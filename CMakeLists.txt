@@ -1,0 +1,34 @@
+cmake_minimum_required(VERSION 3.20)
+project(TernaryGPUBackendValidation LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ------------------------------------------------------------------------------
+# CUDA Validation
+# ------------------------------------------------------------------------------
+option(ENABLE_CUDA "Enable CUDA validation test" OFF)
+if(ENABLE_CUDA OR DEFINED ENV{CUDACXX})
+    enable_language(CUDA)
+    add_executable(test_cuda_kernels test_cuda_kernels.cu)
+    target_compile_features(test_cuda_kernels PUBLIC cxx_std_17)
+    target_compile_definitions(test_cuda_kernels PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+    # Set CUDA architecture or rely on default
+    # set_target_properties(test_cuda_kernels PROPERTIES CUDA_ARCHITECTURES "80;89")
+endif()
+
+# ------------------------------------------------------------------------------
+# SYCL Validation
+# ------------------------------------------------------------------------------
+option(ENABLE_SYCL "Enable SYCL validation test" OFF)
+find_package(IntelSYCL QUIET)
+if(IntelSYCL_FOUND OR ENABLE_SYCL)
+    add_executable(test_sycl_kernels test_sycl_kernels.cpp)
+    target_compile_options(test_sycl_kernels PRIVATE -fsycl -U_CONTAINER_DEBUG_LEVEL)
+    target_link_options(test_sycl_kernels PRIVATE -fsycl)
+    target_compile_definitions(test_sycl_kernels PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH)
+endif()
+
+message(STATUS "Build Configuration:")
+message(STATUS "  CUDA Enabled: ${ENABLE_CUDA}")
+message(STATUS "  SYCL Enabled: ${ENABLE_SYCL}")

@@ -1,0 +1,4 @@
+C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/test_cuda_kernels.dir
+C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/test_sycl_kernels.dir
+C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/edit_cache.dir
+C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/rebuild_cache.dir

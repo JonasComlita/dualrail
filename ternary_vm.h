@@ -1,0 +1,1037 @@
+// =============================================================================
+// ternary_vm.h  —  Ternary VM Dispatcher (Fetch-Decode-Execute Loop)
+// =============================================================================
+//
+// Phase 3 of the Ternary VM build plan. Implements the execution engine that
+// operates on VMState (Phase 2) using the ISA definition (Phase 1).
+//
+// Dependencies:
+//   ternary_vm_state.h  (which pulls in ternary_math.h and ternary_isa.h)
+//
+// Public API:
+//   step(VMState&)              — Execute one instruction. Returns VMStatus.
+//   run(VMState&, max_steps)    — Execute until HALT/TRAP or step limit.
+//   RunResult                   — Structured result from run().
+//
+// Execution Model:
+//   Each call to step() performs exactly one fetch-decode-execute-writeback
+//   cycle. The PC is advanced AFTER successful execution, BEFORE the next
+//   fetch. On HALT or TRAP the PC is NOT advanced — it continues to point
+//   at the offending or terminal instruction for post-mortem inspection.
+//
+// Opcode Implementation Notes:
+//   ADD, SUB, NEG, ABS       — width-selected native ternary arithmetic
+//   MUL                      — ops::multiply (native trit multiply)
+//   DIV                      — ops::divide with pre-check for zero → TRAP
+//   SQRT                     — width-selected native ternary sqrt
+//   TCMP                     — sign(Rs1 − Rs2) via native ternary comparison;
+//                              result is a tagged T1 value
+//   TMIN / TMAX              — compare natively, return the input value
+//   TINV                     — alias for NEG (trit flip is its own inverse)
+//   LOAD / STORE             — word-addressed DMEM access; fault → TRAP
+//   JMP                      — unconditional PC-relative branch
+//   BRN                      — conditional: branch if Rs.trit[0] == T_NEG
+//   CALL                     — save PC+1 to r25 (LR), then JMP
+//   RET                      — PC ← toLong(r25)
+//   MOV / MOVH               — load immediate into Rd
+//   COPY                     — Rd ← Rs1
+//
+// =============================================================================
+
+#pragma once
+#ifndef TERNARY_VM_H
+#define TERNARY_VM_H
+
+#include "ternary_vm_state.h"
+#include <algorithm>
+#include <cmath>
+#include <string>
+#include <sstream>
+
+namespace sandbox {
+namespace vm {
+
+// =============================================================================
+// SECTION 1 — LongTriple Arithmetic Helpers
+// =============================================================================
+// These bridge the gap between what ternary_math.h provides and what the
+// dispatcher needs. They live here to keep ternary_vm_state.h data-only.
+
+namespace exec {
+
+[[nodiscard]] inline bool modeFromFunc(uint8_t func, TernaryMode& out) {
+    switch (func) {
+        case FUNC_T1:  out = TernaryMode::T1;  return true;
+        case FUNC_T5:  out = TernaryMode::T5;  return true;
+        case FUNC_T10: out = TernaryMode::T10; return true;
+        case FUNC_T20: out = TernaryMode::T20; return true;
+        case FUNC_T40: out = TernaryMode::T40; return true;
+        case FUNC_T50: out = TernaryMode::T50; return true;
+        case FUNC_L1:  out = TernaryMode::L1;  return true;
+        case FUNC_L5:  out = TernaryMode::L5;  return true;
+        case FUNC_L10: out = TernaryMode::L10; return true;
+        case FUNC_L20: out = TernaryMode::L20; return true;
+        case FUNC_L40: out = TernaryMode::L40; return true;
+        case FUNC_L50: out = TernaryMode::L50; return true;
+        default: return false;
+    }
+}
+
+[[nodiscard]] inline bool numericModeFromFunc(uint8_t func, TernaryMode& out) {
+    return isNumericWidthFunc(func) && modeFromFunc(func, out);
+}
+
+[[nodiscard]] inline bool laneModeFromFunc(uint8_t func, TernaryMode& out) {
+    return isLaneWidthFunc(func) && modeFromFunc(func, out);
+}
+
+enum class NativeOp : uint8_t {
+    Add, Sub, Mul, Div, Neg, Abs, Sqrt
+};
+
+template<typename F>
+[[nodiscard]] inline TernaryValue unaryByMode(TernaryValue value, TernaryMode mode, F&& f) {
+    if (!isNumericMode(mode) || !isNumericMode(value.mode)) return TernaryValue::invalid(mode);
+    TernaryValue a = convertValue(value, mode);
+    if (a.isInvalid()) return a;
+    switch (mode) {
+        case TernaryMode::T1:  return TernaryValue::fromT1(f(a.asT1()));
+        case TernaryMode::T5:  return TernaryValue::fromT5(f(a.asT5()));
+        case TernaryMode::T10: return TernaryValue::fromT10(f(a.asT10()));
+        case TernaryMode::T20: return TernaryValue::fromT20(f(a.asT20()));
+        case TernaryMode::T40: return TernaryValue::fromTriple(f(a.asTriple()));
+        case TernaryMode::T50: return TernaryValue::fromLongTriple(f(a.asLongTripleRaw()));
+    }
+    return TernaryValue{mode, UInt128::max()};
+}
+
+[[nodiscard]] inline TernaryValue negateValue(TernaryValue value, TernaryMode mode) {
+    return unaryByMode(value, mode, [](auto x) { return native_ops::negate(x); });
+}
+
+[[nodiscard]] inline TernaryValue absValue(TernaryValue value, TernaryMode mode) {
+    return unaryByMode(value, mode, [](auto x) { return native_ops::abs(x); });
+}
+
+[[nodiscard]] inline TernaryValue sqrtValue(TernaryValue value, TernaryMode mode) {
+    return unaryByMode(value, mode, [](auto x) { return native_ops::sqrt(x); });
+}
+
+template<typename F>
+[[nodiscard]] inline TernaryValue binaryByMode(
+    TernaryValue lhs, TernaryValue rhs, TernaryMode mode, F&& f) {
+    if (!isNumericMode(mode) || !isNumericMode(lhs.mode) || !isNumericMode(rhs.mode)) {
+        return TernaryValue::invalid(mode);
+    }
+    TernaryValue a = convertValue(lhs, mode);
+    TernaryValue b = convertValue(rhs, mode);
+    if (a.isInvalid()) return a;
+    if (b.isInvalid()) return b;
+    switch (mode) {
+        case TernaryMode::T1:  return TernaryValue::fromT1(f(a.asT1(), b.asT1()));
+        case TernaryMode::T5:  return TernaryValue::fromT5(f(a.asT5(), b.asT5()));
+        case TernaryMode::T10: return TernaryValue::fromT10(f(a.asT10(), b.asT10()));
+        case TernaryMode::T20: return TernaryValue::fromT20(f(a.asT20(), b.asT20()));
+        case TernaryMode::T40: return TernaryValue::fromTriple(f(a.asTriple(), b.asTriple()));
+        case TernaryMode::T50: return TernaryValue::fromLongTriple(f(a.asLongTripleRaw(), b.asLongTripleRaw()));
+    }
+    return TernaryValue{mode, UInt128::max()};
+}
+
+[[nodiscard]] inline TernaryValue addValue(TernaryValue a, TernaryValue b, TernaryMode mode) {
+    return binaryByMode(a, b, mode, [](auto x, auto y) { return native_ops::add(x, y); });
+}
+
+[[nodiscard]] inline TernaryValue subtractValue(TernaryValue a, TernaryValue b, TernaryMode mode) {
+    return binaryByMode(a, b, mode, [](auto x, auto y) { return native_ops::subtract(x, y); });
+}
+
+[[nodiscard]] inline TernaryValue multiplyValue(TernaryValue a, TernaryValue b, TernaryMode mode) {
+    return binaryByMode(a, b, mode, [](auto x, auto y) { return native_ops::multiply(x, y); });
+}
+
+[[nodiscard]] inline TernaryValue divideValue(TernaryValue a, TernaryValue b, TernaryMode mode) {
+    return binaryByMode(a, b, mode, [](auto x, auto y) { return native_ops::divide(x, y); });
+}
+
+[[nodiscard]] inline int8_t signValue(TernaryValue value, TernaryMode mode) {
+    if (!isNumericMode(mode) || !isNumericMode(value.mode)) return 0;
+    TernaryValue a = convertValue(value, mode);
+    if (a.isInvalid()) return 0;
+    switch (mode) {
+        case TernaryMode::T1:  return native_ops::sign(a.asT1());
+        case TernaryMode::T5:  return native_ops::sign(a.asT5());
+        case TernaryMode::T10: return native_ops::sign(a.asT10());
+        case TernaryMode::T20: return native_ops::sign(a.asT20());
+        case TernaryMode::T40: return native_ops::sign(a.asTriple());
+        case TernaryMode::T50: return native_ops::sign(a.asLongTripleRaw());
+    }
+    return 0;
+}
+
+[[nodiscard]] inline int8_t compareValue(TernaryValue lhs, TernaryValue rhs, TernaryMode mode) {
+    if (!isNumericMode(mode) || !isNumericMode(lhs.mode) || !isNumericMode(rhs.mode)) return 0;
+    TernaryValue a = convertValue(lhs, mode);
+    TernaryValue b = convertValue(rhs, mode);
+    if (a.isInvalid() || b.isInvalid()) return 0;
+    switch (mode) {
+        case TernaryMode::T1:  return native_ops::compare(a.asT1(), b.asT1());
+        case TernaryMode::T5:  return native_ops::compare(a.asT5(), b.asT5());
+        case TernaryMode::T10: return native_ops::compare(a.asT10(), b.asT10());
+        case TernaryMode::T20: return native_ops::compare(a.asT20(), b.asT20());
+        case TernaryMode::T40: return native_ops::compare(a.asTriple(), b.asTriple());
+        case TernaryMode::T50: return native_ops::compare(a.asLongTripleRaw(), b.asLongTripleRaw());
+    }
+    return 0;
+}
+
+enum class LaneOp : uint8_t {
+    Add, Sub, Neg, And, Or
+};
+
+[[nodiscard]] inline bool laneOperandOk(TernaryValue value, TernaryMode mode) {
+    return value.mode == mode && !value.isInvalid();
+}
+
+[[nodiscard]] inline TernaryValue laneUnaryValue(TernaryValue value, TernaryMode mode, LaneOp op) {
+    if (!isLaneMode(mode) || !laneOperandOk(value, mode)) return TernaryValue::invalid(mode);
+    switch (mode) {
+        case TernaryMode::L1:
+            return TernaryValue::fromL1(op == LaneOp::Neg ? tritwiseNeg(value.asL1()) : TritLane1::invalid());
+        case TernaryMode::L5:
+            return TernaryValue::fromL5(op == LaneOp::Neg ? tritwiseNeg(value.asL5()) : TritLane5::invalid());
+        case TernaryMode::L10:
+            return TernaryValue::fromL10(op == LaneOp::Neg ? tritwiseNeg(value.asL10()) : TritLane10::invalid());
+        case TernaryMode::L20:
+            return TernaryValue::fromL20(op == LaneOp::Neg ? tritwiseNeg(value.asL20()) : TritLane20::invalid());
+        case TernaryMode::L40:
+            return TernaryValue::fromL40(op == LaneOp::Neg ? tritwiseNeg(value.asL40()) : TritLane40::invalid());
+        case TernaryMode::L50:
+            return TernaryValue::fromL50(op == LaneOp::Neg ? tritwiseNeg(value.asL50()) : TritLane50::invalid());
+        default:
+            return TernaryValue::invalid(mode);
+    }
+}
+
+[[nodiscard]] inline TernaryValue laneBinaryValue(
+    TernaryValue lhs, TernaryValue rhs, TernaryMode mode, LaneOp op) {
+
+    if (!isLaneMode(mode) || !laneOperandOk(lhs, mode) || !laneOperandOk(rhs, mode)) {
+        return TernaryValue::invalid(mode);
+    }
+
+    switch (mode) {
+        case TernaryMode::L1:
+            if (op == LaneOp::Add) return TernaryValue::fromL1(tritwiseAddCarryless(lhs.asL1(), rhs.asL1()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL1(tritwiseSubtractCarryless(lhs.asL1(), rhs.asL1()));
+            if (op == LaneOp::And) return TernaryValue::fromL1(tritwiseAnd(lhs.asL1(), rhs.asL1()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL1(tritwiseOr(lhs.asL1(), rhs.asL1()));
+            break;
+        case TernaryMode::L5:
+            if (op == LaneOp::Add) return TernaryValue::fromL5(tritwiseAddCarryless(lhs.asL5(), rhs.asL5()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL5(tritwiseSubtractCarryless(lhs.asL5(), rhs.asL5()));
+            if (op == LaneOp::And) return TernaryValue::fromL5(tritwiseAnd(lhs.asL5(), rhs.asL5()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL5(tritwiseOr(lhs.asL5(), rhs.asL5()));
+            break;
+        case TernaryMode::L10:
+            if (op == LaneOp::Add) return TernaryValue::fromL10(tritwiseAddCarryless(lhs.asL10(), rhs.asL10()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL10(tritwiseSubtractCarryless(lhs.asL10(), rhs.asL10()));
+            if (op == LaneOp::And) return TernaryValue::fromL10(tritwiseAnd(lhs.asL10(), rhs.asL10()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL10(tritwiseOr(lhs.asL10(), rhs.asL10()));
+            break;
+        case TernaryMode::L20:
+            if (op == LaneOp::Add) return TernaryValue::fromL20(tritwiseAddCarryless(lhs.asL20(), rhs.asL20()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL20(tritwiseSubtractCarryless(lhs.asL20(), rhs.asL20()));
+            if (op == LaneOp::And) return TernaryValue::fromL20(tritwiseAnd(lhs.asL20(), rhs.asL20()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL20(tritwiseOr(lhs.asL20(), rhs.asL20()));
+            break;
+        case TernaryMode::L40:
+            if (op == LaneOp::Add) return TernaryValue::fromL40(tritwiseAddCarryless(lhs.asL40(), rhs.asL40()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL40(tritwiseSubtractCarryless(lhs.asL40(), rhs.asL40()));
+            if (op == LaneOp::And) return TernaryValue::fromL40(tritwiseAnd(lhs.asL40(), rhs.asL40()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL40(tritwiseOr(lhs.asL40(), rhs.asL40()));
+            break;
+        case TernaryMode::L50:
+            if (op == LaneOp::Add) return TernaryValue::fromL50(tritwiseAddCarryless(lhs.asL50(), rhs.asL50()));
+            if (op == LaneOp::Sub) return TernaryValue::fromL50(tritwiseSubtractCarryless(lhs.asL50(), rhs.asL50()));
+            if (op == LaneOp::And) return TernaryValue::fromL50(tritwiseAnd(lhs.asL50(), rhs.asL50()));
+            if (op == LaneOp::Or)  return TernaryValue::fromL50(tritwiseOr(lhs.asL50(), rhs.asL50()));
+            break;
+        default:
+            break;
+    }
+    return TernaryValue::invalid(mode);
+}
+
+// Sign of a LongTriple: returns T_NEG, T_ZER, or T_POS.
+[[nodiscard]] inline int8_t sign(LongTriple t) {
+    return native_ops::sign(t);
+}
+
+// Compare two LongTriple values. Returns T_NEG / T_ZER / T_POS.
+// Implements TCMP: sign(a - b).
+[[nodiscard]] inline int8_t compare(LongTriple a, LongTriple b) {
+    return native_ops::compare(a, b);
+}
+
+// Absolute value of a LongTriple.
+[[nodiscard]] inline LongTriple abs_val(LongTriple t) {
+    if (sign(t) == T_NEG) return sandbox::ops::negate(t);
+    return t;
+}
+
+// Subtract: a - b through the native LongTriple arithmetic layer.
+[[nodiscard]] inline LongTriple subtract(LongTriple a, LongTriple b) {
+    return sandbox::ops::subtract(a, b);
+}
+
+// TMIN / TMAX: compare and return the winning input value.
+[[nodiscard]] inline LongTriple tmin(LongTriple a, LongTriple b) {
+    return (compare(a, b) == T_NEG) ? a : b;
+}
+[[nodiscard]] inline LongTriple tmax(LongTriple a, LongTriple b) {
+    return (compare(a, b) == T_POS) ? a : b;
+}
+
+// Reconstruct the integer PC value from a LongTriple (used by RET).
+[[nodiscard]] inline int pcFromLongTriple(LongTriple t) {
+    long long v = sandbox::vm::ops::toLong(t);
+    if (v < 0 || v > 0x7FFFFFFF) return -1;
+    return static_cast<int>(v);
+}
+
+[[nodiscard]] inline int pcFromValue(TernaryValue t) {
+    long long v = sandbox::vm::ops::toLong(t);
+    if (v < 0 || v > 0x7FFFFFFF) return -1;
+    return static_cast<int>(v);
+}
+
+[[nodiscard]] inline bool validVectorReg(uint8_t reg) {
+    return reg < VECTOR_REGISTER_COUNT;
+}
+
+inline void prepareVectorOp(VMState& vm) {
+    if (static_cast<int>(vm.vector_faults.fault_valid.size()) != vm.vector_length) {
+        vm.vector_faults.reset(vm.vector_length);
+    }
+    for (auto& reg : vm.vregfile.reg) {
+        if (static_cast<int>(reg.lane.size()) != vm.vector_length) {
+            reg.reset(vm.vector_length);
+        }
+    }
+    vm.vector_faults.clear();
+}
+
+[[nodiscard]] inline bool convertVectorNumericLane(
+    TernaryValue source,
+    TernaryMode mode,
+    TernaryValue& out) {
+
+    if (!isNumericMode(mode) || !isNumericMode(source.mode) || source.isInvalid()) return false;
+    out = convertValue(source, mode);
+    return out.mode == mode && !out.isInvalid();
+}
+
+[[nodiscard]] inline bool exactVectorNumericLane(TernaryValue source, TernaryMode mode) {
+    return source.mode == mode && !source.isInvalid();
+}
+
+[[nodiscard]] inline TernaryValue makePredicateLane(int8_t cmp) {
+    TritLane1 lane;
+    lane.setTrit(0, cmp);
+    return TernaryValue::fromL1(lane);
+}
+
+inline void writeVectorFaultZero(VMState& vm, uint8_t vreg, int lane, TrapCode code, TernaryMode mode) {
+    vm.vector_faults.setLane(lane, code);
+    vm.vregfile.reg[vreg].write(lane, TernaryValue::zero(mode));
+}
+
+inline void writeVectorBinaryNumeric(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t va,
+    uint8_t vb,
+    TernaryMode mode,
+    Opcode opcode) {
+
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue a;
+        TernaryValue b;
+        if (!convertVectorNumericLane(vm.vregfile.reg[va].read(lane), mode, a) ||
+            !convertVectorNumericLane(vm.vregfile.reg[vb].read(lane), mode, b)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+
+        if (opcode == Opcode::VDIV && b.isZero()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_DIV_ZERO, mode);
+            continue;
+        }
+
+        TernaryValue result = TernaryValue::zero(mode);
+        if (opcode == Opcode::VADD) result = addValue(a, b, mode);
+        else if (opcode == Opcode::VSUB) result = subtractValue(a, b, mode);
+        else if (opcode == Opcode::VMUL) result = multiplyValue(a, b, mode);
+        else if (opcode == Opcode::VDIV) result = divideValue(a, b, mode);
+
+        if (result.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+        } else {
+            vm.vregfile.reg[vd].write(lane, result);
+        }
+    }
+}
+
+inline void writeVectorNeg(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t vs,
+    TernaryMode mode) {
+
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue src;
+        if (!convertVectorNumericLane(vm.vregfile.reg[vs].read(lane), mode, src)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+
+        TernaryValue result = negateValue(src, mode);
+        if (result.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+        } else {
+            vm.vregfile.reg[vd].write(lane, result);
+        }
+    }
+}
+
+inline void writeVectorCompare(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t va,
+    uint8_t vb,
+    TernaryMode mode) {
+
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue a;
+        TernaryValue b;
+        if (!convertVectorNumericLane(vm.vregfile.reg[va].read(lane), mode, a) ||
+            !convertVectorNumericLane(vm.vregfile.reg[vb].read(lane), mode, b)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, makePredicateLane(compareValue(a, b, mode)));
+    }
+}
+
+inline void writeVectorSelect(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t vcond,
+    uint8_t vneg,
+    uint8_t vzero,
+    uint8_t vpos,
+    TernaryMode mode) {
+
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue cond = vm.vregfile.reg[vcond].read(lane);
+        TernaryValue neg = vm.vregfile.reg[vneg].read(lane);
+        TernaryValue zero = vm.vregfile.reg[vzero].read(lane);
+        TernaryValue pos = vm.vregfile.reg[vpos].read(lane);
+        if (cond.mode != TernaryMode::L1 || cond.isInvalid() ||
+            !exactVectorNumericLane(neg, mode) ||
+            !exactVectorNumericLane(zero, mode) ||
+            !exactVectorNumericLane(pos, mode)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+
+        const int8_t trit = cond.asL1().tritAt(0);
+        vm.vregfile.reg[vd].write(lane, trit < 0 ? neg : (trit > 0 ? pos : zero));
+    }
+}
+
+} // namespace exec
+
+// =============================================================================
+// SECTION 2 — Single-Step Executor
+// =============================================================================
+
+// Execute exactly one instruction in the given VMState.
+// Returns the VMStatus after execution:
+//   RUNNING  — instruction completed normally; PC has been advanced.
+//   HALTED   — HALT instruction encountered; PC unchanged.
+//   TRAPPED  — fault occurred; PC unchanged; trap_reg written.
+//
+// Calling step() on a HALTED or TRAPPED VMState is a no-op (returns status).
+inline VMStatus step(VMState& vm) {
+    if (!vm.isRunning()) return vm.status;
+
+    // -----------------------------------------------------------------
+    // FETCH
+    // -----------------------------------------------------------------
+    auto [raw, fetch_fc] = vm.imem.fetch(vm.pc);
+    if (fetch_fc != MemFaultCode::OK) {
+        vm.trap(TrapCode::TRAP_MEM_FAULT);
+        return vm.status;
+    }
+
+    // -----------------------------------------------------------------
+    // DECODE
+    // -----------------------------------------------------------------
+    InstructionWord iw = InstructionWord::decode(raw);
+    if (iw.malformed || iw.opcode == Opcode::RESERVED) {
+        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        return vm.status;
+    }
+
+    // -----------------------------------------------------------------
+    // EXECUTE + WRITEBACK
+    // After this block: either vm.status has changed (HALT/TRAP) or
+    // the instruction completed normally and pc_next holds the new PC.
+    // -----------------------------------------------------------------
+    int pc_next = vm.pc + 1;  // default: advance by one word
+
+    auto decodeWidth = [&]() -> std::pair<bool, TernaryMode> {
+        TernaryMode mode = TernaryMode::T50;
+        if (!exec::numericModeFromFunc(iw.func, mode)) {
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return {false, mode};
+        }
+        return {true, mode};
+    };
+
+    auto decodeLaneWidth = [&]() -> std::pair<bool, TernaryMode> {
+        TernaryMode mode = TernaryMode::L50;
+        if (!exec::laneModeFromFunc(iw.func, mode)) {
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return {false, mode};
+        }
+        return {true, mode};
+    };
+
+    auto writeChecked = [&](uint8_t rd, TernaryValue value) -> bool {
+        if (value.isInvalid()) {
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return false;
+        }
+        vm.regfile.write(rd, value);
+        return true;
+    };
+
+    switch (iw.opcode) {
+
+        // ----- System -----------------------------------------------
+
+        case Opcode::NOP:
+            // Nothing to do.
+            break;
+
+        case Opcode::HALT:
+            vm.halt();
+            return vm.status;
+
+        // ----- Data Movement ----------------------------------------
+
+        case Opcode::MOV: {
+            // I-type: Rd ← sign-extended imm16 as a LongTriple integer.
+            vm.regfile.write(iw.rd, sandbox::vm::ops::fromLong(iw.imm));
+            break;
+        }
+
+        case Opcode::MOVH: {
+            // I-type: Rd ← (current Rd & lower 16 trits) | (imm16 << 16)
+            // Loads the upper half of a 32-trit constant. Use MOV then MOVH
+            // to construct large immediates: MOV loads low 16, MOVH loads high 16.
+            // Implemented as an integer scale by 3^16 until native trit-shift exists.
+            long long shifted = static_cast<long long>(iw.imm);
+            // 3^16 = 43,046,721
+            shifted *= 43046721LL;
+            // Combine: read Rd, mask off upper trits, OR in shifted value.
+            // Simpler for Phase 3: just load the shifted value.
+            // Full combine requires trit masking — deferred to Phase 4 assembler.
+            vm.regfile.write(iw.rd, sandbox::vm::ops::fromLong(shifted));
+            break;
+        }
+
+        case Opcode::COPY: {
+            // R-type: Rd ← Rs1
+            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            break;
+        }
+
+        case Opcode::SWAP: {
+            TernaryValue a = vm.regfile.read(iw.rd);
+            TernaryValue b = vm.regfile.read(iw.rs1);
+            vm.regfile.write(iw.rd, b);
+            vm.regfile.write(iw.rs1, a);
+            break;
+        }
+
+        // ----- Arithmetic -------------------------------------------
+
+        case Opcode::ADD: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::addValue(vm.regfile.read(iw.rs1),
+                                                    vm.regfile.read(iw.rs2), mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::SUB: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::subtractValue(vm.regfile.read(iw.rs1),
+                                                         vm.regfile.read(iw.rs2), mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::MUL: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::multiplyValue(vm.regfile.read(iw.rs1),
+                                                         vm.regfile.read(iw.rs2), mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::DIV: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            if (b.isZero()) {
+                vm.trap(TrapCode::TRAP_DIV_ZERO);
+                return vm.status;
+            }
+            if (!writeChecked(iw.rd, exec::divideValue(vm.regfile.read(iw.rs1), b, mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::SQRT: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue t = convertValue(vm.regfile.read(iw.rs1), mode);
+            if (exec::signValue(t, mode) == T_NEG) {
+                // sqrt of negative: trap as illegal operation.
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (!writeChecked(iw.rd, exec::sqrtValue(t, mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::NEG: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::ABS: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::absValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            break;
+        }
+
+        // ----- Compare & Ternary Logic ------------------------------
+
+        case Opcode::TCMP: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            // Rd ← sign(Rs1 - Rs2) stored as single-trit LongTriple in trit[0].
+            // Contract (from ternary_isa.h Section 5):
+            //   result == T_NEG (-1):  Rs1 < Rs2
+            //   result == T_ZER ( 0):  Rs1 == Rs2
+            //   result == T_POS (+1):  Rs1 > Rs2
+            int8_t cmp = exec::compareValue(vm.regfile.read(iw.rs1),
+                                            vm.regfile.read(iw.rs2), mode);
+            vm.regfile.write(iw.rd, makeTritResult(cmp));
+            break;
+        }
+
+        case Opcode::TMIN: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_POS ? b : a)) return vm.status;
+            break;
+        }
+
+        case Opcode::TMAX: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_NEG ? b : a)) return vm.status;
+            break;
+        }
+
+        case Opcode::TINV: {
+            // Alias for NEG: trit-flip all mantissa trits. TINV(TINV(x)) == x.
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::TLADD:
+        case Opcode::TLSUB:
+        case Opcode::TLAND:
+        case Opcode::TLOR: {
+            auto [ok, mode] = decodeLaneWidth(); if (!ok) return vm.status;
+            exec::LaneOp op = exec::LaneOp::Add;
+            if (iw.opcode == Opcode::TLSUB) op = exec::LaneOp::Sub;
+            else if (iw.opcode == Opcode::TLAND) op = exec::LaneOp::And;
+            else if (iw.opcode == Opcode::TLOR) op = exec::LaneOp::Or;
+            if (!writeChecked(iw.rd, exec::laneBinaryValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), mode, op))) return vm.status;
+            break;
+        }
+
+        case Opcode::TLNEG: {
+            auto [ok, mode] = decodeLaneWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, exec::laneUnaryValue(
+                    vm.regfile.read(iw.rs1), mode, exec::LaneOp::Neg))) return vm.status;
+            break;
+        }
+
+        case Opcode::TSEL: {
+            const int8_t cond = readTrit0(vm.regfile.read(iw.rcond));
+            const uint8_t src = cond < 0 ? iw.rneg : (cond > 0 ? iw.rpos : iw.rzero);
+            vm.regfile.write(iw.rd, vm.regfile.read(src));
+            break;
+        }
+
+        case Opcode::CVT: {
+            TernaryMode mode = TernaryMode::T50;
+            if (!exec::modeFromFunc(iw.func, mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue source = vm.regfile.read(iw.rs1);
+            if (isWidthFunc(iw.rs2)) {
+                TernaryMode sourceMode = TernaryMode::T50;
+                if (!exec::modeFromFunc(iw.rs2, sourceMode)) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+                if ((isNumericMode(sourceMode) && !isNumericMode(source.mode)) ||
+                    (isLaneMode(sourceMode) && !isLaneMode(source.mode))) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+                source = convertValue(source, sourceMode);
+                if (source.isInvalid()) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+            } else if (iw.rs2 != R0_ZERO || isLaneMode(mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (!writeChecked(iw.rd, convertValue(source, mode))) return vm.status;
+            break;
+        }
+
+        // ----- Vector Reference Operations --------------------------
+
+        case Opcode::VADD:
+        case Opcode::VSUB:
+        case Opcode::VMUL:
+        case Opcode::VDIV: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rs1) ||
+                !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorBinaryNumeric(vm, iw.rd, iw.rs1, iw.rs2, mode, iw.opcode);
+            break;
+        }
+
+        case Opcode::VNEG: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) || !exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorNeg(vm, iw.rd, iw.rs1, mode);
+            break;
+        }
+
+        case Opcode::VCMP: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rs1) ||
+                !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorCompare(vm, iw.rd, iw.rs1, iw.rs2, mode);
+            break;
+        }
+
+        case Opcode::VSEL: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rcond) ||
+                !exec::validVectorReg(iw.rneg) ||
+                !exec::validVectorReg(iw.rzero) ||
+                !exec::validVectorReg(iw.rpos)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorSelect(vm, iw.rd, iw.rcond, iw.rneg, iw.rzero, iw.rpos, mode);
+            break;
+        }
+
+        case Opcode::VBCAST: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue source;
+            if (!exec::convertVectorNumericLane(vm.regfile.read(iw.rs1), mode, source)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                vm.vregfile.reg[iw.rd].write(lane, source);
+            }
+            break;
+        }
+
+        case Opcode::VLOAD: {
+            TernaryMode mode = TernaryMode::T50;
+            if (!exec::numericModeFromFunc(iw.func, mode) ||
+                !exec::validVectorReg(iw.rd)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue baseReg = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(baseReg.mode) || baseReg.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            const long long base = ops::toLong(baseReg);
+            exec::prepareVectorOp(vm);
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                const long long addrLong = base + iw.imm + lane;
+                if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+                    continue;
+                }
+                auto [loaded, fc] = vm.dmem.load(static_cast<int>(addrLong));
+                if (fc != MemFaultCode::OK) {
+                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+                    continue;
+                }
+                TernaryValue converted;
+                if (!exec::convertVectorNumericLane(loaded, mode, converted)) {
+                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+                    continue;
+                }
+                vm.vregfile.reg[iw.rd].write(lane, converted);
+            }
+            break;
+        }
+
+        case Opcode::VSTORE: {
+            TernaryMode mode = TernaryMode::T50;
+            if (!exec::numericModeFromFunc(iw.func, mode) ||
+                !exec::validVectorReg(iw.rd)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue baseReg = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(baseReg.mode) || baseReg.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            const long long base = ops::toLong(baseReg);
+            exec::prepareVectorOp(vm);
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                const long long addrLong = base + iw.imm + lane;
+                if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+                    vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+                    continue;
+                }
+                TernaryValue converted;
+                if (!exec::convertVectorNumericLane(vm.vregfile.reg[iw.rd].read(lane), mode, converted)) {
+                    vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
+                    continue;
+                }
+                MemFaultCode fc = vm.dmem.store(static_cast<int>(addrLong), converted);
+                if (fc != MemFaultCode::OK) {
+                    vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+                }
+            }
+            break;
+        }
+
+        // ----- Memory -----------------------------------------------
+
+        case Opcode::LOAD: {
+            // I-type: Rd ← dmem[Rs1 + imm16]
+            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            long long base   = ops::toLong(vm.regfile.read(iw.rs1));
+            int       addr   = static_cast<int>(base + iw.imm);
+            auto [val, fc]   = vm.dmem.load(addr);
+            if (fc != MemFaultCode::OK) {
+                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                return vm.status;
+            }
+            vm.regfile.write(iw.rd, val);
+            break;
+        }
+
+        case Opcode::STORE: {
+            // I-type: dmem[Rs1 + imm16] ← Rd
+            // Rd field is the SOURCE register (the value to store).
+            // Rs1 field is the BASE ADDRESS register.
+            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            long long base = ops::toLong(vm.regfile.read(iw.rs1));
+            int       addr = static_cast<int>(base + iw.imm);
+            MemFaultCode fc = vm.dmem.store(addr, vm.regfile.read(iw.rd));
+            if (fc != MemFaultCode::OK) {
+                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                return vm.status;
+            }
+            break;
+        }
+
+        // ----- Control Flow -----------------------------------------
+
+        case Opcode::JMP: {
+            // B-type: PC ← PC + offset19 (unconditional)
+            pc_next = vm.pc + iw.offset;
+            break;
+        }
+
+        case Opcode::BRN: {
+            // B-type: if Rs.trit[0] == T_NEG → PC ← PC + offset19
+            // Otherwise fall through to PC + 1.
+            // This is the primary ternary comparison branch.
+            // Use after TCMP: BRN r3, label executes when r3 == -1 (Rs1 < Rs2).
+            int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (trit0 == T_NEG) {
+                pc_next = vm.pc + iw.offset;
+            }
+            break;
+        }
+
+        case Opcode::BRZ: {
+            int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (trit0 == T_ZER) {
+                pc_next = vm.pc + iw.offset;
+            }
+            break;
+        }
+
+        case Opcode::BRP: {
+            int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (trit0 == T_POS) {
+                pc_next = vm.pc + iw.offset;
+            }
+            break;
+        }
+
+        case Opcode::CALL: {
+            // B-type: r25 (LR) ← PC + 1; PC ← PC + offset19
+            vm.regfile.writeLR(sandbox::vm::ops::fromLong(vm.pc + 1));
+            pc_next = vm.pc + iw.offset;
+            break;
+        }
+
+        case Opcode::RET: {
+            // R-type (no operands): PC ← r25 (LR)
+            int ret_addr = exec::pcFromValue(vm.regfile.readLR());
+            if (ret_addr < 0 || !vm.imem.inRange(ret_addr)) {
+                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                return vm.status;
+            }
+            pc_next = ret_addr;
+            break;
+        }
+
+        case Opcode::VLEN: {
+            vm.regfile.write(iw.rd, ops::fromLong(vm.vector_length));
+            break;
+        }
+
+        default:
+            // Should never reach here — decode() maps unknown opcodes to
+            // RESERVED, which is caught above. Belt-and-suspenders trap.
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return vm.status;
+    }
+
+    // -----------------------------------------------------------------
+    // ADVANCE PC (only if still running — HALT/TRAP return early above)
+    // -----------------------------------------------------------------
+    vm.pc = pc_next;
+    return vm.status;
+}
+
+// =============================================================================
+// SECTION 3 — Run Loop
+// =============================================================================
+
+struct RunResult {
+    VMStatus   status;       // Final VMStatus when execution stopped
+    int        steps;        // Number of instructions executed
+    int        final_pc;     // PC value when execution stopped
+    TrapCode   trap_code;    // Only meaningful when status == TRAPPED
+    std::string description; // Human-readable reason for stopping
+
+    [[nodiscard]] bool halted()  const { return status == VMStatus::HALTED;  }
+    [[nodiscard]] bool trapped() const { return status == VMStatus::TRAPPED; }
+    [[nodiscard]] bool timeout() const { return status == VMStatus::RUNNING; }
+};
+
+// Run the VM until HALT, TRAP, or max_steps is reached.
+// max_steps == -1 means unlimited (use with care — infinite loops are possible).
+// Returns a RunResult describing why execution stopped.
+inline RunResult run(VMState& vm, int max_steps = 1000000) {
+    int steps = 0;
+    while (vm.isRunning()) {
+        if (max_steps >= 0 && steps >= max_steps) break;
+        step(vm);
+        ++steps;
+    }
+
+    RunResult r;
+    r.status   = vm.status;
+    r.steps    = steps;
+    r.final_pc = vm.pc;
+
+    if (vm.isHalted()) {
+        r.trap_code   = TrapCode::TRAP_ILLEGAL_OP;  // unused
+        r.description = "HALT at PC=" + std::to_string(vm.pc)
+                      + " after " + std::to_string(steps) + " steps";
+    } else if (vm.isTrapped()) {
+        r.trap_code = decodeTrap(vm.trap_reg);
+        std::string tc;
+        switch (r.trap_code) {
+            case TrapCode::TRAP_DIV_ZERO:   tc = "TRAP_DIV_ZERO";   break;
+            case TrapCode::TRAP_MEM_FAULT:  tc = "TRAP_MEM_FAULT";  break;
+            case TrapCode::TRAP_ILLEGAL_OP: tc = "TRAP_ILLEGAL_OP"; break;
+        }
+        r.description = tc + " at PC=" + std::to_string(vm.pc)
+                      + " after " + std::to_string(steps) + " steps";
+    } else {
+        r.trap_code   = TrapCode::TRAP_ILLEGAL_OP;  // unused
+        r.description = "Step limit reached after "
+                      + std::to_string(steps) + " steps";
+    }
+
+    return r;
+}
+
+} // namespace vm
+} // namespace sandbox
+
+#endif // TERNARY_VM_H
