@@ -598,7 +598,8 @@ struct InstructionWord {
         // --- Format-specific field decode ---
         switch (iw.fmt) {
             case InstructionFormat::R_TYPE:
-                if (iw.opcode == Opcode::TSEL || iw.opcode == Opcode::VSEL) {
+                if (iw.opcode == Opcode::TSEL || iw.opcode == Opcode::VSEL ||
+                    iw.opcode == Opcode::VBLEND) {
                     iw.r5_layout = true;
                     iw.rd    = static_cast<uint8_t>(w.getField(FIELD_R5_RD_LSB,   FIELD_R5_RD_W)   + REG_FIELD_OFFSET);
                     iw.rcond = static_cast<uint8_t>(w.getField(FIELD_R5_COND_LSB, FIELD_R5_COND_W) + REG_FIELD_OFFSET);
@@ -607,7 +608,7 @@ struct InstructionWord {
                     iw.rpos  = static_cast<uint8_t>(w.getField(FIELD_R5_POS_LSB,  FIELD_R5_POS_W)  + REG_FIELD_OFFSET);
                     iw.rs1   = iw.rcond;
                     iw.rs2   = iw.rneg;
-                    iw.func  = iw.opcode == Opcode::VSEL
+                    iw.func  = (iw.opcode == Opcode::VSEL || iw.opcode == Opcode::VBLEND)
                         ? static_cast<uint8_t>(w.getField(FIELD_R5_FUNC_LSB, FIELD_R5_FUNC_W) + REG_FIELD_OFFSET)
                         : FUNC_T50;
                 } else {
@@ -694,7 +695,7 @@ struct InstructionWord {
         w.setField(FIELD_R5_NEG_LSB,  FIELD_R5_NEG_W,  static_cast<int>(rneg)  - REG_FIELD_OFFSET);
         w.setField(FIELD_R5_ZERO_LSB, FIELD_R5_ZERO_W, static_cast<int>(rzero) - REG_FIELD_OFFSET);
         w.setField(FIELD_R5_POS_LSB,  FIELD_R5_POS_W,  static_cast<int>(rpos)  - REG_FIELD_OFFSET);
-        if (op == Opcode::VSEL) {
+        if (op == Opcode::VSEL || op == Opcode::VBLEND) {
             w.setField(FIELD_R5_FUNC_LSB, FIELD_R5_FUNC_W, static_cast<int>(func) - REG_FIELD_OFFSET);
         }
         return w;
@@ -955,7 +956,8 @@ inline bool verifyRoundTrip() {
     if (iw.opcode == Opcode::CVT && iw.fmt == InstructionFormat::R_TYPE) {
         if (isWidthFunc(iw.rs2)) mnemonic += widthFuncSuffix(iw.rs2);
         if (isWidthFunc(iw.func)) mnemonic += widthFuncSuffix(iw.func);
-    } else if (iw.opcode == Opcode::VSEL && iw.fmt == InstructionFormat::R_TYPE) {
+    } else if ((iw.opcode == Opcode::VSEL || iw.opcode == Opcode::VBLEND) &&
+               iw.fmt == InstructionFormat::R_TYPE) {
         if (isNumericWidthFunc(iw.func)) mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&
         (iw.opcode == Opcode::TLADD || iw.opcode == Opcode::TLSUB ||
@@ -980,8 +982,15 @@ inline bool verifyRoundTrip() {
          iw.opcode == Opcode::VMAC || iw.opcode == Opcode::VACT ||
          iw.opcode == Opcode::ACLR || iw.opcode == Opcode::ALOAD ||
          iw.opcode == Opcode::AADD || iw.opcode == Opcode::ASUB ||
-         iw.opcode == Opcode::AMUL || iw.opcode == Opcode::ASTORE) &&
+         iw.opcode == Opcode::AMUL || iw.opcode == Opcode::ASTORE ||
+         iw.opcode == Opcode::VPERMUTE || iw.opcode == Opcode::VGATHER ||
+         iw.opcode == Opcode::VSCATTER) &&
         isNumericWidthFunc(iw.func)) {
+        mnemonic += widthFuncSuffix(iw.func);
+    } else if (iw.fmt == InstructionFormat::R_TYPE &&
+        (iw.opcode == Opcode::VPACK || iw.opcode == Opcode::VUNPACK) &&
+        isNumericWidthFunc(iw.rs2) && isNumericWidthFunc(iw.func)) {
+        mnemonic += widthFuncSuffix(iw.rs2);
         mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::I_TYPE &&
         (iw.opcode == Opcode::VLOAD || iw.opcode == Opcode::VSTORE) &&
@@ -1004,14 +1013,54 @@ inline bool verifyRoundTrip() {
                    + ", v" + std::to_string(iw.rneg)
                    + ", v" + std::to_string(iw.rzero)
                    + ", v" + std::to_string(iw.rpos);
+            } else if (iw.opcode == Opcode::VBLEND) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rcond)
+                   + ", v" + std::to_string(iw.rneg)
+                   + ", v" + std::to_string(iw.rpos);
             } else if (iw.opcode == Opcode::VLEN) {
+                s += "r" + std::to_string(iw.rd);
+            } else if (iw.opcode == Opcode::ACLR) {
+                s.pop_back();
+            } else if (iw.opcode == Opcode::ALOAD ||
+                       iw.opcode == Opcode::AADD ||
+                       iw.opcode == Opcode::ASUB ||
+                       iw.opcode == Opcode::AMUL) {
+                s += "r" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::ASTORE) {
                 s += "r" + std::to_string(iw.rd);
             } else if (iw.opcode == Opcode::VBCAST) {
                 s += "v" + std::to_string(iw.rd)
                    + ", r" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::VACT) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::VMAC) {
+                s += "v" + std::to_string(iw.rs1)
+                   + ", v" + std::to_string(iw.rs2);
+            } else if (iw.opcode == Opcode::VDOT) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1)
+                   + ", v" + std::to_string(iw.rs2);
             } else if (iw.opcode == Opcode::VNEG) {
                 s += "v" + std::to_string(iw.rd)
                    + ", v" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::VPACK ||
+                       iw.opcode == Opcode::VUNPACK) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::VPERMUTE) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1)
+                   + ", v" + std::to_string(iw.rs2);
+            } else if (iw.opcode == Opcode::VSWAP) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::VGATHER ||
+                       iw.opcode == Opcode::VSCATTER) {
+                s += "v" + std::to_string(iw.rd)
+                   + ", r" + std::to_string(iw.rs1)
+                   + ", v" + std::to_string(iw.rs2);
             } else if (iw.opcode == Opcode::VADD ||
                        iw.opcode == Opcode::VSUB ||
                        iw.opcode == Opcode::VMUL ||

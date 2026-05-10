@@ -494,6 +494,47 @@ void testIsaAndAsmWidths() {
     expect(!assemble("vbcast.t20 v0, v1\n").success, "vector register rejected as VBCAST scalar source");
     expect(!assemble("vload.t20 r1, r2, 0\n").success, "scalar register rejected in VLOAD vector dest");
     expect(!assemble("vload.t20 v0, v8, 0\n").success, "vector register rejected as VLOAD base");
+
+    auto phase4Rest = assembleOrThrow(R"(
+        aclr.t50
+        aload.t20 r1
+        aadd.t20 r2
+        asub.t20 r3
+        amul.t20 r4
+        astore.t20 r5
+        vdot.t1 r6, v0, v1
+        vmac.t1 v0, v1
+        vact.t1 v2, v3
+        vpack.t20.t10 v4, v5
+        vunpack.t10.t20 v5, v4
+        vpermute.t20 v6, v5, v0
+        vblend.t20 v7, v2, v3, v4
+        vswap v0, v1
+        vgather.t20 v2, r1, v0
+        vscatter.t20 v2, r1, v0
+        halt
+    )");
+    expect(InstructionWord::decode(phase4Rest[0]).opcode == Opcode::ACLR,
+           "assembler encodes ACLR");
+    expect(InstructionWord::decode(phase4Rest[6]).opcode == Opcode::VDOT &&
+           InstructionWord::decode(phase4Rest[6]).func == FUNC_T1,
+           "assembler encodes VDOT.t1");
+    auto vpackIw = InstructionWord::decode(phase4Rest[9]);
+    expect(vpackIw.opcode == Opcode::VPACK &&
+           vpackIw.rs2 == FUNC_T20 && vpackIw.func == FUNC_T10,
+           "assembler encodes VPACK source/dest suffix pair");
+    auto vblendIw = InstructionWord::decode(phase4Rest[12]);
+    expect(vblendIw.opcode == Opcode::VBLEND && vblendIw.r5_layout &&
+           vblendIw.rcond == 2 && vblendIw.rneg == 3 &&
+           vblendIw.rzero == 3 && vblendIw.rpos == 4,
+           "assembler encodes VBLEND as R5 false/true select");
+    expect(disassemble(phase4Rest[9]).find("VPACK.t20.t10 v4, v5") != std::string::npos,
+           "disassembler prints VPACK suffix pair");
+    expect(disassemble(phase4Rest[12]).find("VBLEND.t20 v7, v2, v3, v4") != std::string::npos,
+           "disassembler prints VBLEND shape");
+    expect(!assemble("vdot.t20 r1, v0, v1\n").success, "VDOT only accepts .t1");
+    expect(!assemble("vpack.t20 v1, v0\n").success, "VPACK requires source and destination suffixes");
+    expect(!assemble("vswap.t20 v0, v1\n").success, "VSWAP rejects width suffix");
 }
 
 void testVmWidths() {
@@ -900,6 +941,138 @@ pos_path:
     }
 
     {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 3
+            mov.t20 r2, 4
+            aclr.t50
+            aload.t20 r1
+            aadd.t20  r2
+            amul.t20  r2
+            asub.t20  r1
+            astore.t20 r3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "accumulator program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "accumulator program halts");
+        expect(vm.regfile.read(R3).mode == TernaryMode::T20 &&
+               sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 25,
+               "accumulator keeps T50 internal precision and stores selected width");
+    }
+
+    {
+        VMState vm(32, 64);
+        vm.vector_length = 4;
+        auto program = assembleOrThrow(R"(
+            vdot.t1 r1, v0, v1
+            vmac.t1 v0, v1
+            astore.t50 r2
+            vact.t1 v2, v3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "T1 AI program loads");
+        auto l1 = [](int8_t trit) {
+            TritLane1 lane;
+            lane.setTrit(0, trit);
+            return TernaryValue::fromL1(lane);
+        };
+        const int8_t a[] = {1, 1, 0, -1};
+        const int8_t b[] = {1, -1, 1, -1};
+        const long long signs[] = {-5, 0, 7, -1};
+        for (int lane = 0; lane < vm.vector_length; ++lane) {
+            vm.vregfile.reg[0].write(lane, l1(a[lane]));
+            vm.vregfile.reg[1].write(lane, l1(b[lane]));
+            vm.vregfile.reg[3].write(lane, TernaryValue::fromT20(native_ops::fromIntT20(signs[lane])));
+        }
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "T1 AI program halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 1,
+               "VDOT.t1 writes T50 dot product to scalar register");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 1,
+               "VMAC.t1 accumulates T1 dot product into accumulator");
+        expect(vectorPredicateTrit(vm, 2, 0) == -1 &&
+               vectorPredicateTrit(vm, 2, 1) == 0 &&
+               vectorPredicateTrit(vm, 2, 2) == 1 &&
+               vectorPredicateTrit(vm, 2, 3) == -1,
+               "VACT.t1 writes sign predicates");
+        expect(!vm.vector_faults.any(), "T1 AI program has no lane faults");
+    }
+
+    {
+        VMState vm(32, 64);
+        vm.vector_length = 3;
+        auto program = assembleOrThrow(R"(
+            vpack.t20.t10   v1, v0
+            vunpack.t10.t20 v2, v1
+            vpermute.t20    v3, v2, v4
+            vblend.t20      v6, v5, v2, v3
+            vswap           v1, v2
+            halt
+        )");
+        expect(loadAndReset(vm, program), "vector plumbing program loads");
+        const long long values[] = {10, 20, 30};
+        const long long indices[] = {2, 0, 1};
+        const int8_t cond[] = {-1, 0, 1};
+        auto l1 = [](int8_t trit) {
+            TritLane1 lane;
+            lane.setTrit(0, trit);
+            return TernaryValue::fromL1(lane);
+        };
+        for (int lane = 0; lane < vm.vector_length; ++lane) {
+            vm.vregfile.reg[0].write(lane, TernaryValue::fromT20(native_ops::fromIntT20(values[lane])));
+            vm.vregfile.reg[4].write(lane, TernaryValue::fromT5(native_ops::fromIntT5(indices[lane])));
+            vm.vregfile.reg[5].write(lane, l1(cond[lane]));
+        }
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "vector plumbing program halts");
+        expect(vectorMode(vm, 1, 0) == TernaryMode::T20 &&
+               vectorMode(vm, 2, 0) == TernaryMode::T10,
+               "VSWAP exchanges whole vector register payloads");
+        expect(vectorLong(vm, 3, 0) == 30 &&
+               vectorLong(vm, 3, 1) == 10 &&
+               vectorLong(vm, 3, 2) == 20,
+               "VPERMUTE reorders lanes by index vector");
+        expect(vectorLong(vm, 6, 0) == 10 &&
+               vectorLong(vm, 6, 1) == 20 &&
+               vectorLong(vm, 6, 2) == 20,
+               "VBLEND selects false for non-positive and true for positive");
+        expect(!vm.vector_faults.any(), "vector plumbing program has no lane faults");
+    }
+
+    {
+        VMState vm(32, 32);
+        vm.vector_length = 3;
+        auto program = assembleOrThrow(R"(
+            mov r1, 10
+            vgather.t20  v2, r1, v0
+            vscatter.t20 v2, r1, v1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "gather/scatter program loads");
+        const long long gatherIdx[] = {0, 2, 4};
+        const long long scatterIdx[] = {6, 7, 40};
+        for (int lane = 0; lane < vm.vector_length; ++lane) {
+            vm.vregfile.reg[0].write(lane, TernaryValue::fromT5(native_ops::fromIntT5(gatherIdx[lane])));
+            vm.vregfile.reg[1].write(lane, TernaryValue::fromT5(native_ops::fromIntT5(scatterIdx[lane])));
+        }
+        vm.dmem.store(10, TernaryValue::fromT5(native_ops::fromIntT5(11)));
+        vm.dmem.store(12, TernaryValue::fromT5(native_ops::fromIntT5(22)));
+        vm.dmem.store(14, TernaryValue::fromT5(native_ops::fromIntT5(33)));
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "gather/scatter program halts with lane-local fault");
+        auto [stored0, fc0] = vm.dmem.load(16);
+        auto [stored1, fc1] = vm.dmem.load(17);
+        expect(fc0 == MemFaultCode::OK && sandbox::vm::ops::toLong(stored0) == 11,
+               "VGATHER/VSCATTER stores first indexed lane");
+        expect(fc1 == MemFaultCode::OK && sandbox::vm::ops::toLong(stored1) == 22,
+               "VGATHER/VSCATTER stores second indexed lane");
+        expect(vm.vector_faults.fault_valid[2] &&
+               vm.vector_faults.fault_class[2] == TrapCode::TRAP_MEM_FAULT,
+               "VSCATTER records out-of-range indexed lane");
+    }
+
+    {
         VMState vm;
         expect(!sandbox::vm::trapValid(vm.trap_reg), "reset trap record is invalid/no-fault");
         expect(sandbox::vm::readStoredTrit(vm.trap_reg, 0) == sandbox::isa::FAULT_VALID_NONE,
@@ -929,6 +1102,7 @@ void testNoBridgeInExecutionHeaders() {
         "ternary_vm_state.h",
         "ternary_vm.h",
         "ternary_asm.h",
+        "ternary_transformer_runtime.h",
     };
     const std::vector<std::string> banned = {
         "long_ops::decode",

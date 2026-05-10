@@ -1,5 +1,5 @@
 # ninja log v7
-4	4011	8000818597789067	CMakeFiles/test_cuda_kernels.dir/test_cuda_kernels.cu.obj	1ef93b11a2e433f1
-4013	4113	8000818637890862	test_cuda_kernels.exe	c4e7dd8f549f4c5d
-7	4997	8000818597838659	CMakeFiles/test_sycl_kernels.dir/test_sycl_kernels.cpp.obj	d1a2dbf11f169775
-4999	6440	8000818647756158	test_sycl_kernels.exe	34476e88a7bc728c
+4	4097	8001521115224723	CMakeFiles/test_cuda_kernels.dir/test_cuda_kernels.cu.obj	1ef93b11a2e433f1
+4101	4208	8001521156193698	test_cuda_kernels.exe	c4e7dd8f549f4c5d
+7	7958	8001521115254742	CMakeFiles/test_sycl_kernels.dir/test_sycl_kernels.cpp.obj	d1a2dbf11f169775
+7960	9574	8001521194785064	test_sycl_kernels.exe	34476e88a7bc728c

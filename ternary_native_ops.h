@@ -62,11 +62,10 @@ constexpr int pow3Int(int n) {
 }
 
 [[nodiscard]] inline UInt128 roundedDiv3(UInt128 n) {
-    switch (static_cast<unsigned>(n % 3)) {
-        case 0:  return n / 3;
-        case 1:  return (n - UInt128{1}) / 3;
-        default: return (n + UInt128{1}) / 3;
-    }
+    uint32_t rem = 0;
+    UInt128 quotient = n.divMod3(rem);
+    if (rem == 2) quotient += UInt128{1};
+    return quotient;
 }
 
 [[nodiscard]] inline Int128 roundedDiv3Signed(Int128 n) {
@@ -359,13 +358,13 @@ inline void encodeMantissa(
     std::array<int8_t, Fmt::total_trits>& out) {
 
     for (int i = 0; i < Fmt::mantissa_trits; ++i) {
-        const int8_t trit = balancedRem(magnitude);
+        uint32_t rem = 0;
+        UInt128 quotient = magnitude.divMod3(rem);
+        const int8_t trit = rem == 2
+            ? static_cast<int8_t>(-1)
+            : static_cast<int8_t>(rem);
         out[i] = static_cast<int8_t>(sign * trit);
-        if (trit < 0) {
-            magnitude = (magnitude + UInt128{1}) / 3;
-        } else {
-            magnitude = (magnitude - UInt128{static_cast<uint64_t>(trit)}) / 3;
-        }
+        magnitude = trit < 0 ? quotient + UInt128{1} : quotient;
     }
 }
 

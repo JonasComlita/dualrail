@@ -101,6 +101,7 @@ template<typename F>
         case TernaryMode::T20: return TernaryValue::fromT20(f(a.asT20()));
         case TernaryMode::T40: return TernaryValue::fromTriple(f(a.asTriple()));
         case TernaryMode::T50: return TernaryValue::fromLongTriple(f(a.asLongTripleRaw()));
+        default: break;
     }
     return TernaryValue{mode, UInt128::max()};
 }
@@ -134,6 +135,7 @@ template<typename F>
         case TernaryMode::T20: return TernaryValue::fromT20(f(a.asT20(), b.asT20()));
         case TernaryMode::T40: return TernaryValue::fromTriple(f(a.asTriple(), b.asTriple()));
         case TernaryMode::T50: return TernaryValue::fromLongTriple(f(a.asLongTripleRaw(), b.asLongTripleRaw()));
+        default: break;
     }
     return TernaryValue{mode, UInt128::max()};
 }
@@ -165,6 +167,7 @@ template<typename F>
         case TernaryMode::T20: return native_ops::sign(a.asT20());
         case TernaryMode::T40: return native_ops::sign(a.asTriple());
         case TernaryMode::T50: return native_ops::sign(a.asLongTripleRaw());
+        default: break;
     }
     return 0;
 }
@@ -181,6 +184,7 @@ template<typename F>
         case TernaryMode::T20: return native_ops::compare(a.asT20(), b.asT20());
         case TernaryMode::T40: return native_ops::compare(a.asTriple(), b.asTriple());
         case TernaryMode::T50: return native_ops::compare(a.asLongTripleRaw(), b.asLongTripleRaw());
+        default: break;
     }
     return 0;
 }
@@ -448,6 +452,197 @@ inline void writeVectorSelect(
 
         const int8_t trit = cond.asL1().tritAt(0);
         vm.vregfile.reg[vd].write(lane, trit < 0 ? neg : (trit > 0 ? pos : zero));
+    }
+}
+
+[[nodiscard]] inline bool accumulatorSource(
+    VMState& vm,
+    uint8_t scalarReg,
+    TernaryMode sourceMode,
+    TernaryValue& outT50) {
+
+    if (!isNumericMode(sourceMode)) return false;
+    TernaryValue source = vm.regfile.read(scalarReg);
+    if (!isNumericMode(source.mode) || source.isInvalid()) return false;
+    TernaryValue typed = convertValue(source, sourceMode);
+    if (typed.isInvalid()) return false;
+    outT50 = convertValue(typed, TernaryMode::T50);
+    return outT50.mode == TernaryMode::T50 && !outT50.isInvalid();
+}
+
+[[nodiscard]] inline bool t1Product(TernaryValue lhs, TernaryValue rhs, int8_t& product) {
+    if (lhs.mode != TernaryMode::L1 || rhs.mode != TernaryMode::L1 ||
+        lhs.isInvalid() || rhs.isInvalid()) {
+        product = 0;
+        return false;
+    }
+
+    const int8_t a = lhs.asL1().tritAt(0);
+    const int8_t b = rhs.asL1().tritAt(0);
+    if (a == 0 || b == 0) {
+        product = 0;
+    } else {
+        product = (a == b) ? T_POS : T_NEG;
+    }
+    return true;
+}
+
+[[nodiscard]] inline TernaryValue vectorDotT1(
+    VMState& vm,
+    uint8_t va,
+    uint8_t vb) {
+
+    LongTriple sum = native_ops::fromInt(0);
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        int8_t product = 0;
+        if (!t1Product(vm.vregfile.reg[va].read(lane),
+                       vm.vregfile.reg[vb].read(lane),
+                       product)) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
+            continue;
+        }
+        if (product != 0) {
+            sum = native_ops::add(sum, native_ops::fromInt(product));
+        }
+    }
+    return TernaryValue::fromLongTriple(sum);
+}
+
+inline void writeVectorActivateT1(VMState& vm, uint8_t vd, uint8_t vs) {
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue source = vm.vregfile.reg[vs].read(lane);
+        if (!isNumericMode(source.mode) || source.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, makePredicateLane(signValue(source, source.mode)));
+    }
+}
+
+inline void writeVectorConvert(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t vs,
+    TernaryMode sourceMode,
+    TernaryMode targetMode) {
+
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue source;
+        if (!convertVectorNumericLane(vm.vregfile.reg[vs].read(lane), sourceMode, source)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, targetMode);
+            continue;
+        }
+        TernaryValue converted = convertValue(source, targetMode);
+        if (converted.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, targetMode);
+        } else {
+            vm.vregfile.reg[vd].write(lane, converted);
+        }
+    }
+}
+
+inline void writeVectorPermute(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t vs,
+    uint8_t vindex,
+    TernaryMode mode) {
+
+    const std::vector<TernaryValue> source = vm.vregfile.reg[vs].lane;
+    const std::vector<TernaryValue> indices = vm.vregfile.reg[vindex].lane;
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue idx = indices[static_cast<std::size_t>(lane)];
+        if (!isNumericMode(idx.mode) || idx.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+        const long long index = ops::toLong(idx);
+        if (index < 0 || index >= vm.vector_length) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+        TernaryValue selected;
+        if (!convertVectorNumericLane(source[static_cast<std::size_t>(index)], mode, selected)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, selected);
+    }
+}
+
+inline void writeVectorGather(
+    VMState& vm,
+    uint8_t vd,
+    uint8_t baseReg,
+    uint8_t vindex,
+    TernaryMode mode) {
+
+    TernaryValue baseValue = vm.regfile.read(baseReg);
+    if (!isNumericMode(baseValue.mode) || baseValue.isInvalid()) {
+        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        return;
+    }
+    const long long base = ops::toLong(baseValue);
+    const std::vector<TernaryValue> indices = vm.vregfile.reg[vindex].lane;
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue idx = indices[static_cast<std::size_t>(lane)];
+        if (!isNumericMode(idx.mode) || idx.isInvalid()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+        const long long addrLong = base + ops::toLong(idx);
+        if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+            continue;
+        }
+        auto [loaded, fc] = vm.dmem.load(static_cast<int>(addrLong));
+        if (fc != MemFaultCode::OK) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+            continue;
+        }
+        TernaryValue converted;
+        if (!convertVectorNumericLane(loaded, mode, converted)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, converted);
+    }
+}
+
+inline void writeVectorScatter(
+    VMState& vm,
+    uint8_t vs,
+    uint8_t baseReg,
+    uint8_t vindex,
+    TernaryMode mode) {
+
+    TernaryValue baseValue = vm.regfile.read(baseReg);
+    if (!isNumericMode(baseValue.mode) || baseValue.isInvalid()) {
+        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        return;
+    }
+    const long long base = ops::toLong(baseValue);
+    const std::vector<TernaryValue> source = vm.vregfile.reg[vs].lane;
+    const std::vector<TernaryValue> indices = vm.vregfile.reg[vindex].lane;
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        TernaryValue idx = indices[static_cast<std::size_t>(lane)];
+        if (!isNumericMode(idx.mode) || idx.isInvalid()) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
+            continue;
+        }
+        const long long addrLong = base + ops::toLong(idx);
+        if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+            continue;
+        }
+        TernaryValue converted;
+        if (!convertVectorNumericLane(source[static_cast<std::size_t>(lane)], mode, converted)) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
+            continue;
+        }
+        if (vm.dmem.store(static_cast<int>(addrLong), converted) != MemFaultCode::OK) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+        }
     }
 }
 
@@ -863,6 +1058,165 @@ inline VMStatus step(VMState& vm) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
                 }
             }
+            break;
+        }
+
+        case Opcode::ACLR: {
+            if (!isNumericWidthFunc(iw.func)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            vm.accumulator = TernaryValue::zero(TernaryMode::T50);
+            break;
+        }
+
+        case Opcode::ALOAD:
+        case Opcode::AADD:
+        case Opcode::ASUB:
+        case Opcode::AMUL: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue sourceT50;
+            if (!exec::accumulatorSource(vm, iw.rs1, mode, sourceT50)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+
+            if (iw.opcode == Opcode::ALOAD) {
+                vm.accumulator = sourceT50;
+            } else if (iw.opcode == Opcode::AADD) {
+                vm.accumulator = exec::addValue(vm.accumulator, sourceT50, TernaryMode::T50);
+            } else if (iw.opcode == Opcode::ASUB) {
+                vm.accumulator = exec::subtractValue(vm.accumulator, sourceT50, TernaryMode::T50);
+            } else {
+                vm.accumulator = exec::multiplyValue(vm.accumulator, sourceT50, TernaryMode::T50);
+            }
+
+            if (vm.accumulator.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            break;
+        }
+
+        case Opcode::ASTORE: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!writeChecked(iw.rd, convertValue(vm.accumulator, mode))) return vm.status;
+            break;
+        }
+
+        case Opcode::VDOT:
+        case Opcode::VMAC: {
+            if (iw.func != FUNC_T1 ||
+                !exec::validVectorReg(iw.rs1) ||
+                !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            TernaryValue dot = exec::vectorDotT1(vm, iw.rs1, iw.rs2);
+            if (dot.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (iw.opcode == Opcode::VDOT) {
+                if (!writeChecked(iw.rd, dot)) return vm.status;
+            } else {
+                vm.accumulator = exec::addValue(vm.accumulator, dot, TernaryMode::T50);
+                if (vm.accumulator.isInvalid()) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+            }
+            break;
+        }
+
+        case Opcode::VACT: {
+            if (iw.func != FUNC_T1 ||
+                !exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorActivateT1(vm, iw.rd, iw.rs1);
+            break;
+        }
+
+        case Opcode::VPACK:
+        case Opcode::VUNPACK: {
+            TernaryMode sourceMode = TernaryMode::T50;
+            TernaryMode targetMode = TernaryMode::T50;
+            if (!exec::numericModeFromFunc(iw.rs2, sourceMode) ||
+                !exec::numericModeFromFunc(iw.func, targetMode) ||
+                !exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorConvert(vm, iw.rd, iw.rs1, sourceMode, targetMode);
+            break;
+        }
+
+        case Opcode::VPERMUTE: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rs1) ||
+                !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorPermute(vm, iw.rd, iw.rs1, iw.rs2, mode);
+            break;
+        }
+
+        case Opcode::VBLEND: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) ||
+                !exec::validVectorReg(iw.rcond) ||
+                !exec::validVectorReg(iw.rneg) ||
+                !exec::validVectorReg(iw.rzero) ||
+                !exec::validVectorReg(iw.rpos)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorSelect(vm, iw.rd, iw.rcond, iw.rneg, iw.rzero, iw.rpos, mode);
+            break;
+        }
+
+        case Opcode::VSWAP: {
+            if (!exec::validVectorReg(iw.rd) || !exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            std::swap(vm.vregfile.reg[iw.rd], vm.vregfile.reg[iw.rs1]);
+            break;
+        }
+
+        case Opcode::VGATHER: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) || !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorGather(vm, iw.rd, iw.rs1, iw.rs2, mode);
+            if (vm.isTrapped()) return vm.status;
+            break;
+        }
+
+        case Opcode::VSCATTER: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rd) || !exec::validVectorReg(iw.rs2)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            exec::writeVectorScatter(vm, iw.rd, iw.rs1, iw.rs2, mode);
+            if (vm.isTrapped()) return vm.status;
             break;
         }
 

@@ -303,7 +303,7 @@ struct LongTriple {
     static constexpr int EXP_MIN = -9841;
 
     static constexpr UInt128 OVERFLOW_DATA  = UInt128::max();
-    static constexpr UInt128 UNDERFLOW_DATA = UInt128::max() - UInt128{1};
+    static constexpr UInt128 UNDERFLOW_DATA = UInt128{UINT64_MAX, UINT64_MAX - 1};
 
     // Precomputed powers of 3 for 50 trits.
     static UInt128 POW3_50[50];
@@ -336,8 +336,9 @@ struct LongTriple {
         if (isSpecial()) { trits.fill(0); return trits; }
         UInt128 temp = data;
         for (int i = 0; i < 50; ++i) {
-            trits[i] = static_cast<int8_t>(temp % 3) - 1;
-            temp = temp / 3;
+            uint32_t raw = 0;
+            temp = temp.divMod3(raw);
+            trits[i] = static_cast<int8_t>(raw) - 1;
         }
         return trits;
     }

@@ -4,6 +4,10 @@ project(TernaryGPUBackendValidation LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_executable(test_tiny_transformer_runtime test_tiny_transformer_runtime.cpp)
+target_compile_features(test_tiny_transformer_runtime PUBLIC cxx_std_17)
+target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 # ------------------------------------------------------------------------------
 # CUDA Validation
 # ------------------------------------------------------------------------------
@@ -27,6 +31,9 @@ if(IntelSYCL_FOUND OR ENABLE_SYCL)
     target_compile_options(test_sycl_kernels PRIVATE -fsycl -U_CONTAINER_DEBUG_LEVEL)
     target_link_options(test_sycl_kernels PRIVATE -fsycl)
     target_compile_definitions(test_sycl_kernels PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH)
+    if(MSVC)
+        target_compile_options(test_sycl_kernels PRIVATE /EHsc)
+    endif()
 endif()
 
 message(STATUS "Build Configuration:")

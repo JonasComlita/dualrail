@@ -42,6 +42,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -49,6 +50,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -185,6 +187,15 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/samu.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/samu.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/samu"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja-build.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja-build.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja-build"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/ninja"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/samu.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/samu.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/samu"
       - "C:/Windows/System32/ninja-build.com"
       - "C:/Windows/System32/ninja-build.exe"
       - "C:/Windows/System32/ninja-build"
@@ -259,6 +270,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -266,6 +279,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -322,6 +336,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -329,6 +344,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -389,6 +405,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -396,6 +414,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -454,6 +473,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -461,6 +482,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -568,6 +590,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -575,6 +598,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -611,6 +635,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -618,6 +644,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -671,6 +698,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -678,6 +706,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -736,6 +765,9 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link"
       - "C:/Windows/System32/lld-link.com"
       - "C:/Windows/System32/lld-link.exe"
       - "C:/Windows/System32/lld-link"
@@ -757,6 +789,9 @@ events:
       - "C:/msys64/ucrt64/bin/lld-link.com"
       - "C:/msys64/ucrt64/bin/lld-link.exe"
       - "C:/msys64/ucrt64/bin/lld-link"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link.com"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link.exe"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link.com"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link.exe"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link"
@@ -827,6 +862,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -834,6 +871,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -885,6 +923,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -892,6 +931,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -928,6 +968,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -935,6 +977,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -986,6 +1029,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -993,6 +1037,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -1050,6 +1095,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1057,6 +1104,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1108,6 +1156,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -1115,6 +1164,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -1151,6 +1201,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1158,6 +1210,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1212,6 +1265,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -1219,6 +1273,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -1288,6 +1343,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1295,6 +1352,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1328,8 +1386,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-kzdag9"
-      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-kzdag9"
+      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-mgx7ka"
+      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-mgx7ka"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -1339,44 +1397,41 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-kzdag9'
+        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-mgx7ka'
         
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_61f61
-        [1/2] C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_61f61.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_61f61.dir\\ /FS -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_61f61.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_61f61.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_61f61.exe /implib:cmTC_61f61.lib /pdb:cmTC_61f61.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
-        FAILED: [code=4294967295] cmTC_61f61.exe 
-        C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_61f61.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_61f61.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_61f61.exe /implib:cmTC_61f61.lib /pdb:cmTC_61f61.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
-        FINAL LINK: command "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_61f61.dir\\CMakeCXXCompilerABI.cpp.obj /out:cmTC_61f61.exe /implib:cmTC_61f61.lib /pdb:cmTC_61f61.pdb /version:0.0 /machine:x64 /debug /INCREMENTAL /subsystem:console kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTFILE:CMakeFiles\\cmTC_61f61.dir/intermediate.manifest CMakeFiles\\cmTC_61f61.dir/manifest.res" failed (exit code 1201) with the following output:
-        LINK : fatal error LNK1201: error writing to program database 'C:\\Users\\jonas\\Documents\\trit\\build_cuda\\CMakeFiles\\CMakeScratch\\TryCompile-kzdag9\\cmTC_61f61.pdb'; check for insufficient disk space, invalid path, or insufficient privilege\x0d
-        ninja: build stopped: subcommand failed.
-        
-      exitCode: -1
-  -
-    kind: "try_compile-v1"
-    backtrace:
-      - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCXXCompiler.cmake:56 (try_compile)"
-      - "CMakeLists.txt:2 (project)"
-    checks:
-      - "Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe"
-    directories:
-      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-89rizs"
-      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-89rizs"
-    cmakeVariables:
-      CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
-      CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
-      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
-      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
-    buildResult:
-      variable: "CMAKE_CXX_COMPILER_WORKS"
-      cached: true
-      stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-89rizs'
-        
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_09a9d
-        [1/2] C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_09a9d.dir\\testCXXCompiler.cxx.obj /FdCMakeFiles\\cmTC_09a9d.dir\\ /FS -c C:\\Users\\jonas\\Documents\\trit\\build_cuda\\CMakeFiles\\CMakeScratch\\TryCompile-89rizs\\testCXXCompiler.cxx
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_09a9d.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_09a9d.dir\\testCXXCompiler.cxx.obj  /out:cmTC_09a9d.exe /implib:cmTC_09a9d.lib /pdb:cmTC_09a9d.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
+        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_12d06
+        [1/2] C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_12d06.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_12d06.dir\\ /FS -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_12d06.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_12d06.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_12d06.exe /implib:cmTC_12d06.lib /pdb:cmTC_12d06.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
         
       exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:253 (message)"
+      - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
+        linker tool for 'CXX': C:/PROGRA~2/MICROS~2/2022/BUILDT~1/VC/Tools/MSVC/1444~1.352/bin/Hostx64/x64/link.exe
+        implicit libs: []
+        implicit objs: []
+        implicit dirs: []
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:38 (message)"
+      - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:299 (cmake_determine_linker_id)"
+      - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the CXX compiler's linker: "C:/PROGRA~2/MICROS~2/2022/BUILDT~1/VC/Tools/MSVC/1444~1.352/bin/Hostx64/x64/link.exe" "-v"
+      Microsoft (R) Incremental Linker Version 14.44.35225.0
+      Copyright (C) Microsoft Corporation.  All rights reserved.
   -
     kind: "find-v1"
     backtrace:
@@ -1417,6 +1472,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1424,6 +1481,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1502,6 +1560,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1509,6 +1569,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1556,7 +1617,7 @@ events:
       
       The output was:
       0
-      #$ PATH=C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg
+      #$ PATH=C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg
       #$ _NVVM_BRANCH_=nvvm
       #$ _SPACE_= 
       #$ _CUDART_=cudart
@@ -1570,7 +1631,7 @@ events:
       #$ TOP=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/..
       #$ CICC_PATH=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../nvvm/bin
       #$ NVVMIR_LIBRARY_DIR=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../nvvm/libdevice
-      #$ PATH=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../nvvm/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../lib;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg
+      #$ PATH=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../nvvm/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../lib;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg
       #$ INCLUDES="-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include" "-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include/cccl"  
       #$ SYSTEM_INCLUDES= 
       #$ LIBRARIES=  "/LIBPATH:C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../lib/x64"
@@ -1664,6 +1725,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -1671,6 +1733,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -1741,6 +1804,9 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/lld-link"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/lld-link"
       - "C:/Windows/System32/lld-link.com"
       - "C:/Windows/System32/lld-link.exe"
       - "C:/Windows/System32/lld-link"
@@ -1762,6 +1828,9 @@ events:
       - "C:/msys64/ucrt64/bin/lld-link.com"
       - "C:/msys64/ucrt64/bin/lld-link.exe"
       - "C:/msys64/ucrt64/bin/lld-link"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link.com"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link.exe"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/lld-link"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link.com"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link.exe"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/lld-link"
@@ -1868,6 +1937,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -1875,6 +1946,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -1907,7 +1979,7 @@ events:
       - "CMakeLists.txt:12 (enable_language)"
     message: |
       Parsed CUDA nvcc implicit link information:
-        found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
+        found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
         found 'LIBRARIES=' string: ["/LIBPATH:C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../lib/x64"]
         found 'INCLUDES=' string: ["-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include" "-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include/cccl"  ]
         found 'SYSTEM_INCLUDES=' string: []
@@ -1969,7 +2041,7 @@ events:
       - "CMakeLists.txt:12 (enable_language)"
     message: |
       Parsed CUDA nvcc include information:
-        found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
+        found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Warp\\bin;;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
         found 'LIBRARIES=' string: ["/LIBPATH:C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../lib/x64"]
         found 'INCLUDES=' string: ["-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include" "-IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/../include/cccl"  ]
         found 'SYSTEM_INCLUDES=' string: []
@@ -2032,8 +2104,8 @@ events:
     checks:
       - "Detecting CUDA compiler ABI info"
     directories:
-      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-wapoop"
-      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-wapoop"
+      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-eabjsh"
+      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-eabjsh"
     cmakeVariables:
       CMAKE_CUDA_ARCHITECTURES: "75"
       CMAKE_CUDA_FLAGS: "-D_WINDOWS -Xcompiler=\" /EHsc\""
@@ -2044,19 +2116,19 @@ events:
       variable: "CMAKE_CUDA_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-wapoop'
+        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-eabjsh'
         
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_0ac9b
-        [1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75,code=[compute_75,sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_0ac9b.dir\\,-FS
+        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_e7153
+        [1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75,code=[compute_75,sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_e7153.dir\\,-FS
         cl : Command line warning D9002 : ignoring unknown option '-v'
         CMakeCUDACompilerABI.cu
         cl : Command line warning D9002 : ignoring unknown option '-v'
         CMakeCUDACompilerABI.cu
         CMakeCUDACompilerABI.cu
         cl : Command line warning D9002 : ignoring unknown option '-v'
-        tmpxft_00003dc4_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp
+        tmpxft_00000b5c_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp
         C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCompilerCUDAArch.h(10): warning C4305: 'return': truncation from 'int' to 'bool'
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_0ac9b.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_0ac9b.exe /implib:cmTC_0ac9b.lib /pdb:cmTC_0ac9b.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_e7153.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_e7153.exe /implib:cmTC_e7153.lib /pdb:cmTC_e7153.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."
         
       exitCode: 0
   -
@@ -2080,19 +2152,19 @@ events:
       Parsed CUDA implicit link information:
         link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
         linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
-        ignore line: [Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-wapoop']
+        ignore line: [Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-eabjsh']
         ignore line: []
-        ignore line: [Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_0ac9b]
-        ignore line: [[1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75 code=[compute_75 sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_0ac9b.dir\\ -FS]
+        ignore line: [Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_e7153]
+        ignore line: [[1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75 code=[compute_75 sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_e7153.dir\\ -FS]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
-        ignore line: [tmpxft_00003dc4_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp]
+        ignore line: [tmpxft_00000b5c_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp]
         ignore line: [C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCompilerCUDAArch.h(10): warning C4305: 'return': truncation from 'int' to 'bool']
-        ignore line: [[2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_0ac9b.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_0ac9b.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_0ac9b.exe /implib:cmTC_0ac9b.lib /pdb:cmTC_0ac9b.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."]
+        ignore line: [[2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_e7153.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_e7153.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_e7153.exe /implib:cmTC_e7153.lib /pdb:cmTC_e7153.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."]
         ignore line: []
         ignore line: []
         linker tool for 'CUDA': C:/PROGRA~2/MICROS~2/2022/BUILDT~1/VC/Tools/MSVC/1444~1.352/bin/Hostx64/x64/link.exe
@@ -2148,6 +2220,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -2155,6 +2228,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -2303,6 +2377,15 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/pkgconf.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/pkgconf.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/pkgconf"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config.bat.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config.bat.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config.bat"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkg-config"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkgconf.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkgconf.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/pkgconf"
       - "C:/Windows/System32/pkg-config.bat.com"
       - "C:/Windows/System32/pkg-config.bat.exe"
       - "C:/Windows/System32/pkg-config.bat"
@@ -2377,6 +2460,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -2384,6 +2469,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -2441,6 +2527,7 @@ events:
       - "C:/Windows/Microsoft.NET/Framework64/v4.0.30319/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/"
       - "C:/Windows/System32/"
       - "C:/Windows/"
       - "C:/Windows/System32/wbem/"
@@ -2448,6 +2535,7 @@ events:
       - "C:/Windows/System32/OpenSSH/"
       - "C:/Program Files/nodejs/"
       - "C:/msys64/ucrt64/bin/"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/"
       - "C:/Users/jonas/scoop/apps/android-clt/current/platform-tools/"
       - "C:/Users/jonas/scoop/apps/temurin17-jdk/current/bin/"
@@ -2518,6 +2606,9 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx"
       - "C:/Windows/System32/icx.com"
       - "C:/Windows/System32/icx.exe"
       - "C:/Windows/System32/icx"
@@ -2539,6 +2630,9 @@ events:
       - "C:/msys64/ucrt64/bin/icx.com"
       - "C:/msys64/ucrt64/bin/icx.exe"
       - "C:/msys64/ucrt64/bin/icx"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx.com"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx.exe"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx.com"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx.exe"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx"
@@ -2668,6 +2762,9 @@ events:
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx-cl.com"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx-cl.exe"
       - "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/icx-cl"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx-cl.com"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx-cl.exe"
+      - "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/icx-cl"
       - "C:/Windows/System32/icx-cl.com"
       - "C:/Windows/System32/icx-cl.exe"
       - "C:/Windows/System32/icx-cl"
@@ -2689,6 +2786,9 @@ events:
       - "C:/msys64/ucrt64/bin/icx-cl.com"
       - "C:/msys64/ucrt64/bin/icx-cl.exe"
       - "C:/msys64/ucrt64/bin/icx-cl"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx-cl.com"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx-cl.exe"
+      - "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/icx-cl"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx-cl.com"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx-cl.exe"
       - "C:/Users/jonas/scoop/apps/android-clt/current/cmdline-tools/latest/bin/icx-cl"
@@ -2795,6 +2895,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -2802,6 +2904,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"
@@ -2974,6 +3077,14 @@ events:
         mode: "config"
         reason: "no_exist"
       -
+        path: "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/IntelSYCLConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/x64/intelsycl-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
         path: "C:/Windows/System32/IntelSYCLConfig.cmake"
         mode: "config"
         reason: "no_exist"
@@ -3027,6 +3138,14 @@ events:
         reason: "no_exist"
       -
         path: "C:/msys64/ucrt64/intelsycl-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/IntelSYCLConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/NVIDIA Corporation/Nsight Compute 2026.1.1/intelsycl-config.cmake"
         mode: "config"
         reason: "no_exist"
       -
@@ -3208,6 +3327,8 @@ events:
         - "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\"
         - "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64"
+        - "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin"
         - "C:\\WINDOWS\\system32"
         - "C:\\WINDOWS"
         - "C:\\WINDOWS\\System32\\Wbem"
@@ -3215,6 +3336,7 @@ events:
         - "C:\\WINDOWS\\System32\\OpenSSH\\"
         - "C:\\Program Files\\nodejs\\"
         - "C:\\msys64\\ucrt64\\bin\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin"
         - "C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools"
         - "C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin"

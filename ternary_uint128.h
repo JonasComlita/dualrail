@@ -14,7 +14,20 @@
 #include <limits>
 #include <string>
 
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#endif
+
 namespace sandbox {
+
+#if defined(__SIZEOF_INT128__) && !defined(__CUDA_ARCH__) && !defined(__SYCL_DEVICE_ONLY__)
+#define SANDBOX_TERNARY_HAS_NATIVE_UINT128 1
+#if defined(__GNUC__) || defined(__clang__)
+__extension__ typedef unsigned __int128 NativeUInt128;
+#else
+using NativeUInt128 = unsigned __int128;
+#endif
+#endif
 
 struct UInt256;
 
@@ -53,26 +66,46 @@ struct UInt128 {
         else hi |= (1ULL << (index - 64));
     }
 
-    [[nodiscard]] UInt128 divSmall(uint32_t divisor) const {
-        UInt128 q{};
-        uint64_t rem = 0;
-        for (int i = 127; i >= 0; --i) {
-            rem = (rem << 1) | (bit(i) ? 1ULL : 0ULL);
-            if (rem >= divisor) {
-                rem -= divisor;
-                q.setBit(i);
-            }
+    [[nodiscard]] UInt128 divModSmall(uint32_t divisor, uint32_t& rem_out) const {
+        if (divisor == 0) {
+            rem_out = 0;
+            return UInt128{};
         }
-        return q;
+        if (divisor == 1) {
+            rem_out = 0;
+            return *this;
+        }
+
+        uint64_t parts[4] = {
+            hi >> 32,
+            hi & 0xFFFFFFFFULL,
+            lo >> 32,
+            lo & 0xFFFFFFFFULL
+        };
+        uint64_t q_parts[4] = {0, 0, 0, 0};
+        uint64_t rem = 0;
+        for (int i = 0; i < 4; ++i) {
+            uint64_t num = (rem << 32) | parts[i];
+            q_parts[i] = num / divisor;
+            rem = num % divisor;
+        }
+        rem_out = static_cast<uint32_t>(rem);
+        return UInt128{(q_parts[0] << 32) | q_parts[1], (q_parts[2] << 32) | q_parts[3]};
+    }
+
+    [[nodiscard]] UInt128 divSmall(uint32_t divisor) const {
+        uint32_t rem;
+        return divModSmall(divisor, rem);
     }
 
     [[nodiscard]] uint32_t modSmall(uint32_t divisor) const {
-        uint64_t rem = 0;
-        for (int i = 127; i >= 0; --i) {
-            rem = (rem << 1) | (bit(i) ? 1ULL : 0ULL);
-            if (rem >= divisor) rem -= divisor;
-        }
-        return static_cast<uint32_t>(rem);
+        uint32_t rem;
+        (void)divModSmall(divisor, rem);
+        return rem;
+    }
+
+    [[nodiscard]] UInt128 divMod3(uint32_t& rem_out) const {
+        return divModSmall(3, rem_out);
     }
 
     [[nodiscard]] std::string toString() const {
@@ -80,24 +113,24 @@ struct UInt128 {
         UInt128 tmp = *this;
         std::string out;
         while (!tmp.isZero()) {
-            uint32_t digit = tmp.modSmall(10);
+            uint32_t digit;
+            tmp = tmp.divModSmall(10, digit);
             out.insert(out.begin(), static_cast<char>('0' + digit));
-            tmp = tmp.divSmall(10);
         }
         return out;
     }
 
-#if defined(__SIZEOF_INT128__) && !defined(__CUDA_ARCH__)
-    [[nodiscard]] static constexpr UInt128 fromNative(unsigned __int128 value) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    [[nodiscard]] static constexpr UInt128 fromNative(NativeUInt128 value) {
         return UInt128{
             static_cast<uint64_t>(value >> 64),
             static_cast<uint64_t>(value)
         };
     }
 
-    [[nodiscard]] constexpr unsigned __int128 toNative() const {
-        return (static_cast<unsigned __int128>(hi) << 64)
-             | static_cast<unsigned __int128>(lo);
+    [[nodiscard]] constexpr NativeUInt128 toNative() const {
+        return (static_cast<NativeUInt128>(hi) << 64)
+             | static_cast<NativeUInt128>(lo);
     }
 #endif
 };
@@ -126,18 +159,36 @@ struct UInt128 {
     return !(a < b);
 }
 
-[[nodiscard]] constexpr UInt128 operator+(UInt128 a, UInt128 b) {
+[[nodiscard]] inline UInt128 operator+(UInt128 a, UInt128 b) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    return UInt128::fromNative(a.toNative() + b.toNative());
+#elif defined(_MSC_VER) && defined(_M_X64)
+    UInt128 out;
+    unsigned char carry = _addcarry_u64(0, a.lo, b.lo, &out.lo);
+    _addcarry_u64(carry, a.hi, b.hi, &out.hi);
+    return out;
+#else
     UInt128 out;
     out.lo = a.lo + b.lo;
     out.hi = a.hi + b.hi + (out.lo < a.lo ? 1ULL : 0ULL);
     return out;
+#endif
 }
 
-[[nodiscard]] constexpr UInt128 operator-(UInt128 a, UInt128 b) {
+[[nodiscard]] inline UInt128 operator-(UInt128 a, UInt128 b) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    return UInt128::fromNative(a.toNative() - b.toNative());
+#elif defined(_MSC_VER) && defined(_M_X64)
+    UInt128 out;
+    unsigned char borrow = _subborrow_u64(0, a.lo, b.lo, &out.lo);
+    _subborrow_u64(borrow, a.hi, b.hi, &out.hi);
+    return out;
+#else
     UInt128 out;
     out.lo = a.lo - b.lo;
     out.hi = a.hi - b.hi - (a.lo < b.lo ? 1ULL : 0ULL);
     return out;
+#endif
 }
 
 inline UInt128& operator+=(UInt128& a, UInt128 b) {
@@ -175,13 +226,19 @@ inline UInt128& operator>>=(UInt128& a, unsigned shift) {
 }
 
 [[nodiscard]] inline UInt128 operator*(UInt128 a, uint32_t b) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    return UInt128::fromNative(a.toNative() * static_cast<NativeUInt128>(b));
+#else
     UInt128 result{};
-    while (b != 0) {
-        if ((b & 1U) != 0) result += a;
-        a <<= 1;
-        b >>= 1;
-    }
+    const uint64_t lo0 = (a.lo & 0xFFFFFFFFULL) * b;
+    const uint64_t lo1 = (a.lo >> 32) * b + (lo0 >> 32);
+    result.lo = (lo1 << 32) | (lo0 & 0xFFFFFFFFULL);
+
+    const uint64_t hi0 = (a.hi & 0xFFFFFFFFULL) * b + (lo1 >> 32);
+    const uint64_t hi1 = (a.hi >> 32) * b + (hi0 >> 32);
+    result.hi = (hi1 << 32) | (hi0 & 0xFFFFFFFFULL);
     return result;
+#endif
 }
 
 [[nodiscard]] inline UInt128 operator*(uint32_t a, UInt128 b) {
@@ -194,14 +251,22 @@ inline UInt128& operator*=(UInt128& a, uint32_t b) {
 }
 
 [[nodiscard]] inline UInt128 operator*(UInt128 a, UInt128 b) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    return UInt128::fromNative(a.toNative() * b.toNative());
+#else
     UInt128 result{};
     for (int i = 0; i < 128; ++i) {
         if (b.bit(i)) result += (a << static_cast<unsigned>(i));
     }
     return result;
+#endif
 }
 
 [[nodiscard]] inline UInt128 operator/(UInt128 dividend, UInt128 divisor) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    if (divisor.isZero()) return UInt128{};
+    return UInt128::fromNative(dividend.toNative() / divisor.toNative());
+#else
     if (divisor.isZero()) return UInt128{};
     UInt128 quotient{};
     UInt128 remainder{};
@@ -214,9 +279,14 @@ inline UInt128& operator*=(UInt128& a, uint32_t b) {
         }
     }
     return quotient;
+#endif
 }
 
 [[nodiscard]] inline UInt128 operator%(UInt128 dividend, UInt128 divisor) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+    if (divisor.isZero()) return UInt128{};
+    return UInt128::fromNative(dividend.toNative() % divisor.toNative());
+#else
     if (divisor.isZero()) return UInt128{};
     UInt128 remainder{};
     for (int i = 127; i >= 0; --i) {
@@ -225,6 +295,7 @@ inline UInt128& operator*=(UInt128& a, uint32_t b) {
         if (remainder >= divisor) remainder -= divisor;
     }
     return remainder;
+#endif
 }
 
 [[nodiscard]] inline UInt128 operator/(UInt128 dividend, uint32_t divisor) {

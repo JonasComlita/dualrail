@@ -311,7 +311,9 @@ struct MnemonicParts {
     } else {
         const std::string suffix1 = lowered.substr(dot + 1, dot2 - dot - 1);
         const std::string suffix2 = lowered.substr(dot2 + 1);
-        out.suffix_valid = out.base == "cvt" &&
+        out.suffix_valid = (out.base == "cvt" ||
+                            out.base == "vpack" ||
+                            out.base == "vunpack") &&
                            parseWidthSuffix(suffix1, out.source_func) &&
                            parseWidthSuffix(suffix2, out.func);
         out.has_source_width = out.suffix_valid;
@@ -329,7 +331,13 @@ struct MnemonicParts {
            base == "vadd" || base == "vsub" || base == "vneg" ||
            base == "vmul" || base == "vdiv" || base == "vcmp" ||
            base == "vsel" || base == "vbcast" ||
-           base == "vload" || base == "vstore";
+           base == "vload" || base == "vstore" ||
+           base == "aclr" || base == "aload" || base == "aadd" ||
+           base == "asub" || base == "amul" || base == "astore" ||
+           base == "vdot" || base == "vmac" || base == "vact" ||
+           base == "vpack" || base == "vunpack" ||
+           base == "vpermute" || base == "vblend" ||
+           base == "vgather" || base == "vscatter";
 }
 
 [[nodiscard]] inline int instructionWordCount(const std::string& mnemonic) {
@@ -403,6 +411,26 @@ struct MnemonicParts {
     t["vstore"] = {Opcode::VSTORE, F::I_TYPE, 3, false};
     t["vbcast"] = {Opcode::VBCAST, F::R_TYPE, 2, true};
     t["vlen"] = {Opcode::VLEN, F::R_TYPE, 1, true};
+
+    // Accumulator and T1 AI
+    t["aclr"]   = {Opcode::ACLR,   F::R_TYPE, 0, true};
+    t["aload"]  = {Opcode::ALOAD,  F::R_TYPE, 1, true};
+    t["aadd"]   = {Opcode::AADD,   F::R_TYPE, 1, true};
+    t["asub"]   = {Opcode::ASUB,   F::R_TYPE, 1, true};
+    t["amul"]   = {Opcode::AMUL,   F::R_TYPE, 1, true};
+    t["astore"] = {Opcode::ASTORE, F::R_TYPE, 1, true};
+    t["vdot"]   = {Opcode::VDOT,   F::R_TYPE, 3, false};
+    t["vmac"]   = {Opcode::VMAC,   F::R_TYPE, 2, false};
+    t["vact"]   = {Opcode::VACT,   F::R_TYPE, 2, true};
+
+    // Vector plumbing and indexed memory
+    t["vpack"]    = {Opcode::VPACK,    F::R_TYPE, 2, true};
+    t["vunpack"]  = {Opcode::VUNPACK,  F::R_TYPE, 2, true};
+    t["vpermute"] = {Opcode::VPERMUTE, F::R_TYPE, 3, false};
+    t["vblend"]   = {Opcode::VBLEND,   F::R_TYPE, 4, false};
+    t["vswap"]    = {Opcode::VSWAP,    F::R_TYPE, 2, true};
+    t["vgather"]  = {Opcode::VGATHER,  F::R_TYPE, 3, false};
+    t["vscatter"] = {Opcode::VSCATTER, F::R_TYPE, 3, false};
 
     return t;
 }
@@ -609,6 +637,16 @@ struct SourceLine {
             parts.base == "vmul" || parts.base == "vdiv" || parts.base == "vcmp" ||
             parts.base == "vsel" || parts.base == "vbcast" ||
             parts.base == "vload" || parts.base == "vstore";
+        const bool accumulatorMnemonic =
+            parts.base == "aclr" || parts.base == "aload" || parts.base == "aadd" ||
+            parts.base == "asub" || parts.base == "amul" || parts.base == "astore";
+        const bool t1AiMnemonic =
+            parts.base == "vdot" || parts.base == "vmac" || parts.base == "vact";
+        const bool vectorConvertMnemonic =
+            parts.base == "vpack" || parts.base == "vunpack";
+        const bool vectorPlumbingNumericMnemonic =
+            parts.base == "vpermute" || parts.base == "vblend" ||
+            parts.base == "vgather" || parts.base == "vscatter";
         if (laneMnemonic && (!parts.has_width || !isLaneWidthFunc(parts.func))) {
             errors.push_back({sl.line_num,
                 "Lane mnemonic '" + parts.base + "' requires an .lN suffix"});
@@ -624,6 +662,39 @@ struct SourceLine {
         if (vectorNumericMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
             errors.push_back({sl.line_num,
                 "Vector numeric mnemonic '" + parts.base + "' requires a .tN suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (accumulatorMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
+            errors.push_back({sl.line_num,
+                "Accumulator mnemonic '" + parts.base + "' requires a .tN suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (t1AiMnemonic && (!parts.has_width || parts.func != FUNC_T1)) {
+            errors.push_back({sl.line_num,
+                "T1 AI mnemonic '" + parts.base + "' requires a .t1 suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (vectorConvertMnemonic &&
+            (!parts.has_source_width ||
+             !isNumericWidthFunc(parts.source_func) ||
+             !isNumericWidthFunc(parts.func))) {
+            errors.push_back({sl.line_num,
+                "Vector conversion mnemonic '" + parts.base + "' requires .src.dst numeric suffixes"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (vectorPlumbingNumericMnemonic &&
+            (!parts.has_width || !isNumericWidthFunc(parts.func))) {
+            errors.push_back({sl.line_num,
+                "Vector mnemonic '" + parts.base + "' requires a .tN suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (parts.base == "vswap" && parts.has_width) {
+            errors.push_back({sl.line_num, "vswap does not take a width suffix"});
             program.push_back(TritWord27{});
             continue;
         }
@@ -976,6 +1047,180 @@ struct SourceLine {
                         R0_ZERO,
                         R0_ZERO,
                         FUNC_T50);
+                }
+            }
+
+        } else if (mnemonic == "aclr") {
+            if (!ops.empty()) {
+                errors.push_back({line, "aclr takes no operands"});
+                ok = false;
+            } else {
+                word = InstructionWord::encodeR(Opcode::ACLR, R0_ZERO, R0_ZERO, R0_ZERO, parts.func);
+            }
+
+        } else if (mnemonic == "aload" || mnemonic == "aadd" ||
+                   mnemonic == "asub" || mnemonic == "amul") {
+            if (ops.size() != 1) {
+                errors.push_back({line, mnemonic + " requires rS"});
+                ok = false;
+            } else {
+                int rs = getReg(ops[0], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(info.opcode,
+                        R0_ZERO,
+                        static_cast<uint8_t>(rs),
+                        R0_ZERO,
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "astore") {
+            if (ops.size() != 1) {
+                errors.push_back({line, "astore requires rD"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::ASTORE,
+                        static_cast<uint8_t>(rd),
+                        R0_ZERO,
+                        R0_ZERO,
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "vdot") {
+            if (ops.size() != 3) {
+                errors.push_back({line, "vdot requires rD, vA, vB"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                int va = getVecReg(ops[1], line);
+                int vb = getVecReg(ops[2], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::VDOT,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(va),
+                        static_cast<uint8_t>(vb),
+                        FUNC_T1);
+                }
+            }
+
+        } else if (mnemonic == "vmac") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "vmac requires vA, vB"});
+                ok = false;
+            } else {
+                int va = getVecReg(ops[0], line);
+                int vb = getVecReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::VMAC,
+                        R0_ZERO,
+                        static_cast<uint8_t>(va),
+                        static_cast<uint8_t>(vb),
+                        FUNC_T1);
+                }
+            }
+
+        } else if (mnemonic == "vact") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "vact requires vD, vS"});
+                ok = false;
+            } else {
+                int vd = getVecReg(ops[0], line);
+                int vs = getVecReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::VACT,
+                        static_cast<uint8_t>(vd),
+                        static_cast<uint8_t>(vs),
+                        R0_ZERO,
+                        FUNC_T1);
+                }
+            }
+
+        } else if (mnemonic == "vpack" || mnemonic == "vunpack") {
+            if (ops.size() != 2) {
+                errors.push_back({line, mnemonic + " requires vD, vS"});
+                ok = false;
+            } else {
+                int vd = getVecReg(ops[0], line);
+                int vs = getVecReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(info.opcode,
+                        static_cast<uint8_t>(vd),
+                        static_cast<uint8_t>(vs),
+                        parts.source_func,
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "vpermute") {
+            if (ops.size() != 3) {
+                errors.push_back({line, "vpermute requires vD, vS, vIndex"});
+                ok = false;
+            } else {
+                int vd = getVecReg(ops[0], line);
+                int vs = getVecReg(ops[1], line);
+                int vi = getVecReg(ops[2], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::VPERMUTE,
+                        static_cast<uint8_t>(vd),
+                        static_cast<uint8_t>(vs),
+                        static_cast<uint8_t>(vi),
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "vblend") {
+            if (ops.size() != 4) {
+                errors.push_back({line, "vblend requires vD, vCond, vFalse, vTrue"});
+                ok = false;
+            } else {
+                int vd = getVecReg(ops[0], line);
+                int vc = getVecReg(ops[1], line);
+                int vf = getVecReg(ops[2], line);
+                int vt = getVecReg(ops[3], line);
+                if (ok) {
+                    word = InstructionWord::encodeR5(Opcode::VBLEND,
+                        static_cast<uint8_t>(vd),
+                        static_cast<uint8_t>(vc),
+                        static_cast<uint8_t>(vf),
+                        static_cast<uint8_t>(vf),
+                        static_cast<uint8_t>(vt),
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "vswap") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "vswap requires vA, vB"});
+                ok = false;
+            } else {
+                int va = getVecReg(ops[0], line);
+                int vb = getVecReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::VSWAP,
+                        static_cast<uint8_t>(va),
+                        static_cast<uint8_t>(vb),
+                        R0_ZERO,
+                        FUNC_T50);
+                }
+            }
+
+        } else if (mnemonic == "vgather" || mnemonic == "vscatter") {
+            if (ops.size() != 3) {
+                errors.push_back({line, mnemonic + " requires vReg, rBase, vIndex"});
+                ok = false;
+            } else {
+                int vreg = getVecReg(ops[0], line);
+                int base = getReg(ops[1], line);
+                int vi = getVecReg(ops[2], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(info.opcode,
+                        static_cast<uint8_t>(vreg),
+                        static_cast<uint8_t>(base),
+                        static_cast<uint8_t>(vi),
+                        parts.func);
                 }
             }
 

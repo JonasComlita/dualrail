@@ -5,6 +5,10 @@ VM, lane/SIMD layer, and future ISA extensions. The core rule is that numeric
 formats and lane/wire formats are separate families with explicit conversion
 boundaries.
 
+Optimization before/after measurements are tracked in
+`optimization_baseline.md`. Add a new dated entry there before accepting any
+hot-path optimization.
+
 ## Phase 1: Native Arithmetic Migration
 
 Status: implemented.
@@ -99,7 +103,9 @@ Benchmark review:
 
 ## Phase 4: Ternary-Aware ISA and Vector Extension
 
-Status: Phase 4A base scalar foundations implemented; vector extension planned.
+Status: Phase 4 reference VM implementation complete. Scalar lane ops, vector
+numeric ops, accumulator/T1 AI ops, vector plumbing, and gather/scatter now have
+ISA, assembler, VM execution, and tests. Hardware acceleration remains Phase 6.
 
 Goal: expose advantages that are specific to ternary computation instead of
 copying a binary SIMD ISA shape.
@@ -109,7 +115,7 @@ copying a binary SIMD ISA shape.
 - Keep width selection orthogonal: prefer `vadd.t20`, `vadd.t40`, `vdot.t1` over width-specific opcode names like `V32_ADD`.
 - Keep numeric vector ops separate from lane/carryless logic ops:
   - `vadd.t20` is numeric and routes through carry, normalization, exponent, and rounding behavior.
-  - `tladd.t20` is lane/carryless logic and operates directly on trit pairs.
+  - `tladd.l20` is lane/carryless logic and operates directly on trit pairs.
 - Preserve `T1` as a first-class predicate type, not just an integer that happens to be `-1/0/+1`.
 - Avoid implicit crossing between numeric formats and lane formats.
 - Keep all numeric/lane family crossings explicit and visible in the instruction stream.
@@ -132,14 +138,19 @@ These should be completed before any vector opcode work begins.
    - The opcode identifies the extended layout.
    - `InstructionWord::decode()` sets decoded R5 fields when `opcode == TSEL`.
 
-### Phase 4A Implemented
+### Phase 4 Implemented
 
 - Added scalar `TSEL` using the R5 layout.
 - Added scalar `BRZ` and `BRP` alongside existing `BRN`.
 - Added scalar `SWAP`.
 - Added numeric `cvt.src.dst` assembler spelling while preserving destination-only `cvt.dst` compatibility.
 - Made scalar `r27` a two-trit `fault_valid` / `fault_class` record.
-- Added ISA, assembler, VM execution, and trap-record tests.
+- Added `.lN` lane value tags and explicit numeric/lane conversion boundaries.
+- Added scalar lane/carryless opcodes: `tladd`, `tlsub`, `tlneg`, `tland`, and `tlor`.
+- Added vector registers, abstract `vlen`, vector fault masks, and core vector numeric ops.
+- Added accumulator ops and T1 AI ops: `vdot.t1`, `vmac.t1`, and `vact.t1`.
+- Added vector conversion, permutation, blend, swap, gather, and scatter reference VM paths.
+- Added ISA, assembler, VM execution, vector-fault, and trap-record tests.
 
 ### Base ISA Additions
 
@@ -233,11 +244,11 @@ cheaper: it is conditional add/subtract/skip, not a true multiply.
 
 ### Vector Plumbing and Memory
 
-- `vpack.*`, `vunpack.*`: explicit precision conversion.
+- `vpack.src.dst`, `vunpack.src.dst`: explicit precision conversion.
 - `vpermute`: rearrange vector lanes.
 - `vblend.*`: blend lanes under a predicate mask.
 - `vswap`: explicit vector register swap.
-- `vgather.*`, `vscatter.*`: add last, after vector fault semantics are stable.
+- `vgather.*`, `vscatter.*`: indexed memory movement with lane-local faults.
 
 ### Fault Model
 
@@ -247,14 +258,14 @@ Scalar traps currently use a ternary-native trap class in one trit:
 - `0`: memory fault.
 - `+1`: illegal operation.
 
-The scalar model must be corrected before vector faults are implemented:
+The scalar model has been corrected before vector faults are implemented:
 
 - `fault_valid` says whether a fault occurred.
 - `fault_class` says which ternary fault class occurred.
 - `fault_class` is meaningful only when `fault_valid == +1`.
 - This makes the no-fault state explicit instead of relying only on `VMStatus`.
 
-Vector faults need an explicit model before gather/scatter:
+Vector faults use an explicit lane-local model:
 
 - Use a per-lane `T1` fault-valid vector.
 - Use a per-lane `T1` fault-class vector.
@@ -271,23 +282,156 @@ Vector faults need an explicit model before gather/scatter:
 ### Phase 4 Implementation Order
 
 1. Correct scalar fault encoding with separate `fault_valid` and `fault_class`. Done.
-2. Add the R5 decoder path for `TSEL`. Done.
+2. Add the R5 decoder path for `TSEL`, `VSEL`, and `VBLEND`. Done.
 3. Add base ternary control instructions: `tsel`, `brz`, `brp`, `swap`, and numeric `cvt.src.dst`. Done.
-4. Add scalar lane/carryless opcodes: `tladd`, `tlsub`, `tlneg`, `tland`, and `tlor`.
-5. Add vector numeric opcodes after the SYCL/GPU backend boundary is stable.
-6. Add accumulator and AI ops: `vdot.t1`, `vmac.t1`, and `vact.t1`.
-7. Add gather/scatter and complex vector plumbing only after the vector fault model is tested.
+4. Add scalar lane/carryless opcodes: `tladd`, `tlsub`, `tlneg`, `tland`, and `tlor`. Done.
+5. Add vector numeric opcodes after the SYCL/GPU backend boundary is stable. Done in the scalar reference VM.
+6. Add accumulator and AI ops: `vdot.t1`, `vmac.t1`, and `vact.t1`. Done.
+7. Add gather/scatter and complex vector plumbing after the vector fault model is tested. Done in the scalar reference VM.
 
-## Phase 5: Hardware Backends
+## Phase 5: GPU Launch and Tiny Transformer Runtime
+
+Status: in progress.
+
+Goal: split the next work into two separate deliverables: first validate that
+the existing device-side lane ALU can be launched as a GPU/SYCL/CUDA kernel,
+then build the first useful application-level VM benchmark with a tiny
+NanoGPT-class transformer forward pass.
+
+Important host limitation:
+
+- This Windows machine cannot currently validate AMD GPU SYCL through Codeplay
+  oneAPI because the Codeplay AMD plugin targets Linux with ROCm/HIP.
+- Current local SYCL results are CPU OpenCL/default SYCL results only.
+- AMD GPU validation should be run later from a supported Linux/ROCm
+  environment, or through another confirmed AMD GPU SYCL backend.
+
+### Phase 5A: GPU Kernel Launch Validation
+
+Status: in progress, blocked locally only for AMD GPU validation.
+
+Goal: prove that the already-written device-side lane ALU can execute through
+real kernel launch wrappers. This is not new arithmetic design; it is launch,
+device-memory, and conformance work.
+
+What is already close:
+
+- `ternary_backend.h` contains device-safe raw lane helpers.
+- Raw lane add/sub/neg/compare/min/max helpers are already written without STL,
+  exceptions, strings, or virtual dispatch.
+- `ternary_kernel.h` exposes batch wrappers for raw lane payloads.
+- Optional CUDA/SYCL allocators and launch wrappers already exist behind
+  compile-time flags.
+- CPU SIMD and CPU OpenCL/default SYCL paths have already been benchmarked.
+- CUDA/SYCL harnesses now run conformance plus timing over every raw lane width
+  and operation, with deterministic invalid/spare payload cases.
+
+Scope:
+
+- Add or finish minimal `__global__` / `parallel_for` launch wrappers where the
+  existing wrappers are incomplete.
+- Validate `batchTritwiseAddRaw64` and related raw lane operations on an actual
+  device buffer.
+- Keep tests shared with scalar/reference CPU paths.
+- Keep numeric formats and lane formats separate. This phase validates lane ALU
+  execution, not full numeric `T10/T20/T40/T50` arithmetic kernels.
+- Record every device run in `tuning_results.md`.
+
+Validation:
+
+- CPU scalar reference and device result buffers must match bit-for-bit.
+- Cover `TritLane1/5/10/20/40/50` raw operations where the backend supports the
+  payload width.
+- Include invalid/spare lane payload behavior.
+- Record device name, backend, compiler, local size, payload count, operation,
+  runtime, checksum, and whether the run was CPU fallback or real GPU.
+
+Non-goals:
+
+- Do not require AMD GPU SYCL validation on this Windows host.
+- Do not add transformer-specific opcodes here.
+- Do not add FPGA/ASIC modules here.
+
+### Phase 5B: Tiny Transformer VM Runtime
+
+Status: first runtime scaffold in progress.
+
+Goal: build the first useful application-level benchmark on top of the
+completed scalar/vector ISA: a tiny NanoGPT-class transformer forward pass
+running through the VM. This phase should prove that the architecture can
+express modern neural workloads without hidden FPU bridges while giving us a
+stable benchmark before lower-level hardware optimization continues.
+
+Scope:
+
+- Keep this as a VM/runtime phase, not a new hardware backend phase.
+- Use existing ISA features first: `add`, `mul`, `div`, `sqrt`, `tsel`,
+  `cvt`, `vload`, `vstore`, `vdot.t1`, `vmac.t1`, `vact.t1`, and the
+  accumulator family.
+- Keep numeric and lane families explicit. Quantized storage crosses through
+  `cvt.*.*` or runtime conversion helpers only at named boundaries.
+- Prefer VM-callable math routines before adding new opcodes. Add opcodes only
+  after profiling shows a routine is both common and expensive.
+- Record before/after measurements in `optimization_baseline.md` before any
+  runtime or hot-path optimization is accepted.
+
+Major runtime pieces:
+
+- Add a VM-callable `exp` routine.
+  - Native C++ `ops::exp(LongTriple)` already exists and is tested.
+  - Phase 5 needs an assembly/runtime form or a clearly documented intrinsic
+    path so VM programs can call it.
+  - The first runtime scaffold implements this through existing arithmetic
+    helpers and keeps native exponential calls in tests only.
+- Add `softmax` over a vector.
+  - Use max subtraction for stability.
+  - Use `exp`, sum reduction, and reciprocal/division.
+- Add `tanh` and `gelu` or choose a simpler first activation.
+  - `gelu(x)` can be implemented after `tanh`/`exp` exists.
+  - `vact.t1` already covers ternary sign activation for T1 paths.
+- Add matrix multiply kernels.
+  - Start with scalar nested loops for correctness.
+  - Add accumulator-backed versions.
+  - Add T1 dot/MAC paths using `vdot.t1` and `vmac.t1`.
+- Add layer normalization.
+  - Mean, variance, reciprocal square root, scale, and bias are expressible
+    with existing VM arithmetic.
+- Add a tiny tensor/memory layout.
+  - Define row-major tensor storage in DMEM.
+  - Define packed lane storage for quantized weights where useful.
+  - Keep tokenizer and embedding tables as explicit software data structures.
+- Add a tiny model fixture.
+  - Prefer a character-level model with small vocabulary and dimensions.
+  - Keep weights deterministic and small enough for fast regression tests.
+
+Validation:
+
+- Compare every runtime routine against a host reference using fixed inputs.
+- Add VM program tests for `exp`, `softmax`, matmul, layer norm, and activation.
+- Add an end-to-end tiny transformer forward-pass test.
+- Track instruction counts, VM dispatch throughput, memory footprint, and
+  numerical error.
+- Add static no-bridge checks for the runtime path.
+
+Non-goals:
+
+- Do not train a model in this phase.
+- Do not target GPT-2-small scale as the first milestone.
+- Do not add CUDA/SYCL/FPGA-specific execution here.
+- Do not make lane/numeric conversion implicit to simplify model code.
+
+## Phase 6: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 
-Goal: move the same semantics onto concrete GPU, FPGA, and ASIC targets.
+Goal: move the validated semantics beyond the reference VM and one-off GPU
+launch validation into production-quality hardware backends.
 
 Major goals:
 
-- SYCL/CUDA kernels over lane types.
-- Device allocator implementations.
+- Broaden SYCL/CUDA kernels from lane ALU launch validation into selected
+  numeric/vector operations.
+- Harden device allocator implementations.
 - FPGA-friendly lane ALU modules.
 - ASIC-oriented decode/execute mapping.
 - Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.

@@ -177,6 +177,7 @@ inline void cudaLaunchTritwiseNegRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseNegRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(in, out, count, trits);
 }
 
@@ -189,6 +190,7 @@ inline void cudaLaunchTritwiseAddRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseAddRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -201,6 +203,7 @@ inline void cudaLaunchTritwiseSubRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseSubRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -213,6 +216,7 @@ inline void cudaLaunchTritwiseCompareRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseCompareRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -225,6 +229,7 @@ inline void cudaLaunchTritwiseMinRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseMinRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -237,6 +242,7 @@ inline void cudaLaunchTritwiseMaxRaw64(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseMaxRaw64Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -248,6 +254,7 @@ inline void cudaLaunchTritwiseNegRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseNegRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(in, out, count, trits);
 }
 
@@ -260,6 +267,7 @@ inline void cudaLaunchTritwiseAddRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseAddRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -272,6 +280,7 @@ inline void cudaLaunchTritwiseSubRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseSubRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -284,6 +293,7 @@ inline void cudaLaunchTritwiseCompareRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseCompareRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -296,6 +306,7 @@ inline void cudaLaunchTritwiseMinRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseMinRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 
@@ -308,6 +319,7 @@ inline void cudaLaunchTritwiseMaxRaw128(
     int blockSize = 256,
     cudaStream_t stream = nullptr) {
 
+    if (count == 0) return;
     cudaTritwiseMaxRaw128Kernel<<<cudaLaneGrid(count, blockSize), blockSize, 0, stream>>>(a, b, out, count, trits);
 }
 #else
@@ -317,6 +329,10 @@ inline constexpr bool CUDA_LANE_KERNELS_ENABLED = false;
 #if defined(TERNARY_ENABLE_SYCL)
 inline constexpr bool SYCL_LANE_KERNELS_ENABLED = true;
 
+inline sycl::event syclNoop(sycl::queue& queue) {
+    return queue.single_task([]() {});
+}
+
 inline sycl::event syclLaunchTritwiseNegRaw64(
     sycl::queue& queue,
     const uint64_t* in,
@@ -325,6 +341,7 @@ inline sycl::event syclLaunchTritwiseNegRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -351,6 +368,7 @@ inline sycl::event syclLaunchTritwiseAddRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -377,6 +395,7 @@ inline sycl::event syclLaunchTritwiseSubRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -403,6 +422,7 @@ inline sycl::event syclLaunchTritwiseCompareRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -429,6 +449,7 @@ inline sycl::event syclLaunchTritwiseMinRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -455,6 +476,7 @@ inline sycl::event syclLaunchTritwiseMaxRaw64(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -480,6 +502,7 @@ inline sycl::event syclLaunchTritwiseNegRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -506,6 +529,7 @@ inline sycl::event syclLaunchTritwiseAddRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -532,6 +556,7 @@ inline sycl::event syclLaunchTritwiseSubRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -558,6 +583,7 @@ inline sycl::event syclLaunchTritwiseCompareRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -584,6 +610,7 @@ inline sycl::event syclLaunchTritwiseMinRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);
@@ -610,6 +637,7 @@ inline sycl::event syclLaunchTritwiseMaxRaw128(
     int trits,
     int localSize = 0) {
 
+    if (count == 0) return syclNoop(queue);
     if (localSize > 0) {
         std::size_t globalSize = ((count + static_cast<std::size_t>(localSize) - 1) / 
                                    static_cast<std::size_t>(localSize)) * static_cast<std::size_t>(localSize);

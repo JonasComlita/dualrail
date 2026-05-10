@@ -1,7 +1,7 @@
 // Baseline benchmark harness.
 //
 // Build:
-//   g++ -std=c++17 -O3 -DNDEBUG benchmark.cpp -o benchmark.exe
+//   g++ -std=c++20 -O3 -DNDEBUG benchmark.cpp -o benchmark.exe
 //
 // Run:
 //   ./benchmark.exe          // default scale = 1
@@ -13,6 +13,7 @@
 #include "ternary_simd.h"
 #include "ternary_vm.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -186,6 +187,85 @@ uint64_t benchVmLoop(uint64_t repeats, uint64_t& totalSteps) {
         h = mix(h, static_cast<uint64_t>(vm::ops::toLong(vm.regfile.read(isa::R1))));
     }
     return h;
+}
+
+
+void addUInt128Benches(std::vector<Result>& results, int scale) {
+    using namespace sandbox;
+
+    const uint64_t iters = 4'000'000ULL * scale;
+    const uint64_t wideIters = 400'000ULL * scale;
+    auto mk = [](int n) { return UInt128{static_cast<uint64_t>(n * 1337), static_cast<uint64_t>(n * 42)}; };
+    auto corpusA = makeCorpus<UInt128>(mk, 1, 16);
+    auto corpusB = makeCorpus<UInt128>(mk, 1, 16);
+
+    std::vector<std::array<int8_t, 50>> tritCorpus;
+    std::vector<LongTriple> longCorpus;
+    for (int n = 0; n < 16; ++n) {
+        std::array<int8_t, 50> trits{};
+        for (int i = 0; i < 50; ++i) {
+            trits[i] = static_cast<int8_t>(((i + n) % 3) - 1);
+        }
+        tritCorpus.push_back(trits);
+        longCorpus.push_back(LongTriple::pack(trits));
+    }
+
+    auto addOp = [](UInt128 a, UInt128 b) { return a + b; };
+    auto subOp = [](UInt128 a, UInt128 b) { return a - b; };
+    auto mulOp = [](UInt128 a, UInt128 b) { return a * b; };
+    auto divOp = [](UInt128 a, UInt128 b) { return a / b; };
+    auto modOp = [](UInt128 a, UInt128 b) { return a % b; };
+    auto divSmallOp = [](UInt128 a) { return a.divSmall(3); };
+    auto modSmallOp = [](UInt128 a) { return UInt128{a.modSmall(3), 0}; };
+    auto divModSmallOp = [](UInt128 a) { uint32_t r; return a.divModSmall(3, r); };
+
+    results.push_back(measure("uint128", "add", "ops/s", iters,
+        [&] { return benchBinary(corpusA, corpusB, iters, addOp); }));
+    results.push_back(measure("uint128", "sub", "ops/s", iters,
+        [&] { return benchBinary(corpusA, corpusB, iters, subOp); }));
+    results.push_back(measure("uint128", "mul", "ops/s", iters,
+        [&] { return benchBinary(corpusA, corpusB, iters, mulOp); }));
+    results.push_back(measure("uint128", "div", "ops/s", iters,
+        [&] { return benchBinary(corpusA, corpusB, iters, divOp); }));
+    results.push_back(measure("uint128", "mod", "ops/s", iters,
+        [&] { return benchBinary(corpusA, corpusB, iters, modOp); }));
+    results.push_back(measure("uint128", "divSmall", "ops/s", iters,
+        [&] { return benchUnary(corpusA, iters, divSmallOp); }));
+    results.push_back(measure("uint128", "modSmall", "ops/s", iters,
+        [&] { return benchUnary(corpusA, iters, modSmallOp); }));
+    results.push_back(measure("uint128", "divModSmall", "ops/s", iters,
+        [&] { return benchUnary(corpusA, iters, divModSmallOp); }));
+    results.push_back(measure("uint128", "pow3UInt128", "ops/s", iters,
+        [&] {
+            uint64_t h = 0;
+            for (uint64_t i = 0; i < iters; ++i) {
+                h = mix(h, payload(native_ops::detail::pow3UInt128(static_cast<int>(i % 50))));
+            }
+            return h;
+        }));
+    results.push_back(measure("uint128", "LongTriple pack", "ops/s", wideIters,
+        [&] {
+            uint64_t h = 0;
+            const uint64_t mask = static_cast<uint64_t>(tritCorpus.size() - 1);
+            for (uint64_t i = 0; i < wideIters; ++i) {
+                h = mix(h, payload(LongTriple::pack(tritCorpus[i & mask])));
+            }
+            return h;
+        }));
+    results.push_back(measure("uint128", "LongTriple unpack", "ops/s", wideIters,
+        [&] {
+            uint64_t h = 0;
+            const uint64_t mask = static_cast<uint64_t>(longCorpus.size() - 1);
+            for (uint64_t i = 0; i < wideIters; ++i) {
+                const auto trits = longCorpus[i & mask].unpack();
+                uint64_t packed = 0;
+                for (int t = 0; t < 16; ++t) {
+                    packed = (packed << 2) | static_cast<uint64_t>(trits[t] + 1);
+                }
+                h = mix(h, packed);
+            }
+            return h;
+        }));
 }
 
 void addNativeBenches(std::vector<Result>& results, int scale) {
@@ -672,6 +752,7 @@ int main(int argc, char** argv) {
     std::vector<Result> results;
     results.reserve(120);
 
+    addUInt128Benches(results, scale);
     addNativeBenches(results, scale);
     addLaneBenches(results, scale);
     addSimdBenches(results, scale);
