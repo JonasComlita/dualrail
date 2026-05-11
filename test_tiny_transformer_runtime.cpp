@@ -180,6 +180,21 @@ Matrix layerNormHost(const Matrix& input) {
     return out;
 }
 
+Matrix rmsNormHost(const Matrix& input) {
+    Matrix out = input;
+    for (std::size_t row = 0; row < input.size(); ++row) {
+        long double meanSquare = 0.0L;
+        for (long double value : input[row]) meanSquare += value * value;
+        meanSquare /= static_cast<long double>(input[row].size());
+        const long double denom = std::sqrt(meanSquare + 0.001L);
+
+        for (std::size_t col = 0; col < input[row].size(); ++col) {
+            out[row][col] = input[row][col] / denom;
+        }
+    }
+    return out;
+}
+
 void storeMatrix(
     sandbox::vm::VMState& vm,
     rt::TensorView view,
@@ -318,6 +333,19 @@ void testMatmulLayerNormAndT1Dot() {
     for (int col = 0; col < 3; ++col) {
         expectNear(readLongDouble(vm, lnOut, 0, col), lnExpected[0][static_cast<std::size_t>(col)],
                    2e-5L, "layer norm value");
+    }
+
+    rt::TensorView rmsIn{200, 1, 3, sandbox::TernaryMode::T50};
+    rt::TensorView rmsOut{210, 1, 3, sandbox::TernaryMode::T50};
+    for (int col = 0; col < 3; ++col) {
+        storeInt(vm, rmsIn, 0, col, col + 1);
+    }
+    rt::GeneratedKernelResult rmsRun = rt::rmsNormRowsGenerated(vm, rmsIn, gamma, rmsOut);
+    expectKernel(rmsRun, "rms norm");
+    Matrix rmsExpected = rmsNormHost({{1.0L, 2.0L, 3.0L}});
+    for (int col = 0; col < 3; ++col) {
+        expectNear(readLongDouble(vm, rmsOut, 0, col), rmsExpected[0][static_cast<std::size_t>(col)],
+                   2e-5L, "rms norm value");
     }
 
     rt::TensorView t1A{100, 2, 3, sandbox::TernaryMode::L1};

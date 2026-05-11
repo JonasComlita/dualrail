@@ -76,6 +76,22 @@ corresponding activation is added, subtracted, or skipped. A positive weight
 routes the activation to an add path, a negative weight routes the activation
 to a subtract path, and a zero weight suppresses the contribution.
 
+## Technical Improvement and Prior-Art Distinction
+
+The invention produces a measurable reduction in execution-unit invocations for
+low-precision multiply-accumulate work by replacing weight multiplication with
+conditional add, conditional subtract, or skip behavior. The improvement is not
+the abstract idea of ternary weights. The specific mechanism is an ISA-visible
+T1 operand width and T1-specific dot/MAC instruction path that routes execution
+away from a general multiplier and into a wider accumulator.
+
+This distinguishes the mechanism from ordinary quantized neural networks,
+binary bit-serial arithmetic, tensor-core mixed-precision multiply, and generic
+integer multiplication by `-1`, `0`, or `+1`. In those systems, the hardware or
+instruction stream generally treats the weight as a numeric multiply operand.
+Here, the instruction itself identifies the operand as a single balanced ternary
+trit and selects the add/subtract/skip path before multiplier invocation.
+
 ## Definitions
 
 - **T1 value:** a typed single-trit value having one of `-1`, `0`, or `+1`.

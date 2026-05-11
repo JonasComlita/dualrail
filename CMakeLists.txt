@@ -8,6 +8,20 @@ add_executable(test_tiny_transformer_runtime test_tiny_transformer_runtime.cpp)
 target_compile_features(test_tiny_transformer_runtime PUBLIC cxx_std_17)
 target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_bitnet_loading test_bitnet_loading.cpp)
+add_executable(run_bitnet run_bitnet.cpp)
+target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
+target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+target_compile_features(run_bitnet PUBLIC cxx_std_17)
+target_compile_definitions(run_bitnet PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+if(MSVC)
+    target_compile_options(run_bitnet PRIVATE /arch:AVX2)
+else()
+    target_compile_options(run_bitnet PRIVATE -mavx2)
+endif()
+
 add_executable(test_ternary_ir test_ternary_ir.cpp)
 target_compile_features(test_ternary_ir PUBLIC cxx_std_17)
 target_compile_definitions(test_ternary_ir PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)

@@ -657,6 +657,42 @@ inline bool layerNormRows(
     return true;
 }
 
+inline bool rmsNormRows(
+    vm::VMState& state,
+    TensorView input,
+    TensorView gamma,
+    TensorView out,
+    RuntimeStats* stats = nullptr) {
+
+    if (input.rows != out.rows || input.cols != out.cols) return false;
+    if (gamma.rows != 1 || gamma.cols != input.cols) return false;
+    const vm::TernaryValue invCols = divT50(intValue(1), intValue(input.cols), stats);
+    const vm::TernaryValue eps = ratioValue(1, 1000);
+
+    for (int row = 0; row < input.rows; ++row) {
+        vm::TernaryValue meanSquare = intValue(0);
+        std::vector<vm::TernaryValue> values(static_cast<std::size_t>(input.cols));
+        for (int col = 0; col < input.cols; ++col) {
+            vm::TernaryValue value;
+            if (!loadElement(state, input, row, col, value, stats)) return false;
+            values[static_cast<std::size_t>(col)] = value;
+            meanSquare = addT50(meanSquare, mulT50(value, value, stats), stats);
+        }
+        meanSquare = mulT50(meanSquare, invCols, stats);
+        const vm::TernaryValue denom = sqrtT50(addT50(meanSquare, eps, stats), stats);
+        if (denom.isInvalid() || denom.isZero()) return false;
+
+        for (int col = 0; col < input.cols; ++col) {
+            vm::TernaryValue scale;
+            if (!loadElement(state, gamma, 0, col, scale, stats)) return false;
+            vm::TernaryValue normalized = divT50(values[static_cast<std::size_t>(col)], denom, stats);
+            vm::TernaryValue shifted = mulT50(normalized, scale, stats);
+            if (!storeElement(state, out, row, col, shifted, stats)) return false;
+        }
+    }
+    return true;
+}
+
 inline sandbox::ir::Value loadElementIrT50(
     sandbox::ir::Program& program,
     TensorView view,
@@ -1040,6 +1076,94 @@ inline GeneratedKernelResult layerNormRowsGenerated(
     addKernelStats(stats, result, rows * (cols * 2 + cols * 2), rows * cols);
     return result;
 }
+
+inline sandbox::ir::Program buildRmsNormRowsProgram(
+    TensorView input,
+    TensorView gamma,
+    TensorView out) {
+
+    using namespace sandbox::ir;
+    Program program;
+    Value invColsN = program.constant(Type::T50, 1);
+    Value invColsD = program.constant(Type::T50, input.cols);
+    Value invCols = program.div(invColsN, invColsD);
+    Value epsN = program.constant(Type::T50, 1);
+    Value epsD = program.constant(Type::T50, 1000);
+    Value eps = program.div(epsN, epsD);
+
+    for (int row = 0; row < input.rows; ++row) {
+        std::vector<Value> values;
+        values.reserve(static_cast<std::size_t>(input.cols));
+        Value meanSquareSum = program.constant(Type::T50, 0);
+        for (int col = 0; col < input.cols; ++col) {
+            Value value = loadElementIrT50(program, input, row, col);
+            values.push_back(value);
+            Value square = program.mul(value, value);
+            Value next = program.add(meanSquareSum, square);
+            program.release(meanSquareSum);
+            program.release(square);
+            meanSquareSum = next;
+        }
+        Value meanSquare = program.mul(meanSquareSum, invCols);
+        Value meanSquareEps = program.add(meanSquare, eps);
+        Value denom = program.sqrt(meanSquareEps);
+        program.release(meanSquareSum);
+        program.release(meanSquare);
+        program.release(meanSquareEps);
+
+        for (int col = 0; col < input.cols; ++col) {
+            Value normalized = program.div(values[static_cast<std::size_t>(col)], denom);
+            Value scale = loadElementIrT50(program, gamma, 0, col);
+            Value shifted = program.mul(normalized, scale);
+            storeElementIr(program, out, row, col, shifted);
+            program.release(values[static_cast<std::size_t>(col)]);
+            program.release(normalized);
+            program.release(scale);
+            program.release(shifted);
+        }
+        program.release(denom);
+    }
+
+    program.release(invColsN);
+    program.release(invColsD);
+    program.release(invCols);
+    program.release(epsN);
+    program.release(epsD);
+    program.release(eps);
+    program.halt();
+    return program;
+}
+
+inline GeneratedKernelResult rmsNormRowsGenerated(
+    vm::VMState& state,
+    TensorView input,
+    TensorView gamma,
+    TensorView out,
+    RuntimeStats* stats = nullptr) {
+
+    GeneratedKernelResult failed;
+    failed.name = "rms norm rows";
+    if (input.rows != out.rows || input.cols != out.cols ||
+        gamma.rows != 1 || gamma.cols != input.cols ||
+        !validTensor(state, input) || !validTensor(state, gamma) ||
+        !validTensor(state, out) ||
+        !vm::isNumericMode(input.mode) || !vm::isNumericMode(gamma.mode) ||
+        !vm::isNumericMode(out.mode)) {
+        failed.status = "invalid tensor shape or mode";
+        return failed;
+    }
+
+    GeneratedKernelResult result = executeGeneratedKernel(
+        state,
+        "rms norm rows",
+        buildRmsNormRowsProgram(input, gamma, out),
+        200000);
+    const uint64_t rows = static_cast<uint64_t>(input.rows);
+    const uint64_t cols = static_cast<uint64_t>(input.cols);
+    addKernelStats(stats, result, rows * (cols * 2 + cols), rows * cols);
+    return result;
+}
+
 
 } // namespace transformer_runtime
 } // namespace sandbox

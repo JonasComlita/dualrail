@@ -81,6 +81,23 @@ lane modes. A memory copy, load, store, or tag-preserving select may preserve a
 tagged value without conversion, but arithmetic and lane operations do not
 reinterpret a backing integer as belonging to the other family.
 
+## Technical Improvement and Prior-Art Distinction
+
+The invention improves execution reliability and optimization visibility by
+preventing hidden reinterpretation between arithmetic encodings and transport
+encodings. The improvement is not merely tagging data. The specific mechanism
+is the combination of two disjoint ternary representation families,
+instruction-level suffix validation, tagged VM/register payloads, and an
+explicit `cvt.src.dst` instruction that is the only allowed numeric/lane family
+crossing.
+
+This distinguishes the mechanism from ordinary type systems, serialization
+formats, tagged memory architectures, CHERI-style capabilities, and untyped GPU
+packing schemes. Those systems may attach metadata or pack values, but they do
+not enforce a ternary-specific firewall between base-3 positional arithmetic
+formats and two-bit-per-trit lane/wire formats while making every family
+crossing visible in the instruction stream.
+
 ## Definitions
 
 - **Numeric family:** ternary formats whose payloads carry arithmetic meaning,

@@ -67,6 +67,22 @@ The no-fault state is explicit: `fault_valid` is zero. When `fault_valid` is
 set, `fault_class` identifies the fault class, such as division by zero, memory
 fault, or illegal operation.
 
+## Technical Improvement and Prior-Art Distinction
+
+The invention improves vector execution by isolating per-lane data faults while
+preserving useful results from non-faulting lanes. The improvement is not merely
+recording an exception flag. The specific mechanism is separated
+fault-valid/fault-class state per lane, deterministic typed-zero writeback for
+faulted lanes, and continued execution of valid lanes for structurally valid
+vector instructions.
+
+This distinguishes the mechanism from global exception flags, binary vector
+masks, GPU per-thread error reporting, and ordinary exception handling. Those
+mechanisms may record whether work should be masked or whether an exception
+occurred, but they do not combine explicit per-lane fault occurrence,
+ternary-coded fault class, typed destination zeroing, and continued vector
+completion under the same instruction semantics.
+
 ## Definitions
 
 - **Fault-valid value:** a value indicating whether a fault record or lane fault

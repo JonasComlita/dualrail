@@ -84,6 +84,25 @@ layout. The layout reuses existing reserved trits in a register-register
 instruction format and therefore avoids requiring a second instruction word to
 name the fifth register operand.
 
+## Technical Improvement and Prior-Art Distinction
+
+The invention produces a measurable reduction in instructions and
+pipeline-disrupting control events required to perform a three-way conditional
+operation. The improvement is not merely that a ternary value exists. The
+specific mechanism is a single decoded instruction that consumes a first-class
+balanced ternary predicate value and selects among three register operands
+without consulting a branch predictor, reading a binary flags register,
+performing a secondary comparison, or coercing the selected value.
+
+This distinguishes the mechanism from binary conditional moves, ARM-style
+predication, x86 `CMOV`, AVX-512 mask registers, and conventional vector blend
+instructions. Those mechanisms select between two alternatives or require
+multiple Boolean masks to encode a three-way route. This also distinguishes the
+mechanism from historical ternary arithmetic generally: the disclosed operation
+ties a balanced ternary predicate, a five-register instruction layout,
+tag-preserving register movement, and scalar/vector execution semantics into
+one concrete processor operation.
+
 ## Definitions
 
 - **Balanced ternary trit:** a digit having one of three values: `-1`, `0`, or

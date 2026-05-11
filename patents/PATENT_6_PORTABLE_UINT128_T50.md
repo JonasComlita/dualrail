@@ -1,4 +1,4 @@
-# System and Method for Stable Two-Limb 128-Bit Ternary Positional Storage with Portable Arithmetic
+# System and Method for Portable 50-Trit Balanced Ternary Arithmetic Across Heterogeneous Backends
 
 ## Filing-Support Draft
 
@@ -10,8 +10,8 @@ to preserve later claim options.
 
 ## Title
 
-System and Method for Stable Two-Limb 128-Bit Ternary Positional Storage with
-Portable Arithmetic
+System and Method for Portable 50-Trit Balanced Ternary Arithmetic Across
+Heterogeneous Backends
 
 ## Field
 
@@ -37,17 +37,24 @@ numeric values directly in compiler-specific extended integer types, the
 machine-state layout, file snapshots, GPU transport, and hardware mapping can
 become platform-dependent.
 
-There is therefore a need for a stable two-limb 128-bit storage primitive that
-preserves a fixed public layout across platforms while still allowing internal
-compiler-specific or intrinsic fast paths when available. There is also a need
-for fused small-divisor operations because base-3 positional ternary pack and
-unpack operations repeatedly divide by, multiply by, or take remainders modulo
-three.
+There is therefore a need for portable 50-trit balanced ternary arithmetic that
+can compile across CPU, CUDA device, SYCL device, and hardware-oriented
+toolchains without making compiler-specific extended integer types part of the
+machine-state ABI. There is also a need for fused small-divisor operations
+because base-3 positional ternary pack and unpack operations repeatedly divide
+by, multiply by, or take remainders modulo three.
 
 ## Summary
 
-The disclosed architecture provides a stable 128-bit unsigned storage primitive
-comprising two 64-bit limbs:
+The disclosed architecture provides a portable arithmetic substrate for a
+50-trit balanced ternary numeric format, referred to as `LongTriple` or `T50`.
+The format stores packed base-3 positional trits, supports overflow and
+underflow sentinel states, and is usable across host CPU code, CUDA/SYCL device
+code, virtual-machine memory, and hardware-oriented models without changing the
+public payload shape.
+
+In the preferred embodiment, the T50 payload uses a stable 128-bit unsigned
+storage primitive comprising two 64-bit limbs:
 
 ```cpp
 struct UInt128 {
@@ -79,6 +86,24 @@ form using the two-limb `UInt128` storage. Pack and unpack operations operate by
 repeated multiplication by powers of three, fused division/remainder by three,
 and explicit sentinel handling for overflow and underflow states.
 
+## Technical Improvement and Prior-Art Distinction
+
+The invention improves heterogeneous execution by providing portable 50-trit
+balanced ternary arithmetic without requiring the public VM state or device
+payload representation to depend on compiler-specific 128-bit integer types.
+The improvement is not the two-limb integer representation alone. The specific
+mechanism is the combination of a 50-trit positional ternary format, stable
+machine-state payload shape, cross-target portable arithmetic, fused base-3
+pack/unpack operations, and optional internal fast paths that do not change the
+ABI.
+
+This distinguishes the mechanism from ordinary multi-precision integer
+libraries, `__int128` compiler extensions, and generic big-integer arithmetic.
+Those systems provide wide arithmetic, but they do not define a portable
+backing substrate for a fixed 50-trit balanced ternary floating point format
+that preserves VM snapshots, device transport, and hardware mapping while
+supporting native ternary pack/unpack and arithmetic.
+
 ## Definitions
 
 - **Two-limb 128-bit storage:** a storage object comprising a low 64-bit limb
@@ -97,7 +122,7 @@ and explicit sentinel handling for overflow and underflow states.
 
 ## Brief Description of the Drawings
 
-### Figure 1: Stable Two-Limb Layout
+### Figure 1: Preferred Two-Limb T50 Payload Layout
 
 ```text
 +----------------------+----------------------+
@@ -154,7 +179,7 @@ mul/div combine signs and unsigned magnitudes
 
 ## Detailed Description
 
-### Stable UInt128 Storage
+### Preferred Two-Limb Storage Embodiment
 
 In one embodiment, a 128-bit unsigned storage primitive is defined as two
 64-bit limbs:
@@ -413,48 +438,53 @@ language should be prepared by a registered patent practitioner.
 
 ### Claim 1: Independent Method Claim
 
-1. A method for storing and operating on a packed ternary numeric value in a
+1. A method for executing portable fifty-trit balanced ternary arithmetic in a
    processor or virtual processor, the method comprising:
-   representing a 128-bit payload as a first 64-bit limb and a second 64-bit
-   limb in a public storage layout;
-   storing a packed balanced ternary positional value in the 128-bit payload;
-   performing arithmetic operations on the 128-bit payload using one of a
-   native temporary fast path, an intrinsic limb path, or a fallback limb path;
-   preserving the public storage layout regardless of which arithmetic path is
-   used; and
-   packing or unpacking trits of the packed balanced ternary positional value
-   using powers of three represented in the public storage layout.
+   storing a fifty-trit balanced ternary numeric value as a packed base-3
+   positional payload;
+   preserving a fixed public payload layout for the packed base-3 positional
+   payload across host, device, virtual-machine, snapshot, and hardware-model
+   execution targets;
+   compiling arithmetic operations for the fifty-trit balanced ternary numeric
+   value without requiring a compiler-specific 128-bit integer type in the
+   fixed public payload layout;
+   packing trits into the fixed public payload layout using powers of three;
+   unpacking trits from the fixed public payload layout using fused quotient
+   and remainder operations by three; and
+   permitting target-specific internal fast paths only when the fixed public
+   payload layout is preserved.
 
 ### Claim 2: System Claim
 
 2. A computing system comprising:
-   a virtual-machine state including tagged values having a two-limb 128-bit
-   payload;
-   a ternary floating point type storing fifty packed trits in the two-limb
-   128-bit payload;
+   a virtual-machine state including tagged values having a fixed public
+   payload layout;
+   a ternary floating point type storing fifty packed trits in the fixed public
+   payload layout;
    a portable arithmetic library configured to perform addition, subtraction,
    comparison, shift, multiplication, division, and small-divisor
-   quotient/remainder operations on the two-limb payload; and
+   quotient/remainder operations on the fixed public payload layout; and
    conditional internal fast paths configured to accelerate selected operations
-   without changing the two-limb payload layout.
+   without changing the fixed public payload layout.
 
 ### Claim 3: Computer-Readable Medium Claim
 
 3. A non-transitory computer-readable medium storing instructions that, when
    compiled for one or more execution targets, cause the one or more execution
    targets to:
-   maintain a stable two-limb representation for 128-bit ternary payloads;
-   use the stable two-limb representation as backing storage for a fifty-trit
+   maintain a stable payload representation for fifty-trit balanced ternary
+   values;
+   use the stable payload representation as backing storage for a fifty-trit
    balanced ternary value;
-   perform portable limb arithmetic when compiler-native 128-bit arithmetic is
+   perform portable arithmetic when compiler-native 128-bit arithmetic is
    unavailable;
    use compiler-native or intrinsic arithmetic internally when available; and
-   convert packed ternary trits to and from the stable two-limb representation
+   convert packed ternary trits to and from the stable payload representation
    without changing the external representation.
 
 ### Dependent Claim Concepts
 
-4. The method of claim 1, wherein the public storage layout comprises `lo` and
+4. The method of claim 1, wherein the fixed public payload layout comprises `lo` and
    `hi` fields, each field being 64 bits.
 
 5. The method of claim 1, wherein the native temporary fast path uses a
@@ -509,17 +539,17 @@ language should be prepared by a registered patent practitioner.
 
 ## Abstract
 
-A stable two-limb 128-bit storage primitive stores packed balanced ternary
-positional values while preserving the same public layout across host, GPU,
-SYCL, virtual-machine, and hardware-oriented targets. The storage primitive
-contains low and high 64-bit limbs. Arithmetic operators may use internal
-compiler-native or intrinsic fast paths when available, or portable limb
-fallback arithmetic otherwise, but all paths return the same two-limb layout.
-A fifty-trit ternary floating point value stores its packed trits in the
-two-limb payload. Packing uses powers of three represented in the two-limb
-format, and unpacking uses fused quotient/remainder operations such as division
-by three. A signed companion type represents sign and magnitude for portable
-wide signed arithmetic.
+A portable fifty-trit balanced ternary arithmetic substrate stores packed
+base-3 positional values while preserving a fixed public payload layout across
+host, GPU, SYCL, virtual-machine, snapshot, and hardware-oriented targets. In a
+preferred embodiment, the payload is a stable two-limb 128-bit storage
+primitive containing low and high 64-bit limbs. Arithmetic operators may use
+internal compiler-native or intrinsic fast paths when available, or portable
+limb fallback arithmetic otherwise, but all paths return the same public
+payload layout. Packing uses powers of three represented in the payload format,
+and unpacking uses fused quotient/remainder operations such as division by
+three. A signed companion type represents sign and magnitude for portable wide
+signed arithmetic.
 
 ## Source-Code Exhibit Checklist
 
@@ -551,10 +581,12 @@ Recommended source excerpts to highlight:
 
 ## Filing Notes
 
-- The filing should avoid claiming a generic "128-bit integer" by itself.
-  The stronger framing is stable two-limb public storage used as the portable
-  substrate for packed ternary positional values, with optional internal fast
-  paths that do not alter ABI.
+- This disclosure should not be filed as a standalone claim to a generic
+  two-limb integer. The stronger framing is portable fifty-trit balanced
+  ternary arithmetic across heterogeneous backends, with two-limb storage as
+  the preferred embodiment.
+- The two-limb `UInt128` material should be used as dependent claim support or
+  implementation disclosure unless counsel chooses otherwise.
 - The disclosure should emphasize why the public type is not redefined per
   platform: stable VM state, device transport, file snapshots, and hardware
   mapping.

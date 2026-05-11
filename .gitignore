@@ -1,1 +1,5 @@
 *.exe
+bitnet_weights/converted/
+bitnet_weights/model/
+build/
+build_fresh/
