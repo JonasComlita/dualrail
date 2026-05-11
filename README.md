@@ -289,14 +289,15 @@ Vector faults use an explicit lane-local model:
 6. Add accumulator and AI ops: `vdot.t1`, `vmac.t1`, and `vact.t1`. Done.
 7. Add gather/scatter and complex vector plumbing after the vector fault model is tested. Done in the scalar reference VM.
 
-## Phase 5: GPU Launch and Tiny Transformer Runtime
+## Phase 5: GPU Launch, IR, Benchmarks, and Transformer Runtime
 
 Status: in progress.
 
-Goal: split the next work into two separate deliverables: first validate that
-the existing device-side lane ALU can be launched as a GPU/SYCL/CUDA kernel,
-then build the first useful application-level VM benchmark with a tiny
-NanoGPT-class transformer forward pass.
+Goal: finish the near-complete GPU lane launch validation, then add the minimal
+compiler/IR layer and benchmark suite needed before building a maintainable
+tiny NanoGPT-class transformer forward pass. The pivot is intentional: serious
+VM programs should be generated from a typed IR rather than maintained as large
+hand-written assembly programs.
 
 Important host limitation:
 
@@ -308,7 +309,8 @@ Important host limitation:
 
 ### Phase 5A: GPU Kernel Launch Validation
 
-Status: in progress, blocked locally only for AMD GPU validation.
+Status: local launch-boundary validation implemented; external AMD GPU
+validation remains deferred to Linux/ROCm.
 
 Goal: prove that the already-written device-side lane ALU can execute through
 real kernel launch wrappers. This is not new arithmetic design; it is launch,
@@ -325,6 +327,8 @@ What is already close:
 - CPU SIMD and CPU OpenCL/default SYCL paths have already been benchmarked.
 - CUDA/SYCL harnesses now run conformance plus timing over every raw lane width
   and operation, with deterministic invalid/spare payload cases.
+- CUDA and SYCL CMake targets are opt-in, so normal repo builds do not require
+  GPU or oneAPI tooling.
 
 Scope:
 
@@ -352,22 +356,123 @@ Non-goals:
 - Do not add transformer-specific opcodes here.
 - Do not add FPGA/ASIC modules here.
 
-### Phase 5B: Tiny Transformer VM Runtime
+### Phase 5B: Minimal Ternary IR and Lowering
 
-Status: first runtime scaffold in progress.
+Status: first implementation complete.
+
+Goal: add a small purpose-built IR that can generate ternary VM programs from a
+typed operation graph. This is not a full LLVM-scale compiler. It is the minimum
+layer needed to make transformers, benchmarks, and later cryptographic kernels
+maintainable.
+
+IR requirements:
+
+- Represent typed scalar, vector, and lane values: `T1/T5/T10/T20/T40/T50` and
+  `L1/L5/L10/L20/L40/L50`.
+- Represent operations as a small graph or linear SSA-like form with typed
+  edges.
+- Lower directly to existing ISA/assembler text first, not binary instruction
+  words directly.
+- Add a simple register allocator for `r0-r26` and `v0-v7`.
+- Add accumulator-aware lowering for `aclr`, `aload`, `aadd`, `asub`, `amul`,
+  `astore`, `vdot.t1`, and `vmac.t1`.
+- Add explicit lowering for `cvt.src.dst`; never insert hidden numeric/lane
+  crossings.
+- Emit labels, branches, calls, and loops through the existing assembler.
+
+Initial IR operations:
+
+- Constants, copy, load, store, vector load/store, and conversion.
+- Numeric arithmetic, compare, `tsel`, branches, and loop labels.
+- Vector arithmetic, `vsel`, `vbcast`, `vpack`, `vunpack`, gather/scatter.
+- Accumulator and T1 AI dot/MAC operations.
+
+Implemented first tranche:
+
+- Added `ternary_ir.h` under `namespace sandbox::ir`.
+- Added typed scalar/vector values for numeric and lane widths.
+- Added deterministic register allocation over `r1-r24` and `v0-v7`, with
+  diagnostics on exhaustion and no implicit spilling.
+- Lowering emits assembly text first and then calls the existing assembler.
+- Typed arithmetic always emits explicit suffixes; `cvt` emits `.src.dst`;
+  exact no-op conversions are removed.
+- Added `test_ternary_ir.cpp` for assembly text checks, VM execution,
+  diagnostics, branch/load/store/vector/accumulator/T1 coverage, and register
+  exhaustion.
+
+Validation:
+
+- Golden tests compare generated assembly against expected instruction
+  families, not exact register names where allocation is intentionally flexible.
+- Run generated programs through the existing VM and compare outputs to direct
+  host references.
+- Include register pressure tests that force spills or reject programs with a
+  clear diagnostic.
+- Add a static no-bridge check for generated runtime programs.
+
+Non-goals:
+
+- Do not implement a general programming language in this phase.
+- Do not add optimizer passes beyond tiny local cleanups such as adjacent
+  no-op `cvt` removal.
+- Do not add new ISA opcodes to make lowering easier.
+
+### Phase 5C: Architectural Benchmark Suite
+
+Status: first deterministic benchmark tranche implemented.
+
+Goal: produce repeatable numbers for the architecture's core claims before the
+transformer and security work. Each benchmark should report VM step count,
+runtime, checksum, memory footprint, and the exact program source or generated
+IR.
+
+Benchmarks:
+
+- T1 dot product through `vmac.t1` / `vdot.t1` versus T50 multiply-add.
+- Ternary heap versus binary heap emulated on the VM.
+- Three-way routing with `tcmp`/`tsel` versus binary-style two-branch routing.
+- Two-tailed outlier detection using ternary predicates.
+- Existing Fibonacci, recursion, DFT/FFT, and Taylor/Maclaurin workloads with
+  step-count and timing rows.
+- Tiny generated matmul kernels in T10, T20, and T50.
+
+Implemented first tranche:
+
+- Added `benchmark_architecture.cpp`.
+- Results are written to `architecture_benchmark_results.md`.
+- Current rows cover T1-vs-T50 dot, ternary-vs-binary-style routing,
+  two-tailed outlier routing, small heap-shape routing, and generated small
+  matmul at T10/T20/T50 widths.
+- Rows report generated program size, VM steps, checksum, baseline, and
+  relative step-count delta where a paired baseline exists.
+
+Validation:
+
+- Every benchmark must have a deterministic checksum.
+- Record results in `optimization_baseline.md` or a dedicated benchmark results
+  document before and after any optimization.
+- Keep binary comparisons honest: compare VM instruction counts separately from
+  host CPU wall-clock time.
+
+### Phase 5D: Tiny Transformer VM Runtime
+
+Status: initial generated-VM runtime scaffold implemented after Phase 5B and
+the first Phase 5C benchmark tranche.
 
 Goal: build the first useful application-level benchmark on top of the
 completed scalar/vector ISA: a tiny NanoGPT-class transformer forward pass
-running through the VM. This phase should prove that the architecture can
-express modern neural workloads without hidden FPU bridges while giving us a
-stable benchmark before lower-level hardware optimization continues.
+running through generated VM programs. This phase should prove that the
+architecture can express modern neural workloads without hidden FPU bridges
+while giving us a stable benchmark before lower-level hardware optimization
+continues.
 
 Scope:
 
-- Keep this as a VM/runtime phase, not a new hardware backend phase.
-- Use existing ISA features first: `add`, `mul`, `div`, `sqrt`, `tsel`,
-  `cvt`, `vload`, `vstore`, `vdot.t1`, `vmac.t1`, `vact.t1`, and the
-  accumulator family.
+- Generate transformer kernels through the IR/lowering layer, not by writing a
+  large hand-maintained assembly program.
+- Use existing ISA features first: `add`, `mul`, `div`, `sqrt`, `tsel`, `cvt`,
+  `vload`, `vstore`, `vdot.t1`, `vmac.t1`, `vact.t1`, and the accumulator
+  family.
 - Keep numeric and lane families explicit. Quantized storage crosses through
   `cvt.*.*` or runtime conversion helpers only at named boundaries.
 - Prefer VM-callable math routines before adding new opcodes. Add opcodes only
@@ -375,32 +480,29 @@ Scope:
 - Record before/after measurements in `optimization_baseline.md` before any
   runtime or hot-path optimization is accepted.
 
-Major runtime pieces:
+Initial runtime pieces:
 
-- Add a VM-callable `exp` routine.
+- Added a VM-callable `exp` routine.
   - Native C++ `ops::exp(LongTriple)` already exists and is tested.
-  - Phase 5 needs an assembly/runtime form or a clearly documented intrinsic
-    path so VM programs can call it.
-  - The first runtime scaffold implements this through existing arithmetic
-    helpers and keeps native exponential calls in tests only.
-- Add `softmax` over a vector.
+  - The generated runtime path implements this through existing arithmetic
+    instructions and keeps native exponential calls in tests only.
+- Added `softmax` over a vector.
   - Use max subtraction for stability.
   - Use `exp`, sum reduction, and reciprocal/division.
-- Add `tanh` and `gelu` or choose a simpler first activation.
-  - `gelu(x)` can be implemented after `tanh`/`exp` exists.
+- Added `tanh` and `gelu` scalar kernels.
   - `vact.t1` already covers ternary sign activation for T1 paths.
-- Add matrix multiply kernels.
+- Added matrix multiply kernels.
   - Start with scalar nested loops for correctness.
   - Add accumulator-backed versions.
   - Add T1 dot/MAC paths using `vdot.t1` and `vmac.t1`.
-- Add layer normalization.
+- Added layer normalization.
   - Mean, variance, reciprocal square root, scale, and bias are expressible
     with existing VM arithmetic.
-- Add a tiny tensor/memory layout.
+- Added a tiny tensor/memory layout.
   - Define row-major tensor storage in DMEM.
   - Define packed lane storage for quantized weights where useful.
   - Keep tokenizer and embedding tables as explicit software data structures.
-- Add a tiny model fixture.
+- Added a tiny model fixture.
   - Prefer a character-level model with small vocabulary and dimensions.
   - Keep weights deterministic and small enough for fast regression tests.
 
@@ -419,19 +521,42 @@ Non-goals:
 - Do not target GPT-2-small scale as the first milestone.
 - Do not add CUDA/SYCL/FPGA-specific execution here.
 - Do not make lane/numeric conversion implicit to simplify model code.
+- Do not implement security primitives as part of the transformer milestone.
 
 ## Phase 6: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 
 Goal: move the validated semantics beyond the reference VM and one-off GPU
-launch validation into production-quality hardware backends.
+launch validation into production-quality hardware backends, starting with an
+FPGA prototype that can run real Phase 5 benchmark programs.
 
 Major goals:
 
 - Broaden SYCL/CUDA kernels from lane ALU launch validation into selected
   numeric/vector operations.
 - Harden device allocator implementations.
-- FPGA-friendly lane ALU modules.
+- FPGA instruction decoder derived from `ternary_isa.h`.
+- Scalar register file and simple fetch/decode/execute pipeline.
+- FPGA-friendly trit full-adder, lane ALU, accumulator, and `vmac.t1` modules.
 - ASIC-oriented decode/execute mapping.
 - Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.
+
+## Phase 7: Security and Post-Quantum Crypto Primitives
+
+Status: future.
+
+Goal: apply the measured IR, benchmark, and hardware work to security workloads
+where ternary arithmetic is structurally useful. Password hashing is not the
+target; password hashes are deliberately slow and memory-hard, so being faster
+is not a useful security claim.
+
+Major goals:
+
+- Implement lattice/PQC inner products with T1/T5 coefficients.
+- Implement polynomial multiplication for Kyber/Dilithium-like workloads.
+- Implement and benchmark NTT-style finite-field kernels.
+- Keep crypto code generated through the IR so constant-time behavior can be
+  inspected and tested.
+- Use published, peer-reviewed algorithms as the cryptographic basis; optimize
+  the VM/hardware execution path, not secret proprietary crypto math.

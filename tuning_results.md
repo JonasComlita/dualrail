@@ -101,7 +101,7 @@ Notes:
 - The production header no longer emits the earlier `__int128` pedantic
   warnings; remaining `__int128` warnings are test-reference code only.
 
-## Phase 5B Tiny Transformer VM Runtime Fixture
+## Phase 5D Tiny Transformer VM Runtime Fixture
 
 | Runtime | DMEM Words | Scalar Ops | DMEM Loads | DMEM Stores | Runtime (us) | Max Error |
 | ------- | ---------: | ---------: | ---------: | ----------: | -----------: | --------: |
@@ -765,3 +765,9 @@ Notes:
 | SYCL | `AMD Ryzen 9 3900X 12-Core Processor            ` | `IntelLLVM 20250101` | `max` | `L50` | 65536 | `auto` | `0xf973ba4e15385def` | 623 | CPU fallback | pass |
 | SYCL | `AMD Ryzen 9 3900X 12-Core Processor            ` | `IntelLLVM 20250101` | `max` | `L50` | 65536 | `64` | `0xf973ba4e15385def` | 543 | CPU fallback | pass |
 | SYCL | `AMD Ryzen 9 3900X 12-Core Processor            ` | `IntelLLVM 20250101` | `max` | `L50` | 65536 | `256` | `0xf973ba4e15385def` | 604 | CPU fallback | pass |
+
+## Phase 5D Tiny Transformer VM Runtime Fixture
+
+| Runtime | DMEM Words | Scalar Ops | DMEM Loads | DMEM Stores | Runtime (us) | Max Error |
+| ------- | ---------: | ---------: | ---------: | ----------: | -----------: | --------: |
+| VM tensor runtime | 138 | 745 | 144 | 36 | 3256 | 3.49523e-10 |

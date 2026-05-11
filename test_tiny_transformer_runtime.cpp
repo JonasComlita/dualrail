@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -18,6 +19,7 @@ rt::RuntimeStats g_tinyStats{};
 long long g_tinyRuntimeUs = 0;
 int g_tinyDmemWords = 0;
 long double g_tinyMaxError = 0.0L;
+uint64_t g_tinyChecksum = 0;
 
 void expect(bool condition, const std::string& message) {
     if (condition) return;
@@ -49,6 +51,32 @@ void expectNear(long double got, long double want, long double tol, const std::s
     expect(diff <= tol * scale,
            label + " got " + std::to_string(static_cast<double>(got)) +
            " want " + std::to_string(static_cast<double>(want)));
+}
+
+void expectKernel(const rt::GeneratedKernelResult& result, const std::string& label) {
+    expect(result.ok, label + " generated VM kernel runs: " + result.status);
+    expect(result.assemblyWords > 0, label + " generated assembly has words");
+    expect(result.vmSteps > 0, label + " generated VM steps recorded");
+}
+
+uint64_t mix(uint64_t hash, uint64_t value) {
+    hash ^= value;
+    hash *= 1099511628211ULL;
+    return hash;
+}
+
+uint64_t checksumTensor(const sandbox::vm::VMState& vm, rt::TensorView view) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (int row = 0; row < view.rows; ++row) {
+        for (int col = 0; col < view.cols; ++col) {
+            sandbox::vm::TernaryValue value;
+            expect(rt::loadElement(vm, view, row, col, value), "checksum load tensor element");
+            hash = mix(hash, value.bits.lo);
+            hash = mix(hash, value.bits.hi);
+            hash = mix(hash, static_cast<uint64_t>(value.mode));
+        }
+    }
+    return hash;
 }
 
 void storeInt(
@@ -180,20 +208,28 @@ Matrix readMatrix(const sandbox::vm::VMState& vm, rt::TensorView view) {
 void testExpSoftmaxAndActivation() {
     std::cout << "[1] runtime exp, softmax, tanh, gelu\n";
 
+    sandbox::vm::VMState scalarVm(4096, 256);
+    rt::TensorView scalarIn{0, 1, 1, sandbox::TernaryMode::T50};
+    rt::TensorView scalarOut{1, 1, 1, sandbox::TernaryMode::T50};
     for (long long x : {-1LL, 0LL, 1LL}) {
-        sandbox::vm::TernaryValue got = rt::expT50(rt::intValue(x));
+        storeInt(scalarVm, scalarIn, 0, 0, x);
+        rt::GeneratedKernelResult expRun = rt::expScalarGenerated(scalarVm, scalarIn.base, scalarOut.base);
+        expectKernel(expRun, "exp runtime x=" + std::to_string(x));
+        sandbox::vm::TernaryValue got;
+        expect(rt::loadElement(scalarVm, scalarOut, 0, 0, got), "load generated exp output");
         sandbox::LongTriple oracle = sandbox::ops::exp(sandbox::native_ops::fromInt(x));
         expectNear(toLongDouble(got), toLongDouble(sandbox::vm::TernaryValue::fromLongTriple(oracle)),
                    1e-8L, "exp runtime x=" + std::to_string(x));
     }
 
-    sandbox::vm::VMState vm(16, 64);
+    sandbox::vm::VMState vm(4096, 64);
     rt::TensorView logits{0, 1, 3, sandbox::TernaryMode::T50};
     rt::TensorView probs{10, 1, 3, sandbox::TernaryMode::T50};
     storeInt(vm, logits, 0, 0, 1);
     storeInt(vm, logits, 0, 1, 2);
     storeInt(vm, logits, 0, 2, 3);
-    expect(rt::softmaxRows(vm, logits, probs), "softmax rows succeeds");
+    rt::GeneratedKernelResult softmaxRun = rt::softmaxRowsGenerated(vm, logits, probs);
+    expectKernel(softmaxRun, "softmax rows");
 
     const Matrix expected = softmaxHost({{1.0L, 2.0L, 3.0L}});
     long double sum = 0.0L;
@@ -206,11 +242,22 @@ void testExpSoftmaxAndActivation() {
     expectNear(sum, 1.0L, 2e-5L, "softmax sums to one");
 
     for (long long x : {-1LL, 0LL, 1LL}) {
+        storeInt(scalarVm, scalarIn, 0, 0, x);
+        rt::GeneratedKernelResult tanhRun = rt::tanhScalarGenerated(scalarVm, scalarIn.base, scalarOut.base, 10);
+        expectKernel(tanhRun, "tanh runtime x=" + std::to_string(x));
+        sandbox::vm::TernaryValue tanhGot;
+        expect(rt::loadElement(scalarVm, scalarOut, 0, 0, tanhGot), "load generated tanh output");
+
+        rt::GeneratedKernelResult geluRun = rt::geluScalarGenerated(scalarVm, scalarIn.base, scalarOut.base, 20);
+        expectKernel(geluRun, "gelu runtime x=" + std::to_string(x));
+        sandbox::vm::TernaryValue geluGot;
+        expect(rt::loadElement(scalarVm, scalarOut, 0, 0, geluGot), "load generated gelu output");
+
         const long double xd = static_cast<long double>(x);
-        expectNear(toLongDouble(rt::tanhT50(rt::intValue(x))), std::tanh(xd), 2e-5L,
+        expectNear(toLongDouble(tanhGot), std::tanh(xd), 2e-5L,
                    "tanh runtime x=" + std::to_string(x));
         const long double gelu = 0.5L * xd * (1.0L + std::tanh(0.797885L * (xd + 0.044715L * xd * xd * xd)));
-        expectNear(toLongDouble(rt::geluT50(rt::intValue(x))), gelu, 3e-5L,
+        expectNear(toLongDouble(geluGot), gelu, 3e-5L,
                    "gelu runtime x=" + std::to_string(x));
     }
 }
@@ -218,7 +265,7 @@ void testExpSoftmaxAndActivation() {
 void testMatmulLayerNormAndT1Dot() {
     std::cout << "[2] matmul, layer norm, and T1 dot path\n";
 
-    sandbox::vm::VMState vm(16, 256);
+    sandbox::vm::VMState vm(4096, 256);
     rt::TensorView a{0, 2, 3, sandbox::TernaryMode::T20};
     rt::TensorView b{10, 3, 2, sandbox::TernaryMode::T20};
     rt::TensorView scalarOut{20, 2, 2, sandbox::TernaryMode::T50};
@@ -234,14 +281,27 @@ void testMatmulLayerNormAndT1Dot() {
         for (int col = 0; col < 2; ++col) storeInt(vm, b, row, col, bv[row][col]);
     }
 
-    expect(rt::matmulScalar(vm, a, b, scalarOut), "scalar matmul succeeds");
-    expect(rt::matmulAccumulator(vm, a, b, accumOut), "accumulator matmul succeeds");
+    rt::GeneratedKernelResult scalarRun = rt::matmulScalarGenerated(vm, a, b, scalarOut);
+    expectKernel(scalarRun, "scalar matmul");
+    rt::GeneratedKernelResult accumRun = rt::matmulAccumulatorGenerated(vm, a, b, accumOut);
+    expectKernel(accumRun, "accumulator matmul");
     for (int row = 0; row < 2; ++row) {
         for (int col = 0; col < 2; ++col) {
             expectNear(readLongDouble(vm, scalarOut, row, col), expected[row][col], 1e-12L, "scalar matmul value");
             expectNear(readLongDouble(vm, accumOut, row, col), expected[row][col], 1e-12L, "accumulator matmul value");
         }
     }
+
+    rt::TensorView a10{140, 1, 2, sandbox::TernaryMode::T10};
+    rt::TensorView b10{150, 2, 1, sandbox::TernaryMode::T10};
+    rt::TensorView out10{160, 1, 1, sandbox::TernaryMode::T50};
+    storeInt(vm, a10, 0, 0, 2);
+    storeInt(vm, a10, 0, 1, -1);
+    storeInt(vm, b10, 0, 0, 4);
+    storeInt(vm, b10, 1, 0, 3);
+    rt::GeneratedKernelResult t10Run = rt::matmulScalarGenerated(vm, a10, b10, out10);
+    expectKernel(t10Run, "T10 scalar matmul");
+    expectNear(readLongDouble(vm, out10, 0, 0), 5.0L, 1e-12L, "T10 scalar matmul value");
 
     rt::TensorView lnIn{50, 1, 3, sandbox::TernaryMode::T50};
     rt::TensorView gamma{60, 1, 3, sandbox::TernaryMode::T50};
@@ -252,7 +312,8 @@ void testMatmulLayerNormAndT1Dot() {
         storeInt(vm, gamma, 0, col, 1);
         storeInt(vm, beta, 0, col, 0);
     }
-    expect(rt::layerNormRows(vm, lnIn, gamma, beta, lnOut), "layer norm succeeds");
+    rt::GeneratedKernelResult lnRun = rt::layerNormRowsGenerated(vm, lnIn, gamma, beta, lnOut);
+    expectKernel(lnRun, "layer norm");
     Matrix lnExpected = layerNormHost({{1.0L, 2.0L, 3.0L}});
     for (int col = 0; col < 3; ++col) {
         expectNear(readLongDouble(vm, lnOut, 0, col), lnExpected[0][static_cast<std::size_t>(col)],
@@ -262,6 +323,7 @@ void testMatmulLayerNormAndT1Dot() {
     rt::TensorView t1A{100, 2, 3, sandbox::TernaryMode::L1};
     rt::TensorView t1B{110, 3, 2, sandbox::TernaryMode::L1};
     rt::TensorView t1Out{120, 2, 2, sandbox::TernaryMode::T50};
+    rt::TensorView t1VmacOut{130, 2, 2, sandbox::TernaryMode::T50};
     const int8_t a1[2][3] = {{1, 0, -1}, {-1, 1, 1}};
     const int8_t b1[3][2] = {{1, -1}, {1, 1}, {-1, 0}};
     const long long e1[2][2] = {{2, -1}, {-1, 2}};
@@ -271,10 +333,14 @@ void testMatmulLayerNormAndT1Dot() {
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 2; ++col) storeL1(vm, t1B, row, col, b1[row][col]);
     }
-    expect(rt::matmulT1Dot(vm, t1A, t1B, t1Out), "T1 dot matmul succeeds");
+    rt::GeneratedKernelResult t1Run = rt::matmulT1DotGenerated(vm, t1A, t1B, t1Out);
+    expectKernel(t1Run, "T1 dot matmul");
+    rt::GeneratedKernelResult t1VmacRun = rt::matmulT1DotGenerated(vm, t1A, t1B, t1VmacOut, nullptr, true);
+    expectKernel(t1VmacRun, "T1 vmac matmul");
     for (int row = 0; row < 2; ++row) {
         for (int col = 0; col < 2; ++col) {
             expectNear(readLongDouble(vm, t1Out, row, col), e1[row][col], 1e-12L, "T1 dot value");
+            expectNear(readLongDouble(vm, t1VmacOut, row, col), e1[row][col], 1e-12L, "T1 vmac value");
         }
     }
 }
@@ -282,7 +348,7 @@ void testMatmulLayerNormAndT1Dot() {
 void testTinyTransformerFixture() {
     std::cout << "[3] deterministic tiny character model fixture\n";
 
-    sandbox::vm::VMState vm(64, 512);
+    sandbox::vm::VMState vm(8192, 512);
     rt::RuntimeStats stats{};
     const auto start = std::chrono::high_resolution_clock::now();
 
@@ -330,15 +396,21 @@ void testTinyTransformerFixture() {
     };
     storeMatrix(vm, wout, woutHost);
 
-    expect(rt::layerNormRows(vm, hidden, gamma, beta, norm, &stats), "tiny layer norm succeeds");
+    rt::GeneratedKernelResult lnRun = rt::layerNormRowsGenerated(vm, hidden, gamma, beta, norm, &stats);
+    expectKernel(lnRun, "tiny layer norm");
     Matrix normHost = layerNormHost(hiddenHost);
     Matrix normRead = readMatrix(vm, norm);
     storeMatrix(vm, normT, transposeHost(normRead));
-    expect(rt::matmulAccumulator(vm, norm, normT, scores, &stats), "tiny score matmul succeeds");
-    expect(rt::softmaxRows(vm, scores, attn, &stats), "tiny attention softmax succeeds");
-    expect(rt::matmulAccumulator(vm, attn, norm, context, &stats), "tiny context matmul succeeds");
-    expect(rt::matmulAccumulator(vm, context, wout, logits, &stats), "tiny logits matmul succeeds");
-    expect(rt::softmaxRows(vm, logits, probs, &stats), "tiny logits softmax succeeds");
+    rt::GeneratedKernelResult scoreRun = rt::matmulAccumulatorGenerated(vm, norm, normT, scores, &stats);
+    expectKernel(scoreRun, "tiny score matmul");
+    rt::GeneratedKernelResult attnRun = rt::softmaxRowsGenerated(vm, scores, attn, &stats);
+    expectKernel(attnRun, "tiny attention softmax");
+    rt::GeneratedKernelResult contextRun = rt::matmulAccumulatorGenerated(vm, attn, norm, context, &stats);
+    expectKernel(contextRun, "tiny context matmul");
+    rt::GeneratedKernelResult logitsRun = rt::matmulAccumulatorGenerated(vm, context, wout, logits, &stats);
+    expectKernel(logitsRun, "tiny logits matmul");
+    rt::GeneratedKernelResult probsRun = rt::softmaxRowsGenerated(vm, logits, probs, &stats);
+    expectKernel(probsRun, "tiny logits softmax");
 
     Matrix scoreHost = matmulHost(normHost, transposeHost(normHost));
     Matrix attnHost = softmaxHost(scoreHost);
@@ -365,6 +437,7 @@ void testTinyTransformerFixture() {
     g_tinyRuntimeUs = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     g_tinyDmemWords = 138;
     g_tinyMaxError = maxError;
+    g_tinyChecksum = checksumTensor(vm, probs);
 }
 
 void testNoBridgeRuntimeHeader() {
@@ -394,18 +467,37 @@ void testNoBridgeRuntimeHeader() {
 }
 
 void appendTinyRuntimeResult() {
-    std::ofstream md("tuning_results.md", std::ios_base::app);
+    const std::string path = "optimization_baseline.md";
+    const std::string marker = "## Phase 5D Tiny Transformer VM Runtime Fixture";
+    std::string prefix;
+    {
+        std::ifstream in(path);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line == marker) break;
+            prefix += line;
+            prefix += "\n";
+        }
+    }
+
+    std::ofstream md(path, std::ios_base::trunc);
     if (!md.is_open()) return;
-    md << "\n## Phase 5B Tiny Transformer VM Runtime Fixture\n\n";
-    md << "| Runtime | DMEM Words | Scalar Ops | DMEM Loads | DMEM Stores | Runtime (us) | Max Error |\n";
-    md << "| ------- | ---------: | ---------: | ---------: | ----------: | -----------: | --------: |\n";
-    md << "| VM tensor runtime | " << g_tinyDmemWords
-       << " | " << g_tinyStats.scalarOps
+    while (!prefix.empty() && (prefix.back() == '\n' || prefix.back() == '\r')) prefix.pop_back();
+    if (!prefix.empty()) md << prefix << "\n\n";
+    md << "## Phase 5D Tiny Transformer VM Runtime Fixture\n\n";
+    md << "| Runtime | Shape | Assembly Words | VM Steps | Kernel Runs | DMEM Words | DMEM Loads | DMEM Stores | Runtime (us) | Checksum | Max Error | Notes |\n";
+    md << "| ------- | ----- | -------------: | -------: | ----------: | ---------: | ---------: | ----------: | -----------: | -------- | --------: | ----- |\n";
+    md << "| Tiny character transformer | vocab=4, seq=2, width=3, heads=1 | "
+       << g_tinyStats.generatedAssemblyWords
+       << " | " << g_tinyStats.vmSteps
+       << " | " << g_tinyStats.generatedKernels
+       << " | " << g_tinyDmemWords
        << " | " << g_tinyStats.dmemLoads
        << " | " << g_tinyStats.dmemStores
        << " | " << g_tinyRuntimeUs
+       << " | 0x" << std::hex << g_tinyChecksum << std::dec
        << " | " << static_cast<double>(g_tinyMaxError)
-       << " |\n";
+       << " | IR-generated VM kernels, no transformer opcodes |\n";
 }
 
 } // namespace
