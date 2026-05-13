@@ -71,14 +71,50 @@ def encode_t50_batch(values):
     # 4. Pack into 128-bit integer
     # result = sum((trit + 1) * 3^i)
     # Using np.dot on object arrays allows vectorizing large integer arithmetic in C.
-    p3_powers = np.array([3**i for i in range(50)], dtype=object)
-    results = np.dot((trits.astype(np.int64) + 1).astype(object), p3_powers)
+    def encode_t40_batch(values):
+        m = values.astype(np.float64)
+        e = np.zeros(len(values), dtype=np.int32)
+        
+        # Normalization — same as before
+        for _ in range(60):
+            mask_high = np.abs(m) > 1.5
+            if not np.any(mask_high): break
+            m[mask_high] /= 3.0
+            e[mask_high] += 1
+        for _ in range(60):
+            mask_low = (np.abs(m) < 0.5) & (m != 0)
+            if not np.any(mask_low): break
+            m[mask_low] *= 3.0
+            e[mask_low] -= 1
 
-    # Extract lo/hi 64-bit parts
-    lo = np.array([val & 0xFFFFFFFFFFFFFFFF for val in results], dtype=np.uint64)
-    hi = np.array([(val >> 64) & 0xFFFFFFFFFFFFFFFF for val in results], dtype=np.uint64)
-    
-    return lo, hi
+        trits = np.zeros((len(values), 40), dtype=np.int8)
+        
+        # Exponent: 7 trits, indices 33-39
+        temp_exp = e.copy()
+        for i in range(7):
+            r = ((temp_exp + 1) % 3)
+            trit = (r - 1).astype(np.int8)
+            trits[:, 33 + i] = trit
+            temp_exp = (temp_exp - trit.astype(np.int32)) // 3
+
+        # Mantissa: 33 trits, indices 0-32
+        m_temp = m.copy()
+        for i in range(32, -1, -1):
+            trit = np.zeros(len(values), dtype=np.int8)
+            trit[m_temp >= 0.5] = 1
+            trit[m_temp <= -0.5] = -1
+            trits[:, i] = trit
+            m_temp -= trit.astype(np.float64)
+            m_temp *= 3.0
+
+        # Pack into uint64 — NO object arrays, pure numpy
+        p3_powers = np.array([3**i for i in range(40)], dtype=np.uint64)
+        result = np.dot(
+            (trits.astype(np.uint64) + 1),
+            p3_powers
+        )  # result is uint64, fits natively, no hi word needed
+
+        return result  # single uint64 array, not lo/hi pair
 
 def convert_bitnet_to_trit(model_path, output_dir):
     if not os.path.exists(output_dir):

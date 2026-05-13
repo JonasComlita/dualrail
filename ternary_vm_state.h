@@ -176,7 +176,7 @@ template<typename Lane>
 }
 
 struct TernaryValue {
-    TernaryMode mode = TernaryMode::T50;
+    TernaryMode mode = TernaryMode::T40;
     UInt128 bits = 0;
 
     [[nodiscard]] static TernaryValue fromT1(T1 v) { return {TernaryMode::T1, v.data}; }
@@ -185,12 +185,30 @@ struct TernaryValue {
     [[nodiscard]] static TernaryValue fromT20(T20 v) { return {TernaryMode::T20, v.data}; }
     [[nodiscard]] static TernaryValue fromTriple(Triple v) { return {TernaryMode::T40, v.data}; }
     [[nodiscard]] static TernaryValue fromLongTriple(LongTriple v) { return {TernaryMode::T50, v.data}; }
-    [[nodiscard]] static TernaryValue fromL1(TritLane1 v) { return {TernaryMode::L1, v.rawForKernel()}; }
-    [[nodiscard]] static TernaryValue fromL5(TritLane5 v) { return {TernaryMode::L5, v.rawForKernel()}; }
-    [[nodiscard]] static TernaryValue fromL10(TritLane10 v) { return {TernaryMode::L10, v.rawForKernel()}; }
-    [[nodiscard]] static TernaryValue fromL20(TritLane20 v) { return {TernaryMode::L20, v.rawForKernel()}; }
-    [[nodiscard]] static TernaryValue fromL40(TritLane40 v) { return {TernaryMode::L40, v.rawForKernel()}; }
-    [[nodiscard]] static TernaryValue fromL50(TritLane50 v) { return {TernaryMode::L50, v.rawForKernel()}; }
+    // L-mode factories: convert lane to positional base-3 before storing.
+    // The bits field ALWAYS contains positional data, regardless of mode.
+    [[nodiscard]] static TernaryValue fromL1(TritLane1 v) {
+        return {TernaryMode::L1, fromLane(v).data};
+    }
+    [[nodiscard]] static TernaryValue fromL5(TritLane5 v) {
+        return {TernaryMode::L5, fromLane(v).data};
+    }
+    [[nodiscard]] static TernaryValue fromL10(TritLane10 v) {
+        auto pos = laneToPositional<10, uint32_t>(v);
+        return {TernaryMode::L10, UInt128{pos.data}};
+    }
+    [[nodiscard]] static TernaryValue fromL20(TritLane20 v) {
+        auto pos = laneToPositional<20, uint64_t>(v);
+        return {TernaryMode::L20, UInt128{pos.data}};
+    }
+    [[nodiscard]] static TernaryValue fromL40(TritLane40 v) {
+        auto pos = laneToPositional<40, UInt128>(v);
+        return {TernaryMode::L40, UInt128{pos.data}};
+    }
+    [[nodiscard]] static TernaryValue fromL50(TritLane50 v) {
+        auto pos = laneToPositional<50, UInt128>(v);
+        return {TernaryMode::L50, pos.data};
+    }
 
     [[nodiscard]] static TernaryValue invalid(TernaryMode m) {
         switch (m) {
@@ -210,7 +228,7 @@ struct TernaryValue {
         return fromLongTriple(LongTriple{LongTriple::OVERFLOW_DATA});
     }
 
-    [[nodiscard]] static TernaryValue zero(TernaryMode m = TernaryMode::T50) {
+    [[nodiscard]] static TernaryValue zero(TernaryMode m = TernaryMode::T40) {
         switch (m) {
             case TernaryMode::T1:  return fromT1(native_ops::fromIntT1(0));
             case TernaryMode::T5:  return fromT5(native_ops::fromIntT5(0));
@@ -234,12 +252,25 @@ struct TernaryValue {
     [[nodiscard]] T20 asT20() const { return T20{static_cast<uint32_t>(bits.toUint64())}; }
     [[nodiscard]] Triple asTriple() const { return Triple{bits.toUint64()}; }
     [[nodiscard]] LongTriple asLongTripleRaw() const { return LongTriple{bits}; }
-    [[nodiscard]] TritLane1 asL1() const { return TritLane1::fromRawForKernel(static_cast<uint8_t>(bits.toUint64())); }
-    [[nodiscard]] TritLane5 asL5() const { return TritLane5::fromRawForKernel(static_cast<uint16_t>(bits.toUint64())); }
-    [[nodiscard]] TritLane10 asL10() const { return TritLane10::fromRawForKernel(static_cast<uint32_t>(bits.toUint64())); }
-    [[nodiscard]] TritLane20 asL20() const { return TritLane20::fromRawForKernel(bits.toUint64()); }
-    [[nodiscard]] TritLane40 asL40() const { return TritLane40::fromRawForKernel(bits); }
-    [[nodiscard]] TritLane50 asL50() const { return TritLane50::fromRawForKernel(bits); }
+    // L-mode accessors: convert positional base-3 back to lane format.
+    [[nodiscard]] TritLane1 asL1() const {
+        return toLane(T1{static_cast<uint8_t>(bits.toUint64())});
+    }
+    [[nodiscard]] TritLane5 asL5() const {
+        return toLane(T5{static_cast<uint8_t>(bits.toUint64())});
+    }
+    [[nodiscard]] TritLane10 asL10() const {
+        return laneFromPositional<10, uint32_t>(T10{static_cast<uint16_t>(bits.toUint64())});
+    }
+    [[nodiscard]] TritLane20 asL20() const {
+        return laneFromPositional<20, uint64_t>(T20{static_cast<uint32_t>(bits.toUint64())});
+    }
+    [[nodiscard]] TritLane40 asL40() const {
+        return laneFromPositional<40, UInt128>(Triple{bits.toUint64()});
+    }
+    [[nodiscard]] TritLane50 asL50() const {
+        return laneFromPositional<50, UInt128>(LongTriple{bits});
+    }
 
     [[nodiscard]] bool isInvalid() const {
         switch (mode) {
@@ -249,12 +280,14 @@ struct TernaryValue {
             case TernaryMode::T20: return native_ops::isInvalid(asT20());
             case TernaryMode::T40: return native_ops::isInvalid(asTriple());
             case TernaryMode::T50: return native_ops::isInvalid(asLongTripleRaw());
-            case TernaryMode::L1:  return !asL1().isValid();
-            case TernaryMode::L5:  return !asL5().isValid();
-            case TernaryMode::L10: return !asL10().isValid();
-            case TernaryMode::L20: return !asL20().isValid();
-            case TernaryMode::L40: return !asL40().isValid();
-            case TernaryMode::L50: return !asL50().isValid();
+            // L-modes now store positional data, so isInvalid checks
+            // the same way as numeric modes (via isSpecial/OVERFLOW_DATA).
+            case TernaryMode::L1:  return native_ops::isInvalid(asT1());
+            case TernaryMode::L5:  return native_ops::isInvalid(asT5());
+            case TernaryMode::L10: return asT10().isSpecial();
+            case TernaryMode::L20: return asT20().isSpecial();
+            case TernaryMode::L40: return asTriple().isSpecial();
+            case TernaryMode::L50: return asLongTripleRaw().isSpecial();
         }
         return true;
     }
@@ -267,12 +300,13 @@ struct TernaryValue {
             case TernaryMode::T20: return asT20().isZero();
             case TernaryMode::T40: return asTriple().isZero();
             case TernaryMode::T50: return asLongTripleRaw().isZero();
-            case TernaryMode::L1:  return laneIsZero(asL1());
-            case TernaryMode::L5:  return laneIsZero(asL5());
-            case TernaryMode::L10: return laneIsZero(asL10());
-            case TernaryMode::L20: return laneIsZero(asL20());
-            case TernaryMode::L40: return laneIsZero(asL40());
-            case TernaryMode::L50: return laneIsZero(asL50());
+            // L-modes now store positional data — zero is just data == 0.
+            case TernaryMode::L1:  return asT1().isZero();
+            case TernaryMode::L5:  return asT5().isZero();
+            case TernaryMode::L10: return asT10().isZero();
+            case TernaryMode::L20: return asT20().isZero();
+            case TernaryMode::L40: return asTriple().isZero();
+            case TernaryMode::L50: return asLongTripleRaw().isZero();
         }
         return false;
     }
@@ -291,44 +325,33 @@ struct TernaryValue {
         }
         return LongTriple{LongTriple::OVERFLOW_DATA};
     }
+
+    // Structural equality: same mode AND same bit representation.
+    // Required by IR constant folding and CSE passes.
+    [[nodiscard]] bool operator==(const TernaryValue& other) const {
+        return mode == other.mode && bits == other.bits;
+    }
+    [[nodiscard]] bool operator!=(const TernaryValue& other) const {
+        return !(*this == other);
+    }
 };
 
 [[nodiscard]] inline TernaryValue convertValue(TernaryValue value, TernaryMode target) {
     if (value.mode == target) return value;
     if (value.isInvalid()) return TernaryValue::invalid(target);
 
+    // With unified positional storage, same-width L<->T is a tag change.
+    // Cross-width still needs the full arithmetic path.
     if (isLaneMode(value.mode) || isLaneMode(target)) {
-        if (modeTritWidth(value.mode) != modeTritWidth(target)) {
-            return TernaryValue::invalid(target);
+        if (modeTritWidth(value.mode) == modeTritWidth(target)) {
+            // Same width: data is identical (both positional), just change the tag.
+            return {target, value.bits};
         }
-
-        if (isNumericMode(value.mode) && isLaneMode(target)) {
-            TernaryValue numeric = convertValue(value, matchingNumericMode(target));
-            if (numeric.isInvalid()) return TernaryValue::invalid(target);
-            switch (target) {
-                case TernaryMode::L1:  return TernaryValue::fromL1(toLane(numeric.asT1()));
-                case TernaryMode::L5:  return TernaryValue::fromL5(toLane(numeric.asT5()));
-                case TernaryMode::L10: return TernaryValue::fromL10(toLane(numeric.asT10()));
-                case TernaryMode::L20: return TernaryValue::fromL20(toLane(numeric.asT20()));
-                case TernaryMode::L40: return TernaryValue::fromL40(toLane(numeric.asTriple()));
-                case TernaryMode::L50: return TernaryValue::fromL50(toLane(numeric.asLongTripleRaw()));
-                default: break;
-            }
-        }
-
-        if (isLaneMode(value.mode) && isNumericMode(target)) {
-            switch (value.mode) {
-                case TernaryMode::L1:  return convertValue(TernaryValue::fromT1(fromLane(value.asL1())), target);
-                case TernaryMode::L5:  return convertValue(TernaryValue::fromT5(fromLane(value.asL5())), target);
-                case TernaryMode::L10: return convertValue(TernaryValue::fromT10(fromLane(value.asL10())), target);
-                case TernaryMode::L20: return convertValue(TernaryValue::fromT20(fromLane(value.asL20())), target);
-                case TernaryMode::L40: return convertValue(TernaryValue::fromTriple(fromLane(value.asL40())), target);
-                case TernaryMode::L50: return convertValue(TernaryValue::fromLongTriple(fromLane(value.asL50())), target);
-                default: break;
-            }
-        }
-
-        return TernaryValue::invalid(target);
+        // Cross-width: reinterpret as numeric, then convert through LongTriple.
+        TernaryValue asNumeric = {matchingNumericMode(value.mode), value.bits};
+        TernaryValue converted = convertValue(asNumeric, matchingNumericMode(target));
+        if (converted.isInvalid()) return TernaryValue::invalid(target);
+        return {target, converted.bits};
     }
 
     LongTriple canonical = value.toLongTriple();
@@ -379,18 +402,31 @@ struct TernaryValue {
             if (pos >= 50) return 0;
             return val.asLongTripleRaw().unpack()[pos];
         }
+        // L-modes store positional data — delegate to numeric unpack.
         case TernaryMode::L1:
-            return pos == 0 && val.asL1().isValid() ? val.asL1().tritAt(0) : 0;
-        case TernaryMode::L5:
-            return pos >= 0 && pos < TritLane5::trits && val.asL5().isValid() ? val.asL5().tritAt(pos) : 0;
-        case TernaryMode::L10:
-            return pos >= 0 && pos < TritLane10::trits && val.asL10().isValid() ? val.asL10().tritAt(pos) : 0;
-        case TernaryMode::L20:
-            return pos >= 0 && pos < TritLane20::trits && val.asL20().isValid() ? val.asL20().tritAt(pos) : 0;
-        case TernaryMode::L40:
-            return pos >= 0 && pos < TritLane40::trits && val.asL40().isValid() ? val.asL40().tritAt(pos) : 0;
-        case TernaryMode::L50:
-            return pos >= 0 && pos < TritLane50::trits && val.asL50().isValid() ? val.asL50().tritAt(pos) : 0;
+            return pos == 0 ? static_cast<int8_t>(native_ops::toLongLong(val.asT1())) : 0;
+        case TernaryMode::L5: {
+            if (pos >= T5::TRITS) return 0;
+            uint8_t temp = val.asT5().data;
+            for (int i = 0; i < pos; ++i) temp = static_cast<uint8_t>(temp / 3);
+            return static_cast<int8_t>(temp % 3) - 1;
+        }
+        case TernaryMode::L10: {
+            if (pos >= 10) return 0;
+            return val.asT10().unpack()[pos];
+        }
+        case TernaryMode::L20: {
+            if (pos >= 20) return 0;
+            return val.asT20().unpack()[pos];
+        }
+        case TernaryMode::L40: {
+            if (pos >= 40) return 0;
+            return val.asTriple().unpack()[pos];
+        }
+        case TernaryMode::L50: {
+            if (pos >= 50) return 0;
+            return val.asLongTripleRaw().unpack()[pos];
+        }
     }
     return 0;
 }
@@ -466,7 +502,7 @@ struct TernaryValue {
 struct TernaryRegisterFile {
     // Registers r0..r26. r0 is hardwired zero — reads always return
     // a tagged zero; writes are silently discarded. All others are
-    // general-purpose, initialized to T50 zero on reset.
+    // general-purpose, initialized to T40 zero on reset.
     std::array<TernaryValue, REG_COUNT> reg;
 
     TernaryRegisterFile() { reset(); }
@@ -573,15 +609,20 @@ struct TernaryMemory {
     TernaryMemory(const TernaryMemory& other)
         : allocator(other.allocator) {
         allocate(other.capacity);
-        if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        try {
+            if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        } catch (...) {
+            release();
+            throw;
+        }
     }
 
     TernaryMemory& operator=(const TernaryMemory& other) {
         if (this == &other) return *this;
-        release();
-        allocator = other.allocator;
-        allocate(other.capacity);
-        if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        TernaryMemory tmp(other);  // copy-and-swap for strong exception safety
+        std::swap(words, tmp.words);
+        std::swap(capacity, tmp.capacity);
+        std::swap(allocator, tmp.allocator);
         return *this;
     }
 
@@ -685,15 +726,20 @@ struct TernaryInstructionMemory {
     TernaryInstructionMemory(const TernaryInstructionMemory& other)
         : allocator(other.allocator) {
         allocate(other.capacity);
-        if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        try {
+            if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        } catch (...) {
+            release();
+            throw;
+        }
     }
 
     TernaryInstructionMemory& operator=(const TernaryInstructionMemory& other) {
         if (this == &other) return *this;
-        release();
-        allocator = other.allocator;
-        allocate(other.capacity);
-        if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+        TernaryInstructionMemory tmp(other);  // copy-and-swap for strong exception safety
+        std::swap(words, tmp.words);
+        std::swap(capacity, tmp.capacity);
+        std::swap(allocator, tmp.allocator);
         return *this;
     }
 
@@ -803,7 +849,7 @@ enum class VMStatus : uint8_t {
 
 namespace ops {
 
-[[nodiscard]] inline TernaryValue fromLong(long long n, TernaryMode mode = TernaryMode::T50) {
+[[nodiscard]] inline TernaryValue fromLong(long long n, TernaryMode mode = TernaryMode::T40) {
     switch (mode) {
         case TernaryMode::T1:  return TernaryValue::fromT1(native_ops::fromIntT1(n));
         case TernaryMode::T5:  return TernaryValue::fromT5(native_ops::fromIntT5(n));
@@ -847,7 +893,7 @@ namespace ops {
 // SECTION 8b - Vector Register and Fault State
 // =============================================================================
 
-static constexpr int DEFAULT_VECTOR_LENGTH = 16;
+static constexpr int DEFAULT_VECTOR_LENGTH = 27;
 
 struct TernaryVectorRegister {
     std::vector<TernaryValue> lane;
@@ -926,6 +972,7 @@ struct VMState {
     TernaryVectorFile        vregfile;
     VectorFaultState         vector_faults;
     TernaryValue             accumulator;
+    std::string              syscall_buffer;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -967,6 +1014,7 @@ struct VMState {
         status     = VMStatus::RUNNING;
         trap_reg   = encodeNoTrap();
         accumulator = TernaryValue::zero();
+        syscall_buffer.clear();
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
 
@@ -1057,8 +1105,8 @@ inline void emit(std::vector<TritWord27>& prog, TritWord27 w) {
 
 // Emit shortcuts for all formats:
 inline void emitR(std::vector<TritWord27>& prog, Opcode op,
-                  uint8_t rd, uint8_t rs1, uint8_t rs2, uint8_t func = FUNC_T50) {
-    // FUNC_T50 maps to field value 0 and preserves legacy bare arithmetic.
+                  uint8_t rd, uint8_t rs1, uint8_t rs2, uint8_t func = FUNC_DEFAULT) {
+    // FUNC_DEFAULT maps to native arithmetic.
     prog.push_back(InstructionWord::encodeR(op, rd, rs1, rs2, func));
 }
 

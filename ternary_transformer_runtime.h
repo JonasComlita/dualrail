@@ -26,7 +26,7 @@ struct TensorView {
     int base = 0;
     int rows = 0;
     int cols = 0;
-    TernaryMode mode = TernaryMode::T50;
+    TernaryMode mode = TernaryMode::T40;
 };
 
 struct RuntimeStats {
@@ -60,48 +60,48 @@ inline int offsetOf(TensorView view, int row, int col) {
     return view.base + row * view.cols + col;
 }
 
-inline vm::TernaryValue asT50(vm::TernaryValue value) {
-    return vm::convertValue(value, TernaryMode::T50);
+inline vm::TernaryValue asT40(vm::TernaryValue value) {
+    return vm::convertValue(value, TernaryMode::T40);
 }
 
-inline vm::TernaryValue intValue(long long value, TernaryMode mode = TernaryMode::T50) {
+inline vm::TernaryValue intValue(long long value, TernaryMode mode = TernaryMode::T40) {
     return vm::ops::fromLong(value, mode);
 }
 
 inline vm::TernaryValue ratioValue(long long numerator, long long denominator) {
-    if (denominator == 0) return vm::TernaryValue::invalid(TernaryMode::T50);
-    return vm::exec::divideValue(intValue(numerator), intValue(denominator), TernaryMode::T50);
+    if (denominator == 0) return vm::TernaryValue::invalid(TernaryMode::T40);
+    return vm::exec::divideValue(intValue(numerator), intValue(denominator), TernaryMode::T40);
 }
 
-inline vm::TernaryValue addT50(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue addT40(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    return vm::exec::addValue(asT50(a), asT50(b), TernaryMode::T50);
+    return vm::exec::addValue(asT40(a), asT40(b), TernaryMode::T40);
 }
 
-inline vm::TernaryValue subT50(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue subT40(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    return vm::exec::subtractValue(asT50(a), asT50(b), TernaryMode::T50);
+    return vm::exec::subtractValue(asT40(a), asT40(b), TernaryMode::T40);
 }
 
-inline vm::TernaryValue mulT50(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue mulT40(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    return vm::exec::multiplyValue(asT50(a), asT50(b), TernaryMode::T50);
+    return vm::exec::multiplyValue(asT40(a), asT40(b), TernaryMode::T40);
 }
 
-inline vm::TernaryValue divT50(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue divT40(vm::TernaryValue a, vm::TernaryValue b, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    if (asT50(b).isZero()) return vm::TernaryValue::invalid(TernaryMode::T50);
-    return vm::exec::divideValue(asT50(a), asT50(b), TernaryMode::T50);
+    if (asT40(b).isZero()) return vm::TernaryValue::invalid(TernaryMode::T40);
+    return vm::exec::divideValue(asT40(a), asT40(b), TernaryMode::T40);
 }
 
-inline vm::TernaryValue negT50(vm::TernaryValue value, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue negT40(vm::TernaryValue value, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    return vm::exec::negateValue(asT50(value), TernaryMode::T50);
+    return vm::exec::negateValue(asT40(value), TernaryMode::T40);
 }
 
-inline vm::TernaryValue sqrtT50(vm::TernaryValue value, RuntimeStats* stats = nullptr) {
+inline vm::TernaryValue sqrtT40(vm::TernaryValue value, RuntimeStats* stats = nullptr) {
     if (stats) ++stats->scalarOps;
-    return vm::exec::sqrtValue(asT50(value), TernaryMode::T50);
+    return vm::exec::sqrtValue(asT40(value), TernaryMode::T40);
 }
 
 inline bool loadElement(
@@ -150,7 +150,7 @@ inline sandbox::ir::Type irTypeForMode(TernaryMode mode) {
         case TernaryMode::L40: return sandbox::ir::Type::L40;
         case TernaryMode::L50: return sandbox::ir::Type::L50;
     }
-    return sandbox::ir::Type::T50;
+    return sandbox::ir::Type::T40;
 }
 
 inline void addKernelStats(
@@ -219,11 +219,11 @@ inline sandbox::ir::Value buildExpPositiveValue(
     sandbox::ir::Value x) {
 
     using namespace sandbox::ir;
-    Value sum = program.constant(Type::T50, 1);
-    Value term = program.constant(Type::T50, 1);
+    Value sum = program.constant(Type::T40, 1);
+    Value term = program.constant(Type::T40, 1);
     for (int k = 1; k <= 22; ++k) {
         Value numerator = program.mul(term, x);
-        Value denom = program.constant(Type::T50, k);
+        Value denom = program.constant(Type::T40, k);
         Value nextTerm = program.div(numerator, denom);
         Value nextSum = program.add(sum, nextTerm);
         program.release(numerator);
@@ -240,10 +240,10 @@ inline sandbox::ir::Value buildExpPositiveValue(
 inline sandbox::ir::Program buildExpScalarProgram(int inputAddr, int outputAddr) {
     using namespace sandbox::ir;
     Program program;
-    Value inBase = program.constant(Type::T50, inputAddr);
-    Value outBase = program.constant(Type::T50, outputAddr);
-    Value x = program.load(Type::T50, inBase, 0);
-    Value zero = program.constant(Type::T50, 0);
+    Value inBase = program.constant(Type::T40, inputAddr);
+    Value outBase = program.constant(Type::T40, outputAddr);
+    Value x = program.load(Type::T40, inBase, 0);
+    Value zero = program.constant(Type::T40, 0);
     Value cond = program.cmp(x, zero);
     program.brn(cond, "negative_input");
 
@@ -255,7 +255,7 @@ inline sandbox::ir::Program buildExpScalarProgram(int inputAddr, int outputAddr)
     program.label("negative_input");
     Value mag = program.neg(x);
     Value positiveMag = buildExpPositiveValue(program, mag);
-    Value one = program.constant(Type::T50, 1);
+    Value one = program.constant(Type::T40, 1);
     Value reciprocal = program.div(one, positiveMag);
     program.store(reciprocal, outBase, 0);
     program.release(mag);
@@ -276,7 +276,7 @@ inline GeneratedKernelResult expScalarGenerated(
 
     GeneratedKernelResult result = executeGeneratedKernel(
         state,
-        "exp.t50 scalar",
+        "exp.T40 scalar",
         buildExpScalarProgram(inputAddr, outputAddr),
         4096);
     addKernelStats(stats, result, 1, 1);
@@ -286,12 +286,12 @@ inline GeneratedKernelResult expScalarGenerated(
 inline sandbox::ir::Program buildTanhFromExpProgram(int expAddr, int outputAddr) {
     using namespace sandbox::ir;
     Program program;
-    Value expBase = program.constant(Type::T50, expAddr);
-    Value outBase = program.constant(Type::T50, outputAddr);
-    Value e = program.load(Type::T50, expBase, 0);
-    Value oneA = program.constant(Type::T50, 1);
+    Value expBase = program.constant(Type::T40, expAddr);
+    Value outBase = program.constant(Type::T40, outputAddr);
+    Value e = program.load(Type::T40, expBase, 0);
+    Value oneA = program.constant(Type::T40, 1);
     Value numerator = program.sub(e, oneA);
-    Value oneB = program.constant(Type::T50, 1);
+    Value oneB = program.constant(Type::T40, 1);
     Value denominator = program.add(e, oneB);
     Value result = program.div(numerator, denominator);
     program.store(result, outBase, 0);
@@ -302,10 +302,10 @@ inline sandbox::ir::Program buildTanhFromExpProgram(int expAddr, int outputAddr)
 inline sandbox::ir::Program buildTanhPrepProgram(int inputAddr, int scratchAddr) {
     using namespace sandbox::ir;
     Program program;
-    Value inBase = program.constant(Type::T50, inputAddr);
-    Value scratchBase = program.constant(Type::T50, scratchAddr);
-    Value x = program.load(Type::T50, inBase, 0);
-    Value two = program.constant(Type::T50, 2);
+    Value inBase = program.constant(Type::T40, inputAddr);
+    Value scratchBase = program.constant(Type::T40, scratchAddr);
+    Value x = program.load(Type::T40, inBase, 0);
+    Value two = program.constant(Type::T40, 2);
     Value twoX = program.mul(two, x);
     program.store(twoX, scratchBase, 0);
     program.halt();
@@ -321,7 +321,7 @@ inline GeneratedKernelResult tanhScalarGenerated(
 
     GeneratedKernelResult prep = executeGeneratedKernel(
         state,
-        "tanh.t50 prep",
+        "tanh.T40 prep",
         buildTanhPrepProgram(inputAddr, scratchAddr),
         128);
     addKernelStats(stats, prep, 1, 1);
@@ -332,7 +332,7 @@ inline GeneratedKernelResult tanhScalarGenerated(
 
     GeneratedKernelResult finish = executeGeneratedKernel(
         state,
-        "tanh.t50 finish",
+        "tanh.T40 finish",
         buildTanhFromExpProgram(scratchAddr + 1, outputAddr),
         128);
     addKernelStats(stats, finish, 1, 1);
@@ -342,18 +342,18 @@ inline GeneratedKernelResult tanhScalarGenerated(
 inline sandbox::ir::Program buildGeluPrepProgram(int inputAddr, int scratchAddr) {
     using namespace sandbox::ir;
     Program program;
-    Value inBase = program.constant(Type::T50, inputAddr);
-    Value scratchBase = program.constant(Type::T50, scratchAddr);
-    Value x = program.load(Type::T50, inBase, 0);
+    Value inBase = program.constant(Type::T40, inputAddr);
+    Value scratchBase = program.constant(Type::T40, scratchAddr);
+    Value x = program.load(Type::T40, inBase, 0);
     Value x2 = program.mul(x, x);
     Value x3 = program.mul(x2, x);
-    Value c1n = program.constant(Type::T50, 44715);
-    Value c1d = program.constant(Type::T50, 1000000);
+    Value c1n = program.constant(Type::T40, 44715);
+    Value c1d = program.constant(Type::T40, 1000000);
     Value c1 = program.div(c1n, c1d);
     Value cubic = program.mul(c1, x3);
     Value inner = program.add(x, cubic);
-    Value c2n = program.constant(Type::T50, 797885);
-    Value c2d = program.constant(Type::T50, 1000000);
+    Value c2n = program.constant(Type::T40, 797885);
+    Value c2d = program.constant(Type::T40, 1000000);
     Value c2 = program.div(c2n, c2d);
     Value shaped = program.mul(c2, inner);
     program.store(shaped, scratchBase, 0);
@@ -364,15 +364,15 @@ inline sandbox::ir::Program buildGeluPrepProgram(int inputAddr, int scratchAddr)
 inline sandbox::ir::Program buildGeluFinishProgram(int inputAddr, int tanhAddr, int outputAddr) {
     using namespace sandbox::ir;
     Program program;
-    Value inBase = program.constant(Type::T50, inputAddr);
-    Value tanhBase = program.constant(Type::T50, tanhAddr);
-    Value outBase = program.constant(Type::T50, outputAddr);
-    Value x = program.load(Type::T50, inBase, 0);
-    Value gateRaw = program.load(Type::T50, tanhBase, 0);
-    Value one = program.constant(Type::T50, 1);
+    Value inBase = program.constant(Type::T40, inputAddr);
+    Value tanhBase = program.constant(Type::T40, tanhAddr);
+    Value outBase = program.constant(Type::T40, outputAddr);
+    Value x = program.load(Type::T40, inBase, 0);
+    Value gateRaw = program.load(Type::T40, tanhBase, 0);
+    Value one = program.constant(Type::T40, 1);
     Value gate = program.add(one, gateRaw);
-    Value halfN = program.constant(Type::T50, 1);
-    Value halfD = program.constant(Type::T50, 2);
+    Value halfN = program.constant(Type::T40, 1);
+    Value halfD = program.constant(Type::T40, 2);
     Value half = program.div(halfN, halfD);
     Value halfX = program.mul(half, x);
     Value result = program.mul(halfX, gate);
@@ -390,7 +390,7 @@ inline GeneratedKernelResult geluScalarGenerated(
 
     GeneratedKernelResult prep = executeGeneratedKernel(
         state,
-        "gelu.t50 prep",
+        "gelu.T40 prep",
         buildGeluPrepProgram(inputAddr, scratchAddr),
         256);
     addKernelStats(stats, prep, 1, 1);
@@ -401,56 +401,56 @@ inline GeneratedKernelResult geluScalarGenerated(
 
     GeneratedKernelResult finish = executeGeneratedKernel(
         state,
-        "gelu.t50 finish",
+        "gelu.T40 finish",
         buildGeluFinishProgram(inputAddr, scratchAddr + 1, outputAddr),
         256);
     addKernelStats(stats, finish, 2, 1);
     return finish;
 }
 
-inline vm::TernaryValue expT50(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
-    vm::TernaryValue x = asT50(input);
-    if (x.isInvalid()) return vm::TernaryValue::invalid(TernaryMode::T50);
+inline vm::TernaryValue expT40(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
+    vm::TernaryValue x = asT40(input);
+    if (x.isInvalid()) return vm::TernaryValue::invalid(TernaryMode::T40);
     if (x.isZero()) return intValue(1);
 
-    if (vm::exec::signValue(x, TernaryMode::T50) < 0) {
-        vm::TernaryValue positive = expT50(negT50(x, stats), stats);
-        return divT50(intValue(1), positive, stats);
+    if (vm::exec::signValue(x, TernaryMode::T40) < 0) {
+        vm::TernaryValue positive = expT40(negT40(x, stats), stats);
+        return divT40(intValue(1), positive, stats);
     }
 
     const vm::TernaryValue three = intValue(3);
     int reductions = 0;
-    while (vm::exec::compareValue(x, three, TernaryMode::T50) > 0 && reductions < 16) {
-        x = divT50(x, three, stats);
+    while (vm::exec::compareValue(x, three, TernaryMode::T40) > 0 && reductions < 16) {
+        x = divT40(x, three, stats);
         ++reductions;
     }
 
     vm::TernaryValue sum = intValue(1);
     vm::TernaryValue term = intValue(1);
     for (int k = 1; k <= 22; ++k) {
-        term = divT50(mulT50(term, x, stats), intValue(k), stats);
-        sum = addT50(sum, term, stats);
+        term = divT40(mulT40(term, x, stats), intValue(k), stats);
+        sum = addT40(sum, term, stats);
     }
     for (int i = 0; i < reductions; ++i) {
-        sum = mulT50(mulT50(sum, sum, stats), sum, stats);
+        sum = mulT40(mulT40(sum, sum, stats), sum, stats);
     }
     return sum;
 }
 
-inline vm::TernaryValue tanhT50(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
-    vm::TernaryValue twoX = mulT50(intValue(2), input, stats);
-    vm::TernaryValue e = expT50(twoX, stats);
-    return divT50(subT50(e, intValue(1), stats), addT50(e, intValue(1), stats), stats);
+inline vm::TernaryValue tanhT40(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
+    vm::TernaryValue twoX = mulT40(intValue(2), input, stats);
+    vm::TernaryValue e = expT40(twoX, stats);
+    return divT40(subT40(e, intValue(1), stats), addT40(e, intValue(1), stats), stats);
 }
 
-inline vm::TernaryValue geluT50(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
-    vm::TernaryValue x = asT50(input);
-    vm::TernaryValue x2 = mulT50(x, x, stats);
-    vm::TernaryValue x3 = mulT50(x2, x, stats);
-    vm::TernaryValue inner = addT50(x, mulT50(ratioValue(44715, 1000000), x3, stats), stats);
-    vm::TernaryValue shaped = mulT50(ratioValue(797885, 1000000), inner, stats);
-    vm::TernaryValue gate = addT50(intValue(1), tanhT50(shaped, stats), stats);
-    return mulT50(mulT50(ratioValue(1, 2), x, stats), gate, stats);
+inline vm::TernaryValue geluT40(vm::TernaryValue input, RuntimeStats* stats = nullptr) {
+    vm::TernaryValue x = asT40(input);
+    vm::TernaryValue x2 = mulT40(x, x, stats);
+    vm::TernaryValue x3 = mulT40(x2, x, stats);
+    vm::TernaryValue inner = addT40(x, mulT40(ratioValue(44715, 1000000), x3, stats), stats);
+    vm::TernaryValue shaped = mulT40(ratioValue(797885, 1000000), inner, stats);
+    vm::TernaryValue gate = addT40(intValue(1), tanhT40(shaped, stats), stats);
+    return mulT40(mulT40(ratioValue(1, 2), x, stats), gate, stats);
 }
 
 inline bool softmaxRow(
@@ -464,12 +464,12 @@ inline bool softmaxRow(
 
     vm::TernaryValue maxValue;
     if (!loadElement(state, logits, row, 0, maxValue, stats)) return false;
-    maxValue = asT50(maxValue);
+    maxValue = asT40(maxValue);
     for (int col = 1; col < logits.cols; ++col) {
         vm::TernaryValue value;
         if (!loadElement(state, logits, row, col, value, stats)) return false;
-        value = asT50(value);
-        if (vm::exec::compareValue(value, maxValue, TernaryMode::T50) > 0) maxValue = value;
+        value = asT40(value);
+        if (vm::exec::compareValue(value, maxValue, TernaryMode::T40) > 0) maxValue = value;
     }
 
     std::vector<vm::TernaryValue> exps(static_cast<std::size_t>(logits.cols));
@@ -477,13 +477,13 @@ inline bool softmaxRow(
     for (int col = 0; col < logits.cols; ++col) {
         vm::TernaryValue value;
         if (!loadElement(state, logits, row, col, value, stats)) return false;
-        exps[static_cast<std::size_t>(col)] = expT50(subT50(value, maxValue, stats), stats);
-        sum = addT50(sum, exps[static_cast<std::size_t>(col)], stats);
+        exps[static_cast<std::size_t>(col)] = expT40(subT40(value, maxValue, stats), stats);
+        sum = addT40(sum, exps[static_cast<std::size_t>(col)], stats);
     }
     if (sum.isInvalid() || sum.isZero()) return false;
 
     for (int col = 0; col < logits.cols; ++col) {
-        vm::TernaryValue probability = divT50(exps[static_cast<std::size_t>(col)], sum, stats);
+        vm::TernaryValue probability = divT40(exps[static_cast<std::size_t>(col)], sum, stats);
         if (!storeElement(state, out, row, col, probability, stats)) return false;
     }
     return true;
@@ -518,7 +518,7 @@ inline bool matmulScalar(
                 vm::TernaryValue bv;
                 if (!loadElement(state, a, row, k, av, stats)) return false;
                 if (!loadElement(state, b, k, col, bv, stats)) return false;
-                sum = addT50(sum, mulT50(av, bv, stats), stats);
+                sum = addT40(sum, mulT40(av, bv, stats), stats);
             }
             if (!storeElement(state, out, row, col, sum, stats)) return false;
         }
@@ -542,7 +542,7 @@ inline bool matmulAccumulator(
                 vm::TernaryValue bv;
                 if (!loadElement(state, a, row, k, av, stats)) return false;
                 if (!loadElement(state, b, k, col, bv, stats)) return false;
-                state.accumulator = addT50(state.accumulator, mulT50(av, bv, stats), stats);
+                state.accumulator = addT40(state.accumulator, mulT40(av, bv, stats), stats);
             }
             if (!storeElement(state, out, row, col, state.accumulator, stats)) return false;
         }
@@ -617,7 +617,7 @@ inline bool layerNormRows(
 
     if (input.rows != out.rows || input.cols != out.cols) return false;
     if (gamma.rows != 1 || beta.rows != 1 || gamma.cols != input.cols || beta.cols != input.cols) return false;
-    const vm::TernaryValue invCols = divT50(intValue(1), intValue(input.cols), stats);
+    const vm::TernaryValue invCols = divT40(intValue(1), intValue(input.cols), stats);
     const vm::TernaryValue eps = ratioValue(1, 1000);
 
     for (int row = 0; row < input.rows; ++row) {
@@ -625,23 +625,23 @@ inline bool layerNormRows(
         for (int col = 0; col < input.cols; ++col) {
             vm::TernaryValue value;
             if (!loadElement(state, input, row, col, value, stats)) return false;
-            mean = addT50(mean, value, stats);
+            mean = addT40(mean, value, stats);
         }
-        mean = mulT50(mean, invCols, stats);
+        mean = mulT40(mean, invCols, stats);
 
         vm::TernaryValue variance = intValue(0);
         std::vector<vm::TernaryValue> centered(static_cast<std::size_t>(input.cols));
         for (int col = 0; col < input.cols; ++col) {
             vm::TernaryValue value;
             if (!loadElement(state, input, row, col, value, stats)) return false;
-            centered[static_cast<std::size_t>(col)] = subT50(value, mean, stats);
-            variance = addT50(
+            centered[static_cast<std::size_t>(col)] = subT40(value, mean, stats);
+            variance = addT40(
                 variance,
-                mulT50(centered[static_cast<std::size_t>(col)], centered[static_cast<std::size_t>(col)], stats),
+                mulT40(centered[static_cast<std::size_t>(col)], centered[static_cast<std::size_t>(col)], stats),
                 stats);
         }
-        variance = mulT50(variance, invCols, stats);
-        const vm::TernaryValue denom = sqrtT50(addT50(variance, eps, stats), stats);
+        variance = mulT40(variance, invCols, stats);
+        const vm::TernaryValue denom = sqrtT40(addT40(variance, eps, stats), stats);
         if (denom.isInvalid() || denom.isZero()) return false;
 
         for (int col = 0; col < input.cols; ++col) {
@@ -649,8 +649,8 @@ inline bool layerNormRows(
             vm::TernaryValue bias;
             if (!loadElement(state, gamma, 0, col, scale, stats)) return false;
             if (!loadElement(state, beta, 0, col, bias, stats)) return false;
-            vm::TernaryValue normalized = divT50(centered[static_cast<std::size_t>(col)], denom, stats);
-            vm::TernaryValue shifted = addT50(mulT50(normalized, scale, stats), bias, stats);
+            vm::TernaryValue normalized = divT40(centered[static_cast<std::size_t>(col)], denom, stats);
+            vm::TernaryValue shifted = addT40(mulT40(normalized, scale, stats), bias, stats);
             if (!storeElement(state, out, row, col, shifted, stats)) return false;
         }
     }
@@ -666,7 +666,7 @@ inline bool rmsNormRows(
 
     if (input.rows != out.rows || input.cols != out.cols) return false;
     if (gamma.rows != 1 || gamma.cols != input.cols) return false;
-    const vm::TernaryValue invCols = divT50(intValue(1), intValue(input.cols), stats);
+    const vm::TernaryValue invCols = divT40(intValue(1), intValue(input.cols), stats);
     const vm::TernaryValue eps = ratioValue(1, 1000);
 
     for (int row = 0; row < input.rows; ++row) {
@@ -676,35 +676,35 @@ inline bool rmsNormRows(
             vm::TernaryValue value;
             if (!loadElement(state, input, row, col, value, stats)) return false;
             values[static_cast<std::size_t>(col)] = value;
-            meanSquare = addT50(meanSquare, mulT50(value, value, stats), stats);
+            meanSquare = addT40(meanSquare, mulT40(value, value, stats), stats);
         }
-        meanSquare = mulT50(meanSquare, invCols, stats);
-        const vm::TernaryValue denom = sqrtT50(addT50(meanSquare, eps, stats), stats);
+        meanSquare = mulT40(meanSquare, invCols, stats);
+        const vm::TernaryValue denom = sqrtT40(addT40(meanSquare, eps, stats), stats);
         if (denom.isInvalid() || denom.isZero()) return false;
 
         for (int col = 0; col < input.cols; ++col) {
             vm::TernaryValue scale;
             if (!loadElement(state, gamma, 0, col, scale, stats)) return false;
-            vm::TernaryValue normalized = divT50(values[static_cast<std::size_t>(col)], denom, stats);
-            vm::TernaryValue shifted = mulT50(normalized, scale, stats);
+            vm::TernaryValue normalized = divT40(values[static_cast<std::size_t>(col)], denom, stats);
+            vm::TernaryValue shifted = mulT40(normalized, scale, stats);
             if (!storeElement(state, out, row, col, shifted, stats)) return false;
         }
     }
     return true;
 }
 
-inline sandbox::ir::Value loadElementIrT50(
+inline sandbox::ir::Value loadElementIrT40(
     sandbox::ir::Program& program,
     TensorView view,
     int row,
     int col) {
 
     using namespace sandbox::ir;
-    Value base = program.constant(Type::T50, view.base);
+    Value base = program.constant(Type::T40, view.base);
     Value loaded = program.load(irTypeForMode(view.mode), base, offsetOf(view, row, col) - view.base);
     program.release(base);
-    if (view.mode == TernaryMode::T50) return loaded;
-    Value widened = program.cvt(loaded, Type::T50);
+    if (view.mode == TernaryMode::T40) return loaded;
+    Value widened = program.cvt(loaded, Type::T40);
     program.release(loaded);
     return widened;
 }
@@ -717,9 +717,9 @@ inline void storeElementIr(
     sandbox::ir::Value value) {
 
     using namespace sandbox::ir;
-    Value base = program.constant(Type::T50, view.base);
+    Value base = program.constant(Type::T40, view.base);
     Value stored = value;
-    if (view.mode != TernaryMode::T50) stored = program.cvt(value, irTypeForMode(view.mode));
+    if (view.mode != TernaryMode::T40) stored = program.cvt(value, irTypeForMode(view.mode));
     program.store(stored, base, offsetOf(view, row, col) - view.base);
     if (stored.reg != value.reg || stored.vector != value.vector) program.release(stored);
     program.release(base);
@@ -732,7 +732,7 @@ inline sandbox::ir::Program buildSoftmaxRowsProgram(TensorView logits, TensorVie
         std::vector<Value> values;
         values.reserve(static_cast<std::size_t>(logits.cols));
         for (int col = 0; col < logits.cols; ++col) {
-            values.push_back(loadElementIrT50(program, logits, row, col));
+            values.push_back(loadElementIrT40(program, logits, row, col));
         }
 
         Value maxValue = values[0];
@@ -744,12 +744,12 @@ inline sandbox::ir::Program buildSoftmaxRowsProgram(TensorView logits, TensorVie
             maxIsOwned = true;
         }
 
-        Value sum = program.constant(Type::T50, 0);
+        Value sum = program.constant(Type::T40, 0);
         for (int col = 0; col < logits.cols; ++col) {
             Value diff = program.sub(values[static_cast<std::size_t>(col)], maxValue);
             Value magnitude = program.neg(diff);
             Value expMagnitude = buildExpPositiveValue(program, magnitude);
-            Value one = program.constant(Type::T50, 1);
+            Value one = program.constant(Type::T40, 1);
             Value probNumerator = program.div(one, expMagnitude);
             storeElementIr(program, out, row, col, probNumerator);
             Value nextSum = program.add(sum, probNumerator);
@@ -765,7 +765,7 @@ inline sandbox::ir::Program buildSoftmaxRowsProgram(TensorView logits, TensorVie
         if (maxIsOwned) program.release(maxValue);
 
         for (int col = 0; col < out.cols; ++col) {
-            Value expValue = loadElementIrT50(program, out, row, col);
+            Value expValue = loadElementIrT40(program, out, row, col);
             Value probability = program.div(expValue, sum);
             storeElementIr(program, out, row, col, probability);
             program.release(expValue);
@@ -814,17 +814,17 @@ inline sandbox::ir::Program buildMatmulProgram(
     for (int row = 0; row < out.rows; ++row) {
         for (int col = 0; col < out.cols; ++col) {
             if (useAccumulator) {
-                program.aclr(Type::T50);
+                program.aclr(Type::T40);
             }
-            Value sum = program.constant(Type::T50, 0);
+            Value sum = program.constant(Type::T40, 0);
             for (int k = 0; k < a.cols; ++k) {
-                Value av = loadElementIrT50(program, a, row, k);
-                Value bv = loadElementIrT50(program, b, k, col);
+                Value av = loadElementIrT40(program, a, row, k);
+                Value bv = loadElementIrT40(program, b, k, col);
                 Value product = program.mul(av, bv);
                 if (useAccumulator) {
                     program.aadd(product);
                     program.release(sum);
-                    sum = program.astore(Type::T50);
+                    sum = program.astore(Type::T40);
                 } else {
                     Value next = program.add(sum, product);
                     program.release(sum);
@@ -897,14 +897,14 @@ inline GeneratedKernelResult matmulAccumulatorGenerated(
 inline sandbox::ir::Program buildT1DotStoreProgram(TensorView out, int row, int col, bool useVmac) {
     using namespace sandbox::ir;
     Program program;
-    Value base = program.constant(Type::T50, out.base);
+    Value base = program.constant(Type::T40, out.base);
     Value lhs = program.vparam(Type::L1);
     Value rhs = program.vparam(Type::L1);
     Value dot;
     if (useVmac) {
-        program.aclr(Type::T50);
+        program.aclr(Type::T40);
         program.vmacT1(lhs, rhs);
-        dot = program.astore(Type::T50);
+        dot = program.astore(Type::T40);
     } else {
         dot = program.vdotT1(lhs, rhs);
     }
@@ -975,19 +975,19 @@ inline sandbox::ir::Program buildLayerNormRowsProgram(
 
     using namespace sandbox::ir;
     Program program;
-    Value invColsN = program.constant(Type::T50, 1);
-    Value invColsD = program.constant(Type::T50, input.cols);
+    Value invColsN = program.constant(Type::T40, 1);
+    Value invColsD = program.constant(Type::T40, input.cols);
     Value invCols = program.div(invColsN, invColsD);
-    Value epsN = program.constant(Type::T50, 1);
-    Value epsD = program.constant(Type::T50, 1000);
+    Value epsN = program.constant(Type::T40, 1);
+    Value epsD = program.constant(Type::T40, 1000);
     Value eps = program.div(epsN, epsD);
 
     for (int row = 0; row < input.rows; ++row) {
         std::vector<Value> values;
         values.reserve(static_cast<std::size_t>(input.cols));
-        Value sum = program.constant(Type::T50, 0);
+        Value sum = program.constant(Type::T40, 0);
         for (int col = 0; col < input.cols; ++col) {
-            Value value = loadElementIrT50(program, input, row, col);
+            Value value = loadElementIrT40(program, input, row, col);
             values.push_back(value);
             Value next = program.add(sum, value);
             program.release(sum);
@@ -998,7 +998,7 @@ inline sandbox::ir::Program buildLayerNormRowsProgram(
 
         std::vector<Value> centered;
         centered.reserve(static_cast<std::size_t>(input.cols));
-        Value varianceSum = program.constant(Type::T50, 0);
+        Value varianceSum = program.constant(Type::T40, 0);
         for (int col = 0; col < input.cols; ++col) {
             Value delta = program.sub(values[static_cast<std::size_t>(col)], mean);
             Value square = program.mul(delta, delta);
@@ -1020,8 +1020,8 @@ inline sandbox::ir::Program buildLayerNormRowsProgram(
 
         for (int col = 0; col < input.cols; ++col) {
             Value normalized = program.div(centered[static_cast<std::size_t>(col)], denom);
-            Value scale = loadElementIrT50(program, gamma, 0, col);
-            Value bias = loadElementIrT50(program, beta, 0, col);
+            Value scale = loadElementIrT40(program, gamma, 0, col);
+            Value bias = loadElementIrT40(program, beta, 0, col);
             Value scaled = program.mul(normalized, scale);
             Value shifted = program.add(scaled, bias);
             storeElementIr(program, out, row, col, shifted);
@@ -1084,19 +1084,19 @@ inline sandbox::ir::Program buildRmsNormRowsProgram(
 
     using namespace sandbox::ir;
     Program program;
-    Value invColsN = program.constant(Type::T50, 1);
-    Value invColsD = program.constant(Type::T50, input.cols);
+    Value invColsN = program.constant(Type::T40, 1);
+    Value invColsD = program.constant(Type::T40, input.cols);
     Value invCols = program.div(invColsN, invColsD);
-    Value epsN = program.constant(Type::T50, 1);
-    Value epsD = program.constant(Type::T50, 1000);
+    Value epsN = program.constant(Type::T40, 1);
+    Value epsD = program.constant(Type::T40, 1000);
     Value eps = program.div(epsN, epsD);
 
     for (int row = 0; row < input.rows; ++row) {
         std::vector<Value> values;
         values.reserve(static_cast<std::size_t>(input.cols));
-        Value meanSquareSum = program.constant(Type::T50, 0);
+        Value meanSquareSum = program.constant(Type::T40, 0);
         for (int col = 0; col < input.cols; ++col) {
-            Value value = loadElementIrT50(program, input, row, col);
+            Value value = loadElementIrT40(program, input, row, col);
             values.push_back(value);
             Value square = program.mul(value, value);
             Value next = program.add(meanSquareSum, square);
@@ -1113,7 +1113,7 @@ inline sandbox::ir::Program buildRmsNormRowsProgram(
 
         for (int col = 0; col < input.cols; ++col) {
             Value normalized = program.div(values[static_cast<std::size_t>(col)], denom);
-            Value scale = loadElementIrT50(program, gamma, 0, col);
+            Value scale = loadElementIrT40(program, gamma, 0, col);
             Value shifted = program.mul(normalized, scale);
             storeElementIr(program, out, row, col, shifted);
             program.release(values[static_cast<std::size_t>(col)]);

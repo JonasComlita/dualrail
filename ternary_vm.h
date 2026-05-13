@@ -459,15 +459,15 @@ inline void writeVectorSelect(
     VMState& vm,
     uint8_t scalarReg,
     TernaryMode sourceMode,
-    TernaryValue& outT50) {
+    TernaryValue& outNative) {
 
     if (!isNumericMode(sourceMode)) return false;
     TernaryValue source = vm.regfile.read(scalarReg);
     if (!isNumericMode(source.mode) || source.isInvalid()) return false;
     TernaryValue typed = convertValue(source, sourceMode);
     if (typed.isInvalid()) return false;
-    outT50 = convertValue(typed, TernaryMode::T50);
-    return outT50.mode == TernaryMode::T50 && !outT50.isInvalid();
+    outNative = convertValue(typed, TernaryMode::T40);
+    return outNative.mode == TernaryMode::T40 && !outNative.isInvalid();
 }
 
 [[nodiscard]] inline bool t1Product(TernaryValue lhs, TernaryValue rhs, int8_t& product) {
@@ -688,7 +688,7 @@ inline VMStatus step(VMState& vm) {
     int pc_next = vm.pc + 1;  // default: advance by one word
 
     auto decodeWidth = [&]() -> std::pair<bool, TernaryMode> {
-        TernaryMode mode = TernaryMode::T50;
+        TernaryMode mode = TernaryMode::T40;
         if (!exec::numericModeFromFunc(iw.func, mode)) {
             vm.trap(TrapCode::TRAP_ILLEGAL_OP);
             return {false, mode};
@@ -735,17 +735,30 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::MOVH: {
-            // I-type: Rd ← (current Rd & lower 16 trits) | (imm16 << 16)
+            // I-type: Rd ← (current Rd lower 16 trits) | (imm << 16 trits)
             // Loads the upper half of a 32-trit constant. Use MOV then MOVH
             // to construct large immediates: MOV loads low 16, MOVH loads high 16.
-            // Implemented as an integer scale by 3^16 until native trit-shift exists.
-            long long shifted = static_cast<long long>(iw.imm);
-            // 3^16 = 43,046,721
-            shifted *= 43046721LL;
-            // Combine: read Rd, mask off upper trits, OR in shifted value.
-            // Simpler for Phase 3: just load the shifted value.
-            // Full combine requires trit masking — deferred to Phase 4 assembler.
-            vm.regfile.write(iw.rd, sandbox::vm::ops::fromLong(shifted));
+            //
+            // Algorithm: unpack rd → 50 trits, decompose imm into balanced
+            // ternary and write into trit positions [16..31], zero [32..49],
+            // then repack.
+            TernaryValue current = vm.regfile.read(iw.rd);
+            LongTriple currentLT = current.toLongTriple();
+            auto trits = currentLT.unpack();
+
+            // Decompose imm into balanced ternary trits for positions [16..31].
+            int immVal = iw.imm;
+            for (int i = 16; i < 32; ++i) {
+                int r = (immVal + 1) % 3;
+                if (r < 0) r += 3;
+                int8_t trit = static_cast<int8_t>(r - 1);
+                trits[i] = trit;
+                immVal = (immVal - trit) / 3;
+            }
+            // Zero out trits [32..49] to avoid stale data from prior rd value.
+            for (int i = 32; i < 50; ++i) trits[i] = 0;
+
+            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
             break;
         }
 
@@ -888,14 +901,14 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::CVT: {
-            TernaryMode mode = TernaryMode::T50;
+            TernaryMode mode = TernaryMode::T40;
             if (!exec::modeFromFunc(iw.func, mode)) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
             TernaryValue source = vm.regfile.read(iw.rs1);
             if (isWidthFunc(iw.rs2)) {
-                TernaryMode sourceMode = TernaryMode::T50;
+                TernaryMode sourceMode = TernaryMode::T40;
                 if (!exec::modeFromFunc(iw.rs2, sourceMode)) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return vm.status;
@@ -994,7 +1007,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::VLOAD: {
-            TernaryMode mode = TernaryMode::T50;
+            TernaryMode mode = TernaryMode::T40;
             if (!exec::numericModeFromFunc(iw.func, mode) ||
                 !exec::validVectorReg(iw.rd)) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
@@ -1029,7 +1042,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::VSTORE: {
-            TernaryMode mode = TernaryMode::T50;
+            TernaryMode mode = TernaryMode::T40;
             if (!exec::numericModeFromFunc(iw.func, mode) ||
                 !exec::validVectorReg(iw.rd)) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
@@ -1066,7 +1079,7 @@ inline VMStatus step(VMState& vm) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            vm.accumulator = TernaryValue::zero(TernaryMode::T50);
+            vm.accumulator = TernaryValue::zero(TernaryMode::T40);
             break;
         }
 
@@ -1075,20 +1088,20 @@ inline VMStatus step(VMState& vm) {
         case Opcode::ASUB:
         case Opcode::AMUL: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue sourceT50;
-            if (!exec::accumulatorSource(vm, iw.rs1, mode, sourceT50)) {
+            TernaryValue sourceNative;
+            if (!exec::accumulatorSource(vm, iw.rs1, mode, sourceNative)) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
 
             if (iw.opcode == Opcode::ALOAD) {
-                vm.accumulator = sourceT50;
+                vm.accumulator = sourceNative;
             } else if (iw.opcode == Opcode::AADD) {
-                vm.accumulator = exec::addValue(vm.accumulator, sourceT50, TernaryMode::T50);
+                vm.accumulator = exec::addValue(vm.accumulator, sourceNative, TernaryMode::T40);
             } else if (iw.opcode == Opcode::ASUB) {
-                vm.accumulator = exec::subtractValue(vm.accumulator, sourceT50, TernaryMode::T50);
+                vm.accumulator = exec::subtractValue(vm.accumulator, sourceNative, TernaryMode::T40);
             } else {
-                vm.accumulator = exec::multiplyValue(vm.accumulator, sourceT50, TernaryMode::T50);
+                vm.accumulator = exec::multiplyValue(vm.accumulator, sourceNative, TernaryMode::T40);
             }
 
             if (vm.accumulator.isInvalid()) {
@@ -1121,7 +1134,7 @@ inline VMStatus step(VMState& vm) {
             if (iw.opcode == Opcode::VDOT) {
                 if (!writeChecked(iw.rd, dot)) return vm.status;
             } else {
-                vm.accumulator = exec::addValue(vm.accumulator, dot, TernaryMode::T50);
+                vm.accumulator = exec::addValue(vm.accumulator, dot, TernaryMode::T40);
                 if (vm.accumulator.isInvalid()) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return vm.status;
@@ -1144,8 +1157,8 @@ inline VMStatus step(VMState& vm) {
 
         case Opcode::VPACK:
         case Opcode::VUNPACK: {
-            TernaryMode sourceMode = TernaryMode::T50;
-            TernaryMode targetMode = TernaryMode::T50;
+            TernaryMode sourceMode = TernaryMode::T40;
+            TernaryMode targetMode = TernaryMode::T40;
             if (!exec::numericModeFromFunc(iw.rs2, sourceMode) ||
                 !exec::numericModeFromFunc(iw.func, targetMode) ||
                 !exec::validVectorReg(iw.rd) ||
@@ -1240,16 +1253,16 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::STORE: {
-            // I-type: dmem[Rs1 + imm16] ← Rd
-            // Rd field is the SOURCE register (the value to store).
-            // Rs1 field is the BASE ADDRESS register.
+            // I-type: dmem[Rs1 + imm16] ← rs_store
+            // rs_store is the SOURCE register (the value to store).
+            // Rs1 is the BASE ADDRESS register.
             if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
             long long base = ops::toLong(vm.regfile.read(iw.rs1));
             int       addr = static_cast<int>(base + iw.imm);
-            MemFaultCode fc = vm.dmem.store(addr, vm.regfile.read(iw.rd));
+            MemFaultCode fc = vm.dmem.store(addr, vm.regfile.read(iw.rs_store));
             if (fc != MemFaultCode::OK) {
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
@@ -1308,6 +1321,276 @@ inline VMStatus step(VMState& vm) {
                 return vm.status;
             }
             pc_next = ret_addr;
+            break;
+        }
+        // ----- Phase 2 Extensions -----------------------------------
+
+        case Opcode::TWCMP: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue s1 = vm.regfile.read(iw.rs1);
+            TernaryValue s2 = vm.regfile.read(iw.rs2);
+            TernaryValue s3 = vm.regfile.read(iw.rs3);
+            if (!isNumericMode(s1.mode) || !isNumericMode(s2.mode) || !isNumericMode(s3.mode) ||
+                s1.isInvalid() || s2.isInvalid() || s3.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            int8_t res = 0;
+            if (exec::compareValue(s1, s2, mode) == T_NEG) {
+                res = T_NEG;
+            } else if (exec::compareValue(s1, s3, mode) == T_POS) {
+                res = T_POS;
+            } else {
+                res = T_ZER;
+            }
+            vm.regfile.write(iw.rd, makeTritResult(res));
+            break;
+        }
+
+        case Opcode::TCLAMP: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue s1 = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue s2 = convertValue(vm.regfile.read(iw.rs2), mode);
+            TernaryValue s3 = convertValue(vm.regfile.read(iw.rs3), mode);
+            if (!isNumericMode(s1.mode) || !isNumericMode(s2.mode) || !isNumericMode(s3.mode) ||
+                s1.isInvalid() || s2.isInvalid() || s3.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            // min(s1, s3)
+            TernaryValue min_val = (exec::compareValue(s1, s3, mode) == T_POS) ? s3 : s1;
+            // max(s2, min_val)
+            TernaryValue clamped = (exec::compareValue(s2, min_val, mode) == T_POS) ? s2 : min_val;
+            writeChecked(iw.rd, clamped);
+            break;
+        }
+
+        case Opcode::CALLR: {
+            TernaryValue target = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(target.mode) || target.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            int dest = exec::pcFromValue(target);
+            if (dest < 0 || !vm.imem.inRange(dest)) {
+                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                return vm.status;
+            }
+            vm.regfile.writeLR(sandbox::vm::ops::fromLong(vm.pc + 1));
+            pc_next = dest;
+            break;
+        }
+
+        case Opcode::JMPR: {
+            TernaryValue target = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(target.mode) || target.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            int dest = exec::pcFromValue(target);
+            if (dest < 0 || !vm.imem.inRange(dest)) {
+                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                return vm.status;
+            }
+            pc_next = dest;
+            break;
+        }
+
+        case Opcode::TMOD: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            if (a.isInvalid() || b.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (b.isZero()) {
+                vm.trap(TrapCode::TRAP_DIV_ZERO);
+                return vm.status;
+            }
+            TernaryValue quot = exec::divideValue(a, b, mode);
+            TernaryValue prod = exec::multiplyValue(quot, b, mode);
+            TernaryValue rem  = exec::subtractValue(a, prod, mode);
+            if (!writeChecked(iw.rd, rem)) return vm.status;
+            break;
+        }
+
+        case Opcode::TLSHIFT:
+        case Opcode::TRSHIFT: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue b = vm.regfile.read(iw.rs2);
+            if (a.isInvalid() || !isNumericMode(b.mode) || b.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            long long k = ops::toLong(b);
+            bool is_left = (iw.opcode == Opcode::TLSHIFT);
+            if (k < 0) {
+                is_left = !is_left;
+                k = -k;
+            }
+            if (k > 60) k = 60;
+            TernaryValue three = convertValue(sandbox::vm::ops::fromLong(3), mode);
+            TernaryValue res = a;
+            for (long long i = 0; i < k; ++i) {
+                if (is_left) {
+                    res = exec::multiplyValue(res, three, mode);
+                } else {
+                    res = exec::divideValue(res, three, mode);
+                }
+            }
+            if (!writeChecked(iw.rd, res)) return vm.status;
+            break;
+        }
+
+        case Opcode::TMAC: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue src1Native;
+            TernaryValue src2Native;
+            if (!exec::accumulatorSource(vm, iw.rs1, mode, src1Native) ||
+                !exec::accumulatorSource(vm, iw.rs2, mode, src2Native)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue prod = exec::multiplyValue(src1Native, src2Native, TernaryMode::T40);
+            vm.accumulator = exec::addValue(vm.accumulator, prod, TernaryMode::T40);
+            if (vm.accumulator.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            break;
+        }
+
+        case Opcode::TCOUNT: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue val = convertValue(vm.regfile.read(iw.rs1), mode);
+            if (val.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            int num_trits = 0;
+            switch (mode) {
+                case TernaryMode::T1:  num_trits = 1;  break;
+                case TernaryMode::T5:  num_trits = 5;  break;
+                case TernaryMode::T10: num_trits = 10; break;
+                case TernaryMode::T20: num_trits = 20; break;
+                case TernaryMode::T40: num_trits = 40; break;
+                case TernaryMode::T50: num_trits = 50; break;
+                default: break;
+            }
+            long long count = 0;
+            for (int i = 0; i < num_trits; ++i) {
+                if (readStoredTrit(val, i) != 0) ++count;
+            }
+            if (!writeChecked(iw.rd, sandbox::vm::ops::fromLong(count))) return vm.status;
+            break;
+        }
+
+        case Opcode::TSCAN: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            TernaryValue val = convertValue(vm.regfile.read(iw.rs1), mode);
+            if (val.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            int num_trits = 0;
+            switch (mode) {
+                case TernaryMode::T1:  num_trits = 1;  break;
+                case TernaryMode::T5:  num_trits = 5;  break;
+                case TernaryMode::T10: num_trits = 10; break;
+                case TernaryMode::T20: num_trits = 20; break;
+                case TernaryMode::T40: num_trits = 40; break;
+                case TernaryMode::T50: num_trits = 50; break;
+                default: break;
+            }
+            long long index = -1;
+            for (int i = num_trits - 1; i >= 0; --i) {
+                if (readStoredTrit(val, i) != 0) {
+                    index = i;
+                    break;
+                }
+            }
+            if (!writeChecked(iw.rd, sandbox::vm::ops::fromLong(index))) return vm.status;
+            break;
+        }
+
+        case Opcode::SYSCALL: {
+            if (iw.imm == 1) {
+                long long val = sandbox::vm::ops::toLong(vm.regfile.read(1));
+                vm.syscall_buffer += std::to_string(val);
+            } else if (iw.imm == 2) {
+                vm.syscall_buffer += "\n";
+            } else if (iw.imm == 3) {
+                vm.syscall_buffer.clear();
+            } else {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            break;
+        }
+
+        case Opcode::FENCE: {
+            // Full memory barrier execution marker.
+            break;
+        }
+
+        case Opcode::VSUM: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            TernaryValue sum = TernaryValue::zero(mode);
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                TernaryValue val;
+                if (!exec::convertVectorNumericLane(vm.vregfile.reg[iw.rs1].read(lane), mode, val)) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+                sum = exec::addValue(sum, val, mode);
+                if (sum.isInvalid()) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+            }
+            if (!writeChecked(iw.rd, sum)) return vm.status;
+            break;
+        }
+
+        case Opcode::VHMIN:
+        case Opcode::VHMAX: {
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            if (!exec::validVectorReg(iw.rs1)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            exec::prepareVectorOp(vm);
+            if (vm.vector_length <= 0) {
+                if (!writeChecked(iw.rd, TernaryValue::zero(mode))) return vm.status;
+                break;
+            }
+            TernaryValue best;
+            if (!exec::convertVectorNumericLane(vm.vregfile.reg[iw.rs1].read(0), mode, best)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            bool is_min = (iw.opcode == Opcode::VHMIN);
+            for (int lane = 1; lane < vm.vector_length; ++lane) {
+                TernaryValue val;
+                if (!exec::convertVectorNumericLane(vm.vregfile.reg[iw.rs1].read(lane), mode, val)) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
+                int8_t cmp = exec::compareValue(best, val, mode);
+                if (is_min) {
+                    if (cmp == T_POS) best = val;
+                } else {
+                    if (cmp == T_NEG) best = val;
+                }
+            }
+            if (!writeChecked(iw.rd, best)) return vm.status;
             break;
         }
 

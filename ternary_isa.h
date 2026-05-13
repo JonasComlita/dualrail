@@ -254,6 +254,14 @@ static constexpr int FIELD_RS2_LSB   = 13;  static constexpr int FIELD_RS2_W   =
 static constexpr int FIELD_FUNC_LSB  = 10;  static constexpr int FIELD_FUNC_W  = 3;
 static constexpr int FIELD_PAD_LSB   =  0;  static constexpr int FIELD_PAD_W   = 10;
 
+// Extended R4 layout for TWCMP and TCLAMP:
+// [fmt:1 | opcode:4 | rd:3 | rs1:3 | rs2:3 | rs3:3 | func:3 | reserved:4]
+static constexpr int FIELD_R4_RD_LSB   = 19;  static constexpr int FIELD_R4_RD_W   = 3;
+static constexpr int FIELD_R4_RS1_LSB  = 16;  static constexpr int FIELD_R4_RS1_W  = 3;
+static constexpr int FIELD_R4_RS2_LSB  = 13;  static constexpr int FIELD_R4_RS2_W  = 3;
+static constexpr int FIELD_R4_RS3_LSB  = 10;  static constexpr int FIELD_R4_RS3_W  = 3;
+static constexpr int FIELD_R4_FUNC_LSB =  7;  static constexpr int FIELD_R4_FUNC_W = 3;
+
 // Extended R5 layout for TSEL:
 // [fmt:1 | opcode:4 | rd:3 | rCond:3 | rNeg:3 | rZero:3 | rPos:3 | reserved:7]
 static constexpr int FIELD_R5_RD_LSB    = 19;  static constexpr int FIELD_R5_RD_W    = 3;
@@ -388,14 +396,31 @@ enum class Opcode : uint8_t {
     VGATHER  = 57,
     VSCATTER = 58,
 
+    // --- Phase 2 ISA Extension ---
+    TWCMP    = 59,
+    CALLR    = 60,
+    JMPR     = 61,
+    TMOD     = 62,
+    TLSHIFT  = 63,
+    TRSHIFT  = 64,
+    TMAC     = 65,
+    TCOUNT   = 66,
+    TSCAN    = 67,
+    TCLAMP   = 68,
+    SYSCALL  = 69,
+    FENCE    = 70,
+    VSUM     = 71,
+    VHMIN    = 72,
+    VHMAX    = 73,
+
     // --- Reserved ---
-    // Values 59-80 are reserved for future extension.
+    // Values 74-80 are reserved for future extension.
     // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
     RESERVED = 255  // Sentinel — never encoded into an instruction word.
 };
 
-static constexpr uint8_t OPCODE_MAX_ASSIGNED = 58;  // VSCATTER
-static constexpr uint8_t OPCODE_RESERVED_START = 59;
+static constexpr uint8_t OPCODE_MAX_ASSIGNED = 73;  // VHMAX
+static constexpr uint8_t OPCODE_RESERVED_START = 74;
 
 static constexpr uint8_t FUNC_T1  =  8;
 static constexpr uint8_t FUNC_T5  =  9;
@@ -409,6 +434,7 @@ static constexpr uint8_t FUNC_L10 = 16;
 static constexpr uint8_t FUNC_L20 = 17;
 static constexpr uint8_t FUNC_L40 = 18;
 static constexpr uint8_t FUNC_L50 = 19;
+static constexpr uint8_t FUNC_DEFAULT = FUNC_T40;
 
 [[nodiscard]] inline bool isNumericWidthFunc(uint8_t func) {
     return func == FUNC_T1  || func == FUNC_T5  || func == FUNC_T10 ||
@@ -540,6 +566,10 @@ struct InstructionWord {
     uint8_t rs2  = 0;
     uint8_t func = 0;
 
+    // Extended R4 fields for window ops.
+    bool    r4_layout = false;
+    uint8_t rs3       = 0;
+
     // Extended R5 fields, currently used by TSEL.
     bool    r5_layout = false;
     uint8_t rcond = 0;
@@ -553,6 +583,10 @@ struct InstructionWord {
 
     // B-type condition register (reuses rd field position)
     uint8_t rs_branch = 0;
+
+    // STORE source register — aliases the rd field position but semantically
+    // represents the data source, not a destination.
+    uint8_t rs_store = 0;
 
     // True if the raw TritWord27 contained any 0b11 trit pattern.
     bool malformed = false;
@@ -610,7 +644,14 @@ struct InstructionWord {
                     iw.rs2   = iw.rneg;
                     iw.func  = (iw.opcode == Opcode::VSEL || iw.opcode == Opcode::VBLEND)
                         ? static_cast<uint8_t>(w.getField(FIELD_R5_FUNC_LSB, FIELD_R5_FUNC_W) + REG_FIELD_OFFSET)
-                        : FUNC_T50;
+                        : FUNC_DEFAULT;
+                } else if (iw.opcode == Opcode::TWCMP || iw.opcode == Opcode::TCLAMP) {
+                    iw.r4_layout = true;
+                    iw.rd   = static_cast<uint8_t>(w.getField(FIELD_R4_RD_LSB,   FIELD_R4_RD_W)   + REG_FIELD_OFFSET);
+                    iw.rs1  = static_cast<uint8_t>(w.getField(FIELD_R4_RS1_LSB,  FIELD_R4_RS1_W)  + REG_FIELD_OFFSET);
+                    iw.rs2  = static_cast<uint8_t>(w.getField(FIELD_R4_RS2_LSB,  FIELD_R4_RS2_W)  + REG_FIELD_OFFSET);
+                    iw.rs3  = static_cast<uint8_t>(w.getField(FIELD_R4_RS3_LSB,  FIELD_R4_RS3_W)  + REG_FIELD_OFFSET);
+                    iw.func = static_cast<uint8_t>(w.getField(FIELD_R4_FUNC_LSB, FIELD_R4_FUNC_W) + REG_FIELD_OFFSET);
                 } else {
                     iw.rd   = static_cast<uint8_t>(w.getField(FIELD_RD_LSB,   FIELD_RD_W)   + REG_FIELD_OFFSET);
                     iw.rs1  = static_cast<uint8_t>(w.getField(FIELD_RS1_LSB,  FIELD_RS1_W)  + REG_FIELD_OFFSET);
@@ -620,8 +661,9 @@ struct InstructionWord {
                 break;
 
             case InstructionFormat::I_TYPE:
-                iw.rd   = static_cast<uint8_t>(w.getField(FIELD_RD_LSB,  FIELD_RD_W)  + REG_FIELD_OFFSET);
-                iw.rs1  = static_cast<uint8_t>(w.getField(FIELD_RS1_LSB, FIELD_RS1_W) + REG_FIELD_OFFSET);
+                iw.rd       = static_cast<uint8_t>(w.getField(FIELD_RD_LSB,  FIELD_RD_W)  + REG_FIELD_OFFSET);
+                iw.rs1      = static_cast<uint8_t>(w.getField(FIELD_RS1_LSB, FIELD_RS1_W) + REG_FIELD_OFFSET);
+                iw.rs_store = iw.rd;  // STORE uses the rd-position field as source
                 if (iw.opcode == Opcode::VLOAD || iw.opcode == Opcode::VSTORE) {
                     iw.func = static_cast<uint8_t>(w.getField(FIELD_VMEM_FUNC_LSB, FIELD_VMEM_FUNC_W) + REG_FIELD_OFFSET);
                     iw.imm  = decodeSigned(w, FIELD_VMEM_IMM_LSB, FIELD_VMEM_IMM_W);
@@ -649,6 +691,8 @@ struct InstructionWord {
             if (iw.r5_layout) {
                 checkReg(iw.rd); checkReg(iw.rcond); checkReg(iw.rneg);
                 checkReg(iw.rzero); checkReg(iw.rpos);
+            } else if (iw.r4_layout) {
+                checkReg(iw.rd); checkReg(iw.rs1); checkReg(iw.rs2); checkReg(iw.rs3);
             } else {
                 checkReg(iw.rd); checkReg(iw.rs1); checkReg(iw.rs2);
             }
@@ -668,7 +712,7 @@ struct InstructionWord {
 
     [[nodiscard]] static TritWord27 encodeR(Opcode op,
                                             uint8_t rd, uint8_t rs1, uint8_t rs2,
-                                            uint8_t func = FUNC_T50) {
+                                            uint8_t func = FUNC_DEFAULT) {
         TritWord27 w;
         w.setTrit(FIELD_FMT_LSB, T_POS);
         setOpcode(w, op);
@@ -680,13 +724,30 @@ struct InstructionWord {
         return w;
     }
 
+    [[nodiscard]] static TritWord27 encodeR4(Opcode op,
+                                             uint8_t rd,
+                                             uint8_t rs1,
+                                             uint8_t rs2,
+                                             uint8_t rs3,
+                                             uint8_t func = FUNC_DEFAULT) {
+        TritWord27 w;
+        w.setTrit(FIELD_FMT_LSB, T_POS);
+        setOpcode(w, op);
+        w.setField(FIELD_R4_RD_LSB,   FIELD_R4_RD_W,   static_cast<int>(rd)   - REG_FIELD_OFFSET);
+        w.setField(FIELD_R4_RS1_LSB,  FIELD_R4_RS1_W,  static_cast<int>(rs1)  - REG_FIELD_OFFSET);
+        w.setField(FIELD_R4_RS2_LSB,  FIELD_R4_RS2_W,  static_cast<int>(rs2)  - REG_FIELD_OFFSET);
+        w.setField(FIELD_R4_RS3_LSB,  FIELD_R4_RS3_W,  static_cast<int>(rs3)  - REG_FIELD_OFFSET);
+        w.setField(FIELD_R4_FUNC_LSB, FIELD_R4_FUNC_W, static_cast<int>(func) - REG_FIELD_OFFSET);
+        return w;
+    }
+
     [[nodiscard]] static TritWord27 encodeR5(Opcode op,
                                              uint8_t rd,
                                              uint8_t rcond,
                                              uint8_t rneg,
                                              uint8_t rzero,
                                              uint8_t rpos,
-                                             uint8_t func = FUNC_T50) {
+                                             uint8_t func = FUNC_DEFAULT) {
         TritWord27 w;
         w.setTrit(FIELD_FMT_LSB, T_POS);
         setOpcode(w, op);
@@ -711,6 +772,14 @@ struct InstructionWord {
         w.setField(FIELD_RS1_LSB, FIELD_RS1_W, static_cast<int>(rs1) - REG_FIELD_OFFSET);
         encodeSigned(w, FIELD_IMM16_LSB, FIELD_IMM16_W, imm);
         return w;
+    }
+
+    // STORE-type encoding: semantically identical to encodeI but names the
+    // rd-position field as rs_store (source data) and rs1 as rs_base (address).
+    [[nodiscard]] static TritWord27 encodeS(Opcode op,
+                                            uint8_t rs_store, uint8_t rs_base,
+                                            int imm) {
+        return encodeI(op, rs_store, rs_base, imm);
     }
 
     [[nodiscard]] static TritWord27 encodeVectorMemory(Opcode op,
@@ -939,6 +1008,21 @@ inline bool verifyRoundTrip() {
         case Opcode::VSWAP:  return "VSWAP";
         case Opcode::VGATHER: return "VGATHER";
         case Opcode::VSCATTER: return "VSCATTER";
+        case Opcode::TWCMP:   return "TWCMP";
+        case Opcode::CALLR:   return "CALLR";
+        case Opcode::JMPR:    return "JMPR";
+        case Opcode::TMOD:    return "TMOD";
+        case Opcode::TLSHIFT: return "TLSHIFT";
+        case Opcode::TRSHIFT: return "TRSHIFT";
+        case Opcode::TMAC:    return "TMAC";
+        case Opcode::TCOUNT:  return "TCOUNT";
+        case Opcode::TSCAN:   return "TSCAN";
+        case Opcode::TCLAMP:  return "TCLAMP";
+        case Opcode::SYSCALL: return "SYSCALL";
+        case Opcode::FENCE:   return "FENCE";
+        case Opcode::VSUM:    return "VSUM";
+        case Opcode::VHMIN:   return "VHMIN";
+        case Opcode::VHMAX:   return "VHMAX";
         default:            return "???";
     }
 }
@@ -971,7 +1055,12 @@ inline bool verifyRoundTrip() {
          iw.opcode == Opcode::SQRT || iw.opcode == Opcode::NEG ||
          iw.opcode == Opcode::ABS || iw.opcode == Opcode::TCMP ||
          iw.opcode == Opcode::TMIN || iw.opcode == Opcode::TMAX ||
-         iw.opcode == Opcode::TINV || iw.opcode == Opcode::CVT) &&
+         iw.opcode == Opcode::TINV || iw.opcode == Opcode::CVT ||
+         iw.opcode == Opcode::TMOD || iw.opcode == Opcode::TLSHIFT ||
+         iw.opcode == Opcode::TRSHIFT || iw.opcode == Opcode::TMAC ||
+         iw.opcode == Opcode::TCOUNT || iw.opcode == Opcode::TSCAN ||
+         iw.opcode == Opcode::TCLAMP || iw.opcode == Opcode::VSUM ||
+         iw.opcode == Opcode::VHMIN || iw.opcode == Opcode::VHMAX) &&
         iw.func != FUNC_T50) {
         mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&
@@ -1007,6 +1096,11 @@ inline bool verifyRoundTrip() {
                    + ", r" + std::to_string(iw.rneg)
                    + ", r" + std::to_string(iw.rzero)
                    + ", r" + std::to_string(iw.rpos);
+            } else if (iw.r4_layout) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", r" + std::to_string(iw.rs1)
+                   + ", r" + std::to_string(iw.rs2)
+                   + ", r" + std::to_string(iw.rs3);
             } else if (iw.opcode == Opcode::VSEL) {
                 s += "v" + std::to_string(iw.rd)
                    + ", v" + std::to_string(iw.rcond)
@@ -1076,9 +1170,24 @@ inline bool verifyRoundTrip() {
                        iw.opcode == Opcode::NEG ||
                        iw.opcode == Opcode::ABS ||
                        iw.opcode == Opcode::TINV ||
-                       iw.opcode == Opcode::TLNEG) {
+                       iw.opcode == Opcode::TLNEG ||
+                       iw.opcode == Opcode::TCOUNT ||
+                       iw.opcode == Opcode::TSCAN) {
                 s += "r" + std::to_string(iw.rd)
                    + ", r" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::CALLR ||
+                       iw.opcode == Opcode::JMPR) {
+                s += "r" + std::to_string(iw.rs1);
+            } else if (iw.opcode == Opcode::FENCE) {
+                s.pop_back();
+            } else if (iw.opcode == Opcode::TMAC) {
+                s += "r" + std::to_string(iw.rs1)
+                   + ", r" + std::to_string(iw.rs2);
+            } else if (iw.opcode == Opcode::VSUM ||
+                       iw.opcode == Opcode::VHMIN ||
+                       iw.opcode == Opcode::VHMAX) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", v" + std::to_string(iw.rs1);
             } else {
                 s += "r" + std::to_string(iw.rd)
                    + ", r" + std::to_string(iw.rs1)
@@ -1086,7 +1195,9 @@ inline bool verifyRoundTrip() {
             }
             break;
         case InstructionFormat::I_TYPE:
-            if (iw.opcode == Opcode::VLOAD || iw.opcode == Opcode::VSTORE) {
+            if (iw.opcode == Opcode::SYSCALL) {
+                s += std::to_string(iw.imm);
+            } else if (iw.opcode == Opcode::VLOAD || iw.opcode == Opcode::VSTORE) {
                 s += "v" + std::to_string(iw.rd)
                    + ", r" + std::to_string(iw.rs1)
                    + ", " + std::to_string(iw.imm);

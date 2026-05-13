@@ -112,7 +112,7 @@ void testControlConversionAndMemory() {
 
     {
         Program program;
-        Value base = program.constant(Type::T50, 20);
+        Value base = program.constant(Type::T40, 20);
         Value value = program.constant(Type::T20, 42);
         program.store(value, base, 0);
         Value loaded = program.load(Type::T20, base, 0);
@@ -188,10 +188,10 @@ void testVectorAndAccumulatorOps() {
         Value weights = program.vparam(Type::L1);
         Value activations = program.vparam(Type::L1);
         Value signs = program.vparam(Type::T20);
-        program.aclr(Type::T50);
+        program.aclr(Type::T40);
         Value dot = program.vdotT1(weights, activations);
         program.vmacT1(weights, activations);
-        Value acc = program.astore(Type::T50);
+        Value acc = program.astore(Type::T40);
         Value activated = program.vactT1(signs);
         program.halt();
 

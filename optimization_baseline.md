@@ -175,4 +175,4 @@ Benchmark sink:
 
 | Runtime | Shape | Assembly Words | VM Steps | Kernel Runs | DMEM Words | DMEM Loads | DMEM Stores | Runtime (us) | Checksum | Max Error | Notes |
 | ------- | ----- | -------------: | -------: | ----------: | ---------: | ---------: | ----------: | -----------: | -------- | --------: | ----- |
-| Tiny character transformer | vocab=4, seq=2, width=3, heads=1 | 2298 | 2298 | 6 | 138 | 156 | 48 | 71897 | 0xbae6d3d133955f94 | 4.65544e-10 | IR-generated VM kernels, no transformer opcodes |
+| Tiny character transformer | vocab=4, seq=2, width=3, heads=1 | 2298 | 2298 | 6 | 138 | 156 | 48 | 6835 | 0xd317ad9abb2cdb68 | 4.65543e-10 | IR-generated VM kernels, no transformer opcodes |

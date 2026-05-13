@@ -49,16 +49,16 @@ int main() {
     std::cout << "Successfully loaded " << loaded << " weights." << std::endl;
 
     // Sample first 10 weights
-    std::cout << "\nFirst 10 weights in DMEM (T50):" << std::endl;
+    std::cout << "\nFirst 10 weights in DMEM (T40):" << std::endl;
     for (int i = 0; i < 10; ++i) {
         auto [val, fault] = vm.dmem.load(i);
         if (fault != vm::MemFaultCode::OK) break;
         
         std::cout << "  [" << i << "]: ";
-        if (val.mode == TernaryMode::T50) {
+        if (val.mode == TernaryMode::T40) {
             auto lt = val.toLongTriple();
             auto decoded = long_ops::decode(lt);
-            std::cout << "Mode=T50, Value=" << (double)decoded.first * std::pow(3.0, decoded.second);
+            std::cout << "Mode=T40, Value=" << (double)decoded.first * std::pow(3.0, decoded.second);
         } else {
             std::cout << "Mode=" << (int)val.mode << " (Raw bits: " << std::hex << val.bits.hi << " " << val.bits.lo << std::dec << ")";
         }
@@ -109,10 +109,10 @@ int main() {
     std::cout << "Executing matmul kernel (L50 Packed)..." << std::endl;
     // Wrap memory in TensorViews
     transformer_runtime::TensorView viewA = { l1Addr, n, k, TernaryMode::L50 };
-    transformer_runtime::TensorView viewB = { bAddr, k, m, TernaryMode::T50 };
-    transformer_runtime::TensorView viewOut = { cAddr, n, m, TernaryMode::T50 };
+    transformer_runtime::TensorView viewB = { bAddr, k, m, TernaryMode::T40 };
+    transformer_runtime::TensorView viewOut = { cAddr, n, m, TernaryMode::T40 };
 
-    transformer_runtime::matmulL50(vm, viewA, viewB, viewOut);
+    transformer_runtime::matmulAccumulator(vm, viewA, viewB, viewOut);
 
     std::cout << "Matmul complete. First 5 output values:" << std::endl;
     for (int i = 0; i < 5; ++i) {

@@ -1,4 +1,4 @@
-#include "ternary_transformer_runtime.h"
+#include "../ternary_transformer_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -224,8 +224,8 @@ void testExpSoftmaxAndActivation() {
     std::cout << "[1] runtime exp, softmax, tanh, gelu\n";
 
     sandbox::vm::VMState scalarVm(4096, 256);
-    rt::TensorView scalarIn{0, 1, 1, sandbox::TernaryMode::T50};
-    rt::TensorView scalarOut{1, 1, 1, sandbox::TernaryMode::T50};
+    rt::TensorView scalarIn{0, 1, 1, sandbox::TernaryMode::T40};
+    rt::TensorView scalarOut{1, 1, 1, sandbox::TernaryMode::T40};
     for (long long x : {-1LL, 0LL, 1LL}) {
         storeInt(scalarVm, scalarIn, 0, 0, x);
         rt::GeneratedKernelResult expRun = rt::expScalarGenerated(scalarVm, scalarIn.base, scalarOut.base);
@@ -238,8 +238,8 @@ void testExpSoftmaxAndActivation() {
     }
 
     sandbox::vm::VMState vm(4096, 64);
-    rt::TensorView logits{0, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView probs{10, 1, 3, sandbox::TernaryMode::T50};
+    rt::TensorView logits{0, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView probs{10, 1, 3, sandbox::TernaryMode::T40};
     storeInt(vm, logits, 0, 0, 1);
     storeInt(vm, logits, 0, 1, 2);
     storeInt(vm, logits, 0, 2, 3);
@@ -283,8 +283,8 @@ void testMatmulLayerNormAndT1Dot() {
     sandbox::vm::VMState vm(4096, 256);
     rt::TensorView a{0, 2, 3, sandbox::TernaryMode::T20};
     rt::TensorView b{10, 3, 2, sandbox::TernaryMode::T20};
-    rt::TensorView scalarOut{20, 2, 2, sandbox::TernaryMode::T50};
-    rt::TensorView accumOut{30, 2, 2, sandbox::TernaryMode::T50};
+    rt::TensorView scalarOut{20, 2, 2, sandbox::TernaryMode::T40};
+    rt::TensorView accumOut{30, 2, 2, sandbox::TernaryMode::T40};
 
     const long long av[2][3] = {{1, 2, 3}, {-1, 0, 4}};
     const long long bv[3][2] = {{2, -1}, {0, 3}, {1, 1}};
@@ -309,7 +309,7 @@ void testMatmulLayerNormAndT1Dot() {
 
     rt::TensorView a10{140, 1, 2, sandbox::TernaryMode::T10};
     rt::TensorView b10{150, 2, 1, sandbox::TernaryMode::T10};
-    rt::TensorView out10{160, 1, 1, sandbox::TernaryMode::T50};
+    rt::TensorView out10{160, 1, 1, sandbox::TernaryMode::T40};
     storeInt(vm, a10, 0, 0, 2);
     storeInt(vm, a10, 0, 1, -1);
     storeInt(vm, b10, 0, 0, 4);
@@ -318,10 +318,10 @@ void testMatmulLayerNormAndT1Dot() {
     expectKernel(t10Run, "T10 scalar matmul");
     expectNear(readLongDouble(vm, out10, 0, 0), 5.0L, 1e-12L, "T10 scalar matmul value");
 
-    rt::TensorView lnIn{50, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView gamma{60, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView beta{70, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView lnOut{80, 1, 3, sandbox::TernaryMode::T50};
+    rt::TensorView lnIn{50, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView gamma{60, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView beta{70, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView lnOut{80, 1, 3, sandbox::TernaryMode::T40};
     for (int col = 0; col < 3; ++col) {
         storeInt(vm, lnIn, 0, col, col + 1);
         storeInt(vm, gamma, 0, col, 1);
@@ -335,8 +335,8 @@ void testMatmulLayerNormAndT1Dot() {
                    2e-5L, "layer norm value");
     }
 
-    rt::TensorView rmsIn{200, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView rmsOut{210, 1, 3, sandbox::TernaryMode::T50};
+    rt::TensorView rmsIn{200, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView rmsOut{210, 1, 3, sandbox::TernaryMode::T40};
     for (int col = 0; col < 3; ++col) {
         storeInt(vm, rmsIn, 0, col, col + 1);
     }
@@ -350,8 +350,8 @@ void testMatmulLayerNormAndT1Dot() {
 
     rt::TensorView t1A{100, 2, 3, sandbox::TernaryMode::L1};
     rt::TensorView t1B{110, 3, 2, sandbox::TernaryMode::L1};
-    rt::TensorView t1Out{120, 2, 2, sandbox::TernaryMode::T50};
-    rt::TensorView t1VmacOut{130, 2, 2, sandbox::TernaryMode::T50};
+    rt::TensorView t1Out{120, 2, 2, sandbox::TernaryMode::T40};
+    rt::TensorView t1VmacOut{130, 2, 2, sandbox::TernaryMode::T40};
     const int8_t a1[2][3] = {{1, 0, -1}, {-1, 1, 1}};
     const int8_t b1[3][2] = {{1, -1}, {1, 1}, {-1, 0}};
     const long long e1[2][2] = {{2, -1}, {-1, 2}};
@@ -380,17 +380,17 @@ void testTinyTransformerFixture() {
     rt::RuntimeStats stats{};
     const auto start = std::chrono::high_resolution_clock::now();
 
-    rt::TensorView hidden{0, 2, 3, sandbox::TernaryMode::T50};
-    rt::TensorView gamma{10, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView beta{20, 1, 3, sandbox::TernaryMode::T50};
-    rt::TensorView norm{30, 2, 3, sandbox::TernaryMode::T50};
-    rt::TensorView normT{40, 3, 2, sandbox::TernaryMode::T50};
-    rt::TensorView scores{50, 2, 2, sandbox::TernaryMode::T50};
-    rt::TensorView attn{60, 2, 2, sandbox::TernaryMode::T50};
-    rt::TensorView context{70, 2, 3, sandbox::TernaryMode::T50};
-    rt::TensorView wout{90, 3, 4, sandbox::TernaryMode::T50};
-    rt::TensorView logits{110, 2, 4, sandbox::TernaryMode::T50};
-    rt::TensorView probs{130, 2, 4, sandbox::TernaryMode::T50};
+    rt::TensorView hidden{0, 2, 3, sandbox::TernaryMode::T40};
+    rt::TensorView gamma{10, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView beta{20, 1, 3, sandbox::TernaryMode::T40};
+    rt::TensorView norm{30, 2, 3, sandbox::TernaryMode::T40};
+    rt::TensorView normT{40, 3, 2, sandbox::TernaryMode::T40};
+    rt::TensorView scores{50, 2, 2, sandbox::TernaryMode::T40};
+    rt::TensorView attn{60, 2, 2, sandbox::TernaryMode::T40};
+    rt::TensorView context{70, 2, 3, sandbox::TernaryMode::T40};
+    rt::TensorView wout{90, 3, 4, sandbox::TernaryMode::T40};
+    rt::TensorView logits{110, 2, 4, sandbox::TernaryMode::T40};
+    rt::TensorView probs{130, 2, 4, sandbox::TernaryMode::T40};
 
     const Matrix embeddings = {
         {1.0L, 0.0L, -1.0L},

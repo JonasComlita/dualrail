@@ -218,8 +218,9 @@ inline void batchTritwiseNegT20Avx2(
         alignas(32) uint64_t rawResult[4];
         _mm256_store_si256(reinterpret_cast<__m256i*>(rawResult), result);
         for (int lane = 0; lane < 4; ++lane) {
+            auto candidate = TritLane20::fromRawForKernel(rawResult[lane]);
             out[i + static_cast<std::size_t>(lane)] =
-                TritLane20::fromRawForKernel(rawResult[lane] == invalidRaw ? invalidRaw : rawResult[lane]);
+                candidate.isValid() ? candidate : TritLane20::fromRawForKernel(invalidRaw);
         }
     }
 
@@ -295,8 +296,13 @@ inline void batchTritwiseAddSubT20Avx2(
         _mm256_store_si256(reinterpret_cast<__m256i*>(rawCarry), carry);
 
         for (int lane = 0; lane < 4; ++lane) {
-            out[i + static_cast<std::size_t>(lane)] =
-                TritLane20::fromRawForKernel(rawCarry[lane] == 0 ? rawResult[lane] : invalidRaw);
+            if (rawCarry[lane] != 0) {
+                out[i + static_cast<std::size_t>(lane)] = TritLane20::fromRawForKernel(invalidRaw);
+            } else {
+                auto candidate = TritLane20::fromRawForKernel(rawResult[lane]);
+                out[i + static_cast<std::size_t>(lane)] =
+                    candidate.isValid() ? candidate : TritLane20::fromRawForKernel(invalidRaw);
+            }
         }
     }
 

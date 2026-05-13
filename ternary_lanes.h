@@ -78,13 +78,6 @@ template<typename Storage>
     return true;
 }
 
-template<std::size_t Trits>
-[[nodiscard]] inline bool mantissaZero(const std::array<int8_t, Trits>& trits, int mantissaTrits) {
-    for (int i = 0; i < mantissaTrits; ++i) {
-        if (trits[i] != 0) return false;
-    }
-    return true;
-}
 
 } // namespace lane_detail
 
@@ -292,6 +285,51 @@ template<int Trits, typename Storage>
     return trits;
 }
 
+
+
+// ---------------------------------------------------------------------------
+// CANONICAL CROSSING POINTS: Positional Base-3 <-> 2-bit Packed Lane
+//
+// These two functions are the ONLY legal conversion path between the
+// canonical positional representation (TernaryScalar<N>) and the SIMD
+// transport format (TritLane<N>). Every other conversion must go through
+// these. This eliminates the class of bugs where different conversion
+// sites make different assumptions about field layouts.
+//
+// Invalid lane sentinel: an invalid lane (containing 0b11 bit patterns)
+// maps to OVERFLOW_DATA in positional representation. This is consistent
+// with the existing convention where invalid numeric values use OVERFLOW.
+// ---------------------------------------------------------------------------
+
+// Positional -> Lane: unpack positional to trit array, pack into lane.
+template<int Trits, typename LaneStorage>
+[[nodiscard]] inline TritLane<Trits, LaneStorage> laneFromPositional(
+    TernaryScalar<Trits> scalar) {
+    if (scalar.isSpecial()) return TritLane<Trits, LaneStorage>::invalid();
+    if (scalar.isZero()) {
+        TritLane<Trits, LaneStorage> lane;
+        lane.fill(0);
+        return lane;
+    }
+    return laneFromTritArray<Trits, LaneStorage>(scalar.unpack());
+}
+
+// Lane -> Positional: extract all trits from lane, pack into positional.
+// Invalid lanes map to OVERFLOW_DATA sentinel — no selective field checks.
+template<int Trits, typename LaneStorage>
+[[nodiscard]] inline TernaryScalar<Trits> laneToPositional(
+    TritLane<Trits, LaneStorage> lane) {
+    if (!lane.isValid()) return TernaryScalar<Trits>{TernaryScalar<Trits>::OVERFLOW_DATA};
+    // Convert ALL trits — no mantissa-only zero check. This is what
+    // fixes the T10/T20 fromLane precision loss bug.
+    const auto trits = laneToTritArray(lane);
+    return TernaryScalar<Trits>::pack(trits);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy toLane/fromLane wrappers (delegate to canonical crossing points)
+// ---------------------------------------------------------------------------
+
 [[nodiscard]] inline TritLane1 toLane(T1 value) {
     if (value.isInvalid()) return TritLane1::invalid();
     TritLane1 lane;
@@ -326,72 +364,37 @@ template<int Trits, typename Storage>
     return T5{static_cast<uint8_t>(raw)};
 }
 
+// T10+ toLane/fromLane now delegate to the canonical crossing points.
 [[nodiscard]] inline TritLane10 toLane(T10 value) {
-    if (value.isSpecial() || native_ops::isInvalid(value)) return TritLane10::invalid();
-    if (value.isZero()) {
-        TritLane10 lane;
-        lane.fill(0);
-        return lane;
-    }
-    return laneFromTritArray<10, uint32_t>(value.unpack());
+    return laneFromPositional<10, uint32_t>(value);
 }
 
 [[nodiscard]] inline T10 fromLane(TritLane10 lane) {
-    if (!lane.isValid()) return T10{T10::OVERFLOW_DATA};
-    const auto trits = laneToTritArray(lane);
-    if (lane_detail::mantissaZero(trits, 6)) return T10{0};
-    return T10::pack(trits);
+    return laneToPositional<10, uint32_t>(lane);
 }
 
 [[nodiscard]] inline TritLane20 toLane(T20 value) {
-    if (value.isSpecial() || native_ops::isInvalid(value)) return TritLane20::invalid();
-    if (value.isZero()) {
-        TritLane20 lane;
-        lane.fill(0);
-        return lane;
-    }
-    return laneFromTritArray<20, uint64_t>(value.unpack());
+    return laneFromPositional<20, uint64_t>(value);
 }
 
 [[nodiscard]] inline T20 fromLane(TritLane20 lane) {
-    if (!lane.isValid()) return T20{T20::OVERFLOW_DATA};
-    const auto trits = laneToTritArray(lane);
-    if (lane_detail::mantissaZero(trits, 14)) return T20{0};
-    return T20::pack(trits);
+    return laneToPositional<20, uint64_t>(lane);
 }
 
 [[nodiscard]] inline TritLane40 toLane(Triple value) {
-    if (value.isSpecial() || native_ops::isInvalid(value)) return TritLane40::invalid();
-    if (value.isZero()) {
-        TritLane40 lane;
-        lane.fill(0);
-        return lane;
-    }
-    return laneFromTritArray<40, UInt128>(value.unpack());
+    return laneFromPositional<40, UInt128>(value);
 }
 
 [[nodiscard]] inline Triple fromLane(TritLane40 lane) {
-    if (!lane.isValid()) return Triple{Triple::OVERFLOW_DATA};
-    const auto trits = laneToTritArray(lane);
-    if (lane_detail::mantissaZero(trits, 33)) return Triple{0};
-    return Triple::pack(trits);
+    return laneToPositional<40, UInt128>(lane);
 }
 
 [[nodiscard]] inline TritLane50 toLane(LongTriple value) {
-    if (value.isSpecial() || native_ops::isInvalid(value)) return TritLane50::invalid();
-    if (value.isZero()) {
-        TritLane50 lane;
-        lane.fill(0);
-        return lane;
-    }
-    return laneFromTritArray<50, UInt128>(value.unpack());
+    return laneFromPositional<50, UInt128>(value);
 }
 
 [[nodiscard]] inline LongTriple fromLane(TritLane50 lane) {
-    if (!lane.isValid()) return LongTriple{LongTriple::OVERFLOW_DATA};
-    const auto trits = laneToTritArray(lane);
-    if (lane_detail::mantissaZero(trits, 41)) return LongTriple{0};
-    return LongTriple::pack(trits);
+    return laneToPositional<50, UInt128>(lane);
 }
 
 } // namespace sandbox

@@ -832,8 +832,8 @@ struct SourceLine {
             }
 
         } else if (mnemonic == "store") {
-            // I-type: STORE src, base [, imm]
-            // Rd field = src (value to write), Rs1 field = base address register.
+            // I-type: STORE rs_store, base [, imm]
+            // rs_store = source register (value to write), Rs1 = base address register.
             if (ops.size() < 2) {
                 errors.push_back({line, "STORE requires src and base"});
                 ok = false;
@@ -848,7 +848,7 @@ struct SourceLine {
                 }
                 if (ok) {
                     try {
-                        word = InstructionWord::encodeI(Opcode::STORE,
+                        word = InstructionWord::encodeS(Opcode::STORE,
                             static_cast<uint8_t>(src),
                             static_cast<uint8_t>(base), imm);
                     } catch (std::out_of_range& e) {
@@ -1366,7 +1366,7 @@ inline bool verifyAssembler() {
     {
         auto prog = assembleOrThrow("STORE r1, sp, -4\nHALT");
         auto iw = InstructionWord::decode(prog[0]);
-        ok &= (iw.opcode == Opcode::STORE && iw.rd == 1 &&
+        ok &= (iw.opcode == Opcode::STORE && iw.rs_store == 1 &&
                iw.rs1 == 26 && iw.imm == -4);
     }
 

@@ -36,7 +36,7 @@ enum class Type : uint8_t {
 };
 
 struct Value {
-    Type type = Type::T50;
+    Type type = Type::T40;
     int reg = -1;
     bool vector = false;
 
@@ -83,7 +83,7 @@ inline const char* suffix(Type type) {
         case Type::L40: return "l40";
         case Type::L50: return "l50";
     }
-    return "t50";
+    return "t40";
 }
 
 inline std::string regName(Value value) {
@@ -123,7 +123,7 @@ public:
         return result;
     }
 
-    [[nodiscard]] Value zero(Type type = Type::T50) const {
+    [[nodiscard]] Value zero(Type type = Type::T40) const {
         return Value{type, 0, false};
     }
 
@@ -240,7 +240,7 @@ public:
     }
 
     [[nodiscard]] Value vlen() {
-        Value out = allocScalar(Type::T50, "vlen destination");
+        Value out = allocScalar(Type::T40, "vlen destination");
         if (!out.valid()) return out;
         emit("vlen " + regName(out));
         return out;
@@ -349,7 +349,7 @@ public:
              regName(base) + ", " + regName(index));
     }
 
-    void aclr(Type type = Type::T50) {
+    void aclr(Type type = Type::T40) {
         emit(std::string("aclr.") + suffix(type));
     }
 
@@ -358,7 +358,7 @@ public:
     void asub(Value src) { accumulatorUnary("asub", src); }
     void amul(Value src) { accumulatorUnary("amul", src); }
 
-    [[nodiscard]] Value astore(Type type = Type::T50) {
+    [[nodiscard]] Value astore(Type type = Type::T40) {
         Value out = allocScalar(type, "astore destination");
         if (!out.valid()) return out;
         emit(std::string("astore.") + suffix(type) + " " + regName(out));
@@ -366,12 +366,12 @@ public:
     }
 
     [[nodiscard]] Value vdotT1(Value a, Value b) {
-        if (!checkVector(a, "vdot first") || !checkVector(b, "vdot second")) return invalid(Type::T50);
+        if (!checkVector(a, "vdot first") || !checkVector(b, "vdot second")) return invalid(Type::T40);
         if (a.type != Type::L1 || b.type != Type::L1) {
             diag("vdotT1 requires L1 vectors");
-            return invalid(Type::T50);
+            return invalid(Type::T40);
         }
-        Value out = allocScalar(Type::T50, "vdot destination");
+        Value out = allocScalar(Type::T40, "vdot destination");
         if (!out.valid()) return out;
         emit("vdot.t1 " + regName(out) + ", " + regName(a) + ", " + regName(b));
         return out;
