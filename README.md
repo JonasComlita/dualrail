@@ -523,24 +523,79 @@ Non-goals:
 - Do not make lane/numeric conversion implicit to simplify model code.
 - Do not implement security primitives as part of the transformer milestone.
 
-## Phase 6: FPGA/ASIC and Production Hardware Backends
+## Phase 6: Core Toolchain Expansion and Source Language Frontend
 
-Status: future.
+Status: in progress (incorporating implementation plan targets).
 
-Goal: move the validated semantics beyond the reference VM and one-off GPU
-launch validation into production-quality hardware backends, starting with an
-FPGA prototype that can run real Phase 5 benchmark programs.
+Goal: resolve core architectural correctness bugs, finalize the ternary ISA expansion, upgrade the intermediate representation into an analyzable node graph with structured control flow, and build a premium high-level ML-style ternary source language frontend.
 
-Major goals:
+### Scope and Implementation Tracks
 
-- Broaden SYCL/CUDA kernels from lane ALU launch validation into selected
-  numeric/vector operations.
-- Harden device allocator implementations.
-- FPGA instruction decoder derived from `ternary_isa.h`.
-- Scalar register file and simple fetch/decode/execute pipeline.
-- FPGA-friendly trit full-adder, lane ALU, accumulator, and `vmac.t1` modules.
-- ASIC-oriented decode/execute mapping.
-- Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.
+#### Track 6.0: Correctness and Architectural Foundations (Completed)
+- **Bug Fixes**: Corrected `MOVH` register masking, eliminated silent denormal precision loss in `fromLane` for `T10/T20`, aligned AVX2 SIMD validity checking with scalar paths, added `TernaryValue` equality operators for optimization passes, and ensured copy constructor exception safety in `TernaryMemory`.
+- **Architectural Unification**: Established canonical in-memory representations unifying raw lanes, typed `TritLane<N>`, `Triple`/`LongTriple`, and `TernaryValue`.
+- **Native Word & Width Semantics**: Unified machine word configuration to default to `T40` (80 bits packed in `uint64_t`), transitioning `T50` into an explicit extended precision target. Configured default vector lengths to ternary-native powers of 3 (`DEFAULT_VECTOR_LENGTH = 27`), and standardized `STORE` source register addressing conventions.
+
+#### Track 6.1: ISA Expansion (In Progress)
+- **Indirect Control Flow**: Implement register-indirect branches (`CALLR`, `JMPR`) to support function pointers, dynamic dispatch, and vtables.
+- **Advanced Arithmetic & Windowing**: Register `R4`-type instruction layouts supporting windowed comparisons (`TWCMP`) and range clamping (`TCLAMP`). Implement remainder extraction (`TMOD`), structural exponent scaling/shifting (`TLSHIFT`, `TRSHIFT`), and scalar multiply-accumulate (`TMAC`).
+- **Ternary-Native Analysis**: Register non-zero trit counting (`TCOUNT`) and most-significant non-zero trit scanning (`TSCAN`) primitives.
+- **Infrastructure & Reductions**: Implement sandbox system service invocation gates (`SYSCALL`), architectural synchronization fences (`FENCE`), and horizontal vector reductions (`VSUM`, `VHMIN`, `VHMAX`).
+- **Assembler & Execution Integration**: Update assembly builder mapping, decoding logic, and execution dispatch loop handlers for all 15 new opcodes.
+
+#### Track 6.2: Infrastructure and Performance Tuning
+- **VM Observability**: Add lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler output profiling without core patching.
+- **Data Sections**: Implement assembler data labels (`.data` section, `.word` directives) for static storage resolution.
+- **Math Caching & Fallbacks**: Provide lazy-initialized cached statics for expensive series constants (`cachedLn3()`, `cachedPi()`), implement optimized schoolbook 64×64→128 multiplications on non-native hosts, and formalize cycle-based step execution limits.
+
+#### Track 6.3: Advanced IR Expansion
+- **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
+- **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
+- **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
+- **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
+- **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
+
+#### Track 6.4: High-Level Source Language Frontend
+- **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
+- **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
+
+### Critical Gaps to Bridge for `xv6` OS Execution
+Currently, your VM acts as a single-program runtime. To support a multi-process operating system kernel, the following features will be added to `VMState`:
+
+#### A. Privilege Rings (Kernel vs. User Mode)
+Currently, any loaded instruction can access any memory address. To protect the kernel from user-space crashes, `VMState` needs a runtime privilege indicator:
+* **Ternary Protection Mode**: `-1` (Ring 0 / Kernel Mode), `0` (Ring 1 / Device Drivers), `+1` (Ring 2 / Sandboxed User Tasks).
+* **Restricted Opcodes**: Instructions like `FENCE` or direct hardware `SYSCALL` configurations must trigger protection faults if executed outside Kernel mode.
+
+#### B. Memory Management Unit (MMU) & Page Tables
+`xv6` isolates process memory structures entirely. `VMState` memory access currently uses flat physical offsets. 
+* **Virtual Address Translation**: You will need to introduce a Page Table Base Register (`PTBR`). The VM execution loop must intercept `LOAD` and `STORE` addresses to translate virtual pointers to physical `DMEM` pages automatically.
+
+#### C. Preemptive Timer Interrupts (`IRQ`)
+A Task Manager expects to observe task interleaving. Currently, a running program retains complete control of the VM loop until it yields or halts.
+* **Hardware Timer Traps**: Introduce an instruction cycle limit counter inside `VMState`. When exhausted, the dispatcher must trigger an asynchronous timer interrupt, saving the process execution context and forcing an indirect jump directly into the `xv6` kernel scheduler routine.
+
+By augmenting `VMState` with **Privilege Modes, Virtual Translation, and Hardware Interrupts**, your machine will transition from executing isolated functional algorithms to booting a fully interactive virtualized operating system.
+
+### Critical Path
+
+The minimum viable sequence to establish a functional end-to-end compiled language frontend prioritizes foundational integration:
+```
+Phase 0/1 Correctness/T40 Decisions → CALLR/JMPR + SYSCALL Implementation → 
+Assembler & Hook Additions → IR Nodes + Type Widening + Structured Control Flow → 
+Language Syntax Design → Lexer → Parser → Type Checker → IR Lowering Driver
+```
+Full optimization pass pipelines, horizontal reductions, and extended analytics execute in parallel or incrementally following driver validation.
+
+Validation:
+
+- End-to-end lowering verification passing multi-function AST input through lexing, parsing, lowering, and VM reference checks.
+- Static liveness test verifications guaranteeing register reuse without leaks or manual release invocations.
+
+Non-goals:
+
+- Do not implement arbitrary memory-hard garbage collectors in the initial source language runtime.
+- Do not add target-specific backends directly inside the source language lowering phase.
 
 ## Phase 7: Security and Post-Quantum Crypto Primitives
 
@@ -560,3 +615,22 @@ Major goals:
   inspected and tested.
 - Use published, peer-reviewed algorithms as the cryptographic basis; optimize
   the VM/hardware execution path, not secret proprietary crypto math.
+
+## Phase 8: FPGA/ASIC and Production Hardware Backends
+
+Status: future.
+
+Goal: move the validated semantics beyond the reference VM and one-off GPU
+launch validation into production-quality hardware backends, starting with an
+FPGA prototype that can run real Phase 5 benchmark programs.
+
+Major goals:
+
+- Broaden SYCL/CUDA kernels from lane ALU launch validation into selected
+  numeric/vector operations.
+- Harden device allocator implementations.
+- FPGA instruction decoder derived from `ternary_isa.h`.
+- Scalar register file and simple fetch/decode/execute pipeline.
+- FPGA-friendly trit full-adder, lane ALU, accumulator, and `vmac.t1` modules.
+- ASIC-oriented decode/execute mapping.
+- Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.

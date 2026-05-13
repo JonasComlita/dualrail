@@ -1,0 +1,687 @@
+Description
+translated from Chinese
+Ternary logic gate circuit, computing circuit, chip and electronic device
+Technical Field
+
+The embodiments of the present application relate to the field of multi-valued logic computing technology, and in particular to a ternary logic gate circuit, a computing circuit, a chip, and an electronic device.
+
+Background Art
+
+With the advent of the big data era, processing huge amounts of data requires chips to have higher computing performance. At present, it is more difficult to improve the computing performance of chips by simply reducing the size of transistors. Therefore, it is necessary to set up large-scale integrated circuits to achieve the purpose of improving the computing performance of chips, but large-scale integrated circuits will bring higher power consumption and interconnection complexity.
+
+Ternary logic uses three-valued logic to increase information density. Ternary logic can surpass the computing performance of binary logic, so the computing performance of ternary logic circuits is higher than that of binary logic circuits. Ternary logic gate circuits are the basic units that constitute ternary logic circuits, so the design of ternary logic gate circuits is crucial.
+
+Summary of the invention
+
+The embodiments of the present application provide a ternary logic gate circuit, a computing circuit, a chip, and an electronic device. The ternary logic gate circuit provided by the present application can realize addition or subtraction of a ternary input logic value.
+
+In a first aspect, an embodiment of the present application provides a ternary logic gate circuit, which includes a first voltage module and a logic gate module. The first voltage module is used to output a first voltage, and the first voltage is used to represent a first logic value, and the first logic value is any logic value in the ternary logic value. The logic gate module is used to receive the first voltage and output a second voltage, and the second voltage is used to represent a second logic value, and the second logic value is equal to the first logic value plus 1, or the second logic value is equal to the first logic value minus 1.
+
+The embodiment of the present application designs a ternary logic gate circuit, which can realize the addition or subtraction of an input logic value by 1. As a basic unit of a ternary logic circuit, the ternary logic gate circuit can be applied to a ternary logic circuit, which facilitates the design of a ternary logic circuit with high computing performance.
+
+In a possible implementation, the logic gate module includes a preprocessing unit, a first processing unit, and a second processing unit, wherein the preprocessing unit is used to receive the first voltage and output a third voltage to the first processing unit, wherein the third voltage is used to represent a third logic value, and the third logic value is 0 or 2.
+
+Exemplarily, the preprocessing unit may be a negative polarity three-value inverter NTI or a positive polarity three-value inverter PTI. For example, taking the ternary logic values including 0, 1, and 2 as an example, when the first logic value is 0, a third logic value 2 may be output after NTI processing, when the first logic value is 1, a third logic value 0 may be output after NTI processing, and when the first logic value is 2, a third logic value 0 may be output after NTI processing.
+
+For example, taking the ternary logic values including 0, 1, and 2 as an example, when the first logic value is 0, the third logic value 2 can be output after PTI processing; when the first logic value is 1, the third logic value 2 can be output after NTI processing; when the first logic value is 2, the third logic value 0 can be output after NTI processing.
+
+The first processing unit is used to receive the first voltage and the third voltage, and output a fourth voltage to the second processing unit, wherein the fourth voltage is used to represent a fourth logic value, and the fourth logic value includes 0 or 2. The second processing unit is used to receive the fourth voltage, and output the second voltage.
+
+In some embodiments, the preprocessing unit may be composed of at least one transistor, or the preprocessing unit may be composed of a voltage adjustment unit. After receiving the first voltage, the preprocessing unit may output a third voltage after processing the first voltage by the transistor therein. Alternatively, after receiving the first voltage, the preprocessing unit 221 may adjust the first voltage to a third voltage by the voltage adjustment unit and output the third voltage.
+
+The structures of the first processing unit and the second processing unit may refer to the description of the preprocessing unit.
+
+In some embodiments, the first processing unit includes a first group of transistors and a second group of transistors, the second processing unit includes a third group of transistors, the threshold voltage of the transistors in the first group of transistors is a first threshold voltage, the threshold voltage of the transistors in the second group of transistors is a second threshold voltage, and the threshold voltage of the transistors in the third group of transistors is a third threshold voltage.
+
+Wherein, the first threshold voltage is less than or equal to the first threshold, the third threshold voltage is greater than the first threshold and less than or equal to the second threshold, the second threshold voltage is greater than the second threshold, and the first threshold is less than the second threshold. Wherein, the transistors in the first group of transistors can be called low threshold voltage transistors, the transistors in the second group of transistors can be called medium threshold voltage transistors, and the transistors in the third group of transistors can be called high threshold voltage transistors.
+
+The first voltage module is respectively connected to the preprocessing module, some transistors in the first group of transistors, and transistors in the second group of transistors; the preprocessing module is connected to the remaining transistors in the first group of transistors; and the transistors in the third group of transistors are connected to the transistors in the first group of transistors and the transistors in the second group of transistors.
+
+In the embodiment of the present application, transistors with different threshold voltages may be used to design the first processing unit and the second processing unit, so that the logic gate circuit can add 1 or subtract 1 from the first logic value.
+
+The following describes the principles by which the logic gate circuit can realize adding 1 or subtracting 1 from the first logic value:
+
+First, the logic gate circuit can realize adding 1 to the first logic value, that is, the second logic value is equal to the first logic value plus 1. In some embodiments, the ternary logic gate circuit can be called a self-decrementing ternary logic gate circuit.
+
+The first transistor group includes: a first transistor L1, a second transistor L2 and a third transistor L3, the second transistor group includes: a fourth transistor H1 and a fifth transistor H2, and the third transistor group includes: a sixth transistor M1 and a seventh transistor M2.
+
+Among them, the preprocessing module is a negative polarity three-value inverter NTI, the first transistor L1, the second transistor L2, the fourth transistor H1, and the sixth transistor M1 are P-type transistors, and the third transistor L3, the fifth transistor H2, and the seventh transistor M2 are N-type transistors.
+
+The following introduces the specific structure of the self-incrementing ternary logic gate circuit:
+
+The first voltage module is connected to the gate of the first transistor L1, the gate of the fourth transistor H1, and the gate of the fifth transistor H2 respectively, and the NTI is connected to the gate of the second transistor L2 and the gate of the third transistor L3 respectively.
+
+The source of the first transistor L1 is connected to the second voltage module, the drain of the first transistor L1 is connected to the source of the second transistor L2, the drain of the second transistor L2 is respectively connected to the source of the third transistor L3 and the source of the sixth transistor M1, the drain of the third transistor L3 is grounded, the gate of the sixth transistor M1 is grounded, and the drain of the sixth transistor M1 is connected to the drain of the seventh transistor M2.
+
+The source of the fourth transistor H1 is connected to the second voltage module, the drain of the fourth transistor H1 is respectively connected to the source of the fifth transistor H2 and the source of the seventh transistor M2, the drain of the fifth transistor H2 is grounded, and the gate of the seventh transistor M2 is connected to the second voltage module.
+
+It should be understood that when the first voltage module outputs the first voltage, because the first voltage is different, the on and off conditions of the first transistor L1, the second transistor L2, the third transistor L3, the fourth transistor H1, the fifth transistor H2, the sixth transistor M1, and the seventh transistor M2 are also different, and reference can be made to Table 1 in the following embodiment. When the on and off conditions of the transistors in the ternary logic gate circuit are different, the ternary logic gate circuit can be enabled to output different second voltages in different situations, and the second logic value represented by the second voltage is equal to the first logic value plus 1.
+
+Secondly, the ternary logic gate circuit can realize the first logic value minus 1, that is, the second logic value is equal to the first logic value minus 1. In some embodiments, the ternary logic gate circuit can be called a self-incrementing ternary logic gate circuit.
+
+The first transistor group includes: a first transistor L1, a second transistor L2 and a third transistor L3, the second transistor group includes: a fourth transistor H1 and a fifth transistor H2, and the third transistor group includes: a sixth transistor M1 and a seventh transistor M2.
+
+Among them, the preprocessing module is a positive polarity three-value inverter PTI, the first transistor L1, the fourth transistor H1, and the sixth transistor M1 are P-type transistors, and the second transistor L2, the third transistor L3, the fifth transistor H2, and the seventh transistor M2 are N-type transistors.
+
+The following introduces the specific structure of the self-incrementing ternary logic gate circuit:
+
+The first voltage module is connected to the gate of the third transistor L3, the gate of the fourth transistor H1, and the gate of the fifth transistor H2 respectively, and the PTI is connected to the gate of the first transistor L1 and the gate of the second transistor L2 respectively.
+
+The source of the first transistor L1 is connected to the second voltage module, the drain of the first transistor L1 is connected to the source of the second transistor L2 and the source of the seventh transistor M2 respectively, the drain of the second transistor L2 is connected to the source of the third transistor L3, the drain of the third transistor L3 is grounded, the gate of the seventh transistor M2 is connected to the second voltage module, and the drain of the seventh transistor M2 is connected to the drain of the sixth transistor M1.
+
+The source of the fourth transistor H1 is connected to the second voltage module, the drain of the fourth transistor H1 is connected to the source of the fifth transistor H2 and the source of the sixth transistor M1 respectively, the drain of the fifth transistor H2 is grounded, and the gate of the sixth transistor M1 is grounded.
+
+In a possible implementation, the ternary logic gate circuit may further include the second voltage module as described above, wherein the second voltage module is configured to output a fifth voltage, and the sum of the first threshold voltage and the second threshold voltage is less than the fifth voltage.
+
+It should be understood that when the first voltage module outputs the first voltage, because the first voltage is different, the on and off conditions of the first transistor L1, the second transistor L2, the third transistor L3, the fourth transistor H1, the fifth transistor H2, the sixth transistor M1, and the seventh transistor M2 are also different, and reference can be made to Table 1 in the following embodiment. When the on and off conditions of the transistors in the ternary logic gate circuit are different, the ternary logic gate circuit can be enabled to output different second voltages in different situations, and the second logic value represented by the second voltage is equal to the first logic value minus 1.
+
+In a second aspect, an embodiment of the present application provides a summation circuit, which includes: a first ternary logic gate circuit and a second ternary logic gate circuit.
+
+In the first ternary logic gate circuit, the second logic value is equal to the first logic value plus 1, and in the second ternary logic gate circuit, the second logic value is equal to the first logic value minus 1. The first ternary logic gate circuit and the second ternary logic gate circuit can refer to the description of the first aspect.
+
+In a possible implementation, the summing circuit further includes: a signal processing module, a first gating tube, a second gating tube, and a third gating tube.
+
+The signal processing module is used to connect with the first signal module, and the signal processing module is respectively connected with the first gate tube, the second gate tube, and the third gate tube. The second signal module is used to connect with the first gate tube, the first ternary logic gate circuit, and the second ternary logic gate circuit respectively, the first ternary logic gate circuit is connected with the second gate tube, and the second ternary logic gate circuit is connected with the third gate tube.
+
+The second signal module is used to output a second signal. The first signal module is used to output a first signal. The signal processing module is used to turn on any gating tube according to the first signal to enable the summing circuit to output a first summation result of the first signal and the second signal.
+
+In this implementation, the summation circuit provided in the embodiment of the present application can perform a summation calculation on two ternary signals and output a first summation result.
+
+In a possible implementation, the first signal is used to represent a fifth logic value, and the second signal is used to represent a sixth logic value. When the first gate tube is turned on, the first summation result is: the sum of the fifth logic value and the sixth logic value. When the second gate tube is turned on, the first summation result is: the sum of the sixth logic value plus 1 and the fifth logic value. When the third gate tube is turned on, the first summation result is: the sum of the sixth logic value minus 1 and the fifth logic value.
+
+In a possible implementation, the signal processing module includes: a first NTI, a second NTI, a PTI, and a NOR gate.
+
+Among them, the first signal module is respectively connected to the first end of the first NTI and the first end of the PTI, the second end of the first NTI is respectively connected to the first selection tube and the first input end of the NOR gate, the second end of the PTI is connected to the first end of the second NTI, the second end of the second NTI is respectively connected to the second input end of the NOR gate and the third selection tube, and the output end of the NOR gate is connected to the second selection tube.
+
+In a third aspect, an embodiment of the present application provides a half-adder circuit, which may include the summation circuit in the second aspect.
+
+In a possible implementation, the half-adder circuit further includes: a first carry device, wherein the first signal module is used to be connected to the summing circuit and the first carry device respectively, and the second signal module is used to be connected to the summing circuit and the first carry device respectively. The first carry device is used to output a first carry result.
+
+In this implementation, when the first signal and the second signal are summed, the half-adder circuit can not only output the first sum result of the first signal and the second signal, but also output the first carry result when the first signal and the second signal are summed, and can accurately output the sum calculation result of the first signal and the second signal.
+
+In a fourth aspect, an embodiment of the present application provides a full-adder circuit, including the half-adder circuit in the third aspect, and the half-adder circuit can be called a first-stage half-adder circuit.
+
+In a possible implementation, the full adder circuit further includes: a second-stage half adder circuit and a second carry, wherein the second-stage half adder circuit is configured to be connected to the third signal module.
+
+The first-stage half-adder circuit is used to output the first summation result to the second-stage half-adder circuit and output the first carry result to the second carry device. The third signal module is used to output a third signal to the second-stage half-adder circuit.
+
+The second-stage half-adder circuit is used to output a second summation result according to the third signal and the first summation result, and to output a second carry result to the second carry device. The second carry device is used to output a third carry result according to the first carry result and the second carry result.
+
+In this implementation, a full-adder circuit is provided, which can accurately implement the summation calculation of three ternary signals.
+
+In a possible implementation, the second-stage half-adder circuit includes: a third ternary logic gate circuit. Wherein, in the third ternary logic gate circuit, the second logic value is equal to the first logic value plus 1. In other words, the third ternary logic gate circuit may be a self-incrementing ternary logic gate circuit, and the third ternary logic gate circuit may refer to the description in the first aspect.
+
+In a possible implementation, the second-stage half-adder circuit includes: a positive polarity buffer PB, a negative polarity buffer NB, a fourth gate transistor, a fifth gate transistor, an AND gate, and a third ternary logic gate circuit.
+
+The third signal module is used to be connected to the input end of the PB and the fourth gate tube respectively, the output end of the PB is connected to the fifth gate tube and the second input end of the AND gate respectively, and the quad gate tube is connected to the fifth gate tube. The first-stage half-adder circuit is connected to the third ternary logic gate circuit and the input end of the NB respectively, the third ternary logic gate circuit is connected to the fifth gate tube, and the output end of the NB is connected to the first input end of the AND gate.
+
+The third signal is used to turn on the fourth gate tube or the fifth gate tube to enable the full-adder circuit to output the second summation result.
+
+The embodiment of the present application provides a full-adder circuit. A summation circuit can be designed based on a self-incrementing logic gate circuit and a self-decrementing logic gate circuit, and a half-adder circuit can be designed based on the summation circuit. Based on the first-stage half-adder circuit, a full-adder circuit that can sum three ternary signals is designed, with a small number of transistors, low power consumption, and high computing efficiency.
+
+In a fifth aspect, an embodiment of the present application provides a multiplication circuit, which may include the summation circuit in the second aspect and the half-addition circuit in the third aspect.
+
+In a possible implementation, the multiplication circuit further includes: a multiplier and an approximate multiplier. The multiplier is used to output a first multiplication result. The approximate multiplier is used to output a second multiplication result. The summation circuit and the half-addition circuit are used to output a third multiplication result according to the first multiplication result and the second multiplication result.
+
+In this implementation, the idea of approximate multiplication calculation can be used to set an approximate multiplier in the multiplication circuit. The approximate multiplication calculation can achieve higher computing performance and lower power consumption at the cost of a smaller calculation error.
+
+Here, a 2trit*2trit multiplication circuit is taken as an example, the approximate multiplier includes a first approximate multiplier, a second approximate multiplier, and a third approximate multiplier, and the half-adder circuit includes a first half-adder circuit and a second half-adder circuit.
+
+Wherein, the first approximate multiplier is used to output a first sub-multiplication result.
+
+The second approximate multiplier is used to output a second sub-multiplication result to the first half-adder circuit. The third approximate multiplier is used to output a third sub-multiplication result to the first half-adder circuit. The first half-adder circuit is used to output a fourth sub-multiplication result according to the second sub-multiplication result and the third sub-multiplication result, and output a fifth sub-multiplication result to the second half-adder circuit.
+
+The multiplier is further configured to output the first multiplication result to the second half-adder circuit. The second half-adder circuit is configured to output a sixth sub-multiplication result according to the fifth sub-multiplication result and the first multiplication result, and output a seventh sub-multiplication result to the summing circuit.
+
+The summing circuit is used to output an eighth sub-multiplication result according to the first multiplication result and the seventh sub-multiplication result.
+
+In summary, the third multiplication result includes: the first sub-multiplication result, the fourth sub-multiplication result, the sixth sub-multiplication result and the eighth sub-multiplication result.
+
+It should be understood that the summation circuit and half-addition circuit in the embodiments of the present application can also be applied to 6trit*6trit ternary multiplication circuits, and can even be applied to circuit designs of larger and arbitrary scales, all of which fall within the protection scope of the embodiments of the present application.
+
+In a sixth aspect, an embodiment of the present application provides a calculation circuit, which is a ternary logic calculation circuit. The ternary logic calculation circuit may include at least one of the following: the summation circuit of the second aspect, the half-addition circuit of the third aspect, the full-addition circuit of the fourth aspect, and the multiplication circuit of the fifth aspect.
+
+In the seventh aspect, an embodiment of the present application provides a chip, which may include any one of the following circuits: the ternary logic gate circuit of the first aspect, the summation circuit of the second aspect, the half-addition circuit of the third aspect, the full-addition circuit of the fourth aspect, and the multiplication circuit of the fifth aspect.
+
+In an eighth aspect, an embodiment of the present application provides a chip, which may include at least one of the following circuits: the summation circuit of the second aspect, the half-addition circuit of the third aspect, the full-addition circuit of the fourth aspect, and the multiplication circuit of the fifth aspect.
+
+In a ninth aspect, an embodiment of the present application provides an electronic device, which may include: the chip in the seventh aspect or the chip in the eighth aspect.
+
+The beneficial effects of the possible implementation methods of the sixth to ninth aspects mentioned above can be found in the relevant descriptions of the beneficial effects in the first to fifth aspects mentioned above, and will not be elaborated here.
+
+The embodiment of the present application provides a ternary logic gate circuit, a computing circuit, a chip, and an electronic device. The ternary logic gate circuit may include a first voltage module and a logic gate module, wherein the first voltage module is used to output a first voltage, the first voltage is used to represent a first logic value, and the first logic value is any logic value in the ternary logic value. The logic gate module is used to receive the first voltage and output a second voltage, the second voltage is used to represent a second logic value, the second logic value is equal to the first logic value plus 1, or the second logic value is equal to the first logic value minus 1. The ternary logic gate circuit provided in the present application can realize the addition and subtraction of the input logic value, and based on the ternary logic gate circuit, using 27 single variable functions of the ternary logic, the ternary logic gate circuit is applied to the ternary logic circuit, which can achieve the purpose of simplifying the structure of the ternary logic circuit, can reduce the number of transistors in the ternary logic circuit, reduce the power consumption of the ternary logic circuit, and improve the calculation efficiency of the ternary logic circuit.
+
+BRIEF DESCRIPTION OF THE DRAWINGS
+
+FIG1A is a schematic diagram of a ternary logic circuit;
+
+FIG1B is a schematic diagram of designing another ternary logic circuit;
+
+FIG2A is a schematic diagram of a ternary logic gate circuit provided in an embodiment of the present application;
+
+FIG2B is a schematic diagram of a ternary logic gate circuit provided in an embodiment of the present application;
+
+FIG3 is a schematic diagram of a self-incrementing logic gate circuit provided in an embodiment of the present application;
+
+FIG4 is a schematic diagram of a self-decrementing logic gate circuit provided in an embodiment of the present application;
+
+FIG5 is a schematic diagram of a summing circuit provided in an embodiment of the present application;
+
+FIG6 is a schematic diagram of a half-adder circuit provided in an embodiment of the present application;
+
+FIG7 is a schematic diagram of a full-adder circuit provided in an embodiment of the present application;
+
+8 is a schematic diagram of a second-stage half-adder circuit in a full-adder circuit provided in an embodiment of the present application;
+
+FIG9 is a schematic diagram of a positive polarity buffer and a negative polarity buffer provided in an embodiment of the present application;
+
+FIG10 is a schematic diagram of a second carry device provided in an embodiment of the present application;
+
+FIG11 is a schematic diagram showing a comparison between an existing ternary multiplication circuit and a ternary multiplication circuit provided in an embodiment of the present application;
+
+FIG12 is a schematic diagram of ternary approximate calculation multiplication;
+
+FIG13 is a schematic diagram of a ternary multiplication circuit provided in an embodiment of the present application;
+
+FIG14 is another schematic diagram of a ternary multiplication circuit provided in an embodiment of the present application;
+
+FIG. 15 is another schematic diagram comparing an existing ternary multiplication circuit with the ternary multiplication circuit provided in an embodiment of the present application.
+
+DETAILED DESCRIPTION
+
+With the rapid development of technologies such as artificial intelligence, automation, and intelligent driving, the data generated is also growing explosively. With the advent of the big data era, processing huge amounts of data requires chips to have higher computing performance. On the one hand, the size of transistors can be reduced, the number of transistors integrated on the chip can be increased, and the computing performance of the chip can be improved. However, when the size of transistors is reduced to a certain extent, it becomes difficult to further reduce the size of transistors. On the other hand, large-scale integrated circuits can be set up to achieve the purpose of improving the computing performance of the chip, but large-scale integrated circuits will bring higher power consumption and interconnection complexity, and will also cause data processing delays.
+
+The logic circuits currently integrated in chips are binary logic circuits. Compared with binary logic, multi-valued logic (MVL) uses three-value, four-value or even larger-value logic to increase information density, which helps reduce the interconnection complexity of the chip. Circuit design implemented using multi-valued logic has advantages in increasing information density, reducing chip area, and improving the computing power of integrated circuits. Therefore, it is currently possible to design multi-valued logic circuits based on multi-valued logic to improve the computing performance of chips.
+
+Among them, in multi-valued logic, the theoretical efficiency value of ternary logic is the highest, so deploying ternary logic circuits on a chip can improve the computing performance of the chip. Accordingly, the design of ternary logic circuits is crucial. In some embodiments, the ternary logic circuit can also be called a ternary circuit or a ternary logic calculation circuit.
+
+In some embodiments, a decoder 11 and a binary circuit 12 may be deployed on a chip. Taking a chip implementing ternary addition calculation as an example, referring to FIG. 1A , for example, the decoder 11 may include a decoder A and a decoder B, and the chip may receive input 1 and input 2, and perform a sum calculation on input 1 and input 2. Among them, input 1 includes A0, A1, and A2, and input 2 includes B0, B1, and B2.
+
+Among them, after the chip receives input 1 and input 2, decoder A can convert input 1 into a binary logic value, decoder B can convert input 2 into a binary logic value, and binary circuit 12 can add the binary logic value converted by decoder A and the binary logic value converted by decoder B to output the result.
+
+Although the scheme in FIG1A can realize ternary logic addition calculation, the interconnection complexity of the circuit is much higher than that of the binary logic circuit with the same function, and the calculation efficiency is low.
+
+In some embodiments, the ternary logic circuit can be directly deployed according to the truth table of the ternary logic. The solution may include the following steps:
+
+Step 1, develop a truth table for ternary logic.
+
+Taking ternary addition calculation as an example, the addition truth table of ternary logic is shown in Figure 1B. It should be understood that -1, 0 and 1 are used to represent ternary logic values in Table 1, and "-" in Table 1 can represent -1, and "+" can represent +1.
+
+After the ternary logic values are added in pairs, Table 2 in FIG. 1B can be understood as a pull up switching map, which shows the partial results where the summed results are logic value increases. Table 3 in FIG. 1B can be understood as a pull down switching map, which shows the partial results where the summed results are logic value decreases.
+
+Step 2, optimize the expression to determine the minimum number of transistors and the lowest delay in the ternary logic circuit.
+
+Step 3: Select the best sum of products (SOP).
+
+Step 4: Transistor mapping to obtain a ternary logic circuit.
+
+After the transistor mapping of Table 2, the circuit for increasing the logic value can be shown as Circuit 1 in FIG. 1B. After the transistor mapping of Table 3, the circuit for decreasing the logic value can be shown as Circuit 2 in FIG. 1B. It should be understood that, taking the addition calculation of ternary signal A and ternary signal B as an example, in Circuit 1 and Circuit 2, A represents ternary signal A, B represents ternary signal B, AN represents ternary signal A after being processed by negative ternary inverter (NTI), AP represents ternary signal A after being processed by positive ternary inverter (PTI), BN represents ternary signal B after being processed by NTI, and BP represents ternary signal B after being processed by PTI.
+
+Although this scheme can realize a ternary logic addition circuit, the design of a ternary logic circuit based on the truth table of ternary logic has the disadvantages of complex structure, large number of transistors, large circuit delay and power consumption, and low computing performance. The specific details of this scheme can be referred to the content of the prior art "A logic synthesis methodology for low-power ternary logic circuits".
+
+In summary, how to design a ternary logic circuit with a simple structure and a small number of transistors is crucial. As the basic unit of the ternary logic circuit, the design of the ternary logic gate circuit is crucial. The current ternary logic gate circuits are all based on adding and multiplying input signals, and directly designing ternary logic gate circuits (as shown in FIG. 1B ), and there is no design scheme for ternary logic gate circuits. It should be understood that when the structure of the ternary logic circuit is simple and the number of transistors is small, the circuit delay of the ternary logic circuit is small, the power consumption is small, and the computing performance is high.
+
+It should be understood that in circuit design, the single variable function f(x) is a means of realizing digital functions and is widely used. In three-valued logic, the variable x of the single variable function f(x) has three values: 0, 1, and 2, that is, x∈{0,1,2}. It should be noted that in the following embodiments, the logic values in the three-valued logic include "0, 1, and 2" as an example.
+
+The output value of the univariate function f(x) is different for different values of x. When x=0, the output value of f(x) is C0, C0=f(0); when x=1, the output value of f(x) is C1, C1=f(1); when x=2, the output value of f(x) is C2, C2=f(2). C0∈{0,1,2}, C1∈{0,1,2}, C2∈{0,1,2}. According to the design principles of multi-valued logic circuits, there are 3 3 = 27 three-valued logic single-variable functions. The output values C0, C1 and C2 of these single-variable functions at x = 0, x = 1, and x = 2 are arranged in ascending order according to the size of the ternary three-digit numbers C0, C1, and C2, namely f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, and f26.
+
+Among them, f0＝{0,0,0}, f1＝{0,0,1}, f2＝{0,0,2}, f3＝{0,1,0}, f4＝{0,1,1}, f5＝{0,1,2}, f6＝{0,2,0}, f7＝{0,2,1}, f8＝{0,2,2}, f9＝{1,0,0}, f10＝{1,0,1}, f11＝{1,0,2}, f12＝{1,1,0}, f13＝{1,1, 1}, f14＝{1,1,2}, f15＝{1,2,0}, f16＝{1,2,1}, f17＝{1,2,2}, f18＝{2,0,0}, f19＝{2,0,1}, f20＝ {2,0,2}, f21={2,1,0}, f22={2,1,1}, f23={2,1,2}, f24={2,2,0}, f25={2,2,1}, f26={2,2,2}.
+
+Based on the ternary logic single variable function, any input and output can be represented by the ternary logic single variable function, so the embodiment of the present application designs a ternary logic gate circuit, which is used to implement the addition and subtraction of the input logic value. Based on the ternary logic gate circuit, the embodiment of the present application uses 27 single variable functions of the ternary logic and applies the ternary logic gate circuit to the ternary logic circuit on a large scale, which can achieve the purpose of simplifying the structure of the ternary logic circuit, reduce the number of transistors in the ternary logic circuit, reduce the power consumption of the ternary logic circuit, and improve the calculation efficiency of the ternary logic circuit.
+
+The following is a description of the ternary logic gate circuit, ternary logic calculation circuit (calculation circuit), chip and electronic device provided in the embodiments of the present application in conjunction with specific embodiments. The following embodiments can be combined with each other, and the same or similar concepts or processes may not be repeated in some embodiments.
+
+An embodiment of the present application provides a ternary logic gate circuit. Referring to FIG. 2A , the ternary logic gate circuit 20 includes: a first voltage module 21 and a logic gate module 22 .
+
+Among them, the first voltage module 21 is used to output a first voltage. Specifically, the first voltage module 21 is used to output a first voltage to the logic gate module 22. The first voltage is used to represent a first logic value, and the first logic value is any logic value in a ternary logic value. Exemplarily, the first logic value is any of the following: 0, 1, 2. In some embodiments, the first logic value can be any of the following: -1, 0, 1. In the embodiment of the present application, the ternary logic value includes "0, 1, 2" as an example for explanation.
+
+In some embodiments, the mapping relationship between the first voltage and the first logic value can be preset. For example, when the first voltage is a value A, the first voltage represents a first logic value of 0, when the first voltage is a value B, the first voltage represents a first logic value of 1, and when the first voltage is a value C, the first voltage represents a first logic value of 2. For example, when the first voltage is 0V (value A), the first voltage represents a first logic value of 0, when the first voltage is 0.5V (value B), the first voltage represents a first logic value of 1, and when the first voltage is 1V, the first voltage represents a first logic value of 2.
+
+In some embodiments, the first voltage may also be regarded as the first level. Exemplarily, a mapping relationship between the first level and the first logic value may be preset. For example, a low level represents a first logic value of 0, a medium level represents a first logic value of 1, and a high level represents a first logic value of 2. The low level, the medium level, and the high level may be preconfigured.
+
+The logic gate module 22 is used to receive the first voltage from the first voltage module 21 and output a second voltage. The second voltage is used to represent a second logic value, and the second logic value is equal to the first logic value plus 1, or the second logic value is equal to the first logic value minus 1. In other words, in the embodiment of the present application, the logic gate module 22 can realize adding 1 or subtracting 1 to the first logic value.
+
+In some embodiments, the logic gate module 22 may be composed of a plurality of transistors. For example, when the logic gate module 22 receives a first voltage, the first transistor among the plurality of transistors may be controlled to be turned on, enabling the logic gate module 22 to output a second voltage, and the second logic value represented by the second voltage is equal to the first logic value plus 1. For example, when the logic gate module 22 receives a first voltage, the second transistor among the plurality of transistors may be controlled to be turned on, enabling the logic gate module 22 to output a second voltage, and the second logic value represented by the second voltage is equal to the first logic value minus 1. The first transistor may include some transistors among the plurality of transistors, the second transistor may include some transistors among the plurality of transistors, and the first transistor is different from the second transistor.
+
+In some embodiments, the logic gate module 22 may include a first voltage adjustment unit and a second voltage adjustment unit. Exemplarily, for example, when the logic gate module 22 receives a first voltage, the first voltage adjustment unit may be turned on and the second voltage adjustment unit may be turned off, and the first voltage adjustment unit may adjust the first voltage to a second voltage, and the second logic value represented by the second voltage is equal to the first logic value plus 1. Exemplarily, for example, when the logic gate module 22 receives a first voltage, the second voltage adjustment unit may be turned on and the first voltage adjustment unit may be turned off, and the second voltage adjustment unit is used to adjust the first voltage to a second voltage, and the second logic value represented by the second voltage is equal to the first logic value minus 1. In some embodiments, the first voltage adjustment unit may be composed of a capacitor and/or a resistor, and the second voltage adjustment unit may be composed of a capacitor and/or a resistor.
+
+The ternary logic gate circuit provided in the embodiment of the present application can realize the addition or subtraction of the input first logic value, that is, the ternary logic gate circuit can realize the self-increment or self-decrement of the logic value. Among them, the self-increment can represent the first logic value plus 1, and the self-decrement can represent the first logic value minus 1.
+
+In some embodiments, referring to FIG. 2B , the logic gate module 22 includes a pre-processing unit 221 , a first processing unit 222 , and a second processing unit 223 .
+
+The first voltage module 21 is used to output the first voltage to the preprocessing unit 221 and the first processing unit 222. Accordingly, the preprocessing unit 221 can receive the first voltage from the first voltage module 21, and the first processing unit 222 can receive the first voltage from the first voltage module 21.
+
+After receiving the first voltage, the pre-processing unit 221 may output a third voltage to the first processing unit 222. The third voltage is used to represent a third logic value, and the third logic value is 0 or 2.
+
+In some embodiments, the preprocessing unit 221 may be composed of at least one transistor, or the preprocessing unit 221 may be composed of a voltage adjustment unit. After receiving the first voltage, the preprocessing unit 221 may output a third voltage after processing the first voltage by the transistor therein. Alternatively, after receiving the first voltage, the preprocessing unit 221 may adjust the first voltage to a third voltage by the voltage adjustment unit and output the third voltage.
+
+The first processing unit 222 may receive the first voltage from the first voltage module 21 and the third voltage from the pre-processing unit 221. The first processing unit 222 may output a fourth voltage to the second processing unit 223. The fourth voltage is used to represent a fourth logic value, and the fourth logic value is 0 or 2.
+
+In some embodiments, the first processing unit 222 may be composed of at least one transistor, or the first processing unit 222 may be composed of a voltage adjustment unit. After receiving the first voltage and the third voltage, the first processing unit 222 may output a fourth voltage after processing the first voltage and the third voltage by the transistors therein. Alternatively, after receiving the first voltage and the third voltage, the voltage adjustment unit of the first processing unit 222 may adjust the voltage to the fourth voltage and output the fourth voltage.
+
+The second processing unit 223 can receive the fourth voltage from the first processing unit 222 and output the second voltage.
+
+In some embodiments, the second processing unit 223 may be composed of at least one transistor, or the second processing unit 223 may be composed of a voltage adjustment unit. After receiving the fourth voltage, the second processing unit 223 may output the second voltage after processing the fourth voltage by the transistor therein. Alternatively, after receiving the fourth voltage, the voltage adjustment unit may adjust the fourth voltage to the second voltage and output the second voltage.
+
+In the embodiment of the present application, a pre-processing unit 221 , a first processing unit 222 , and a second processing unit 223 are provided in the logic gate module 22 , so as to achieve the purpose of adding 1 or subtracting 1 to the first logic value.
+
+In the embodiment of the present application, 27 single-variable functions of three-valued logic are used to design a ternary logic gate circuit. In order to further solve the problems of a large number of transistors and high power consumption in the ternary logic circuit in the prior art, the first processing unit 222 and the second processing unit 223 in the embodiment of the present application can also be composed of transistors. This facilitates a clear comparison with the current ternary logic gate circuit. The ternary logic circuit provided in the embodiment of the present application has a small number of transistors, low power consumption, and high computing performance.
+
+In some embodiments, the first processing unit 222 includes: a first group of transistors and a second group of transistors. The second processing unit 223 includes a third group of transistors. In some embodiments, the first group of transistors may include at least one transistor, the second group of transistors may include at least one transistor, and the third group of transistors may include at least one transistor.
+
+The first voltage module 21 is connected to the preprocessing module 221, some transistors in the first group of transistors, and transistors in the second group of transistors, respectively. In this way, the first voltage module 21 can output the first voltage to the preprocessing module 221 and the first processing unit 222 (e.g., some transistors in the first group of transistors, and transistors in the second group of transistors), respectively.
+
+The preprocessing module 221 is connected to the remaining transistors in the first group of transistors, and the transistors in the third group of transistors are connected to the transistors in the first group of transistors and the transistors in the second group of transistors. In this way, when the preprocessing module 221 outputs the third voltage, it can output the third voltage to the first processing unit 222 (for example, the remaining transistors in the first group of transistors). The first processing unit 222 can output the fourth voltage to the second processing unit 223 (for example, the third group of transistors).
+
+In some embodiments, the first group of transistors, the second group of transistors, and the third group of transistors may be transistors of the same or different types, such as insulated gate bipolar transistors (IGBT), metal-oxide-semiconductor field effect transistors (MOS), etc.
+
+In some embodiments, the transistors in the first group of transistors, the second group of transistors, and the third group of transistors may be carbon nanotube field effect transistors (CNTFETs). In the embodiments of the present application, in the ternary logic gate circuit, the power consumption of the ternary logic gate circuit may be further reduced by avoiding the use of devices with high power consumption such as resistors and using CNTFETs instead.
+
+The threshold voltage (Vth) of CNTFET is related to the diameter of CNT, and the diameter of CNT depends on the chirality vector. Therefore, by changing the diameter or chirality vector of CNT, the threshold voltage of CNTFET can be controlled. It should be understood that the threshold voltage of a transistor refers to: the voltage that enables the transistor to turn on. Among them, when the voltage difference between the gate and the source (or drain) of the transistor is greater than or equal to the threshold voltage of the transistor, the transistor is turned on, and when the voltage difference between the gate and the source (or drain) of the transistor is less than the threshold voltage of the transistor, the transistor is turned off (or in a cut-off state).
+
+In some embodiments, the threshold voltages of transistors in the first group of transistors, the second group of transistors, and the third group of transistors may be the same.
+
+In some embodiments, the threshold voltages of transistors in the first group of transistors, the second group of transistors, and the third group of transistors may be different. Exemplarily, the threshold voltage of transistors in the first group of transistors is a first threshold voltage, the threshold voltage of transistors in the second group of transistors is a second threshold voltage, and the threshold voltage of transistors in the third group of transistors 2223 is a third threshold voltage. The first threshold voltage is less than or equal to the first threshold, the third threshold voltage is greater than the first threshold and less than or equal to the second threshold, and the first threshold is less than the second threshold. Exemplarily, for example, the first threshold may be 0.35V, and the second threshold may be 0.5V. The first threshold voltage may be set to 0.2V-0.3V, the third threshold voltage may be set to 0.4V, and the second threshold voltage may be set to 0.6V-0.7V.
+
+In some embodiments, the transistors in the first group of transistors can be called low threshold voltage (low Vthreshold, LVT) transistors, the transistors in the second group of transistors can be called high threshold voltage (high V threshold, HVT) transistors, and the transistors in the third group of transistors 2221 can be called middle threshold voltage (middle V threshold) transistors.
+
+In the embodiments of the present application, there is no restriction on the specific values of the first threshold voltage, the second threshold voltage, and the third threshold voltage. The first threshold voltage, the second threshold voltage, and the third threshold voltage may be related to the voltage output by the second voltage module. The first threshold voltage, the second threshold voltage, the third threshold voltage, and the second voltage module may refer to the description in the following embodiments.
+
+The following describes the principle that a ternary logic gate circuit can realize the addition of 1 to a first logic value or the subtraction of 1 to a first logic value with reference to a specific example:
+
+Example 1: The ternary logic gate circuit can realize the first logic value plus 1, that is, the second logic value is equal to the first logic value plus 1.
+
+In some embodiments, the pre-processing module 221 is a negative ternary inverter (NTI). The first group of transistors includes: a first transistor L1, a second transistor L2 and a third transistor L3, the second group of transistors includes: a fourth transistor H1 and a fifth transistor H2, and the third group of transistors includes: a sixth transistor M1 and a seventh transistor M2.
+
+In some embodiments, the first group of transistors, the second group of transistors, and the third group of transistors may be transistors of the same or different polarities, and the polarities may include N-type and P-type. In some embodiments, the first transistor L1, the second transistor L2, the fourth transistor H1, and the sixth transistor M1 are P-type transistors, and the third transistor L3, the fifth transistor H2, and the seventh transistor M2 are N-type transistors.
+
+In some embodiments, the ternary logic gate circuit may further include a second voltage module, and the second voltage module may provide a fifth voltage (V DD ) for the logic gate module 22 .
+
+In some embodiments, the first voltage module 21 and the second voltage module may not be included in the ternary logic gate circuit, wherein the ternary logic gate circuit may receive the first voltage from the first voltage module 21 and the fifth voltage from the second voltage module.
+
+Referring to a in FIG3 , the first voltage module 21 is connected to the gate of the first transistor L1, the gate of the fourth transistor H1, and the gate of the fifth transistor H2, respectively, and NTI is connected to the gate of the second transistor L2 and the gate of the third transistor L3, respectively. The source of the first transistor L1 is connected to the second voltage module, the drain of the first transistor L1 is connected to the source of the second transistor L2, the drain of the second transistor L2 is connected to the source of the third transistor L3 and the source of the sixth transistor M1, respectively, and the drain of the third transistor L3 is grounded. The gate of the sixth transistor M1 is grounded, and the drain of the sixth transistor M1 is connected to the drain of the seventh transistor M2.
+
+The source of the fourth transistor H1 is connected to the second voltage module, the drain of the fourth transistor H1 is connected to the source of the fifth transistor H2 and the source of the seventh transistor M2 respectively, the drain of the fifth transistor H2 is grounded, and the gate of the seventh transistor M2 is connected to the second voltage module.
+
+It should be understood that in a in FIG. 3 , GND represents grounding, in represents output, out represents output, and V DD represents the second voltage module.
+
+In the embodiment of the present application, because the second voltage module can provide the fifth voltage (V DD ) for the logic gate module 22, and the ground voltage is V GND , it can be understood that the highest voltage input to the logic gate module 22 is V DD , and the lowest voltage is V GND . In order to reflect that the first voltage output by the first voltage module represents any logic value in the ternary logic value, in some embodiments, when the first voltage is equal to V DD , the first voltage represents the first logic value 2. The first voltage can be set to be equal to The first voltage represents a first logic value of 1. When the first voltage is set to be equal to V GND , the first voltage represents a first logic value of 0.
+
+When the first voltage is equal to V DD (such as 1V), the first voltage can output a third voltage V GND (such as 0V) through NTI, and the third voltage represents a third logic value 0. When the first voltage is equal to V GND (such as 0.5V), the first voltage can output a third voltage V GND (such as 0V) through NTI, and the third voltage represents a third logic value of 0. When the first voltage is equal to V GND (such as 0V), the first voltage can output a third voltage V DD (such as 1V) through NTI, and the third voltage represents a third logic value of 2. In summary, NTI is used to receive the first voltage and output the third voltage, and the third voltage value represents a third logic value of 0 or 2.
+
+Referring to b in FIG. 3 , NTI can be formed by two transistors connected in parallel, the two transistors being an eighth transistor H3 and a ninth transistor L4. The threshold voltage of the eighth transistor H3 is greater than the second threshold, and the threshold voltage of the ninth transistor L4 can be less than or equal to the first threshold. The eighth transistor H3 is a P-type transistor, and the ninth transistor L4 is an N-type transistor. It should be understood that the connection between NTI and the second voltage module is not shown in a in FIG. 3 .
+
+The first voltage module 21 is connected to the gate of the eighth transistor H3 and the gate of the ninth transistor L4 respectively, the source of the eighth transistor H3 is connected to the second voltage module, the drain of the eighth transistor H3 is connected to the source of the ninth transistor L4, and the drain of the ninth transistor L4 is grounded. The source of the ninth transistor L4 is connected to the gate of the second transistor L2 and the gate of the third transistor L3 respectively.
+
+In some embodiments, the ternary logic gate circuit shown in a of FIG. 3 may be referred to as a self-incrementing logic gate circuit, or a first ternary logic gate circuit. The self-incrementing logic gate circuit may realize that the second logic value is equal to the first logic value plus 1. Wherein, if the first voltage indicates that the first logic value is 0, the ternary logic gate circuit outputs a second logic value of 1. If the first voltage indicates that the first logic value is 1, the ternary logic gate circuit outputs a second logic value of 2. If the first voltage indicates that the first logic value is 2, the ternary logic gate circuit outputs a second logic value of 0.
+
+In some embodiments, the self-increment logic gate circuit can be simplified as c in Figure 3. In the more complex ternary logic circuits (such as summation circuits, half-addition circuits) provided in the following embodiments, the simplified schematic diagram shown in c in Figure 3 can be used to represent the self-increment logic gate circuit.
+
+In some embodiments, the fifth voltage may be 0.9V-1.8V, or even a value greater than 1.8V.
+
+In some embodiments, the first threshold voltage may be set to 0.2 V-0.3 V, the third threshold voltage may be set to 0.4 V, and the second threshold voltage may be set to 0.6 V-0.7 V. In some embodiments, the sum of the first threshold voltage and the second threshold voltage may be less than the fifth voltage.
+
+The principle that the second logic value is equal to the first logic value plus 1 is described below in conjunction with FIG. 3 . In the following example, V DD is 1V and V GND is 0V.
+
+First, when the first voltage is equal to V GND , the first voltage represents a first logic value of 0.
+
+For the first transistor L1, the voltage of the gate of the first transistor L1 is V GND , the voltage of the source of the first transistor L1 is V DD , the voltage difference between the gate and the source of the first transistor L1 is V GND -V DD (e.g. -1V), and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 (e.g. 1V) is greater than the first threshold voltage of the first transistor L1, so the first transistor L1 is turned on.
+
+When the first transistor L1 is turned on, the voltage of the source of the second transistor L2 is equal to V DD , and the first voltage (V GND ) can output the third voltage V DD through NTI, so the voltage of the gate of the second transistor L2 is V DD . The voltage difference between the gate and the source of the second transistor L2 is 0V, and because the second transistor L2 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the second transistor L2 is less than the first threshold voltage of the second transistor L2, so the second transistor L2 is turned off.
+
+Similarly, for the third transistor L3, the first voltage (V GND ) can output the third voltage V DD through NTI, and the voltage of the gate of the third transistor L3 is V DD . The drain of the third transistor L3 is grounded, and the voltage difference between the gate and the drain of the third transistor L3 is V DD (e.g., 1V), and because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the drain of the third transistor L3 (e.g., 1V) is greater than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned on.
+
+When the third transistor L3 is turned on, the voltage at the source of the sixth transistor M1 is equal to V DD . Since the gate of the sixth transistor M1 is grounded, the voltage difference between the gate and the source of the sixth transistor M1 is V GND -V DD (e.g. -1V). Since the sixth transistor M1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the sixth transistor M1 (e.g. 1V) is greater than the third threshold voltage of the sixth transistor M1. Therefore, the sixth transistor M1 is turned on.
+
+Similarly, for the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is V GND , the voltage of the source of the fourth transistor H1 is V DD , the voltage difference between the gate and the source of the fourth transistor H1 is V GND -V DD (e.g. -1V), and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 (e.g. 1V) is greater than the second threshold voltage of the fourth transistor H1, and therefore the fourth transistor H1 is turned on.
+
+The voltage of the source of the fifth transistor H2 is equal to V GND . Since the voltage of the gate of the fifth transistor H2 is V GND , the voltage difference between the gate and the source of the fifth transistor H2 is 0. Moreover, since the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 is less than the second threshold voltage of the fifth transistor H2. Therefore, the fifth transistor H2 is turned off.
+
+When the fourth transistor H1 is turned on, the voltage of the source of the seventh transistor M2 is equal to V GND . Since the gate of the seventh transistor M2 is connected to the second voltage module, the voltage of the gate of the seventh transistor M2 is V DD . The voltage difference between the gate and the source of the seventh transistor M2 is V DD -V GND (e.g., 1V). Since the seventh transistor M2 is an N-type transistor, the voltage difference between the gate and the source of the seventh transistor M2 is greater than the third threshold voltage of the seventh transistor M2. Therefore, the seventh transistor M2 is turned on.
+
+When the sixth transistor M1 and the seventh transistor M2 are turned on, a second voltage The second voltage represents the second logic value 1. Specifically, when the sixth transistor M1 and the seventh transistor M2 are both turned on, the voltage output by the ternary logic gate circuit is equivalent to the voltage divided by the series resistance of the sixth transistor M1 and the seventh transistor M2, that is, the voltage output by the ternary logic gate circuit is V out = RM2 / ( RM1 + RM2 ) × VDD . At this time, RM1 and RM2 are almost equal, so the ternary logic gate circuit outputs Wherein, RM1 is the resistance of the sixth transistor M1, and RM2 is the resistance of the seventh transistor M2.
+
+In summary, when the first voltage is equal to V GND , the first voltage represents a first logic value of 0, the first transistor L1 in the ternary logic gate circuit is turned on, the second transistor L2 is turned off, the third transistor L3 is turned on, the fourth transistor H1 is turned on, the fifth transistor H2 is turned off, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on. Among them, the first group of transistors (the first transistor L1, the second transistor L2, and the third transistor L3) can output V DD to the third group of transistors (for example, the sixth transistor M1), and V DD represents a logic value of 2. In addition, the second group of transistors (the fourth transistor H1 and the fifth transistor H2) can output V GND to the third group of transistors (for example, the seventh transistor M2), and V GND represents a logic value of 0. Accordingly, the first group of transistors and the second group of transistors are regarded as a first processing unit, and the first processing unit can output a fourth voltage representing a fourth logic value, and the fourth logic value is 0 and 2.
+
+Second, when the first voltage is equal to When , the first voltage represents a first logic value 1.
+
+For the first transistor L1, the voltage of the gate of the first transistor L1 is The voltage of the source of the first transistor L1 is V DD , and the voltage difference between the gate and source of the first transistor L1 is (eg, -0.5V), and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 (eg, 0.5V) is greater than the first threshold voltage of the first transistor L1, and the first transistor L1 is turned on.
+
+When the first transistor L1 is turned on, the voltage at the source of the second transistor L2 is equal to V DD . Through NTI, a third voltage V GND can be output, so the voltage of the gate of the second transistor L2 is V GND . The voltage difference between the gate and the source of the second transistor L2 is V GND -V DD (such as -1V), and because the second transistor L2 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the second transistor L2 (such as 1V) is greater than the first threshold voltage of the second transistor L2, so the second transistor L2 is turned on.
+
+For the third transistor L3, the first voltage Through NTI, a third voltage V GND can be output, and the voltage of the gate of the third transistor L3 is V GND . The drain of the third transistor L3 is grounded, and the voltage difference between the gate and the drain of the third transistor L3 is 0V. Because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the drain of the third transistor L3 is less than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned off.
+
+When the second transistor L2 is turned on, the voltage at the source of the sixth transistor M1 is equal to V DD . Since the gate of the sixth transistor M1 is grounded, the voltage difference between the gate and the source of the sixth transistor M1 is 0-V DD (e.g., -1V). Moreover, since the sixth transistor M1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the sixth transistor M1 (e.g., 1V) is greater than the third threshold voltage of the sixth transistor M1. Therefore, the sixth transistor M1 is turned on.
+
+Similarly, for the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is The voltage of the source of the fourth transistor H1 is V DD , and the voltage difference between the gate and the source of the fourth transistor H1 is (e.g. -0.5V), and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 (e.g. 0.5V) is less than the second threshold voltage of the fourth transistor H1 (e.g. 0.6V-0.7V), so the fourth transistor H1 is turned off.
+
+Similarly, the voltage at the drain of the fifth transistor H2 is equal to V GND because the voltage at the gate of the fifth transistor H2 is Therefore, the voltage difference between the gate and drain of the fifth transistor H2 is (eg, 0.5V), and because the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 (eg, 0.5V) is less than the second threshold voltage of the fifth transistor H2 (eg, 0.6V-0.7V), and thus the fifth transistor H2 is turned off.
+
+When the fourth transistor H2 and the fifth transistor H2 are both turned off, the voltage of the source of the seventh transistor M2 is equal to 0V. Since the gate of the seventh transistor M2 is connected to the second voltage module, the voltage of the gate of the seventh transistor M2 is V DD , and the voltage difference between the gate and the source of the seventh transistor M2 is V DD (e.g., 1V). Since the seventh transistor M2 is an N-type transistor, the voltage difference between the gate and the source of the seventh transistor M2 is greater than the third threshold voltage of the seventh transistor M2, and therefore the seventh transistor M2 is turned on.
+
+According to the same analysis idea, when the sixth transistor M1 and the seventh transistor M2 are turned on, a second voltage V DD can be output, and the second voltage represents a second logic value 2.
+
+In summary, when the first voltage is equal to When the first voltage represents the first logic value 1, the first transistor L1 in the ternary logic gate circuit is turned on, the second transistor L2 is turned on, the third transistor L3 is turned off, the fourth transistor H1 is turned off, the fifth transistor H2 is turned off, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on. Among them, the first group of transistors (the first transistor L1, the second transistor L2 and the third transistor L3) can output V DD to the third group of transistors (for example, the sixth transistor M1), and V DD represents the logic value 2. In addition, the second group of transistors (the fourth transistor H1 and the fifth transistor H2) can output V GND to the third group of transistors (for example, the seventh transistor M2), and V GND represents the logic value 0. Accordingly, the first group of transistors and the second group of transistors are regarded as a first processing unit, and the first processing unit can output a fourth voltage representing a fourth logic value, and the fourth logic value is 0 and 2.
+
+Third, when the first voltage is equal to V DD , the first voltage represents a first logic value of 2.
+
+For the first transistor L1, the voltage of the gate of the first transistor L1 is V DD , the voltage of the source of the first transistor L1 is V DD , the voltage difference between the gate and the source of the first transistor L1 is 0, and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 is less than the first threshold voltage of the first transistor L1, and the first transistor L1 is turned off.
+
+For the third transistor L3, the first voltage (V DD ) passes through NTI to output a third voltage V GND , and the voltage of the gate of the third transistor L3 is V GND . The drain of the third transistor L3 is grounded, and the voltage difference between the gate and the source of the third transistor L3 is 0. Because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the source of the third transistor L3 is less than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned off.
+
+For the second transistor L2, when the first transistor L1 and the third transistor L3 are both turned off, the second transistor L2 has no effect on the ternary logic gate circuit. At this time, the voltage output by the ternary logic gate circuit depends on the fifth transistor H2 and the seventh transistor M2 to output V GND , realizing the function of adding 1 to the first logic value.
+
+For the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is V DD , the voltage of the source of the fourth transistor H1 is V DD , the voltage difference between the gate and the source of the fourth transistor H1 is 0V, and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 is less than the second threshold voltage of the fourth transistor H1, so the fourth transistor H1 is turned off.
+
+The voltage of the drain of the fifth transistor H2 is equal to V GND , and the voltage of the gate of the fifth transistor H2 is V DD , so the voltage difference between the gate and the source of the fifth transistor H2 is V DD -V GND (e.g., 1V), and because the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 is greater than the second threshold voltage of the fifth transistor H2, so the fifth transistor H2 is turned on.
+
+When the fifth transistor H2 is turned on, the voltage of the source of the seventh transistor M2 is equal to V GND . Since the gate of the seventh transistor M2 is connected to the second voltage module, the voltage of the gate of the seventh transistor M2 is V DD , and the voltage difference between the gate and the source of the seventh transistor M2 is V DD (e.g., 1V). Since the seventh transistor M2 is an N-type transistor, the voltage difference between the gate and the source of the seventh transistor M2 is greater than the third threshold voltage of the seventh transistor M2, and therefore the seventh transistor M2 is turned on.
+
+According to the same analysis idea, when the sixth transistor M1 and the seventh transistor M2 are turned on, a second voltage V GND can be output, and the second voltage represents a second logic value of 0. Specifically, because the first transistor L1 and the third transistor L3 are turned off, the second transistor L2 and the sixth transistor M1 are isolated outside the circuit and have no effect on the ternary logic gate circuit. At this time, the output of the ternary logic gate circuit relies on H2 and M2 to output V GND , thereby realizing the function of adding 1 to the first logic value.
+
+In summary, when the first voltage is equal to V DD , the first voltage represents the first logic value 2, the first transistor L1 in the ternary logic gate circuit is turned off, the second transistor L2 is turned on, the third transistor L3 is turned off, the fourth transistor H1 is turned off, the fifth transistor H2 is turned on, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on. Among them, the first group of transistors (the first transistor L1, the second transistor L2, and the third transistor L3) can output V DD to the third group of transistors (for example, the sixth transistor M1), and V DD represents the logic value 2. In addition, the second group of transistors (the fourth transistor H1 and the fifth transistor H2) can output V GND to the third group of transistors (for example, the seventh transistor M2), and V GND represents the logic value 0. Accordingly, the first group of transistors and the second group of transistors are regarded as a first processing unit, and the first processing unit can output a fourth voltage representing a fourth logic value, and the fourth logic value includes 0 and 2.
+
+In summary, referring to d in FIG. 3 , when the input first voltage is V GND = 0V, that is, the first logic value is 0, the output second voltage is That is, the second logic value is 1. When the first input voltage is That is, when the first logic value is 1, the output second voltage is V DD =1V, that is, the second logic value is 2. When the input first voltage is V DD =1V, that is, the first logic value is 2, the output second voltage is V GND =0V, that is, the second logic value is 0.
+
+In summary, Table 1 shows that when the first voltage is V GND , and V DD , the on and off conditions of the first transistor L1, the second transistor L2, the third transistor L3, the fourth transistor H1, the fifth transistor H2, the sixth transistor M1, and the seventh transistor M2.
+
+Table 1
+
+
+Among them, ON in Table 1 means that the transistor is turned on, and OFF means that the transistor is turned off.
+
+It should be understood that the embodiments of the present application analyze the situations in which each transistor is turned off and on at different inputs. Based on the situations in which each transistor is turned off and on, the ternary gate circuit can output different second voltages (i.e., different outputs), and the second logic value is equal to the first logic value plus 1. It should be noted that when a transistor is turned off, the adjacent transistor is isolated outside the circuit, and has no effect on the output of the ternary logic gate circuit. When analyzing the output of the ternary gate circuit, the ternary logic gate circuit shown in a in FIG. 3 can be referred to for specific analysis.
+
+Example 2: The ternary logic gate circuit can realize the first logic value minus 1, that is, the second logic value is equal to the first logic value minus 1.
+
+In some embodiments, the pre-processing module 221 is a positive ternary inverter (PTI). The first group of transistors includes: a first transistor L1, a second transistor L2 and a third transistor L3, the second group of transistors includes: a fourth transistor H1 and a fifth transistor H2, and the third group of transistors includes: a sixth transistor M1 and a seventh transistor M2.
+
+In some embodiments, the first group of transistors, the second group of transistors, and the third group of transistors may be transistors of the same or different polarities, and the polarities may include N-type and P-type. In some embodiments, the first transistor L1, the fourth transistor H1, and the sixth transistor M1 are P-type transistors, and the second transistor L2, the third transistor L3, the fifth transistor H2, and the seventh transistor M2 are N-type transistors.
+
+In some embodiments, the ternary logic gate circuit may further include a second voltage module, and the second voltage module may provide a fifth voltage (V DD ) for the logic gate module 22 .
+
+In some embodiments, the first voltage module 21 and the second voltage module may not be included in the ternary logic gate circuit, wherein the ternary logic gate circuit may receive the first voltage from the first voltage module 21 and the fifth voltage from the second voltage module.
+
+Referring to a in FIG4 , the first voltage module 21 is connected to the gate of the third transistor L3, the gate of the fourth transistor H1, and the gate of the fifth transistor H2, respectively, and the PTI is connected to the gate of the first transistor L1 and the gate of the second transistor L2, respectively. The source of the first transistor L1 is connected to the second voltage module, and the drain of the first transistor L1 is connected to the source of the second transistor L2 and the source of the seventh transistor M2, respectively. The drain of the second transistor L2 is connected to the source of the third transistor L3, and the drain of the third transistor L3 is grounded, the gate of the seventh transistor M2 is connected to the second voltage module, and the drain of the seventh transistor M2 is connected to the drain of the sixth transistor M1.
+
+The source of the fourth transistor H1 is connected to the second voltage module, the drain of the fourth transistor H1 is connected to the source of the fifth transistor H2 and the source of the sixth transistor M1 respectively, the drain of the fifth transistor H2 is grounded, and the gate of the sixth transistor M1 is grounded.
+
+It should be understood that GND in a in FIG. 4 represents grounding.
+
+In some embodiments, when the first voltage is set equal to V DD , the first voltage represents a first logic value of 2. The first voltage represents a first logic value of 1. When the first voltage is set to be equal to V GND , the first voltage represents a first logic value of 0.
+
+When the first voltage is equal to V DD , the first voltage can output a third voltage V GND after passing through PTI, and the third voltage represents a third logic value 0. When the first voltage is equal to V GND, the first voltage can output a third voltage V DD through PTI, and the third voltage represents a third logic value of 2. When the first voltage is equal to V GND , the first voltage can output a third voltage V DD through NTI, and the third voltage represents a third logic value of 2. In summary, PTI is used to receive the first voltage and output the third voltage, and the third voltage value represents a third logic value of 0 or 2.
+
+Referring to b in FIG4 , the PTI can be formed by two transistors connected in parallel, the two transistors being the tenth transistor L5 and the eleventh transistor H4. The threshold voltage of the eleventh transistor H4 is greater than the second threshold, and the threshold voltage of the tenth transistor L5 is less than the first threshold. The tenth transistor L5 is a P-type transistor, and the eleventh transistor H4 is an N-type transistor.
+
+The first voltage module 21 is connected to the gate of the tenth transistor L5 and the gate of the eleventh transistor H4 respectively, the source of the tenth transistor L5 is connected to the second voltage module, the drain of the tenth transistor L5 is connected to the source of the eleventh transistor H4, and the drain of the eleventh transistor H4 is grounded. The source of the eleventh transistor H4 is connected to the gate of the first transistor L1 and the gate of the second transistor L2 respectively.
+
+In some embodiments, the ternary logic gate circuit shown in a of FIG. 4 can be called a self-decrementing logic gate circuit, or a second ternary logic gate circuit, which can realize that the second logic value is equal to the first logic value minus 1. If the first voltage indicates that the first logic value is 0, the ternary logic gate circuit outputs the second logic value as 2. If the first voltage indicates that the first logic value is 1, the ternary logic gate circuit outputs the second logic value as 0. If the first voltage indicates that the first logic value is 2, the ternary logic gate circuit outputs the second logic value as 1.
+
+In some embodiments, the self-increment logic gate circuit can be simplified as shown in c in Figure 4. In the more complex ternary logic circuits (such as summation circuits, half-addition circuits) provided in the following embodiments, the simplified schematic diagram shown in b in Figure 4 can be used to represent the self-increment logic gate circuit.
+
+In some embodiments, the fifth voltage may be 0.9V-1.8V, or even a value greater than 1.8V.
+
+In some embodiments, the first threshold voltage may be set to 0.2 V-0.3 V, the third threshold voltage may be set to 0.4 V, and the second threshold voltage may be set to 0.6 V-0.7 V. In some embodiments, the sum of the first threshold voltage and the second threshold voltage may be less than the fifth voltage.
+
+Based on the same analysis ideas in "Part 1" to "Part 3", the following introduces the principle that the second logic value is equal to the first logic value minus 1 in combination with the self-decrementing logic gate circuit shown in a of FIG. 4:
+
+Fourthly, when the first voltage is equal to V GND , the first voltage represents a first logic value of 0.
+
+For the first transistor L1, the first voltage (V GND ) can output a third voltage V DD after passing through PTI, the voltage of the gate of the first transistor L1 is V DD , the voltage of the source of the first transistor L1 is V DD , the voltage difference between the gate and the source of the first transistor L1 is 0, and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 is less than the first threshold voltage of the first transistor L1, and the first transistor L1 is turned off.
+
+For the third transistor L3, the voltage of the gate of the third transistor L3 is V GND , the drain of the third transistor L3 is grounded, the voltage difference between the gate and the drain of the third transistor L3 is 0, and because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the drain of the third transistor L3 is less than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned off.
+
+When the first transistor L1 is turned on, the source voltage of the second transistor L2 is 0. For the second transistor L2, the first voltage (V GND ) can output the third voltage V DD through PTI. The gate voltage of the second transistor L2 is V DD . The voltage difference between the gate and the source of the second transistor L2 is V DD . Because the second transistor L2 is an N-type transistor, the voltage difference between the gate and the source of the second transistor L2 is greater than the first threshold voltage of the second transistor L2, and the second transistor L2 is turned on.
+
+When the second transistor L2 is turned on, the voltage at the source of the seventh transistor M2 is equal to V GND . Since the gate of the seventh transistor M2 is connected to the second voltage module, the voltage at the gate of the seventh transistor M2 is V DD . Moreover, since the seventh transistor M2 is an N-type transistor, the voltage difference between the gate and the source of the seventh transistor M2 (V DD −V GND ) is greater than the third threshold voltage of the seventh transistor M2, and the seventh transistor M2 is turned on.
+
+Similarly, for the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is V GND , the voltage of the source of the fourth transistor H1 is V DD , the voltage difference between the gate and the source of the fourth transistor H1 is V GND -V DD (e.g. -1V), and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 (e.g. 1V) is greater than the second threshold voltage of the fourth transistor H1, and therefore the fourth transistor H1 is turned on.
+
+When the fourth transistor H1 is turned on, the voltage of the source of the fifth transistor H2 is equal to V GND . Since the voltage of the gate of the fifth transistor H2 is V GND , the voltage difference between the gate and the source of the fifth transistor H2 is 0V. Moreover, since the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 is less than the second threshold voltage of the fifth transistor H2. Therefore, the fifth transistor H2 is turned off.
+
+When the fourth transistor H1 is turned on, the voltage at the source of the sixth transistor M1 is equal to V DD . Since the gate of the sixth transistor M1 is grounded, the voltage at the gate of the sixth transistor M1 is V GND . The voltage difference between the gate and the source of the sixth transistor M1 is V DD -V GND . Since the sixth transistor M1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the sixth transistor M1 is greater than the third threshold voltage of the sixth transistor M1 . Therefore, the sixth transistor M1 is turned on.
+
+When the sixth transistor M1 and the seventh transistor M2 are turned on, a second voltage V DD can be output, and the second voltage represents a second logic value 2.
+
+In summary, when the first voltage is equal to V GND , the first voltage represents the first logic value 0, the first transistor L1 in the ternary logic gate circuit is turned off, the second transistor L2 is turned on, the third transistor L3 is turned off, the fourth transistor H1 is turned on, the fifth transistor H2 is turned off, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on. Among them, at this time, only the fourth transistor H1 and the sixth transistor M1 of the circuit play a role, transmitting V DD to the output end, so the input first logic value is 0, and the output second logic value is 2, realizing the -1 function.
+
+Fifth, when the first voltage is equal to When , the first voltage represents a first logic value 1.
+
+For the first transistor L1, the first voltage After PTI, a third voltage V DD can be output, the voltage of the gate of the first transistor L1 is V DD , the voltage of the source of the first transistor L1 is V DD , the voltage difference between the gate and the source of the first transistor L1 is 0, and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 is less than the first threshold voltage of the first transistor L1, and the first transistor L1 is turned off.
+
+For the third transistor L3, the gate of the third transistor L3 is The voltage of the drain of the third transistor L3 is V GND , and the voltage difference between the gate and drain of the third transistor L3 is (eg 0.5V), and because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the drain of the third transistor L3 is greater than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned on.
+
+When the third transistor L3 is turned on, the source voltage of the second transistor L2 is 0V, and the first voltage After PTI, a third voltage V DD can be output. The voltage of the gate of the second transistor L2 is V DD , and the voltage difference between the gate and the source of the second transistor L2 is And because the second transistor L2 is an N-type transistor, the voltage difference between the gate and the source of the second transistor L2 is greater than the first threshold voltage of the second transistor L2, and the second transistor L2 is turned on.
+
+When the second transistor L2 is turned on, the voltage at the source of the seventh transistor M2 is equal to Because the gate of the seventh transistor M2 is connected to the second voltage module, the gate voltage of the seventh transistor M2 is V DD , and because the seventh transistor M2 is an N-type transistor, the gate and source voltage difference of the seventh transistor M2 is greater than the third threshold voltage of the seventh transistor M2 , and the seventh transistor M2 is turned on.
+
+Similarly, for the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is The voltage of the source of the fourth transistor H1 is V DD , and the voltage difference between the gate and the source of the fourth transistor H1 is (e.g. -0.5V), and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 (e.g. 0.5V) is less than the second threshold voltage of the fourth transistor H1 (e.g. 0.6V-0.7V), so the fourth transistor H1 is turned off.
+
+Similarly, for the fifth transistor H2, the voltage of the gate of the fifth transistor H2 is The voltage of the drain of the fifth transistor H2 is equal to V GND , and the voltage difference between the gate and drain of the fifth transistor H2 is (eg, 0.5V), and because the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 (eg, 0.5V) is less than the second threshold voltage of the fifth transistor H2 (eg, 0.6V-0.7V), and thus the fifth transistor H2 is turned off.
+
+When the fourth transistor H1 and the fifth transistor are both turned off, the sixth transistor M1 is isolated outside the ternary logic gate circuit and does not affect the output of the ternary logic gate circuit.
+
+When the sixth transistor M1 and the seventh transistor M2 are turned on, the third transistor L3, the second transistor L2, and the seventh transistor M2 are in action in the ternary logic gate circuit, and the input is The output is 0V, which plays the role of turning the first logic value -1. In the embodiment of the present application, when the first voltage is , the ternary logic gate circuit can output a second voltage V GND , and the second voltage represents a second logic value 0.
+
+In summary, when the first voltage is equal to When the first voltage represents the first logic value 1, the first transistor L1 in the ternary logic gate circuit is turned off, the second transistor L2 is turned on, the third transistor L3 is turned on, the fourth transistor H1 is turned off, the fifth transistor H2 is turned off, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on.
+
+Sixth, when the first voltage is equal to V DD , the first voltage represents a first logic value of 2.
+
+For the first transistor L1, the first voltage (V DD ) can output a third voltage V GND after passing through PTI, the voltage of the gate of the first transistor L1 is V GND , the voltage of the source of the first transistor L1 is V DD , the voltage difference between the gate and the source of the first transistor L1 is V GND -V DD (e.g. -1V), and because the first transistor L1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the first transistor L1 (e.g. 1V) is greater than the first threshold voltage of the first transistor L1, and the first transistor L1 is turned on.
+
+For the third transistor L3, the voltage of the gate of the third transistor L3 is V DD , the drain of the third transistor L3 is grounded, the voltage difference between the gate and the drain of the third transistor L3 is V DD , and because the third transistor L3 is an N-type transistor, the voltage difference between the gate and the source of the third transistor L3 is greater than the first threshold voltage of the third transistor L3, so the third transistor L3 is turned on.
+
+When the first transistor L1 and the third transistor L3 are both turned on, the source voltage of the second transistor L2 is V GND . For the second transistor L2, the first voltage (V DD ) can output the third voltage V GND after passing through PTI. The gate voltage of the second transistor L2 is V GND . The voltage difference between the gate and the source of the second transistor L2 is 0V. Because the second transistor L2 is an N-type transistor, the voltage difference between the gate and the source of the second transistor L2 is less than the first threshold voltage of the second transistor L2, and the second transistor L2 is turned off.
+
+Wherein, after the second transistor L2 is turned off, the third transistor L3 is isolated and does not affect the output of the ternary gate circuit.
+
+When the first transistor L1 is turned on, the voltage at the source of the seventh transistor M2 is equal to V GND . Since the gate of the seventh transistor M2 is connected to the second voltage module, the voltage at the gate of the seventh transistor M2 is V DD . Moreover, since the seventh transistor M2 is an N-type transistor, the voltage difference between the gate and the source of the seventh transistor M2 is greater than the third threshold voltage of the seventh transistor M2 , and the seventh transistor M2 is turned on.
+
+Similarly, for the fourth transistor H1, the voltage of the gate of the fourth transistor H1 is V DD , the voltage of the source of the fourth transistor H1 is V DD , the voltage difference between the gate and the source of the fourth transistor H1 is 0V, and because the fourth transistor H1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the fourth transistor H1 is less than the second threshold voltage of the fourth transistor H1, and therefore the fourth transistor H1 is turned off.
+
+The voltage of the gate of the fifth transistor H2 is V DD , and the voltage of the drain of the fifth transistor H2 is equal to V GND . Therefore, the voltage difference between the gate and the drain of the fifth transistor H2 is V DD −V GND (e.g., 1V), and because the fifth transistor H2 is an N-type transistor, the voltage difference between the gate and the source of the fifth transistor H2 is greater than the second threshold voltage of the fifth transistor H2 , and thus the fifth transistor H2 is turned on.
+
+When the fifth transistor H3 is turned on, the voltage at the source of the sixth transistor M1 is equal to V DD . Since the gate of the sixth transistor M1 is grounded, the voltage at the gate of the sixth transistor M1 is V GND . The voltage difference between the gate and the source of the sixth transistor M1 is V GND -V DD (e.g. -1V). Since the sixth transistor M1 is a P-type transistor, the absolute value of the voltage difference between the gate and the source of the sixth transistor M1 (1V) is greater than the third threshold voltage of the sixth transistor M1. Therefore, the sixth transistor M1 is turned on.
+
+According to the same analysis idea, when the sixth transistor M1 and the seventh transistor M2 are turned on, the second voltage The second voltage represents a second logic value 1.
+
+In summary, when the first voltage is equal to V DD , the first voltage represents the first logic value 2, the first transistor L1 in the ternary logic gate circuit is turned on, the second transistor L2 is turned off, the third transistor L3 is turned on, the fourth transistor H1 is turned off, the fifth transistor H2 is turned on, the sixth transistor M1 is turned on, and the seventh transistor M2 is turned on.
+
+In summary, referring to d in FIG. 4 , when the input first voltage is V GND = 0V, that is, the first logic value is 0, the output second voltage is V DD , that is, the second logic value is 2. That is, when the first logic value is 1, the output second voltage is V GND = 0V, that is, the second logic value is 0. When the input first voltage is V DD = 1V, that is, the first logic value is 2, the output second voltage is That is, the second logic value is 1.
+
+In summary, Table 2 shows that when the first voltage is V GND , and V DD , the on and off conditions of the first transistor L1, the second transistor L2, the third transistor L3, the fourth transistor H1, the fifth transistor H2, the sixth transistor M1, and the seventh transistor M2.
+
+Table 2
+
+
+Among them, ON in Table 2 means that the transistor is turned on, and OFF means that the transistor is turned off.
+
+It should be understood that the embodiments of the present application analyze the situations in which each transistor is turned off and on at different inputs. Based on the situations in which each transistor is turned off and on, the ternary gate circuit can output different second voltages (i.e., different outputs), and the second logic value is equal to the first logic value minus 1. It should be noted that when a transistor is turned off, the adjacent transistor is isolated outside the circuit, and has no effect on the output of the ternary logic gate circuit. When analyzing the output of the ternary gate circuit, the ternary logic gate circuit shown in a of FIG. 4 can be referred to for specific analysis.
+
+In summary, the embodiment of the present application can provide a self-increment logic gate circuit, which can realize the addition of 1 to the input ternary logic value. In addition, the embodiment of the present application also provides a self-decrement logic gate circuit, which can realize the subtraction of 1 from the input ternary logic value.
+
+Based on the ternary logic gate circuit provided in the embodiment of the present application, a summing circuit is designed by using the ternary logic gate circuit in the embodiment of the present application, and the summing circuit is used to sum two signals. Wherein, both signals are ternary signals. In some embodiments, the summing circuit can be called a summer.
+
+In some embodiments, the summing circuit may include: a first ternary logic gate circuit and a second ternary logic gate circuit. In the first ternary logic gate circuit, the second logic value is equal to the first logic value plus 1, and in the second ternary logic gate circuit, the second logic value is equal to the first logic value minus 1. The first ternary logic gate circuit can be understood as a self-incrementing logic gate circuit, and the second ternary logic gate circuit can be understood as a self-decrementing logic gate circuit.
+
+The following describes the summing circuit provided in the embodiment of the present application in conjunction with FIG5 :
+
+The first signal module is used to connect to the summing circuit, and the second signal module is used to connect to the summing circuit. The first signal module can output a first signal to the summing circuit, and the second signal module can output a second signal to the summing circuit. The first signal and the second signal are both ternary signals. The summing circuit can perform sum calculation on the first signal and the second signal and output a first summation result.
+
+5 , in some embodiments, the summing circuit 50 may include: a signal processing module 51, a first ternary logic gate circuit 52, a second ternary logic gate circuit 53, a first gating tube 54, a second gating tube 55, and a third gating tube 56. In some embodiments, the gating tube HIA may be referred to as a transmission gate.
+
+In some embodiments, summing circuit 50 may include a first signal module and a second signal module.
+
+The signal processing module 51 is used to connect with the first signal module, and the signal processing module 51 is respectively connected with the first gate tube 54, the second gate tube 55, and the third gate tube 56. The second signal module is respectively connected with the first gate tube 54, the first ternary logic gate circuit 52, and the second ternary logic gate circuit 53. The first ternary logic gate circuit 52 is connected with the second gate tube 55, and the second ternary logic gate circuit 53 is connected with the third gate tube 56.
+
+The second signal module is used to output a second signal. When the second signal passes through the first ternary logic gate circuit 52, the first ternary logic gate circuit 52 can add 1 to the logic value corresponding to the second signal. When the second signal passes through the second ternary logic gate circuit 53, the second ternary logic gate circuit 53 can subtract 1 from the logic value corresponding to the second signal. When the second signal does not pass through the first ternary logic gate circuit 52 and the second ternary logic gate circuit 53, the logic value corresponding to the second signal can be output.
+
+The first signal module is used to output the first signal. The signal processing module 51 is used to turn on any gate tube according to the first signal to enable the summing circuit to output the first summation result of the first signal and the second signal.
+
+The first signal and the second signal are both ternary signals, for example, the first signal is used to represent the fifth logic value, and the second signal is used to represent the sixth logic value. In some embodiments, the first signal module can output the first signal in the form of an output voltage or a level, and the second signal module can also output the second signal in the form of an output voltage or a level, and the description of the first voltage module outputting the first voltage can be referred to.
+
+In some embodiments, when the signal processing module 51 turns on the first gate tube 54 according to the first signal, the first summation result is: the sum of the fifth logic value and the sixth logic value. When the signal processing module 51 turns on the second gate tube 55 according to the first signal, the first summation result is: the sum of the sixth logic value plus 1 and the fifth logic value. When the signal processing module 51 turns on the third gate tube 56 according to the first signal, the first summation result is: the sum of the sixth logic value minus 1 and the fifth logic value. In this way, the summation circuit 50 can output the first summation result of the first signal and the second signal.
+
+In some embodiments, referring to FIG. 5 , the signal processing module 51 may include: a first NTI 511 , a second NTI 512 , a PTI 513 , and a NOR gate 514 .
+
+The first signal module is connected to the first end of the first NTI 511 and the first end of the PTI 513 respectively, the second end of the first NTI 511 is connected to the first selection tube 54 and the first input end of the NOR gate 514 respectively, the second end of the PTI 513 is connected to the first end of the second NTI 512, the second end of the second NTI 512 is connected to the second input end of the NOR gate 514 and the third selection tube 56 respectively, and the output end of the NOR gate 514 is connected to the second selection tube 55. In some embodiments, the first end of the NTI can be regarded as the input end of the NTI, the second end of the NTI can be regarded as the output end of the NTI, the first end of the PTI can be regarded as the input end of the PTI, and the second end of the PTI can be regarded as the output end of the PTI.
+
+The following takes the case where the first signal is a ternary signal A and the second signal is a ternary signal B as an example to illustrate the process in which the summing circuit 50 outputs the first summing result SUM AB :
+
+When the ternary signal A passes through the first NTI 511, the first NTI 511 can output the A0 signal. When the ternary signal A passes through the PTI 513 and the second NTI 512, the second NTI 512 can output the A2 signal. When the A0 signal and the A2 signal pass through the NOR gate 514, the NOR gate 514 can output the A1 signal.
+
+The A0 signal is used to turn off or turn on the first gate tube 54. The A1 signal is used to turn off or turn on the second gate tube 55. The A2 signal is used to turn off or turn on the third gate tube 56.
+
+In some embodiments, the gate tube is composed of two transistors with opposite polarities. Specifically, the gate tube is composed of an N-type transistor and a P-type transistor connected back to back. The back-to-back connection of the N-type transistor and the P-type transistor can be understood as: the source of the N-type transistor is connected to the drain of the P-type transistor, the drain of the N-type transistor is connected to the source of the P-type transistor, or the source of the N-type transistor is connected to the source of the P-type transistor, and the drain of the N-type transistor is connected to the drain of the P-type transistor.
+
+Taking the ternary signal A representing the fifth logic value 2 as an example, the ternary signal A can output an A2 signal through the PTI 513 and the second NTI 512, and the A2 signal represents the logic value 2. The A2 signal can turn on the third selection tube, so that the summing circuit can output the first summation result of "the sum of the sixth logic value minus 1 and the fifth logic value".
+
+Taking the ternary signal A representing the fifth logic value 1 as an example, the A1 signal output by the NOR gate 514 can turn on the second selection tube, so that the summing circuit can output the first summing result of "the sum of the sixth logic value plus 1 and the fifth logic value".
+
+Taking the ternary signal A representing the fifth logic value 0 as an example, the ternary signal A can output the A0 signal through the first NTI 511, and the A0 signal represents the logic value 2. The A0 signal can turn on the first selection tube, so that the summing circuit can output the first summation result of "the sum of the fifth logic value and the sixth logic value".
+
+An embodiment of the present application provides a summing circuit, which can perform a summing calculation on a ternary signal A and a ternary signal B and output a first summing result.
+
+In the above summation circuit, the summation calculation of the ternary signal A and the ternary signal B can be realized, but based on the calculation principle of the ternary summation, there is a carry when the summation calculation of the ternary signal A and the ternary signal B is performed. In order to ensure the accuracy of the summation calculation, the embodiment of the present application provides a half-adder circuit based on the summation circuit. The half-adder circuit adds a carry device on the basis of the summation circuit, and can more accurately perform the summation calculation of the ternary signal A and the ternary signal B.
+
+In some embodiments, the half-adder circuit includes the summing circuit 50 in the above embodiments. In some embodiments, the half-adder circuit may be referred to as a half adder.
+
+In some embodiments, referring to Fig. 6, the half-adder circuit 60 may include: a summing circuit 50 and a first carry 61. The first signal module is used to connect to the summing circuit 50 and the first carry 61 respectively, and the second signal module is used to connect to the summing circuit 50 and the first carry 61 respectively.
+
+The structure of the first carry 61 may be the same as that of the carry in the binary logic circuit, and reference may be made to the enlarged view of the first carry 61 in Fig. 6. In the enlarged view of the first carry 61, An indicates that the first signal is output to the first carry 61 after being processed by NTI, and Ap indicates that the first signal is output to the first carry 61 after being processed by PTI. Bn indicates that the second signal is output to the first carry 61 after being processed by NTI, and BP indicates that the second signal is output to the first carry 61 after being processed by PTI.
+
+The summing circuit 50 is used to output a first summation result of the first signal and the second signal, and the first summation result is represented by SUM AB in Figure 6. In some embodiments, SUM AB can also be referred to as the sum of halfadder circuit 60.
+
+The first carry device is used to output a first carry result of summing the first signal and the second signal, and the first carry result is represented by Carry AB in Figure 6. In some embodiments, Carry AB can also be called a carry result of half adder circuit 60 (carry of half adder).
+
+An embodiment of the present application provides a half-adder circuit, which, when performing a sum calculation on a first signal and a second signal, can not only output a first sum result of the first signal and the second signal, but also output a first carry result when performing the sum calculation on the first signal and the second signal, and can accurately output the sum calculation result of the first signal and the second signal.
+
+On the basis of the summing circuit 50 and the half-adding circuit 60 provided in the above embodiment, the embodiment of the present application provides a full adding circuit, which may include the half-adding circuit 60 in the above embodiment. The full adding circuit is used to realize the summing calculation of three ternary signals. For a ternary full adding circuit, as with binary calculation, the ternary full adding circuit may include three input signals: such as ternary signal A, ternary signal B, and ternary signal C, and the output of the ternary full adding circuit is: sum signal SUM ABC and carry signal Carry ABC . In some embodiments, the full adding circuit may be called a full adder.
+
+7, the full adder circuit 70 may include: a first-stage half adder circuit 60, a second-stage half adder circuit 71, and a second carry 72. The second-stage half adder circuit 71 is used to connect to the third signal module.
+
+In some embodiments, the full adder circuit 70 may include a third signal module. In some embodiments, because the first-stage half adder circuit 60 may include a first signal module and a second signal module, the full adder circuit 70 may include a first signal module, a second signal module, and a third signal module.
+
+The structure of the first stage half adder circuit 60 may be shown in FIG. 6 . The first stage half adder circuit 60 is used to output a first summation result (such as SUM AB ) to the second stage half adder circuit 71 , and to output a first carry result (Carry AB ) to the second carry device 72 .
+
+The third signal module is used to output a third signal to the second-stage half-adder circuit 71. The third signal is a ternary signal. For example, FIG7 takes the third signal as a ternary signal C as an example.
+
+In some embodiments, the second-stage half-adder circuit 71 is used to perform a sum calculation on the first summation result and the third signal, output a second summation result, and output a second carry result to the second carry device 72. The second summation result is the result of summing the first summation result and the third signal, and the second summation result is represented as SUM ABC in FIG7 , and the second carry result is the carry result when summing the first summation result and the third signal, and the second carry result is represented as Carry ABC in FIG7 .
+
+In some embodiments, the structure of the second-stage half-adder circuit 71 may be the same as the structure of the first-stage half-adder circuit 60 , as shown in FIG. 6 .
+
+In some embodiments, in the second-stage half adder, since the carry after the sum of the first signal and the second signal can only be a logic value 0 or a logic value 1, and a logic value 2 will not appear, in the second-stage half adder, the calculation path only needs to perform a +0 operation (such as using a buffer) or a +1 operation (such as using a self-increment logic gate circuit), without using a self-decrement logic gate circuit.
+
+In some embodiments, the second-stage half-adder circuit 71 may include a third ternary logic gate circuit, in which the second logic value output by the third ternary logic gate circuit is equal to the first logic value plus 1. In other words, the third ternary logic gate circuit is a self-incrementing logic gate circuit.
+
+8 , the second-stage half-adder circuit 71 may include: a third ternary logic gate circuit 711 , a positive buffer (PB) 712 , a negative buffer (NB) 713 , a fourth gate tube 714 , a fifth gate tube 715 , and an AND gate 716 .
+
+The third signal module is used to connect to the input end of PB 712 and the fourth gate tube 714 respectively, and the output end of PB 712 is connected to the fifth gate tube 715 and the second input end of AND gate 716 respectively. The fourth gate tube 714 is connected to the fifth gate tube 715.
+
+The first-stage half-adder circuit 60 is connected to the input terminals of the third ternary logic gate circuit 711 and NB 713 respectively. The third ternary logic gate circuit 711 is connected to the fifth selection transistor 715 . The output terminal of NB 713 is connected to the first input terminal of the AND gate 716 .
+
+In the embodiment of the present application, the first summation result output by the first-stage half-adder circuit 60 may be processed by the third ternary logic gate circuit 711 and then output a signal, or the first summation result output by the first-stage half-adder circuit 60 may be processed by the NB 713 and then output a signal.
+
+Here is a brief description of the structure and function of PB 712 and NB 713:
+
+FIG9 a shows a structure of a PB 712. Referring to FIG9 a, the PB 712 can be composed of two transistors, which are respectively a twelfth transistor L6 and a thirteenth transistor L7. The voltage threshold of the twelfth transistor L6 is less than the first threshold, and the voltage threshold of the thirteenth transistor L7 is less than the first threshold. The twelfth transistor L6 is a P-type transistor, and the thirteenth transistor L7 is an N-type transistor.
+
+In some embodiments, the second-stage half-adder circuit 71 further includes: a third NTI. A third signal module is used to be connected to a first end of the third NTI, and a second end of the third NTI is connected to an input end of the PB 712. It can be understood that the third signal module can output a third signal, and the third signal is output to the PB 712 after being processed by the third NTI.
+
+In PB 712, the second end of the third NTI is connected to the gate of the twelfth transistor L6 and the gate of the thirteenth transistor L7 respectively, the source of the twelfth transistor L6 is connected to the second voltage module, the drain of the twelfth transistor L6 is connected to the source of the thirteenth transistor L7, and the drain of the thirteenth transistor L7 is grounded. In addition, the source of the thirteenth transistor L7 can be connected to the second input terminals of the fifth selection transistor 715 and the AND gate 716 respectively.
+
+When the input PB 712 is a logic value of 0, the PB 712 may output a logic value of 0, when the input PB 712 is a logic value of 1, the PB 712 may output a logic value of 2, and when the input PB 712 is a logic value of 2, the PB 712 may output a logic value of 2.
+
+FIG9 b shows a structure of NB 713. Referring to FIG9 b, NB 713 can be composed of two transistors, which are: a fourteenth transistor L8 and a fifteenth transistor L9. The voltage threshold of the fourteenth transistor L8 is less than the first threshold, and the voltage threshold of the fifteenth transistor L9 is less than the first threshold. The fourteenth transistor L8 is a P-type transistor, and the fifteenth transistor L9 is an N-type transistor.
+
+In some embodiments, the second-stage half-adder circuit 71 further includes: a second PTI. A third signal module is used to be connected to a first end of the second PTI, and a second end of the second PTI is connected to an input end of the NB 713. It can be understood that the third signal module can output a third signal, and the third signal is output to the NB 713 after being processed by the PTI.
+
+In NB 713, the second end of the second PTI is connected to the gate of the fourteenth transistor L8 and the gate of the fifteenth transistor L9 respectively, the source of the fourteenth transistor L8 is connected to the second voltage module, the drain of the fourteenth transistor L8 is connected to the source of the fifteenth transistor L9, and the drain of the fifteenth transistor L9 is grounded. In addition, the source of the fifteenth transistor L9 can be connected to the first input terminal of the AND gate 716.
+
+When the input NB 713 is a logic value of 0, NB 713 may output a logic value of 0; when the input NB 713 is a logic value of 1, NB 713 may output a logic value of 0; and when the input NB 713 is a logic value of 2, NB 713 may output a logic value of 2.
+
+The third signal output by the third signal module is used to turn on the fourth selection tube 714 or the fifth selection tube 715 to enable the full-adder circuit 70 to output the second summation result.
+
+Taking the first summation result SUM AB as an example, when the third signal represents a logic value of 1, the third signal outputs a logic value of 2 through PB 712, which can turn on the fifth selection tube 715, and the fifth selection tube 715 can output SUM AB +1. The second summation result SUM ABC =SUM AB +1+C, where C represents the logic value represented by the ternary signal C.
+
+Taking the first summation result SUM AB as an example, when the third signal represents a logic value of 0, the third signal outputs a logic value of 0 through PB 712, and the fourth gate tube 714 can be turned on, and the fifth gate tube 715 is turned off. The second summation result SUM ABC = SUM AB + C, where C represents the logic value represented by the ternary signal C.
+
+In FIG. 7 , the second carry device 72 is used to output a third carry result Carry according to the first carry result Carry AB and the second carry result Carry ABC .
+
+In some embodiments, the second carry 72 may have the same structure as the first carry 71 .
+
+In some embodiments, the structure of the second carry 72 may be as shown in FIG10. In FIG10, An indicates that the first carry result Carry AB is output to the second carry 72 after NTI processing, and A P indicates that the first carry result Carry AB is output to the second carry 72 after PTI processing. B n indicates that the second carry result Carry ABC is output to the second carry 72 after NTI processing, and B P indicates that the second carry result Carry ABC is output to the second carry 72 after PTI processing. Out indicates the output (Carry) of the second carry, and half V DD indicates V DD /2.
+
+As shown in FIG. 10 , the second carry device 72 is composed of a plurality of low voltage threshold transistors of different polarities, wherein the voltage threshold of the P-type transistor may be, for example, -0.323V, and the voltage threshold of the N-type transistor may be, for example, 0.323V.
+
+In the embodiment of the present application, a summing circuit can be designed based on a self-increasing logic gate circuit and a self-decrementing logic gate circuit, and a half-adding circuit can be designed based on the summing circuit. Based on the first-stage half-adding circuit, a full-adding circuit that can sum three ternary signals is designed, with a small number of transistors, low power consumption, and high computing efficiency.
+
+In some embodiments, the present application also provides a multiplication circuit, which includes the summing circuit 50 in the above embodiment and the half-adding circuit 60 in the above embodiment. The summing circuit 50 and the half-adding circuit 60 provided in the embodiment of the present application are applied to a larger-scale ternary multiplication circuit, and the number of transistors in the ternary multiplication circuit is small, the power consumption is small, and the calculation efficiency is high.
+
+Taking the 2trit*2trit multiplication circuit as an example, a in FIG11 shows an existing ternary multiplication circuit. Referring to a in FIG11 , the current ternary multiplication circuit needs to use 4 multipliers TMul, two summing circuits, and two full-adding circuits. If the summing circuit and the full-adding circuit use the summing circuit and the full-adding circuit in the current prior art, the number of transistors in the multiplication circuit is large and the calculation efficiency is low.
+
+In some embodiments, the summing circuit 50 and the full adder circuit 70 provided in the embodiment of the present application can be used in a in FIG. 11 , which can reduce the number of transistors in the multiplication circuit to a certain extent and improve the calculation efficiency of the multiplication circuit. It should be understood that a in FIG. 11 represents the summing circuit with Tsum (ternary Sum), represents the full adder circuit with TFA (ternary full adder), and TMul represents the 1trit multiplier.
+
+In some embodiments, in order to further reduce the number of transistors in the multiplication circuit, the idea of approximate multiplication calculation can be used in the embodiments of the present application. Approximate multiplication calculation can exchange higher computing performance and lower power consumption at the cost of smaller calculation errors. The basic scheme of 1trit ternary approximate calculation multiplication is shown in Figure 12 below. With reference to Figure 12, it can be seen that the carry C of 1trit ternary multiplication calculation is 1 only when and only when input A and input B are both 2, and the carry is 0 in all other cases. If this approximate scheme is adopted to perform approximate calculation on the case where input A=B=2, the carry can be ignored in all cases in the circuit.
+
+In some embodiments, the multiplication circuit may include: a summing circuit 50, a half-adding circuit 60, a multiplier, and an approximate multiplier. In the embodiments of the present application, based on the idea of approximate multiplication calculation, some multipliers in the current ternary multiplication circuit may be replaced with approximate multipliers, which can reduce the number of transistors in the multiplication circuit.
+
+The multiplier is used to output a first multiplication result. The approximate multiplier is used to output a second multiplication result, which can be understood as a multiplication result obtained by approximate multiplication calculation. The summation circuit and the half-addition circuit are used to output a third multiplication result according to the first multiplication result and the second multiplication result.
+
+In order to facilitate comparison with the current ternary multiplication circuit, taking a 2trit*2trit multiplication circuit as an example, b in FIG. 11 shows the multiplication circuit provided in an embodiment of the present application.
+
+11 b , the multiplication circuit 1100 may include a multiplier 1101 , a first approximate multiplier 1102 , a second approximate multiplier 1103 , a third approximate multiplier 1104 , a summing circuit 60 , a first half-addition circuit 50 , and a second half-addition circuit 50 .
+
+It should be understood that the structures of the first half-adder circuit 50 and the second half-adder circuit 50 are the same, and reference can be made to the description of the half-adder circuit 50 in the above embodiment. In b of FIG. 11 , the inputs respectively include “A 0 and B 0 ”, “A 1 and B 0 ”, “A 0 and B 1 ”, and “A 1 and B 1 ” as an example, and A 0 , B 0 , A 1 , and B 1 are all ternary signals. In some embodiments, “A 0 and B 0 ” can be referred to as the first group of ternary signals, “A 1 and B 0 ” can be referred to as the second group of ternary signals, “A 0 and B 1 ” can be referred to as the third group of ternary signals, and “A 1 and B 1 ” can be referred to as the fourth group of ternary signals.
+
+In addition, in b in Figure 11, the summation circuit 60 is represented by Tsum (ternary Sum), the first half adder circuit 50 is represented by THA 1 (ternary half adder), the second half adder circuit 50 is represented by THA 2, the 1trit multiplier is represented by TMul, the first approximate multiplier is represented by ATMul 1, the second approximate multiplier is represented by ATMul 2, and the third approximate multiplier is represented by ATMul 3.
+
+The first approximate multiplier ATMul 1 can perform multiplication calculation on the first group of ternary signals and output a first sub-multiplication result, such as P 0 .
+
+The second approximate multiplier ATMul 2 can perform multiplication calculation on the second group of ternary signals and output the second sub-multiplication result to the first half adder circuit THA1. The third approximate multiplier ATMul 3 can perform multiplication calculation on the third group of ternary signals and output the third sub-multiplication result to the first half adder circuit THA1. The first half adder circuit THA1 can output a fourth sub-multiplication result P1 according to the second sub-multiplication result and the third sub-multiplication result, and output a fifth sub-multiplication result to the second half adder circuit THA2.
+
+The multiplier TMul can perform multiplication calculation on the fourth group of ternary signals and output the first multiplication result to the second half adder circuit THA2. The second half adder circuit THA2 is used to output the sixth sub-multiplication result P2 according to the fifth sub-multiplication result and the first multiplication result, and output the seventh sub-multiplication result to the summing circuit Tsum.
+
+The summing circuit Tsum is used to output an eighth sub-multiplication result P 2 according to the first multiplication result and the seventh sub-multiplication result.
+
+Among them, for the third multiplication result output by the summation circuit and the half-addition circuit, the third multiplication result may include: a first sub-multiplication result, a fourth sub-multiplication result, a sixth sub-multiplication result and an eighth sub-multiplication result.
+
+The multiplication circuit provided in the embodiment of the present application can be applied to any scenario requiring ternary multiplication calculation.
+
+In some embodiments, because the multiplication circuit in the embodiment of the present application is based on the idea of approximate multiplication, the multiplication circuit provided by the embodiment of the present application can be used in scenarios where precise calculation is not required (such as artificial intelligence neural network algorithms). Among them, the multiplication circuit provided by the embodiment of the present application based on approximate multiplication calculation can effectively reduce the complexity of the circuit and realize new high-efficiency and low-power algorithm acceleration applications.
+
+In some embodiments, in order to reduce the calculation error of the multiplication circuit, an additional compensation unit may be added to the multiplication circuit. As shown in b of FIG. 13 , the multiplication circuit may include a first compensation unit, which may implement a +6 operation. As shown in c of FIG. 13 , the multiplication circuit may include a second compensation unit, which may implement a +9 operation. It should be understood that a of FIG. 13 shows the multiplication circuit shown in b of FIG. 11 , and ATMul 1, ATMul2, ATMul 3, TFA 1, and TFA 2 are not marked in FIG. 13 , and reference may be made to b of FIG. 11 .
+
+In addition, FIG13 shows the relative error and absolute error of each multiplication circuit when performing multiplication calculation.
+
+In the embodiment of the present application, an additional compensation unit is added to the multiplication circuit to implement the +6 or +9 operation, which can effectively reduce the calculation error of the multiplication circuit, and the hardware cost is only the addition of a new addition module. Because the "+9" operation is equivalent to the P2 bit +1 in the ternary system, and the "+6" operation is equivalent to the P1 bit +2 in the ternary system, the first compensation unit and the second compensation unit can be implemented by a summation circuit or a full addition circuit.
+
+In some embodiments, multiple 2trit*2trit ternary multiplication circuits may be cascaded to further expand the multiplication circuit to realize a larger-scale multiplication circuit. For example, a 6trit*6trit ternary multiplication circuit is taken as an example in the embodiments of the present application.
+
+Referring to Figure 14, for the ternary input signals A and B of 6trit, we group A and B into 2 bits, and we can get A[5:4], A[3:2], A[1:0], and B[5:4], B[3:2], B[1:0] respectively. By performing multiplication operations with 2trit as the basic unit, we can get multiple groups of partial products such as P00=A[1:0]*B[1:0], P01=A[3:2]*B[1:0], P10=A[1:0]*B[3:2], etc., and then sum these partial products in a weighted manner (the summation process uses the exact calculation mode) to get the approximate calculation result of the ternary multiplication of 6trit*6trit.
+
+It should be understood that the 6trit*6trit ternary multiplication circuit is taken as an example in the embodiment of the present application. It can be imagined that the multiplication circuit provided in the embodiment of the present application can be applied to circuit designs of larger scale and arbitrary scale, and all belong to the protection scope of the embodiment of the present application.
+
+For example, if A is 379 and B is 537 in decimal, then A×B=203523. If A and B are expressed in ternary, A can be expressed as 112001 and B can be expressed as 201220.
+
+a in Figure 15 shows the process of calculating A×B using the current multiplication circuit (such as a in Figure 11), and b in Figure 15 shows the process of calculating A×B using the multiplication circuit provided in the embodiment of the present application (such as b in Figure 11). The multiplication result obtained by multiplying A and B by the multiplication circuit provided in the embodiment of the present application has a small error.
+
+In some embodiments, the present application provides a chip, which may include any of the following: a first ternary logic gate circuit, a second ternary logic gate circuit, a summing circuit 50, a half-adding circuit 60, a full-adding circuit 70, and a multiplication circuit 1100. In some embodiments, the chip may be referred to as a first chip.
+
+In some embodiments, the present application provides a chip, which may include at least one of the following: a summing circuit 50, a half-adding circuit 60, a full-adding circuit 70, and a multiplication circuit 1100. In some embodiments, the chip may be referred to as a second chip.
+
+In some embodiments, an embodiment of the present application provides an electronic device, which may include a first chip or a second chip.
+
+The electronic device in the embodiments of the present application may be a mobile phone, a portable android device (PAD tablet), a personal digital assistant (PDA), a handheld device with a wireless communication function, a computing device, a vehicle-mounted device or a wearable device, a virtual reality (VR) terminal device, an augmented reality (AR) terminal device, a wireless terminal in industrial control, a wireless terminal in a smart home, etc. The form of the electronic device in the embodiments of the present application is not specifically limited.
+
+It should be noted that the data involved in this application (including but not limited to data used for analysis, stored data, displayed data, etc.) are all information and data authorized by the user or fully authorized by all parties, and the collection, use and processing of relevant data must comply with relevant laws, regulations and standards of relevant countries and regions, and provide corresponding operation entrances for users to choose to authorize or refuse.
+
+In the above embodiments, it can be implemented in whole or in part by software, hardware, firmware or any combination thereof. When implemented using software, it can be implemented in whole or in part in the form of a computer program product. The computer program product includes one or more computer instructions. When loading and executing computer program instructions on a computer, the process or function according to the embodiment of the present application is generated in whole or in part. The computer can be a general-purpose computer, a special-purpose computer, a computer network, or other programmable devices. The computer instructions can be stored in a computer-readable storage medium, or transmitted from one computer-readable storage medium to another computer-readable storage medium. For example, the computer instructions can be transmitted from a website site, a computer, a server or a data center by wired (e.g., coaxial cable, optical fiber, digital subscriber line (DSL)) or wireless (e.g., infrared, wireless, microwave, etc.) mode to another website site, computer, server or data center. The computer-readable storage medium can be any available medium that a computer can access or a data storage device such as a server, a data center, etc. that contains one or more available media integrated. The available medium can be a magnetic medium, (e.g., a floppy disk, a hard disk, a tape), an optical medium (e.g., a DVD), or a semiconductor medium (e.g., a solid-state hard disk Solid State Disk (SSD)), etc.
+
+The term "plurality" in this article refers to two or more than two. The term "and/or" in this article is only a description of the association relationship of associated objects, indicating that three relationships may exist. For example, A and/or B can represent: A exists alone, A and B exist at the same time, and B exists alone. In addition, the character "/" in this article generally indicates that the previous and next associated objects are in an "or" relationship; in the formula, the character "/" indicates that the previous and next associated objects are in a "division" relationship. In addition, it should be understood that in the description of this application, words such as "first" and "second" are only used for the purpose of distinguishing descriptions, and cannot be understood as indicating or implying relative importance, nor can they be understood as indicating or implying order.
+
+It should be understood that the various numerical numbers involved in the embodiments of the present application are only used for the convenience of description and are not used to limit the scope of the embodiments of the present application.
+
+It can be understood that in the embodiments of the present application, the size of the serial numbers of the above-mentioned processes does not mean the order of execution. The execution order of each process should be determined by its function and internal logic, and should not constitute any limitation on the implementation process of the embodiments of the present application.
+
