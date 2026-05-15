@@ -535,6 +535,66 @@ void testIsaAndAsmWidths() {
     expect(!assemble("vdot.t20 r1, v0, v1\n").success, "VDOT only accepts .t1");
     expect(!assemble("vpack.t20 v1, v0\n").success, "VPACK requires source and destination suffixes");
     expect(!assemble("vswap.t20 v0, v1\n").success, "VSWAP rejects width suffix");
+
+    TritWord27 r4Word = InstructionWord::encodeR4(Opcode::TWCMP, R5, R1, R2, R3, FUNC_T20);
+    auto r4Iw = InstructionWord::decode(r4Word);
+    expect(!r4Iw.malformed && r4Iw.r4_layout && r4Iw.opcode == Opcode::TWCMP &&
+           r4Iw.rd == R5 && r4Iw.rs1 == R1 && r4Iw.rs2 == R2 &&
+           r4Iw.rs3 == R3 && r4Iw.func == FUNC_T20,
+           "R4 layout roundtrips TWCMP fields");
+
+    auto phase2 = assembleOrThrow(R"(
+        twcmp.t20   r4,  r1, r2, r3
+        tclamp.t20  r5,  r1, r2, r3
+        tmod.t20    r6,  r1, r2
+        tlshift.t20 r7,  r1, r2
+        trshift.t20 r8,  r1, r2
+        tmac.t20    r1,  r2
+        tcount.t20  r9,  r1
+        tscan.t20   r10, r1
+        callr       r11
+        jmpr        r12
+        syscall     1
+        fence
+        vsum.t20    r13, v0
+        vhmin.t20   r14, v1
+        vhmax.t20   r15, v2
+        halt
+    )");
+    expect(InstructionWord::decode(phase2[0]).opcode == Opcode::TWCMP &&
+           InstructionWord::decode(phase2[0]).r4_layout &&
+           InstructionWord::decode(phase2[0]).func == FUNC_T20,
+           "assembler encodes TWCMP.t20 R4");
+    expect(InstructionWord::decode(phase2[1]).opcode == Opcode::TCLAMP &&
+           InstructionWord::decode(phase2[1]).r4_layout,
+           "assembler encodes TCLAMP.t20 R4");
+    expect(InstructionWord::decode(phase2[2]).opcode == Opcode::TMOD, "assembler encodes TMOD");
+    expect(InstructionWord::decode(phase2[5]).opcode == Opcode::TMAC &&
+           InstructionWord::decode(phase2[5]).rs1 == R1,
+           "assembler encodes TMAC source-only shape");
+    expect(InstructionWord::decode(phase2[8]).opcode == Opcode::CALLR &&
+           InstructionWord::decode(phase2[8]).rs1 == R11,
+           "assembler encodes CALLR register target");
+    expect(InstructionWord::decode(phase2[10]).opcode == Opcode::SYSCALL &&
+           InstructionWord::decode(phase2[10]).imm == 1,
+           "assembler encodes SYSCALL service id");
+    expect(InstructionWord::decode(phase2[12]).opcode == Opcode::VSUM &&
+           InstructionWord::decode(phase2[12]).rd == 13 &&
+           InstructionWord::decode(phase2[12]).rs1 == 0,
+           "assembler encodes VSUM scalar/vector operands");
+    expect(disassemble(phase2[0]).find("TWCMP.t20 r4, r1, r2, r3") != std::string::npos,
+           "disassembler prints TWCMP R4 shape");
+    expect(disassemble(phase2[10]).find("SYSCALL 1") != std::string::npos,
+           "disassembler prints SYSCALL service id");
+    expect(disassemble(phase2[12]).find("VSUM.t20 r13, v0") != std::string::npos,
+           "disassembler prints vector reduction shape");
+
+    expect(!assemble("tmod r1, r2, r3\n").success, "TMOD requires suffix");
+    expect(!assemble("twcmp.l20 r1, r2, r3, r4\n").success, "TWCMP rejects lane suffix");
+    expect(!assemble("vsum r1, v0\n").success, "VSUM requires suffix");
+    expect(!assemble("vsum.t20 v1, v0\n").success, "VSUM rejects vector destination");
+    expect(!assemble("callr.t20 r1\n").success, "CALLR rejects suffix");
+    expect(!assemble("syscall.t20 1\n").success, "SYSCALL rejects suffix");
 }
 
 void testVmWidths() {
@@ -633,7 +693,7 @@ void testVmWidths() {
         expect(vm.regfile.read(R6).mode == TernaryMode::T20 &&
                sandbox::vm::ops::toLong(vm.regfile.read(R6)) == 20,
                "TSEL preserves zero arm tag/value");
-        expect(vm.regfile.read(R7).mode == TernaryMode::T50 &&
+        expect(vm.regfile.read(R7).mode == TernaryMode::T40 &&
                sandbox::vm::ops::toLong(vm.regfile.read(R7)) == 50,
                "TSEL preserves positive arm tag/value");
     }
@@ -762,14 +822,180 @@ pos_path:
     }
 
     {
+        VMState vm(64, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 2
+            mov.t20 r2, 3
+            mov.t20 r3, 7
+            twcmp.t20  r4, r1, r2, r3
+            mov.t20 r1, 5
+            twcmp.t20  r5, r1, r2, r3
+            mov.t20 r1, 9
+            twcmp.t20  r6, r1, r2, r3
+            tclamp.t20 r7, r1, r2, r3
+            mov.t20 r1, 1
+            tclamp.t20 r8, r1, r2, r3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "window compare/clamp program loads");
+        auto result = sandbox::vm::run(vm, 64);
+        expect(result.halted(), "window compare/clamp program halts");
+        expect(readTrit0(vm.regfile.read(R4)) == T_NEG, "TWCMP reports below window");
+        expect(readTrit0(vm.regfile.read(R5)) == T_ZER, "TWCMP reports inside window");
+        expect(readTrit0(vm.regfile.read(R6)) == T_POS, "TWCMP reports above window");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R7)) == 7, "TCLAMP clamps high");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R8)) == 3, "TCLAMP clamps low");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 5
+            mov.t20 r2, 9
+            mov.t20 r3, 3
+            twcmp.t20 r4, r1, r2, r3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "invalid window program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.trapped(), "TWCMP traps on inverted bounds");
+        expect(result.trap_code == TrapCode::TRAP_ILLEGAL_OP, "TWCMP inverted bounds trap code");
+    }
+
+    {
+        VMState vm(64, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, -8
+            mov.t20 r2, 3
+            tmod.t20 r3, r1, r2
+            mov.t20 r4, 2
+            tlshift.t20 r5, r4, r2
+            trshift.t20 r6, r5, r2
+            mov.t5 r7, 9
+            tcount.t5 r8, r7
+            tscan.t5  r9, r7
+            mov.t5 r10, 0
+            tscan.t5 r11, r10
+            halt
+        )");
+        expect(loadAndReset(vm, program), "Phase 2 scalar numeric program loads");
+        auto result = sandbox::vm::run(vm, 64);
+        expect(result.halted(), "Phase 2 scalar numeric program halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == -2,
+               "TMOD remainder follows dividend sign");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R5)) == 54,
+               "TLSHIFT scales by powers of three");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R6)) == 2,
+               "TRSHIFT inverse scales by powers of three");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R8)) == 1,
+               "TCOUNT counts non-zero trits");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R9)) == 2,
+               "TSCAN returns first non-zero trit position");
+        expect(vm.regfile.read(R11).mode == TernaryMode::T1 &&
+               readTrit0(vm.regfile.read(R11)) == T_NEG,
+               "TSCAN all-zero returns T1 -1 sentinel");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 5
+            mov.t20 r2, 0
+            tmod.t20 r3, r1, r2
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TMOD divisor zero program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.trapped(), "TMOD traps on zero divisor");
+        expect(result.trap_code == TrapCode::TRAP_DIV_ZERO, "TMOD zero divisor trap code");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 6
+            mov.t20 r2, 7
+            aclr.t40
+            tmac.t20 r1, r2
+            astore.t40 r3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TMAC program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "TMAC program halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 42,
+               "TMAC multiplies into accumulator");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            syscall 3
+            mov.t20 r1, 42
+            syscall 1
+            syscall 2
+            fence
+            halt
+        )");
+        expect(loadAndReset(vm, program), "SYSCALL/FENCE program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "SYSCALL/FENCE program halts");
+        expect(vm.syscall_buffer == "42\n", "SYSCALL writes sandbox output buffer");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 4
+            callr r1
+            mov r2, 999
+            halt
+            mov r2, 7
+            mov r3, 3
+            jmpr r3
+        )");
+        expect(loadAndReset(vm, program), "CALLR/JMPR program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "CALLR/JMPR program halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 7,
+               "CALLR jumps to absolute PC target");
+        expect(sandbox::vm::ops::toLong(vm.regfile.readLR()) == 2,
+               "CALLR writes link register with return PC");
+    }
+
+    {
+        VMState vm(32, 64);
+        vm.vector_length = 3;
+        auto program = assembleOrThrow(R"(
+            vsum.t20  r1, v0
+            vhmin.t20 r2, v0
+            vhmax.t20 r3, v0
+            halt
+        )");
+        expect(loadAndReset(vm, program), "vector reduction program loads");
+        vm.vector_length = 3;
+        vm.vregfile.reset(3);
+        vm.vector_faults.reset(3);
+        const long long values[] = {3, -2, 5};
+        for (int lane = 0; lane < vm.vector_length; ++lane) {
+            vm.vregfile.reg[0].write(lane, TernaryValue::fromT20(native_ops::fromIntT20(values[lane])));
+        }
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "vector reduction program halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 6, "VSUM reduces lanes");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == -2, "VHMIN reduces lanes");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 5, "VHMAX reduces lanes");
+    }
+
+    {
         VMState vm(16, 64);
         auto program = assembleOrThrow("vlen r1\nhalt\n");
         expect(loadAndReset(vm, program), "VLEN program loads");
         auto result = sandbox::vm::run(vm, 8);
         expect(result.halted(), "VLEN program halts");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 16, "VLEN returns default length");
-        expect(vm.vregfile.reg[0].lane.size() == 16, "vector registers allocate default lanes");
-        expect(vm.vector_faults.fault_valid.size() == 16 && !vm.vector_faults.any(),
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == DEFAULT_VECTOR_LENGTH, "VLEN returns default length");
+        expect(vm.vregfile.reg[0].lane.size() == DEFAULT_VECTOR_LENGTH, "vector registers allocate default lanes");
+        expect(vm.vector_faults.fault_valid.size() == DEFAULT_VECTOR_LENGTH && !vm.vector_faults.any(),
                "vector fault masks reset to default length");
     }
 
@@ -1088,8 +1314,180 @@ pos_path:
     }
 }
 
+void testPhase35Infrastructure() {
+    std::cout << "[8] Phase 3.5 VM hooks, data sections, and run limits\n";
+    using namespace sandbox;
+    using namespace sandbox::isa;
+    using namespace sandbox::vm;
+    using namespace sandbox::vm::assembler;
+
+    {
+        auto assembled = assemble(R"(
+            .data
+        value: .word 42
+        next:  .word -7, value
+            .text
+        start:
+            mov  r1, value
+            load r2, r1
+            load r3, zero, next
+            mov  r4, next
+            load r5, zero, 2
+            halt
+        )");
+        expect(assembled.success, "assembler accepts .data/.text with .word");
+        if (assembled.success) {
+            expect(assembled.labels.count("start") && assembled.labels.at("start") == 0,
+                   "text label maps to IMEM address");
+            expect(assembled.data_labels.count("value") && assembled.data_labels.at("value") == 0,
+                   "data label maps to first DMEM address");
+            expect(assembled.data_labels.count("next") && assembled.data_labels.at("next") == 1,
+                   "data label maps to second DMEM address");
+            expect(assembled.data.size() == 3, ".word emits each data word");
+            expect(sandbox::vm::ops::toLong(assembled.data[0]) == 42, ".word stores numeric literal");
+            expect(sandbox::vm::ops::toLong(assembled.data[1]) == -7, ".word stores signed literal");
+            expect(sandbox::vm::ops::toLong(assembled.data[2]) == 0, ".word resolves data label");
+
+            VMState vm(32, 16);
+            expect(loadAndReset(vm, assembled), "assembled text/data image loads");
+            auto result = sandbox::vm::run(vm, 16);
+            expect(result.halted(), "text/data program halts");
+            expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 42,
+                   "LOAD reads value through data label address");
+            expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == -7,
+                   "LOAD immediate resolves data label absolutely");
+            expect(sandbox::vm::ops::toLong(vm.regfile.read(R4)) == 1,
+                   "MOV resolves data label absolutely");
+            expect(sandbox::vm::ops::toLong(vm.regfile.read(R5)) == 0,
+                   ".word label operand stores absolute data address");
+        }
+    }
+
+    {
+        auto mixed = assemble(R"(
+            .text
+        entry: mov r1, payload
+               jmp done
+            .data
+        payload: .word 17
+            .text
+        done:  halt
+        )");
+        expect(mixed.success, "assembler accepts mixed text/data/text sections");
+        if (mixed.success) {
+            expect(mixed.labels.count("entry") && mixed.labels.at("entry") == 0,
+                   "entry text label survives section switch");
+            expect(mixed.labels.count("done") && mixed.labels.at("done") == 2,
+                   "done text label address ignores data words");
+            expect(mixed.data_labels.count("payload") && mixed.data_labels.at("payload") == 0,
+                   "payload data label address ignores text words");
+            auto jmp = InstructionWord::decode(mixed.program[1]);
+            expect(jmp.opcode == Opcode::JMP && jmp.offset == 1,
+                   "branch labels remain PC-relative text offsets");
+        }
+    }
+
+    expect(!assemble("foo: halt\n.data\nfoo: .word 1\n").success,
+           "duplicate labels across text and data are rejected");
+    expect(!assemble(".data\nx: .word 1\n.text\njmp x\n").success,
+           "data labels cannot be branch targets");
+    expect(!assemble(".word 1\nhalt\n").success,
+           ".word outside .data is rejected");
+
+    {
+        VMState vm(16, 16);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 2
+            mov.t20 r2, 3
+            add.t20 r3, r1, r2
+            halt
+        )");
+        expect(loadAndReset(vm, program), "hooked halt program loads");
+        std::vector<std::string> events;
+        VMHooks hooks;
+        hooks.onStep = [&](const VMState&, int pc) {
+            events.push_back("step:" + std::to_string(pc));
+        };
+        hooks.onTrap = [&](const VMState&, int pc) {
+            events.push_back("trap:" + std::to_string(pc));
+        };
+        hooks.onHalt = [&](const VMState&, int pc) {
+            events.push_back("halt:" + std::to_string(pc));
+        };
+        auto result = sandbox::vm::run(vm, 16, &hooks);
+        expect(result.halted() && result.steps == 4, "hooked halt program runs four steps");
+        const std::vector<std::string> want = {
+            "step:0", "step:1", "step:2", "step:3", "halt:3"
+        };
+        expect(events == want, "hooks fire onStep per instruction then onHalt");
+    }
+
+    {
+        VMState vm(16, 16);
+        auto program = assembleOrThrow(R"(
+            mov.t20 r1, 1
+            mov.t20 r2, 0
+            div.t20 r3, r1, r2
+            halt
+        )");
+        expect(loadAndReset(vm, program), "hooked trap program loads");
+        std::vector<std::string> events;
+        VMHooks hooks;
+        hooks.onStep = [&](const VMState&, int pc) {
+            events.push_back("step:" + std::to_string(pc));
+        };
+        hooks.onTrap = [&](const VMState&, int pc) {
+            events.push_back("trap:" + std::to_string(pc));
+        };
+        auto result = sandbox::vm::run(vm, 16, &hooks);
+        expect(result.trapped() && result.trap_code == TrapCode::TRAP_DIV_ZERO,
+               "hooked trap program reports divide by zero");
+        const std::vector<std::string> want = {
+            "step:0", "step:1", "step:2", "trap:2"
+        };
+        expect(events == want, "hooks fire onStep per instruction then onTrap");
+    }
+
+    {
+        VMState vm(16, 16);
+        auto program = assembleOrThrow("nop\nhalt\n");
+        expect(loadAndReset(vm, program), "run-limit program loads");
+        std::vector<std::string> events;
+        VMHooks hooks;
+        hooks.onStep = [&](const VMState&, int pc) {
+            events.push_back("step:" + std::to_string(pc));
+        };
+        hooks.onHalt = [&](const VMState&, int pc) {
+            events.push_back("halt:" + std::to_string(pc));
+        };
+        auto first = sandbox::vm::run(vm, 1, &hooks);
+        expect(first.timeout() && first.steps == 1 && vm.isRunning() && vm.pc == 1,
+               "step limit stops after exact instruction count without trap/halt");
+        expect(events.size() == 1 && events[0] == "step:0",
+               "timeout fires only onStep for executed instruction");
+        auto second = sandbox::vm::run(vm, 1, &hooks);
+        expect(second.halted() && second.steps == 1,
+               "continuing after timeout can reach HALT");
+        expect(events.size() == 3 && events[1] == "step:1" && events[2] == "halt:1",
+               "HALT hook fires when second run executes terminal instruction");
+    }
+
+    {
+        const LongTriple* lnA = &native_ops::cachedLn3();
+        const LongTriple* lnB = &native_ops::cachedLn3();
+        const LongTriple* piA = &native_ops::cachedPi();
+        const LongTriple* piB = &native_ops::cachedPi();
+        expect(lnA == lnB, "cachedLn3 returns stable cached object");
+        expect(piA == piB, "cachedPi returns stable cached object");
+        expect(native_ops::compare(native_ops::ln3(), *lnA) == 0,
+               "ln3 preserves public value through cache");
+        expect(native_ops::compare(native_ops::pi(), *piA) == 0,
+               "pi preserves public value through cache");
+    }
+}
+
 void testNoBridgeInExecutionHeaders() {
-    std::cout << "[8] static no-bridge scan\n";
+    std::cout << "[9] static no-bridge scan\n";
     const std::vector<std::string> files = {
         "ternary_native_ops.h",
         "ternary_backend.h",
@@ -1153,6 +1551,7 @@ int main() {
     testFractionalAlignmentAndSqrt();
     testIsaAndAsmWidths();
     testVmWidths();
+    testPhase35Infrastructure();
     testNoBridgeInExecutionHeaders();
 
     if (g_failures != 0) {

@@ -250,15 +250,62 @@ inline UInt128& operator*=(UInt128& a, uint32_t b) {
     return a;
 }
 
+namespace detail {
+
+[[nodiscard]] inline uint32_t low32(uint64_t value) {
+    return static_cast<uint32_t>(value & 0xFFFFFFFFULL);
+}
+
+inline void addToLimb32(uint32_t* out, int count, int index, uint64_t value) {
+    int k = index;
+    uint64_t carry = value;
+    while (carry != 0 && k < count) {
+        const uint64_t sum = static_cast<uint64_t>(out[k]) + (carry & 0xFFFFFFFFULL);
+        out[k] = low32(sum);
+        carry = (carry >> 32) + (sum >> 32);
+        ++k;
+    }
+}
+
+inline void multiplyToLimbs32(UInt128 a, UInt128 b, uint32_t out[8]) {
+    for (int i = 0; i < 8; ++i) out[i] = 0;
+
+    const uint32_t av[4] = {
+        low32(a.lo),
+        static_cast<uint32_t>(a.lo >> 32),
+        low32(a.hi),
+        static_cast<uint32_t>(a.hi >> 32)
+    };
+    const uint32_t bv[4] = {
+        low32(b.lo),
+        static_cast<uint32_t>(b.lo >> 32),
+        low32(b.hi),
+        static_cast<uint32_t>(b.hi >> 32)
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            const uint64_t product = static_cast<uint64_t>(av[i]) * static_cast<uint64_t>(bv[j]);
+            addToLimb32(out, 8, i + j, product);
+        }
+    }
+}
+
+[[nodiscard]] inline UInt128 lowUInt128FromLimbs32(const uint32_t limbs[8]) {
+    const uint64_t lo = (static_cast<uint64_t>(limbs[1]) << 32) | limbs[0];
+    const uint64_t hi = (static_cast<uint64_t>(limbs[3]) << 32) | limbs[2];
+    return UInt128{hi, lo};
+}
+
+} // namespace detail
+
 [[nodiscard]] inline UInt128 operator*(UInt128 a, UInt128 b) {
 #if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
     return UInt128::fromNative(a.toNative() * b.toNative());
 #else
-    UInt128 result{};
-    for (int i = 0; i < 128; ++i) {
-        if (b.bit(i)) result += (a << static_cast<unsigned>(i));
-    }
-    return result;
+    uint32_t limbs[8];
+    detail::multiplyToLimbs32(a, b, limbs);
+    return detail::lowUInt128FromLimbs32(limbs);
 #endif
 }
 
@@ -368,11 +415,36 @@ struct UInt256 {
 };
 
 [[nodiscard]] inline UInt256 multiplyFull(UInt128 a, UInt128 b) {
+#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
     UInt256 out{};
-    for (int i = 0; i < 128; ++i) {
-        if (b.bit(i)) out.addShifted(a, i);
-    }
+    const NativeUInt128 a_native = a.toNative();
+    const NativeUInt128 b_native = b.toNative();
+    const uint64_t a0 = static_cast<uint64_t>(a_native);
+    const uint64_t a1 = static_cast<uint64_t>(a_native >> 64);
+    const uint64_t b0 = static_cast<uint64_t>(b_native);
+    const uint64_t b1 = static_cast<uint64_t>(b_native >> 64);
+    const NativeUInt128 p00 = static_cast<NativeUInt128>(a0) * b0;
+    const NativeUInt128 p01 = static_cast<NativeUInt128>(a0) * b1;
+    const NativeUInt128 p10 = static_cast<NativeUInt128>(a1) * b0;
+    const NativeUInt128 p11 = static_cast<NativeUInt128>(a1) * b1;
+
+    out.limb[0] = static_cast<uint64_t>(p00);
+    NativeUInt128 carry = (p00 >> 64) + static_cast<uint64_t>(p01) + static_cast<uint64_t>(p10);
+    out.limb[1] = static_cast<uint64_t>(carry);
+    carry = (carry >> 64) + (p01 >> 64) + (p10 >> 64) + p11;
+    out.limb[2] = static_cast<uint64_t>(carry);
+    out.limb[3] = static_cast<uint64_t>(carry >> 64);
     return out;
+#else
+    uint32_t limbs[8];
+    detail::multiplyToLimbs32(a, b, limbs);
+    UInt256 out{};
+    out.limb[0] = (static_cast<uint64_t>(limbs[1]) << 32) | limbs[0];
+    out.limb[1] = (static_cast<uint64_t>(limbs[3]) << 32) | limbs[2];
+    out.limb[2] = (static_cast<uint64_t>(limbs[5]) << 32) | limbs[4];
+    out.limb[3] = (static_cast<uint64_t>(limbs[7]) << 32) | limbs[6];
+    return out;
+#endif
 }
 
 struct Int128 {

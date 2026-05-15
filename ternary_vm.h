@@ -10,6 +10,7 @@
 //
 // Public API:
 //   step(VMState&)              — Execute one instruction. Returns VMStatus.
+//   step(VMState&, VMHooks)     — Execute one instruction with observer hooks.
 //   run(VMState&, max_steps)    — Execute until HALT/TRAP or step limit.
 //   RunResult                   — Structured result from run().
 //
@@ -45,6 +46,7 @@
 #include "ternary_vm_state.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <string>
 #include <sstream>
 
@@ -1327,11 +1329,15 @@ inline VMStatus step(VMState& vm) {
 
         case Opcode::TWCMP: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue s1 = vm.regfile.read(iw.rs1);
-            TernaryValue s2 = vm.regfile.read(iw.rs2);
-            TernaryValue s3 = vm.regfile.read(iw.rs3);
+            TernaryValue s1 = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue s2 = convertValue(vm.regfile.read(iw.rs2), mode);
+            TernaryValue s3 = convertValue(vm.regfile.read(iw.rs3), mode);
             if (!isNumericMode(s1.mode) || !isNumericMode(s2.mode) || !isNumericMode(s3.mode) ||
                 s1.isInvalid() || s2.isInvalid() || s3.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (exec::compareValue(s2, s3, mode) == T_POS) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
@@ -1354,6 +1360,10 @@ inline VMStatus step(VMState& vm) {
             TernaryValue s3 = convertValue(vm.regfile.read(iw.rs3), mode);
             if (!isNumericMode(s1.mode) || !isNumericMode(s2.mode) || !isNumericMode(s3.mode) ||
                 s1.isInvalid() || s2.isInvalid() || s3.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (exec::compareValue(s2, s3, mode) == T_POS) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
@@ -1409,7 +1419,16 @@ inline VMStatus step(VMState& vm) {
                 return vm.status;
             }
             TernaryValue quot = exec::divideValue(a, b, mode);
-            TernaryValue prod = exec::multiplyValue(quot, b, mode);
+            if (quot.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue truncQuot = convertValue(sandbox::vm::ops::fromLong(sandbox::vm::ops::toLong(quot)), mode);
+            if (truncQuot.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue prod = exec::multiplyValue(truncQuot, b, mode);
             TernaryValue rem  = exec::subtractValue(a, prod, mode);
             if (!writeChecked(iw.rd, rem)) return vm.status;
             break;
@@ -1469,6 +1488,10 @@ inline VMStatus step(VMState& vm) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
+            if (val.isZero()) {
+                if (!writeChecked(iw.rd, sandbox::vm::ops::fromLong(0))) return vm.status;
+                break;
+            }
             int num_trits = 0;
             switch (mode) {
                 case TernaryMode::T1:  num_trits = 1;  break;
@@ -1494,6 +1517,10 @@ inline VMStatus step(VMState& vm) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
+            if (val.isZero()) {
+                if (!writeChecked(iw.rd, makeTritResult(T_NEG))) return vm.status;
+                break;
+            }
             int num_trits = 0;
             switch (mode) {
                 case TernaryMode::T1:  num_trits = 1;  break;
@@ -1505,13 +1532,16 @@ inline VMStatus step(VMState& vm) {
                 default: break;
             }
             long long index = -1;
-            for (int i = num_trits - 1; i >= 0; --i) {
+            for (int i = 0; i < num_trits; ++i) {
                 if (readStoredTrit(val, i) != 0) {
                     index = i;
                     break;
                 }
             }
-            if (!writeChecked(iw.rd, sandbox::vm::ops::fromLong(index))) return vm.status;
+            TernaryValue scanResult = index < 0
+                ? makeTritResult(T_NEG)
+                : sandbox::vm::ops::fromLong(index);
+            if (!writeChecked(iw.rd, scanResult)) return vm.status;
             break;
         }
 
@@ -1617,6 +1647,34 @@ inline VMStatus step(VMState& vm) {
 // SECTION 3 — Run Loop
 // =============================================================================
 
+struct VMHooks {
+    using Hook = std::function<void(const VMState&, int pc_before)>;
+
+    Hook onStep;
+    Hook onTrap;
+    Hook onHalt;
+};
+
+// Execute one instruction and notify hooks after the architectural state for
+// that instruction has been committed. Terminal hooks fire after onStep.
+inline VMStatus step(VMState& vm, const VMHooks& hooks) {
+    if (!vm.isRunning()) return vm.status;
+
+    const int pc_before = vm.pc;
+    const VMStatus before = vm.status;
+    const VMStatus after = step(vm);
+
+    if (hooks.onStep) hooks.onStep(vm, pc_before);
+    if (before == VMStatus::RUNNING && after == VMStatus::TRAPPED && hooks.onTrap) {
+        hooks.onTrap(vm, pc_before);
+    }
+    if (before == VMStatus::RUNNING && after == VMStatus::HALTED && hooks.onHalt) {
+        hooks.onHalt(vm, pc_before);
+    }
+
+    return after;
+}
+
 struct RunResult {
     VMStatus   status;       // Final VMStatus when execution stopped
     int        steps;        // Number of instructions executed
@@ -1630,13 +1688,17 @@ struct RunResult {
 };
 
 // Run the VM until HALT, TRAP, or max_steps is reached.
-// max_steps == -1 means unlimited (use with care — infinite loops are possible).
+// One step is one architecturally executed instruction, regardless of opcode
+// family or vector length. max_steps == -1 means unlimited.
+// Reaching max_steps leaves VMStatus as RUNNING and reports timeout().
 // Returns a RunResult describing why execution stopped.
-inline RunResult run(VMState& vm, int max_steps = 1000000) {
+inline RunResult run(VMState& vm, int max_steps = 1000000,
+                     const VMHooks* hooks = nullptr) {
     int steps = 0;
     while (vm.isRunning()) {
         if (max_steps >= 0 && steps >= max_steps) break;
-        step(vm);
+        if (hooks) step(vm, *hooks);
+        else step(vm);
         ++steps;
     }
 

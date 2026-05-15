@@ -536,12 +536,19 @@ Goal: resolve core architectural correctness bugs, finalize the ternary ISA expa
 - **Architectural Unification**: Established canonical in-memory representations unifying raw lanes, typed `TritLane<N>`, `Triple`/`LongTriple`, and `TernaryValue`.
 - **Native Word & Width Semantics**: Unified machine word configuration to default to `T40` (80 bits packed in `uint64_t`), transitioning `T50` into an explicit extended precision target. Configured default vector lengths to ternary-native powers of 3 (`DEFAULT_VECTOR_LENGTH = 27`), and standardized `STORE` source register addressing conventions.
 
-#### Track 6.1: ISA Expansion (In Progress)
+#### Track 6.1: ISA Expansion (Implementation Complete; Verification In Progress)
 - **Indirect Control Flow**: Implement register-indirect branches (`CALLR`, `JMPR`) to support function pointers, dynamic dispatch, and vtables.
 - **Advanced Arithmetic & Windowing**: Register `R4`-type instruction layouts supporting windowed comparisons (`TWCMP`) and range clamping (`TCLAMP`). Implement remainder extraction (`TMOD`), structural exponent scaling/shifting (`TLSHIFT`, `TRSHIFT`), and scalar multiply-accumulate (`TMAC`).
 - **Ternary-Native Analysis**: Register non-zero trit counting (`TCOUNT`) and most-significant non-zero trit scanning (`TSCAN`) primitives.
 - **Infrastructure & Reductions**: Implement sandbox system service invocation gates (`SYSCALL`), architectural synchronization fences (`FENCE`), and horizontal vector reductions (`VSUM`, `VHMIN`, `VHMAX`).
 - **Assembler & Execution Integration**: Update assembly builder mapping, decoding logic, and execution dispatch loop handlers for all 15 new opcodes.
+
+Current integration note:
+- Opcodes 59-73 now have ISA decode/disassembly, assembler mnemonics, VM execution, and IR builder helpers.
+- `CALLR` and `JMPR` consume absolute instruction-memory PC targets from numeric scalar registers; `CALLR` writes `LR = PC + 1`.
+- `SYSCALL` uses a sandbox service-id immediate: `1` appends `r1` as decimal text, `2` appends newline, and `3` clears the syscall buffer.
+- Focused Phase 6.1 verification passes in `test_multiwidth_vm` and `test_ternary_ir`.
+- Numeric/lane conversion boundary verification passes in `test_ternary_lanes`.
 
 #### Track 6.2: Infrastructure and Performance Tuning
 - **VM Observability**: Add lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler output profiling without core patching.

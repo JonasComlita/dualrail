@@ -1049,19 +1049,22 @@ inline bool verifyRoundTrip() {
          iw.opcode == Opcode::TLOR) &&
         isLaneWidthFunc(iw.func)) {
         mnemonic += widthFuncSuffix(iw.func);
+    } else if (iw.r4_layout && isNumericWidthFunc(iw.func)) {
+        mnemonic += widthFuncSuffix(iw.func);
+    } else if (iw.fmt == InstructionFormat::R_TYPE &&
+        (iw.opcode == Opcode::TMOD || iw.opcode == Opcode::TLSHIFT ||
+         iw.opcode == Opcode::TRSHIFT || iw.opcode == Opcode::TMAC ||
+         iw.opcode == Opcode::TCOUNT || iw.opcode == Opcode::TSCAN) &&
+        isNumericWidthFunc(iw.func)) {
+        mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&
         (iw.opcode == Opcode::ADD || iw.opcode == Opcode::SUB ||
          iw.opcode == Opcode::MUL || iw.opcode == Opcode::DIV ||
          iw.opcode == Opcode::SQRT || iw.opcode == Opcode::NEG ||
          iw.opcode == Opcode::ABS || iw.opcode == Opcode::TCMP ||
          iw.opcode == Opcode::TMIN || iw.opcode == Opcode::TMAX ||
-         iw.opcode == Opcode::TINV || iw.opcode == Opcode::CVT ||
-         iw.opcode == Opcode::TMOD || iw.opcode == Opcode::TLSHIFT ||
-         iw.opcode == Opcode::TRSHIFT || iw.opcode == Opcode::TMAC ||
-         iw.opcode == Opcode::TCOUNT || iw.opcode == Opcode::TSCAN ||
-         iw.opcode == Opcode::TCLAMP || iw.opcode == Opcode::VSUM ||
-         iw.opcode == Opcode::VHMIN || iw.opcode == Opcode::VHMAX) &&
-        iw.func != FUNC_T50) {
+         iw.opcode == Opcode::TINV || iw.opcode == Opcode::CVT) &&
+        iw.func != FUNC_DEFAULT) {
         mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&
         (iw.opcode == Opcode::VADD || iw.opcode == Opcode::VSUB ||
@@ -1073,7 +1076,8 @@ inline bool verifyRoundTrip() {
          iw.opcode == Opcode::AADD || iw.opcode == Opcode::ASUB ||
          iw.opcode == Opcode::AMUL || iw.opcode == Opcode::ASTORE ||
          iw.opcode == Opcode::VPERMUTE || iw.opcode == Opcode::VGATHER ||
-         iw.opcode == Opcode::VSCATTER) &&
+         iw.opcode == Opcode::VSCATTER || iw.opcode == Opcode::VSUM ||
+         iw.opcode == Opcode::VHMIN || iw.opcode == Opcode::VHMAX) &&
         isNumericWidthFunc(iw.func)) {
         mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&

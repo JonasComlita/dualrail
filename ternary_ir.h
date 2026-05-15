@@ -171,6 +171,9 @@ public:
     [[nodiscard]] Value sub(Value a, Value b) { return numericBinary("sub", a, b, a.type); }
     [[nodiscard]] Value mul(Value a, Value b) { return numericBinary("mul", a, b, a.type); }
     [[nodiscard]] Value div(Value a, Value b) { return numericBinary("div", a, b, a.type); }
+    [[nodiscard]] Value tmod(Value a, Value b) { return numericBinary("tmod", a, b, a.type); }
+    [[nodiscard]] Value tlshift(Value value, Value amount) { return numericBinary("tlshift", value, amount, value.type); }
+    [[nodiscard]] Value trshift(Value value, Value amount) { return numericBinary("trshift", value, amount, value.type); }
     [[nodiscard]] Value min(Value a, Value b) { return numericBinary("tmin", a, b, a.type); }
     [[nodiscard]] Value max(Value a, Value b) { return numericBinary("tmax", a, b, a.type); }
 
@@ -178,9 +181,32 @@ public:
         return numericBinary("tcmp", a, b, Type::T1);
     }
 
+    [[nodiscard]] Value twcmp(Value value, Value low, Value high) {
+        return numericWindow("twcmp", value, low, high, Type::T1);
+    }
+
+    [[nodiscard]] Value tclamp(Value value, Value low, Value high) {
+        return numericWindow("tclamp", value, low, high, value.type);
+    }
+
     [[nodiscard]] Value sqrt(Value src) { return numericUnary("sqrt", src, src.type); }
     [[nodiscard]] Value neg(Value src) { return numericUnary("neg", src, src.type); }
     [[nodiscard]] Value abs(Value src) { return numericUnary("abs", src, src.type); }
+    [[nodiscard]] Value tcount(Value src) { return numericUnary("tcount", src, Type::T40); }
+    [[nodiscard]] Value tscan(Value src) { return numericUnary("tscan", src, Type::T40); }
+
+    void tmac(Value a, Value b) {
+        if (!checkScalar(a, "tmac first operand") ||
+            !checkScalar(b, "tmac second operand")) {
+            return;
+        }
+        if (!isNumeric(a.type) || !isNumeric(b.type) || a.type != b.type) {
+            diag("tmac requires matching numeric scalar operands");
+            return;
+        }
+        emit(std::string("tmac.") + suffix(a.type) + " " +
+             regName(a) + ", " + regName(b));
+    }
 
     [[nodiscard]] Value inv(Value src) {
         if (isNumeric(src.type)) return numericUnary("tinv", src, src.type);
@@ -239,6 +265,32 @@ public:
         emit("jmp " + target);
     }
 
+    void callr(Value target) {
+        if (!checkScalar(target, "callr target")) return;
+        if (!isNumeric(target.type)) {
+            diag("callr target must be numeric");
+            return;
+        }
+        emit("callr " + regName(target));
+    }
+
+    void jmpr(Value target) {
+        if (!checkScalar(target, "jmpr target")) return;
+        if (!isNumeric(target.type)) {
+            diag("jmpr target must be numeric");
+            return;
+        }
+        emit("jmpr " + regName(target));
+    }
+
+    void syscall(int service) {
+        emit("syscall " + std::to_string(service));
+    }
+
+    void fence() {
+        emit("fence");
+    }
+
     [[nodiscard]] Value vlen() {
         Value out = allocScalar(Type::T40, "vlen destination");
         if (!out.valid()) return out;
@@ -274,6 +326,9 @@ public:
     [[nodiscard]] Value vmul(Value a, Value b) { return vectorBinary("vmul", a, b, a.type); }
     [[nodiscard]] Value vdiv(Value a, Value b) { return vectorBinary("vdiv", a, b, a.type); }
     [[nodiscard]] Value vneg(Value src) { return vectorUnary("vneg", src, src.type); }
+    [[nodiscard]] Value vsum(Value src) { return vectorReduction("vsum", src); }
+    [[nodiscard]] Value vhmin(Value src) { return vectorReduction("vhmin", src); }
+    [[nodiscard]] Value vhmax(Value src) { return vectorReduction("vhmax", src); }
 
     [[nodiscard]] Value vcmp(Value a, Value b) {
         return vectorBinary("vcmp", a, b, Type::L1);
@@ -487,6 +542,31 @@ private:
         return out;
     }
 
+    [[nodiscard]] Value numericWindow(
+        const std::string& mnemonic,
+        Value value,
+        Value low,
+        Value high,
+        Type resultType) {
+
+        if (!checkScalar(value, mnemonic + " value") ||
+            !checkScalar(low, mnemonic + " low bound") ||
+            !checkScalar(high, mnemonic + " high bound")) {
+            return invalid(resultType);
+        }
+        if (!isNumeric(value.type) ||
+            value.type != low.type ||
+            value.type != high.type) {
+            diag(mnemonic + " requires matching numeric scalar operands");
+            return invalid(resultType);
+        }
+        Value out = allocScalar(resultType, mnemonic + " destination");
+        if (!out.valid()) return out;
+        emit(mnemonic + "." + suffix(value.type) + " " + regName(out) + ", " +
+             regName(value) + ", " + regName(low) + ", " + regName(high));
+        return out;
+    }
+
     [[nodiscard]] Value laneBinary(const std::string& mnemonic, Value a, Value b) {
         if (!checkScalar(a, mnemonic + " first operand") ||
             !checkScalar(b, mnemonic + " second operand")) {
@@ -547,6 +627,18 @@ private:
             return invalidVector(resultType);
         }
         Value out = allocVector(resultType, mnemonic + " destination");
+        if (!out.valid()) return out;
+        emit(mnemonic + "." + suffix(src.type) + " " + regName(out) + ", " + regName(src));
+        return out;
+    }
+
+    [[nodiscard]] Value vectorReduction(const std::string& mnemonic, Value src) {
+        if (!checkVector(src, mnemonic + " source")) return invalid(Type::T40);
+        if (!isNumeric(src.type)) {
+            diag(mnemonic + " requires a numeric vector operand");
+            return invalid(Type::T40);
+        }
+        Value out = allocScalar(src.type, mnemonic + " destination");
         if (!out.valid()) return out;
         emit(mnemonic + "." + suffix(src.type) + " " + regName(out) + ", " + regName(src));
         return out;

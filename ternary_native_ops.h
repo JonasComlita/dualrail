@@ -790,7 +790,7 @@ template<class Fmt>
     return sum;
 }
 
-[[nodiscard]] inline LongTriple ln3() {
+[[nodiscard]] inline LongTriple computeLn3() {
     const LongTriple three = fromInt(3);
     const LongTriple one = fromInt(1);
     const LongTriple y = divide(subtract(three, one), add(three, one));
@@ -802,6 +802,15 @@ template<class Fmt>
         sum = add(sum, divide(term, fromInt(2 * k + 1)));
     }
     return multiply(fromInt(2), sum);
+}
+
+[[nodiscard]] inline const LongTriple& cachedLn3() {
+    static const LongTriple value = computeLn3();
+    return value;
+}
+
+[[nodiscard]] inline LongTriple ln3() {
+    return cachedLn3();
 }
 
 [[nodiscard]] inline LongTriple ln(LongTriple x) {
@@ -833,7 +842,7 @@ template<class Fmt>
     }
     LongTriple result = multiply(two, sum);
     if (powerOfThree != 0) {
-        result = add(result, multiply(fromInt(powerOfThree), ln3()));
+        result = add(result, multiply(fromInt(powerOfThree), cachedLn3()));
     }
     return result;
 }
@@ -849,19 +858,29 @@ template<class Fmt>
     return sum;
 }
 
-[[nodiscard]] inline LongTriple pi() {
+[[nodiscard]] inline LongTriple computePi() {
     LongTriple a = arctan_series(fromRatio(1, 5),   28);
     LongTriple b = arctan_series(fromRatio(1, 239),  12);
     return multiply(fromInt(4), subtract(multiply(fromInt(4), a), b));
 }
 
+[[nodiscard]] inline const LongTriple& cachedPi() {
+    static const LongTriple value = computePi();
+    return value;
+}
+
+[[nodiscard]] inline LongTriple pi() {
+    return cachedPi();
+}
+
 [[nodiscard]] inline LongTriple sin(LongTriple x) {
-    const LongTriple twoPi = multiply(fromInt(2), pi());
+    const LongTriple piValue = cachedPi();
+    const LongTriple twoPi = multiply(fromInt(2), piValue);
     LongTriple cycles = divide(x, twoPi);
     long long n = toLongLong(cycles);
     x = subtract(x, multiply(fromInt(n), twoPi));
-    if (compare(x, pi()) == 1)  x = subtract(x, twoPi);
-    if (compare(x, negate(pi())) == -1) x = add(x, twoPi);
+    if (compare(x, piValue) == 1)  x = subtract(x, twoPi);
+    if (compare(x, negate(piValue)) == -1) x = add(x, twoPi);
 
     const LongTriple x2 = multiply(x, x);
     LongTriple term = x;
@@ -875,12 +894,13 @@ template<class Fmt>
 }
 
 [[nodiscard]] inline LongTriple cos(LongTriple x) {
-    const LongTriple twoPi = multiply(fromInt(2), pi());
+    const LongTriple piValue = cachedPi();
+    const LongTriple twoPi = multiply(fromInt(2), piValue);
     LongTriple cycles = divide(x, twoPi);
     long long n = toLongLong(cycles);
     x = subtract(x, multiply(fromInt(n), twoPi));
-    if (compare(x, pi()) == 1)  x = subtract(x, twoPi);
-    if (compare(x, negate(pi())) == -1) x = add(x, twoPi);
+    if (compare(x, piValue) == 1)  x = subtract(x, twoPi);
+    if (compare(x, negate(piValue)) == -1) x = add(x, twoPi);
 
     const LongTriple x2 = multiply(x, x);
     LongTriple term = fromInt(1);

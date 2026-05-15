@@ -320,9 +320,33 @@ template<int Trits, typename LaneStorage>
 [[nodiscard]] inline TernaryScalar<Trits> laneToPositional(
     TritLane<Trits, LaneStorage> lane) {
     if (!lane.isValid()) return TernaryScalar<Trits>{TernaryScalar<Trits>::OVERFLOW_DATA};
-    // Convert ALL trits — no mantissa-only zero check. This is what
-    // fixes the T10/T20 fromLane precision loss bug.
     const auto trits = laneToTritArray(lane);
+
+    bool allZero = true;
+    for (int i = 0; i < Trits; ++i) {
+        if (trits[i] != 0) {
+            allZero = false;
+            break;
+        }
+    }
+    if (allZero) return TernaryScalar<Trits>{};
+
+    constexpr int mantissaTrits =
+        Trits == 10 ? 6 :
+        Trits == 20 ? 14 :
+        Trits == 40 ? 33 :
+        Trits == 50 ? 41 : Trits;
+    if constexpr (mantissaTrits < Trits) {
+        bool mantissaZero = true;
+        for (int i = 0; i < mantissaTrits; ++i) {
+            if (trits[i] != 0) {
+                mantissaZero = false;
+                break;
+            }
+        }
+        if (mantissaZero) return TernaryScalar<Trits>{};
+    }
+
     return TernaryScalar<Trits>::pack(trits);
 }
 

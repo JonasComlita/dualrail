@@ -226,8 +226,109 @@ void testVectorAndAccumulatorOps() {
     }
 }
 
+void testPhase2IsaIrOps() {
+    std::cout << "[4] IR Phase 2 ISA ops\n";
+    using namespace sandbox::ir;
+
+    {
+        Program program;
+        Value value = program.constant(Type::T20, 11);
+        Value low = program.constant(Type::T20, 3);
+        Value high = program.constant(Type::T20, 9);
+        Value four = program.constant(Type::T20, 4);
+        Value one = program.constant(Type::T20, 1);
+        Value scanSubject = program.constant(Type::T5, 9);
+        Value window = program.twcmp(value, low, high);
+        Value clamped = program.tclamp(value, low, high);
+        Value rem = program.tmod(value, four);
+        Value left = program.tlshift(value, one);
+        Value right = program.trshift(left, one);
+        Value count = program.tcount(scanSubject);
+        Value scan = program.tscan(scanSubject);
+        program.aclr(Type::T40);
+        program.tmac(value, four);
+        Value acc = program.astore(Type::T40);
+        program.syscall(3);
+        program.syscall(1);
+        program.fence();
+        program.halt();
+
+        auto lowered = program.lower();
+        expect(lowered.success, "Phase 2 scalar IR assembles");
+        expect(contains(lowered.assembly, "twcmp.t20"), "twcmp emitted");
+        expect(contains(lowered.assembly, "tclamp.t20"), "tclamp emitted");
+        expect(contains(lowered.assembly, "tmod.t20"), "tmod emitted");
+        expect(contains(lowered.assembly, "tlshift.t20"), "tlshift emitted");
+        expect(contains(lowered.assembly, "trshift.t20"), "trshift emitted");
+        expect(contains(lowered.assembly, "tmac.t20"), "tmac emitted");
+        expect(contains(lowered.assembly, "tcount.t5"), "tcount emitted");
+        expect(contains(lowered.assembly, "tscan.t5"), "tscan emitted");
+        expect(contains(lowered.assembly, "syscall 1"), "syscall emitted");
+        expect(contains(lowered.assembly, "fence"), "fence emitted");
+
+        sandbox::vm::VMState vm(128, 64);
+        expect(loadAndRun(vm, lowered), "Phase 2 scalar IR program runs");
+        expect(scalarLong(vm, window) == 1, "IR twcmp above-window result");
+        expect(scalarLong(vm, clamped) == 9, "IR tclamp high result");
+        expect(scalarLong(vm, rem) == 3, "IR tmod result");
+        expect(scalarLong(vm, left) == 33, "IR tlshift result");
+        expect(scalarLong(vm, right) == 11, "IR trshift result");
+        expect(scalarLong(vm, count) == 1, "IR tcount result");
+        expect(scalarLong(vm, scan) == 2, "IR tscan result");
+        expect(scalarLong(vm, acc) == 44, "IR tmac accumulator result");
+        expect(vm.syscall_buffer == "11", "IR syscall wrote value from r1");
+    }
+
+    {
+        Program program;
+        Value vector = program.vparam(Type::T20);
+        Value sum = program.vsum(vector);
+        Value min = program.vhmin(vector);
+        Value max = program.vhmax(vector);
+        program.halt();
+
+        auto lowered = program.lower();
+        expect(lowered.success, "Phase 2 vector reduction IR assembles");
+        expect(contains(lowered.assembly, "vsum.t20"), "vsum emitted");
+        expect(contains(lowered.assembly, "vhmin.t20"), "vhmin emitted");
+        expect(contains(lowered.assembly, "vhmax.t20"), "vhmax emitted");
+
+        sandbox::vm::VMState vm(64, 64);
+        vm.vector_length = 3;
+        vm.coldReset();
+        vm.vector_length = 3;
+        vm.vregfile.reset(3);
+        vm.vector_faults.reset(3);
+        const long long values[] = {3, -2, 5};
+        for (int lane = 0; lane < vm.vector_length; ++lane) {
+            vm.vregfile.reg[static_cast<std::size_t>(vector.reg)].write(
+                lane,
+                sandbox::vm::TernaryValue::fromT20(sandbox::native_ops::fromIntT20(values[lane])));
+        }
+        expect(vm.imem.loadProgram(lowered.assembled.program, 0), "vector reduction IR program loads");
+        const auto result = sandbox::vm::run(vm, 64);
+        expect(result.halted(), "vector reduction IR program runs");
+        expect(scalarLong(vm, sum) == 6, "IR vsum result");
+        expect(scalarLong(vm, min) == -2, "IR vhmin result");
+        expect(scalarLong(vm, max) == 5, "IR vhmax result");
+    }
+
+    {
+        Program program;
+        Value target = program.constant(Type::T40, 6);
+        program.callr(target);
+        program.jmpr(target);
+        program.halt();
+
+        auto lowered = program.lower();
+        expect(lowered.success, "indirect control IR assembles");
+        expect(contains(lowered.assembly, "callr"), "callr emitted");
+        expect(contains(lowered.assembly, "jmpr"), "jmpr emitted");
+    }
+}
+
 void testDiagnosticsAndRegisterExhaustion() {
-    std::cout << "[4] IR diagnostics and register exhaustion\n";
+    std::cout << "[5] IR diagnostics and register exhaustion\n";
     using namespace sandbox::ir;
 
     {
@@ -261,6 +362,7 @@ int main() {
     testScalarMathAndAssembly();
     testControlConversionAndMemory();
     testVectorAndAccumulatorOps();
+    testPhase2IsaIrOps();
     testDiagnosticsAndRegisterExhaustion();
 
     if (g_failures != 0) {

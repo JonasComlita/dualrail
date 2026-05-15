@@ -115,6 +115,11 @@ namespace assembler {
 
 using namespace isa;
 
+enum class AssemblySection {
+    Text,
+    Data
+};
+
 // =============================================================================
 // SECTION 1 — AssemblyResult
 // =============================================================================
@@ -133,8 +138,10 @@ struct AssemblyError {
 struct AssemblyResult {
     bool                          success = false;
     std::vector<TritWord27>       program;
+    std::vector<TernaryValue>     data;
     std::vector<AssemblyError>    errors;
-    std::map<std::string, int>    labels;   // label name → word address
+    std::map<std::string, int>    labels;       // text label name -> IMEM word address
+    std::map<std::string, int>    data_labels;  // data label name -> DMEM word address
 
     // Convenience: check and throw on error.
     [[nodiscard]] const std::vector<TritWord27>& require() const {
@@ -270,7 +277,7 @@ struct OpcodeInfo {
 struct MnemonicParts {
     std::string base;
     bool has_width = false;
-    uint8_t func = FUNC_T50;
+    uint8_t func = FUNC_DEFAULT;
     bool has_source_width = false;
     uint8_t source_func = 0;
     bool suffix_valid = true;
@@ -325,6 +332,9 @@ struct MnemonicParts {
     return base == "add" || base == "sub" || base == "mul" || base == "div" ||
            base == "sqrt" || base == "neg" || base == "abs" || base == "tinv" ||
            base == "tcmp" || base == "tmin" || base == "tmax" ||
+           base == "twcmp" || base == "tclamp" || base == "tmod" ||
+           base == "tlshift" || base == "trshift" ||
+           base == "tmac" || base == "tcount" || base == "tscan" ||
            base == "cvt" || base == "mov" ||
            base == "tladd" || base == "tlsub" || base == "tlneg" ||
            base == "tland" || base == "tlor" ||
@@ -337,7 +347,8 @@ struct MnemonicParts {
            base == "vdot" || base == "vmac" || base == "vact" ||
            base == "vpack" || base == "vunpack" ||
            base == "vpermute" || base == "vblend" ||
-           base == "vgather" || base == "vscatter";
+           base == "vgather" || base == "vscatter" ||
+           base == "vsum" || base == "vhmin" || base == "vhmax";
 }
 
 [[nodiscard]] inline int instructionWordCount(const std::string& mnemonic) {
@@ -379,6 +390,8 @@ struct MnemonicParts {
     t["tmin"] = {Opcode::TMIN, F::R_TYPE, 3, false};
     t["tmax"] = {Opcode::TMAX, F::R_TYPE, 3, false};
     t["tsel"] = {Opcode::TSEL, F::R_TYPE, 5, false};
+    t["twcmp"] = {Opcode::TWCMP, F::R_TYPE, 4, false};
+    t["tclamp"] = {Opcode::TCLAMP, F::R_TYPE, 4, false};
 
     // Scalar lane logic
     t["tladd"] = {Opcode::TLADD, F::R_TYPE, 3, false};
@@ -397,7 +410,19 @@ struct MnemonicParts {
     t["brz"]  = {Opcode::BRZ,  F::B_TYPE, 2, false};   // rs, target
     t["brp"]  = {Opcode::BRP,  F::B_TYPE, 2, false};   // rs, target
     t["call"] = {Opcode::CALL, F::B_TYPE, 1, false};   // target (rs = r0)
+    t["callr"] = {Opcode::CALLR, F::R_TYPE, 1, true};   // absolute PC in rS
+    t["jmpr"]  = {Opcode::JMPR,  F::R_TYPE, 1, true};   // absolute PC in rS
     t["ret"]  = {Opcode::RET,  F::R_TYPE, 0, false};
+    t["syscall"] = {Opcode::SYSCALL, F::I_TYPE, 1, false}; // sandbox service id
+    t["fence"]   = {Opcode::FENCE,   F::R_TYPE, 0, true};
+
+    // Phase 2 scalar arithmetic and analysis
+    t["tmod"]    = {Opcode::TMOD,    F::R_TYPE, 3, false};
+    t["tlshift"] = {Opcode::TLSHIFT, F::R_TYPE, 3, false};
+    t["trshift"] = {Opcode::TRSHIFT, F::R_TYPE, 3, false};
+    t["tmac"]    = {Opcode::TMAC,    F::R_TYPE, 2, false};
+    t["tcount"]  = {Opcode::TCOUNT,  F::R_TYPE, 2, true};
+    t["tscan"]   = {Opcode::TSCAN,   F::R_TYPE, 2, true};
 
     // Vector foundation
     t["vadd"]   = {Opcode::VADD,   F::R_TYPE, 3, false};
@@ -431,6 +456,9 @@ struct MnemonicParts {
     t["vswap"]    = {Opcode::VSWAP,    F::R_TYPE, 2, true};
     t["vgather"]  = {Opcode::VGATHER,  F::R_TYPE, 3, false};
     t["vscatter"] = {Opcode::VSCATTER, F::R_TYPE, 3, false};
+    t["vsum"]     = {Opcode::VSUM,     F::R_TYPE, 2, false};
+    t["vhmin"]    = {Opcode::VHMIN,    F::R_TYPE, 2, false};
+    t["vhmax"]    = {Opcode::VHMAX,    F::R_TYPE, 2, false};
 
     return t;
 }
@@ -444,10 +472,12 @@ static const std::map<std::string, OpcodeInfo> OPCODE_TABLE = buildOpcodeTable()
 // Internal representation of one parsed source line.
 struct SourceLine {
     int                      line_num;    // 1-based
+    AssemblySection          section = AssemblySection::Text;
     std::string              label;       // empty if no label on this line
     std::string              mnemonic;    // empty for label-only lines
     std::vector<std::string> operands;    // raw operand tokens
-    int                      address;     // word address assigned in pass 1 (-1 = no instruction)
+    int                      address;     // section-local word address (-1 = label-only line)
+    int                      word_count = 0;
 };
 
 // Parse source into SourceLine list. Extracts labels, mnemonics, operands.
@@ -460,7 +490,9 @@ struct SourceLine {
     std::istringstream stream(source);
     std::string raw;
     int line_num = 0;
-    int word_addr = 0;
+    int text_addr = 0;
+    int data_addr = 0;
+    AssemblySection current_section = AssemblySection::Text;
 
     while (std::getline(stream, raw)) {
         ++line_num;
@@ -469,6 +501,7 @@ struct SourceLine {
 
         SourceLine sl;
         sl.line_num = line_num;
+        sl.section = current_section;
         sl.address  = -1;
 
         // Extract label if present (token ending with ':').
@@ -504,8 +537,44 @@ struct SourceLine {
         for (size_t i = 1; i < tokens.size(); ++i)
             sl.operands.push_back(tokens[i]);
 
-        sl.address = word_addr;
-        word_addr += instructionWordCount(sl.mnemonic);
+        if (sl.mnemonic == ".text" || sl.mnemonic == ".data") {
+            if (!sl.label.empty()) {
+                errors.push_back({line_num, "Section directive cannot carry a label"});
+            }
+            if (!sl.operands.empty()) {
+                errors.push_back({line_num, sl.mnemonic + " takes no operands"});
+            }
+            current_section = (sl.mnemonic == ".text")
+                ? AssemblySection::Text
+                : AssemblySection::Data;
+            continue;
+        }
+
+        sl.section = current_section;
+        if (current_section == AssemblySection::Data) {
+            if (sl.mnemonic != ".word") {
+                errors.push_back({line_num, "Only .word directives are valid in .data"});
+                lines.push_back(sl);
+                continue;
+            }
+            if (sl.operands.empty()) {
+                errors.push_back({line_num, ".word requires at least one operand"});
+                lines.push_back(sl);
+                continue;
+            }
+            sl.address = data_addr;
+            sl.word_count = static_cast<int>(sl.operands.size());
+            data_addr += sl.word_count;
+        } else {
+            if (sl.mnemonic == ".word") {
+                errors.push_back({line_num, ".word is only valid in .data"});
+                lines.push_back(sl);
+                continue;
+            }
+            sl.address = text_addr;
+            sl.word_count = instructionWordCount(sl.mnemonic);
+            text_addr += sl.word_count;
+        }
         lines.push_back(sl);
     }
 
@@ -513,51 +582,69 @@ struct SourceLine {
 }
 
 // Pass 1: build the label → address map from parsed source lines.
-[[nodiscard]] inline std::map<std::string, int> buildLabelMap(
+struct LabelMaps {
+    std::map<std::string, int> text;
+    std::map<std::string, int> data;
+};
+
+[[nodiscard]] inline bool labelAlreadySeen(
+        const LabelMaps& labels,
+        const std::string& pending_text,
+        const std::string& pending_data,
+        const std::string& label) {
+    return labels.text.count(label) || labels.data.count(label) ||
+           pending_text == label || pending_data == label;
+}
+
+[[nodiscard]] inline LabelMaps buildLabelMaps(
         const std::vector<SourceLine>& lines,
         std::vector<AssemblyError>& errors) {
 
-    std::map<std::string, int> labels;
+    LabelMaps labels;
 
-    // Find the address of each label. A label defined on its own line
-    // points to the next instruction's address. A label on an instruction
-    // line points to that instruction's address.
-    std::string pending_label;
-    int pending_line = 0;
+    std::string pending_text_label;
+    std::string pending_data_label;
+    int pending_text_line = 0;
+    int pending_data_line = 0;
 
     for (auto& sl : lines) {
+        std::map<std::string, int>& section_labels =
+            sl.section == AssemblySection::Text ? labels.text : labels.data;
+        std::string& pending_label =
+            sl.section == AssemblySection::Text ? pending_text_label : pending_data_label;
+        int& pending_line =
+            sl.section == AssemblySection::Text ? pending_text_line : pending_data_line;
+
         if (!sl.label.empty()) {
-            if (labels.count(sl.label)) {
-                errors.push_back({sl.line_num,
-                    "Duplicate label '" + sl.label + "'"});
-            } else if (!pending_label.empty() && pending_label == sl.label) {
-                // Second definition of the same label before any instruction.
+            if (labelAlreadySeen(labels, pending_text_label, pending_data_label, sl.label)) {
                 errors.push_back({sl.line_num,
                     "Duplicate label '" + sl.label + "'"});
             } else if (sl.address >= 0) {
-                // Label is on the same line as an instruction.
-                labels[sl.label] = sl.address;
+                section_labels[sl.label] = sl.address;
             } else {
-                // Label-only line: remember it; next instruction gets the address.
                 pending_label = sl.label;
                 pending_line  = sl.line_num;
             }
         }
 
         if (!pending_label.empty() && sl.address >= 0) {
-            if (labels.count(pending_label)) {
+            if (section_labels.count(pending_label)) {
                 errors.push_back({pending_line,
                     "Duplicate label '" + pending_label + "'"});
             } else {
-                labels[pending_label] = sl.address;
+                section_labels[pending_label] = sl.address;
             }
             pending_label.clear();
         }
     }
 
-    if (!pending_label.empty()) {
-        errors.push_back({pending_line,
-            "Label '" + pending_label + "' defined after last instruction"});
+    if (!pending_text_label.empty()) {
+        errors.push_back({pending_text_line,
+            "Label '" + pending_text_label + "' defined after last text instruction"});
+    }
+    if (!pending_data_label.empty()) {
+        errors.push_back({pending_data_line,
+            "Label '" + pending_data_label + "' defined after last data word"});
     }
 
     return labels;
@@ -567,7 +654,8 @@ struct SourceLine {
 // Resolves label references to PC-relative offsets.
 [[nodiscard]] inline std::vector<TritWord27> encode(
         const std::vector<SourceLine>& lines,
-        const std::map<std::string, int>& labels,
+        const std::map<std::string, int>& text_labels,
+        const std::map<std::string, int>& data_labels,
         std::vector<AssemblyError>& errors) {
 
     std::vector<TritWord27> program;
@@ -591,14 +679,33 @@ struct SourceLine {
         return r;
     };
 
-    // Helper: resolve an immediate or label to an integer.
-    // For labels in branch instructions, computes PC-relative offset.
-    auto resolveImm = [&](const std::string& tok, int pc,
-                           int line_num) -> std::optional<int> {
+    auto resolveAbsolute = [&](const std::string& tok,
+                               int line_num) -> std::optional<int> {
         auto parsed = parseImmOrLabel(tok);
         if (parsed.isLabel) {
-            auto it = labels.find(parsed.labelName);
-            if (it == labels.end()) {
+            auto text_it = text_labels.find(parsed.labelName);
+            if (text_it != text_labels.end()) return text_it->second;
+            auto data_it = data_labels.find(parsed.labelName);
+            if (data_it != data_labels.end()) return data_it->second;
+            errors.push_back({line_num,
+                "Undefined label '" + parsed.labelName + "'"});
+            return std::nullopt;
+        }
+        return parsed.imm;
+    };
+
+    // Helper: resolve branch/call labels to PC-relative text offsets.
+    auto resolveRelativeText = [&](const std::string& tok, int pc,
+                                   int line_num) -> std::optional<int> {
+        auto parsed = parseImmOrLabel(tok);
+        if (parsed.isLabel) {
+            auto it = text_labels.find(parsed.labelName);
+            if (it == text_labels.end()) {
+                if (data_labels.count(parsed.labelName)) {
+                    errors.push_back({line_num,
+                        "Data label '" + parsed.labelName + "' cannot be a branch target"});
+                    return std::nullopt;
+                }
                 errors.push_back({line_num,
                     "Undefined label '" + parsed.labelName + "'"});
                 return std::nullopt;
@@ -609,6 +716,7 @@ struct SourceLine {
     };
 
     for (auto& sl : lines) {
+        if (sl.section != AssemblySection::Text) continue;
         if (sl.address < 0) continue;  // label-only line, no instruction
 
         MnemonicParts parts = splitMnemonic(sl.mnemonic);
@@ -632,11 +740,18 @@ struct SourceLine {
             parts.base == "div" || parts.base == "sqrt" || parts.base == "neg" ||
             parts.base == "abs" || parts.base == "tinv" || parts.base == "tcmp" ||
             parts.base == "tmin" || parts.base == "tmax";
+        const bool phase2NumericMnemonic =
+            parts.base == "twcmp" || parts.base == "tclamp" ||
+            parts.base == "tmod" || parts.base == "tlshift" ||
+            parts.base == "trshift" || parts.base == "tmac" ||
+            parts.base == "tcount" || parts.base == "tscan";
         const bool vectorNumericMnemonic =
             parts.base == "vadd" || parts.base == "vsub" || parts.base == "vneg" ||
             parts.base == "vmul" || parts.base == "vdiv" || parts.base == "vcmp" ||
             parts.base == "vsel" || parts.base == "vbcast" ||
             parts.base == "vload" || parts.base == "vstore";
+        const bool phase2VectorReductionMnemonic =
+            parts.base == "vsum" || parts.base == "vhmin" || parts.base == "vhmax";
         const bool accumulatorMnemonic =
             parts.base == "aclr" || parts.base == "aload" || parts.base == "aadd" ||
             parts.base == "asub" || parts.base == "amul" || parts.base == "astore";
@@ -659,9 +774,21 @@ struct SourceLine {
             program.push_back(TritWord27{});
             continue;
         }
+        if (phase2NumericMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
+            errors.push_back({sl.line_num,
+                "Phase 2 numeric mnemonic '" + parts.base + "' requires a .tN suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
         if (vectorNumericMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
             errors.push_back({sl.line_num,
                 "Vector numeric mnemonic '" + parts.base + "' requires a .tN suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (phase2VectorReductionMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
+            errors.push_back({sl.line_num,
+                "Vector reduction mnemonic '" + parts.base + "' requires a .tN suffix"});
             program.push_back(TritWord27{});
             continue;
         }
@@ -698,6 +825,14 @@ struct SourceLine {
             program.push_back(TritWord27{});
             continue;
         }
+        if ((parts.base == "callr" || parts.base == "jmpr" ||
+             parts.base == "syscall" || parts.base == "fence") &&
+            parts.has_width) {
+            errors.push_back({sl.line_num,
+                parts.base + " does not take a width suffix"});
+            program.push_back(TritWord27{});
+            continue;
+        }
 
         auto it = OPCODE_TABLE.find(parts.base);
         if (it == OPCODE_TABLE.end()) {
@@ -726,13 +861,61 @@ struct SourceLine {
         } else if (mnemonic == "ret") {
             word = InstructionWord::encodeR(Opcode::RET, 0, 0, 0);
 
+        } else if (mnemonic == "callr" || mnemonic == "jmpr") {
+            if (ops.size() != 1) {
+                errors.push_back({line, mnemonic + " requires rTarget"});
+                ok = false;
+            } else {
+                int target = getReg(ops[0], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(info.opcode,
+                        R0_ZERO,
+                        static_cast<uint8_t>(target),
+                        R0_ZERO,
+                        FUNC_DEFAULT);
+                }
+            }
+
+        } else if (mnemonic == "syscall") {
+            if (ops.size() != 1) {
+                errors.push_back({line, "syscall requires service id"});
+                ok = false;
+            } else {
+                auto service = resolveAbsolute(ops[0], line);
+                if (!service) {
+                    ok = false;
+                } else {
+                    try {
+                        word = InstructionWord::encodeI(Opcode::SYSCALL,
+                            R0_ZERO,
+                            R0_ZERO,
+                            service.value());
+                    } catch (std::out_of_range& e) {
+                        errors.push_back({line, std::string(e.what())});
+                        ok = false;
+                    }
+                }
+            }
+
+        } else if (mnemonic == "fence") {
+            if (!ops.empty()) {
+                errors.push_back({line, "fence takes no operands"});
+                ok = false;
+            } else {
+                word = InstructionWord::encodeR(Opcode::FENCE,
+                    R0_ZERO,
+                    R0_ZERO,
+                    R0_ZERO,
+                    FUNC_DEFAULT);
+            }
+
         } else if (mnemonic == "jmp" || mnemonic == "call") {
             // B-type: target only (rs = r0)
             if (ops.empty()) {
                 errors.push_back({line, mnemonic + " requires a target"});
                 ok = false;
             } else {
-                auto offset = resolveImm(ops[0], pc, line);
+                auto offset = resolveRelativeText(ops[0], pc, line);
                 if (!offset) { ok = false; }
                 else {
                     try {
@@ -752,7 +935,7 @@ struct SourceLine {
                 ok = false;
             } else {
                 int rs = getReg(ops[0], line);
-                auto offset = resolveImm(ops[1], pc, line);
+                auto offset = resolveRelativeText(ops[1], pc, line);
                 if (!offset) { ok = false; }
                 else {
                     try {
@@ -778,7 +961,7 @@ struct SourceLine {
                     errors.push_back({line, mnemonic + " requires an immediate"});
                     ok = false;
                 } else {
-                    auto imm = resolveImm(ops[imm_idx], pc, line);
+                    auto imm = resolveAbsolute(ops[imm_idx], line);
                     if (!imm) { ok = false; }
                     else {
                         try {
@@ -815,7 +998,7 @@ struct SourceLine {
                 int rs1  = getReg(ops[1], line);
                 int imm  = 0;
                 if (ops.size() >= 3) {
-                    auto v = resolveImm(ops[2], pc, line);
+                    auto v = resolveAbsolute(ops[2], line);
                     if (!v) { ok = false; }
                     else imm = v.value();
                 }
@@ -842,7 +1025,7 @@ struct SourceLine {
                 int base = getReg(ops[1], line);
                 int imm  = 0;
                 if (ops.size() >= 3) {
-                    auto v = resolveImm(ops[2], pc, line);
+                    auto v = resolveAbsolute(ops[2], line);
                     if (!v) { ok = false; }
                     else imm = v.value();
                 }
@@ -875,6 +1058,25 @@ struct SourceLine {
                         static_cast<uint8_t>(rneg),
                         static_cast<uint8_t>(rzero),
                         static_cast<uint8_t>(rpos));
+                }
+            }
+
+        } else if (mnemonic == "twcmp" || mnemonic == "tclamp") {
+            if (ops.size() != 4) {
+                errors.push_back({line, mnemonic + " requires rd, rValue, rLow, rHigh"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                int value = getReg(ops[1], line);
+                int low = getReg(ops[2], line);
+                int high = getReg(ops[3], line);
+                if (ok) {
+                    word = InstructionWord::encodeR4(info.opcode,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(value),
+                        static_cast<uint8_t>(low),
+                        static_cast<uint8_t>(high),
+                        parts.func);
                 }
             }
 
@@ -929,7 +1131,23 @@ struct SourceLine {
                         static_cast<uint8_t>(ra),
                         static_cast<uint8_t>(rb),
                         R0_ZERO,
-                        FUNC_T50);
+                        FUNC_DEFAULT);
+                }
+            }
+
+        } else if (mnemonic == "tmac") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "tmac requires rA and rB"});
+                ok = false;
+            } else {
+                int ra = getReg(ops[0], line);
+                int rb = getReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::TMAC,
+                        R0_ZERO,
+                        static_cast<uint8_t>(ra),
+                        static_cast<uint8_t>(rb),
+                        parts.func);
                 }
             }
 
@@ -1014,7 +1232,7 @@ struct SourceLine {
                 int base = getReg(ops[1], line);
                 int imm = 0;
                 if (ops.size() >= 3) {
-                    auto v = resolveImm(ops[2], pc, line);
+                    auto v = resolveAbsolute(ops[2], line);
                     if (!v) ok = false;
                     else imm = v.value();
                 }
@@ -1046,7 +1264,7 @@ struct SourceLine {
                         static_cast<uint8_t>(rd),
                         R0_ZERO,
                         R0_ZERO,
-                        FUNC_T50);
+                        FUNC_DEFAULT);
                 }
             }
 
@@ -1203,7 +1421,7 @@ struct SourceLine {
                         static_cast<uint8_t>(va),
                         static_cast<uint8_t>(vb),
                         R0_ZERO,
-                        FUNC_T50);
+                        FUNC_DEFAULT);
                 }
             }
 
@@ -1220,6 +1438,22 @@ struct SourceLine {
                         static_cast<uint8_t>(vreg),
                         static_cast<uint8_t>(base),
                         static_cast<uint8_t>(vi),
+                        parts.func);
+                }
+            }
+
+        } else if (mnemonic == "vsum" || mnemonic == "vhmin" || mnemonic == "vhmax") {
+            if (ops.size() != 2) {
+                errors.push_back({line, mnemonic + " requires rD and vS"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                int vs = getVecReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(info.opcode,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(vs),
+                        R0_ZERO,
                         parts.func);
                 }
             }
@@ -1264,6 +1498,45 @@ struct SourceLine {
     return program;
 }
 
+[[nodiscard]] inline std::vector<TernaryValue> encodeData(
+        const std::vector<SourceLine>& lines,
+        const std::map<std::string, int>& text_labels,
+        const std::map<std::string, int>& data_labels,
+        std::vector<AssemblyError>& errors) {
+
+    std::vector<TernaryValue> data;
+
+    auto resolveAbsolute = [&](const std::string& tok,
+                               int line_num) -> std::optional<int> {
+        auto parsed = parseImmOrLabel(tok);
+        if (parsed.isLabel) {
+            auto text_it = text_labels.find(parsed.labelName);
+            if (text_it != text_labels.end()) return text_it->second;
+            auto data_it = data_labels.find(parsed.labelName);
+            if (data_it != data_labels.end()) return data_it->second;
+            errors.push_back({line_num,
+                "Undefined label '" + parsed.labelName + "'"});
+            return std::nullopt;
+        }
+        return parsed.imm;
+    };
+
+    for (auto& sl : lines) {
+        if (sl.section != AssemblySection::Data || sl.address < 0) continue;
+        if (sl.mnemonic != ".word") continue;
+
+        while (static_cast<int>(data.size()) < sl.address) {
+            data.push_back(TernaryValue::zero());
+        }
+        for (const std::string& operand : sl.operands) {
+            auto value = resolveAbsolute(operand, sl.line_num);
+            data.push_back(value ? ops::fromLong(value.value()) : TernaryValue::zero());
+        }
+    }
+
+    return data;
+}
+
 // =============================================================================
 // SECTION 7 — Public API: assemble()
 // =============================================================================
@@ -1278,11 +1551,14 @@ struct SourceLine {
     if (!result.errors.empty()) return result;
 
     // Pass 1: collect labels.
-    result.labels = buildLabelMap(lines, result.errors);
+    LabelMaps labels = buildLabelMaps(lines, result.errors);
+    result.labels = labels.text;
+    result.data_labels = labels.data;
     if (!result.errors.empty()) return result;
 
     // Pass 2: encode.
-    result.program = encode(lines, result.labels, result.errors);
+    result.program = encode(lines, result.labels, result.data_labels, result.errors);
+    result.data = encodeData(lines, result.labels, result.data_labels, result.errors);
     result.success = result.errors.empty();
     return result;
 }
@@ -1291,6 +1567,23 @@ struct SourceLine {
 [[nodiscard]] inline std::vector<TritWord27> assembleOrThrow(
         const std::string& source) {
     return assemble(source).require();
+}
+
+// Load both text and data images produced by assemble(). Data labels are
+// absolute DMEM offsets starting at zero.
+inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
+    if (!assembled.success) return false;
+    if (static_cast<int>(assembled.program.size()) > vm.imem.size()) return false;
+    if (static_cast<int>(assembled.data.size()) > vm.dmem.size()) return false;
+
+    vm.coldReset();
+    if (!vm.imem.loadProgram(assembled.program, 0)) return false;
+    for (int i = 0; i < static_cast<int>(assembled.data.size()); ++i) {
+        if (vm.dmem.store(i, assembled.data[static_cast<std::size_t>(i)]) != MemFaultCode::OK) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // =============================================================================

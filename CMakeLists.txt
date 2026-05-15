@@ -7,6 +7,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/bitnet_weights)
 
+add_executable(test_multiwidth_vm tests/test_multiwidth_vm.cpp)
+target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
+target_compile_definitions(test_multiwidth_vm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_ternary_lanes tests/test_ternary_lanes.cpp)
+target_compile_features(test_ternary_lanes PUBLIC cxx_std_17)
+target_compile_definitions(test_ternary_lanes PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_native_ops tests/test_native_ops.cpp)
+target_compile_features(test_native_ops PUBLIC cxx_std_17)
+target_compile_definitions(test_native_ops PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_numeric_workloads tests/test_numeric_workloads.cpp)
+target_compile_features(test_numeric_workloads PUBLIC cxx_std_17)
+target_compile_definitions(test_numeric_workloads PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_tiny_transformer_runtime tests/test_tiny_transformer_runtime.cpp)
 target_compile_features(test_tiny_transformer_runtime PUBLIC cxx_std_17)
 target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
