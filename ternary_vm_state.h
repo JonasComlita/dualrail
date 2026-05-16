@@ -909,6 +909,148 @@ static constexpr int TASK_CONTEXT_DMEM_PTBR = 4;
 static constexpr int TASK_CONTEXT_DMEM_PAGES = 5;
 static constexpr int TASK_CONTEXT_REG_BASE = 6;
 
+static constexpr int PROC_STATE_FREE     = 0;
+static constexpr int PROC_STATE_RUNNABLE = 1;
+static constexpr int PROC_STATE_RUNNING  = 2;
+static constexpr int PROC_STATE_BLOCKED  = 3;
+static constexpr int PROC_STATE_SLEEPING = 4;
+static constexpr int PROC_STATE_EXITED   = 5;
+static constexpr int PROC_DEFAULT_QUANTUM = 180;
+static constexpr int PROC_WAIT_NONE          = 0;
+static constexpr int PROC_WAIT_TIMER         = 1;
+static constexpr int PROC_WAIT_CONSOLE_INPUT = 2;
+static constexpr int PROC_WAIT_CHILD         = 3;
+
+static constexpr int SYSCALL_WRITE_INT        = 1;
+static constexpr int SYSCALL_NEWLINE          = 2;
+static constexpr int SYSCALL_CLEAR_CONSOLE    = 3;
+static constexpr int SYSCALL_YIELD            = 4;
+static constexpr int SYSCALL_SLEEP_UNTIL_TICK = 5;
+static constexpr int SYSCALL_EXIT             = 6;
+static constexpr int SYSCALL_GETPID           = 7;
+static constexpr int SYSCALL_UPTIME           = 8;
+static constexpr int SYSCALL_READ_INPUT       = 9;
+static constexpr int SYSCALL_SPAWN            = 10;
+static constexpr int SYSCALL_WAITPID          = 11;
+
+static constexpr int EXEC_HEADER_WORDS = 9;
+static constexpr int EXEC_MAGIC = 40404;
+static constexpr int EXEC_VERSION_V1 = 1;
+static constexpr int EXEC_ABI_VERSION_V1 = 1;
+static constexpr int EXEC_SYSCALL_ABI_VERSION_V1 = 1;
+
+static constexpr int EXEC_HEADER_MAGIC = 0;
+static constexpr int EXEC_HEADER_VERSION = 1;
+static constexpr int EXEC_HEADER_ABI_VERSION = 2;
+static constexpr int EXEC_HEADER_ENTRY_PC = 3;
+static constexpr int EXEC_HEADER_TEXT_PAGES = 4;
+static constexpr int EXEC_HEADER_DATA_PAGES = 5;
+static constexpr int EXEC_HEADER_STACK_WORDS = 6;
+static constexpr int EXEC_HEADER_SYSCALL_ABI_VERSION = 7;
+static constexpr int EXEC_HEADER_FLAGS = 8;
+
+struct ExecutableImageHeader {
+    int header_addr = -1;
+    int magic = EXEC_MAGIC;
+    int version = EXEC_VERSION_V1;
+    int abi_version = EXEC_ABI_VERSION_V1;
+    int entry_virtual_pc = 0;
+    int text_pages = 0;
+    int data_pages = 0;
+    int stack_words = 0;
+    int syscall_abi_version = EXEC_SYSCALL_ABI_VERSION_V1;
+    int flags = 0;
+};
+
+[[nodiscard]] inline std::vector<TernaryValue> encodeExecutableHeader(
+    int entry_virtual_pc,
+    int text_pages,
+    int data_pages,
+    int stack_words,
+    int syscall_abi_version = EXEC_SYSCALL_ABI_VERSION_V1,
+    int flags = 0,
+    int abi_version = EXEC_ABI_VERSION_V1,
+    int version = EXEC_VERSION_V1) {
+
+    return {
+        ops::fromLong(EXEC_MAGIC),
+        ops::fromLong(version),
+        ops::fromLong(abi_version),
+        ops::fromLong(entry_virtual_pc),
+        ops::fromLong(text_pages),
+        ops::fromLong(data_pages),
+        ops::fromLong(stack_words),
+        ops::fromLong(syscall_abi_version),
+        ops::fromLong(flags),
+    };
+}
+
+[[nodiscard]] inline bool validateExecutableHeader(const ExecutableImageHeader& header) {
+    return header.magic == EXEC_MAGIC &&
+           header.version == EXEC_VERSION_V1 &&
+           header.abi_version == EXEC_ABI_VERSION_V1 &&
+           header.entry_virtual_pc >= 0 &&
+           header.text_pages > 0 &&
+           header.data_pages > 0 &&
+           header.stack_words > 0 &&
+           header.syscall_abi_version == EXEC_SYSCALL_ABI_VERSION_V1;
+}
+
+[[nodiscard]] inline bool decodeExecutableHeader(
+    const std::vector<TernaryValue>& image,
+    int header_addr,
+    ExecutableImageHeader& out) {
+
+    if (header_addr < 0 ||
+        header_addr + EXEC_HEADER_WORDS > static_cast<int>(image.size())) {
+        return false;
+    }
+    for (int i = 0; i < EXEC_HEADER_WORDS; ++i) {
+        const TernaryValue& word = image[static_cast<std::size_t>(header_addr + i)];
+        if (!isNumericMode(word.mode) || word.isInvalid()) return false;
+    }
+    out.header_addr = header_addr;
+    out.magic = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_MAGIC)]));
+    out.version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_VERSION)]));
+    out.abi_version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_ABI_VERSION)]));
+    out.entry_virtual_pc = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_ENTRY_PC)]));
+    out.text_pages = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_TEXT_PAGES)]));
+    out.data_pages = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_DATA_PAGES)]));
+    out.stack_words = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_STACK_WORDS)]));
+    out.syscall_abi_version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_SYSCALL_ABI_VERSION)]));
+    out.flags = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_FLAGS)]));
+    return validateExecutableHeader(out);
+}
+
+inline bool initializeTaskContext(
+    TernaryMemory& dmem,
+    int context_addr,
+    const ExecutableImageHeader& header,
+    int imem_ptbr,
+    int dmem_ptbr) {
+
+    if (!validateExecutableHeader(header)) return false;
+    if (context_addr < 0 || context_addr + TASK_CONTEXT_WORDS > dmem.size()) return false;
+    const int sp = header.stack_words;
+    if (dmem.store(context_addr + TASK_CONTEXT_EPC,
+                   ops::fromLong(header.entry_virtual_pc)) != MemFaultCode::OK) return false;
+    if (dmem.store(context_addr + TASK_CONTEXT_STATUS,
+                   ops::fromLong(35)) != MemFaultCode::OK) return false;
+    if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PTBR,
+                   ops::fromLong(imem_ptbr)) != MemFaultCode::OK) return false;
+    if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PAGES,
+                   ops::fromLong(header.text_pages)) != MemFaultCode::OK) return false;
+    if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PTBR,
+                   ops::fromLong(dmem_ptbr)) != MemFaultCode::OK) return false;
+    if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PAGES,
+                   ops::fromLong(header.data_pages)) != MemFaultCode::OK) return false;
+    for (int i = TASK_CONTEXT_REG_BASE; i < TASK_CONTEXT_WORDS; ++i) {
+        if (dmem.store(context_addr + i, TernaryValue::zero()) != MemFaultCode::OK) return false;
+    }
+    return dmem.store(context_addr + TASK_CONTEXT_REG_BASE + R26_SP - 1,
+                      ops::fromLong(sp)) == MemFaultCode::OK;
+}
+
 struct PageTableEntry {
     int ppn = 0;
     bool present = false;
@@ -1057,6 +1199,7 @@ struct VMState {
     VectorFaultState         vector_faults;
     TernaryValue             accumulator;
     std::string              syscall_buffer;
+    std::vector<long long>    console_input;
     PrivilegeMode            privilege = PrivilegeMode::Kernel;
     PrivilegeMode            previous_privilege = PrivilegeMode::Kernel;
     bool                     interrupt_enable = false;
@@ -1130,6 +1273,7 @@ struct VMState {
         trap_reg   = encodeNoTrap();
         accumulator = TernaryValue::zero();
         syscall_buffer.clear();
+        console_input.clear();
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
         resetControlState();
@@ -1137,6 +1281,34 @@ struct VMState {
         // Initialize SP to top of data memory.
         // native_ops::fromInt puts a small integer into LongTriple format.
         regfile.write(R26_SP, ops::fromLong(dmem.size() - 1));
+    }
+
+    void enqueueConsoleInput(long long word) {
+        console_input.push_back(word);
+    }
+
+    void enqueueConsoleAscii(const std::string& text) {
+        for (unsigned char ch : text) {
+            console_input.push_back(static_cast<long long>(ch));
+        }
+    }
+
+    [[nodiscard]] int consoleInputAvailable() const {
+        return static_cast<int>(console_input.size());
+    }
+
+    [[nodiscard]] long long peekConsoleInput() const {
+        return console_input.empty() ? -1 : console_input.front();
+    }
+
+    bool consumeConsoleInput() {
+        if (console_input.empty()) return false;
+        console_input.erase(console_input.begin());
+        return true;
+    }
+
+    void clearConsoleInput() {
+        console_input.clear();
     }
 
     // Clear both memories (set all words to zero / NOP).
@@ -1245,6 +1417,8 @@ struct VMState {
             case CSR_PAGE_FAULT_ACCESS: value = page_fault_access; break;
             case CSR_CONSOLE_OUT: value = 0; break;
             case CSR_CONSOLE_CTRL: value = static_cast<long long>(syscall_buffer.size()); break;
+            case CSR_CONSOLE_IN: value = peekConsoleInput(); break;
+            case CSR_CONSOLE_IN_CTRL: value = consoleInputAvailable(); break;
             default: return false;
         }
         out = ops::fromLong(value);
@@ -1339,6 +1513,15 @@ struct VMState {
                     syscall_buffer.clear();
                 } else if (value > 0) {
                     syscall_buffer += "\n";
+                }
+                return true;
+            case CSR_CONSOLE_IN:
+                return false;
+            case CSR_CONSOLE_IN_CTRL:
+                if (value < 0) {
+                    clearConsoleInput();
+                } else if (value > 0) {
+                    consumeConsoleInput();
                 }
                 return true;
             default:

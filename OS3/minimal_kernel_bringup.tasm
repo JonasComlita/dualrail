@@ -1,19 +1,19 @@
-; Minimal OS substrate bring-up.
-; Boots in kernel mode at PC 0, installs trap state, enables the MMU and timer,
-; enters user mode, handles syscalls through a console CSR, and preemptively
-; switches two user tasks.
+; Phase 4 closure kernel proof.
+; Boots in kernel mode, handles lifecycle/device syscalls, runs a ready queue,
+; wakes timer/console/child waits, loads static executable descriptors, and
+; runs a tiny shell from host-fed console input.
 
 .text
 boot:
     mov r1, trap_handler
     csrw tvec, r1
-    mov r1, ctx0
+    mov r1, ctx_shell
     csrw scratch, r1
-    mov r1, imem_pt0
+    mov r1, imem_pt_shell
     csrw user_imem_ptbr, r1
-    mov r1, 1
+    mov r1, 3
     csrw user_imem_pages, r1
-    mov r1, dmem_pt0
+    mov r1, dmem_pt_shell
     csrw user_dmem_ptbr, r1
     mov r1, 1
     csrw user_dmem_pages, r1
@@ -78,21 +78,201 @@ trap_handler:
     mov r2, 7
     tcmp r2, r1, r2
     brz r2, handle_syscall
+    jmp account_timer
+
+enqueue_ready:
+    mov r2, proc_ready_next
+    add r2, r2, r1
+    mov r3, -1
+    store r3, r2, 0
+    load r3, zero, ready_tail
+    mov r4, -1
+    tcmp r5, r3, r4
+    brz r5, enqueue_ready_empty
+    mov r2, proc_ready_next
+    add r2, r2, r3
+    store r1, r2, 0
+    store r1, zero, ready_tail
+    ret
+enqueue_ready_empty:
+    store r1, zero, ready_head
+    store r1, zero, ready_tail
+    ret
+
+dequeue_ready:
+    load r1, zero, ready_head
+    mov r2, -1
+    tcmp r3, r1, r2
+    brz r3, dequeue_ready_done
+    mov r4, proc_ready_next
+    add r4, r4, r1
+    load r5, r4, 0
+    store r5, zero, ready_head
+    tcmp r3, r5, r2
+    brz r3, dequeue_ready_tail_empty
+    store r2, r4, 0
+    ret
+dequeue_ready_tail_empty:
+    store r2, zero, ready_tail
+    store r2, r4, 0
+dequeue_ready_done:
+    ret
+
+account_timer:
     load r1, zero, current_proc
-    mov r2, 1
-    add r1, r1, r2
-    load r2, zero, proc_count
-    tcmp r2, r1, r2
-    brz r2, wrap_proc
+    mov r2, proc_ticks
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_preemptions
+    add r2, r2, r1
+    load r3, r2, 0
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_quantum_remaining
+    add r2, r2, r1
+    load r3, r2, 0
+    sub r3, r3, r4
+    store r3, r2, 0
+    load r2, zero, idle_proc
+    tcmp r3, r1, r2
+    brz r3, schedule_next
+    mov r2, proc_state
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 2
+    tcmp r5, r3, r4
+    brn r5, schedule_next
+    brp r5, schedule_next
+    mov r3, 1
+    store r3, r2, 0
+    call enqueue_ready
+    jmp schedule_next
+
+schedule_next:
+    call wake_events
+    call dequeue_ready
+    mov r2, -1
+    tcmp r3, r1, r2
+    brz r3, select_idle
     jmp select_proc
-wrap_proc:
-    mov r1, 0
+select_idle:
+    load r1, zero, idle_proc
 select_proc:
     store r1, zero, current_proc
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 2
+    store r3, r2, 0
+    mov r2, proc_quantum_remaining
+    add r2, r2, r1
+    mov r3, 180
+    store r3, r2, 0
     mov r2, proc_table
     add r2, r2, r1
     load r3, r2, 0
     jmp restore_next
+
+wake_events:
+    mov r1, 0
+wake_events_loop:
+    load r2, zero, user_proc_count
+    tcmp r3, r1, r2
+    brz r3, wake_events_done
+    brp r3, wake_events_done
+    mov r2, proc_state
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 4
+    tcmp r5, r3, r4
+    brz r5, wake_check_timer
+    mov r4, 3
+    tcmp r5, r3, r4
+    brz r5, wake_check_blocked
+    jmp wake_events_next
+wake_check_timer:
+    mov r4, proc_wait_channel
+    add r4, r4, r1
+    load r5, r4, 0
+    mov r6, 1
+    tcmp r5, r5, r6
+    brn r5, wake_events_next
+    brp r5, wake_events_next
+    mov r4, proc_wakeup_tick
+    add r4, r4, r1
+    load r5, r4, 0
+    mov r6, 0
+    tcmp r6, r5, r6
+    brz r6, wake_events_next
+    csrr r6, cycle
+    tcmp r6, r6, r5
+    brn r6, wake_events_next
+    jmp wake_make_runnable
+wake_check_blocked:
+    mov r4, proc_wait_channel
+    add r4, r4, r1
+    load r5, r4, 0
+    mov r6, 2
+    tcmp r7, r5, r6
+    brz r7, wake_check_console
+    mov r6, 3
+    tcmp r7, r5, r6
+    brz r7, wake_check_child
+    jmp wake_events_next
+wake_check_console:
+    csrr r6, console_in_ctrl
+    mov r7, 0
+    tcmp r7, r6, r7
+    brp r7, wake_make_runnable
+    jmp wake_events_next
+wake_check_child:
+    mov r4, proc_wait_target
+    add r4, r4, r1
+    load r6, r4, 0
+    mov r7, 1
+    sub r6, r6, r7
+    mov r7, 0
+    tcmp r7, r6, r7
+    brn r7, wake_events_next
+    load r7, zero, user_proc_count
+    tcmp r7, r6, r7
+    brz r7, wake_events_next
+    brp r7, wake_events_next
+    mov r4, proc_state
+    add r4, r4, r6
+    load r7, r4, 0
+    mov r8, 5
+    tcmp r7, r7, r8
+    brz r7, wake_make_runnable
+    jmp wake_events_next
+wake_make_runnable:
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 1
+    store r3, r2, 0
+    mov r2, proc_wait_channel
+    add r2, r2, r1
+    mov r3, 0
+    store r3, r2, 0
+    mov r2, proc_wakeup_tick
+    add r2, r2, r1
+    store r3, r2, 0
+    mov r2, proc_wait_next
+    add r2, r2, r1
+    mov r3, -1
+    store r3, r2, 0
+    copy r9, lr
+    call enqueue_ready
+    copy lr, r9
+wake_events_next:
+    mov r4, 1
+    add r1, r1, r4
+    jmp wake_events_loop
+wake_events_done:
+    ret
+
 restore_next:
     copy sp, r3
     load r1, sp, 0
@@ -152,65 +332,489 @@ handle_syscall:
     mov r2, 3
     tcmp r2, r1, r2
     brz r2, syscall_clear
+    mov r2, 4
+    tcmp r2, r1, r2
+    brz r2, syscall_yield
+    mov r2, 5
+    tcmp r2, r1, r2
+    brz r2, syscall_sleep_until
+    mov r2, 6
+    tcmp r2, r1, r2
+    brz r2, syscall_exit
+    mov r2, 7
+    tcmp r2, r1, r2
+    brz r2, syscall_getpid
+    mov r2, 8
+    tcmp r2, r1, r2
+    brz r2, syscall_uptime
+    mov r2, 9
+    tcmp r2, r1, r2
+    brz r2, syscall_read_input
+    mov r2, 10
+    tcmp r2, r1, r2
+    brz r2, syscall_spawn
+    mov r2, 11
+    tcmp r2, r1, r2
+    brz r2, syscall_waitpid
     mov r1, -1
     store r1, sp, 18
-    jmp syscall_advance
+    jmp syscall_advance_restore
+
 syscall_write:
     csrw console_out, r13
     mov r1, 0
     store r1, sp, 18
-    jmp syscall_advance
+    jmp syscall_advance_restore
 syscall_newline:
     mov r1, 1
     csrw console_ctrl, r1
     mov r1, 0
     store r1, sp, 18
-    jmp syscall_advance
+    jmp syscall_advance_restore
 syscall_clear:
     mov r1, -1
     csrw console_ctrl, r1
     mov r1, 0
     store r1, sp, 18
-syscall_advance:
+    jmp syscall_advance_restore
+syscall_getpid:
+    load r1, zero, current_proc
+    mov r2, 1
+    add r1, r1, r2
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_uptime:
+    csrr r1, cycle
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_yield:
+    load r1, zero, current_proc
+    mov r2, proc_yields
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 1
+    store r3, r2, 0
+    call enqueue_ready
+    mov r3, 0
+    store r3, sp, 18
+    jmp syscall_advance_schedule
+syscall_sleep_until:
+    load r1, zero, current_proc
+    mov r2, proc_sleeps
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 4
+    store r3, r2, 0
+    mov r2, proc_wait_channel
+    add r2, r2, r1
+    mov r3, 1
+    store r3, r2, 0
+    mov r2, proc_wakeup_tick
+    add r2, r2, r1
+    load r3, sp, 18
+    store r3, r2, 0
+    mov r3, 0
+    store r3, sp, 18
+    jmp syscall_advance_schedule
+syscall_read_input:
+    csrr r1, console_in_ctrl
+    mov r2, 0
+    tcmp r2, r1, r2
+    brp r2, syscall_read_input_ready
+    load r1, zero, current_proc
+    mov r2, proc_read_blocks
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 3
+    store r3, r2, 0
+    mov r2, proc_wait_channel
+    add r2, r2, r1
+    mov r3, 2
+    store r3, r2, 0
+    jmp syscall_block_schedule
+syscall_read_input_ready:
+    csrr r1, console_in
+    store r1, sp, 18
+    mov r2, 1
+    csrw console_in_ctrl, r2
+    load r2, zero, current_proc
+    mov r3, proc_input_reads
+    add r3, r3, r2
+    load r4, r3, 0
+    mov r5, 1
+    add r4, r4, r5
+    store r4, r3, 0
+    jmp syscall_advance_restore
+syscall_spawn:
+    load r1, sp, 18
+    mov r2, 1
+    tcmp r3, r1, r2
+    brz r3, syscall_spawn_a
+    mov r2, 2
+    tcmp r3, r1, r2
+    brz r3, syscall_spawn_b
+    mov r1, -1
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_spawn_a:
+    mov r1, 1
+    mov r8, imem_pt_a
+    mov r9, dmem_pt_a
+    mov r10, ctx_a
+    jmp syscall_spawn_slot
+syscall_spawn_b:
+    mov r1, 2
+    mov r8, imem_pt_b
+    mov r9, dmem_pt_b
+    mov r10, ctx_b
+    jmp syscall_spawn_slot
+syscall_spawn_slot:
+    mov r2, proc_state
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 0
+    tcmp r5, r3, r4
+    brz r5, syscall_spawn_slot_free
+    mov r3, -1
+    store r3, sp, 18
+    jmp syscall_advance_restore
+syscall_spawn_slot_free:
+    mov r3, 0
+    store r3, r10, 0
+    mov r3, 35
+    store r3, r10, 1
+    store r8, r10, 2
+    mov r3, 1
+    store r3, r10, 3
+    store r9, r10, 4
+    store r3, r10, 5
+    mov r4, 6
+    mov r5, 32
+spawn_clear_context:
+    tcmp r6, r4, r5
+    brz r6, spawn_context_cleared
+    brp r6, spawn_context_cleared
+    add r7, r10, r4
+    mov r6, 0
+    store r6, r7, 0
+    mov r6, 1
+    add r4, r4, r6
+    jmp spawn_clear_context
+spawn_context_cleared:
+    mov r3, 24
+    store r3, r10, 31
+    load r3, zero, current_proc
+    mov r4, 1
+    add r3, r3, r4
+    mov r5, proc_parent_pid
+    add r5, r5, r1
+    store r3, r5, 0
+    mov r5, proc_exit_status
+    add r5, r5, r1
+    mov r3, 0
+    store r3, r5, 0
+    mov r5, proc_wait_channel
+    add r5, r5, r1
+    store r3, r5, 0
+    mov r5, proc_wait_target
+    add r5, r5, r1
+    store r3, r5, 0
+    mov r5, proc_state
+    add r5, r5, r1
+    mov r3, 1
+    store r3, r5, 0
+    call enqueue_ready
+    load r2, zero, current_proc
+    mov r3, proc_spawns
+    add r3, r3, r2
+    load r4, r3, 0
+    mov r5, 1
+    add r4, r4, r5
+    store r4, r3, 0
+    add r1, r1, r5
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_waitpid:
+    load r1, sp, 18
+    mov r2, 1
+    sub r1, r1, r2
+    mov r3, 0
+    tcmp r4, r1, r3
+    brn r4, syscall_waitpid_fail
+    load r3, zero, user_proc_count
+    tcmp r4, r1, r3
+    brz r4, syscall_waitpid_fail
+    brp r4, syscall_waitpid_fail
+    mov r3, proc_parent_pid
+    add r3, r3, r1
+    load r4, r3, 0
+    load r5, zero, current_proc
+    mov r6, 1
+    add r5, r5, r6
+    tcmp r4, r4, r5
+    brn r4, syscall_waitpid_fail
+    brp r4, syscall_waitpid_fail
+    mov r3, proc_state
+    add r3, r3, r1
+    load r4, r3, 0
+    mov r5, 5
+    tcmp r6, r4, r5
+    brz r6, syscall_waitpid_done
+    mov r5, 0
+    tcmp r6, r4, r5
+    brz r6, syscall_waitpid_fail
+    load r7, zero, current_proc
+    mov r3, proc_waits
+    add r3, r3, r7
+    load r4, r3, 0
+    mov r5, 1
+    add r4, r4, r5
+    store r4, r3, 0
+    mov r3, proc_state
+    add r3, r3, r7
+    mov r4, 3
+    store r4, r3, 0
+    mov r3, proc_wait_channel
+    add r3, r3, r7
+    mov r4, 3
+    store r4, r3, 0
+    mov r3, proc_wait_target
+    add r3, r3, r7
+    load r4, sp, 18
+    store r4, r3, 0
+    jmp syscall_block_schedule
+syscall_waitpid_done:
+    mov r3, proc_exit_status
+    add r3, r3, r1
+    load r4, r3, 0
+    store r4, sp, 18
+    mov r3, proc_state
+    add r3, r3, r1
+    mov r4, 0
+    store r4, r3, 0
+    mov r3, proc_parent_pid
+    add r3, r3, r1
+    store r4, r3, 0
+    jmp syscall_advance_restore
+syscall_waitpid_fail:
+    mov r1, -1
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_exit:
+    load r1, zero, current_proc
+    mov r2, proc_exits
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r2, proc_exit_status
+    add r2, r2, r1
+    load r3, sp, 18
+    store r3, r2, 0
+    mov r2, proc_state
+    add r2, r2, r1
+    mov r3, 5
+    store r3, r2, 0
+    mov r2, proc_wait_channel
+    add r2, r2, r1
+    mov r3, 0
+    store r3, r2, 0
+    jmp syscall_advance_schedule
+
+syscall_advance_restore:
     load r1, sp, 0
     mov r2, 1
     add r1, r1, r2
     store r1, sp, 0
     copy r3, sp
     jmp restore_next
+syscall_advance_schedule:
+    load r1, sp, 0
+    mov r2, 1
+    add r1, r1, r2
+    store r1, sp, 0
+    jmp schedule_next
+syscall_block_schedule:
+    jmp schedule_next
 
-.org 270
-user_loop:
+.org 1350
+shell_loop:
+    syscall 9
+    mov r1, 32
+    tcmp r2, r13, r1
+    brz r2, shell_loop
+    mov r1, 10
+    tcmp r2, r13, r1
+    brz r2, shell_loop
+    mov r1, 97
+    tcmp r2, r13, r1
+    brz r2, shell_spawn_a
+    mov r1, 98
+    tcmp r2, r13, r1
+    brz r2, shell_spawn_b
+    mov r1, 119
+    tcmp r2, r13, r1
+    brz r2, shell_wait
+    mov r1, 117
+    tcmp r2, r13, r1
+    brz r2, shell_uptime
+    mov r1, 120
+    tcmp r2, r13, r1
+    brz r2, shell_exit
+    jmp shell_loop
+shell_spawn_a:
+    mov r13, 1
+    syscall 10
+    store r13, zero, 0
+    syscall 1
+    syscall 2
+    jmp shell_loop
+shell_spawn_b:
+    mov r13, 2
+    syscall 10
+    store r13, zero, 0
+    syscall 1
+    syscall 2
+    jmp shell_loop
+shell_wait:
+    load r13, zero, 0
+    syscall 11
+    store r13, zero, 1
+    syscall 1
+    syscall 2
+    jmp shell_loop
+shell_uptime:
+    syscall 8
+    syscall 1
+    syscall 2
+    jmp shell_loop
+shell_exit:
+    mov r13, 0
+    syscall 6
+    jmp shell_exit
+
+.org 1431
+prog_a:
     load r1, zero, 0
     mov r2, 1
     add r1, r1, r2
     store r1, zero, 0
-    tcmp r3, r1, r2
-    brz r3, emit_counter
-    jmp user_loop
-emit_counter:
-    copy r13, r1
-    syscall 1
-    syscall 2
-    jmp user_loop
+    mov r13, 11
+    syscall 6
+    jmp prog_a
+
+.org 1458
+prog_b:
+    load r1, zero, 0
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, 0
+    mov r13, 22
+    syscall 6
+    jmp prog_b
+
+.org 1485
+idle_loop:
+    load r1, zero, 0
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, 0
+    jmp idle_loop
 
 .data
-imem_pt0: .pte 10, 1, 0, 0, 1
-dmem_pt0: .pte 4, 1, 1, 1, 0
-imem_pt1: .pte 10, 1, 0, 0, 1
-dmem_pt1: .pte 5, 1, 1, 1, 0
-proc_count: .word 2
-current_proc: .word 0
-proc_table: .word ctx0, ctx1
+imem_pt_shell: .pte 50, 1, 0, 0, 1
+.pte 51, 1, 0, 0, 1
+.pte 52, 1, 0, 0, 1
+dmem_pt_shell: .pte 16, 1, 1, 1, 0
+imem_pt_a: .pte 53, 1, 0, 0, 1
+dmem_pt_a: .pte 17, 1, 1, 1, 0
+imem_pt_b: .pte 54, 1, 0, 0, 1
+dmem_pt_b: .pte 18, 1, 1, 1, 0
+imem_pt_idle: .pte 55, 1, 0, 0, 1
+dmem_pt_idle: .pte 19, 1, 1, 1, 0
 
-.org 16
-ctx0: .word 0
-.org 48
-ctx1: .word 0, 35, imem_pt1, 1, dmem_pt1, 1
-.org 79
+exec_shell: .execheader 0, 3, 1, 24, 1, 0
+exec_prog_a: .execheader 0, 1, 1, 24, 1, 0
+exec_prog_b: .execheader 0, 1, 1, 24, 1, 0
+
+exec_context_table: .word ctx_a, ctx_b
+exec_imem_table: .word imem_pt_a, imem_pt_b
+exec_dmem_table: .word dmem_pt_a, dmem_pt_b
+exec_slot_table: .word 1, 2
+
+.org 64
+ctx_shell: .word 0, 35, imem_pt_shell, 3, dmem_pt_shell, 1
+.org 95
+.word 24
+.org 96
+ctx_a: .word 0, 35, imem_pt_a, 1, dmem_pt_a, 1
+.org 127
+.word 24
+.org 128
+ctx_b: .word 0, 35, imem_pt_b, 1, dmem_pt_b, 1
+.org 159
+.word 24
+.org 160
+ctx_spare: .word 0, 35, imem_pt_a, 1, dmem_pt_a, 1
+.org 191
+.word 24
+.org 192
+idle_ctx: .word 0, 35, imem_pt_idle, 1, dmem_pt_idle, 1
+.org 223
 .word 24
 
-.org 108
-counter0: .word 0
-.org 135
-counter1: .word 0
+.org 240
+proc_count: .word 5
+user_proc_count: .word 4
+idle_proc: .word 4
+current_proc: .word 0
+ready_head: .word -1
+ready_tail: .word -1
+timer_wait_head: .word -1
+console_wait_head: .word -1
+child_wait_head: .word -1
+proc_table: .word ctx_shell, ctx_a, ctx_b, ctx_spare, idle_ctx
+proc_pid: .word 1, 2, 3, 4, 5
+proc_parent_pid: .word 0, 0, 0, 0, 0
+proc_state: .word 2, 0, 0, 0, 1
+proc_ticks: .word 0, 0, 0, 0, 0
+proc_quantum_remaining: .word 180, 180, 180, 180, 180
+proc_preemptions: .word 0, 0, 0, 0, 0
+proc_wakeup_tick: .word 0, 0, 0, 0, 0
+proc_wait_channel: .word 0, 0, 0, 0, 0
+proc_wait_target: .word 0, 0, 0, 0, 0
+proc_ready_next: .word -1, -1, -1, -1, -1
+proc_wait_next: .word -1, -1, -1, -1, -1
+proc_yields: .word 0, 0, 0, 0, 0
+proc_sleeps: .word 0, 0, 0, 0, 0
+proc_exits: .word 0, 0, 0, 0, 0
+proc_spawns: .word 0, 0, 0, 0, 0
+proc_waits: .word 0, 0, 0, 0, 0
+proc_read_blocks: .word 0, 0, 0, 0, 0
+proc_input_reads: .word 0, 0, 0, 0, 0
+proc_exit_status: .word 0, 0, 0, 0, 0
+
+.org 432
+shell_data: .word 0, 0
+.org 459
+prog_a_counter: .word 0
+.org 486
+prog_b_counter: .word 0
+.org 513
+idle_counter: .word 0

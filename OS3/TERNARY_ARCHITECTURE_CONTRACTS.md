@@ -202,6 +202,14 @@ Implemented minimal syscall ids:
 - `1`: write integer
 - `2`: newline
 - `3`: clear console output
+- `4`: yield
+- `5`: sleep until absolute cycle tick
+- `6`: exit with status in `r13`
+- `7`: getpid
+- `8`: uptime
+- `9`: read one console input word
+- `10`: spawn a predeclared static executable image
+- `11`: waitpid
 
 ## 5. Endianness And Data Layout
 
@@ -330,23 +338,73 @@ Implemented:
 - bootable minimal kernel assembly artifact
 - routed syscall path
 - console output CSRs
+- host-fed console input CSRs
 - deterministic timer preemption
 - interrupt-disabled critical-section semantics
 - `TLDR`/`TSTR` atomics and lock ABI proof
 - 32-word task context
-- process table seed:
+- process table and lifecycle metadata:
   - `proc_count`
+  - `user_proc_count`
+  - `idle_proc`
   - `current_proc`
+  - `ready_head`
+  - `ready_tail`
   - `proc_table[]`
+  - `proc_pid[]`
+  - `proc_parent_pid[]`
+  - `proc_state[]`
+  - `proc_ticks[]`
+  - `proc_quantum_remaining[]`
+  - `proc_preemptions[]`
+  - `proc_wakeup_tick[]`
+  - `proc_wait_channel[]`
+  - `proc_wait_target[]`
+  - `proc_ready_next[]`
+  - `proc_wait_next[]`
+  - `proc_yields[]`
+  - `proc_sleeps[]`
+  - `proc_exits[]`
+  - `proc_spawns[]`
+  - `proc_waits[]`
+  - `proc_read_blocks[]`
+  - `proc_input_reads[]`
+  - `proc_exit_status[]`
+- lifecycle syscalls:
+  - `4`: yield
+  - `5`: sleep until absolute cycle tick
+  - `6`: exit
+  - `7`: getpid
+  - `8`: uptime
+- device/process syscalls:
+  - `9`: read console input word
+  - `10`: spawn static executable image
+  - `11`: wait for child process id
+- idle task fallback when no user task is runnable
+- executable header v1 and assembler metadata through `.execheader`
+- minimal shell proof using host-fed ASCII input
 
-### Next Kernel Direction
+Process state values:
 
-The next implementation layer should add:
+- `0`: free process slot
+- `1`: runnable
+- `2`: running
+- `3`: blocked
+- `4`: sleeping
+- `5`: exited
 
-- scheduler policy beyond round-robin table selection
-- process lifecycle states
-- blocking/wakeup paths for syscalls and devices
-- richer devices beyond the current console buffer
+Wait-channel values:
+
+- `0`: no wait
+- `1`: timer wait
+- `2`: console input wait
+- `3`: child-exit wait
+
+### Phase 4 Frozen Kernel Boundary
+
+Phase 4 is closed at this boundary. Future work should build compiler and
+toolchain layers against this stable target before expanding toward richer
+devices, filesystems, dynamic process loading, or a larger xv6-style kernel.
 
 ## 10. Decisions Locked By This Document
 
@@ -355,7 +413,7 @@ The next implementation layer should add:
 - Single-core VM behavior remains sequentially consistent.
 - Future memory ordering uses `-1 relaxed`, `0 acquire-release`, `+1 sequential
   consistency`.
-- Future store-conditional returns `-1 collision`, `0 value mismatch`,
+- Store-conditional returns `-1 collision`, `0 value mismatch`,
   `+1 success`.
 - Positive `CAUSE` means synchronous exception; negative `CAUSE` means
   interrupt.
@@ -364,3 +422,6 @@ The next implementation layer should add:
 - Base instructions are fixed 27-trit words.
 - Page size remains 27 words for MMU v1.
 - Syscall ABI v1 uses `SYSCALL_ID`, `r13-r18` arguments, and `r13` return.
+- Phase 4 executable header v1 uses fixed words for magic/version, ABI version,
+  entry virtual PC, text/data page counts, stack hint, syscall ABI version, and
+  flags.

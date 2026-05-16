@@ -604,25 +604,58 @@ Current integration note:
 - **Memory-Order FENCE**: `FENCE` now accepts the same ternary order spelling (`fence.-1`, `fence.0`, `fence.+1`) while remaining a single-core VM ordering marker.
 - **Lock ABI Proof**: Added VM tests for atomic success, value mismatch, reservation collision, and a minimal acquire/critical-section/release sequence.
 
-#### Track 6.12: Scheduler Policy and Process Lifecycle
-- **Process States**: Add runnable, running, blocked, sleeping, and exited states to the process table.
-- **Run Queue Policy**: Replace the current process-table toggle with a small policy-driven runnable selection path.
-- **Timer Accounting**: Track ticks, quanta, and preemption counts per process.
-- **Blocking Surface**: Prepare syscall/device paths to block and wake tasks instead of spinning.
+#### Track 6.12: Scheduler Policy and Process Lifecycle (Implemented)
+- **Process States**: Added runnable, running, blocked, sleeping, and exited process-state constants and sidecar process metadata.
+- **Run Queue Policy**: The minimal kernel scheduler now wakes ready sleepers, skips blocked/sleeping/exited tasks, and chooses the next runnable process instead of blindly toggling contexts.
+- **Timer Accounting**: Tracks per-process timer ticks, quantum remaining, and preemption counts.
+- **Blocking Surface**: Added `proc_wakeup_tick` metadata and tests proving blocked tasks are skipped and sleeping tasks wake deterministically.
 
-#### Track 6.13: Advanced IR Expansion
+#### Track 6.13: Kernel Services v1 (Implemented)
+- **Lifecycle Syscalls**: Added kernel-handled `yield`, `sleep_until_tick`, `exit`, `getpid`, and `uptime` syscalls while preserving console syscalls.
+- **Wait Metadata**: Added wait-channel metadata so timer sleepers are woken by the scheduler instead of polling.
+- **Idle Task**: Expanded the minimal kernel image to three user tasks plus an idle task, with idle selected when no user process is runnable.
+- **Kernel Acceptance Image**: The boot artifact now proves sleep/yield/exit/getpid behavior, task exit removal, timer wakeup, console output, and idle progress in one image.
+
+#### Track 6.14: Device/Event Queues and Kernel Authoring (Implemented)
+- **Event Queues**: Generalized timer sleeping into wait-channel metadata that also handles console input and child-exit waits.
+- **Device Blocking**: Added host-fed console input CSRs and blocking read behavior.
+- **Ready/Wait Queues**: Added ready/wait queue metadata for the Phase 4 scheduler proof.
+- **Kernel Authoring Ergonomics**: The kernel artifact now uses shared queue, wakeup, and syscall paths instead of fixed two-task toggles.
+
+#### Track 6.15: Self-Describing Binary Loader and Object ABI Seed (Implemented)
+- **Executable Header v1**: Added fixed executable headers with magic/version, ABI version, entry virtual PC, text/data page counts, stack hint, syscall ABI version, and flags.
+- **Assembler Metadata**: `.execheader` emits header words and records executable metadata in `AssemblyResult`.
+- **Static Loader**: Added loader helpers that validate executable metadata and initialize task contexts/page-table bindings.
+- **Compiler Pipeline Boundary**: Phase 4 now owns the executable/runtime/ABI/metadata/assembler contract layers named in `OS3/compiler_pipeline.md`.
+
+#### Track 6.16: Process Creation and Lifecycle Syscalls v1 (Implemented)
+- **Process Identity**: Added free/runnable lifecycle state, PID convention, parent PID, exit status, wait target, and queue sidecars.
+- **Spawn/Wait**: Added static `spawn` and `waitpid` behavior for predeclared executable images.
+- **Lifecycle Compatibility**: Preserved `yield`, `sleep_until_tick`, `exit`, `getpid`, and `uptime`.
+
+#### Track 6.17: Console Input and Minimal Shell Proof (Implemented)
+- **Console Input Device**: Added host-fed word/ASCII input queue support with `console_in` and `console_in_ctrl` CSRs.
+- **Tiny Command Loop**: The shell proof reads ASCII commands, launches static programs, waits for child exit, prints results, and exits.
+- **Integrated Proof**: The acceptance image covers input wakeup, shell dispatch, spawn/wait, console output, timer preemption, and idle behavior together.
+
+#### Track 6.18: Phase 4 Freeze and Acceptance (Implemented)
+- **Scope Freeze**: The syscall table, trap-frame layout, process metadata, executable header v1, and page-table v1 contract are frozen for Phase 4.
+- **Documentation Lock**: `OS3/PHASE4_COMPLETION_ROADMAP.md` is now canonical; deprecated implementation-plan files are no longer synchronized.
+- **Regression Gate**: `test_multiwidth_vm`, `test_ternary_ir`, `test_ternary_lanes`, `test_native_ops`, and `test_numeric_workloads` pass.
+
+#### Track 6.19: Advanced IR Expansion
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
 - **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
 - **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
 - **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
 - **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
 
-#### Track 6.14: High-Level Source Language Frontend
+#### Track 6.20: High-Level Source Language Frontend
 - **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
 - **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
 
 ### Critical Gaps to Bridge for `xv6` OS Execution
-The VM now has the core OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a timer-driven context switch proof, a bootable minimal kernel artifact, kernel-mediated console output, interrupt-disabled critical-section behavior, a seeded process table, a written ternary architecture contract, and the first ternary atomics/lock ABI proof. The remaining `xv6` path is now less about "can the VM act like an OS target?" and more about scheduler lifecycle, richer device models, and toolchain conventions.
+The VM now has the Phase 4 OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a bootable minimal kernel artifact, kernel-mediated console output/input, interrupt-disabled critical-section behavior, process lifecycle state, ready/wait metadata, timer-backed sleeping, lifecycle syscalls, static spawn/waitpid, an idle task, executable header v1, a minimal shell proof, a written ternary architecture contract, and the first ternary atomics/lock ABI proof. The next path is compiler/toolchain work against this frozen OS target contract.
 
 #### A. Privilege Rings (Kernel vs. User Mode)
 Implemented in substrate v1:
@@ -640,7 +673,7 @@ Implemented as substrate v1:
 A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
 * **Scheduler Context**: The minimal kernel now saves/restores `EPC`, `STATUS`, page-table CSRs, `r1-r26`, and user `sp` using the `SCRATCH`/`CSRRW` convention, then selects the next task through a tiny process table.
 
-Next substrate work should focus on scheduler policy and process lifecycle state beyond round-robin table selection, with richer device/timer models close behind.
+The definitive Phase 4 closure roadmap is `OS3/PHASE4_COMPLETION_ROADMAP.md`, and it is now complete. Compiler and source-language work should resume against this stable OS target contract.
 
 ### Critical Path
 
@@ -651,10 +684,13 @@ Phase 6.3 core VM OS substrate -> Phase 6.4 trap-save/ABI contract ->
 Phase 6.5 MMU page tables -> Phase 6.6 timer two-task switch ->
 Phase 6.7 minimal kernel bring-up -> Phase 6.8 syscall/console substrate ->
 Phase 6.9 critical sections/process table seed -> Phase 6.10 architecture contracts ->
-Phase 6.11 TLDR/TSTR atomics and lock ABI -> scheduler policy/process lifecycle ->
-minimal IR/C-like kernel authoring -> tiny kernel milestone -> source language expansion
+Phase 6.11 TLDR/TSTR atomics and lock ABI -> Phase 6.12 scheduler/process lifecycle ->
+Phase 6.13 kernel services v1 -> Phase 6.14 device/event queues and kernel helpers ->
+Phase 6.15 self-describing binary loader -> Phase 6.16 spawn/wait process lifecycle ->
+Phase 6.17 console input and shell proof -> Phase 6.18 Phase 4 freeze [closed] ->
+Phase 6.19 advanced IR -> Phase 6.20 source language frontend
 ```
-Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, atomic, page-table, and scheduler contracts rather than preceding them.
+Full language and optimization work now grows from the frozen ABI, trap/interrupt, memory-model, atomic, page-table, scheduler, executable-header, and syscall contracts.
 
 Validation:
 

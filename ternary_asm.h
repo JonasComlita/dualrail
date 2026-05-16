@@ -27,6 +27,8 @@
 //   - Label names: [A-Za-z_][A-Za-z0-9_]*  (no leading digits)
 //   - .org N advances the current text or data address and pads with zero/NOP.
 //   - .pte ppn,user,read,write,execute[,present] emits one raw T40 PTE word.
+//   - .execheader entry,text_pages,data_pages,stack_words,syscall_abi,flags
+//     emits a fixed Phase 4 executable header and records metadata.
 //
 // REGISTER NAMES:
 //   r0 .. r26     General-purpose registers (r0 hardwired zero)
@@ -144,6 +146,7 @@ struct AssemblyResult {
     std::vector<AssemblyError>    errors;
     std::map<std::string, int>    labels;       // text label name -> IMEM word address
     std::map<std::string, int>    data_labels;  // data label name -> DMEM word address
+    std::map<std::string, ExecutableImageHeader> executable_headers;
 
     // Convenience: check and throw on error.
     [[nodiscard]] const std::vector<TritWord27>& require() const {
@@ -257,6 +260,8 @@ struct AssemblyResult {
     if (s == "page_fault_access") return CSR_PAGE_FAULT_ACCESS;
     if (s == "console_out") return CSR_CONSOLE_OUT;
     if (s == "console_ctrl") return CSR_CONSOLE_CTRL;
+    if (s == "console_in") return CSR_CONSOLE_IN;
+    if (s == "console_in_ctrl") return CSR_CONSOLE_IN_CTRL;
 
     if (s.empty()) return -1;
     for (char c : s) {
@@ -648,8 +653,8 @@ struct SourceLine {
 
         sl.section = current_section;
         if (current_section == AssemblySection::Data) {
-            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte") {
-                errors.push_back({line_num, "Only .word and .pte directives are valid in .data"});
+            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" && sl.mnemonic != ".execheader") {
+                errors.push_back({line_num, "Only .word, .pte, and .execheader directives are valid in .data"});
                 lines.push_back(sl);
                 continue;
             }
@@ -665,11 +670,18 @@ struct SourceLine {
                 lines.push_back(sl);
                 continue;
             }
+            if (sl.mnemonic == ".execheader" && sl.operands.size() != 6) {
+                errors.push_back({line_num, ".execheader requires entry_pc, text_pages, data_pages, stack_words, syscall_abi, flags"});
+                lines.push_back(sl);
+                continue;
+            }
             sl.address = data_addr;
-            sl.word_count = sl.mnemonic == ".pte" ? 1 : static_cast<int>(sl.operands.size());
+            sl.word_count = sl.mnemonic == ".pte" ? 1 :
+                            sl.mnemonic == ".execheader" ? EXEC_HEADER_WORDS :
+                            static_cast<int>(sl.operands.size());
             data_addr += sl.word_count;
         } else {
-            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte") {
+            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" || sl.mnemonic == ".execheader") {
                 errors.push_back({line_num, sl.mnemonic + " is only valid in .data"});
                 lines.push_back(sl);
                 continue;
@@ -1809,6 +1821,29 @@ struct LabelMaps {
                 auto value = resolveAbsolute(operand, sl.line_num);
                 data.push_back(value ? ops::fromLong(value.value()) : TernaryValue::zero());
             }
+        } else if (sl.mnemonic == ".execheader") {
+            std::array<int, 6> fields{};
+            bool ok = true;
+            for (int i = 0; i < 6; ++i) {
+                auto value = resolveAbsolute(sl.operands[static_cast<std::size_t>(i)], sl.line_num);
+                if (!value) {
+                    ok = false;
+                } else {
+                    fields[static_cast<std::size_t>(i)] = value.value();
+                }
+            }
+            if (!ok) {
+                for (int i = 0; i < EXEC_HEADER_WORDS; ++i) data.push_back(TernaryValue::zero());
+                continue;
+            }
+            auto header = encodeExecutableHeader(
+                fields[0],
+                fields[1],
+                fields[2],
+                fields[3],
+                fields[4],
+                fields[5]);
+            data.insert(data.end(), header.begin(), header.end());
         } else if (sl.mnemonic == ".pte") {
             auto ppn = resolveAbsolute(sl.operands[0], sl.line_num);
             auto user = requireFlag(sl.operands[1], sl.line_num, "user");
@@ -1845,6 +1880,32 @@ struct LabelMaps {
     return data;
 }
 
+[[nodiscard]] inline std::map<std::string, ExecutableImageHeader> collectExecutableHeaders(
+        const std::vector<SourceLine>& lines,
+        const std::vector<TernaryValue>& data,
+        std::vector<AssemblyError>& errors) {
+
+    std::map<std::string, ExecutableImageHeader> headers;
+    for (const SourceLine& sl : lines) {
+        if (sl.section != AssemblySection::Data ||
+            sl.mnemonic != ".execheader" ||
+            sl.address < 0) {
+            continue;
+        }
+        if (sl.label.empty()) {
+            errors.push_back({sl.line_num, ".execheader requires a label"});
+            continue;
+        }
+        ExecutableImageHeader header;
+        if (!decodeExecutableHeader(data, sl.address, header)) {
+            errors.push_back({sl.line_num, "Invalid executable header"});
+            continue;
+        }
+        headers[sl.label] = header;
+    }
+    return headers;
+}
+
 // =============================================================================
 // SECTION 7 — Public API: assemble()
 // =============================================================================
@@ -1867,6 +1928,7 @@ struct LabelMaps {
     // Pass 2: encode.
     result.program = encode(lines, result.labels, result.data_labels, result.errors);
     result.data = encodeData(lines, result.labels, result.data_labels, result.errors);
+    result.executable_headers = collectExecutableHeaders(lines, result.data, result.errors);
     result.success = result.errors.empty();
     return result;
 }

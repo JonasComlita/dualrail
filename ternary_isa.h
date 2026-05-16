@@ -639,7 +639,9 @@ static constexpr int CSR_PAGE_FAULT_ADDR = 20;
 static constexpr int CSR_PAGE_FAULT_ACCESS = 21;
 static constexpr int CSR_CONSOLE_OUT     = 22;
 static constexpr int CSR_CONSOLE_CTRL    = 23;
-static constexpr int CSR_MAX_ID          = CSR_CONSOLE_CTRL;
+static constexpr int CSR_CONSOLE_IN      = 24;
+static constexpr int CSR_CONSOLE_IN_CTRL = 25;
+static constexpr int CSR_MAX_ID          = CSR_CONSOLE_IN_CTRL;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -671,6 +673,8 @@ static constexpr int CSR_MAX_ID          = CSR_CONSOLE_CTRL;
         case CSR_PAGE_FAULT_ACCESS: return "page_fault_access";
         case CSR_CONSOLE_OUT: return "console_out";
         case CSR_CONSOLE_CTRL: return "console_ctrl";
+        case CSR_CONSOLE_IN: return "console_in";
+        case CSR_CONSOLE_IN_CTRL: return "console_in_ctrl";
         default: return "unknown";
     }
 }

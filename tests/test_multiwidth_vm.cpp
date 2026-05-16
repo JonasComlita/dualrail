@@ -69,6 +69,12 @@ sandbox::TernaryMode vectorMode(const sandbox::vm::VMState& vm, int vreg, int la
     return vm.vregfile.reg[static_cast<std::size_t>(vreg)].read(lane).mode;
 }
 
+long long loadPhysLong(sandbox::vm::VMState& vm, int addr) {
+    auto [value, fault] = vm.dmem.load(addr);
+    if (fault != sandbox::vm::MemFaultCode::OK) return 0;
+    return sandbox::vm::ops::toLong(value);
+}
+
 int8_t vectorPredicateTrit(const sandbox::vm::VMState& vm, int vreg, int lane) {
     return vm.vregfile.reg[static_cast<std::size_t>(vreg)].read(lane).asL1().tritAt(0);
 }
@@ -641,7 +647,7 @@ void testIsaAndAsmWidths() {
     expect(!assemble("csrw 99, r1\n").success, "CSRW rejects invalid CSR id");
     expect(!assemble("csrrw r1, 99, r2\n").success, "CSRRW rejects invalid CSR id");
     expect(!assemble("eret.t20\n").success, "ERET rejects width suffix");
-    expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\ncsrr r3, console_ctrl\nhalt\n").success,
+    expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\ncsrr r3, console_ctrl\ncsrr r4, console_in\ncsrr r5, console_in_ctrl\nhalt\n").success,
            "assembler accepts MMU and console CSR names");
 
     auto atomics = assembleOrThrow(R"(
@@ -1514,6 +1520,47 @@ void testPhase35Infrastructure() {
            ".pte outside .data is rejected");
 
     {
+        auto image = assemble(R"(
+            .text
+        entry:
+            halt
+            .data
+        app: .execheader 0, 1, 1, 24, 1, 0
+        )");
+        expect(image.success, "assembler accepts executable header directive");
+        if (image.success) {
+            expect(image.data_labels.count("app") && image.data_labels.at("app") == 0,
+                   ".execheader defines a data label");
+            expect(image.data.size() == EXEC_HEADER_WORDS,
+                   ".execheader emits fixed-size header words");
+            expect(image.executable_headers.count("app"),
+                   ".execheader records executable metadata");
+            const ExecutableImageHeader header = image.executable_headers.at("app");
+            expect(header.entry_virtual_pc == 0 &&
+                   header.text_pages == 1 &&
+                   header.data_pages == 1 &&
+                   header.stack_words == 24 &&
+                   header.syscall_abi_version == EXEC_SYSCALL_ABI_VERSION_V1,
+                   "executable metadata decodes header fields");
+            VMState vm(64, 64);
+            expect(initializeTaskContext(vm.dmem, 8, header, 1, 2),
+                   "loader helper initializes a task context from executable metadata");
+            expect(loadPhysLong(vm, 8 + TASK_CONTEXT_EPC) == 0 &&
+                   loadPhysLong(vm, 8 + TASK_CONTEXT_IMEM_PTBR) == 1 &&
+                   loadPhysLong(vm, 8 + TASK_CONTEXT_DMEM_PTBR) == 2 &&
+                   loadPhysLong(vm, 8 + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "loader helper writes context PC, page tables, and SP");
+        }
+
+        expect(!assemble(".data\nbad: .execheader 0, 0, 1, 24, 1, 0\n").success,
+               ".execheader rejects invalid text page count");
+        expect(!assemble(".execheader 0, 1, 1, 24, 1, 0\n").success,
+               ".execheader outside .data is rejected");
+        expect(!assemble(".data\n.execheader 0, 1, 1, 24, 1, 0\n").success,
+               ".execheader requires a label");
+    }
+
+    {
         VMState vm(16, 16);
         auto program = assembleOrThrow(R"(
             nop
@@ -1839,6 +1886,32 @@ void testOsSubstrate() {
         expect(result.halted(), "kernel console CSR program halts");
         expect(vm.syscall_buffer == "55\n", "console CSRs update output buffer");
         expect(asLong(vm, R2) == 3, "console_ctrl reads output buffer length");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            csrr r1, console_in_ctrl
+            csrr r2, console_in
+            mov r3, 1
+            csrw console_in_ctrl, r3
+            csrr r4, console_in_ctrl
+            csrr r5, console_in
+            mov r3, -1
+            csrw console_in_ctrl, r3
+            csrr r6, console_in_ctrl
+            halt
+        )");
+        expect(loadAndReset(vm, program), "kernel console input CSR program loads");
+        vm.enqueueConsoleAscii("az");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "kernel console input CSR program halts");
+        expect(asLong(vm, R1) == 2 &&
+               asLong(vm, R2) == 97 &&
+               asLong(vm, R4) == 1 &&
+               asLong(vm, R5) == 122 &&
+               asLong(vm, R6) == 0,
+               "console input CSRs peek, consume, and clear host-fed input");
     }
 
     {
@@ -2289,52 +2362,153 @@ void testOsSubstrate() {
         const std::string source = readTextFile("OS3/minimal_kernel_bringup.tasm");
         expect(!source.empty(), "minimal kernel bring-up artifact is readable");
         auto assembled = assemble(source);
-        expect(assembled.success, "minimal kernel bring-up artifact assembles");
+            expect(assembled.success, "minimal kernel bring-up artifact assembles");
         if (assembled.success) {
             expect(assembled.labels.count("boot") && assembled.labels.at("boot") == 0,
                    "minimal kernel boots at PC zero");
-            expect(assembled.labels.count("user_loop") && assembled.labels.at("user_loop") == 10 * MMU_PAGE_WORDS,
-                   "minimal kernel places user code on mapped physical page");
-            expect(assembled.data_labels.count("counter0") &&
-                   assembled.data_labels.at("counter0") == 4 * MMU_PAGE_WORDS,
-                   "minimal kernel maps task 0 counter page");
-            expect(assembled.data_labels.count("counter1") &&
-                   assembled.data_labels.at("counter1") == 5 * MMU_PAGE_WORDS,
-                   "minimal kernel maps task 1 counter page");
+            expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * MMU_PAGE_WORDS,
+                   "minimal kernel places shell code on mapped physical page");
+            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 53 * MMU_PAGE_WORDS,
+                   "minimal kernel places static program A on mapped physical page");
+            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 54 * MMU_PAGE_WORDS,
+                   "minimal kernel places static program B on mapped physical page");
+            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 55 * MMU_PAGE_WORDS,
+                   "minimal kernel places idle task code on mapped physical page");
+            expect(assembled.data_labels.count("shell_data") &&
+                   assembled.data_labels.at("shell_data") == 16 * MMU_PAGE_WORDS,
+                   "minimal kernel maps shell data page");
+            expect(assembled.data_labels.count("prog_a_counter") &&
+                   assembled.data_labels.at("prog_a_counter") == 17 * MMU_PAGE_WORDS,
+                   "minimal kernel maps program A data page");
+            expect(assembled.data_labels.count("prog_b_counter") &&
+                   assembled.data_labels.at("prog_b_counter") == 18 * MMU_PAGE_WORDS,
+                   "minimal kernel maps program B data page");
+            expect(assembled.data_labels.count("idle_counter") &&
+                   assembled.data_labels.at("idle_counter") == 19 * MMU_PAGE_WORDS,
+                   "minimal kernel maps idle counter page");
+            expect(assembled.executable_headers.count("exec_shell") &&
+                   assembled.executable_headers.count("exec_prog_a") &&
+                   assembled.executable_headers.count("exec_prog_b"),
+                   "minimal kernel defines executable image metadata");
             expect(assembled.data_labels.count("proc_count") &&
+                   assembled.data_labels.count("user_proc_count") &&
+                   assembled.data_labels.count("idle_proc") &&
                    assembled.data_labels.count("current_proc") &&
+                   assembled.data_labels.count("ready_head") &&
+                   assembled.data_labels.count("ready_tail") &&
                    assembled.data_labels.count("proc_table"),
                    "minimal kernel defines process table metadata");
+            expect(assembled.data_labels.count("proc_state") &&
+                   assembled.data_labels.count("proc_parent_pid") &&
+                   assembled.data_labels.count("proc_exit_status") &&
+                   assembled.data_labels.count("proc_ticks") &&
+                   assembled.data_labels.count("proc_quantum_remaining") &&
+                   assembled.data_labels.count("proc_preemptions") &&
+                   assembled.data_labels.count("proc_wakeup_tick") &&
+                   assembled.data_labels.count("proc_wait_channel") &&
+                   assembled.data_labels.count("proc_wait_target") &&
+                   assembled.data_labels.count("proc_ready_next") &&
+                   assembled.data_labels.count("proc_wait_next") &&
+                   assembled.data_labels.count("proc_yields") &&
+                   assembled.data_labels.count("proc_sleeps") &&
+                   assembled.data_labels.count("proc_exits") &&
+                   assembled.data_labels.count("proc_spawns") &&
+                   assembled.data_labels.count("proc_waits") &&
+                   assembled.data_labels.count("proc_read_blocks") &&
+                   assembled.data_labels.count("proc_input_reads"),
+                   "minimal kernel defines scheduler lifecycle metadata");
 
-            VMState vm(320, 224);
+            VMState vm(2048, 768);
             expect(loadAndReset(vm, assembled), "minimal kernel image loads");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_count")) == 2,
-                   "minimal kernel process table declares two tasks");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_count")) == 5,
+                   "minimal kernel process table declares four user slots plus idle");
+            expect(loadPhysLong(vm, assembled.data_labels.at("user_proc_count")) == 4,
+                   "minimal kernel process table declares four user slots");
+            expect(loadPhysLong(vm, assembled.data_labels.at("idle_proc")) == 4,
+                   "minimal kernel records idle process index");
             expect(loadPhysLong(vm, assembled.data_labels.at("proc_table")) ==
-                       assembled.data_labels.at("ctx0") &&
+                       assembled.data_labels.at("ctx_shell") &&
                    loadPhysLong(vm, assembled.data_labels.at("proc_table") + 1) ==
-                       assembled.data_labels.at("ctx1"),
-                   "minimal kernel process table points at task contexts");
-            auto result = sandbox::vm::run(vm, 1400);
+                       assembled.data_labels.at("ctx_a") &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 2) ==
+                       assembled.data_labels.at("ctx_b") &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 4) ==
+                       assembled.data_labels.at("idle_ctx"),
+                   "minimal kernel process table points at task and idle contexts");
+            auto result = sandbox::vm::run(vm, 1000);
             expect(result.timeout() && vm.isRunning(),
-                   "minimal kernel keeps running under timer preemption");
+                   "minimal kernel idles while shell blocks for input");
             expect(vm.trap_routing_enabled && vm.mmu_enable,
                    "minimal kernel boot enabled routed traps and MMU");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_state")) == PROC_STATE_BLOCKED &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_wait_channel")) == PROC_WAIT_CONSOLE_INPUT,
+                   "shell blocks on console input without polling");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_read_blocks")) > 0,
+                   "console input wait is accounted");
+            expect(loadPhysLong(vm, assembled.data_labels.at("idle_counter")) > 0,
+                   "idle task runs while shell waits for input");
+
+            vm.enqueueConsoleAscii("awbu x");
+            result = sandbox::vm::run(vm, 20000);
+            expect(result.timeout() && vm.isRunning(),
+                   "minimal kernel services image keeps running under timer preemption");
             expect(loadPhysLong(vm, assembled.data_labels.at("current_proc")) >= 0 &&
                    loadPhysLong(vm, assembled.data_labels.at("current_proc")) <
                        loadPhysLong(vm, assembled.data_labels.at("proc_count")),
                    "minimal kernel scheduler keeps current process index in range");
-            expect(loadPhysLong(vm, assembled.data_labels.at("counter0")) > 0,
-                   "minimal kernel task 0 counter advances");
-            expect(loadPhysLong(vm, assembled.data_labels.at("counter1")) > 0,
-                   "minimal kernel task 1 counter advances");
+            expect(loadPhysLong(vm, assembled.data_labels.at("prog_a_counter")) == 1,
+                   "spawned program A runs once and exits");
+            expect(loadPhysLong(vm, assembled.data_labels.at("prog_b_counter")) == 1,
+                   "spawned program B runs once and exits");
+            expect(loadPhysLong(vm, assembled.data_labels.at("shell_data")) == 3,
+                   "shell records last spawned child PID");
+            expect(loadPhysLong(vm, assembled.data_labels.at("shell_data") + 1) == 11,
+                   "waitpid returns program A exit status to shell memory");
             expect(!vm.syscall_buffer.empty() &&
-                   vm.syscall_buffer.find('\n') != std::string::npos,
-                   "minimal kernel handles user syscalls through console CSR");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ctx0") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved task 0 user stack pointer");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ctx1") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved task 1 user stack pointer");
+                   vm.syscall_buffer.find("2\n") != std::string::npos &&
+                   vm.syscall_buffer.find("11\n") != std::string::npos &&
+                   vm.syscall_buffer.find("3\n") != std::string::npos,
+                   "shell prints spawn and wait results through console CSR");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_shell") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved shell user stack pointer");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_a") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved program A user stack pointer");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_b") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved program B user stack pointer");
+            expect(loadPhysLong(vm, assembled.data_labels.at("idle_ctx") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved idle user stack pointer");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_spawns")) == 2,
+                   "spawn syscall accounts shell-created children");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_waits")) == 1,
+                   "waitpid blocking path is accounted");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_input_reads")) >= 5,
+                   "console input reads are accounted");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_exits")) == 1 &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_exits") + 1) == 1 &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_exits") + 2) == 1,
+                   "exit syscall accounts shell and children");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_state")) == PROC_STATE_EXITED &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_state") + 1) == PROC_STATE_FREE &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_state") + 2) == PROC_STATE_EXITED,
+                   "waited child is freed and un-waited child remains exited");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ready_head")) == -1 &&
+                   loadPhysLong(vm, assembled.data_labels.at("ready_tail")) == -1,
+                   "ready queue drains when only idle remains runnable");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining")) <= PROC_DEFAULT_QUANTUM &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining") + 1) <= PROC_DEFAULT_QUANTUM &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining") + 4) <= PROC_DEFAULT_QUANTUM,
+                   "minimal kernel tracks per-process quantum remaining");
+
+            VMState exhaustedVm(2048, 768);
+            expect(loadAndReset(exhaustedVm, assembled), "spawn exhaustion image loads");
+            exhaustedVm.enqueueConsoleAscii("aa x");
+            auto exhaustedResult = sandbox::vm::run(exhaustedVm, 20000);
+            expect(exhaustedResult.timeout() && exhaustedVm.isRunning(),
+                   "kernel keeps running through spawn exhaustion");
+            expect(exhaustedVm.syscall_buffer.find("-1\n") != std::string::npos,
+                   "spawn returns -1 when the static slot is not free");
+            expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
+                   "failed spawn is not counted as a created process");
         }
     }
 
