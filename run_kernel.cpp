@@ -71,19 +71,33 @@ int main(int argc, char** argv) {
     using namespace sandbox;
     using namespace sandbox::vm;
 
-    std::cout << "\033[2J\033[H"; // Clear screen and reset cursor
-    std::cout << "\033[1;36m===============================================================\033[0m\n";
-    std::cout << "\033[1;35m      Ternary OS3 Microkernel Real-Time Visualizer             \033[0m\n";
-    std::cout << "\033[1;36m===============================================================\033[0m\n\n";
-    
     std::string kernel_path = "OS3/minimal_kernel_bringup.tasm";
-    if (argc > 1) {
-        kernel_path = argv[1];
+    bool plain_mode = false;
+
+    // Parse options
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--plain" || arg == "-p" || arg == "--no-ansi") {
+            plain_mode = true;
+        } else {
+            kernel_path = arg;
+        }
     }
 
+    if (!plain_mode) {
+        std::cout << "\033[2J\033[H"; // Clear screen and reset cursor
+        std::cout << "\033[1;36m===============================================================\033[0m\n";
+        std::cout << "\033[1;35m      Ternary OS3 Microkernel Real-Time Visualizer             \033[0m\n";
+        std::cout << "\033[1;36m===============================================================\033[0m\n\n";
+    } else {
+        std::cout << "===============================================================\n";
+        std::cout << "      Ternary OS3 Microkernel Runner (Plain Log Mode)          \n";
+        std::cout << "===============================================================\n\n";
+    }
+    
     std::string src = readTextFile(kernel_path);
     if (src.empty()) {
-        std::cerr << "\033[1;31mError: Could not read " << kernel_path << "\033[0m\n";
+        std::cerr << (plain_mode ? "Error: Could not read " : "\033[1;31mError: Could not read ") << kernel_path << (plain_mode ? "\n" : "\033[0m\n");
         return 1;
     }
 
@@ -91,7 +105,7 @@ int main(int argc, char** argv) {
         std::cout << "Assembling " << kernel_path << "...\n";
         auto assembled = assembler::assemble(src);
         if (!assembled.success) {
-            std::cerr << "\033[1;31mAssembly failed:\033[0m\n";
+            std::cerr << (plain_mode ? "Assembly failed:\n" : "\033[1;31mAssembly failed:\033[0m\n");
             for (const auto& err : assembled.errors) {
                 std::cerr << "  Line " << err.line << ": " << err.message << "\n";
             }
@@ -100,7 +114,7 @@ int main(int argc, char** argv) {
         
         VMState vm(8192, 65536); 
         if (!assembler::loadAndReset(vm, assembled)) {
-            std::cerr << "\033[1;31mError: Failed to load program/data into VM.\033[0m\n";
+            std::cerr << (plain_mode ? "Error: Failed to load program/data into VM.\n" : "\033[1;31mError: Failed to load program/data into VM.\033[0m\n");
             return 1;
         }
 
@@ -127,29 +141,42 @@ int main(int argc, char** argv) {
         const int addr_read_blocks = label("proc_read_blocks");
         const int addr_input_reads = label("proc_input_reads");
 
-        std::cout << "\033[1;32mKernel Booting...\033[0m\n";
-        std::cout << "Press [Enter] to begin step-by-step interactive simulation...\n";
-        std::cin.get();
+        std::cout << (plain_mode ? "Kernel Booting...\n" : "\033[1;32mKernel Booting...\033[0m\n");
+        if (!plain_mode) {
+            std::cout << "Press [Enter] to begin step-by-step interactive simulation...\n";
+            std::cin.get();
+        } else {
+            std::cout << "Starting deterministic microkernel execution...\n";
+        }
 
         size_t last_pos = 0;
         int steps = 0;
         int next_input_step = 300;
         std::string script = "awbu x";
         size_t script_idx = 0;
+        PrivilegeMode last_priv = PrivilegeMode::Kernel;
+        int last_active_proc = -1;
 
         auto printStateTable = [&]() {
-            // Read active process
             int current = static_cast<int>(loadPhysLong(vm, addr_current));
 
-            std::cout << "\033[H"; // Reset cursor to top
-            std::cout << "\033[1;36m===============================================================\033[0m\n";
-            std::cout << "\033[1;35m      Ternary OS3 Microkernel Real-Time Visualizer             \033[0m\n";
-            std::cout << "\033[1;36m===============================================================\033[0m\n";
-            std::cout << " System Cycle: \033[1;33m" << std::setw(6) << vm.cycle_count << "\033[0m | Simulation Step: " << std::setw(6) << steps;
-            std::cout << " | Privilege: " << (vm.privilege == PrivilegeMode::Kernel ? "\033[1;31mKERNEL\033[0m" : "\033[1;32mUSER\033[0m") << "\n";
-            std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
-            std::cout << " \033[1mSlot Name    PID  State     WaitCh  Ticks  Preempt  Yields  Spawns\033[0m\n";
-            std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+            if (!plain_mode) {
+                std::cout << "\033[H"; // Reset cursor to top
+                std::cout << "\033[1;36m===============================================================\033[0m\n";
+                std::cout << "\033[1;35m      Ternary OS3 Microkernel Real-Time Visualizer             \033[0m\n";
+                std::cout << "\033[1;36m===============================================================\033[0m\n";
+                std::cout << " System Cycle: \033[1;33m" << std::setw(6) << vm.cycle_count << "\033[0m | Simulation Step: " << std::setw(6) << steps;
+                std::cout << " | Privilege: " << (vm.privilege == PrivilegeMode::Kernel ? "\033[1;31mKERNEL\033[0m" : "\033[1;32mUSER\033[0m") << "\n";
+                std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+                std::cout << " \033[1mSlot Name    PID  State     WaitCh  Ticks  Preempt  Yields  Spawns\033[0m\n";
+                std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+            } else {
+                std::cout << "===============================================================\n";
+                std::cout << " System Cycle: " << std::setw(6) << vm.cycle_count << " | Step: " << std::setw(6) << steps << "\n";
+                std::cout << "---------------------------------------------------------------\n";
+                std::cout << " Slot Name    PID  State     WaitCh  Ticks  Preempt  Yields  Spawns\n";
+                std::cout << "---------------------------------------------------------------\n";
+            }
 
             for (int i = 0; i < 5; ++i) {
                 int pid = static_cast<int>(loadPhysLong(vm, addr_pid + i));
@@ -160,10 +187,12 @@ int main(int argc, char** argv) {
                 int yields = static_cast<int>(loadPhysLong(vm, addr_yields + i));
                 int spawns = static_cast<int>(loadPhysLong(vm, addr_spawns + i));
 
-                if (i == current) {
-                    std::cout << "\033[1;32m * \033[0m"; // Active marker
+                if (!plain_mode) {
+                    if (i == current) std::cout << "\033[1;32m * \033[0m";
+                    else std::cout << "   ";
                 } else {
-                    std::cout << "   ";
+                    if (i == current) std::cout << " * ";
+                    else std::cout << "   ";
                 }
 
                 std::cout << procName(i) << "  " 
@@ -175,21 +204,33 @@ int main(int argc, char** argv) {
                           << std::setw(6) << yields << "  "
                           << std::setw(6) << spawns << "\n";
             }
-            std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
-            std::cout << " \033[1mVirtual Console Output:\033[0m\n ";
-            if (vm.syscall_buffer.empty()) {
-                std::cout << "\033[90m(No output yet)\033[0m";
+
+            if (!plain_mode) {
+                std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+                std::cout << " \033[1mVirtual Console Output:\033[0m\n ";
+                if (vm.syscall_buffer.empty()) {
+                    std::cout << "\033[90m(No output yet)\033[0m";
+                } else {
+                    std::cout << "\033[1;32m" << vm.syscall_buffer << "\033[0m";
+                }
+                std::cout << "\n\033[1;34m---------------------------------------------------------------\033[0m\n";
+                std::cout << " \033[1mSimulated Keyboard Input:\033[0m ";
+                if (script_idx < script.size()) {
+                    std::cout << "Queued: \"" << script.substr(script_idx) << "\"\n";
+                } else {
+                    std::cout << "All inputs processed.\n";
+                }
+                std::cout << "\033[1;36m===============================================================\033[0m\n";
             } else {
-                std::cout << "\033[1;32m" << vm.syscall_buffer << "\033[0m";
+                std::cout << "---------------------------------------------------------------\n";
+                std::cout << " Virtual Console Output:\n ";
+                if (vm.syscall_buffer.empty()) {
+                    std::cout << "(No output yet)";
+                } else {
+                    std::cout << vm.syscall_buffer;
+                }
+                std::cout << "\n---------------------------------------------------------------\n";
             }
-            std::cout << "\n\033[1;34m---------------------------------------------------------------\033[0m\n";
-            std::cout << " \033[1mSimulated Keyboard Input:\033[0m ";
-            if (script_idx < script.size()) {
-                std::cout << "Queued: \"" << script.substr(script_idx) << "\"\n";
-            } else {
-                std::cout << "All inputs processed.\n";
-            }
-            std::cout << "\033[1;36m===============================================================\033[0m\n";
         };
 
         // Run simulation loop
@@ -204,26 +245,46 @@ int main(int argc, char** argv) {
             if (shell_state == 3 && shell_chan == 2 && script_idx < script.size() && steps >= next_input_step) {
                 char ch = script[script_idx++];
                 vm.enqueueConsoleInput(ch);
-                next_input_step = steps + 1000; // Queue next character in 1000 steps to let processes execute
+                if (plain_mode) {
+                    std::cout << "[Event] Enqueued simulated keyboard character: '" << ch << "'\n";
+                }
+                next_input_step = steps + 1000;
             }
 
-            // Update UI every 50 steps, or when console output changes, or during privilege transitions
-            if (steps % 100 == 0 || vm.syscall_buffer.size() > last_pos) {
-                last_pos = vm.syscall_buffer.size();
-                printStateTable();
-                std::this_thread::sleep_for(std::chrono::milliseconds(20)); // High quality smooth rate-limiting
+            // Log transitions in plain mode
+            if (plain_mode) {
+                int active = static_cast<int>(loadPhysLong(vm, addr_current));
+                if (active != last_active_proc) {
+                    std::cout << "[Scheduler] Switched to Slot " << active << " (" << procName(active) << ") at Cycle " << vm.cycle_count << "\n";
+                    last_active_proc = active;
+                }
+                if (vm.privilege != last_priv) {
+                    std::cout << "[Privilege] Changed to " << (vm.privilege == PrivilegeMode::Kernel ? "Kernel" : "User") << " Mode at Cycle " << vm.cycle_count << "\n";
+                    last_priv = vm.privilege;
+                }
+                if (vm.syscall_buffer.size() > last_pos) {
+                    std::cout << "[Console Output] " << vm.syscall_buffer.substr(last_pos);
+                    last_pos = vm.syscall_buffer.size();
+                }
+            } else {
+                // Update ANSI UI every 100 steps or on new console output
+                if (steps % 100 == 0 || vm.syscall_buffer.size() > last_pos) {
+                    last_pos = vm.syscall_buffer.size();
+                    printStateTable();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20)); // High quality smooth rate-limiting
+                }
             }
         }
 
         // Final print
         printStateTable();
 
-        std::cout << "\n\033[1;32mSimulation Finished Successfully!\033[0m\n";
+        std::cout << "\n" << (plain_mode ? "Simulation Finished Successfully!\n" : "\033[1;32mSimulation Finished Successfully!\033[0m\n");
         std::cout << "Total execution steps: " << steps << "\n";
         std::cout << "Final VM Status: " << vmStatusToString(vm.status) << "\n";
         
     } catch (const std::exception& e) {
-        std::cerr << "\n\033[1;31mError during execution: " << e.what() << "\033[0m\n";
+        std::cerr << "\n" << (plain_mode ? "Error during execution: " : "\033[1;31mError during execution: ") << e.what() << (plain_mode ? "\n" : "\033[0m\n");
         return 1;
     }
 
