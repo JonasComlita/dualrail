@@ -1,5 +1,3 @@
-Rewriting **xv6** alongside `curl` and `sqlite` completes the foundational trio of systems engineering: Networking, Storage, and the Kernel. 
-
 To expand this ecosystem, the ideal candidates are **minimal, self-contained, dependency-free masterworks** that exercise distinct layers of your ternary compiler, memory model, and instruction set architecture.
 
 Here are the most compelling minimal programs that follow this ethos:
@@ -40,7 +38,6 @@ Here are the most compelling minimal programs that follow this ethos:
 
 | Target Utility | Ethos Milestone | Core Hardware / ISA Focus |
 | :--- | :--- | :--- |
-| **`xv6`** | Kernel & Process Management | Memory protection, Interrupts, Context switching (`swap`) |
 | **`sqlite`** | Dense Storage & Bytecode | Bytecode dispatch (`CALLR`/`JMPR`), Ternary B-Trees |
 | **`curl`** | Stream Networking | Socket ABIs, Packed String translation, Stream states |
 | **`zlib`** | Tritstream Compression | Bitwise/Tritwise sliding windows, Shifts (`TLSHIFT`) |

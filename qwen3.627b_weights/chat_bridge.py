@@ -139,7 +139,9 @@ def run_generation(tokenizer, history: list[int], bos_id: int,
         "--vocab",        str(config.get("vocab_size", 248320)),
         "--eps",          str(config.get("rms_norm_eps", 1e-6)),
         "--theta",        str(config.get("rope_theta", 10000000.0)),
-    ] + [str(tid) for tid in history]
+    ]
+
+    cmd += [str(tid) for tid in history]
 
     try:
         process = subprocess.Popen(
@@ -264,13 +266,13 @@ def main():
         sys.exit(1)
 
     if not os.path.exists(TOKENIZER_PATH):
-        print(red(f"[Error] Tokenizer not found: {TOKENIZER_PATH}"))
+        print(red(f"\n[Error] Tokenizer not found: {TOKENIZER_PATH}"))
+        print(      "  Please place tokenizer.json in the model/ directory.")
         sys.exit(1)
 
     model_path = os.path.join(BASE_DIR, "model", "model.safetensors")
     if not os.path.exists(model_path):
-        print(red(f"[Error] Safetensors not found: {model_path}"))
-        sys.exit(1)
+        print(dim(f"[Info] Safetensors not found at {model_path}, relying on converted weights."))
 
     print("Loading tokenizer...", end="", flush=True)
     tokenizer = Tokenizer.from_file(TOKENIZER_PATH)
