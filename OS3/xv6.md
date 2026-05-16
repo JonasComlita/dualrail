@@ -150,3 +150,44 @@ The intermediate level — real scheduler, demand paging, network stack — is w
 The complete POSIX level is where you attract real software. If musl libc compiles and runs, then Python, Lua, SQLite, and eventually a large fraction of the open source ecosystem becomes available with recompilation. That is the point where a ternary computer stops being a research project and starts being a platform.
 
 The honest answer about sequence for your project is: build the minimal OS first to prove the architecture works end to end, then decide which intermediate features matter most based on what the hardware can actually do. The network stack matters a lot if the ASIC is fast enough to be a server. The scheduler matters a lot if the ASIC has multiple cores. Demand paging matters a lot if the ASIC has less SRAM than a workload needs. Those decisions should be driven by what the hardware delivers, which you will know after Stage 3.
+
+---
+
+Current state (as of 5/16/2026)
+
+Let's break down where we stand relative to a complete Unix-like teaching OS (like `xv6`) across the four key pillars of systems design.
+
+---
+
+### 1. Where We Are Fully Aligned with `xv6`
+We have successfully built the most difficult hardware-software privilege boundaries:
+*   **Preemptive Scheduling & Ready Queues**: We have an asynchronous timer interrupt that preempts user tasks, preserves all registers in trap frames, and uses ready-list wait channels (`RUNNABLE`, `BLOCKED`, `SLEEPING`) instead of simple round-robin toggling.
+*   **Privilege Ring Isolation**: Kernel Mode and User Mode are strictly segregated. Attempting to touch privileged CSRs from user space triggers a hardware trap.
+*   **Virtual Memory Protection (MMU)**: Programs execute in isolated virtual memory pages mapped by physical Page Table Entries (PTEs).
+*   **Interactive Command Interpreter**: We have a working shell that blocks on I/O, spawns child programs, and waits for them to exit using exit status codes.
+
+---
+
+### 2. The Three Remaining Gaps to `xv6`
+
+To turn our current Phase 4 substrate into a true ternary clone of `xv6`, we are missing three core systems:
+
+#### A. A Block Device & File System (The Storage Gap)
+*   **Where we are**: We have no filesystem. User programs are static blocks hard-coded into Kernel page memory.
+*   **To reach `xv6`**: We need a simulated disk block device (acting via memory-mapped I/O or a special storage CSR) and a basic file system. Even a tiny version of Unix V6 FS (containing superblocks, inodes, direct/indirect blocks, and directory files) would allow us to load programs dynamically from a "disk image" rather than hardcoding them into kernel assembly.
+
+#### B. Dynamic Process Spawning & Forking (The Process Gap)
+*   **Where we are**: We have static `spawn` (loading a predefined text/data slot).
+*   **To reach `xv6`**: We need a true `fork` (cloning a parent's virtual memory pages into a new process slot) and `exec` (overwriting the current process's virtual memory pages with a new binary loaded from disk). 
+
+#### C. User-Space Allocator & Heap (The Memory Gap)
+*   **Where we are**: Process memory allocations are statically sized page bounds defined by the executable loader.
+*   **To reach `xv6`**: We need a `sbrk`/`brk` syscall that allows a user program to request more pages of virtual memory dynamically from the kernel allocator, enabling standard libraries to implement `malloc()` and `free()`.
+
+---
+
+### 3. The Path Forward: Phase 5 Compiler Integration
+
+Before we write the filesystem or dynamic fork/exec models, the roadmap places the **Compiler Pipeline (Phase 5)** next:
+*   **Why compiler-first?** Because writing filesystems, user heap allocators, and complex system utilities in pure hand-written assembly (`.tasm`) is incredibly slow and error-prone. 
+*   **The Plan**: Once the Ternary compiler toolchain is online in Phase 5, we can compile a high-level source language directly down to our frozen ABI binaries. Writing our custom file system, shell utilities, and memory allocators in a high-level ML/C-like language will allow us to build a complete, highly complex `xv6` clone in a fraction of the time!
