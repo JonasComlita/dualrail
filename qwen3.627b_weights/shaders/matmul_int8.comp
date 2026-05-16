@@ -1,0 +1,57 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+
+layout (local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer Weights {
+    uint8_t w[];
+};
+
+layout(set = 0, binding = 1) readonly buffer Activations {
+    int8_t x[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer Output {
+    float y[];
+};
+
+layout(push_constant) uniform PushConstants {
+    int rows;
+    int cols;
+    float scale;
+    int w_offset_bytes;
+} pc;
+
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    if (row >= pc.rows) {
+        return;
+    }
+
+    int acc = 0;
+    uint row_bytes = pc.cols / 4;
+    uint w_start = pc.w_offset_bytes + row * row_bytes;
+    
+    for (int i = 0; i < row_bytes; ++i) {
+        uint packed = uint(w[w_start + i]);
+        
+        int t0 = int(packed & 3u);
+        int t1 = int((packed >> 2) & 3u);
+        int t2 = int((packed >> 4) & 3u);
+        int t3 = int((packed >> 6) & 3u);
+        
+        int w0 = t0 - ((t0 >> 1) << 2);
+        int w1 = t1 - ((t1 >> 1) << 2);
+        int w2 = t2 - ((t2 >> 1) << 2);
+        int w3 = t3 - ((t3 >> 1) << 2);
+        
+        int act_idx = i * 4;
+        acc += w0 * int(x[act_idx]);
+        acc += w1 * int(x[act_idx + 1]);
+        acc += w2 * int(x[act_idx + 2]);
+        acc += w3 * int(x[act_idx + 3]);
+    }
+
+    y[row] = float(acc) * pc.scale;
+}
