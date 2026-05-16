@@ -291,6 +291,42 @@ public:
         emit("fence");
     }
 
+    [[nodiscard]] Value csrr(int csr) {
+        if (!isa::isValidCSR(csr)) {
+            diag("csrr requires a valid CSR id");
+            return invalid(Type::T40);
+        }
+        Value out = allocScalar(Type::T40, "csrr destination");
+        if (!out.valid()) return out;
+        emit("csrr " + regName(out) + ", " + std::string(isa::csrToString(csr)));
+        return out;
+    }
+
+    void csrw(int csr, Value src) {
+        if (!isa::isValidCSR(csr)) {
+            diag("csrw requires a valid CSR id");
+            return;
+        }
+        if (!checkScalar(src, "csrw source")) return;
+        emit("csrw " + std::string(isa::csrToString(csr)) + ", " + regName(src));
+    }
+
+    [[nodiscard]] Value csrrw(int csr, Value src) {
+        if (!isa::isValidCSR(csr)) {
+            diag("csrrw requires a valid CSR id");
+            return invalid(Type::T40);
+        }
+        if (!checkScalar(src, "csrrw source")) return invalid(Type::T40);
+        Value out = allocScalar(Type::T40, "csrrw destination");
+        if (!out.valid()) return out;
+        emit("csrrw " + regName(out) + ", " + std::string(isa::csrToString(csr)) + ", " + regName(src));
+        return out;
+    }
+
+    void eret() {
+        emit("eret");
+    }
+
     [[nodiscard]] Value vlen() {
         Value out = allocScalar(Type::T40, "vlen destination");
         if (!out.valid()) return out;

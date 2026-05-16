@@ -26,7 +26,7 @@ from tokenizers import Tokenizer
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 TOKENIZER_PATH = os.path.join(BASE_DIR, "model", "tokenizer.json")
 CONFIG_PATH    = os.path.join(BASE_DIR, "model", "config.json")
-WEIGHTS_DIR    = os.path.join(BASE_DIR, "converted")
+WEIGHTS_DIR    = os.path.join(BASE_DIR, "converted_t40")
 CONFIG_PATH    = os.path.join(BASE_DIR, "model", "config.json")
 
 # Build output is one level up from bitnet_weights/
@@ -34,7 +34,7 @@ BUILD_DIR      = os.path.join(BASE_DIR, "..", "build")
 EXE_NAME       = "run_bitnet.exe" if sys.platform == "win32" else "run_bitnet"
 RUN_BITNET_EXE = os.path.join(BUILD_DIR, EXE_NAME)
 
-DEFAULT_MAX_NEW_TOKENS = 200
+DEFAULT_MAX_NEW_TOKENS = 500
 DEFAULT_TEMPERATURE    = 0.7
 DEFAULT_TOP_P          = 0.95
 DEFAULT_PENALTY        = 1.15
@@ -115,18 +115,28 @@ def _format_status(n_tokens: int, elapsed_wall: float,
 def run_generation(tokenizer, history: list[int], bos_id: int,
                    eos_ids: set[int], max_new_tokens: int,
                    temp: float, top_p: float, penalty: float,
-                   model_path: str) -> list[int]:
+                   model_path: str, config: dict) -> list[int]:
     """
     Spawn run_bitnet, stream tokens back, return list of generated token ids.
     """
     cmd = [
         RUN_BITNET_EXE,
-        "--dir",     WEIGHTS_DIR,
-        "--model",   model_path,
-        "--tokens",  str(max_new_tokens),
-        "--temp",    str(temp),
-        "--top_p",   str(top_p),
-        "--penalty", str(penalty),
+        "--dir",          WEIGHTS_DIR,
+        "--model",        model_path,
+        "--tokens",       str(max_new_tokens),
+        "--temp",         str(temp),
+        "--top_p",        str(top_p),
+        "--penalty",      str(penalty),
+        "--neg_penalty",  "0.5",
+        "--neg_trigger",  "0.4",
+        "--hidden",       str(config.get("hidden_size", 2560)),
+        "--intermediate", str(config.get("intermediate_size", 6912)),
+        "--heads",        str(config.get("num_attention_heads", 20)),
+        "--kv_heads",     str(config.get("num_key_value_heads", 5)),
+        "--layers",       str(config.get("num_hidden_layers", 30)),
+        "--vocab",        str(config.get("vocab_size", 128256)),
+        "--eps",          str(config.get("rms_norm_eps", 1e-5)),
+        "--theta",        str(config.get("rope_theta", 500000.0)),
     ] + [str(tid) for tid in history]
 
     try:
@@ -209,6 +219,7 @@ def run_generation(tokenizer, history: list[int], bos_id: int,
 
             if next_token in eos_ids:
                 print()
+                process.terminate()
                 break
             continue
 
@@ -219,6 +230,8 @@ def run_generation(tokenizer, history: list[int], bos_id: int,
             "Prefilling",
             "Workers:",
             "Manifest:",
+            "Architecture:",
+            "Weights dir:",
             "Init failed",
             "Forward pass failed",
             "[Stop token",
@@ -259,7 +272,16 @@ def main():
 
     print("Loading tokenizer...", end="", flush=True)
     tokenizer = Tokenizer.from_file(TOKENIZER_PATH)
-    bos_id, eos_ids = load_token_ids(tokenizer)
+    
+    # Load config
+    config = {}
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            config = json.load(f)
+    
+    bos_id = config.get("bos_token_id", 128000)
+    eos_ids = {config.get("eos_token_id", 128001), 128009}
+    
     print(f" done  (bos={bos_id}, eos={sorted(eos_ids)})")
 
     print(f"\n{bold('=== BitNet b1.58 Chat ===')}  (type {dim('exit')} to quit)\n")
@@ -280,8 +302,10 @@ def main():
         if not user_input.strip():
             continue
 
-        # Encode user turn
-        encoded = tokenizer.encode(user_input, add_special_tokens=False)
+        # Format user turn using the model's expected chat template
+        # "User: {text}<|eot_id|>Assistant: "
+        prompt_text = f"User: {user_input.strip()}<|eot_id|>Assistant: "
+        encoded = tokenizer.encode(prompt_text, add_special_tokens=False)
         history.extend(encoded.ids)
 
         # Generate
@@ -292,6 +316,7 @@ def main():
             top_p          = DEFAULT_TOP_P,
             penalty        = DEFAULT_PENALTY,
             model_path     = model_path,
+            config         = config,
         )
 
         # Append model response to history for next turn

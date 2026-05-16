@@ -113,18 +113,47 @@ int main(int argc, char* argv[]) {
     float temp               = 0.7f;
     float top_p              = 1.0f;
     float repetition_penalty = 1.1f;
+    float neg_penalty        = 0.0f;
+    float neg_trigger        = 0.4f;
     int   stop_token         = 128001; // <|end_of_text|> for Llama-3 tokenizer
+
+    // ---- Model config (defaults to microsoft/bitnet-b1.58-2B-4T) ----
+    BitNetConfig cfg;
+    cfg.hidden_size             = 2560;
+    cfg.num_heads               = 20;
+    cfg.num_kv_heads            = 5;
+    cfg.head_dim                = 128;
+    cfg.intermediate_size       = 6912;
+    cfg.num_layers              = 30;
+    cfg.vocab_size              = 128256;
+    cfg.rms_norm_eps            = 1.0e-5f;
+    cfg.rope_theta              = 500000.0f;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if      (arg == "--model"   && i + 1 < argc) safetensors_path  = argv[++i];
-        else if (arg == "--dir"     && i + 1 < argc) weights_dir        = argv[++i];
+        else if (arg == "--dir"     && i + 1 < argc) weights_dir       = argv[++i];
         else if (arg == "--tokens"  && i + 1 < argc) max_new_tokens     = std::atoi(argv[++i]);
         else if (arg == "--threads" && i + 1 < argc) threads            = std::atoi(argv[++i]);
         else if (arg == "--temp"    && i + 1 < argc) temp               = std::atof(argv[++i]);
         else if (arg == "--top_p"   && i + 1 < argc) top_p              = std::atof(argv[++i]);
         else if (arg == "--penalty" && i + 1 < argc) repetition_penalty = std::atof(argv[++i]);
+        else if (arg == "--neg_penalty" && i + 1 < argc) neg_penalty    = std::atof(argv[++i]);
+        else if (arg == "--neg_trigger" && i + 1 < argc) neg_trigger    = std::atof(argv[++i]);
         else if (arg == "--stop"    && i + 1 < argc) stop_token         = std::atoi(argv[++i]);
+        
+        // Architectural flags
+        else if (arg == "--hidden"       && i + 1 < argc) cfg.hidden_size             = std::atoi(argv[++i]);
+        else if (arg == "--intermediate" && i + 1 < argc) cfg.intermediate_size       = std::atoi(argv[++i]);
+        else if (arg == "--heads"        && i + 1 < argc) cfg.num_heads               = std::atoi(argv[++i]);
+        else if (arg == "--kv_heads"     && i + 1 < argc) cfg.num_kv_heads            = std::atoi(argv[++i]);
+        else if (arg == "--layers"       && i + 1 < argc) cfg.num_layers              = std::atoi(argv[++i]);
+        else if (arg == "--vocab"        && i + 1 < argc) cfg.vocab_size              = std::atoi(argv[++i]);
+        else if (arg == "--eps"          && i + 1 < argc) cfg.rms_norm_eps            = std::atof(argv[++i]);
+        else if (arg == "--theta"        && i + 1 < argc) cfg.rope_theta              = std::atof(argv[++i]);
+        else if (arg == "--bos"          && i + 1 < argc) cfg.bos_token_id            = std::atoi(argv[++i]);
+        else if (arg == "--eos"          && i + 1 < argc) cfg.eos_token_id            = std::atoi(argv[++i]);
+        
         // Legacy flag name
         else if (arg == "--safetensors" && i + 1 < argc) safetensors_path = argv[++i];
         else {
@@ -132,21 +161,23 @@ int main(int argc, char* argv[]) {
             catch (...) { std::cerr << "Unknown arg or non-integer token: " << arg << "\n"; }
         }
     }
-    if (token_ids.empty()) token_ids.push_back(128000); // <|begin_of_text|>
+    if (token_ids.empty()) token_ids.push_back(cfg.bos_token_id);
     if (safetensors_path.empty()) safetensors_path = defaultSafetensorsPath(weights_dir);
 
     // Whether we need the full logit vector (sampling) or just greedy token
     const bool need_logits = (temp > 0.0f);
 
     // ---- Banner ----
-    std::cout << "=== BitNet b1.58 Incremental Inference ===\n";
+    std::cout << "=== BitNet b1.58 Dynamic Inference ===\n";
     std::cout << "Weights dir:  " << weights_dir     << "\n";
+    std::cout << "Architecture: " << cfg.hidden_size << "h, " << cfg.num_layers << "L, " << cfg.num_heads << "H (" << cfg.vocab_size << " vocab)\n";
     std::cout << "Safetensors:  " << safetensors_path << "\n";
     std::cout << "Prompt tokens:";
     for (int id : token_ids) std::cout << " " << id;
     std::cout << "\n";
     std::cout << "Temperature:  " << temp << "  top_p: " << top_p
-              << "  penalty: " << repetition_penalty << "\n\n";
+              << "  penalty: " << repetition_penalty << "\n";
+    std::cout << "Neg Penalty:  " << neg_penalty << "  trigger: < " << neg_trigger << "\n\n";
 
     // ---- Load manifest ----
     BitNetLoader loader(weights_dir);
@@ -155,19 +186,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "Manifest: " << loader.layers.size() << " layers loaded.\n";
-
-    // ---- Model config for microsoft/bitnet-b1.58-2B-4T ----
-    BitNetConfig cfg;
-    cfg.hidden_size             = 2560;
-    cfg.num_heads               = 20;
-    cfg.num_kv_heads            = 5;    // GQA: groups = 20/5 = 4
-    cfg.head_dim                = 128;  // 2560 / 20
-    cfg.intermediate_size       = 6912;
-    cfg.num_layers              = 30;
-    cfg.vocab_size              = 128256;
-    cfg.max_position_embeddings = 4096;
-    cfg.rms_norm_eps            = 1.0e-5f;
-    cfg.rope_theta              = 500000.0f;
 
     const int actual_threads = (threads > 0)
         ? threads
@@ -207,6 +225,7 @@ int main(int argc, char* argv[]) {
     // ---- Autoregressive generation ----
     std::cout << "Generating (max " << max_new_tokens << " tokens)...\n";
     std::deque<int> recent_tokens; // for repetition penalty window
+    std::deque<std::vector<float>> negative_centroids; // for contrastive search
     std::mt19937 rng(42);
 
     // Accumulate timing stats across generated tokens
@@ -229,6 +248,65 @@ int main(int argc, char* argv[]) {
                 if (static_cast<std::size_t>(token) < result.logits.size()) {
                     float& l = result.logits[static_cast<std::size_t>(token)];
                     l = (l > 0.0f) ? l / repetition_penalty : l * repetition_penalty;
+                }
+            }
+        }
+
+        // ---- Apply Contrastive Negative Penalty (SOTA) ----
+        if (neg_penalty > 0.0f && !result.logits.empty()) {
+            // 1. Check Uncertainty
+            float max_l = *std::max_element(result.logits.begin(), result.logits.end());
+            float sum_exp = 0.0f;
+            for (float l : result.logits) sum_exp += std::exp(l - max_l);
+            float max_prob = std::exp(0.0f) / sum_exp; // max_l - max_l = 0
+
+            if (max_prob < neg_trigger) {
+                // 2. Find Bottom 33%
+                int cutoff_idx = static_cast<int>(result.logits.size() * 0.33f);
+                std::vector<std::pair<float, int>> indexed_logits;
+                indexed_logits.reserve(result.logits.size());
+                for (int j = 0; j < static_cast<int>(result.logits.size()); ++j) {
+                    indexed_logits.emplace_back(result.logits[static_cast<std::size_t>(j)], j);
+                }
+                std::nth_element(indexed_logits.begin(), indexed_logits.begin() + cutoff_idx, indexed_logits.end(),
+                                 [](const auto& a, const auto& b) { return a.first < b.first; });
+                
+                std::vector<int> bottom_tokens;
+                bottom_tokens.reserve(cutoff_idx);
+                for (int j = 0; j < cutoff_idx; ++j) {
+                    bottom_tokens.push_back(indexed_logits[static_cast<std::size_t>(j)].second);
+                }
+
+                // 3. Compute Centroid and update sliding window
+                std::vector<float> centroid = inference.computeCentroid(bottom_tokens);
+                negative_centroids.push_back(centroid);
+                if (negative_centroids.size() > 5) negative_centroids.pop_front();
+            }
+
+            // 4. Apply Penalty to likely candidates
+            if (!negative_centroids.empty()) {
+                float p_cutoff = 0.02f; // Only evaluate dot product for reasonably likely tokens
+                for (int j = 0; j < static_cast<int>(result.logits.size()); ++j) {
+                    float p = std::exp(result.logits[static_cast<std::size_t>(j)] - max_l) / sum_exp;
+                    if (p > p_cutoff) {
+                        std::vector<float> emb = inference.getEmbedding(j);
+                        float max_sim = 0.0f;
+                        for (const auto& cent : negative_centroids) {
+                            float dot = 0.0f, norm1 = 0.0f, norm2 = 0.0f;
+                            for (int k = 0; k < cfg.hidden_size; ++k) {
+                                dot += emb[static_cast<std::size_t>(k)] * cent[static_cast<std::size_t>(k)];
+                                norm1 += emb[static_cast<std::size_t>(k)] * emb[static_cast<std::size_t>(k)];
+                                norm2 += cent[static_cast<std::size_t>(k)] * cent[static_cast<std::size_t>(k)];
+                            }
+                            if (norm1 > 0 && norm2 > 0) {
+                                float sim = dot / std::sqrt(norm1 * norm2);
+                                if (sim > max_sim) max_sim = sim;
+                            }
+                        }
+                        if (max_sim > 0.0f) {
+                            result.logits[static_cast<std::size_t>(j)] -= neg_penalty * max_sim;
+                        }
+                    }
                 }
             }
         }

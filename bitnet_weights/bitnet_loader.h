@@ -42,7 +42,7 @@ struct WeightLayer {
     std::string name;
     std::string filename;
     double scale = 1.0;
-    std::string mode = "L50";  // "L1", "L50", or "T50"
+    std::string mode = "T40";  // "L1", "T40", "L50", or "T50"
     int count = 0;
 };
 
@@ -51,6 +51,7 @@ public:
     std::string baseDir;
     std::map<std::string, WeightLayer>                   layers;
     std::map<std::string, std::vector<int8_t>>           weightCacheL1;
+    std::map<std::string, std::vector<uint64_t>>         weightCacheT40;
     std::map<std::string, std::vector<UInt128>>          weightCacheL50;
     std::map<std::string, std::vector<vm::TernaryValue>> weightCacheT50;
     std::map<std::string, std::vector<int8_t>>           weightCacheUnpacked;
@@ -106,7 +107,8 @@ public:
             if (parts.size() >= 4) {
                 layer.mode = parts[3];
             } else {
-                if      (layer.filename.find(".t50") != std::string::npos) layer.mode = "T50";
+                if      (layer.filename.find(".t40") != std::string::npos) layer.mode = "T40";
+                else if (layer.filename.find(".t50") != std::string::npos) layer.mode = "T50";
                 else if (layer.filename.find(".l50") != std::string::npos) layer.mode = "L50";
                 else                                                         layer.mode = "L1";
             }
@@ -115,7 +117,8 @@ public:
                 const std::string fullPath = baseDir + layer.filename;
                 if (fs::exists(fullPath)) {
                     const uintmax_t size = fs::file_size(fullPath);
-                    if      (layer.mode == "T50") layer.count = static_cast<int>(size / 16);
+                    if      (layer.mode == "T40") layer.count = static_cast<int>(size / 8) * 40;
+                    else if (layer.mode == "T50") layer.count = static_cast<int>(size / 16);
                     else if (layer.mode == "L50") layer.count = static_cast<int>(size / 16) * 50;
                     else                           layer.count = static_cast<int>(size);
                 }
@@ -176,35 +179,83 @@ public:
     }
 
     // -------------------------------------------------------------------------
-    // unpackedL50 — decode L50 lanes to int8 {-1, 0, 1} for AVX2 matmul.
-    // Thread-safe; only decodes once even under concurrent calls.
+    // packedT40 — load and cache raw T40 (Triple) 64-bit base-3 words.
     // -------------------------------------------------------------------------
-    const std::vector<int8_t>* unpackedL50(const std::string& layerName) {
+    const std::vector<uint64_t>* packedT40(const std::string& layerName) {
+        const auto layer = getLayer(layerName);
+        if (layer.name.empty() || layer.mode != "T40") return nullptr;
+
+        {
+            std::lock_guard<std::mutex> lk(loaderMutex);
+            auto it = weightCacheT40.find(layerName);
+            if (it != weightCacheT40.end()) return &it->second;
+        }
+
+        const int wordCount = layer.count / 40;
+        std::vector<uint64_t> words(static_cast<std::size_t>(wordCount));
+        {
+            std::ifstream f(baseDir + layer.filename, std::ios::binary);
+            if (!f.is_open()) return nullptr;
+            f.read(reinterpret_cast<char*>(words.data()),
+                   static_cast<std::streamsize>(static_cast<std::size_t>(wordCount) * 8));
+            if (!f) return nullptr;
+        }
+
+        std::lock_guard<std::mutex> lk(loaderMutex);
+        auto it = weightCacheT40.find(layerName);
+        if (it != weightCacheT40.end()) return &it->second;
+        auto [ins, _] = weightCacheT40.emplace(layerName, std::move(words));
+        return &ins->second;
+    }
+
+    // -------------------------------------------------------------------------
+    // unpackedAny — decode T40, L50 or T50 to int8 {-1, 0, 1} for AVX2 matmul.
+    // -------------------------------------------------------------------------
+    const std::vector<int8_t>* unpackedAny(const std::string& layerName) {
         {
             std::lock_guard<std::mutex> lk(loaderMutex);
             auto it = weightCacheUnpacked.find(layerName);
             if (it != weightCacheUnpacked.end()) return &it->second;
         }
 
-        // Load packed form (I/O outside lock)
-        const auto* packed = packedL50(layerName);
-        if (!packed) return nullptr;
-
         const auto layer = getLayer(layerName);
-        std::vector<int8_t> unpacked(static_cast<std::size_t>(layer.count));
-        int out = 0;
-        for (const UInt128 raw : *packed) {
-            TritLane50 lane = TritLane50::fromRawForKernel(raw);
-            for (int i = 0; i < TritLane50::trits && out < layer.count; ++i)
-                unpacked[static_cast<std::size_t>(out++)] = lane.tritAt(i);
+        if (layer.name.empty()) return nullptr;
+
+        std::vector<int8_t> unpacked;
+        if (layer.mode == "T40") {
+            const auto* packed = packedT40(layerName);
+            if (!packed) return nullptr;
+            unpacked.resize(static_cast<std::size_t>(layer.count));
+            int out = 0;
+            for (uint64_t raw : *packed) {
+                auto trits = TernaryScalar<40>{raw}.unpack();
+                for (int i = 0; i < 40 && out < layer.count; ++i)
+                    unpacked[static_cast<std::size_t>(out++)] = trits[static_cast<std::size_t>(i)];
+            }
+        } else if (layer.mode == "L50") {
+            const auto* packed = packedL50(layerName);
+            if (!packed) return nullptr;
+            unpacked.resize(static_cast<std::size_t>(layer.count));
+            int out = 0;
+            for (const UInt128 raw : *packed) {
+                TritLane50 lane = TritLane50::fromRawForKernel(raw);
+                for (int i = 0; i < TritLane50::trits && out < layer.count; ++i)
+                    unpacked[static_cast<std::size_t>(out++)] = lane.tritAt(i);
+            }
+        } else {
+            return nullptr;
         }
 
         std::lock_guard<std::mutex> lk(loaderMutex);
-        // Double-check: another thread may have decoded while we worked
         auto it = weightCacheUnpacked.find(layerName);
         if (it != weightCacheUnpacked.end()) return &it->second;
         auto [ins, _] = weightCacheUnpacked.emplace(layerName, std::move(unpacked));
         return &ins->second;
+    }
+
+    // For backward compatibility with bitnet_inference.h
+    const std::vector<int8_t>* unpackedL50(const std::string& layerName) {
+        return unpackedAny(layerName);
     }
 
     // -------------------------------------------------------------------------
@@ -234,7 +285,7 @@ public:
         // Launch the async task OUTSIDE the lock
         std::future<void> fut = std::async(std::launch::async,
                                             [this, layerName]() {
-            this->unpackedL50(layerName); // internally lock-safe
+            this->unpackedAny(layerName); // internally lock-safe
         });
 
         {

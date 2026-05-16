@@ -523,11 +523,11 @@ Non-goals:
 - Do not make lane/numeric conversion implicit to simplify model code.
 - Do not implement security primitives as part of the transformer milestone.
 
-## Phase 6: Core Toolchain Expansion and Source Language Frontend
+## Phase 6: Core Tooling and OS-Capable Machine Roadmap
 
 Status: in progress (incorporating implementation plan targets).
 
-Goal: resolve core architectural correctness bugs, finalize the ternary ISA expansion, upgrade the intermediate representation into an analyzable node graph with structured control flow, and build a premium high-level ML-style ternary source language frontend.
+Goal: resolve core architectural correctness bugs, finalize the ternary ISA expansion, add VM tooling needed for kernel-scale debugging and static data, then formalize the OS machine contract before expanding into a full source language frontend.
 
 ### Scope and Implementation Tracks
 
@@ -536,7 +536,7 @@ Goal: resolve core architectural correctness bugs, finalize the ternary ISA expa
 - **Architectural Unification**: Established canonical in-memory representations unifying raw lanes, typed `TritLane<N>`, `Triple`/`LongTriple`, and `TernaryValue`.
 - **Native Word & Width Semantics**: Unified machine word configuration to default to `T40` (80 bits packed in `uint64_t`), transitioning `T50` into an explicit extended precision target. Configured default vector lengths to ternary-native powers of 3 (`DEFAULT_VECTOR_LENGTH = 27`), and standardized `STORE` source register addressing conventions.
 
-#### Track 6.1: ISA Expansion (Implementation Complete; Verification In Progress)
+#### Track 6.1: ISA Expansion (Verified)
 - **Indirect Control Flow**: Implement register-indirect branches (`CALLR`, `JMPR`) to support function pointers, dynamic dispatch, and vtables.
 - **Advanced Arithmetic & Windowing**: Register `R4`-type instruction layouts supporting windowed comparisons (`TWCMP`) and range clamping (`TCLAMP`). Implement remainder extraction (`TMOD`), structural exponent scaling/shifting (`TLSHIFT`, `TRSHIFT`), and scalar multiply-accumulate (`TMAC`).
 - **Ternary-Native Analysis**: Register non-zero trit counting (`TCOUNT`) and most-significant non-zero trit scanning (`TSCAN`) primitives.
@@ -548,51 +548,64 @@ Current integration note:
 - `CALLR` and `JMPR` consume absolute instruction-memory PC targets from numeric scalar registers; `CALLR` writes `LR = PC + 1`.
 - `SYSCALL` uses a sandbox service-id immediate: `1` appends `r1` as decimal text, `2` appends newline, and `3` clears the syscall buffer.
 - Focused Phase 6.1 verification passes in `test_multiwidth_vm` and `test_ternary_ir`.
-- Numeric/lane conversion boundary verification passes in `test_ternary_lanes`.
+- Regression checks also pass in `test_native_ops`, `test_numeric_workloads`, and `test_ternary_lanes`.
 
-#### Track 6.2: Infrastructure and Performance Tuning
-- **VM Observability**: Add lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler output profiling without core patching.
-- **Data Sections**: Implement assembler data labels (`.data` section, `.word` directives) for static storage resolution.
-- **Math Caching & Fallbacks**: Provide lazy-initialized cached statics for expensive series constants (`cachedLn3()`, `cachedPi()`), implement optimized schoolbook 64×64→128 multiplications on non-native hosts, and formalize cycle-based step execution limits.
+#### Track 6.2: VM Tooling and Infrastructure Bridge (Implemented)
+- **VM Observability**: Added lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler and kernel output profiling without core patching.
+- **Data Sections**: Added assembler `.text`, `.data`, `.word`, text labels, data labels, and mixed text/data/text section support for static storage resolution.
+- **Step Limits**: Formalized `run()` limits so one architecturally executed instruction is one step; timeout leaves `VMStatus::RUNNING` and allows execution to continue later.
+- **Math Caching & Fallbacks**: Added lazy cached statics for expensive series constants (`cachedLn3()`, `cachedPi()`) and schoolbook limb multiplication for `UInt128 * UInt128` and `multiplyFull(UInt128, UInt128)`.
 
-#### Track 6.3: Advanced IR Expansion
+#### Track 6.3: Core VM OS Substrate (Implemented)
+- **CSR and Return-from-Trap ISA**: Added `CSRR`, `CSRW`, and `ERET` as opcodes 74-76 with assembler, disassembler, decode, VM dispatch, and IR builder support.
+- **Privilege and Routed Traps**: Added kernel `-1`, supervisor/reserved `0`, and user `+1` privilege state; routed traps save `EPC`, `CAUSE`, and packed `STATUS`, disable interrupts, enter kernel mode, jump to `TVEC`, and resume through `ERET`.
+- **Syscalls, Timer IRQs, and Protection**: In routed mode, user `SYSCALL imm` becomes an ECALL-style trap with `SYSCALL_ID`; deterministic timer IRQs route through the same trap path; user-mode fetch/load/store use v1 IMEM/DMEM base-limit protection while kernel bypasses those bounds.
+- **Compatibility**: Legacy halt-on-trap behavior and sandbox syscall buffer services remain unchanged until trap routing is enabled by kernel setup.
+
+#### Track 6.4: Remaining OS Architecture Contract (Next)
+- **ABI**: Formalize the calling convention around `r1-r12` callee-saved, `r13-r24` caller-saved/argument/return/scratch, `r25` link register, `r26` stack pointer, and `r27` trap/status.
+- **Memory, Atomics, and Boot**: Document single-core sequential consistency, future `FENCE`/atomic semantics, reset vector, initial mode, initial stack, trit order, data layout, and instruction alignment.
+- **Next Kernel Substrate**: Reserve full page tables, atomics, `WFI`, sticky FP flags, context switching, and the tiny two-task kernel for follow-on OS substrate sprints.
+
+#### Track 6.5: Advanced IR Expansion
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
 - **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
 - **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
 - **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
 - **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
 
-#### Track 6.4: High-Level Source Language Frontend
+#### Track 6.6: High-Level Source Language Frontend
 - **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
 - **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
 
 ### Critical Gaps to Bridge for `xv6` OS Execution
-Currently, your VM acts as a single-program runtime. To support a multi-process operating system kernel, the following features will be added to `VMState`:
+The VM now has the first OS substrate layer: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, and v1 user base-limit protection. The remaining `xv6` path is now less about "can the VM trap?" and more about ABI, memory management, scheduler context, and toolchain conventions.
 
 #### A. Privilege Rings (Kernel vs. User Mode)
-Currently, any loaded instruction can access any memory address. To protect the kernel from user-space crashes, `VMState` needs a runtime privilege indicator:
-* **Ternary Protection Mode**: `-1` (Ring 0 / Kernel Mode), `0` (Ring 1 / Device Drivers), `+1` (Ring 2 / Sandboxed User Tasks).
-* **Restricted Opcodes**: Instructions like `FENCE` or direct hardware `SYSCALL` configurations must trigger protection faults if executed outside Kernel mode.
+Implemented in substrate v1:
+* **Ternary Protection Mode**: `-1` kernel, `0` supervisor/reserved, `+1` user.
+* **Restricted Opcodes**: CSR writes and `ERET` are kernel-only and route protection faults from user mode.
+* **V1 Protection**: User fetch/load/store obey IMEM/DMEM base-limit CSRs; kernel bypasses those v1 bounds.
 
 #### B. Memory Management Unit (MMU) & Page Tables
-`xv6` isolates process memory structures entirely. `VMState` memory access currently uses flat physical offsets. 
-* **Virtual Address Translation**: You will need to introduce a Page Table Base Register (`PTBR`). The VM execution loop must intercept `LOAD` and `STORE` addresses to translate virtual pointers to physical `DMEM` pages automatically.
+Still future work. The current substrate is base-limit protection, not virtual memory.
+* **Virtual Address Translation**: Add a page-table base register (`PTBR`) or equivalent CSR family later. The VM execution loop will need to translate user virtual addresses to physical DMEM/IMEM pages before true process isolation.
 
 #### C. Preemptive Timer Interrupts (`IRQ`)
-A Task Manager expects to observe task interleaving. Currently, a running program retains complete control of the VM loop until it yields or halts.
-* **Hardware Timer Traps**: Introduce an instruction cycle limit counter inside `VMState`. When exhausted, the dispatcher must trigger an asynchronous timer interrupt, saving the process execution context and forcing an indirect jump directly into the `xv6` kernel scheduler routine.
+A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
+* **Scheduler Context**: The next step is saving/restoring register files and per-task CSRs around that timer trap, then using the timer handler to switch between two minimal tasks.
 
 By augmenting `VMState` with **Privilege Modes, Virtual Translation, and Hardware Interrupts**, your machine will transition from executing isolated functional algorithms to booting a fully interactive virtualized operating system.
 
 ### Critical Path
 
-The minimum viable sequence to establish a functional end-to-end compiled language frontend prioritizes foundational integration:
+The current OS-oriented sequence prioritizes the machine contract before the full source language:
 ```
-Phase 0/1 Correctness/T40 Decisions → CALLR/JMPR + SYSCALL Implementation → 
-Assembler & Hook Additions → IR Nodes + Type Widening + Structured Control Flow → 
-Language Syntax Design → Lexer → Parser → Type Checker → IR Lowering Driver
+Phase 0/1 foundations -> Phase 6.1 ISA expansion -> Phase 6.2 VM tooling bridge ->
+Phase 6.3 core VM OS substrate -> ABI/memory-model/boot contract docs ->
+minimal IR/C-like kernel authoring -> tiny kernel milestone -> source language expansion
 ```
-Full optimization pass pipelines, horizontal reductions, and extended analytics execute in parallel or incrementally following driver validation.
+Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, and boot contracts rather than preceding them.
 
 Validation:
 

@@ -593,11 +593,18 @@ inline void writeVectorGather(
             continue;
         }
         const long long addrLong = base + ops::toLong(idx);
-        if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+        int physical_addr = static_cast<int>(addrLong);
+        int cause = OS_CAUSE_LOAD_FAULT;
+        if (vm.privilege != PrivilegeMode::Kernel &&
+            !vm.translateLoadAddress(static_cast<int>(addrLong), physical_addr, cause)) {
+            vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+            return;
+        }
+        if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
             writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
             continue;
         }
-        auto [loaded, fc] = vm.dmem.load(static_cast<int>(addrLong));
+        auto [loaded, fc] = vm.dmem.load(physical_addr);
         if (fc != MemFaultCode::OK) {
             writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
             continue;
@@ -633,7 +640,14 @@ inline void writeVectorScatter(
             continue;
         }
         const long long addrLong = base + ops::toLong(idx);
-        if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+        int physical_addr = static_cast<int>(addrLong);
+        int cause = OS_CAUSE_STORE_FAULT;
+        if (vm.privilege != PrivilegeMode::Kernel &&
+            !vm.translateStoreAddress(static_cast<int>(addrLong), physical_addr, cause)) {
+            vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+            return;
+        }
+        if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
             vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
             continue;
         }
@@ -642,7 +656,7 @@ inline void writeVectorScatter(
             vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
             continue;
         }
-        if (vm.dmem.store(static_cast<int>(addrLong), converted) != MemFaultCode::OK) {
+        if (vm.dmem.store(physical_addr, converted) != MemFaultCode::OK) {
             vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
         }
     }
@@ -667,9 +681,15 @@ inline VMStatus step(VMState& vm) {
     // -----------------------------------------------------------------
     // FETCH
     // -----------------------------------------------------------------
-    auto [raw, fetch_fc] = vm.imem.fetch(vm.pc);
+    int physical_pc = vm.pc;
+    int routed_cause = OS_CAUSE_FETCH_FAULT;
+    if (!vm.translateFetchAddress(vm.pc, physical_pc, routed_cause)) {
+        vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, routed_cause, vm.pc);
+        return vm.status;
+    }
+    auto [raw, fetch_fc] = vm.imem.fetch(physical_pc);
     if (fetch_fc != MemFaultCode::OK) {
-        vm.trap(TrapCode::TRAP_MEM_FAULT);
+        vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_FETCH_FAULT, vm.pc);
         return vm.status;
     }
 
@@ -678,7 +698,7 @@ inline VMStatus step(VMState& vm) {
     // -----------------------------------------------------------------
     InstructionWord iw = InstructionWord::decode(raw);
     if (iw.malformed || iw.opcode == Opcode::RESERVED) {
-        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_ILLEGAL_INSTRUCTION, vm.pc);
         return vm.status;
     }
 
@@ -725,8 +745,79 @@ inline VMStatus step(VMState& vm) {
             break;
 
         case Opcode::HALT:
+            vm.completeTerminalInstruction();
             vm.halt();
             return vm.status;
+
+        case Opcode::CSRR: {
+            TernaryValue value;
+            if (!vm.readCSR(iw.imm, value)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            vm.regfile.write(iw.rd, value);
+            break;
+        }
+
+        case Opcode::CSRW: {
+            if (vm.privilege != PrivilegeMode::Kernel) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_PROTECTION_FAULT,
+                                 vm.pc);
+                return vm.status;
+            }
+            if (!vm.writeCSR(iw.imm, vm.regfile.read(iw.rd))) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            break;
+        }
+
+        case Opcode::CSRRW: {
+            if (vm.privilege != PrivilegeMode::Kernel) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_PROTECTION_FAULT,
+                                 vm.pc);
+                return vm.status;
+            }
+            TernaryValue old_value;
+            if (!vm.readCSR(iw.rs2, old_value)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            const TernaryValue source_value = vm.regfile.read(iw.rs1);
+            if (!vm.writeCSR(iw.rs2, source_value)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            vm.regfile.write(iw.rd, old_value);
+            break;
+        }
+
+        case Opcode::ERET: {
+            if (vm.privilege != PrivilegeMode::Kernel) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_PROTECTION_FAULT,
+                                 vm.pc);
+                return vm.status;
+            }
+            if (!vm.returnFromTrap()) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            vm.recordCycle(true);
+            return vm.status;
+        }
 
         // ----- Data Movement ----------------------------------------
 
@@ -805,7 +896,7 @@ inline VMStatus step(VMState& vm) {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
             TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
             if (b.isZero()) {
-                vm.trap(TrapCode::TRAP_DIV_ZERO);
+                vm.trapWithCause(TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, vm.pc);
                 return vm.status;
             }
             if (!writeChecked(iw.rd, exec::divideValue(vm.regfile.read(iw.rs1), b, mode))) return vm.status;
@@ -1024,11 +1115,20 @@ inline VMStatus step(VMState& vm) {
             exec::prepareVectorOp(vm);
             for (int lane = 0; lane < vm.vector_length; ++lane) {
                 const long long addrLong = base + iw.imm + lane;
-                if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+                int physical_addr = static_cast<int>(addrLong);
+                int cause = OS_CAUSE_LOAD_FAULT;
+                if (vm.privilege != PrivilegeMode::Kernel &&
+                    !vm.translateLoadAddress(static_cast<int>(addrLong), physical_addr, cause)) {
+                    vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                     cause,
+                                     vm.pc);
+                    return vm.status;
+                }
+                if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
                     exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
                     continue;
                 }
-                auto [loaded, fc] = vm.dmem.load(static_cast<int>(addrLong));
+                auto [loaded, fc] = vm.dmem.load(physical_addr);
                 if (fc != MemFaultCode::OK) {
                     exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
                     continue;
@@ -1059,7 +1159,16 @@ inline VMStatus step(VMState& vm) {
             exec::prepareVectorOp(vm);
             for (int lane = 0; lane < vm.vector_length; ++lane) {
                 const long long addrLong = base + iw.imm + lane;
-                if (addrLong < 0 || addrLong >= vm.dmem.size()) {
+                int physical_addr = static_cast<int>(addrLong);
+                int cause = OS_CAUSE_STORE_FAULT;
+                if (vm.privilege != PrivilegeMode::Kernel &&
+                    !vm.translateStoreAddress(static_cast<int>(addrLong), physical_addr, cause)) {
+                    vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                     cause,
+                                     vm.pc);
+                    return vm.status;
+                }
+                if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
                     continue;
                 }
@@ -1068,7 +1177,7 @@ inline VMStatus step(VMState& vm) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
                     continue;
                 }
-                MemFaultCode fc = vm.dmem.store(static_cast<int>(addrLong), converted);
+                MemFaultCode fc = vm.dmem.store(physical_addr, converted);
                 if (fc != MemFaultCode::OK) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
                 }
@@ -1245,9 +1354,15 @@ inline VMStatus step(VMState& vm) {
             }
             long long base   = ops::toLong(vm.regfile.read(iw.rs1));
             int       addr   = static_cast<int>(base + iw.imm);
-            auto [val, fc]   = vm.dmem.load(addr);
+            int physical_addr = addr;
+            int cause = OS_CAUSE_LOAD_FAULT;
+            if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return vm.status;
+            }
+            auto [val, fc]   = vm.dmem.load(physical_addr);
             if (fc != MemFaultCode::OK) {
-                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
                 return vm.status;
             }
             vm.regfile.write(iw.rd, val);
@@ -1264,9 +1379,15 @@ inline VMStatus step(VMState& vm) {
             }
             long long base = ops::toLong(vm.regfile.read(iw.rs1));
             int       addr = static_cast<int>(base + iw.imm);
-            MemFaultCode fc = vm.dmem.store(addr, vm.regfile.read(iw.rs_store));
+            int physical_addr = addr;
+            int cause = OS_CAUSE_STORE_FAULT;
+            if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return vm.status;
+            }
+            MemFaultCode fc = vm.dmem.store(physical_addr, vm.regfile.read(iw.rs_store));
             if (fc != MemFaultCode::OK) {
-                vm.trap(TrapCode::TRAP_MEM_FAULT);
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
                 return vm.status;
             }
             break;
@@ -1318,7 +1439,7 @@ inline VMStatus step(VMState& vm) {
         case Opcode::RET: {
             // R-type (no operands): PC ← r25 (LR)
             int ret_addr = exec::pcFromValue(vm.regfile.readLR());
-            if (ret_addr < 0 || !vm.imem.inRange(ret_addr)) {
+            if (!vm.validateControlTarget(ret_addr)) {
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
@@ -1382,7 +1503,7 @@ inline VMStatus step(VMState& vm) {
                 return vm.status;
             }
             int dest = exec::pcFromValue(target);
-            if (dest < 0 || !vm.imem.inRange(dest)) {
+            if (!vm.validateControlTarget(dest)) {
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
@@ -1398,7 +1519,7 @@ inline VMStatus step(VMState& vm) {
                 return vm.status;
             }
             int dest = exec::pcFromValue(target);
-            if (dest < 0 || !vm.imem.inRange(dest)) {
+            if (!vm.validateControlTarget(dest)) {
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
@@ -1415,7 +1536,7 @@ inline VMStatus step(VMState& vm) {
                 return vm.status;
             }
             if (b.isZero()) {
-                vm.trap(TrapCode::TRAP_DIV_ZERO);
+                vm.trapWithCause(TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, vm.pc);
                 return vm.status;
             }
             TernaryValue quot = exec::divideValue(a, b, mode);
@@ -1546,6 +1667,11 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::SYSCALL: {
+            if (vm.trap_routing_enabled && vm.privilege == PrivilegeMode::User) {
+                vm.syscall_id = iw.imm;
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_SYSCALL, vm.pc);
+                return vm.status;
+            }
             if (iw.imm == 1) {
                 long long val = sandbox::vm::ops::toLong(vm.regfile.read(1));
                 vm.syscall_buffer += std::to_string(val);
@@ -1639,7 +1765,7 @@ inline VMStatus step(VMState& vm) {
     // -----------------------------------------------------------------
     // ADVANCE PC (only if still running — HALT/TRAP return early above)
     // -----------------------------------------------------------------
-    vm.pc = pc_next;
+    vm.completeInstruction(pc_next);
     return vm.status;
 }
 

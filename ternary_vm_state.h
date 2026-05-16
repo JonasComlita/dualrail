@@ -890,7 +890,70 @@ namespace ops {
 } // namespace ops
 
 // =============================================================================
-// SECTION 8b - Vector Register and Fault State
+// SECTION 8b - Single-Level Page Table Helpers
+// =============================================================================
+
+static constexpr int MMU_PAGE_WORDS = 27;
+static constexpr int PTE_FLAG_VALID = 0;
+static constexpr int PTE_FLAG_USER = 1;
+static constexpr int PTE_FLAG_READ = 2;
+static constexpr int PTE_FLAG_WRITE = 3;
+static constexpr int PTE_FLAG_EXECUTE = 4;
+static constexpr int PTE_PPN_SHIFT = 5;
+static constexpr long long PTE_PPN_SCALE = 243; // 3^5
+
+struct PageTableEntry {
+    int ppn = 0;
+    bool present = false;
+    bool user = false;
+    bool read = false;
+    bool write = false;
+    bool execute = false;
+};
+
+[[nodiscard]] inline TernaryValue encodePageTableEntry(
+    int ppn,
+    bool user,
+    bool read,
+    bool write,
+    bool execute,
+    bool present = true) {
+
+    long long encoded = static_cast<long long>(ppn) * PTE_PPN_SCALE;
+    encoded += (present ? T_POS : T_NEG);
+    encoded += 3LL * (user ? T_POS : T_NEG);
+    encoded += 9LL * (read ? T_POS : T_NEG);
+    encoded += 27LL * (write ? T_POS : T_NEG);
+    encoded += 81LL * (execute ? T_POS : T_NEG);
+    return ops::fromLong(encoded, TernaryMode::T40);
+}
+
+[[nodiscard]] inline bool decodePageTableEntry(TernaryValue value, PageTableEntry& out) {
+    if (!isNumericMode(value.mode) || value.isInvalid()) return false;
+    const long long raw = ops::toLong(value);
+    const int8_t valid = readStoredTrit(value, PTE_FLAG_VALID);
+    const int8_t user = readStoredTrit(value, PTE_FLAG_USER);
+    const int8_t read = readStoredTrit(value, PTE_FLAG_READ);
+    const int8_t write = readStoredTrit(value, PTE_FLAG_WRITE);
+    const int8_t execute = readStoredTrit(value, PTE_FLAG_EXECUTE);
+    const long long low =
+        static_cast<long long>(valid) +
+        3LL * static_cast<long long>(user) +
+        9LL * static_cast<long long>(read) +
+        27LL * static_cast<long long>(write) +
+        81LL * static_cast<long long>(execute);
+    const long long ppn = (raw - low) / PTE_PPN_SCALE;
+    out.ppn = static_cast<int>(ppn);
+    out.present = valid == T_POS;
+    out.user = user == T_POS;
+    out.read = read == T_POS;
+    out.write = write == T_POS;
+    out.execute = execute == T_POS;
+    return true;
+}
+
+// =============================================================================
+// SECTION 8c - Vector Register and Fault State
 // =============================================================================
 
 static constexpr int DEFAULT_VECTOR_LENGTH = 27;
@@ -973,6 +1036,32 @@ struct VMState {
     VectorFaultState         vector_faults;
     TernaryValue             accumulator;
     std::string              syscall_buffer;
+    PrivilegeMode            privilege = PrivilegeMode::Kernel;
+    PrivilegeMode            previous_privilege = PrivilegeMode::Kernel;
+    bool                     interrupt_enable = false;
+    bool                     previous_interrupt_enable = false;
+    bool                     trap_routing_enabled = false;
+    int                      epc = 0;
+    int                      cause = 0;
+    int                      tvec = 0;
+    int                      scratch = 0;
+    long long                cycle_count = 0;
+    long long                timer_reload = 0;
+    long long                timer_counter = 0;
+    bool                     timer_enable = false;
+    bool                     timer_pending = false;
+    int                      user_imem_base = 0;
+    int                      user_imem_limit = 0;
+    int                      user_dmem_base = 0;
+    int                      user_dmem_limit = 0;
+    int                      syscall_id = 0;
+    bool                     mmu_enable = false;
+    int                      user_imem_ptbr = 0;
+    int                      user_imem_pages = 0;
+    int                      user_dmem_ptbr = 0;
+    int                      user_dmem_pages = 0;
+    int                      page_fault_addr = 0;
+    int                      page_fault_access = OS_PAGE_ACCESS_LOAD;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -983,6 +1072,7 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        resetControlState();
     }
 
     explicit VMState(VMStateAllocator& allocator)
@@ -991,6 +1081,7 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        resetControlState();
     }
 
     VMState(int imem_size, int dmem_size,
@@ -1000,6 +1091,7 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        resetControlState();
     }
 
     // -------------------------------------------------------------------------
@@ -1017,6 +1109,7 @@ struct VMState {
         syscall_buffer.clear();
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        resetControlState();
 
         // Initialize SP to top of data memory.
         // native_ops::fromInt puts a small integer into LongTriple format.
@@ -1035,15 +1128,448 @@ struct VMState {
         clearMemory();
     }
 
+    void resetControlState() {
+        privilege = PrivilegeMode::Kernel;
+        previous_privilege = PrivilegeMode::Kernel;
+        interrupt_enable = false;
+        previous_interrupt_enable = false;
+        trap_routing_enabled = false;
+        epc = 0;
+        cause = 0;
+        tvec = 0;
+        scratch = 0;
+        cycle_count = 0;
+        timer_reload = 0;
+        timer_counter = 0;
+        timer_enable = false;
+        timer_pending = false;
+        user_imem_base = 0;
+        user_imem_limit = imem.size();
+        user_dmem_base = 0;
+        user_dmem_limit = dmem.size();
+        syscall_id = 0;
+        mmu_enable = false;
+        user_imem_ptbr = 0;
+        user_imem_pages = 0;
+        user_dmem_ptbr = 0;
+        user_dmem_pages = 0;
+        page_fault_addr = 0;
+        page_fault_access = OS_PAGE_ACCESS_LOAD;
+    }
+
+    [[nodiscard]] static int privilegeToInt(PrivilegeMode mode) {
+        return static_cast<int>(static_cast<int8_t>(mode));
+    }
+
+    [[nodiscard]] static PrivilegeMode intToPrivilege(int value) {
+        if (value < 0) return PrivilegeMode::Kernel;
+        if (value > 0) return PrivilegeMode::User;
+        return PrivilegeMode::Supervisor;
+    }
+
+    [[nodiscard]] static int8_t tritAt(long long value, int pos) {
+        for (int i = 0; i < pos; ++i) {
+            long long r = (value + 1) % 3;
+            if (r < 0) r += 3;
+            long long trit = r - 1;
+            value = (value - trit) / 3;
+        }
+        long long r = (value + 1) % 3;
+        if (r < 0) r += 3;
+        return static_cast<int8_t>(r - 1);
+    }
+
+    [[nodiscard]] long long packStatus() const {
+        return privilegeToInt(privilege) +
+               3LL * (interrupt_enable ? T_POS : T_ZER) +
+               9LL * privilegeToInt(previous_privilege) +
+               27LL * (previous_interrupt_enable ? T_POS : T_ZER);
+    }
+
+    void unpackStatus(long long value) {
+        privilege = intToPrivilege(tritAt(value, 0));
+        interrupt_enable = tritAt(value, 1) == T_POS;
+        previous_privilege = intToPrivilege(tritAt(value, 2));
+        previous_interrupt_enable = tritAt(value, 3) == T_POS;
+    }
+
+    [[nodiscard]] bool readCSR(int id, TernaryValue& out) const {
+        if (!isValidCSR(id)) return false;
+        long long value = 0;
+        switch (id) {
+            case CSR_EPC: value = epc; break;
+            case CSR_CAUSE: value = cause; break;
+            case CSR_STATUS: value = packStatus(); break;
+            case CSR_TVEC: value = tvec; break;
+            case CSR_SCRATCH: value = scratch; break;
+            case CSR_CYCLE: value = cycle_count; break;
+            case CSR_TIMER_RELOAD: value = timer_reload; break;
+            case CSR_TIMER_COUNTER: value = timer_counter; break;
+            case CSR_TIMER_ENABLE: value = timer_enable ? 1 : 0; break;
+            case CSR_TIMER_PENDING: value = timer_pending ? 1 : 0; break;
+            case CSR_USER_IMEM_BASE: value = user_imem_base; break;
+            case CSR_USER_IMEM_LIMIT: value = user_imem_limit; break;
+            case CSR_USER_DMEM_BASE: value = user_dmem_base; break;
+            case CSR_USER_DMEM_LIMIT: value = user_dmem_limit; break;
+            case CSR_SYSCALL_ID: value = syscall_id; break;
+            case CSR_MMU_ENABLE: value = mmu_enable ? 1 : 0; break;
+            case CSR_USER_IMEM_PTBR: value = user_imem_ptbr; break;
+            case CSR_USER_IMEM_PAGES: value = user_imem_pages; break;
+            case CSR_USER_DMEM_PTBR: value = user_dmem_ptbr; break;
+            case CSR_USER_DMEM_PAGES: value = user_dmem_pages; break;
+            case CSR_PAGE_FAULT_ADDR: value = page_fault_addr; break;
+            case CSR_PAGE_FAULT_ACCESS: value = page_fault_access; break;
+            default: return false;
+        }
+        out = ops::fromLong(value);
+        return true;
+    }
+
+    [[nodiscard]] bool writeCSR(int id, TernaryValue in) {
+        if (!isValidCSR(id) || !isNumericMode(in.mode) || in.isInvalid()) return false;
+        long long value = ops::toLong(in);
+        switch (id) {
+            case CSR_EPC:
+                epc = static_cast<int>(value);
+                return true;
+            case CSR_CAUSE:
+                cause = static_cast<int>(value);
+                return true;
+            case CSR_STATUS:
+                unpackStatus(value);
+                return true;
+            case CSR_TVEC:
+                if (value < 0 || value >= imem.size()) return false;
+                tvec = static_cast<int>(value);
+                trap_routing_enabled = true;
+                return true;
+            case CSR_SCRATCH:
+                scratch = static_cast<int>(value);
+                return true;
+            case CSR_CYCLE:
+                return false;
+            case CSR_TIMER_RELOAD:
+                if (value < 0) return false;
+                timer_reload = value;
+                return true;
+            case CSR_TIMER_COUNTER:
+                if (value < 0) return false;
+                timer_counter = value;
+                return true;
+            case CSR_TIMER_ENABLE:
+                timer_enable = value != 0;
+                if (timer_enable && timer_counter == 0 && timer_reload > 0) {
+                    timer_counter = timer_reload;
+                }
+                return true;
+            case CSR_TIMER_PENDING:
+                timer_pending = value != 0;
+                return true;
+            case CSR_USER_IMEM_BASE:
+                user_imem_base = static_cast<int>(value);
+                return true;
+            case CSR_USER_IMEM_LIMIT:
+                user_imem_limit = static_cast<int>(value);
+                return true;
+            case CSR_USER_DMEM_BASE:
+                user_dmem_base = static_cast<int>(value);
+                return true;
+            case CSR_USER_DMEM_LIMIT:
+                user_dmem_limit = static_cast<int>(value);
+                return true;
+            case CSR_SYSCALL_ID:
+                syscall_id = static_cast<int>(value);
+                return true;
+            case CSR_MMU_ENABLE:
+                mmu_enable = value != 0;
+                return true;
+            case CSR_USER_IMEM_PTBR:
+                if (value < 0) return false;
+                user_imem_ptbr = static_cast<int>(value);
+                return true;
+            case CSR_USER_IMEM_PAGES:
+                if (value < 0) return false;
+                user_imem_pages = static_cast<int>(value);
+                return true;
+            case CSR_USER_DMEM_PTBR:
+                if (value < 0) return false;
+                user_dmem_ptbr = static_cast<int>(value);
+                return true;
+            case CSR_USER_DMEM_PAGES:
+                if (value < 0) return false;
+                user_dmem_pages = static_cast<int>(value);
+                return true;
+            case CSR_PAGE_FAULT_ADDR:
+                page_fault_addr = static_cast<int>(value);
+                return true;
+            case CSR_PAGE_FAULT_ACCESS:
+                page_fault_access = static_cast<int>(value);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    [[nodiscard]] bool inUserRange(int addr, int base, int limit, int capacity) const {
+        return addr >= 0 && addr < capacity && addr >= base && addr < limit;
+    }
+
+    [[nodiscard]] bool canFetch(int addr) const {
+        if (!imem.inRange(addr)) return false;
+        if (privilege == PrivilegeMode::Kernel) return true;
+        return inUserRange(addr, user_imem_base, user_imem_limit, imem.size());
+    }
+
+    [[nodiscard]] bool canLoad(int addr) const {
+        if (!dmem.inRange(addr)) return false;
+        if (privilege == PrivilegeMode::Kernel) return true;
+        return inUserRange(addr, user_dmem_base, user_dmem_limit, dmem.size());
+    }
+
+    [[nodiscard]] bool canStore(int addr) const {
+        return canLoad(addr);
+    }
+
+    void setPageFault(int virtual_addr, int access) {
+        page_fault_addr = virtual_addr;
+        page_fault_access = access;
+    }
+
+    [[nodiscard]] bool translateUserPageAddress(
+        int virtual_addr,
+        int ptbr,
+        int page_count,
+        bool need_read,
+        bool need_write,
+        bool need_execute,
+        int page_fault_cause,
+        int protection_cause,
+        int access,
+        int target_capacity,
+        int& physical_addr,
+        int& routed_cause) {
+
+        if (virtual_addr < 0) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        const int vpn = virtual_addr / MMU_PAGE_WORDS;
+        const int offset = virtual_addr % MMU_PAGE_WORDS;
+        if (vpn < 0 || vpn >= page_count) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        const int pte_addr = ptbr + vpn;
+        if (!dmem.inRange(pte_addr)) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        auto [pte_value, pte_fault] = dmem.load(pte_addr);
+        if (pte_fault != MemFaultCode::OK) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        PageTableEntry pte;
+        if (!decodePageTableEntry(pte_value, pte) || !pte.present) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        if (!pte.user ||
+            (need_read && !pte.read) ||
+            (need_write && !pte.write) ||
+            (need_execute && !pte.execute)) {
+            setPageFault(virtual_addr, access);
+            routed_cause = protection_cause;
+            return false;
+        }
+        const long long phys = static_cast<long long>(pte.ppn) * MMU_PAGE_WORDS + offset;
+        if (phys < 0 || phys >= target_capacity) {
+            setPageFault(virtual_addr, access);
+            routed_cause = page_fault_cause;
+            return false;
+        }
+        physical_addr = static_cast<int>(phys);
+        return true;
+    }
+
+    [[nodiscard]] bool translateFetchAddress(int virtual_pc, int& physical_pc, int& routed_cause) {
+        if (privilege == PrivilegeMode::Kernel) {
+            if (!imem.inRange(virtual_pc)) {
+                routed_cause = OS_CAUSE_FETCH_FAULT;
+                return false;
+            }
+            physical_pc = virtual_pc;
+            return true;
+        }
+        if (!mmu_enable) {
+            if (!canFetch(virtual_pc)) {
+                routed_cause = OS_CAUSE_FETCH_FAULT;
+                return false;
+            }
+            physical_pc = virtual_pc;
+            return true;
+        }
+        return translateUserPageAddress(
+            virtual_pc,
+            user_imem_ptbr,
+            user_imem_pages,
+            false,
+            false,
+            true,
+            OS_CAUSE_FETCH_PAGE_FAULT,
+            OS_CAUSE_PROTECTION_FAULT,
+            OS_PAGE_ACCESS_FETCH,
+            imem.size(),
+            physical_pc,
+            routed_cause);
+    }
+
+    [[nodiscard]] bool translateLoadAddress(int virtual_addr, int& physical_addr, int& routed_cause) {
+        if (privilege == PrivilegeMode::Kernel) {
+            if (!dmem.inRange(virtual_addr)) {
+                routed_cause = OS_CAUSE_LOAD_FAULT;
+                return false;
+            }
+            physical_addr = virtual_addr;
+            return true;
+        }
+        if (!mmu_enable) {
+            if (!canLoad(virtual_addr)) {
+                routed_cause = OS_CAUSE_LOAD_FAULT;
+                return false;
+            }
+            physical_addr = virtual_addr;
+            return true;
+        }
+        return translateUserPageAddress(
+            virtual_addr,
+            user_dmem_ptbr,
+            user_dmem_pages,
+            true,
+            false,
+            false,
+            OS_CAUSE_LOAD_PAGE_FAULT,
+            OS_CAUSE_PROTECTION_FAULT,
+            OS_PAGE_ACCESS_LOAD,
+            dmem.size(),
+            physical_addr,
+            routed_cause);
+    }
+
+    [[nodiscard]] bool translateStoreAddress(int virtual_addr, int& physical_addr, int& routed_cause) {
+        if (privilege == PrivilegeMode::Kernel) {
+            if (!dmem.inRange(virtual_addr)) {
+                routed_cause = OS_CAUSE_STORE_FAULT;
+                return false;
+            }
+            physical_addr = virtual_addr;
+            return true;
+        }
+        if (!mmu_enable) {
+            if (!canStore(virtual_addr)) {
+                routed_cause = OS_CAUSE_STORE_FAULT;
+                return false;
+            }
+            physical_addr = virtual_addr;
+            return true;
+        }
+        return translateUserPageAddress(
+            virtual_addr,
+            user_dmem_ptbr,
+            user_dmem_pages,
+            false,
+            true,
+            false,
+            OS_CAUSE_STORE_PAGE_FAULT,
+            OS_CAUSE_PROTECTION_FAULT,
+            OS_PAGE_ACCESS_STORE,
+            dmem.size(),
+            physical_addr,
+            routed_cause);
+    }
+
+    [[nodiscard]] bool validateControlTarget(int target) {
+        if (target < 0) return false;
+        if (privilege == PrivilegeMode::Kernel) return imem.inRange(target);
+        if (mmu_enable) return true;
+        return canFetch(target);
+    }
+
+    [[nodiscard]] static int osCauseForTrap(TrapCode code) {
+        switch (code) {
+            case TrapCode::TRAP_DIV_ZERO: return OS_CAUSE_DIV_ZERO;
+            case TrapCode::TRAP_MEM_FAULT: return OS_CAUSE_LOAD_FAULT;
+            case TrapCode::TRAP_ILLEGAL_OP: return OS_CAUSE_ILLEGAL_INSTRUCTION;
+        }
+        return OS_CAUSE_ILLEGAL_INSTRUCTION;
+    }
+
+    void trapWithCause(TrapCode legacy_code, int routed_cause, int epc_value) {
+        trap_reg = encodeTrap(legacy_code);
+        if (!trap_routing_enabled) {
+            status = VMStatus::TRAPPED;
+            return;
+        }
+        epc = epc_value;
+        cause = routed_cause;
+        previous_privilege = privilege;
+        previous_interrupt_enable = interrupt_enable;
+        privilege = PrivilegeMode::Kernel;
+        interrupt_enable = false;
+        status = VMStatus::RUNNING;
+        pc = tvec;
+    }
+
+    void recordCycle(bool allow_timer_interrupt = true) {
+        ++cycle_count;
+        if (timer_enable) {
+            if (timer_counter > 0) --timer_counter;
+            if (timer_counter == 0) {
+                timer_pending = true;
+                if (timer_reload > 0) {
+                    timer_counter = timer_reload;
+                } else {
+                    timer_enable = false;
+                }
+            }
+        }
+        if (allow_timer_interrupt && timer_pending && trap_routing_enabled && interrupt_enable) {
+            timer_pending = false;
+            trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_TIMER_IRQ, pc);
+        }
+    }
+
+    void completeInstruction(int next_pc) {
+        pc = next_pc;
+        recordCycle(true);
+    }
+
+    void completeTerminalInstruction() {
+        recordCycle(false);
+    }
+
+    [[nodiscard]] bool returnFromTrap() {
+        if (privilege != PrivilegeMode::Kernel) return false;
+        privilege = previous_privilege;
+        interrupt_enable = previous_interrupt_enable;
+        pc = epc;
+        return true;
+    }
+
     // -------------------------------------------------------------------------
     // Trap — called by the dispatcher on any fault.
     // Sets status to TRAPPED, writes the trap code to r27, and records
     // the PC at the faulting instruction for post-mortem inspection.
     // -------------------------------------------------------------------------
     void trap(TrapCode code) {
-        status   = VMStatus::TRAPPED;
-        trap_reg = encodeTrap(code);
-        // pc is NOT advanced: it continues to point at the faulting instruction.
+        trapWithCause(code, osCauseForTrap(code), pc);
+        // Legacy mode leaves pc at the faulting instruction. Routed mode stores
+        // that PC in EPC and jumps to TVEC.
     }
 
     // -------------------------------------------------------------------------
@@ -1064,6 +1590,7 @@ struct VMState {
     // -------------------------------------------------------------------------
     // Debug dump — human-readable machine state summary.
     // -------------------------------------------------------------------------
+
     [[nodiscard]] std::string dump() const {
         std::ostringstream oss;
         oss << "=== VMState ==========================\n";

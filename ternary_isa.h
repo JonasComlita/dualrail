@@ -413,14 +413,20 @@ enum class Opcode : uint8_t {
     VHMIN    = 72,
     VHMAX    = 73,
 
+    // --- Phase 3 OS Substrate ---
+    CSRR     = 74,
+    CSRW     = 75,
+    ERET     = 76,
+    CSRRW    = 77,
+
     // --- Reserved ---
-    // Values 74-80 are reserved for future extension.
+    // Values 78-80 are reserved for future extension.
     // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
     RESERVED = 255  // Sentinel — never encoded into an instruction word.
 };
 
-static constexpr uint8_t OPCODE_MAX_ASSIGNED = 73;  // VHMAX
-static constexpr uint8_t OPCODE_RESERVED_START = 74;
+static constexpr uint8_t OPCODE_MAX_ASSIGNED = 77;  // CSRRW
+static constexpr uint8_t OPCODE_RESERVED_START = 78;
 
 static constexpr uint8_t FUNC_T1  =  8;
 static constexpr uint8_t FUNC_T5  =  9;
@@ -548,6 +554,86 @@ static constexpr int8_t FAULT_VALID_SET  = T_POS;
 
 // TRAP_NONE is stored as fault_valid = 0. fault_class is meaningful only when
 // fault_valid = +1, which keeps no-fault distinct from TRAP_MEM_FAULT.
+
+// Phase 3 routed trap causes. Positive values are synchronous exceptions;
+// negative values are interrupts.
+static constexpr int OS_CAUSE_ILLEGAL_INSTRUCTION = 1;
+static constexpr int OS_CAUSE_FETCH_FAULT         = 2;
+static constexpr int OS_CAUSE_LOAD_FAULT          = 3;
+static constexpr int OS_CAUSE_STORE_FAULT         = 4;
+static constexpr int OS_CAUSE_PROTECTION_FAULT    = 5;
+static constexpr int OS_CAUSE_DIV_ZERO            = 6;
+static constexpr int OS_CAUSE_SYSCALL             = 7;
+static constexpr int OS_CAUSE_FETCH_PAGE_FAULT    = 8;
+static constexpr int OS_CAUSE_LOAD_PAGE_FAULT     = 9;
+static constexpr int OS_CAUSE_STORE_PAGE_FAULT    = 10;
+static constexpr int OS_CAUSE_TIMER_IRQ           = -1;
+
+static constexpr int OS_PAGE_ACCESS_FETCH = T_NEG;
+static constexpr int OS_PAGE_ACCESS_LOAD  = T_ZER;
+static constexpr int OS_PAGE_ACCESS_STORE = T_POS;
+
+enum class PrivilegeMode : int8_t {
+    Kernel     = T_NEG,
+    Supervisor = T_ZER,
+    User       = T_POS,
+};
+
+static constexpr int CSR_EPC             = 0;
+static constexpr int CSR_CAUSE           = 1;
+static constexpr int CSR_STATUS          = 2;
+static constexpr int CSR_TVEC            = 3;
+static constexpr int CSR_SCRATCH         = 4;
+static constexpr int CSR_CYCLE           = 5;
+static constexpr int CSR_TIMER_RELOAD    = 6;
+static constexpr int CSR_TIMER_COUNTER   = 7;
+static constexpr int CSR_TIMER_ENABLE    = 8;
+static constexpr int CSR_TIMER_PENDING   = 9;
+static constexpr int CSR_USER_IMEM_BASE  = 10;
+static constexpr int CSR_USER_IMEM_LIMIT = 11;
+static constexpr int CSR_USER_DMEM_BASE  = 12;
+static constexpr int CSR_USER_DMEM_LIMIT = 13;
+static constexpr int CSR_SYSCALL_ID      = 14;
+static constexpr int CSR_MMU_ENABLE      = 15;
+static constexpr int CSR_USER_IMEM_PTBR  = 16;
+static constexpr int CSR_USER_IMEM_PAGES = 17;
+static constexpr int CSR_USER_DMEM_PTBR  = 18;
+static constexpr int CSR_USER_DMEM_PAGES = 19;
+static constexpr int CSR_PAGE_FAULT_ADDR = 20;
+static constexpr int CSR_PAGE_FAULT_ACCESS = 21;
+static constexpr int CSR_MAX_ID          = CSR_PAGE_FAULT_ACCESS;
+
+[[nodiscard]] inline bool isValidCSR(int id) {
+    return id >= 0 && id <= CSR_MAX_ID;
+}
+
+[[nodiscard]] inline const char* csrToString(int id) {
+    switch (id) {
+        case CSR_EPC: return "epc";
+        case CSR_CAUSE: return "cause";
+        case CSR_STATUS: return "status";
+        case CSR_TVEC: return "tvec";
+        case CSR_SCRATCH: return "scratch";
+        case CSR_CYCLE: return "cycle";
+        case CSR_TIMER_RELOAD: return "timer_reload";
+        case CSR_TIMER_COUNTER: return "timer_counter";
+        case CSR_TIMER_ENABLE: return "timer_enable";
+        case CSR_TIMER_PENDING: return "timer_pending";
+        case CSR_USER_IMEM_BASE: return "user_imem_base";
+        case CSR_USER_IMEM_LIMIT: return "user_imem_limit";
+        case CSR_USER_DMEM_BASE: return "user_dmem_base";
+        case CSR_USER_DMEM_LIMIT: return "user_dmem_limit";
+        case CSR_SYSCALL_ID: return "syscall_id";
+        case CSR_MMU_ENABLE: return "mmu_enable";
+        case CSR_USER_IMEM_PTBR: return "user_imem_ptbr";
+        case CSR_USER_IMEM_PAGES: return "user_imem_pages";
+        case CSR_USER_DMEM_PTBR: return "user_dmem_ptbr";
+        case CSR_USER_DMEM_PAGES: return "user_dmem_pages";
+        case CSR_PAGE_FAULT_ADDR: return "page_fault_addr";
+        case CSR_PAGE_FAULT_ACCESS: return "page_fault_access";
+        default: return "unknown";
+    }
+}
 
 // =============================================================================
 // SECTION 8 — Decoded Instruction Word
@@ -1023,6 +1109,10 @@ inline bool verifyRoundTrip() {
         case Opcode::VSUM:    return "VSUM";
         case Opcode::VHMIN:   return "VHMIN";
         case Opcode::VHMAX:   return "VHMAX";
+        case Opcode::CSRR:    return "CSRR";
+        case Opcode::CSRW:    return "CSRW";
+        case Opcode::ERET:    return "ERET";
+        case Opcode::CSRRW:   return "CSRRW";
         default:            return "???";
     }
 }
@@ -1035,6 +1125,7 @@ inline bool verifyRoundTrip() {
     if (iw.opcode == Opcode::NOP)  return "NOP";
     if (iw.opcode == Opcode::HALT) return "HALT";
     if (iw.opcode == Opcode::RET)  return "RET";
+    if (iw.opcode == Opcode::ERET) return "ERET";
 
     std::string mnemonic = opcodeToString(iw.opcode);
     if (iw.opcode == Opcode::CVT && iw.fmt == InstructionFormat::R_TYPE) {
@@ -1100,6 +1191,10 @@ inline bool verifyRoundTrip() {
                    + ", r" + std::to_string(iw.rneg)
                    + ", r" + std::to_string(iw.rzero)
                    + ", r" + std::to_string(iw.rpos);
+            } else if (iw.opcode == Opcode::CSRRW) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", " + std::string(csrToString(iw.rs2))
+                   + ", r" + std::to_string(iw.rs1);
             } else if (iw.r4_layout) {
                 s += "r" + std::to_string(iw.rd)
                    + ", r" + std::to_string(iw.rs1)
@@ -1199,7 +1294,13 @@ inline bool verifyRoundTrip() {
             }
             break;
         case InstructionFormat::I_TYPE:
-            if (iw.opcode == Opcode::SYSCALL) {
+            if (iw.opcode == Opcode::CSRR) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", " + std::string(csrToString(iw.imm));
+            } else if (iw.opcode == Opcode::CSRW) {
+                s += std::string(csrToString(iw.imm))
+                   + ", r" + std::to_string(iw.rd);
+            } else if (iw.opcode == Opcode::SYSCALL) {
                 s += std::to_string(iw.imm);
             } else if (iw.opcode == Opcode::VLOAD || iw.opcode == Opcode::VSTORE) {
                 s += "v" + std::to_string(iw.rd)

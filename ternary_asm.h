@@ -228,6 +228,40 @@ struct AssemblyResult {
     return -1;
 }
 
+// Parse a CSR name or numeric CSR id. Returns [0..CSR_MAX_ID] or -1 on error.
+[[nodiscard]] inline int parseCSR(const std::string& tok) {
+    std::string s = toLower(tok);
+    if (s == "epc") return CSR_EPC;
+    if (s == "cause") return CSR_CAUSE;
+    if (s == "status") return CSR_STATUS;
+    if (s == "tvec") return CSR_TVEC;
+    if (s == "scratch") return CSR_SCRATCH;
+    if (s == "cycle") return CSR_CYCLE;
+    if (s == "timer_reload") return CSR_TIMER_RELOAD;
+    if (s == "timer_counter") return CSR_TIMER_COUNTER;
+    if (s == "timer_enable") return CSR_TIMER_ENABLE;
+    if (s == "timer_pending") return CSR_TIMER_PENDING;
+    if (s == "user_imem_base") return CSR_USER_IMEM_BASE;
+    if (s == "user_imem_limit") return CSR_USER_IMEM_LIMIT;
+    if (s == "user_dmem_base") return CSR_USER_DMEM_BASE;
+    if (s == "user_dmem_limit") return CSR_USER_DMEM_LIMIT;
+    if (s == "syscall_id") return CSR_SYSCALL_ID;
+    if (s == "mmu_enable") return CSR_MMU_ENABLE;
+    if (s == "user_imem_ptbr") return CSR_USER_IMEM_PTBR;
+    if (s == "user_imem_pages") return CSR_USER_IMEM_PAGES;
+    if (s == "user_dmem_ptbr") return CSR_USER_DMEM_PTBR;
+    if (s == "user_dmem_pages") return CSR_USER_DMEM_PAGES;
+    if (s == "page_fault_addr") return CSR_PAGE_FAULT_ADDR;
+    if (s == "page_fault_access") return CSR_PAGE_FAULT_ACCESS;
+
+    if (s.empty()) return -1;
+    for (char c : s) {
+        if (!std::isdigit(c)) return -1;
+    }
+    int id = std::stoi(s);
+    return isValidCSR(id) ? id : -1;
+}
+
 // =============================================================================
 // SECTION 4 — Immediate / Label Token Parser
 // =============================================================================
@@ -415,6 +449,10 @@ struct MnemonicParts {
     t["ret"]  = {Opcode::RET,  F::R_TYPE, 0, false};
     t["syscall"] = {Opcode::SYSCALL, F::I_TYPE, 1, false}; // sandbox service id
     t["fence"]   = {Opcode::FENCE,   F::R_TYPE, 0, true};
+    t["csrr"]    = {Opcode::CSRR,    F::I_TYPE, 2, false}; // rd, csr
+    t["csrw"]    = {Opcode::CSRW,    F::I_TYPE, 2, false}; // csr, rs
+    t["csrrw"]   = {Opcode::CSRRW,   F::R_TYPE, 3, false}; // rd, csr, rs
+    t["eret"]    = {Opcode::ERET,    F::R_TYPE, 0, false};
 
     // Phase 2 scalar arithmetic and analysis
     t["tmod"]    = {Opcode::TMOD,    F::R_TYPE, 3, false};
@@ -826,7 +864,10 @@ struct LabelMaps {
             continue;
         }
         if ((parts.base == "callr" || parts.base == "jmpr" ||
-             parts.base == "syscall" || parts.base == "fence") &&
+             parts.base == "syscall" || parts.base == "fence" ||
+             parts.base == "csrr" || parts.base == "csrw" ||
+             parts.base == "csrrw" ||
+             parts.base == "eret") &&
             parts.has_width) {
             errors.push_back({sl.line_num,
                 parts.base + " does not take a width suffix"});
@@ -860,6 +901,77 @@ struct LabelMaps {
 
         } else if (mnemonic == "ret") {
             word = InstructionWord::encodeR(Opcode::RET, 0, 0, 0);
+
+        } else if (mnemonic == "eret") {
+            if (!ops.empty()) {
+                errors.push_back({line, "eret takes no operands"});
+                ok = false;
+            } else {
+                word = InstructionWord::encodeR(Opcode::ERET,
+                    R0_ZERO,
+                    R0_ZERO,
+                    R0_ZERO,
+                    FUNC_DEFAULT);
+            }
+
+        } else if (mnemonic == "csrr") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "csrr requires rd and csr"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                int csr = parseCSR(ops[1]);
+                if (csr < 0) {
+                    errors.push_back({line, "Unknown CSR '" + ops[1] + "'"});
+                    ok = false;
+                }
+                if (ok) {
+                    word = InstructionWord::encodeI(Opcode::CSRR,
+                        static_cast<uint8_t>(rd),
+                        R0_ZERO,
+                        csr);
+                }
+            }
+
+        } else if (mnemonic == "csrw") {
+            if (ops.size() != 2) {
+                errors.push_back({line, "csrw requires csr and rs"});
+                ok = false;
+            } else {
+                int csr = parseCSR(ops[0]);
+                int rs = getReg(ops[1], line);
+                if (csr < 0) {
+                    errors.push_back({line, "Unknown CSR '" + ops[0] + "'"});
+                    ok = false;
+                }
+                if (ok) {
+                    word = InstructionWord::encodeI(Opcode::CSRW,
+                        static_cast<uint8_t>(rs),
+                        R0_ZERO,
+                        csr);
+                }
+            }
+
+        } else if (mnemonic == "csrrw") {
+            if (ops.size() != 3) {
+                errors.push_back({line, "csrrw requires rd, csr, and rs"});
+                ok = false;
+            } else {
+                int rd = getReg(ops[0], line);
+                int csr = parseCSR(ops[1]);
+                int rs = getReg(ops[2], line);
+                if (csr < 0 || csr >= REG_COUNT) {
+                    errors.push_back({line, "Unknown CSR '" + ops[1] + "'"});
+                    ok = false;
+                }
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::CSRRW,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(rs),
+                        static_cast<uint8_t>(csr),
+                        FUNC_DEFAULT);
+                }
+            }
 
         } else if (mnemonic == "callr" || mnemonic == "jmpr") {
             if (ops.size() != 1) {

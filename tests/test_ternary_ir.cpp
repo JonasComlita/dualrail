@@ -325,6 +325,22 @@ void testPhase2IsaIrOps() {
         expect(contains(lowered.assembly, "callr"), "callr emitted");
         expect(contains(lowered.assembly, "jmpr"), "jmpr emitted");
     }
+
+    {
+        Program program;
+        Value target = program.constant(Type::T40, 12);
+        program.csrw(sandbox::isa::CSR_TVEC, target);
+        Value cause = program.csrr(sandbox::isa::CSR_CAUSE);
+        program.eret();
+
+        auto lowered = program.lower();
+        expect(lowered.success, "OS substrate CSR IR assembles");
+        expect(contains(lowered.assembly, "csrw tvec"), "csrw emitted");
+        expect(contains(lowered.assembly, "csrr"), "csrr emitted");
+        expect(contains(lowered.assembly, "cause"), "csrr uses CSR name");
+        expect(contains(lowered.assembly, "eret"), "eret emitted");
+        expect(cause.valid(), "csrr returns scalar value");
+    }
 }
 
 void testDiagnosticsAndRegisterExhaustion() {
@@ -351,6 +367,17 @@ void testDiagnosticsAndRegisterExhaustion() {
         expect(!lowered.success, "type mismatch fails lowering");
         expect(hasDiagnostic(lowered.diagnostics, "matching numeric scalar"),
                "type mismatch diagnostic is clear");
+    }
+
+    {
+        Program program;
+        Value value = program.constant(Type::T40, 1);
+        (void)program.csrr(99);
+        program.csrw(99, value);
+        auto lowered = program.lower();
+        expect(!lowered.success, "invalid CSR ids fail lowering");
+        expect(hasDiagnostic(lowered.diagnostics, "valid CSR id"),
+               "invalid CSR diagnostic is clear");
     }
 }
 

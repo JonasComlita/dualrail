@@ -27,7 +27,7 @@ Status: Complete
 - `SYSCALL` uses immediate sandbox service IDs: `1` prints `r1`, `2` appends newline, `3` clears the buffer.
 
 ### Step 4 - Comprehensive Verification
-Status: In Progress
+Status: Complete
 
 Passing:
 - `test_multiwidth_vm`
@@ -35,3 +35,12 @@ Passing:
 - `test_native_ops`
 - `test_numeric_workloads`
 - `test_ternary_lanes`
+
+## Phase 3 - Core VM OS Substrate
+
+Status: Complete
+
+- Added ISA opcodes 74-76: `CSRR`, `CSRW`, and `ERET`.
+- Added VM privilege state, CSR-style control registers, routed trap entry, `ERET`, timer IRQs, syscall traps, and v1 user IMEM/DMEM base-limit protection.
+- Preserved legacy trap and sandbox syscall behavior until trap routing is enabled.
+- Added tests for CSR/ERET assembly, routed divide-by-zero, user CSR/ERET protection traps, routed syscall behavior, timer IRQ timing, user fetch/load/store protection, and kernel bounds bypass.

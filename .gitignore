@@ -1,6 +1,7 @@
 *.exe
-bitnet_weights/converted/
+bitnet_weights/converted_t40/
 bitnet_weights/model/
+qwen3.627b_weights/
 build/
 build_fresh/
 todo.md

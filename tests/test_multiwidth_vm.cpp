@@ -595,6 +595,42 @@ void testIsaAndAsmWidths() {
     expect(!assemble("vsum.t20 v1, v0\n").success, "VSUM rejects vector destination");
     expect(!assemble("callr.t20 r1\n").success, "CALLR rejects suffix");
     expect(!assemble("syscall.t20 1\n").success, "SYSCALL rejects suffix");
+
+    auto phase3 = assembleOrThrow(R"(
+        csrr r1, cause
+        csrw tvec, r1
+        csrrw r2, scratch, r3
+        eret
+        halt
+    )");
+    expect(InstructionWord::decode(phase3[0]).opcode == Opcode::CSRR &&
+           InstructionWord::decode(phase3[0]).rd == R1 &&
+           InstructionWord::decode(phase3[0]).imm == CSR_CAUSE,
+           "assembler encodes CSRR rd, csr");
+    expect(InstructionWord::decode(phase3[1]).opcode == Opcode::CSRW &&
+           InstructionWord::decode(phase3[1]).rd == R1 &&
+           InstructionWord::decode(phase3[1]).imm == CSR_TVEC,
+           "assembler encodes CSRW csr, rs");
+    expect(InstructionWord::decode(phase3[2]).opcode == Opcode::CSRRW &&
+           InstructionWord::decode(phase3[2]).rd == R2 &&
+           InstructionWord::decode(phase3[2]).rs1 == R3 &&
+           InstructionWord::decode(phase3[2]).rs2 == CSR_SCRATCH,
+           "assembler encodes CSRRW rd, csr, rs");
+    expect(InstructionWord::decode(phase3[3]).opcode == Opcode::ERET,
+           "assembler encodes ERET");
+    expect(disassemble(phase3[0]).find("CSRR r1, cause") != std::string::npos,
+           "disassembler prints CSRR csr name");
+    expect(disassemble(phase3[1]).find("CSRW tvec, r1") != std::string::npos,
+           "disassembler prints CSRW csr name");
+    expect(disassemble(phase3[2]).find("CSRRW r2, scratch, r3") != std::string::npos,
+           "disassembler prints CSRRW csr name");
+    expect(disassemble(phase3[3]) == "ERET", "disassembler prints ERET");
+    expect(!assemble("csrr r1, bogus\n").success, "CSRR rejects invalid CSR name");
+    expect(!assemble("csrw 99, r1\n").success, "CSRW rejects invalid CSR id");
+    expect(!assemble("csrrw r1, 99, r2\n").success, "CSRRW rejects invalid CSR id");
+    expect(!assemble("eret.t20\n").success, "ERET rejects width suffix");
+    expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\nhalt\n").success,
+           "assembler accepts MMU CSR names");
 }
 
 void testVmWidths() {
@@ -1397,9 +1433,9 @@ void testPhase35Infrastructure() {
     {
         VMState vm(16, 16);
         auto program = assembleOrThrow(R"(
-            mov.t20 r1, 2
-            mov.t20 r2, 3
-            add.t20 r3, r1, r2
+            nop
+            nop
+            nop
             halt
         )");
         expect(loadAndReset(vm, program), "hooked halt program loads");
@@ -1425,8 +1461,8 @@ void testPhase35Infrastructure() {
     {
         VMState vm(16, 16);
         auto program = assembleOrThrow(R"(
-            mov.t20 r1, 1
-            mov.t20 r2, 0
+            mov r1, 1
+            mov r2, 0
             div.t20 r3, r1, r2
             halt
         )");
@@ -1486,8 +1522,438 @@ void testPhase35Infrastructure() {
     }
 }
 
+void testOsSubstrate() {
+    std::cout << "[9] Phase 3 OS substrate VM machine contract\n";
+    using namespace sandbox;
+    using namespace sandbox::isa;
+    using namespace sandbox::vm;
+    using namespace sandbox::vm::assembler;
+
+    auto asLong = [](const VMState& vm, int reg) {
+        return sandbox::vm::ops::toLong(vm.regfile.read(static_cast<uint8_t>(reg)));
+    };
+    auto loadPhysLong = [](VMState& vm, int addr) {
+        auto [value, fault] = vm.dmem.load(addr);
+        expect(fault == MemFaultCode::OK, "physical DMEM load succeeds in test helper");
+        return sandbox::vm::ops::toLong(value);
+    };
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r1, 1
+            mov r2, 0
+        fault_div:
+            div.t20 r3, r1, r2
+        after_fault:
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, epc
+            mov r6, after_fault
+            csrw epc, r6
+            eret
+        )");
+        expect(assembled.success, "routed div-zero program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "routed div-zero program loads");
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "routed div-zero handler returns to halt");
+            expect(asLong(vm, R4) == OS_CAUSE_DIV_ZERO, "routed div-zero stores cause");
+            expect(asLong(vm, R5) == assembled.labels.at("fault_div"),
+                   "routed div-zero stores faulting PC in EPC");
+            expect(vm.privilege == PrivilegeMode::User,
+                   "ERET restores user mode before resumed HALT");
+        }
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov sp, 11
+            mov r1, 22
+            csrw scratch, r1
+            csrrw sp, scratch, sp
+            csrr r2, scratch
+            halt
+        )");
+        expect(loadAndReset(vm, program), "CSRRW scratch swap program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "CSRRW scratch swap program halts");
+        expect(asLong(vm, R26_SP) == 22, "CSRRW writes old scratch to rd");
+        expect(asLong(vm, R2) == 11, "CSRRW writes source value into CSR");
+    }
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r1, 99
+            csrrw r2, scratch, r1
+            halt
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "user CSRRW trap program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "user CSRRW trap program loads");
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "user CSRRW routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_PROTECTION_FAULT,
+                   "user CSRRW routes protection fault");
+        }
+    }
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r1, 99
+            csrw scratch, r1
+            halt
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "user CSRW trap program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "user CSRW trap program loads");
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "user CSRW routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_PROTECTION_FAULT,
+                   "user CSRW routes protection fault");
+        }
+    }
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            eret
+            halt
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "user ERET trap program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "user ERET trap program loads");
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "user ERET routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_PROTECTION_FAULT,
+                   "user ERET routes protection fault");
+        }
+    }
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r13, 123
+            syscall 9
+        after_syscall:
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, syscall_id
+            mov r13, 777
+            mov r1, after_syscall
+            csrw epc, r1
+            eret
+        )");
+        expect(assembled.success, "routed syscall program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "routed syscall program loads");
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "routed syscall handler returns");
+            expect(asLong(vm, R4) == OS_CAUSE_SYSCALL, "SYSCALL routes ECALL cause");
+            expect(asLong(vm, R5) == 9, "SYSCALL stores immediate in syscall_id CSR");
+            expect(asLong(vm, 13) == 777, "syscall return value uses r13");
+        }
+    }
+
+    {
+        VMState vm(64, 64);
+        auto assembled = assemble(R"(
+            nop
+            nop
+            nop
+        timer_after:
+            mov r8, 99
+            halt
+        handler:
+            csrr r6, cause
+            csrr r7, epc
+            mov r1, 0
+            csrw timer_enable, r1
+            eret
+        )");
+        expect(assembled.success, "timer IRQ program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "timer IRQ program loads");
+            vm.trap_routing_enabled = true;
+            vm.tvec = assembled.labels.at("handler");
+            vm.privilege = PrivilegeMode::User;
+            vm.interrupt_enable = true;
+            vm.timer_counter = 3;
+            vm.timer_reload = 0;
+            vm.timer_enable = true;
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "timer IRQ handler resumes program");
+            expect(asLong(vm, R6) == OS_CAUSE_TIMER_IRQ, "timer IRQ routes interrupt cause");
+            expect(asLong(vm, R7) == assembled.labels.at("timer_after"),
+                   "timer IRQ EPC is next PC after exact instruction count");
+            expect(asLong(vm, R8) == 99, "program resumes after timer ERET");
+        }
+    }
+
+    {
+        VMState vm(16, 16);
+        auto assembled = assemble(R"(
+            nop
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "fetch protection program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "fetch protection program loads");
+            vm.trap_routing_enabled = true;
+            vm.tvec = assembled.labels.at("handler");
+            vm.privilege = PrivilegeMode::User;
+            vm.user_imem_base = 1;
+            vm.user_imem_limit = 2;
+            auto result = sandbox::vm::run(vm, 16);
+            expect(result.halted(), "fetch protection routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_FETCH_FAULT,
+                   "user fetch outside IMEM range routes fetch fault");
+        }
+    }
+
+    {
+        VMState vm(32, 64);
+        auto assembled = assemble(R"(
+            mov r1, 9
+            load r2, r1
+            halt
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "load protection program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "load protection program loads");
+            vm.trap_routing_enabled = true;
+            vm.tvec = assembled.labels.at("handler");
+            vm.privilege = PrivilegeMode::User;
+            vm.user_dmem_base = 10;
+            vm.user_dmem_limit = 12;
+            auto result = sandbox::vm::run(vm, 32);
+            expect(result.halted(), "load protection routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_LOAD_FAULT,
+                   "user load outside DMEM range routes load fault");
+        }
+    }
+
+    {
+        VMState vm(32, 64);
+        auto assembled = assemble(R"(
+            mov r1, 9
+            mov r2, 77
+            store r2, r1
+            halt
+        handler:
+            csrr r4, cause
+            halt
+        )");
+        expect(assembled.success, "store protection program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "store protection program loads");
+            vm.trap_routing_enabled = true;
+            vm.tvec = assembled.labels.at("handler");
+            vm.privilege = PrivilegeMode::User;
+            vm.user_dmem_base = 10;
+            vm.user_dmem_limit = 12;
+            auto result = sandbox::vm::run(vm, 32);
+            expect(result.halted(), "store protection routes to handler");
+            expect(asLong(vm, R4) == OS_CAUSE_STORE_FAULT,
+                   "user store outside DMEM range routes store fault");
+        }
+    }
+
+    {
+        VMState vm(96, 96);
+        auto user = assembleOrThrow(R"(
+            mov r1, 42
+            halt
+        )");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU fetch user program loads at physical page");
+        vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
+        vm.privilege = PrivilegeMode::User;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.halted(), "MMU translates user fetches");
+        expect(asLong(vm, R1) == 42, "MMU fetch executes mapped physical IMEM page");
+    }
+
+    {
+        VMState vm(96, 128);
+        auto user = assembleOrThrow(R"(
+            load r1, zero, 0
+            mov r2, 1
+            add.t20 r1, r1, r2
+            store r1, zero, 0
+            halt
+        )");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU data user program loads");
+        vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
+        vm.dmem.store(4, encodePageTableEntry(2, true, true, true, false));
+        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(5));
+        vm.privilege = PrivilegeMode::User;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        vm.user_dmem_ptbr = 4;
+        vm.user_dmem_pages = 1;
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "MMU translates user load/store");
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) == 6,
+               "MMU store updates mapped physical data page");
+    }
+
+    {
+        VMState vm(96, 96);
+        auto handler = assembleOrThrow(R"(
+            csrr r4, cause
+            csrr r5, page_fault_addr
+            csrr r6, page_fault_access
+            halt
+        )");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "fetch page fault handler loads");
+        vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true, false));
+        vm.trap_routing_enabled = true;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.privilege = PrivilegeMode::User;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.halted(), "absent IMEM PTE routes page fault");
+        expect(asLong(vm, R4) == OS_CAUSE_FETCH_PAGE_FAULT, "absent fetch PTE cause");
+        expect(asLong(vm, R5) == 0, "fetch page fault records virtual address");
+        expect(asLong(vm, R6) == OS_PAGE_ACCESS_FETCH, "fetch page fault records access type");
+    }
+
+    {
+        VMState vm(96, 128);
+        auto user = assembleOrThrow(R"(
+            load r1, zero, 0
+            store r1, zero, 0
+            halt
+        )");
+        auto handler = assembleOrThrow(R"(
+            csrr r4, cause
+            csrr r5, page_fault_addr
+            csrr r6, page_fault_access
+            halt
+        )");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "read-only data user program loads");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "read-only data handler loads");
+        vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
+        vm.dmem.store(4, encodePageTableEntry(2, true, true, false, false));
+        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33));
+        vm.trap_routing_enabled = true;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.privilege = PrivilegeMode::User;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        vm.user_dmem_ptbr = 4;
+        vm.user_dmem_pages = 1;
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "read-only page rejects user store");
+        expect(asLong(vm, R1) == 33, "read-only page allows user load");
+        expect(asLong(vm, R4) == OS_CAUSE_PROTECTION_FAULT, "read-only store protection cause");
+        expect(asLong(vm, R5) == 0, "store protection records virtual address");
+        expect(asLong(vm, R6) == OS_PAGE_ACCESS_STORE, "store protection records access type");
+    }
+
+    {
+        VMState vm(96, 96);
+        auto handler = assembleOrThrow(R"(
+            csrr r4, cause
+            csrr r5, page_fault_access
+            halt
+        )");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "NX handler loads");
+        vm.dmem.store(0, encodePageTableEntry(1, true, true, false, false));
+        vm.trap_routing_enabled = true;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.privilege = PrivilegeMode::User;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.halted(), "non-executable PTE routes protection fault");
+        expect(asLong(vm, R4) == OS_CAUSE_PROTECTION_FAULT, "NX fetch protection cause");
+        expect(asLong(vm, R5) == OS_PAGE_ACCESS_FETCH, "NX fetch records access type");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 9
+            load r2, r1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "kernel MMU bypass program loads");
+        vm.mmu_enable = true;
+        vm.user_dmem_ptbr = 0;
+        vm.user_dmem_pages = 0;
+        vm.dmem.store(9, sandbox::vm::ops::fromLong(66));
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.halted(), "kernel bypasses MMU translation");
+        expect(asLong(vm, R2) == 66, "kernel load succeeds with MMU enabled");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 9
+            load r2, r1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "kernel bypass program loads");
+        vm.user_dmem_base = 10;
+        vm.user_dmem_limit = 12;
+        vm.dmem.store(9, sandbox::vm::ops::fromLong(55));
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.halted(), "kernel bypasses user DMEM bounds");
+        expect(asLong(vm, R2) == 55, "kernel load succeeds outside user window");
+    }
+}
+
 void testNoBridgeInExecutionHeaders() {
-    std::cout << "[9] static no-bridge scan\n";
+    std::cout << "[10] static no-bridge scan\n";
     const std::vector<std::string> files = {
         "ternary_native_ops.h",
         "ternary_backend.h",
@@ -1552,6 +2018,7 @@ int main() {
     testIsaAndAsmWidths();
     testVmWidths();
     testPhase35Infrastructure();
+    testOsSubstrate();
     testNoBridgeInExecutionHeaders();
 
     if (g_failures != 0) {

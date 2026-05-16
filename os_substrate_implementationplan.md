@@ -3,6 +3,20 @@
 ## Summary
 Pivot the roadmap from “language before OS” to “machine contract before both language and OS.” The next sprint should be an architecture-contract sprint: document the OS-critical ISA/ABI rules that the VM, assembler, IR compiler, future C/LLVM backend, and kernel will all depend on.
 
+## Implementation Status
+Core VM substrate v1 is implemented.
+
+- Added opcodes 74-76: `CSRR`, `CSRW`, and `ERET`.
+- Added privilege state, CSR control registers, routed trap entry, syscall trap routing, deterministic timer IRQs, and v1 user base-limit protection.
+- Preserved legacy halt-on-trap and sandbox syscall behavior until routed traps are enabled.
+- Added focused tests for CSR assembly, routed traps, `ERET`, syscall traps, timer IRQ timing, and user/kernel protection behavior.
+
+Remaining contract work before a real xv6-style kernel:
+- Write the ABI/calling convention document.
+- Document memory model and future atomics.
+- Document reset/boot and data-layout contracts.
+- Design context-switch save/restore and the tiny two-task kernel sprint.
+
 Use these defaults:
 - Next sprint: architecture contract first.
 - ABI: preserve the current split, with `r1-r12` callee-saved and `r13-r24` caller-saved/argument/return/scratch.
