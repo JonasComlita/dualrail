@@ -900,7 +900,14 @@ static constexpr int PTE_FLAG_READ = 2;
 static constexpr int PTE_FLAG_WRITE = 3;
 static constexpr int PTE_FLAG_EXECUTE = 4;
 static constexpr int PTE_PPN_SHIFT = 5;
-static constexpr long long PTE_PPN_SCALE = 243; // 3^5
+static constexpr int TASK_CONTEXT_WORDS = 32;
+static constexpr int TASK_CONTEXT_EPC = 0;
+static constexpr int TASK_CONTEXT_STATUS = 1;
+static constexpr int TASK_CONTEXT_IMEM_PTBR = 2;
+static constexpr int TASK_CONTEXT_IMEM_PAGES = 3;
+static constexpr int TASK_CONTEXT_DMEM_PTBR = 4;
+static constexpr int TASK_CONTEXT_DMEM_PAGES = 5;
+static constexpr int TASK_CONTEXT_REG_BASE = 6;
 
 struct PageTableEntry {
     int ppn = 0;
@@ -919,30 +926,44 @@ struct PageTableEntry {
     bool execute,
     bool present = true) {
 
-    long long encoded = static_cast<long long>(ppn) * PTE_PPN_SCALE;
-    encoded += (present ? T_POS : T_NEG);
-    encoded += 3LL * (user ? T_POS : T_NEG);
-    encoded += 9LL * (read ? T_POS : T_NEG);
-    encoded += 27LL * (write ? T_POS : T_NEG);
-    encoded += 81LL * (execute ? T_POS : T_NEG);
-    return ops::fromLong(encoded, TernaryMode::T40);
+    // PTEs are raw storage fields, not numeric T40 values.
+    std::array<int8_t, 40> trits{};
+    trits[PTE_FLAG_VALID] = present ? T_POS : T_NEG;
+    trits[PTE_FLAG_USER] = user ? T_POS : T_NEG;
+    trits[PTE_FLAG_READ] = read ? T_POS : T_NEG;
+    trits[PTE_FLAG_WRITE] = write ? T_POS : T_NEG;
+    trits[PTE_FLAG_EXECUTE] = execute ? T_POS : T_NEG;
+
+    int remaining = ppn;
+    for (int pos = PTE_PPN_SHIFT; pos < 40 && remaining != 0; ++pos) {
+        int rem = remaining % 3;
+        remaining /= 3;
+        if (rem == 2) {
+            rem = -1;
+            ++remaining;
+        }
+        trits[static_cast<std::size_t>(pos)] = static_cast<int8_t>(rem);
+    }
+    if (remaining != 0 || ppn < 0) {
+        return TernaryValue::invalid(TernaryMode::T40);
+    }
+    return TernaryValue::fromTriple(Triple::pack(trits));
 }
 
 [[nodiscard]] inline bool decodePageTableEntry(TernaryValue value, PageTableEntry& out) {
     if (!isNumericMode(value.mode) || value.isInvalid()) return false;
-    const long long raw = ops::toLong(value);
     const int8_t valid = readStoredTrit(value, PTE_FLAG_VALID);
     const int8_t user = readStoredTrit(value, PTE_FLAG_USER);
     const int8_t read = readStoredTrit(value, PTE_FLAG_READ);
     const int8_t write = readStoredTrit(value, PTE_FLAG_WRITE);
     const int8_t execute = readStoredTrit(value, PTE_FLAG_EXECUTE);
-    const long long low =
-        static_cast<long long>(valid) +
-        3LL * static_cast<long long>(user) +
-        9LL * static_cast<long long>(read) +
-        27LL * static_cast<long long>(write) +
-        81LL * static_cast<long long>(execute);
-    const long long ppn = (raw - low) / PTE_PPN_SCALE;
+    long long ppn = 0;
+    long long place = 1;
+    for (int pos = PTE_PPN_SHIFT; pos < 40; ++pos) {
+        ppn += static_cast<long long>(readStoredTrit(value, pos)) * place;
+        place *= 3;
+    }
+    if (ppn < 0 || ppn > std::numeric_limits<int>::max()) return false;
     out.ppn = static_cast<int>(ppn);
     out.present = valid == T_POS;
     out.user = user == T_POS;
@@ -1219,6 +1240,8 @@ struct VMState {
             case CSR_USER_DMEM_PAGES: value = user_dmem_pages; break;
             case CSR_PAGE_FAULT_ADDR: value = page_fault_addr; break;
             case CSR_PAGE_FAULT_ACCESS: value = page_fault_access; break;
+            case CSR_CONSOLE_OUT: value = 0; break;
+            case CSR_CONSOLE_CTRL: value = static_cast<long long>(syscall_buffer.size()); break;
             default: return false;
         }
         out = ops::fromLong(value);
@@ -1304,6 +1327,16 @@ struct VMState {
                 return true;
             case CSR_PAGE_FAULT_ACCESS:
                 page_fault_access = static_cast<int>(value);
+                return true;
+            case CSR_CONSOLE_OUT:
+                syscall_buffer += std::to_string(value);
+                return true;
+            case CSR_CONSOLE_CTRL:
+                if (value < 0) {
+                    syscall_buffer.clear();
+                } else if (value > 0) {
+                    syscall_buffer += "\n";
+                }
                 return true;
             default:
                 return false;

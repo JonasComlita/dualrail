@@ -601,7 +601,9 @@ static constexpr int CSR_USER_DMEM_PTBR  = 18;
 static constexpr int CSR_USER_DMEM_PAGES = 19;
 static constexpr int CSR_PAGE_FAULT_ADDR = 20;
 static constexpr int CSR_PAGE_FAULT_ACCESS = 21;
-static constexpr int CSR_MAX_ID          = CSR_PAGE_FAULT_ACCESS;
+static constexpr int CSR_CONSOLE_OUT     = 22;
+static constexpr int CSR_CONSOLE_CTRL    = 23;
+static constexpr int CSR_MAX_ID          = CSR_CONSOLE_CTRL;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -631,6 +633,8 @@ static constexpr int CSR_MAX_ID          = CSR_PAGE_FAULT_ACCESS;
         case CSR_USER_DMEM_PAGES: return "user_dmem_pages";
         case CSR_PAGE_FAULT_ADDR: return "page_fault_addr";
         case CSR_PAGE_FAULT_ACCESS: return "page_fault_access";
+        case CSR_CONSOLE_OUT: return "console_out";
+        case CSR_CONSOLE_CTRL: return "console_ctrl";
         default: return "unknown";
     }
 }

@@ -6,6 +6,39 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/bitnet_weights)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights)
+
+# ------------------------------------------------------------------------------
+# Vulkan Integration
+# ------------------------------------------------------------------------------
+find_package(Vulkan REQUIRED)
+
+find_program(GLSLC_EXECUTABLE NAMES glslc HINTS $ENV{VULKAN_SDK}/Bin)
+if(GLSLC_EXECUTABLE)
+    message(STATUS "Found glslc: ${GLSLC_EXECUTABLE}")
+else()
+    message(WARNING "glslc not found. Cannot compile shaders.")
+endif()
+
+# Define shaders
+set(SHADERS 
+    qwen3.627b_weights/shaders/matmul_int8.comp
+    qwen3.627b_weights/shaders/geglu.comp
+)
+set(SPV_FILES "")
+foreach(SHADER ${SHADERS})
+    get_filename_component(SHADER_NAME ${SHADER} NAME)
+    set(SPV_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SHADER_NAME}.spv")
+    list(APPEND SPV_FILES ${SPV_FILE})
+    add_custom_command(
+        OUTPUT ${SPV_FILE}
+        COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER} -o ${SPV_FILE}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER}
+        COMMENT "Compiling shader ${SHADER_NAME} to SPIR-V..."
+    )
+endforeach()
+
+add_custom_target(compile_shaders DEPENDS ${SPV_FILES})
 
 add_executable(test_multiwidth_vm tests/test_multiwidth_vm.cpp)
 target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
@@ -29,11 +62,21 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
+add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
+add_executable(run_kernel run_kernel.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 target_compile_features(run_bitnet PUBLIC cxx_std_17)
 target_compile_definitions(run_bitnet PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+target_compile_features(run_qwen PUBLIC cxx_std_17)
+target_compile_definitions(run_qwen PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+target_link_libraries(run_qwen PRIVATE Vulkan::Vulkan)
+add_dependencies(run_qwen compile_shaders)
+
+target_compile_features(run_kernel PUBLIC cxx_std_17)
+target_compile_definitions(run_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_ternary_ir tests/test_ternary_ir.cpp)
 target_compile_features(test_ternary_ir PUBLIC cxx_std_17)

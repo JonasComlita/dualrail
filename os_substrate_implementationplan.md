@@ -4,18 +4,26 @@
 Pivot the roadmap from “language before OS” to “machine contract before both language and OS.” The next sprint should be an architecture-contract sprint: document the OS-critical ISA/ABI rules that the VM, assembler, IR compiler, future C/LLVM backend, and kernel will all depend on.
 
 ## Implementation Status
-Core VM substrate v1 is implemented.
+Core VM substrate v1 is implemented. Tracks 6.4-6.9 are now also implemented as the OS substrate completion bridge:
+
+- Track 6.4 added `CSRRW` and locked the trap-save, ABI, memory-model, and VM boot defaults.
+- Track 6.5 added single-level user IMEM/DMEM page tables, MMU CSRs, PTE helpers, and page-fault metadata.
+- Track 6.6 added the 32-word task-context layout and a timer-driven two-task context-switch proof.
+- Track 6.7 added a bootable minimal kernel assembly artifact plus `.org` and `.pte` assembler support.
+- Track 6.8 added the syscall ABI v1 and kernel console device CSRs.
+- Track 6.9 verified interrupt-disabled critical sections and seeded a process table in the minimal kernel.
+
+Original core substrate status:
 
 - Added opcodes 74-76: `CSRR`, `CSRW`, and `ERET`.
 - Added privilege state, CSR control registers, routed trap entry, syscall trap routing, deterministic timer IRQs, and v1 user base-limit protection.
 - Preserved legacy halt-on-trap and sandbox syscall behavior until routed traps are enabled.
 - Added focused tests for CSR assembly, routed traps, `ERET`, syscall traps, timer IRQ timing, and user/kernel protection behavior.
 
-Remaining contract work before a real xv6-style kernel:
-- Write the ABI/calling convention document.
-- Document memory model and future atomics.
-- Document reset/boot and data-layout contracts.
-- Design context-switch save/restore and the tiny two-task kernel sprint.
+Remaining substrate work before a real xv6-style kernel:
+- Design the future ternary atomic primitive and lock ABI.
+- Grow scheduler policy and process lifecycle state beyond the current round-robin table seed.
+- Add a kernel-authoring path through IR or a minimal C-like lowering layer.
 
 Use these defaults:
 - Next sprint: architecture contract first.

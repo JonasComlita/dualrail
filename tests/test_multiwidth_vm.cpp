@@ -22,6 +22,18 @@ void expect(bool condition, const std::string& message) {
     std::cout << "FAIL: " << message << "\n";
 }
 
+std::string readTextFile(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.good()) return {};
+    std::string out;
+    std::string line;
+    while (std::getline(in, line)) {
+        out += line;
+        out += '\n';
+    }
+    return out;
+}
+
 template<typename T>
 void expectLong(T value, long long want, const std::string& label) {
     const long long got = sandbox::native_ops::toLongLong(value);
@@ -629,8 +641,8 @@ void testIsaAndAsmWidths() {
     expect(!assemble("csrw 99, r1\n").success, "CSRW rejects invalid CSR id");
     expect(!assemble("csrrw r1, 99, r2\n").success, "CSRRW rejects invalid CSR id");
     expect(!assemble("eret.t20\n").success, "ERET rejects width suffix");
-    expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\nhalt\n").success,
-           "assembler accepts MMU CSR names");
+    expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\ncsrr r3, console_ctrl\nhalt\n").success,
+           "assembler accepts MMU and console CSR names");
 }
 
 void testVmWidths() {
@@ -1431,6 +1443,45 @@ void testPhase35Infrastructure() {
            ".word outside .data is rejected");
 
     {
+        auto placed = assemble(R"(
+            .org 3
+        start:
+            halt
+            .data
+        first: .word 11
+            .org 4
+        pte:   .pte 8, 1, 0, 0, 1
+        )");
+        expect(placed.success, "assembler accepts .org and .pte directives");
+        if (placed.success) {
+            expect(placed.labels.count("start") && placed.labels.at("start") == 3,
+                   ".org advances text addresses");
+            expect(placed.program.size() == 4,
+                   ".org pads text image with NOPs");
+            expect(InstructionWord::decode(placed.program[0]).opcode == Opcode::NOP &&
+                   InstructionWord::decode(placed.program[3]).opcode == Opcode::HALT,
+                   ".org text padding executes as NOPs before placed code");
+            expect(placed.data_labels.count("pte") && placed.data_labels.at("pte") == 4,
+                   ".org advances data addresses");
+            expect(placed.data.size() == 5,
+                   ".org pads data image with zero words");
+            PageTableEntry decoded;
+            expect(decodePageTableEntry(placed.data[4], decoded),
+                   ".pte emits a decodable raw PTE");
+            expect(decoded.ppn == 8 && decoded.present && decoded.user &&
+                   !decoded.read && !decoded.write && decoded.execute,
+                   ".pte stores ppn and permission flags");
+        }
+    }
+
+    expect(!assemble(".org -1\nhalt\n").success,
+           ".org rejects negative addresses");
+    expect(!assemble(".data\n.pte 1, 2, 0, 0, 1\n").success,
+           ".pte rejects non-boolean flags");
+    expect(!assemble(".pte 1, 1, 0, 0, 1\n").success,
+           ".pte outside .data is rejected");
+
+    {
         VMState vm(16, 16);
         auto program = assembleOrThrow(R"(
             nop
@@ -1690,6 +1741,75 @@ void testOsSubstrate() {
     }
 
     {
+        VMState vm(96, 96);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r13, 123
+            syscall 1
+            syscall 2
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, syscall_id
+            mov r1, 1
+            tcmp r2, r5, r1
+            brz r2, write_value
+            mov r1, 2
+            tcmp r2, r5, r1
+            brz r2, write_newline
+            mov r13, -1
+            jmp syscall_return
+        write_value:
+            csrw console_out, r13
+            mov r13, 0
+            jmp syscall_return
+        write_newline:
+            mov r1, 1
+            csrw console_ctrl, r1
+            mov r13, 0
+        syscall_return:
+            csrr r1, epc
+            mov r2, 1
+            add r1, r1, r2
+            csrw epc, r1
+            eret
+        )");
+        expect(assembled.success, "routed syscall console program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "routed syscall console program loads");
+            auto result = sandbox::vm::run(vm, 96);
+            expect(result.halted(), "routed syscall console program returns");
+            expect(vm.syscall_buffer == "123\n",
+                   "kernel console CSR writes routed syscall output");
+            expect(asLong(vm, R4) == OS_CAUSE_SYSCALL, "console syscall routes ECALL cause");
+            expect(asLong(vm, R5) == 2, "console syscall records final syscall id");
+            expect(asLong(vm, 13) == 0, "console syscall returns success in r13");
+        }
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, -1
+            csrw console_ctrl, r1
+            mov r1, 55
+            csrw console_out, r1
+            mov r1, 1
+            csrw console_ctrl, r1
+            csrr r2, console_ctrl
+            halt
+        )");
+        expect(loadAndReset(vm, program), "kernel console CSR program loads");
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "kernel console CSR program halts");
+        expect(vm.syscall_buffer == "55\n", "console CSRs update output buffer");
+        expect(asLong(vm, R2) == 3, "console_ctrl reads output buffer length");
+    }
+
+    {
         VMState vm(64, 64);
         auto assembled = assemble(R"(
             nop
@@ -1721,6 +1841,44 @@ void testOsSubstrate() {
             expect(asLong(vm, R7) == assembled.labels.at("timer_after"),
                    "timer IRQ EPC is next PC after exact instruction count");
             expect(asLong(vm, R8) == 99, "program resumes after timer ERET");
+        }
+    }
+
+    {
+        VMState vm(96, 64);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, 1
+            csrw timer_counter, r1
+            csrw timer_enable, r1
+            nop
+            csrr r2, timer_pending
+            mov r1, -7
+            csrw status, r1
+        after_enable:
+            mov r8, 44
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, epc
+            mov r1, 0
+            csrw timer_enable, r1
+            eret
+        )");
+        expect(assembled.success, "critical section timer program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "critical section timer program loads");
+            auto result = sandbox::vm::run(vm, 96);
+            expect(result.halted(), "critical section timer program halts");
+            expect(asLong(vm, R2) == 1,
+                   "timer interrupt remains pending while interrupts are disabled");
+            expect(asLong(vm, R4) == OS_CAUSE_TIMER_IRQ,
+                   "pending timer routes after interrupts are re-enabled");
+            expect(asLong(vm, R5) == assembled.labels.at("after_enable"),
+                   "pending timer EPC is the first instruction after critical section");
+            expect(asLong(vm, R8) == 44,
+                   "program resumes after deferred timer interrupt");
         }
     }
 
@@ -1933,6 +2091,219 @@ void testOsSubstrate() {
         auto result = sandbox::vm::run(vm, 16);
         expect(result.halted(), "kernel bypasses MMU translation");
         expect(asLong(vm, R2) == 66, "kernel load succeeds with MMU enabled");
+    }
+
+    {
+        VMState vm(320, 224);
+        auto user = assembleOrThrow(R"(
+        loop:
+            load r1, zero, 0
+            mov r2, 1
+            add r1, r1, r2
+            store r1, zero, 0
+            jmp loop
+        )");
+        auto handler = assembleOrThrow(R"(
+            csrrw sp, scratch, sp
+            store r1, sp, 6
+            store r2, sp, 7
+            store r3, sp, 8
+            store r4, sp, 9
+            store r5, sp, 10
+            store r6, sp, 11
+            store r7, sp, 12
+            store r8, sp, 13
+            store r9, sp, 14
+            store r10, sp, 15
+            store r11, sp, 16
+            store r12, sp, 17
+            store r13, sp, 18
+            store r14, sp, 19
+            store r15, sp, 20
+            store r16, sp, 21
+            store r17, sp, 22
+            store r18, sp, 23
+            store r19, sp, 24
+            store r20, sp, 25
+            store r21, sp, 26
+            store r22, sp, 27
+            store r23, sp, 28
+            store r24, sp, 29
+            store r25, sp, 30
+            csrr r1, scratch
+            store r1, sp, 31
+            csrr r1, epc
+            store r1, sp, 0
+            csrr r1, status
+            store r1, sp, 1
+            csrr r1, user_imem_ptbr
+            store r1, sp, 2
+            csrr r1, user_imem_pages
+            store r1, sp, 3
+            csrr r1, user_dmem_ptbr
+            store r1, sp, 4
+            csrr r1, user_dmem_pages
+            store r1, sp, 5
+            mov r1, 0
+            csrw timer_pending, r1
+            csrw timer_enable, r1
+            mov r1, 120
+            tcmp r2, sp, r1
+            brz r2, use_ctx1
+            mov r3, 120
+            jmp restore_next
+        use_ctx1:
+            mov r3, 152
+        restore_next:
+            copy sp, r3
+            load r1, sp, 0
+            csrw epc, r1
+            load r1, sp, 1
+            csrw status, r1
+            load r1, sp, 2
+            csrw user_imem_ptbr, r1
+            load r1, sp, 3
+            csrw user_imem_pages, r1
+            load r1, sp, 4
+            csrw user_dmem_ptbr, r1
+            load r1, sp, 5
+            csrw user_dmem_pages, r1
+            load r1, sp, 31
+            csrw scratch, r1
+            mov r1, 180
+            csrw timer_counter, r1
+            mov r1, 1
+            csrw timer_enable, r1
+            load r1, sp, 6
+            load r2, sp, 7
+            load r3, sp, 8
+            load r4, sp, 9
+            load r5, sp, 10
+            load r6, sp, 11
+            load r7, sp, 12
+            load r8, sp, 13
+            load r9, sp, 14
+            load r10, sp, 15
+            load r11, sp, 16
+            load r12, sp, 17
+            load r13, sp, 18
+            load r14, sp, 19
+            load r15, sp, 20
+            load r16, sp, 21
+            load r17, sp, 22
+            load r18, sp, 23
+            load r19, sp, 24
+            load r20, sp, 25
+            load r21, sp, 26
+            load r22, sp, 27
+            load r23, sp, 28
+            load r24, sp, 29
+            load r25, sp, 30
+            csrrw sp, scratch, sp
+            eret
+        )");
+        constexpr int kUserPhys = MMU_PAGE_WORDS;
+        constexpr int kHandlerPhys = 4 * MMU_PAGE_WORDS;
+        constexpr int kTask0Context = 120;
+        constexpr int kTask1Context = 152;
+        constexpr int kTaskStatus = -1 + 9 + 27; // kernel current, user previous, previous IE set.
+
+        expect(vm.imem.loadProgram(user, kUserPhys), "two-task user program loads");
+        expect(vm.imem.loadProgram(handler, kHandlerPhys), "two-task timer handler loads");
+        vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
+        vm.dmem.store(4, encodePageTableEntry(2, true, true, true, false));
+        vm.dmem.store(8, encodePageTableEntry(1, true, false, false, true));
+        vm.dmem.store(12, encodePageTableEntry(3, true, true, true, false));
+
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_EPC, sandbox::vm::ops::fromLong(0));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_STATUS, sandbox::vm::ops::fromLong(kTaskStatus));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_IMEM_PTBR, sandbox::vm::ops::fromLong(8));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_IMEM_PAGES, sandbox::vm::ops::fromLong(1));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_DMEM_PTBR, sandbox::vm::ops::fromLong(12));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_DMEM_PAGES, sandbox::vm::ops::fromLong(1));
+        vm.dmem.store(kTask1Context + TASK_CONTEXT_REG_BASE + R26_SP - 1,
+                      sandbox::vm::ops::fromLong(24));
+
+        vm.trap_routing_enabled = true;
+        vm.tvec = kHandlerPhys;
+        vm.privilege = PrivilegeMode::User;
+        vm.interrupt_enable = true;
+        vm.mmu_enable = true;
+        vm.user_imem_ptbr = 0;
+        vm.user_imem_pages = 1;
+        vm.user_dmem_ptbr = 4;
+        vm.user_dmem_pages = 1;
+        vm.scratch = kTask0Context;
+        vm.regfile.write(R26_SP, sandbox::vm::ops::fromLong(24));
+        vm.timer_counter = 40;
+        vm.timer_enable = true;
+
+        auto result = sandbox::vm::run(vm, 900);
+        expect(result.timeout() && vm.isRunning(), "two-task timer proof keeps VM running");
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) > 0,
+               "task 0 physical counter advances");
+        expect(loadPhysLong(vm, 3 * MMU_PAGE_WORDS) > 0,
+               "task 1 physical counter advances");
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) !=
+                   loadPhysLong(vm, 3 * MMU_PAGE_WORDS),
+               "tasks retain independent physical counters");
+        expect(loadPhysLong(vm, kTask0Context + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+               "task 0 saved user stack pointer");
+        expect(loadPhysLong(vm, kTask1Context + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+               "task 1 saved user stack pointer");
+    }
+
+    {
+        const std::string source = readTextFile("OS3/minimal_kernel_bringup.tasm");
+        expect(!source.empty(), "minimal kernel bring-up artifact is readable");
+        auto assembled = assemble(source);
+        expect(assembled.success, "minimal kernel bring-up artifact assembles");
+        if (assembled.success) {
+            expect(assembled.labels.count("boot") && assembled.labels.at("boot") == 0,
+                   "minimal kernel boots at PC zero");
+            expect(assembled.labels.count("user_loop") && assembled.labels.at("user_loop") == 10 * MMU_PAGE_WORDS,
+                   "minimal kernel places user code on mapped physical page");
+            expect(assembled.data_labels.count("counter0") &&
+                   assembled.data_labels.at("counter0") == 4 * MMU_PAGE_WORDS,
+                   "minimal kernel maps task 0 counter page");
+            expect(assembled.data_labels.count("counter1") &&
+                   assembled.data_labels.at("counter1") == 5 * MMU_PAGE_WORDS,
+                   "minimal kernel maps task 1 counter page");
+            expect(assembled.data_labels.count("proc_count") &&
+                   assembled.data_labels.count("current_proc") &&
+                   assembled.data_labels.count("proc_table"),
+                   "minimal kernel defines process table metadata");
+
+            VMState vm(320, 224);
+            expect(loadAndReset(vm, assembled), "minimal kernel image loads");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_count")) == 2,
+                   "minimal kernel process table declares two tasks");
+            expect(loadPhysLong(vm, assembled.data_labels.at("proc_table")) ==
+                       assembled.data_labels.at("ctx0") &&
+                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 1) ==
+                       assembled.data_labels.at("ctx1"),
+                   "minimal kernel process table points at task contexts");
+            auto result = sandbox::vm::run(vm, 1400);
+            expect(result.timeout() && vm.isRunning(),
+                   "minimal kernel keeps running under timer preemption");
+            expect(vm.trap_routing_enabled && vm.mmu_enable,
+                   "minimal kernel boot enabled routed traps and MMU");
+            expect(loadPhysLong(vm, assembled.data_labels.at("current_proc")) >= 0 &&
+                   loadPhysLong(vm, assembled.data_labels.at("current_proc")) <
+                       loadPhysLong(vm, assembled.data_labels.at("proc_count")),
+                   "minimal kernel scheduler keeps current process index in range");
+            expect(loadPhysLong(vm, assembled.data_labels.at("counter0")) > 0,
+                   "minimal kernel task 0 counter advances");
+            expect(loadPhysLong(vm, assembled.data_labels.at("counter1")) > 0,
+                   "minimal kernel task 1 counter advances");
+            expect(!vm.syscall_buffer.empty() &&
+                   vm.syscall_buffer.find('\n') != std::string::npos,
+                   "minimal kernel handles user syscalls through console CSR");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ctx0") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved task 0 user stack pointer");
+            expect(loadPhysLong(vm, assembled.data_labels.at("ctx1") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   "minimal kernel saved task 1 user stack pointer");
+        }
     }
 
     {

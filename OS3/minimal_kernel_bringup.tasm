@@ -1,0 +1,216 @@
+; Minimal OS substrate bring-up.
+; Boots in kernel mode at PC 0, installs trap state, enables the MMU and timer,
+; enters user mode, handles syscalls through a console CSR, and preemptively
+; switches two user tasks.
+
+.text
+boot:
+    mov r1, trap_handler
+    csrw tvec, r1
+    mov r1, ctx0
+    csrw scratch, r1
+    mov r1, imem_pt0
+    csrw user_imem_ptbr, r1
+    mov r1, 1
+    csrw user_imem_pages, r1
+    mov r1, dmem_pt0
+    csrw user_dmem_ptbr, r1
+    mov r1, 1
+    csrw user_dmem_pages, r1
+    mov r1, 1
+    csrw mmu_enable, r1
+    mov sp, 24
+    mov r1, 40
+    csrw timer_counter, r1
+    mov r1, 1
+    csrw timer_enable, r1
+    mov r1, 0
+    csrw epc, r1
+    mov r1, 35
+    csrw status, r1
+    eret
+
+trap_handler:
+    csrrw sp, scratch, sp
+    store r1, sp, 6
+    store r2, sp, 7
+    store r3, sp, 8
+    store r4, sp, 9
+    store r5, sp, 10
+    store r6, sp, 11
+    store r7, sp, 12
+    store r8, sp, 13
+    store r9, sp, 14
+    store r10, sp, 15
+    store r11, sp, 16
+    store r12, sp, 17
+    store r13, sp, 18
+    store r14, sp, 19
+    store r15, sp, 20
+    store r16, sp, 21
+    store r17, sp, 22
+    store r18, sp, 23
+    store r19, sp, 24
+    store r20, sp, 25
+    store r21, sp, 26
+    store r22, sp, 27
+    store r23, sp, 28
+    store r24, sp, 29
+    store r25, sp, 30
+    csrr r1, scratch
+    store r1, sp, 31
+    csrr r1, epc
+    store r1, sp, 0
+    csrr r1, status
+    store r1, sp, 1
+    csrr r1, user_imem_ptbr
+    store r1, sp, 2
+    csrr r1, user_imem_pages
+    store r1, sp, 3
+    csrr r1, user_dmem_ptbr
+    store r1, sp, 4
+    csrr r1, user_dmem_pages
+    store r1, sp, 5
+    mov r1, 0
+    csrw timer_pending, r1
+    csrw timer_enable, r1
+    csrr r1, cause
+    mov r2, 7
+    tcmp r2, r1, r2
+    brz r2, handle_syscall
+    load r1, zero, current_proc
+    mov r2, 1
+    add r1, r1, r2
+    load r2, zero, proc_count
+    tcmp r2, r1, r2
+    brz r2, wrap_proc
+    jmp select_proc
+wrap_proc:
+    mov r1, 0
+select_proc:
+    store r1, zero, current_proc
+    mov r2, proc_table
+    add r2, r2, r1
+    load r3, r2, 0
+    jmp restore_next
+restore_next:
+    copy sp, r3
+    load r1, sp, 0
+    csrw epc, r1
+    load r1, sp, 1
+    csrw status, r1
+    load r1, sp, 2
+    csrw user_imem_ptbr, r1
+    load r1, sp, 3
+    csrw user_imem_pages, r1
+    load r1, sp, 4
+    csrw user_dmem_ptbr, r1
+    load r1, sp, 5
+    csrw user_dmem_pages, r1
+    load r1, sp, 31
+    csrw scratch, r1
+    mov r1, 180
+    csrw timer_counter, r1
+    mov r1, 1
+    csrw timer_enable, r1
+    load r1, sp, 6
+    load r2, sp, 7
+    load r3, sp, 8
+    load r4, sp, 9
+    load r5, sp, 10
+    load r6, sp, 11
+    load r7, sp, 12
+    load r8, sp, 13
+    load r9, sp, 14
+    load r10, sp, 15
+    load r11, sp, 16
+    load r12, sp, 17
+    load r13, sp, 18
+    load r14, sp, 19
+    load r15, sp, 20
+    load r16, sp, 21
+    load r17, sp, 22
+    load r18, sp, 23
+    load r19, sp, 24
+    load r20, sp, 25
+    load r21, sp, 26
+    load r22, sp, 27
+    load r23, sp, 28
+    load r24, sp, 29
+    load r25, sp, 30
+    csrrw sp, scratch, sp
+    eret
+
+handle_syscall:
+    csrr r1, syscall_id
+    mov r2, 1
+    tcmp r2, r1, r2
+    brz r2, syscall_write
+    mov r2, 2
+    tcmp r2, r1, r2
+    brz r2, syscall_newline
+    mov r2, 3
+    tcmp r2, r1, r2
+    brz r2, syscall_clear
+    mov r1, -1
+    store r1, sp, 18
+    jmp syscall_advance
+syscall_write:
+    csrw console_out, r13
+    mov r1, 0
+    store r1, sp, 18
+    jmp syscall_advance
+syscall_newline:
+    mov r1, 1
+    csrw console_ctrl, r1
+    mov r1, 0
+    store r1, sp, 18
+    jmp syscall_advance
+syscall_clear:
+    mov r1, -1
+    csrw console_ctrl, r1
+    mov r1, 0
+    store r1, sp, 18
+syscall_advance:
+    load r1, sp, 0
+    mov r2, 1
+    add r1, r1, r2
+    store r1, sp, 0
+    copy r3, sp
+    jmp restore_next
+
+.org 270
+user_loop:
+    load r1, zero, 0
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, 0
+    tcmp r3, r1, r2
+    brz r3, emit_counter
+    jmp user_loop
+emit_counter:
+    copy r13, r1
+    syscall 1
+    syscall 2
+    jmp user_loop
+
+.data
+imem_pt0: .pte 10, 1, 0, 0, 1
+dmem_pt0: .pte 4, 1, 1, 1, 0
+imem_pt1: .pte 10, 1, 0, 0, 1
+dmem_pt1: .pte 5, 1, 1, 1, 0
+proc_count: .word 2
+current_proc: .word 0
+proc_table: .word ctx0, ctx1
+
+.org 16
+ctx0: .word 0
+.org 48
+ctx1: .word 0, 35, imem_pt1, 1, dmem_pt1, 1
+.org 79
+.word 24
+
+.org 108
+counter0: .word 0
+.org 135
+counter1: .word 0

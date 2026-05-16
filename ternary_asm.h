@@ -25,6 +25,8 @@
 //   - Labels are identifiers followed by ':' on their own line or before an
 //     instruction on the same line.
 //   - Label names: [A-Za-z_][A-Za-z0-9_]*  (no leading digits)
+//   - .org N advances the current text or data address and pads with zero/NOP.
+//   - .pte ppn,user,read,write,execute[,present] emits one raw T40 PTE word.
 //
 // REGISTER NAMES:
 //   r0 .. r26     General-purpose registers (r0 hardwired zero)
@@ -253,6 +255,8 @@ struct AssemblyResult {
     if (s == "user_dmem_pages") return CSR_USER_DMEM_PAGES;
     if (s == "page_fault_addr") return CSR_PAGE_FAULT_ADDR;
     if (s == "page_fault_access") return CSR_PAGE_FAULT_ACCESS;
+    if (s == "console_out") return CSR_CONSOLE_OUT;
+    if (s == "console_ctrl") return CSR_CONSOLE_CTRL;
 
     if (s.empty()) return -1;
     for (char c : s) {
@@ -447,7 +451,7 @@ struct MnemonicParts {
     t["callr"] = {Opcode::CALLR, F::R_TYPE, 1, true};   // absolute PC in rS
     t["jmpr"]  = {Opcode::JMPR,  F::R_TYPE, 1, true};   // absolute PC in rS
     t["ret"]  = {Opcode::RET,  F::R_TYPE, 0, false};
-    t["syscall"] = {Opcode::SYSCALL, F::I_TYPE, 1, false}; // sandbox service id
+    t["syscall"] = {Opcode::SYSCALL, F::I_TYPE, 1, false}; // sandbox or OS service id
     t["fence"]   = {Opcode::FENCE,   F::R_TYPE, 0, true};
     t["csrr"]    = {Opcode::CSRR,    F::I_TYPE, 2, false}; // rd, csr
     t["csrw"]    = {Opcode::CSRW,    F::I_TYPE, 2, false}; // csr, rs
@@ -588,24 +592,53 @@ struct SourceLine {
             continue;
         }
 
+        if (sl.mnemonic == ".org") {
+            if (!sl.label.empty()) {
+                errors.push_back({line_num, ".org cannot carry a label"});
+            }
+            if (sl.operands.size() != 1) {
+                errors.push_back({line_num, ".org requires one absolute address"});
+                continue;
+            }
+            auto parsed = parseImmOrLabel(sl.operands[0]);
+            if (parsed.isLabel || parsed.imm < 0) {
+                errors.push_back({line_num, ".org requires a non-negative numeric address"});
+                continue;
+            }
+            int& current_addr = current_section == AssemblySection::Text ? text_addr : data_addr;
+            if (parsed.imm < current_addr) {
+                errors.push_back({line_num, ".org cannot move the current address backwards"});
+                continue;
+            }
+            current_addr = parsed.imm;
+            continue;
+        }
+
         sl.section = current_section;
         if (current_section == AssemblySection::Data) {
-            if (sl.mnemonic != ".word") {
-                errors.push_back({line_num, "Only .word directives are valid in .data"});
+            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte") {
+                errors.push_back({line_num, "Only .word and .pte directives are valid in .data"});
                 lines.push_back(sl);
                 continue;
             }
-            if (sl.operands.empty()) {
+            if (sl.mnemonic == ".word" && sl.operands.empty()) {
                 errors.push_back({line_num, ".word requires at least one operand"});
                 lines.push_back(sl);
                 continue;
             }
+            if (sl.mnemonic == ".pte" &&
+                sl.operands.size() != 5 &&
+                sl.operands.size() != 6) {
+                errors.push_back({line_num, ".pte requires ppn, user, read, write, execute[, present]"});
+                lines.push_back(sl);
+                continue;
+            }
             sl.address = data_addr;
-            sl.word_count = static_cast<int>(sl.operands.size());
+            sl.word_count = sl.mnemonic == ".pte" ? 1 : static_cast<int>(sl.operands.size());
             data_addr += sl.word_count;
         } else {
-            if (sl.mnemonic == ".word") {
-                errors.push_back({line_num, ".word is only valid in .data"});
+            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte") {
+                errors.push_back({line_num, sl.mnemonic + " is only valid in .data"});
                 lines.push_back(sl);
                 continue;
             }
@@ -756,6 +789,10 @@ struct LabelMaps {
     for (auto& sl : lines) {
         if (sl.section != AssemblySection::Text) continue;
         if (sl.address < 0) continue;  // label-only line, no instruction
+
+        while (static_cast<int>(program.size()) < sl.address) {
+            program.push_back(InstructionWord::encodeI(Opcode::NOP, 0, 0, 0));
+        }
 
         MnemonicParts parts = splitMnemonic(sl.mnemonic);
         if (!parts.suffix_valid) {
@@ -1633,16 +1670,59 @@ struct LabelMaps {
         return parsed.imm;
     };
 
+    auto requireFlag = [&](const std::string& tok,
+                           int line_num,
+                           const std::string& name) -> std::optional<bool> {
+        auto value = resolveAbsolute(tok, line_num);
+        if (!value) return std::nullopt;
+        if (value.value() != 0 && value.value() != 1) {
+            errors.push_back({line_num, ".pte " + name + " flag must be 0 or 1"});
+            return std::nullopt;
+        }
+        return value.value() != 0;
+    };
+
     for (auto& sl : lines) {
         if (sl.section != AssemblySection::Data || sl.address < 0) continue;
-        if (sl.mnemonic != ".word") continue;
 
         while (static_cast<int>(data.size()) < sl.address) {
             data.push_back(TernaryValue::zero());
         }
-        for (const std::string& operand : sl.operands) {
-            auto value = resolveAbsolute(operand, sl.line_num);
-            data.push_back(value ? ops::fromLong(value.value()) : TernaryValue::zero());
+        if (sl.mnemonic == ".word") {
+            for (const std::string& operand : sl.operands) {
+                auto value = resolveAbsolute(operand, sl.line_num);
+                data.push_back(value ? ops::fromLong(value.value()) : TernaryValue::zero());
+            }
+        } else if (sl.mnemonic == ".pte") {
+            auto ppn = resolveAbsolute(sl.operands[0], sl.line_num);
+            auto user = requireFlag(sl.operands[1], sl.line_num, "user");
+            auto read = requireFlag(sl.operands[2], sl.line_num, "read");
+            auto write = requireFlag(sl.operands[3], sl.line_num, "write");
+            auto execute = requireFlag(sl.operands[4], sl.line_num, "execute");
+            std::optional<bool> present = true;
+            if (sl.operands.size() == 6) {
+                present = requireFlag(sl.operands[5], sl.line_num, "present");
+            }
+            if (!ppn || ppn.value() < 0 || !user || !read || !write || !execute || !present) {
+                if (ppn && ppn.value() < 0) {
+                    errors.push_back({sl.line_num, ".pte physical page number must be non-negative"});
+                }
+                data.push_back(TernaryValue::zero());
+                continue;
+            }
+            TernaryValue pte = encodePageTableEntry(
+                ppn.value(),
+                user.value(),
+                read.value(),
+                write.value(),
+                execute.value(),
+                present.value());
+            if (pte.isInvalid()) {
+                errors.push_back({sl.line_num, ".pte physical page number is out of range"});
+                data.push_back(TernaryValue::zero());
+            } else {
+                data.push_back(pte);
+            }
         }
     }
 

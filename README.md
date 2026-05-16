@@ -546,7 +546,7 @@ Goal: resolve core architectural correctness bugs, finalize the ternary ISA expa
 Current integration note:
 - Opcodes 59-73 now have ISA decode/disassembly, assembler mnemonics, VM execution, and IR builder helpers.
 - `CALLR` and `JMPR` consume absolute instruction-memory PC targets from numeric scalar registers; `CALLR` writes `LR = PC + 1`.
-- `SYSCALL` uses a sandbox service-id immediate: `1` appends `r1` as decimal text, `2` appends newline, and `3` clears the syscall buffer.
+- `SYSCALL` keeps legacy sandbox service ids when trap routing is disabled; in OS-routed user mode it traps to the kernel with the id in `SYSCALL_ID` and arguments in `r13-r18`.
 - Focused Phase 6.1 verification passes in `test_multiwidth_vm` and `test_ternary_ir`.
 - Regression checks also pass in `test_native_ops`, `test_numeric_workloads`, and `test_ternary_lanes`.
 
@@ -562,24 +562,50 @@ Current integration note:
 - **Syscalls, Timer IRQs, and Protection**: In routed mode, user `SYSCALL imm` becomes an ECALL-style trap with `SYSCALL_ID`; deterministic timer IRQs route through the same trap path; user-mode fetch/load/store use v1 IMEM/DMEM base-limit protection while kernel bypasses those bounds.
 - **Compatibility**: Legacy halt-on-trap behavior and sandbox syscall buffer services remain unchanged until trap routing is enabled by kernel setup.
 
-#### Track 6.4: Remaining OS Architecture Contract (Next)
-- **ABI**: Formalize the calling convention around `r1-r12` callee-saved, `r13-r24` caller-saved/argument/return/scratch, `r25` link register, `r26` stack pointer, and `r27` trap/status.
-- **Memory, Atomics, and Boot**: Document single-core sequential consistency, future `FENCE`/atomic semantics, reset vector, initial mode, initial stack, trit order, data layout, and instruction alignment.
-- **Next Kernel Substrate**: Reserve full page tables, atomics, `WFI`, sticky FP flags, context switching, and the tiny two-task kernel for follow-on OS substrate sprints.
+#### Track 6.4: OS Contract Lock-In and Trap-Save Primitive (Implemented)
+- **Trap-Save CSR Primitive**: Added `CSRRW` as opcode 77 so trap handlers can atomically swap `sp` with `scratch`, matching the kernel-stack handoff pattern needed for safe interrupt context save.
+- **Trap Entry Convention**: While running user code, `SCRATCH` holds the current task kernel context/stack pointer. The first trap-handler instruction should be `csrrw sp, scratch, sp`; before `ERET`, the handler performs the reverse swap.
+- **ABI Defaults**: `r0` is zero; `r1-r12` are callee-saved; `r13-r18` are argument registers with `r13` as primary return; `r19-r24` are caller-saved temporaries; `r25` is link register; `r26` is stack pointer; `r27` remains legacy trap/status visibility.
+- **Memory and Boot Contract**: Single-core execution is sequentially consistent. `FENCE` is an architectural/compiler barrier and VM no-op for now. Reset starts in kernel mode with interrupts and MMU disabled, PC `0`, and SP at the top of DMEM.
 
-#### Track 6.5: Advanced IR Expansion
+#### Track 6.5: Memory Management and Page Tables (Implemented)
+- **Single-Level MMU v1**: Added CSR-controlled user IMEM/DMEM page tables with fixed 27-word pages. Kernel mode bypasses translation; user mode fetch/load/store use virtual word addresses when `MMU_ENABLE` is set.
+- **PTE Layout**: Page tables live in DMEM as raw T40 PTE words: low trits encode valid/user/read/write/execute flags, and trit 5 onward encodes the physical page number.
+- **Fault Reporting**: Page faults set `PAGE_FAULT_ADDR` and `PAGE_FAULT_ACCESS`; fetch/load/store page faults use dedicated causes, while permission failures use protection faults.
+
+#### Track 6.6: Preemptive Timer and Two-Task Switch (Implemented)
+- **Task Context Layout**: Defined a 32-word task context carrying saved virtual PC, packed status, IMEM/DMEM page-table CSRs, and `r1-r26`.
+- **Timer Context Switch Proof**: Added a timer-driven trap handler proof using `CSRRW` to preserve user `sp`, save/restore all task registers and paging CSRs, re-arm the timer, and return through `ERET`.
+- **Isolation Acceptance**: The VM test suite now switches between two user tasks sharing the same virtual PC/data address while mapping their counters through different physical DMEM pages.
+
+#### Track 6.7: Minimal Kernel Bring-Up (Implemented)
+- **Bootable Assembly Artifact**: Added `OS3/minimal_kernel_bringup.tasm`, a single assembly image that boots at PC `0`, installs `TVEC`, configures user page tables, enables the MMU and timer, and enters user mode with `ERET`.
+- **Assembler Kernel Support**: Added `.org` for physical text/data placement and `.pte` for raw T40 page-table entries, so kernel images can carry page tables and task contexts without C++ host patching.
+- **Kernel Acceptance Test**: The VM now runs the artifact as a boot image and verifies timer-driven switching between two user tasks with separate physical counters.
+
+#### Track 6.8: Kernel Syscall and Console Device Path (Implemented)
+- **Console CSRs**: Added `console_out` and `console_ctrl` as kernel-visible device CSRs. `console_out` appends a decimal word to the VM output buffer; `console_ctrl` appends newline for positive writes, clears for negative writes, and reads back output length.
+- **Syscall ABI v1**: Routed user `SYSCALL imm` keeps the syscall id in `SYSCALL_ID`, passes arguments in `r13-r18`, and returns status/value in `r13`.
+- **Kernel-Mediated I/O**: The minimal kernel artifact now handles syscall ids `1` write integer, `2` newline, and `3` clear through the console CSRs while preserving timer preemption.
+
+#### Track 6.9: Critical Sections and Process Table Seed (Implemented)
+- **Interrupt-Disable Critical Sections**: Verified that timer interrupts remain pending while interrupts are disabled and route precisely once kernel code re-enables interrupts through `STATUS`.
+- **Process Table Seed**: Replaced the fixed two-context toggle in the minimal kernel with `proc_count`, `current_proc`, and `proc_table[]`, where each table entry points to a task context.
+- **Scheduler State Verification**: The boot artifact test now verifies process-table metadata, context pointers, current-process bounds, and continued two-task preemption.
+
+#### Track 6.10: Advanced IR Expansion
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
 - **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
 - **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
 - **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
 - **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
 
-#### Track 6.6: High-Level Source Language Frontend
+#### Track 6.11: High-Level Source Language Frontend
 - **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
 - **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
 
 ### Critical Gaps to Bridge for `xv6` OS Execution
-The VM now has the first OS substrate layer: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, and v1 user base-limit protection. The remaining `xv6` path is now less about "can the VM trap?" and more about ABI, memory management, scheduler context, and toolchain conventions.
+The VM now has the core OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a timer-driven context switch proof, a bootable minimal kernel artifact, kernel-mediated console output, interrupt-disabled critical-section behavior, and a seeded process table. The remaining `xv6` path is now less about "can the VM act like an OS target?" and more about atomics, richer device models, scheduler policy, and toolchain conventions.
 
 #### A. Privilege Rings (Kernel vs. User Mode)
 Implemented in substrate v1:
@@ -588,24 +614,29 @@ Implemented in substrate v1:
 * **V1 Protection**: User fetch/load/store obey IMEM/DMEM base-limit CSRs; kernel bypasses those v1 bounds.
 
 #### B. Memory Management Unit (MMU) & Page Tables
-Still future work. The current substrate is base-limit protection, not virtual memory.
-* **Virtual Address Translation**: Add a page-table base register (`PTBR`) or equivalent CSR family later. The VM execution loop will need to translate user virtual addresses to physical DMEM/IMEM pages before true process isolation.
+Implemented as substrate v1:
+* **Virtual Address Translation**: User fetch/load/store translate through separate single-level IMEM/DMEM page tables when `MMU_ENABLE` is set.
+* **Protection**: PTEs carry user/read/write/execute permissions. Kernel mode uses physical IMEM/DMEM and bypasses the MMU.
+* **Fault Metadata**: Page-fault CSRs record the virtual address and access class for precise handler diagnostics.
 
 #### C. Preemptive Timer Interrupts (`IRQ`)
 A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
-* **Scheduler Context**: The next step is saving/restoring register files and per-task CSRs around that timer trap, then using the timer handler to switch between two minimal tasks.
+* **Scheduler Context**: The minimal kernel now saves/restores `EPC`, `STATUS`, page-table CSRs, `r1-r26`, and user `sp` using the `SCRATCH`/`CSRRW` convention, then selects the next task through a tiny process table.
 
-By augmenting `VMState` with **Privilege Modes, Virtual Translation, and Hardware Interrupts**, your machine will transition from executing isolated functional algorithms to booting a fully interactive virtualized operating system.
+Next substrate work should focus on atomics/locks, richer device/timer models, and scheduler policy beyond round-robin table selection.
 
 ### Critical Path
 
 The current OS-oriented sequence prioritizes the machine contract before the full source language:
 ```
 Phase 0/1 foundations -> Phase 6.1 ISA expansion -> Phase 6.2 VM tooling bridge ->
-Phase 6.3 core VM OS substrate -> ABI/memory-model/boot contract docs ->
+Phase 6.3 core VM OS substrate -> Phase 6.4 trap-save/ABI contract ->
+Phase 6.5 MMU page tables -> Phase 6.6 timer two-task switch ->
+Phase 6.7 minimal kernel bring-up -> Phase 6.8 syscall/console substrate ->
+Phase 6.9 critical sections/process table seed -> atomics/scheduler policy ->
 minimal IR/C-like kernel authoring -> tiny kernel milestone -> source language expansion
 ```
-Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, and boot contracts rather than preceding them.
+Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, page-table, and scheduler contracts rather than preceding them.
 
 Validation:
 
