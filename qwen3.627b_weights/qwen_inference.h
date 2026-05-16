@@ -74,6 +74,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -652,20 +653,30 @@ public:
 
     bool init(const std::string& safetensorsPath, std::string& error) {
         // 1. Try loading from quantized loader (new BF16 mode)
-        const std::vector<uint16_t>* emb = loader.bf16("model.embed_tokens.weight");
-        if (!emb) emb = loader.bf16("model.language_model.embed_tokens.weight");
+        std::string embName = "model.embed_tokens.weight";
+        const std::vector<uint16_t>* emb = loader.bf16(embName);
+        if (!emb) {
+            embName = "model.language_model.embed_tokens.weight";
+            emb = loader.bf16(embName);
+        }
         
         if (emb) {
             std::cout << "Loading BF16 embeddings ("
                       << cfg.vocab_size << " × " << cfg.hidden_size << ")...\n";
             embeddings_ = *emb;
+            loader.dropBF16(embName);
             
             // Try loading lm_head if separate
-            const std::vector<uint16_t>* head = loader.bf16("lm_head.weight");
-            if (!head) head = loader.bf16("model.language_model.lm_head.weight");
+            std::string headName = "lm_head.weight";
+            const std::vector<uint16_t>* head = loader.bf16(headName);
+            if (!head) {
+                headName = "model.language_model.lm_head.weight";
+                head = loader.bf16(headName);
+            }
             if (head) {
                 std::cout << "Loading BF16 lm_head (separate)...\n";
                 lm_head_ = *head;
+                loader.dropBF16(headName);
             }
         } else {
             // 2. Fallback to original safetensors (requires a single model.safetensors file)
@@ -725,6 +736,7 @@ public:
         // ---- Embedding lookup ----
         std::vector<float> x;
         if (!embeddingRow(tokenId, x, error)) { result.error = error; return result; }
+        debugVectorStats("embedding token=" + std::to_string(tokenId), x);
 
         const int position = kv_len_;
 
@@ -745,6 +757,7 @@ public:
             if (!rmsNorm(x, tensorFloat(pfx + "input_layernorm.weight", error), norm_, error))
                 { result.error = error; return result; }
             result.norm_ms += nowMs() - nt0;
+            debugVectorStats("layer=" + std::to_string(layer) + " input_norm", norm_);
 
             // Attention (fused Q/K/V projection + scores + O projection)
             std::string layer_type = cfg.layer_types.empty() ? "full_attention" : 
@@ -757,7 +770,9 @@ public:
                 if (!attentionLayer(layer, pfx, norm_, position, attn_out_, error, result.matmul_ms))
                     { result.error = error; return result; }
             }
+            debugVectorStats("layer=" + std::to_string(layer) + " attn_out", attn_out_);
             addInto(residual_, attn_out_, x);
+            debugVectorStats("layer=" + std::to_string(layer) + " after_attn_residual", x);
 
             std::copy(x.begin(), x.end(), residual_.begin());
 
@@ -766,11 +781,14 @@ public:
             if (!rmsNorm(x, tensorFloat(pfx + "post_attention_layernorm.weight", error), norm_, error))
                 { result.error = error; return result; }
             result.norm_ms += nowMs() - nt0;
+            debugVectorStats("layer=" + std::to_string(layer) + " post_attn_norm", norm_);
 
             // MLP (fused gate+up projection + down)
             if (!mlpLayer(pfx, norm_, mlp_out_, error, result.matmul_ms))
                 { result.error = error; return result; }
+            debugVectorStats("layer=" + std::to_string(layer) + " mlp_out", mlp_out_);
             addInto(residual_, mlp_out_, x);
+            debugVectorStats("layer=" + std::to_string(layer) + " after_mlp_residual", x);
 
             // Safety clamp (prevents NaN/Inf propagation)
             for (float& v : x) {
@@ -778,16 +796,19 @@ public:
                 else if (v >  16384.0f)      v =  16384.0f;
                 else if (v < -16384.0f)      v = -16384.0f;
             }
+            debugVectorStats("layer=" + std::to_string(layer) + " after_clamp", x);
         }
 
         ++kv_len_;
 
         // ---- Final norm + LM head ----
         if (computeAllLogits || kv_len_ > 0) {
+            debugVectorStats("before_final_norm", x);
             auto nt0 = nowMs();
             if (!rmsNorm(x, tensorFloat("model.norm.weight", error), norm_, error))
                 { result.error = error; return result; }
             result.norm_ms += nowMs() - nt0;
+            debugVectorStats("final_norm", norm_);
 
             auto st0 = nowMs();
             if (!argmaxLogits(norm_, result.greedy_token, result.greedy_logit,
@@ -947,6 +968,44 @@ private:
     static long long nowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+    }
+
+    static bool logitDebugEnabled() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("QWEN_LOGIT_DEBUG");
+            return value && std::string(value) != "0";
+        }();
+        return enabled;
+    }
+
+    static bool vectorDebugEnabled() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("QWEN_VECTOR_DEBUG");
+            return value && std::string(value) != "0";
+        }();
+        return enabled;
+    }
+
+    static void debugVectorStats(const std::string& label, const std::vector<float>& v) {
+        if (!vectorDebugEnabled()) return;
+        double sumSq = 0.0;
+        float vMin = std::numeric_limits<float>::infinity();
+        float vMax = -std::numeric_limits<float>::infinity();
+        int finite = 0;
+        int nonZero = 0;
+        for (float x : v) {
+            if (!std::isfinite(x)) continue;
+            ++finite;
+            if (x != 0.0f) ++nonZero;
+            sumSq += static_cast<double>(x) * static_cast<double>(x);
+            vMin = std::min(vMin, x);
+            vMax = std::max(vMax, x);
+        }
+        std::cerr << "QWEN_VECTOR_DEBUG " << label
+                  << " finite=" << finite << "/" << v.size()
+                  << " nonzero=" << nonZero
+                  << " rms=" << std::sqrt(sumSq / std::max<std::size_t>(std::size_t{1}, v.size()))
+                  << " min=" << vMin << " max=" << vMax << "\n";
     }
 
     const std::vector<float>& tensorFloat(const std::string& name, std::string& error) {
@@ -1248,11 +1307,13 @@ private:
                       << " rows=" << rows << " cols=" << cols << "\n";
         }
         const auto* packed = loader.packedT2(wname);
+        std::string packedName = wname;
         if (!packed) {
             // Try prefix
             if (wname.find("model.layers") == 0) {
                 const std::string prefixed = "model.language_model.layers" + wname.substr(12);
                 packed = loader.packedT2(prefixed);
+                if (packed) packedName = prefixed;
                 if (packed) {
                     if (QwenLoader::debugEnabled()) {
                         std::cerr << "getVulkanWeightT2: using prefixed " << prefixed
@@ -1276,6 +1337,7 @@ private:
         vulkan.uploadData(buf, packed->data(), size);
         vulkanWeights_[wname] = buf;
         vulkanWeightsMemory_[wname] = mem;
+        loader.dropPackedT2(packedName);
         if (QwenLoader::debugEnabled()) std::cerr << "getVulkanWeightT2: create/upload done " << wname << "\n";
         return buf;
     }
@@ -1286,26 +1348,40 @@ private:
         auto t0 = nowMs();
         
         size_t x_size = cols * sizeof(int8_t);
-        if (!vulkanActBuf_) {
-            vulkan.createBuffer(x_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vulkanActBuf_, vulkanActMem_);
-        }
-        vulkan.uploadData(vulkanActBuf_, xact.data.data(), x_size);
+        VkBuffer actBuf = VK_NULL_HANDLE;
+        VkDeviceMemory actMem = VK_NULL_HANDLE;
+        vulkan.createBuffer(x_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, actBuf, actMem);
+        if (!actBuf) return false;
+        vulkan.uploadData(actBuf, xact.data.data(), x_size);
 
         int max_rows = 0;
         for (const auto& s : specs) max_rows = std::max(max_rows, s.rows);
         size_t out_size = max_rows * sizeof(float);
-        
-        if (!vulkanOutBuf_) {
-            vulkan.createBuffer(out_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vulkanOutBuf_, vulkanOutMem_);
+
+        VkBuffer outBuf = VK_NULL_HANDLE;
+        VkDeviceMemory outMem = VK_NULL_HANDLE;
+        vulkan.createBuffer(out_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, outBuf, outMem);
+        if (!outBuf) {
+            vulkan.destroyBuffer(actBuf, actMem);
+            return false;
         }
 
         for (const auto& s : specs) {
             VkBuffer wBuf = getVulkanWeightT2(s.name, s.rows, cols);
-            if (!wBuf) return false;
+            if (!wBuf) {
+                vulkan.destroyBuffer(outBuf, outMem);
+                vulkan.destroyBuffer(actBuf, actMem);
+                return false;
+            }
             
-            vulkan.executeMatmulInt8(s.rows, cols, s.scale, 0, wBuf, vulkanActBuf_, vulkanOutBuf_);
-            vulkan.readBuffer(vulkanOutMem_, s.out->data(), s.rows * sizeof(float));
+            vulkan.executeMatmulInt8(s.rows, cols, s.scale, 0, wBuf, actBuf, outBuf);
+            vulkan.readBuffer(outMem, s.out->data(), s.rows * sizeof(float));
         }
+
+        vulkan.destroyBuffer(outBuf, outMem);
+        vulkan.destroyBuffer(actBuf, actMem);
         
         if (matmul_ms) *matmul_ms += nowMs() - t0;
         return true;
@@ -1381,13 +1457,28 @@ private:
             return true;
         };
 
+        auto resolveScale = [&](const std::string& wname) -> float {
+            std::string resolvedName = wname;
+            if (loader.getLayer(resolvedName).name.empty() && wname.find("model.layers") == 0)
+                resolvedName = "model.language_model.layers" + wname.substr(12);
+            return static_cast<float>(loader.getScale(resolvedName));
+        };
+
         const int8_t *wqkv = nullptr, *wz = nullptr, *wa = nullptr, *wb = nullptr, *wout = nullptr;
         float sqkv = 1.0f, sz = 1.0f, sa = 1.0f, sb = 1.0f, sout = 1.0f;
-        if (!resolve(pfx + "linear_attn.in_proj_qkv.weight", convDim, wqkv, sqkv)) return false;
-        if (!resolve(pfx + "linear_attn.in_proj_z.weight", valueDim, wz, sz)) return false;
-        if (!resolve(pfx + "linear_attn.in_proj_a.weight", valueHeads, wa, sa)) return false;
-        if (!resolve(pfx + "linear_attn.in_proj_b.weight", valueHeads, wb, sb)) return false;
-        if (!resolve(pfx + "linear_attn.out_proj.weight", H, wout, sout)) return false;
+        if (vulkan.isReady()) {
+            sqkv = resolveScale(pfx + "linear_attn.in_proj_qkv.weight");
+            sz = resolveScale(pfx + "linear_attn.in_proj_z.weight");
+            sa = resolveScale(pfx + "linear_attn.in_proj_a.weight");
+            sb = resolveScale(pfx + "linear_attn.in_proj_b.weight");
+            sout = resolveScale(pfx + "linear_attn.out_proj.weight");
+        } else {
+            if (!resolve(pfx + "linear_attn.in_proj_qkv.weight", convDim, wqkv, sqkv)) return false;
+            if (!resolve(pfx + "linear_attn.in_proj_z.weight", valueDim, wz, sz)) return false;
+            if (!resolve(pfx + "linear_attn.in_proj_a.weight", valueHeads, wa, sa)) return false;
+            if (!resolve(pfx + "linear_attn.in_proj_b.weight", valueHeads, wb, sb)) return false;
+            if (!resolve(pfx + "linear_attn.out_proj.weight", H, wout, sout)) return false;
+        }
 
         qkv_act_.invalidate();
         qkv_act_.quantize(norm);
@@ -1402,7 +1493,14 @@ private:
             { wa,   valueHeads, qkv_act_.gamma * sa,   &a,     pfx + "linear_attn.in_proj_a.weight"   },
             { wb,   valueHeads, qkv_act_.gamma * sb,   &b,     pfx + "linear_attn.in_proj_b.weight"   },
         };
-        linearPackedMulti(projSpecs, H, qkv_act_, &matmul_ms);
+        if (vulkan.isReady()) {
+            if (!vulkanLinearPackedMulti(projSpecs, H, qkv_act_, &matmul_ms)) {
+                error = "Vulkan linear attention projection failed";
+                return false;
+            }
+        } else {
+            linearPackedMulti(projSpecs, H, qkv_act_, &matmul_ms);
+        }
 
         const std::vector<float>& convWeight = tensorFloat(pfx + "linear_attn.conv1d.weight", error);
         const std::vector<float>& aLog = tensorFloat(pfx + "linear_attn.A_log", error);
@@ -1500,7 +1598,14 @@ private:
         const std::vector<LinearSpec> ospec = {
             { wout, H, oact.gamma * sout, &out, pfx + "linear_attn.out_proj.weight" },
         };
-        linearPackedMulti(ospec, valueDim, oact, &matmul_ms);
+        if (vulkan.isReady()) {
+            if (!vulkanLinearPackedMulti(ospec, valueDim, oact, &matmul_ms)) {
+                error = "Vulkan linear attention output failed";
+                return false;
+            }
+        } else {
+            linearPackedMulti(ospec, valueDim, oact, &matmul_ms);
+        }
         return true;
     }
 
@@ -1530,12 +1635,25 @@ private:
             return true;
         };
 
+        auto resolveScale = [&](const std::string& wname) -> float {
+            std::string resolvedName = wname;
+            if (loader.getLayer(resolvedName).name.empty() && wname.find("model.layers") == 0)
+                resolvedName = "model.language_model.layers" + wname.substr(12);
+            return static_cast<float>(loader.getScale(resolvedName));
+        };
+
         const int8_t *wq = nullptr, *wk = nullptr, *wv = nullptr;
         float sq = 1.0f, sk = 1.0f, sv = 1.0f;
         const int qRawDim = q_dim_ * 2;
-        if (!resolve(pfx + "self_attn.q_proj.weight", qRawDim, wq, sq)) return false;
-        if (!resolve(pfx + "self_attn.k_proj.weight", kv_dim_, wk, sk)) return false;
-        if (!resolve(pfx + "self_attn.v_proj.weight", kv_dim_, wv, sv)) return false;
+        if (vulkan.isReady()) {
+            sq = resolveScale(pfx + "self_attn.q_proj.weight");
+            sk = resolveScale(pfx + "self_attn.k_proj.weight");
+            sv = resolveScale(pfx + "self_attn.v_proj.weight");
+        } else {
+            if (!resolve(pfx + "self_attn.q_proj.weight", qRawDim, wq, sq)) return false;
+            if (!resolve(pfx + "self_attn.k_proj.weight", kv_dim_, wk, sk)) return false;
+            if (!resolve(pfx + "self_attn.v_proj.weight", kv_dim_, wv, sv)) return false;
+        }
 
         // Quantize norm output ONCE for all three projections
         qkv_act_.invalidate();
@@ -1547,11 +1665,18 @@ private:
 
         // Dispatch all three projections in one pool.execute()
         const std::vector<LinearSpec> specs = {
-            { wq, qRawDim, qkv_act_.gamma * sq, &qRaw },
-            { wk, kv_dim_, qkv_act_.gamma * sk, &k },
-            { wv, kv_dim_, qkv_act_.gamma * sv, &v },
+            { wq, qRawDim, qkv_act_.gamma * sq, &qRaw, pfx + "self_attn.q_proj.weight" },
+            { wk, kv_dim_, qkv_act_.gamma * sk, &k,    pfx + "self_attn.k_proj.weight" },
+            { wv, kv_dim_, qkv_act_.gamma * sv, &v,    pfx + "self_attn.v_proj.weight" },
         };
-        linearPackedMulti(specs, H, qkv_act_, &matmul_ms);
+        if (vulkan.isReady()) {
+            if (!vulkanLinearPackedMulti(specs, H, qkv_act_, &matmul_ms)) {
+                error = "Vulkan attention projection failed";
+                return false;
+            }
+        } else {
+            linearPackedMulti(specs, H, qkv_act_, &matmul_ms);
+        }
 
         std::vector<float> q(static_cast<std::size_t>(q_dim_));
         std::vector<float> qGate(static_cast<std::size_t>(q_dim_));
@@ -1678,7 +1803,11 @@ private:
             attn[static_cast<std::size_t>(i)] *= sigmoid(qGate[static_cast<std::size_t>(i)]);
 
         const int8_t* wo = nullptr; float so = 1.0f;
-        if (!resolve(pfx + "self_attn.o_proj.weight", H, wo, so)) return false;
+        if (vulkan.isReady()) {
+            so = resolveScale(pfx + "self_attn.o_proj.weight");
+        } else if (!resolve(pfx + "self_attn.o_proj.weight", H, wo, so)) {
+            return false;
+        }
 
         // Quantize gated attention for output projection
         QuantizedActivation oact;
@@ -1686,7 +1815,14 @@ private:
 
         out.assign(static_cast<std::size_t>(H), 0.0f);
         const std::vector<LinearSpec> ospec = {{ wo, H, oact.gamma * so, &out, pfx + "self_attn.o_proj.weight" }};
-        linearPackedMulti(ospec, q_dim_, oact, &matmul_ms);
+        if (vulkan.isReady()) {
+            if (!vulkanLinearPackedMulti(ospec, q_dim_, oact, &matmul_ms)) {
+                error = "Vulkan attention output failed";
+                return false;
+            }
+        } else {
+            linearPackedMulti(ospec, q_dim_, oact, &matmul_ms);
+        }
         return true;
     }
 
@@ -1848,6 +1984,11 @@ private:
             error = "LM head shape mismatch"; return false;
         }
         if (allLogits) allLogits->assign(static_cast<std::size_t>(cfg.vocab_size), 0.0f);
+        std::vector<float> debugLogits;
+        const bool debugLogitsEnabled = logitDebugEnabled();
+        if (debugLogitsEnabled && !allLogits)
+            debugLogits.assign(static_cast<std::size_t>(cfg.vocab_size), 0.0f);
+        std::vector<float>* logitsOut = allLogits ? allLogits : (debugLogitsEnabled ? &debugLogits : nullptr);
 
         // Use lm_head_ if loaded separately, otherwise use embeddings_ (tied)
         const uint16_t* weights = lm_head_.empty() ? embeddings_.data() : lm_head_.data();
@@ -1880,7 +2021,7 @@ private:
 #endif
                 for (; j < cfg.hidden_size; ++j)
                     acc += bf16ToFloat(row[j]) * hidden[static_cast<std::size_t>(j)];
-                if (allLogits) (*allLogits)[static_cast<std::size_t>(token)] = acc;
+                if (logitsOut) (*logitsOut)[static_cast<std::size_t>(token)] = acc;
                 if (acc > local.score) { local.score = acc; local.token = token; }
             }
             locals[static_cast<std::size_t>(worker)] = local;
@@ -1890,6 +2031,62 @@ private:
         bestScore = -std::numeric_limits<float>::infinity();
         for (const auto& local : locals) {
             if (local.score > bestScore) { bestScore = local.score; bestToken = local.token; }
+        }
+        if (debugLogitsEnabled && logitsOut) {
+            double sumSq = 0.0;
+            float hMin = std::numeric_limits<float>::infinity();
+            float hMax = -std::numeric_limits<float>::infinity();
+            int hFinite = 0;
+            for (float v : hidden) {
+                if (std::isfinite(v)) {
+                    ++hFinite;
+                    sumSq += static_cast<double>(v) * static_cast<double>(v);
+                    hMin = std::min(hMin, v);
+                    hMax = std::max(hMax, v);
+                }
+            }
+
+            float lMin = std::numeric_limits<float>::infinity();
+            float lMax = -std::numeric_limits<float>::infinity();
+            int lFinite = 0;
+            int lNonZero = 0;
+            std::vector<int> top;
+            top.reserve(8);
+            for (int token = 0; token < cfg.vocab_size; ++token) {
+                const float v = (*logitsOut)[static_cast<std::size_t>(token)];
+                if (!std::isfinite(v)) continue;
+                ++lFinite;
+                if (v != 0.0f) ++lNonZero;
+                lMin = std::min(lMin, v);
+                lMax = std::max(lMax, v);
+                if (top.size() < 8) {
+                    top.push_back(token);
+                    std::sort(top.begin(), top.end(), [&](int a, int b) {
+                        return (*logitsOut)[static_cast<std::size_t>(a)] > (*logitsOut)[static_cast<std::size_t>(b)];
+                    });
+                } else if (v > (*logitsOut)[static_cast<std::size_t>(top.back())]) {
+                    top.back() = token;
+                    std::sort(top.begin(), top.end(), [&](int a, int b) {
+                        return (*logitsOut)[static_cast<std::size_t>(a)] > (*logitsOut)[static_cast<std::size_t>(b)];
+                    });
+                }
+            }
+
+            std::cerr << "QWEN_LOGIT_DEBUG hidden finite=" << hFinite << "/" << hidden.size()
+                      << " rms=" << std::sqrt(sumSq / std::max<std::size_t>(std::size_t{1}, hidden.size()))
+                      << " min=" << hMin << " max=" << hMax
+                      << " lm_head=" << (lm_head_.empty() ? "embeddings" : "separate")
+                      << " bf16_count=" << (lm_head_.empty() ? embeddings_.size() : lm_head_.size())
+                      << "\n";
+            std::cerr << "QWEN_LOGIT_DEBUG logits finite=" << lFinite << "/" << cfg.vocab_size
+                      << " nonzero=" << lNonZero
+                      << " min=" << lMin << " max=" << lMax
+                      << " best=" << bestToken << ":" << bestScore
+                      << " top=";
+            for (int token : top) {
+                std::cerr << token << ":" << (*logitsOut)[static_cast<std::size_t>(token)] << " ";
+            }
+            std::cerr << "\n";
         }
         return true;
     }

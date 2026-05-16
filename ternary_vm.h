@@ -658,6 +658,8 @@ inline void writeVectorScatter(
         }
         if (vm.dmem.store(physical_addr, converted) != MemFaultCode::OK) {
             vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+        } else {
+            vm.noteStoreForReservation(physical_addr);
         }
     }
 }
@@ -725,6 +727,14 @@ inline VMStatus step(VMState& vm) {
             return {false, mode};
         }
         return {true, mode};
+    };
+
+    auto decodeAtomicOrder = [&]() -> std::pair<bool, int> {
+        if (!isAtomicOrderFunc(iw.func)) {
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return {false, ATOMIC_ORDER_ACQ_REL};
+        }
+        return {true, atomicOrderFromFunc(iw.func)};
     };
 
     auto writeChecked = [&](uint8_t rd, TernaryValue value) -> bool {
@@ -1180,6 +1190,8 @@ inline VMStatus step(VMState& vm) {
                 MemFaultCode fc = vm.dmem.store(physical_addr, converted);
                 if (fc != MemFaultCode::OK) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+                } else {
+                    vm.noteStoreForReservation(physical_addr);
                 }
             }
             break;
@@ -1390,6 +1402,77 @@ inline VMStatus step(VMState& vm) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
                 return vm.status;
             }
+            vm.noteStoreForReservation(physical_addr);
+            break;
+        }
+
+        case Opcode::TLDR: {
+            auto [okOrder, order] = decodeAtomicOrder();
+            (void)order;
+            if (!okOrder) return vm.status;
+            TernaryValue addrValue = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(addrValue.mode) || addrValue.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            const int addr = static_cast<int>(ops::toLong(addrValue));
+            int physical_addr = addr;
+            int cause = OS_CAUSE_LOAD_FAULT;
+            if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return vm.status;
+            }
+            auto [val, fc] = vm.dmem.load(physical_addr);
+            if (fc != MemFaultCode::OK) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
+                return vm.status;
+            }
+            vm.regfile.write(iw.rd, val);
+            vm.setAtomicReservation(physical_addr);
+            break;
+        }
+
+        case Opcode::TSTR: {
+            auto [okOrder, order] = decodeAtomicOrder();
+            (void)order;
+            if (!okOrder) return vm.status;
+            TernaryValue addrValue = vm.regfile.read(iw.rs1);
+            if (!isNumericMode(addrValue.mode) || addrValue.isInvalid()) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            const int addr = static_cast<int>(ops::toLong(addrValue));
+            int physical_addr = addr;
+            int cause = OS_CAUSE_STORE_FAULT;
+            if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return vm.status;
+            }
+
+            const bool reservation_matches =
+                vm.atomic_reservation_valid &&
+                vm.atomic_reservation_addr == physical_addr;
+            vm.clearAtomicReservation();
+            if (!reservation_matches) {
+                vm.regfile.write(iw.rd, makeTritResult(T_NEG));
+                break;
+            }
+
+            auto [current, fc] = vm.dmem.load(physical_addr);
+            if (fc != MemFaultCode::OK) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
+                return vm.status;
+            }
+            if (current != vm.regfile.read(iw.rs3)) {
+                vm.regfile.write(iw.rd, makeTritResult(T_ZER));
+                break;
+            }
+            fc = vm.dmem.store(physical_addr, vm.regfile.read(iw.rs2));
+            if (fc != MemFaultCode::OK) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
+                return vm.status;
+            }
+            vm.regfile.write(iw.rd, makeTritResult(T_POS));
             break;
         }
 
@@ -1687,7 +1770,10 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::FENCE: {
-            // Full memory barrier execution marker.
+            auto [okOrder, order] = decodeAtomicOrder();
+            (void)order;
+            if (!okOrder) return vm.status;
+            // Single-core VM is sequentially consistent; FENCE is an architectural marker.
             break;
         }
 

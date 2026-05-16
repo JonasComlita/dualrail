@@ -109,6 +109,7 @@ int main(int argc, char* argv[]) {
     std::string safetensors_path;
     std::vector<int> token_ids;
     int   max_new_tokens     = 64;
+    int   context_limit      = 0;
     int   threads            = -1;   // -1 → hardware_concurrency
     float temp               = 0.7f;
     float top_p              = 1.0f;
@@ -151,6 +152,7 @@ int main(int argc, char* argv[]) {
         if      (arg == "--model"   && i + 1 < argc) safetensors_path  = argv[++i];
         else if (arg == "--dir"     && i + 1 < argc) weights_dir       = argv[++i];
         else if (arg == "--tokens"  && i + 1 < argc) max_new_tokens     = std::atoi(argv[++i]);
+        else if ((arg == "--ctx" || arg == "--context") && i + 1 < argc) context_limit = std::atoi(argv[++i]);
         else if (arg == "--threads" && i + 1 < argc) threads            = std::atoi(argv[++i]);
         else if (arg == "--temp"    && i + 1 < argc) temp               = std::atof(argv[++i]);
         else if (arg == "--top_p"   && i + 1 < argc) top_p              = std::atof(argv[++i]);
@@ -179,6 +181,10 @@ int main(int argc, char* argv[]) {
         }
     }
     if (token_ids.empty()) token_ids.push_back(cfg.bos_token_id);
+    const int needed_context = static_cast<int>(token_ids.size()) + std::max(1, max_new_tokens) + 8;
+    cfg.max_position_embeddings = (context_limit > 0)
+        ? std::max(context_limit, needed_context)
+        : std::max(128, needed_context);
     if (safetensors_path.empty()) safetensors_path = defaultSafetensorsPath(weights_dir);
 
     // Whether we need the full logit vector (sampling) or just greedy token
@@ -188,6 +194,7 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Qwen Dynamic Inference ===\n";
     std::cout << "Weights dir:  " << weights_dir     << "\n";
     std::cout << "Architecture: " << cfg.hidden_size << "h, " << cfg.num_layers << "L, " << cfg.num_heads << "H (" << cfg.vocab_size << " vocab)\n";
+    std::cout << "Context:      " << cfg.max_position_embeddings << " tokens\n";
     std::cout << "Safetensors:  " << safetensors_path << "\n";
     std::cout << "Prompt tokens:";
     for (int id : token_ids) std::cout << " " << id;

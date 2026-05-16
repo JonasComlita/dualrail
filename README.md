@@ -593,19 +593,36 @@ Current integration note:
 - **Process Table Seed**: Replaced the fixed two-context toggle in the minimal kernel with `proc_count`, `current_proc`, and `proc_table[]`, where each table entry points to a task context.
 - **Scheduler State Verification**: The boot artifact test now verifies process-table metadata, context pointers, current-process bounds, and continued two-task preemption.
 
-#### Track 6.10: Advanced IR Expansion
+#### Track 6.10: Ternary Architecture Contract Pack (Implemented)
+- **Contract Document**: Added `OS3/TERNARY_ARCHITECTURE_CONTRACTS.md` as the shared architecture contract for VM, assembler, compiler, kernel, debugger, FPGA, and future multicore work.
+- **Ternary-Native Memory/Atomic Direction**: Locked the planned memory-order trit (`-1` relaxed, `0` acquire-release, `+1` sequential consistency) and the proposed `TLDR`/`TSTR` result convention (`-1` collision, `0` value mismatch, `+1` success).
+- **Cross-Cutting Contracts**: Captured trap/interrupt rules, ABI, data layout, instruction alignment, FP sticky flag direction, reset/boot, syscall/device rules, and scheduler substrate boundaries.
+
+#### Track 6.11: Ternary Atomics and Lock ABI (Implemented)
+- **Atomic ISA**: Added `TLDR` and `TSTR` with the ternary memory-order trit encoded as `-1` relaxed, `0` acquire-release, and `+1` sequential consistency.
+- **Store-Conditional Status**: `TSTR` returns `-1` for reservation loss/collision, `0` for expected-value mismatch, and `+1` for success.
+- **Memory-Order FENCE**: `FENCE` now accepts the same ternary order spelling (`fence.-1`, `fence.0`, `fence.+1`) while remaining a single-core VM ordering marker.
+- **Lock ABI Proof**: Added VM tests for atomic success, value mismatch, reservation collision, and a minimal acquire/critical-section/release sequence.
+
+#### Track 6.12: Scheduler Policy and Process Lifecycle
+- **Process States**: Add runnable, running, blocked, sleeping, and exited states to the process table.
+- **Run Queue Policy**: Replace the current process-table toggle with a small policy-driven runnable selection path.
+- **Timer Accounting**: Track ticks, quanta, and preemption counts per process.
+- **Blocking Surface**: Prepare syscall/device paths to block and wake tasks instead of spinning.
+
+#### Track 6.13: Advanced IR Expansion
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
 - **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
 - **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
 - **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
 - **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
 
-#### Track 6.11: High-Level Source Language Frontend
+#### Track 6.14: High-Level Source Language Frontend
 - **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
 - **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
 
 ### Critical Gaps to Bridge for `xv6` OS Execution
-The VM now has the core OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a timer-driven context switch proof, a bootable minimal kernel artifact, kernel-mediated console output, interrupt-disabled critical-section behavior, and a seeded process table. The remaining `xv6` path is now less about "can the VM act like an OS target?" and more about atomics, richer device models, scheduler policy, and toolchain conventions.
+The VM now has the core OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a timer-driven context switch proof, a bootable minimal kernel artifact, kernel-mediated console output, interrupt-disabled critical-section behavior, a seeded process table, a written ternary architecture contract, and the first ternary atomics/lock ABI proof. The remaining `xv6` path is now less about "can the VM act like an OS target?" and more about scheduler lifecycle, richer device models, and toolchain conventions.
 
 #### A. Privilege Rings (Kernel vs. User Mode)
 Implemented in substrate v1:
@@ -623,7 +640,7 @@ Implemented as substrate v1:
 A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
 * **Scheduler Context**: The minimal kernel now saves/restores `EPC`, `STATUS`, page-table CSRs, `r1-r26`, and user `sp` using the `SCRATCH`/`CSRRW` convention, then selects the next task through a tiny process table.
 
-Next substrate work should focus on atomics/locks, richer device/timer models, and scheduler policy beyond round-robin table selection.
+Next substrate work should focus on scheduler policy and process lifecycle state beyond round-robin table selection, with richer device/timer models close behind.
 
 ### Critical Path
 
@@ -633,10 +650,11 @@ Phase 0/1 foundations -> Phase 6.1 ISA expansion -> Phase 6.2 VM tooling bridge 
 Phase 6.3 core VM OS substrate -> Phase 6.4 trap-save/ABI contract ->
 Phase 6.5 MMU page tables -> Phase 6.6 timer two-task switch ->
 Phase 6.7 minimal kernel bring-up -> Phase 6.8 syscall/console substrate ->
-Phase 6.9 critical sections/process table seed -> atomics/scheduler policy ->
+Phase 6.9 critical sections/process table seed -> Phase 6.10 architecture contracts ->
+Phase 6.11 TLDR/TSTR atomics and lock ABI -> scheduler policy/process lifecycle ->
 minimal IR/C-like kernel authoring -> tiny kernel milestone -> source language expansion
 ```
-Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, page-table, and scheduler contracts rather than preceding them.
+Full language and optimization work should grow from the ABI, trap/interrupt, memory-model, atomic, page-table, and scheduler contracts rather than preceding them.
 
 Validation:
 

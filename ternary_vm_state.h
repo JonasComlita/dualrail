@@ -1083,6 +1083,8 @@ struct VMState {
     int                      user_dmem_pages = 0;
     int                      page_fault_addr = 0;
     int                      page_fault_access = OS_PAGE_ACCESS_LOAD;
+    bool                     atomic_reservation_valid = false;
+    int                      atomic_reservation_addr = -1;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -1176,6 +1178,7 @@ struct VMState {
         user_dmem_pages = 0;
         page_fault_addr = 0;
         page_fault_access = OS_PAGE_ACCESS_LOAD;
+        clearAtomicReservation();
     }
 
     [[nodiscard]] static int privilegeToInt(PrivilegeMode mode) {
@@ -1526,6 +1529,22 @@ struct VMState {
             routed_cause);
     }
 
+    void clearAtomicReservation() {
+        atomic_reservation_valid = false;
+        atomic_reservation_addr = -1;
+    }
+
+    void setAtomicReservation(int physical_addr) {
+        atomic_reservation_valid = true;
+        atomic_reservation_addr = physical_addr;
+    }
+
+    void noteStoreForReservation(int physical_addr) {
+        if (atomic_reservation_valid && atomic_reservation_addr == physical_addr) {
+            clearAtomicReservation();
+        }
+    }
+
     [[nodiscard]] bool validateControlTarget(int target) {
         if (target < 0) return false;
         if (privilege == PrivilegeMode::Kernel) return imem.inRange(target);
@@ -1543,6 +1562,7 @@ struct VMState {
     }
 
     void trapWithCause(TrapCode legacy_code, int routed_cause, int epc_value) {
+        clearAtomicReservation();
         trap_reg = encodeTrap(legacy_code);
         if (!trap_routing_enabled) {
             status = VMStatus::TRAPPED;

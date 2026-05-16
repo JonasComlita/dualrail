@@ -643,6 +643,38 @@ void testIsaAndAsmWidths() {
     expect(!assemble("eret.t20\n").success, "ERET rejects width suffix");
     expect(assemble("csrr r1, mmu_enable\ncsrr r2, page_fault_addr\ncsrr r3, console_ctrl\nhalt\n").success,
            "assembler accepts MMU and console CSR names");
+
+    auto atomics = assembleOrThrow(R"(
+        tldr.+1 r1, r2
+        tstr.-1 r3, r4, r5, r6
+        fence.+1
+        fence -1
+        halt
+    )");
+    auto tldr = InstructionWord::decode(atomics[0]);
+    auto tstr = InstructionWord::decode(atomics[1]);
+    auto fenceSeq = InstructionWord::decode(atomics[2]);
+    auto fenceRelaxed = InstructionWord::decode(atomics[3]);
+    expect(tldr.opcode == Opcode::TLDR && tldr.rd == R1 && tldr.rs1 == R2 &&
+           tldr.func == FUNC_ORDER_SEQ_CST,
+           "assembler encodes TLDR with ternary memory order");
+    expect(tstr.opcode == Opcode::TSTR && tstr.r4_layout &&
+           tstr.rd == R3 && tstr.rs1 == R4 && tstr.rs2 == R5 &&
+           tstr.rs3 == R6 && tstr.func == FUNC_ORDER_RELAXED,
+           "assembler encodes TSTR R4 with ternary memory order");
+    expect(fenceSeq.opcode == Opcode::FENCE && fenceSeq.func == FUNC_ORDER_SEQ_CST,
+           "assembler encodes FENCE.+1 memory order");
+    expect(fenceRelaxed.opcode == Opcode::FENCE && fenceRelaxed.func == FUNC_ORDER_RELAXED,
+           "assembler encodes FENCE operand memory order");
+    expect(disassemble(atomics[0]).find("TLDR.+1 r1, r2") != std::string::npos,
+           "disassembler prints TLDR memory order");
+    expect(disassemble(atomics[1]).find("TSTR.-1 r3, r4, r5, r6") != std::string::npos,
+           "disassembler prints TSTR memory order");
+    expect(disassemble(atomics[2]).find("FENCE.+1") != std::string::npos,
+           "disassembler prints non-default FENCE memory order");
+    expect(!assemble("tldr.t20 r1, r2\n").success, "TLDR rejects width suffix");
+    expect(!assemble("tstr r1, r2, r3\n").success, "TSTR rejects missing expected operand");
+    expect(!assemble("fence 2\n").success, "FENCE rejects invalid memory order");
 }
 
 void testVmWidths() {
@@ -2323,8 +2355,114 @@ void testOsSubstrate() {
     }
 }
 
+void testTernaryAtomicsAndLockAbi() {
+    std::cout << "[10] ternary atomics and lock ABI\n";
+    using namespace sandbox;
+    using namespace sandbox::isa;
+    using namespace sandbox::vm;
+    using namespace sandbox::vm::assembler;
+
+    auto asLong = [](const VMState& vm, int reg) {
+        return sandbox::vm::ops::toLong(vm.regfile.read(static_cast<uint8_t>(reg)));
+    };
+    auto loadPhysLong = [](VMState& vm, int addr) {
+        auto [value, fault] = vm.dmem.load(addr);
+        expect(fault == MemFaultCode::OK, "physical DMEM load succeeds in atomics helper");
+        return sandbox::vm::ops::toLong(value);
+    };
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 5
+            mov r2, 42
+            tldr.+1 r3, r1
+            tstr.+1 r4, r1, r2, r3
+            load r5, r1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TLDR/TSTR success program loads");
+        vm.dmem.store(5, sandbox::vm::ops::fromLong(7));
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "TLDR/TSTR success program halts");
+        expect(asLong(vm, R3) == 7, "TLDR reads reserved word");
+        expect(asLong(vm, R4) == 1, "TSTR returns +1 on success");
+        expect(asLong(vm, R5) == 42, "TSTR writes desired value");
+        expect(loadPhysLong(vm, 5) == 42, "successful TSTR updates memory");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 5
+            mov r2, 42
+            mov r6, 99
+            tldr r3, r1
+            tstr r4, r1, r2, r6
+            load r5, r1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TSTR mismatch program loads");
+        vm.dmem.store(5, sandbox::vm::ops::fromLong(7));
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "TSTR mismatch program halts");
+        expect(asLong(vm, R4) == 0, "TSTR returns 0 on value mismatch");
+        expect(asLong(vm, R5) == 7, "TSTR mismatch leaves memory unchanged");
+    }
+
+    {
+        VMState vm(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 5
+            mov r2, 8
+            mov r5, 42
+            tldr r3, r1
+            store r2, r1
+            tstr r4, r1, r5, r3
+            load r6, r1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TSTR collision program loads");
+        vm.dmem.store(5, sandbox::vm::ops::fromLong(7));
+        auto result = sandbox::vm::run(vm, 32);
+        expect(result.halted(), "TSTR collision program halts");
+        expect(asLong(vm, R4) == -1, "TSTR returns -1 when reservation is lost");
+        expect(asLong(vm, R6) == 8, "ordinary store invalidates reservation before TSTR");
+    }
+
+    {
+        VMState vm(64, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 5
+            mov r2, 1
+            mov r3, 0
+            tldr.0 r4, r1
+            tstr.+1 r5, r1, r2, r3
+            brp r5, acquired
+            halt
+        acquired:
+            mov r6, 6
+            load r7, r6
+            mov r8, 1
+            add.t40 r9, r7, r8
+            store r9, r6
+            store r3, r1
+            fence.+1
+            halt
+        )");
+        expect(loadAndReset(vm, program), "lock ABI acquire/release program loads");
+        vm.dmem.store(5, sandbox::vm::ops::fromLong(0));
+        vm.dmem.store(6, sandbox::vm::ops::fromLong(10));
+        auto result = sandbox::vm::run(vm, 64);
+        expect(result.halted(), "lock ABI acquire/release program halts");
+        expect(asLong(vm, R5) == 1, "lock acquire TSTR succeeds");
+        expect(loadPhysLong(vm, 5) == 0, "lock release stores zero");
+        expect(loadPhysLong(vm, 6) == 11, "critical section updates protected counter");
+    }
+}
+
 void testNoBridgeInExecutionHeaders() {
-    std::cout << "[10] static no-bridge scan\n";
+    std::cout << "[11] static no-bridge scan\n";
     const std::vector<std::string> files = {
         "ternary_native_ops.h",
         "ternary_backend.h",
@@ -2390,6 +2528,7 @@ int main() {
     testVmWidths();
     testPhase35Infrastructure();
     testOsSubstrate();
+    testTernaryAtomicsAndLockAbi();
     testNoBridgeInExecutionHeaders();
 
     if (g_failures != 0) {

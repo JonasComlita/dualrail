@@ -315,6 +315,37 @@ void testPhase2IsaIrOps() {
 
     {
         Program program;
+        Value addr = program.constant(Type::T40, 5);
+        Value desired = program.constant(Type::T40, 42);
+        Value expected = program.tldr(Type::T40, addr, sandbox::isa::ATOMIC_ORDER_SEQ_CST);
+        Value status = program.tstr(addr, desired, expected, sandbox::isa::ATOMIC_ORDER_RELAXED);
+        program.fence(sandbox::isa::ATOMIC_ORDER_SEQ_CST);
+        program.halt();
+
+        auto lowered = program.lower();
+        expect(lowered.success, "ternary atomic IR assembles");
+        expect(contains(lowered.assembly, "tldr.+1"), "tldr memory order emitted");
+        expect(contains(lowered.assembly, "tstr.-1"), "tstr memory order emitted");
+        expect(contains(lowered.assembly, "fence.+1"), "fence memory order emitted");
+
+        sandbox::vm::VMState vm(64, 64);
+        if (lowered.success) {
+            expect(sandbox::vm::loadAndReset(vm, lowered.assembled.program),
+                   "ternary atomic IR program loads");
+            vm.dmem.store(5, sandbox::vm::ops::fromLong(7));
+            auto result = sandbox::vm::run(vm, 64);
+            expect(result.halted(), "ternary atomic IR program runs");
+            expect(scalarLong(vm, expected) == 7, "IR TLDR reads memory");
+            expect(scalarLong(vm, status) == 1, "IR TSTR reports success");
+            auto [word, fault] = vm.dmem.load(5);
+            expect(fault == sandbox::vm::MemFaultCode::OK &&
+                   sandbox::vm::ops::toLong(word) == 42,
+                   "IR TSTR writes desired value");
+        }
+    }
+
+    {
+        Program program;
         Value target = program.constant(Type::T40, 6);
         program.callr(target);
         program.jmpr(target);

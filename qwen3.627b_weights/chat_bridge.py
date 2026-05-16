@@ -115,7 +115,8 @@ def _format_status(n_tokens: int, elapsed_wall: float,
 def run_generation(tokenizer, history: list[int], bos_id: int,
                    eos_ids: set[int], max_new_tokens: int,
                    temp: float, top_p: float, penalty: float,
-                   model_path: str, config: dict) -> list[int]:
+                   model_path: str, config: dict,
+                   stop_token: int) -> list[int]:
     """
     Spawn run_bitnet, stream tokens back, return list of generated token ids.
     """
@@ -129,6 +130,7 @@ def run_generation(tokenizer, history: list[int], bos_id: int,
         "--penalty",      str(penalty),
         "--neg_penalty",  "0.5",
         "--neg_trigger",  "0.4",
+        "--stop",         str(stop_token),
         "--hidden",       str(config.get("hidden_size", 5120)),
         "--intermediate", str(config.get("intermediate_size", 17408)),
         "--heads",        str(config.get("num_attention_heads", 24)),
@@ -277,10 +279,24 @@ def main():
     config = {}
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r") as f:
-            config = json.load(f)
+            raw_config = json.load(f)
+            config = raw_config.get("text_config", raw_config)
     
-    bos_id = config.get("bos_token_id", 128000)
-    eos_ids = {config.get("eos_token_id", 128001), 128009}
+    bos_id = config.get("bos_token_id") or tokenizer.token_to_id("<|begin_of_text|>") or 248044
+    eos_ids = set()
+    raw_eos = config.get("eos_token_id", [])
+    if isinstance(raw_eos, int):
+        eos_ids.add(raw_eos)
+    else:
+        eos_ids.update(tid for tid in raw_eos if tid is not None)
+    for special in ("<|im_end|>", "<|end_of_text|>", "<|eot_id|>"):
+        tid = tokenizer.token_to_id(special)
+        if tid is not None:
+            eos_ids.add(tid)
+    eos_ids.discard(None)
+    stop_token = tokenizer.token_to_id("<|im_end|>")
+    if stop_token is None:
+        stop_token = next(iter(eos_ids)) if eos_ids else config.get("eos_token_id", 248044)
     
     print(f" done  (bos={bos_id}, eos={sorted(eos_ids)})")
 
@@ -302,9 +318,13 @@ def main():
         if not user_input.strip():
             continue
 
-        # Format user turn using the model's expected chat template
-        # "User: {text}<|eot_id|>Assistant: "
-        prompt_text = f"User: {user_input.strip()}<|eot_id|>Assistant: "
+        # Match the Qwen chat template from tokenizer_config.json. The old
+        # "User: ... Assistant:" text prompt makes this checkpoint continue in
+        # pretraining style and often drifts across languages.
+        prompt_text = (
+            f"<|im_start|>user\n{user_input.strip()}<|im_end|>\n"
+            "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        )
         encoded = tokenizer.encode(prompt_text, add_special_tokens=False)
         history.extend(encoded.ids)
 
@@ -317,10 +337,13 @@ def main():
             penalty        = DEFAULT_PENALTY,
             model_path     = model_path,
             config         = config,
+            stop_token     = stop_token,
         )
 
         # Append model response to history for next turn
         history.extend(new_ids)
+        end_turn = tokenizer.encode("<|im_end|>\n", add_special_tokens=False)
+        history.extend(end_turn.ids)
 
 
 if __name__ == "__main__":

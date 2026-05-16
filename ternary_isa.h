@@ -301,7 +301,7 @@ enum class InstructionFormat : int8_t {
 // =============================================================================
 // Opcodes occupy a 4-trit field (positions [25:22]).
 // The field is read as an unsigned base-3 integer (0–80).
-// Only values 0–20 are currently assigned; values 21–80 are reserved.
+// Values 0-79 are currently assigned; value 80 is reserved.
 //
 // TCMP CONTRACT (critical for ternary branching):
 //   TCMP Rd, Rs1, Rs2 computes sign(Rs1 - Rs2) and writes the result to Rd.
@@ -418,15 +418,17 @@ enum class Opcode : uint8_t {
     CSRW     = 75,
     ERET     = 76,
     CSRRW    = 77,
+    TLDR     = 78,
+    TSTR     = 79,
 
     // --- Reserved ---
-    // Values 78-80 are reserved for future extension.
+    // Value 80 is reserved for future extension.
     // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
     RESERVED = 255  // Sentinel — never encoded into an instruction word.
 };
 
-static constexpr uint8_t OPCODE_MAX_ASSIGNED = 77;  // CSRRW
-static constexpr uint8_t OPCODE_RESERVED_START = 78;
+static constexpr uint8_t OPCODE_MAX_ASSIGNED = 79;  // TSTR
+static constexpr uint8_t OPCODE_RESERVED_START = 80;
 
 static constexpr uint8_t FUNC_T1  =  8;
 static constexpr uint8_t FUNC_T5  =  9;
@@ -441,6 +443,40 @@ static constexpr uint8_t FUNC_L20 = 17;
 static constexpr uint8_t FUNC_L40 = 18;
 static constexpr uint8_t FUNC_L50 = 19;
 static constexpr uint8_t FUNC_DEFAULT = FUNC_T40;
+
+static constexpr int ATOMIC_ORDER_RELAXED = T_NEG;
+static constexpr int ATOMIC_ORDER_ACQ_REL = T_ZER;
+static constexpr int ATOMIC_ORDER_SEQ_CST = T_POS;
+static constexpr uint8_t FUNC_ORDER_RELAXED = static_cast<uint8_t>(FUNC_DEFAULT + ATOMIC_ORDER_RELAXED);
+static constexpr uint8_t FUNC_ORDER_ACQ_REL = static_cast<uint8_t>(FUNC_DEFAULT + ATOMIC_ORDER_ACQ_REL);
+static constexpr uint8_t FUNC_ORDER_SEQ_CST = static_cast<uint8_t>(FUNC_DEFAULT + ATOMIC_ORDER_SEQ_CST);
+
+[[nodiscard]] inline bool isAtomicOrder(int order) {
+    return order >= ATOMIC_ORDER_RELAXED && order <= ATOMIC_ORDER_SEQ_CST;
+}
+
+[[nodiscard]] inline uint8_t atomicOrderFunc(int order) {
+    return isAtomicOrder(order)
+        ? static_cast<uint8_t>(FUNC_DEFAULT + order)
+        : FUNC_ORDER_ACQ_REL;
+}
+
+[[nodiscard]] inline bool isAtomicOrderFunc(uint8_t func) {
+    return isAtomicOrder(static_cast<int>(func) - static_cast<int>(FUNC_DEFAULT));
+}
+
+[[nodiscard]] inline int atomicOrderFromFunc(uint8_t func) {
+    return static_cast<int>(func) - static_cast<int>(FUNC_DEFAULT);
+}
+
+[[nodiscard]] inline std::string atomicOrderSuffix(uint8_t func) {
+    switch (atomicOrderFromFunc(func)) {
+        case ATOMIC_ORDER_RELAXED: return ".-1";
+        case ATOMIC_ORDER_ACQ_REL: return ".0";
+        case ATOMIC_ORDER_SEQ_CST: return ".+1";
+        default: return ".?";
+    }
+}
 
 [[nodiscard]] inline bool isNumericWidthFunc(uint8_t func) {
     return func == FUNC_T1  || func == FUNC_T5  || func == FUNC_T10 ||
@@ -735,7 +771,8 @@ struct InstructionWord {
                     iw.func  = (iw.opcode == Opcode::VSEL || iw.opcode == Opcode::VBLEND)
                         ? static_cast<uint8_t>(w.getField(FIELD_R5_FUNC_LSB, FIELD_R5_FUNC_W) + REG_FIELD_OFFSET)
                         : FUNC_DEFAULT;
-                } else if (iw.opcode == Opcode::TWCMP || iw.opcode == Opcode::TCLAMP) {
+                } else if (iw.opcode == Opcode::TWCMP || iw.opcode == Opcode::TCLAMP ||
+                           iw.opcode == Opcode::TSTR) {
                     iw.r4_layout = true;
                     iw.rd   = static_cast<uint8_t>(w.getField(FIELD_R4_RD_LSB,   FIELD_R4_RD_W)   + REG_FIELD_OFFSET);
                     iw.rs1  = static_cast<uint8_t>(w.getField(FIELD_R4_RS1_LSB,  FIELD_R4_RS1_W)  + REG_FIELD_OFFSET);
@@ -1011,8 +1048,8 @@ inline bool verifyRoundTrip() {
     {
         TritWord27 w{};
         w.setTrit(FIELD_FMT_LSB, T_POS);
-        // Force opcode field to value 79 (reserved)
-        uint8_t val = 79;
+        // Force opcode field to value 80 (reserved)
+        uint8_t val = 80;
         for (int i = 0; i < FIELD_OP_W; ++i) {
             uint8_t d = val % 3; val /= 3;
             w.setTrit(FIELD_OP_LSB + i, static_cast<int8_t>(d) - 1);
@@ -1117,6 +1154,8 @@ inline bool verifyRoundTrip() {
         case Opcode::CSRW:    return "CSRW";
         case Opcode::ERET:    return "ERET";
         case Opcode::CSRRW:   return "CSRRW";
+        case Opcode::TLDR:    return "TLDR";
+        case Opcode::TSTR:    return "TSTR";
         default:            return "???";
     }
 }
@@ -1144,6 +1183,11 @@ inline bool verifyRoundTrip() {
          iw.opcode == Opcode::TLOR) &&
         isLaneWidthFunc(iw.func)) {
         mnemonic += widthFuncSuffix(iw.func);
+    } else if (iw.fmt == InstructionFormat::R_TYPE &&
+        (iw.opcode == Opcode::FENCE || iw.opcode == Opcode::TLDR ||
+         iw.opcode == Opcode::TSTR) &&
+        iw.func != FUNC_DEFAULT && isAtomicOrderFunc(iw.func)) {
+        mnemonic += atomicOrderSuffix(iw.func);
     } else if (iw.r4_layout && isNumericWidthFunc(iw.func)) {
         mnemonic += widthFuncSuffix(iw.func);
     } else if (iw.fmt == InstructionFormat::R_TYPE &&
@@ -1283,6 +1327,9 @@ inline bool verifyRoundTrip() {
                 s += "r" + std::to_string(iw.rs1);
             } else if (iw.opcode == Opcode::FENCE) {
                 s.pop_back();
+            } else if (iw.opcode == Opcode::TLDR) {
+                s += "r" + std::to_string(iw.rd)
+                   + ", r" + std::to_string(iw.rs1);
             } else if (iw.opcode == Opcode::TMAC) {
                 s += "r" + std::to_string(iw.rs1)
                    + ", r" + std::to_string(iw.rs2);

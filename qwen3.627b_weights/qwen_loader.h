@@ -208,7 +208,21 @@ public:
         if (!f.is_open()) return nullptr;
 
         std::vector<uint16_t> vec(static_cast<std::size_t>(lit->second.count));
-        f.read(reinterpret_cast<char*>(vec.data()), static_cast<std::streamsize>(vec.size() * 2));
+        char* dst = reinterpret_cast<char*>(vec.data());
+        std::size_t remaining = vec.size() * sizeof(uint16_t);
+        constexpr std::size_t chunkBytes = 64ull * 1024ull * 1024ull;
+        while (remaining > 0) {
+            const std::size_t n = remaining < chunkBytes ? remaining : chunkBytes;
+            f.read(dst, static_cast<std::streamsize>(n));
+            if (f.gcount() != static_cast<std::streamsize>(n)) {
+                std::cerr << "bf16: short read " << name
+                          << " expected chunk=" << n
+                          << " got=" << f.gcount() << "\n";
+                return nullptr;
+            }
+            dst += n;
+            remaining -= n;
+        }
         
         auto res = weightCacheBF16.emplace(name, std::move(vec));
         return &res.first->second;
@@ -283,6 +297,16 @@ public:
                       << " cached_bytes=" << ins->second.size() << "\n";
         }
         return &ins->second;
+    }
+
+    void dropPackedT2(const std::string& layerName) {
+        std::lock_guard<std::mutex> lk(loaderMutex);
+        weightCacheT2.erase(layerName);
+    }
+
+    void dropBF16(const std::string& layerName) {
+        std::lock_guard<std::mutex> lk(loaderMutex);
+        weightCacheBF16.erase(layerName);
     }
 
     // -------------------------------------------------------------------------

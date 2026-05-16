@@ -90,6 +90,15 @@ inline std::string regName(Value value) {
     return (value.vector ? "v" : "r") + std::to_string(value.reg);
 }
 
+inline std::string memoryOrderSuffix(int order) {
+    switch (order) {
+        case isa::ATOMIC_ORDER_RELAXED: return ".-1";
+        case isa::ATOMIC_ORDER_ACQ_REL: return ".0";
+        case isa::ATOMIC_ORDER_SEQ_CST: return ".+1";
+        default: return ".0";
+    }
+}
+
 class Program {
 public:
     Program() {
@@ -287,8 +296,53 @@ public:
         emit("syscall " + std::to_string(service));
     }
 
-    void fence() {
-        emit("fence");
+    void fence(int order = isa::ATOMIC_ORDER_ACQ_REL) {
+        if (!isa::isAtomicOrder(order)) {
+            diag("fence requires memory order -1, 0, or +1");
+            return;
+        }
+        emit("fence" + memoryOrderSuffix(order));
+    }
+
+    [[nodiscard]] Value tldr(Type type, Value address,
+                             int order = isa::ATOMIC_ORDER_ACQ_REL) {
+        if (!checkScalar(address, "tldr address") || !isNumeric(address.type)) return invalid(type);
+        if (!isa::isAtomicOrder(order)) {
+            diag("tldr requires memory order -1, 0, or +1");
+            return invalid(type);
+        }
+        Value out = allocScalar(type, "tldr destination");
+        if (!out.valid()) return out;
+        emit("tldr" + memoryOrderSuffix(order) + " " +
+             regName(out) + ", " + regName(address));
+        return out;
+    }
+
+    [[nodiscard]] Value tstr(Value address, Value desired, Value expected,
+                             int order = isa::ATOMIC_ORDER_ACQ_REL) {
+        if (!checkScalar(address, "tstr address") ||
+            !checkScalar(desired, "tstr desired") ||
+            !checkScalar(expected, "tstr expected")) {
+            return invalid(Type::T1);
+        }
+        if (!isNumeric(address.type)) {
+            diag("tstr address must be numeric");
+            return invalid(Type::T1);
+        }
+        if (desired.type != expected.type) {
+            diag("tstr desired and expected operands must have matching types");
+            return invalid(Type::T1);
+        }
+        if (!isa::isAtomicOrder(order)) {
+            diag("tstr requires memory order -1, 0, or +1");
+            return invalid(Type::T1);
+        }
+        Value out = allocScalar(Type::T1, "tstr status");
+        if (!out.valid()) return out;
+        emit("tstr" + memoryOrderSuffix(order) + " " +
+             regName(out) + ", " + regName(address) + ", " +
+             regName(desired) + ", " + regName(expected));
+        return out;
     }
 
     [[nodiscard]] Value csrr(int csr) {

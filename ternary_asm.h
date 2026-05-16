@@ -318,8 +318,26 @@ struct MnemonicParts {
     uint8_t func = FUNC_DEFAULT;
     bool has_source_width = false;
     uint8_t source_func = 0;
+    bool has_order = false;
+    int order = ATOMIC_ORDER_ACQ_REL;
     bool suffix_valid = true;
 };
+
+[[nodiscard]] inline bool parseAtomicOrderSuffix(const std::string& suffix, int& order) {
+    if (suffix == "-1" || suffix == "relaxed") {
+        order = ATOMIC_ORDER_RELAXED;
+        return true;
+    }
+    if (suffix == "0" || suffix == "acqrel" || suffix == "acquire-release") {
+        order = ATOMIC_ORDER_ACQ_REL;
+        return true;
+    }
+    if (suffix == "+1" || suffix == "1" || suffix == "seqcst" || suffix == "sc") {
+        order = ATOMIC_ORDER_SEQ_CST;
+        return true;
+    }
+    return false;
+}
 
 [[nodiscard]] inline bool parseWidthSuffix(const std::string& suffix, uint8_t& func) {
     if (suffix == "t1") func = FUNC_T1;
@@ -348,14 +366,22 @@ struct MnemonicParts {
     }
 
     out.base = lowered.substr(0, dot);
-    out.has_width = true;
     const size_t dot2 = lowered.find('.', dot + 1);
     if (dot2 == std::string::npos) {
         const std::string suffix = lowered.substr(dot + 1);
-        out.suffix_valid = parseWidthSuffix(suffix, out.func);
+        int order = ATOMIC_ORDER_ACQ_REL;
+        if (parseAtomicOrderSuffix(suffix, order)) {
+            out.has_order = true;
+            out.order = order;
+            out.func = atomicOrderFunc(order);
+        } else {
+            out.has_width = true;
+            out.suffix_valid = parseWidthSuffix(suffix, out.func);
+        }
     } else {
         const std::string suffix1 = lowered.substr(dot + 1, dot2 - dot - 1);
         const std::string suffix2 = lowered.substr(dot2 + 1);
+        out.has_width = true;
         out.suffix_valid = (out.base == "cvt" ||
                             out.base == "vpack" ||
                             out.base == "vunpack") &&
@@ -387,6 +413,10 @@ struct MnemonicParts {
            base == "vpermute" || base == "vblend" ||
            base == "vgather" || base == "vscatter" ||
            base == "vsum" || base == "vhmin" || base == "vhmax";
+}
+
+[[nodiscard]] inline bool supportsAtomicOrderSuffix(const std::string& base) {
+    return base == "fence" || base == "tldr" || base == "tstr";
 }
 
 [[nodiscard]] inline int instructionWordCount(const std::string& mnemonic) {
@@ -457,6 +487,8 @@ struct MnemonicParts {
     t["csrw"]    = {Opcode::CSRW,    F::I_TYPE, 2, false}; // csr, rs
     t["csrrw"]   = {Opcode::CSRRW,   F::R_TYPE, 3, false}; // rd, csr, rs
     t["eret"]    = {Opcode::ERET,    F::R_TYPE, 0, false};
+    t["tldr"]    = {Opcode::TLDR,    F::R_TYPE, 2, true};  // rd, address register
+    t["tstr"]    = {Opcode::TSTR,    F::R_TYPE, 4, false}; // rdStatus, address, new, expected
 
     // Phase 2 scalar arithmetic and analysis
     t["tmod"]    = {Opcode::TMOD,    F::R_TYPE, 3, false};
@@ -786,6 +818,17 @@ struct LabelMaps {
         return parsed.imm;
     };
 
+    auto parseAtomicOrderOperand = [&](const std::string& tok,
+                                       int line_num) -> std::optional<int> {
+        int order = ATOMIC_ORDER_ACQ_REL;
+        if (!parseAtomicOrderSuffix(toLower(tok), order)) {
+            errors.push_back({line_num,
+                "Atomic memory order must be -1, 0, or +1"});
+            return std::nullopt;
+        }
+        return order;
+    };
+
     for (auto& sl : lines) {
         if (sl.section != AssemblySection::Text) continue;
         if (sl.address < 0) continue;  // label-only line, no instruction
@@ -804,6 +847,12 @@ struct LabelMaps {
         if (parts.has_width && !supportsWidthSuffix(parts.base)) {
             errors.push_back({sl.line_num,
                 "Width suffix is not valid for mnemonic '" + parts.base + "'"});
+            program.push_back(TritWord27{});
+            continue;
+        }
+        if (parts.has_order && !supportsAtomicOrderSuffix(parts.base)) {
+            errors.push_back({sl.line_num,
+                "Memory-order suffix is not valid for mnemonic '" + parts.base + "'"});
             program.push_back(TritWord27{});
             continue;
         }
@@ -903,7 +952,8 @@ struct LabelMaps {
         if ((parts.base == "callr" || parts.base == "jmpr" ||
              parts.base == "syscall" || parts.base == "fence" ||
              parts.base == "csrr" || parts.base == "csrw" ||
-             parts.base == "csrrw" ||
+             parts.base == "csrrw" || parts.base == "tldr" ||
+             parts.base == "tstr" ||
              parts.base == "eret") &&
             parts.has_width) {
             errors.push_back({sl.line_num,
@@ -1047,15 +1097,81 @@ struct LabelMaps {
             }
 
         } else if (mnemonic == "fence") {
-            if (!ops.empty()) {
-                errors.push_back({line, "fence takes no operands"});
+            if (ops.size() > 1 || (parts.has_order && !ops.empty())) {
+                errors.push_back({line, "fence takes at most one memory-order operand"});
                 ok = false;
             } else {
+                int order = parts.order;
+                if (!parts.has_order && ops.size() == 1) {
+                    auto parsed = parseAtomicOrderOperand(ops[0], line);
+                    if (!parsed) {
+                        ok = false;
+                    } else {
+                        order = parsed.value();
+                    }
+                }
+                if (!ok) {
+                    program.push_back(TritWord27{});
+                    continue;
+                }
                 word = InstructionWord::encodeR(Opcode::FENCE,
                     R0_ZERO,
                     R0_ZERO,
                     R0_ZERO,
-                    FUNC_DEFAULT);
+                    atomicOrderFunc(order));
+            }
+
+        } else if (mnemonic == "tldr") {
+            if (ops.size() < 2 || ops.size() > 3 || (parts.has_order && ops.size() == 3)) {
+                errors.push_back({line, "tldr requires rd, rAddress and optional memory order"});
+                ok = false;
+            } else {
+                int order = parts.order;
+                if (!parts.has_order && ops.size() == 3) {
+                    auto parsed = parseAtomicOrderOperand(ops[2], line);
+                    if (!parsed) {
+                        ok = false;
+                    } else {
+                        order = parsed.value();
+                    }
+                }
+                int rd = getReg(ops[0], line);
+                int addr = getReg(ops[1], line);
+                if (ok) {
+                    word = InstructionWord::encodeR(Opcode::TLDR,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(addr),
+                        R0_ZERO,
+                        atomicOrderFunc(order));
+                }
+            }
+
+        } else if (mnemonic == "tstr") {
+            if (ops.size() < 4 || ops.size() > 5 || (parts.has_order && ops.size() == 5)) {
+                errors.push_back({line, "tstr requires rdStatus, rAddress, rNew, rExpected and optional memory order"});
+                ok = false;
+            } else {
+                int order = parts.order;
+                if (!parts.has_order && ops.size() == 5) {
+                    auto parsed = parseAtomicOrderOperand(ops[4], line);
+                    if (!parsed) {
+                        ok = false;
+                    } else {
+                        order = parsed.value();
+                    }
+                }
+                int rd = getReg(ops[0], line);
+                int addr = getReg(ops[1], line);
+                int desired = getReg(ops[2], line);
+                int expected = getReg(ops[3], line);
+                if (ok) {
+                    word = InstructionWord::encodeR4(Opcode::TSTR,
+                        static_cast<uint8_t>(rd),
+                        static_cast<uint8_t>(addr),
+                        static_cast<uint8_t>(desired),
+                        static_cast<uint8_t>(expected),
+                        atomicOrderFunc(order));
+                }
             }
 
         } else if (mnemonic == "jmp" || mnemonic == "call") {

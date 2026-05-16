@@ -9,6 +9,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <cstdint>
+#include <cstdlib>
+#include <limits>
 
 namespace sandbox {
 namespace qwen {
@@ -25,7 +27,16 @@ public:
 
     bool isReady() const { return ready_; }
 
+    void destroyBuffer(VkBuffer buffer, VkDeviceMemory bufferMemory) {
+        if (!device_) return;
+        if (buffer) vkDestroyBuffer(device_, buffer, nullptr);
+        if (bufferMemory) vkFreeMemory(device_, bufferMemory, nullptr);
+    }
+
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+        buffer = VK_NULL_HANDLE;
+        bufferMemory = VK_NULL_HANDLE;
+
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -33,7 +44,7 @@ public:
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         if (vkCreateBuffer(device_, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-            std::cerr << "Failed to create buffer!" << std::endl;
+            std::cerr << "Failed to create Vulkan buffer of " << size << " bytes." << std::endl;
             return;
         }
 
@@ -43,14 +54,30 @@ public:
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-        if (vkAllocateMemory(device_, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            std::cerr << "Failed to allocate buffer memory!" << std::endl;
+        try {
+            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            vkDestroyBuffer(device_, buffer, nullptr);
+            buffer = VK_NULL_HANDLE;
             return;
         }
 
-        vkBindBufferMemory(device_, buffer, bufferMemory, 0);
+        if (vkAllocateMemory(device_, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+            std::cerr << "Failed to allocate Vulkan buffer memory of "
+                      << memRequirements.size << " bytes." << std::endl;
+            vkDestroyBuffer(device_, buffer, nullptr);
+            buffer = VK_NULL_HANDLE;
+            return;
+        }
+
+        if (vkBindBufferMemory(device_, buffer, bufferMemory, 0) != VK_SUCCESS) {
+            std::cerr << "Failed to bind Vulkan buffer memory." << std::endl;
+            vkFreeMemory(device_, bufferMemory, nullptr);
+            vkDestroyBuffer(device_, buffer, nullptr);
+            bufferMemory = VK_NULL_HANDLE;
+            buffer = VK_NULL_HANDLE;
+        }
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -65,12 +92,20 @@ public:
     }
 
     void uploadData(VkBuffer dstBuffer, const void* data, VkDeviceSize size) {
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        if (!dstBuffer || !data || size == 0) return;
 
-        void* mappedData;
-        vkMapMemory(device_, stagingBufferMemory, 0, size, 0, &mappedData);
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        if (!stagingBuffer || !stagingBufferMemory) return;
+
+        void* mappedData = nullptr;
+        if (vkMapMemory(device_, stagingBufferMemory, 0, size, 0, &mappedData) != VK_SUCCESS || !mappedData) {
+            std::cerr << "Failed to map Vulkan staging buffer." << std::endl;
+            vkDestroyBuffer(device_, stagingBuffer, nullptr);
+            vkFreeMemory(device_, stagingBufferMemory, nullptr);
+            return;
+        }
         memcpy(mappedData, data, (size_t)size);
         vkUnmapMemory(device_, stagingBufferMemory);
 
@@ -98,8 +133,13 @@ public:
     }
 
     void readBuffer(VkDeviceMemory memory, void* outData, size_t size) {
-        void* mappedData;
-        vkMapMemory(device_, memory, 0, size, 0, &mappedData);
+        if (!memory || !outData || size == 0) return;
+
+        void* mappedData = nullptr;
+        if (vkMapMemory(device_, memory, 0, size, 0, &mappedData) != VK_SUCCESS || !mappedData) {
+            std::cerr << "Failed to map Vulkan readback buffer." << std::endl;
+            return;
+        }
         memcpy(outData, mappedData, size);
         vkUnmapMemory(device_, memory);
     }
@@ -302,8 +342,72 @@ private:
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
 
-        // Pick first device (usually dedicated GPU if available)
-        physicalDevice_ = devices[0];
+        int selectedDevice = -1;
+        uint32_t selectedQueueFamily = 0;
+        uint64_t bestScore = 0;
+        VkPhysicalDeviceProperties selectedProps{};
+        VkPhysicalDeviceMemoryProperties selectedMem{};
+
+        const char* requestedDevice = std::getenv("QWEN_VULKAN_DEVICE");
+        const int requestedIndex = requestedDevice ? std::atoi(requestedDevice) : -1;
+
+        for (uint32_t devIndex = 0; devIndex < deviceCount; ++devIndex) {
+            VkPhysicalDeviceProperties props{};
+            VkPhysicalDeviceMemoryProperties memProps{};
+            vkGetPhysicalDeviceProperties(devices[devIndex], &props);
+            vkGetPhysicalDeviceMemoryProperties(devices[devIndex], &memProps);
+
+            uint32_t queueFamilyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(devices[devIndex], &queueFamilyCount, nullptr);
+            std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(devices[devIndex], &queueFamilyCount, queueFamilies.data());
+
+            bool hasCompute = false;
+            uint32_t computeFamily = 0;
+            for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+                if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+                    hasCompute = true;
+                    computeFamily = i;
+                    break;
+                }
+            }
+            if (!hasCompute) continue;
+
+            uint64_t localBytes = 0;
+            for (uint32_t i = 0; i < memProps.memoryHeapCount; ++i) {
+                if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                    localBytes += memProps.memoryHeaps[i].size;
+            }
+
+            const bool requested = requestedIndex == static_cast<int>(devIndex);
+            const bool discrete = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+            uint64_t score = localBytes;
+            if (discrete) score += (uint64_t{1} << 62);
+            if (requested) score = std::numeric_limits<uint64_t>::max();
+
+            if (selectedDevice < 0 || score > bestScore) {
+                selectedDevice = static_cast<int>(devIndex);
+                selectedQueueFamily = computeFamily;
+                bestScore = score;
+                selectedProps = props;
+                selectedMem = memProps;
+            }
+        }
+
+        if (selectedDevice < 0) return;
+
+        physicalDevice_ = devices[static_cast<std::size_t>(selectedDevice)];
+        queueFamilyIndex_ = selectedQueueFamily;
+
+        uint64_t selectedLocalBytes = 0;
+        for (uint32_t i = 0; i < selectedMem.memoryHeapCount; ++i) {
+            if (selectedMem.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                selectedLocalBytes += selectedMem.memoryHeaps[i].size;
+        }
+        std::cerr << "Vulkan device: " << selectedProps.deviceName
+                  << " (device_local="
+                  << static_cast<double>(selectedLocalBytes) / (1024.0 * 1024.0 * 1024.0)
+                  << " GiB)\n";
 
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, nullptr);
