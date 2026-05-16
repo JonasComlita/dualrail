@@ -157,57 +157,6 @@ RISC-V now has RVV (RISC-V Vector Extension), which is actually very elegant arc
 
 ---
 
-# 9. Massive investment scale
-
-This is probably the real answer.
-
-Companies spent:
-
-* billions of dollars
-* decades of engineering time
-* thousands of engineers
-
-on ARM optimization.
-
-Apple alone likely spends more CPU R&D money than the entire commercial RISC-V ecosystem.
-
----
-
-# What RISC-V still lacks today
-
-Not fundamentally, but practically:
-
-| Area                | ARM status       | RISC-V status |
-| ------------------- | ---------------- | ------------- |
-| Branch predictors   | Extremely mature | Catching up   |
-| High-end OoO cores  | Mature           | Emerging      |
-| Compilers           | Very mature      | Improving     |
-| Vector optimization | Mature           | Early/mid     |
-| Mobile ecosystem    | Dominant         | Tiny          |
-| OS optimization     | Decades old      | Younger       |
-| Firmware ecosystem  | Mature           | Fragmented    |
-
----
-
-# Interesting twist: RISC-V may surpass ARM in some areas
-
-Because RISC-V allows:
-
-* custom instructions
-* ISA extensions
-* specialized accelerators
-
-it may become better for:
-
-* AI chips
-* robotics
-* domain-specific compute
-* research architectures
-
-ARM’s licensing restrictions can limit experimentation.
-
----
-
 # Apple is the best example
 
 Apple’s chips demonstrate something important:
