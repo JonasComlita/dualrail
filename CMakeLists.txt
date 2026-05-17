@@ -90,6 +90,10 @@ add_executable(test_ternary_ir tests/test_ternary_ir.cpp)
 target_compile_features(test_ternary_ir PUBLIC cxx_std_17)
 target_compile_definitions(test_ternary_ir PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_phase7_compiler tests/test_phase7_compiler.cpp)
+target_compile_features(test_phase7_compiler PUBLIC cxx_std_17)
+target_compile_definitions(test_phase7_compiler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(benchmark_architecture benchmark_architecture.cpp)
 target_compile_features(benchmark_architecture PUBLIC cxx_std_17)
 target_compile_definitions(benchmark_architecture PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)

@@ -702,9 +702,258 @@ Non-goals:
 - Do not implement arbitrary memory-hard garbage collectors in the initial source language runtime.
 - Do not add target-specific backends directly inside the source language lowering phase.
 
-## Phase 7 (Next): Build the high-level compiler toolchain with Hindley-Milner type inference, zero-cost pointer safety, and the SSA-based IR universal bus.
+## Phase 7 (Next): High-Level Compiler Toolchain And SSA Universal Bus
 
-## Phase 8 (The Platform Boot): Port a standard C library and compile a clean, modular Unix shell with a Device Tree abstraction.
+Status: in progress; Phase 7 compiler/toolchain v1 is implemented.
+
+Naming note: the older Phase 4 closure roadmap maps to this README's Phase 6
+OS-capable machine work. The Phase 6.19 and Phase 6.20 items above are now
+absorbed into Phase 7 so the next phase has one clear compiler/toolchain scope.
+
+Goal: turn the frozen OS substrate into a real high-level compiler target. Phase
+7 should not try to finish the xv6 alternative directly; it should make the
+compiler, IR, object tooling, runtime stubs, and developer loop strong enough
+that Phase 8 can implement the remaining xv6-class kernel/userland pieces in a
+high-level systems language instead of hand-written `.tasm`.
+
+Current implementation note:
+
+- `ternary_compiler.h` now provides the Phase 7 v1 public API:
+  `CompilerOptions`, structural `Module`/`Function`/`BasicBlock`/`Instr` IR
+  types, `compileSource`, `linkModules`, runtime syscall ids, verifier helpers,
+  optimizer hooks, and a register allocation helper surface.
+- The v1 frontend supports explicit function signatures, inferred local
+  bindings, mutable locals, arithmetic, direct calls, returns, `while pos(...)`,
+  exhaustive `match sign(...)`, tuple swap lowering, pointer validity
+  diagnostics, unsafe CSR/atomic intrinsics, and static executable linking
+  through the existing assembler.
+- `test_phase7_compiler` verifies source-to-SSA compilation, linking, VM
+  execution, runtime syscall wrappers, call/loop lowering, pointer and width
+  diagnostics, unsafe CSR/atomic lowering, verifier behavior, allocation
+  surface, duplicate-symbol handling, and executable-header emission.
+
+Inputs:
+
+- `OS3/PHASE4_COMPLETION_ROADMAP.md`: Phase 4/README Phase 6 is closed at the
+  frozen trap frame, syscall ABI, executable header v1, page-table v1, atomics,
+  scheduler, console, static spawn/wait, and shell-proof boundary.
+- `OS3/strategic_architecture.md`: the deferred strategic ideas now become
+  compiler-facing concerns where appropriate: dynamic width/type-aware
+  execution, future-aware binary metadata, 9-trit packing hooks, and tooling
+  that does not paint the VM into a corner.
+- `OS3/xv6.md`: the current microkernel already has privilege isolation, MMU
+  protection, preemptive scheduling, ready/wait queues, console I/O, static
+  spawn/wait, and a tiny shell. The gaps to an xv6 alternative are storage/files,
+  dynamic `fork`/`exec`, and a user heap via `brk`/`sbrk`.
+- `todo.md`: cache latency, TLB modeling, and true threaded multicore are future
+  realism/stress tracks. Phase 7 should emit profiling and layout metadata that
+  those tracks can consume later, but should not block the compiler on them.
+- `OS3/language_optimizations.md`: Phase 7 should adopt Hindley-Milner type
+  inference, SSA/CFG IR, graph-coloring allocation, LLVM-style IR as the shared
+  artifact, zero-cost ownership/region safety, first-class `T1`/three-way
+  branching, width polymorphism, typed memory-order annotations, and native swap
+  lowering.
+
+### Track 7.1: Structural SSA IR And Module Model
+
+- Replace flat string-first IR emission with typed instruction nodes carrying
+  explicit operands, defs, uses, effects, widths, and source spans.
+- Add `Module`, `Function`, `BasicBlock`, and terminator concepts so the IR can
+  represent multi-function programs before assembly lowering.
+- Make SSA values explicit and introduce phi/block-argument support for
+  structured branches and loops.
+- Preserve the current assembly-emitting backend as the first lowering target so
+  existing assembler and VM tests remain the oracle.
+- Keep OS substrate operations first-class in IR: `SYSCALL`, `CSRR/CSRW/CSRRW`,
+  `ERET`, `FENCE`, `TLDR`, `TSTR`, executable metadata, and ABI-visible calls.
+
+Acceptance:
+
+- Existing `test_ternary_ir` programs still lower and run through the VM.
+- A multi-block SSA function with `brn`/`brz`/`brp`, a loop, and a function call
+  lowers to valid `.tasm`.
+- IR diagnostics report source spans and verifier failures before assembly.
+
+### Track 7.2: Type System, Width Inference, And Safety Core
+
+- Implement a Hindley-Milner style inference engine over numeric widths, lane
+  widths, vectors, structs, arrays, pointers, and functions.
+- Define the widening lattice `T1 < T5 < T10 < T20 < T40 < T50` and lane-family
+  equivalents, with explicit conversion nodes inserted during typing.
+- Make `T1` the language condition type and require exhaustive three-way
+  handling where a value can be negative, zero, or positive.
+- Add trit-width polymorphism for reusable functions over ternary precision.
+- Define a pointer model with validity states for valid, unknown/uninitialized,
+  and null, and require proven validity before dereference.
+- Add region/ownership checks for stack, static, kernel, user, and borrowed
+  references without introducing a garbage collector.
+- Model shared references with typed memory ordering:
+  relaxed `-1`, acquire-release `0`, and sequential `+1`.
+
+Acceptance:
+
+- Type inference can compile unannotated arithmetic, branches, function calls,
+  and width-polymorphic helpers.
+- Invalid dereferences, missing three-way match arms, unsafe shared mutation,
+  and accidental width narrowing fail at compile time.
+- Valid ownership and region proofs generate no runtime safety checks beyond the
+  branch or trap instructions the program already needs.
+
+### Track 7.3: Control Flow, Optimization, And Register Allocation
+
+- Build explicit CFG construction for `if`, ternary `match`, `while`, `for`, and
+  early returns.
+- Add verifier and analysis passes: dominance, liveness, use-def chains, escape
+  analysis, effect classification, and syscall/CSR side-effect barriers.
+- Add optimizations in conservative order: constant folding, copy propagation,
+  dead-code elimination, common-subexpression elimination, strength reduction,
+  branch simplification, and swap recognition.
+- Replace manual `release()`-driven register reuse with liveness-based
+  allocation.
+- Implement graph-coloring allocation for scalar registers and a compatible
+  allocator for vector registers, then add stack spills/prologues/epilogues.
+- Enforce the documented ABI: `r13-r18` arguments, `r13` return, `r1-r12`
+  callee-saved, `r19-r24` caller-saved, `r25` link, `r26` stack pointer.
+
+Acceptance:
+
+- Programs with more live temporaries than physical registers spill and run
+  correctly.
+- Caller/callee-save preservation is verified by multi-function VM tests.
+- Swap-like assignments lower to `SWAP` for register values and to the approved
+  memory-safe fallback sequence only when needed.
+
+### Track 7.4: Frontend Language MVP
+
+- Add a lexer, parser, AST, and source map for a small ternary-native systems
+  language rather than a full C++ frontend.
+- MVP syntax should cover functions, blocks, local bindings, literals, structs,
+  arrays, pointers, loops, three-way matches, calls, module imports, and
+  explicit syscall/CSR/atomic intrinsics.
+- Add inline assembly or intrinsic escape hatches only for kernel-grade
+  operations that cannot yet be expressed safely.
+- Keep the language ergonomic enough to write the next shell utilities,
+  allocator code, filesystem code, and kernel helpers.
+
+Acceptance:
+
+- Source text can compile through lexer -> parser -> type checker -> SSA IR ->
+  optimizer -> assembly -> executable header -> VM.
+- A small high-level program can call console syscalls, perform loops and
+  function calls, and run as a static user executable under the existing kernel.
+- Compiler diagnostics are stable enough to guide users without inspecting IR.
+
+### Track 7.5: Object, Linker, And Executable Tooling
+
+- Extend assembler/object metadata so compiled modules carry symbols,
+  relocations, data sections, executable headers, ABI version, stack hint,
+  syscall ABI version, and optional debug/source metadata.
+- Implement a static linker that combines compiler-produced modules into the
+  current executable header v1 contract.
+- Reserve but do not require richer future metadata for 9-trit packed sections,
+  dynamic linking, profile data, and cache/TLB layout hints.
+- Add a single driver command path for build/run so Phase 8 can compile many
+  userland and kernel-support programs repeatably.
+
+Acceptance:
+
+- Two or more source modules can link into one static executable.
+- Undefined symbols, duplicate definitions, ABI mismatches, invalid executable
+  headers, and relocation overflow fail deterministically.
+- Generated executables load through the same static loader path already proven
+  by Phase 6.
+
+### Track 7.6: Freestanding Runtime And Syscall Surface
+
+- Provide startup code, stack-frame setup, panic/abort, integer formatting,
+  minimal memory copy/set helpers, and syscall stubs for the frozen ABI.
+- Provide high-level wrappers for console output/input, `yield`,
+  `sleep_until_tick`, `exit`, `getpid`, `uptime`, static `spawn`, and `waitpid`.
+- Add compile-time feature gates for future Phase 8 syscalls such as `open`,
+  `read`, `write`, `close`, `brk`/`sbrk`, `fork`, and `exec`.
+- Keep heap allocation minimal in Phase 7. A region or bump allocator for
+  compiler acceptance tests is allowed; kernel-backed `malloc` waits for Phase
+  8's `brk`/`sbrk`.
+
+Acceptance:
+
+- A high-level user program uses runtime syscall wrappers and exits with a
+  visible status.
+- Runtime helpers do not depend on host services or a garbage collector.
+- Future syscall declarations can exist without pretending the kernel already
+  implements them.
+
+### Track 7.7: Compiler Validation And Developer Loop
+
+- Add unit tests for lexer, parser, type inference, ownership, IR verification,
+  optimization, register allocation, object metadata, linker behavior, and
+  runtime helpers.
+- Add end-to-end VM tests for compiled high-level programs, including an
+  executable launched by the existing shell/static spawn path.
+- Add golden assembly tests where ABI stability matters.
+- Add instruction-count and size reporting so future cache/TLB/PGO work has
+  baseline data.
+- Keep a simple `tritc`/driver workflow as the seed of the eventual 30-second
+  developer loop.
+
+Phase 7 completion criteria:
+
+- The repository can compile a nontrivial multi-function high-level source
+  program into the frozen executable header v1 format and run it under the
+  Phase 6 microkernel.
+- The compiler has structural SSA IR, module/function lowering, type inference,
+  width inference, zero-cost pointer/ownership checks, liveness-based register
+  allocation, stack spills, calls, syscalls, atomics, and source diagnostics.
+- Generated code obeys the frozen ABI, syscall contract, trap/CSR restrictions,
+  page-table expectations, and executable loader contract.
+- The remaining xv6 gaps are no longer blocked on hand-written assembly.
+
+Phase 7 non-goals:
+
+- Do not implement the block device, filesystem, `fork`, disk-backed `exec`, or
+  kernel-backed `brk`/`sbrk`; those belong to Phase 8.
+- Do not port POSIX libc, a full Unix shell, SQLite, curl, or other applications
+  yet.
+- Do not build a full C++ frontend or LLVM backend as the primary path.
+- Do not add a garbage collector.
+- Do not block Phase 7 on cache simulation, TLB emulation, threaded multicore,
+  dynamic linking, demand paging, or FPGA/ASIC work.
+
+## Phase 8 (The Platform Boot): Standard Library, xv6 Gaps, Shell, And Device Tree
+
+Status: planned.
+
+Goal: use the Phase 7 compiler to turn the proven microkernel substrate into an
+xv6-class ternary platform with storage, dynamic program loading, a user heap,
+and a clean modular shell.
+
+Major tracks:
+
+- Add a device-tree/HAL boot description so console, timer, block storage, and
+  future devices are discovered through data instead of hard-coded addresses.
+- Add a simulated block device and disk-image format.
+- Implement a small Unix-style filesystem with superblock, inodes,
+  direct/indirect blocks, directories, and enough path lookup for shell use.
+- Add `brk`/`sbrk`, a user heap contract, and a freestanding allocator that can
+  back `malloc`/`free`.
+- Add disk-backed `exec` and a first `fork`/clone model; copy-on-write and
+  demand paging can stay future work.
+- Port or implement a small libc surface: startup, strings, memory, formatted
+  I/O, file descriptors, process wrappers, and error/status conventions.
+- Rebuild the shell in the high-level language with commands for launching
+  files, inspecting directories, reading/writing files, and exercising process
+  lifecycle behavior.
+- Add optional cache/TLB/profile instrumentation hooks after the platform works,
+  using the metadata emitted by Phase 7.
+
+Phase 8 completion criteria:
+
+- The VM can boot a device-tree-described kernel image, mount a disk image, load
+  user executables from the filesystem, allocate heap memory, run a high-level
+  shell, launch child programs, and wait for their exit statuses.
+- Storage, process creation, and heap allocation close the three current gaps
+  between the Phase 6 microkernel and the xv6 alternative described in
+  `OS3/xv6.md`.
 
 ## Phase 9: Security and Post-Quantum Crypto Primitives
 
