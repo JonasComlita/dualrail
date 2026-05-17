@@ -5,6 +5,49 @@
 // ABI, facilitating console I/O, process management, and memory allocation.
 // =============================================================================
 
+//Category 1: Memory Management (std::malloc)
+//Backs dynamic allocations for user applications, converting raw sbrk pages into discrete blocks:
+//fn malloc(words: t40) -> t40 — Allocates a contiguous block of memory using a first-fit/best-fit list.
+//fn free(ptr: t40) — Frees the allocated block and coalesces adjacent free blocks to prevent fragmentation.
+//fn calloc(num: t40, size: t40) -> t40 — Allocates and zeroes out memory.
+//fn realloc(ptr: t40, new_size: t40) -> t40 — Resizes an existing heap block, copying data if relocation is necessary.
+
+//Category 2: String & Character Utilities (std::string)
+//Since balanced ternary represents text natively using characters, standard string-manipulation functions are crucial:
+//fn strlen(str: t40) -> t40 — Computes string length (terminated by 0).
+//fn strcmp(str1: t40, str2: t40) -> t1 — Performs a native three-way string comparison (-1 for <, 0 for ==, 1 for >).
+//fn strcpy(dest: t40, src: t40) & fn strcat(dest: t40, src: t40) — Copy and concatenate strings.
+//Ternary Conversions:
+//fn atoi_ternary(str: t40) -> t40 — Parses a balanced ternary string representation (e.g., using T, 0, 1 or -, 0, + symbols) into a native scalar word.
+//fn itoa_ternary(val: t40, buf: t40) — Formats a scalar word into a balanced ternary string.
+
+//Category 3: Buffered File I/O & Streams (std::io)
+//Wraps the raw integer file descriptor system calls into easy-to-use, buffered streams:
+//fn fopen(path: t40, mode: t40) -> t40 — Opens a file stream structure, allocating a memory read/write buffer.
+//fn fclose(stream: t40) -> t40 — Closes a stream, flushing any pending write buffers to disk first.
+//fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 — Performs buffered read.
+//fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 — Performs buffered write.
+//fn printf(format: t40, args: t40) — A formatted print utility supporting standard output routing.
+
+//Category 4: Process & Environment Control (std::process)
+//System wrappers for managing process states, parameters, and environment maps:
+//fn getenv(name: t40) -> t40 — Queries the process's environment variable table.
+//fn setenv(name: t40, value: t40) -> t40 — Updates/inserts environment variables.
+//Arguments Parsing:
+//fn parse_args(cmdline: t40, argv_buf: t40) -> t40 — Parses a raw command-line string into separate null-terminated strings, returning argc and building the argv[] pointer array for application entry points.
+
+//Category 5: Ternary Data Structures (std::collections)
+//High-level data structures optimized for ternary-native performance:
+//Ternary Search Tree (TST): A string-to-value map using three-way node branching (left, equal, right), matching our three-way branch instructions. Used for high-speed environment variable lookups.
+//Ternary Heap (PriorityQueue): An $O(\log_3 N)$ shallower priority heap to drive pathfinding or event loops.
+//Ternary Vector: A dynamically resizing contiguous array block.
+
+//Category 6: Freestanding Math & Carryless Operations (std::math)
+//Native math functions that take advantage of our ISA operations:
+//fn abs(val: t40) -> t40 — Balanced absolute value.
+//fn min(a: t40, b: t40) -> t40 & fn max(a: t40, b: t40) -> t40 — Native min/max selections.
+//fn clmul(a: t40, b: t40) -> t40 — Carryless multiplication helper for implementing polynomials and CRC checksum verification.
+
 fn print_int(x: t40) -> t40 {
     return sys_write_int(x);
 }
@@ -52,3 +95,28 @@ fn waitpid(pid: t40) -> t40 {
 fn fork() -> t40 {
     return sys_fork();
 }
+
+fn abs(val: t40) -> t40 {
+    match sign(val) {
+        neg => { return -val; }
+        zero => { return 0; }
+        pos => { return val; }
+    }
+}
+
+fn min(a: t40, b: t40) -> t40 {
+    match sign(a - b) {
+        neg => { return a; }
+        zero => { return a; }
+        pos => { return b; }
+    }
+}
+
+fn max(a: t40, b: t40) -> t40 {
+    match sign(a - b) {
+        neg => { return b; }
+        zero => { return a; }
+        pos => { return a; }
+    }
+}
+
