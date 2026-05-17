@@ -211,6 +211,25 @@ Implemented minimal syscall ids:
 - `10`: spawn a predeclared static executable image
 - `11`: waitpid
 
+Reserved Phase 8 syscall ids:
+
+- `12`: open
+- `13`: close
+- `14`: read
+- `15`: write
+- `16`: stat
+- `17`: readdir
+- `18`: brk
+- `19`: sbrk
+- `20`: fork
+- `21`: exec
+
+New Phase 8 syscalls use the ternary status return convention:
+
+- `r13`: `-1` error, `0` pending/EOF/retry, `+1` success
+- `r14`: payload such as fd, byte/word count, child pid, or new break
+- `r15`: errno/detail
+
 ## 5. Endianness And Data Layout
 
 ### Trit Order

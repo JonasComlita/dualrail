@@ -932,6 +932,16 @@ static constexpr int SYSCALL_UPTIME           = 8;
 static constexpr int SYSCALL_READ_INPUT       = 9;
 static constexpr int SYSCALL_SPAWN            = 10;
 static constexpr int SYSCALL_WAITPID          = 11;
+static constexpr int SYSCALL_OPEN             = 12;
+static constexpr int SYSCALL_CLOSE            = 13;
+static constexpr int SYSCALL_READ             = 14;
+static constexpr int SYSCALL_WRITE            = 15;
+static constexpr int SYSCALL_STAT             = 16;
+static constexpr int SYSCALL_READDIR          = 17;
+static constexpr int SYSCALL_BRK              = 18;
+static constexpr int SYSCALL_SBRK             = 19;
+static constexpr int SYSCALL_FORK             = 20;
+static constexpr int SYSCALL_EXEC             = 21;
 
 static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;

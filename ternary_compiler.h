@@ -647,6 +647,16 @@ static constexpr int sys_uptime = 8;
 static constexpr int sys_read_console_word = 9;
 static constexpr int sys_spawn_static = 10;
 static constexpr int sys_waitpid = 11;
+static constexpr int sys_open = 12;
+static constexpr int sys_close = 13;
+static constexpr int sys_read = 14;
+static constexpr int sys_write = 15;
+static constexpr int sys_stat = 16;
+static constexpr int sys_readdir = 17;
+static constexpr int sys_brk = 18;
+static constexpr int sys_sbrk = 19;
+static constexpr int sys_fork = 20;
+static constexpr int sys_exec = 21;
 } // namespace runtime
 
 // =============================================================================
@@ -1347,7 +1357,12 @@ private:
                name == "sys_sleep_until_tick" || name == "sys_exit" ||
                name == "sys_getpid" || name == "sys_uptime" ||
                name == "sys_read_console_word" || name == "sys_spawn_static" ||
-               name == "sys_waitpid";
+               name == "sys_waitpid" || name == "sys_open" ||
+               name == "sys_close" || name == "sys_read" ||
+               name == "sys_write" || name == "sys_stat" ||
+               name == "sys_readdir" || name == "sys_brk" ||
+               name == "sys_sbrk" || name == "sys_fork" ||
+               name == "sys_exec";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -2892,6 +2907,16 @@ private:
         if (name == "sys_read_console_word") return runtime::sys_read_console_word;
         if (name == "sys_spawn_static") return runtime::sys_spawn_static;
         if (name == "sys_waitpid") return runtime::sys_waitpid;
+        if (name == "sys_open") return runtime::sys_open;
+        if (name == "sys_close") return runtime::sys_close;
+        if (name == "sys_read") return runtime::sys_read;
+        if (name == "sys_write") return runtime::sys_write;
+        if (name == "sys_stat") return runtime::sys_stat;
+        if (name == "sys_readdir") return runtime::sys_readdir;
+        if (name == "sys_brk") return runtime::sys_brk;
+        if (name == "sys_sbrk") return runtime::sys_sbrk;
+        if (name == "sys_fork") return runtime::sys_fork;
+        if (name == "sys_exec") return runtime::sys_exec;
         return 0;
     }
 

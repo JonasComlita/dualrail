@@ -919,32 +919,61 @@ Phase 7 non-goals:
 - Do not block Phase 7 on cache simulation, TLB emulation, threaded multicore,
   dynamic linking, demand paging, or FPGA/ASIC work.
 
-## Phase 8 (The Platform Boot): Standard Library, xv6 Gaps, Shell, And Device Tree
+## Phase 8 (The Platform Boot): Ternary xv6-Class Platform Boot
 
-Status: planned.
+Status: in progress; Phase 8 platform substrate v1 is implemented.
 
 Goal: use the Phase 7 compiler to turn the proven microkernel substrate into an
 xv6-class ternary platform with storage, dynamic program loading, a user heap,
 and a clean modular shell.
 
-Major tracks:
+Current implementation note:
 
-- Add a device-tree/HAL boot description so console, timer, block storage, and
-  future devices are discovered through data instead of hard-coded addresses.
-- Add a simulated block device and disk-image format.
-- Implement a small Unix-style filesystem with superblock, inodes,
-  direct/indirect blocks, directories, and enough path lookup for shell use.
-- Add `brk`/`sbrk`, a user heap contract, and a freestanding allocator that can
-  back `malloc`/`free`.
-- Add disk-backed `exec` and a first `fork`/clone model; copy-on-write and
-  demand paging can stay future work.
-- Port or implement a small libc surface: startup, strings, memory, formatted
-  I/O, file descriptors, process wrappers, and error/status conventions.
-- Rebuild the shell in the high-level language with commands for launching
-  files, inspecting directories, reading/writing files, and exercising process
-  lifecycle behavior.
-- Add optional cache/TLB/profile instrumentation hooks after the platform works,
-  using the metadata emitted by Phase 7.
+- `ternary_phase8.h` adds the first concrete Phase 8 platform layer: device-tree
+  validation, deterministic 27-word block storage, a tiny inode filesystem,
+  `T1` syscall-style result triples, user pointer state wrappers, shared
+  acquire-release word helpers, per-process heap metadata, fork copy semantics,
+  executable metadata attachment, and disk-backed `exec` modeling.
+- `ternary_compiler.h` now reserves runtime syscall wrapper ids `12-21` for
+  `open`, `close`, `read`, `write`, `stat`, `readdir`, `brk`, `sbrk`, `fork`,
+  and `exec`, while keeping ids `1-11` unchanged.
+- `test_phase8_platform` verifies the new platform contracts and compiler
+  lowering for the Phase 8 syscall wrappers.
+
+Accepted ternary-native policies:
+
+- New kernel APIs use `T1` status convention: `r13 = -1/0/+1`,
+  `r14 = payload`, and `r15 = errno/detail`.
+- Runtime and compiler-facing pointer wrappers model `ptr<T, user,
+  valid|null|unknown>`; the kernel still validates user addresses at syscall
+  boundaries.
+- Shared block-cache and scheduler/device state should use `shared<T, order>`
+  semantics and lower through `TLDR`/`TSTR`/`FENCE.0` where concurrency matters.
+- Current executable header v1, syscall ids `1-11`, trap-frame layout, page
+  size, and PTE v1 remain compatible. Compact three-state permission PTEs are a
+  documented future PTE v2 idea, not a Phase 8 replacement.
+
+Major tracks still to push from substrate into the running assembly kernel:
+
+- Boot the minimal kernel from a device-tree/HAL description for console, timer,
+  block storage, page size, disk geometry, and root filesystem.
+- Route the simulated block device through real VM/kernel service paths instead
+  of only the host-side Phase 8 facade.
+- Move the tiny filesystem into kernel-owned storage and implement path lookup,
+  file descriptors, directory reads, and executable file loading from the mounted
+  disk image.
+- Add routed syscalls `12-21` in the assembly kernel with the `T1` result
+  convention and user-pointer validation.
+- Add per-process `heap_start`, `heap_break`, `heap_limit`, heap page ownership,
+  `brk`/`sbrk`, and a freestanding allocator backing `malloc`/`free`.
+- Add disk-backed `exec` and eager-copy `fork`; copy-on-write, demand paging,
+  dynamic linking, networking, users/permissions, and native compiler
+  self-hosting remain future work.
+- Rebuild the shell in the Phase 7 high-level language with `ls`, `cat`,
+  `echo/write`, `run/exec`, `forkwait`, `mem`, `pid`, `help`, and `exit`.
+- Use existing `SWAP` only where the compiler or assembly proves
+  register-to-register swaps are safe. Do not depend on hardware register-rename
+  zero-cycle context switches for correctness.
 
 Phase 8 completion criteria:
 
@@ -954,6 +983,10 @@ Phase 8 completion criteria:
 - Storage, process creation, and heap allocation close the three current gaps
   between the Phase 6 microkernel and the xv6 alternative described in
   `OS3/xv6.md`.
+- The full regression gate includes `test_phase8_platform`,
+  `test_phase7_compiler`, `test_kernel`, `test_ternary_ir`,
+  `test_multiwidth_vm`, `test_ternary_lanes`, `test_native_ops`, and
+  `test_numeric_workloads`.
 
 ## Phase 9: Security and Post-Quantum Crypto Primitives
 
