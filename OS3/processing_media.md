@@ -8,10 +8,6 @@ Processing media (image, video, audio) on an OS isn't just about displaying cont
 
 "Isochronous" means data must move at a **constant, predictable rate.** Missing a deadline by even one millisecond produces an audible pop in audio or a torn frame in video.
 
-*   **Audio**: You need a driver that can talk to a DAC (Digital-to-Analog Converter). The "Strategic Architecture" requirement here is a **Ring Buffer**. The OS fills one half of the buffer while the hardware plays the other half. If the OS misses its deadline by even 1 millisecond, you get an audible "pop."
-
-*   **Image/Video**: You need a **Framebuffer** (a map of memory to pixels) and a **Vertical Sync (VSync)** interrupt. The OS needs to know exactly when the screen is finished drawing a frame so it can swap in the one without "tearing."
-
 ### Audio: Ring Buffers
 
 The standard solution is a ring buffer — the OS fills one half while hardware plays the other. In binary systems, ring buffer wraparound requires a power-of-2 size and a bitmask:
@@ -28,7 +24,7 @@ In ternary, the `TMOD` opcode makes this natural at any power-of-3 size:
 TMOD  r_head, r_head, r_buffer_size    ; wraps at 27, 81, 243, 729 — one instruction
 ```
 
-Buffer sizes of 27, 81, 243, and 729 words align with trit addressing. No bitmask, no branch, no power-of-2 constraint. This is one of the concrete places where ternary is structurally simpler than binary for OS infrastructure.
+Buffer sizes of 27, 81, 243, and 729 words align directly with trit addressing. No bitmask, no branch, no power-of-2 constraint. This is one of the most concrete places where ternary is structurally simpler than binary for OS infrastructure.
 
 ### Video: Framebuffer and Triple Buffering
 
@@ -50,7 +46,7 @@ TLADD.l1 r1, r1, r2          ; advance state, wraps naturally in trit lane arith
 TSEL     r_active, r1, r_buf0, r_buf1, r_buf2
 ```
 
-Triple buffering is the standard fix for the GPU-ahead-of-display problem in modern rendering. In binary it requires explicit conditional logic. In ternary it is one `TLADD` and one `TSEL`.
+Triple buffering is the standard fix for the GPU-ahead-of-display problem in modern rendering. In binary it requires explicit conditional logic. In ternary it is one `TLADD` and one `TSEL`. This is not an optimization — it is the natural expression of a three-state problem in a three-valued system.
 
 ### The Timer Interrupt
 
@@ -71,7 +67,7 @@ audio_loop:
     JMP audio_loop
 ```
 
-This is the soft real-time model made concrete. Without `set_timer` and `wait_interrupt`, the audio buffer has no implementation path regardless of how the ring buffer is structured.
+Without `set_timer` and `wait_interrupt`, the audio buffer has no implementation path regardless of how the ring buffer is structured. These two syscalls are the minimum viable real-time primitive.
 
 ---
 
@@ -81,13 +77,13 @@ Media files are large. If the CPU manually `LOAD`s and `STORE`s every pixel or s
 
 **DMA (Direct Memory Access)** allows hardware to pull data directly from DMEM to the audio or video device without CPU involvement. The CPU sets up a transfer descriptor and the DMA engine handles the rest.
 
-**Zero-copy networking** for video streaming means the OS moves data from the network card directly to the video buffer. Every intermediate copy is a throughput and latency penalty. The MMU implementation already in the system enables this — a region of DMEM can be mapped as both the network receive buffer and the video decode input simultaneously, with no copy in between.
+**Zero-copy networking** for video streaming means the OS moves data from the network card directly to the video buffer. Every intermediate copy is a throughput and latency penalty. The MMU already in the system enables this — a region of DMEM can be mapped as both the network receive buffer and the video decode input simultaneously, with no copy in between.
 
-The `FENCE` opcode is required here:
+The `FENCE` opcode is required at the DMA boundary:
 
 ```asm
-; Signal DMA transfer complete before reading result
-; Without FENCE, CPU may see stale data from before DMA wrote it
+; Ensure DMA write is visible before CPU reads result
+; Without FENCE, CPU may observe stale data from before DMA completed
 FENCE
 LOAD  r1, r_dma_result_addr, 0
 ```
@@ -98,9 +94,9 @@ LOAD  r1, r_dma_result_addr, 0
 
 Standard OS schedulers are fair — they give every thread a turn. Media requires **priority-driven scheduling** with explicit deadline awareness.
 
-The audio thread must preempt the compiler, the shell, and any other non-deadline work. If the compiler takes too much CPU time, the audio should not stutter. This is implemented via the scheduler's priority queue, where the audio thread holds the highest static priority and `wait_interrupt` voluntarily yields until its next deadline.
+The audio thread must preempt the compiler, the shell, and any other non-deadline work. If the compiler takes too much CPU time, the audio must not stutter. This is implemented via the scheduler's priority queue, where the audio thread holds the highest static priority and `wait_interrupt` voluntarily yields until its next deadline.
 
-**Multicore scaling** for video decoding maps directly to the Lock ABI already implemented. Video decoding (H.264, or a future ternary-native codec) is embarrassingly parallel — different chunks of the same frame can be decoded independently. The atomic `TSTR` instruction coordinates cores handing off buffer regions:
+**Multicore scaling** for video decoding maps directly to the Lock ABI already implemented. Video decoding is embarrassingly parallel — different chunks of the same frame can be decoded independently. The atomic `TSTR` instruction coordinates cores handing off buffer regions:
 
 ```asm
 ; Core 0 signals Core 1 that a frame chunk is ready
@@ -108,7 +104,15 @@ MOV.t1    r_flag, 1
 TSTR      r_flag, r_chunk_ready_addr   ; atomic store, visible across cores
 ```
 
-Core 1 polls or waits on `r_chunk_ready_addr` before consuming the decoded data. The three-valued atomic gives a natural three-state handshake: negative means not started, zero means in progress, positive means ready — no separate status register needed.
+Core 1 polls `r_chunk_ready_addr` before consuming the decoded data. The three-valued atomic gives a natural three-state handshake:
+
+```
+-1  not started
+ 0  in progress
++1  ready
+```
+
+No separate status register. No ABA problem from two-state CAS. The handshake state is encoded directly in the trit value.
 
 ---
 
@@ -123,7 +127,7 @@ In binary lossy compression, quantization is a separate lossy step that introduc
 ```
 Binary JPEG pipeline:
   DCT coefficients → divide by quantization table → round → entropy code
-  (rounding error accumulates, scale information is destroyed)
+  Rounding destroys scale. Decoder must reconstruct it from the quantization table.
 ```
 
 In ternary, quantization is trit truncation — dropping lower-order trits using `CVT`:
@@ -131,11 +135,11 @@ In ternary, quantization is trit truncation — dropping lower-order trits using
 ```
 Ternary pipeline:
   DCT coefficients → cvt.t40.t10 → entropy code
-  (scale is preserved exactly in the exponent field,
-   only mantissa precision is reduced)
+  Scale is preserved exactly in the exponent field.
+  Only mantissa precision is reduced.
 ```
 
-The `cvt` instruction preserves the exponent field exactly and reduces only the mantissa. The *scale* of the value survives; only its precision decreases. Binary quantization has no equivalent — dividing by a quantization step destroys scale information and requires the decoder to reconstruct it.
+The `cvt` instruction preserves the exponent field exactly and reduces only the mantissa. The scale of the value survives; only its precision decreases. Binary quantization has no equivalent — dividing by a quantization step destroys scale information and requires the decoder to reconstruct it from a side channel.
 
 The ternary quality ladder is one instruction per step:
 
@@ -160,25 +164,25 @@ The ternary twiddle factors (roots of unity in balanced ternary) are exact repre
 
 ### Audio Filtering and Image Convolution
 
-The `VMAC.t1` (vector multiply-accumulate) instruction handles the inner loop of both audio FIR filters and image convolution kernels:
+The `VMAC.t1` instruction handles the inner loop of both audio FIR filters and image convolution kernels:
 
 ```asm
 ; Audio FIR filter: output[n] = sum(coeffs[k] * input[n-k])
-ACLR.t20                         ; clear accumulator
+ACLR.t20
 vmac_loop:
     VLOAD.t20  v_in,    r_input_ptr, 0
     VLOAD.t20  v_coeff, r_coeff_ptr, 0
-    VMAC.t1    v_in, v_coeff      ; accumulate dot product
-    ; advance pointers...
+    VMAC.t1    v_in, v_coeff           ; accumulate dot product into accumulator
+    ; advance pointers
     BRN r_loop_cond, vmac_loop
-ASTORE.t20 r_output               ; extract result
+ASTORE.t20 r_output
 ```
 
-The same loop structure handles 2D image convolution (blurring, sharpening, edge detection) by treating the image as a stream of row vectors.
+The same loop handles 2D image convolution (blurring, sharpening, edge detection) by treating the image as a stream of row vectors.
 
 ### Horizontal Reductions
 
-The proposed `VSUM`, `VHMIN`, and `VHMAX` opcodes close the gap between element-wise vector operations and scalar results. Without them, computing the energy of an audio frame or the peak pixel value in a tile requires a manual scalar reduction loop. With them:
+The proposed `VSUM`, `VHMIN`, and `VHMAX` opcodes close the gap between element-wise vector operations and scalar results. Without them, computing the energy of an audio frame or the peak pixel value in a tile requires a manual scalar reduction loop:
 
 ```asm
 VSUM.t20   r_energy, v_samples   ; sum all lanes → scalar energy value
@@ -187,185 +191,266 @@ VHMAX.t20  r_peak,   v_samples   ; peak sample value for normalization
 
 ---
 
-## 5. The Ternary Media Stack Roadmap
+## 5. Biologically-Aligned Ternary Color (Opponent-Trit Framebuffer)
+
+This is where ternary moves from math to biology. The human eye does not perceive raw Red, Green, and Blue. After the retina, the visual cortex processes color using **Opponent Color Theory** (Hering's Theory): Red vs. Green, Blue vs. Yellow, and Black vs. White. Balanced ternary (+1, 0, -1) is the unique mathematical structure that maps to this model natively.
+
+### The Opponent-Trit Pixel Format
+
+A naïve 9-trit pixel (3 channels × 3 states) gives only 27 total states — far too coarse for real content. The correct granularity uses T10 per channel, packed into a single T40 word:
+
+```
+T10 Luma channel    (6 mantissa trits → 729 luminance levels, perceptually sufficient)
+T10 Red-Green       (6 mantissa trits → 729 opponent steps)
+T10 Blue-Yellow     (6 mantissa trits → 729 opponent steps)
+
+Total: 30 trits per pixel → fits in one T40 word with 10 trits spare for alpha/metadata
+```
+
+Three T10 channels in one T40 word. The perceptual color space is preserved, the precision is sufficient for display use, and the entire pixel fits in a single native-width register.
+
+Compared to binary RGB:
+
+```
+Binary 24-bit RGB:      16.7 million colors, perceptually redundant
+Opponent T40 pixel:     729 × 729 × 729 ≈ 387 million opponent states
+                        mapped to a perceptually uniform space
+```
+
+### Zero-Cost Color Inversion
+
+To invert a binary framebuffer, the CPU must XOR every bit of every pixel:
+
+```c
+// Binary color inversion — 24 bit flips per pixel
+for (int i = 0; i < pixel_count; i++)
+    framebuffer[i] ^= 0xFFFFFF;
+```
+
+In the opponent-trit format, `TINV` flips the physical sign of every trit simultaneously. A full framebuffer inversion — dark mode, night mode, accessibility inversion — is a single pass with no arithmetic:
+
+```asm
+; Invert entire framebuffer — each T40 word is one pixel
+tinv_loop:
+    LOAD.t40   r1, r_fb_ptr, 0
+    TINV.t40   r1, r1              ; physical polarity flip, all 40 trits
+    STORE.t40  r1, r_fb_ptr, 0
+    ; advance pointer
+    BRN r_done, tinv_loop
+```
+
+Because `TINV` is a physical polarity flip in hardware rather than a logical operation, this executes at propagation delay speed rather than ALU speed.
+
+### Dual-Array Delta Buffering
+
+Using two arrays separates persistent state from change:
+
+```
+Array 1 (Baseline):  Full-resolution T20 image  — the complete current frame
+Array 2 (Delta):     Low-resolution T5 motion buffer — only what changed
+```
+
+Instead of redrawing the whole screen, the GPU applies only the delta array. Because ternary has a genuine zero state — not a value representing zero, but physical absence of signal in a dual-rail implementation — the delta array is mostly zeros in a static scene.
+
+In a dual-rail physical implementation where zero draws no power, a mostly-zero delta array is a mostly-off hardware state. Power consumption becomes directly proportional to the information density of the change, not the resolution of the screen.
+
+### Fast Sign-Flipping for Sub-Pixel Modulation
+
+In binary, switching a pixel between states requires charging and discharging a capacitor — a full voltage swing. In balanced ternary with differential signaling, the transition from `+1` to `-1` is a phase shift — swapping which wire is high, not charging a new voltage level.
+
+This enables sub-pixel temporal dithering at kilohertz speeds with near-zero power cost. Oscillating a pixel between `+1` and `-1` at high frequency creates perceptually intermediate color states without the capacitive energy cost of binary switching. At 120Hz+ refresh rates, this reduces per-frame power consumption significantly.
+
+### SYSCALL Integration
+
+```
+SYSCALL 10  — BLIT_OPPONENT(buffer_addr, width, height)
+              Kernel accepts opponent-trit T40 pixel buffer
+              and pushes directly to display hardware
+```
+
+Three T40 pixels pack into one 27-trit instruction word boundary naturally — the display pipeline is word-aligned at the architecture level.
+
+---
+
+## 6. Biologically-Aligned Ternary Audio (Opponent-Trit Audio)
+
+The same biological alignment that motivates the opponent-trit framebuffer applies to audio. The human auditory system processes sound using opponent mechanisms — comparing pressure differentials across time and between ears. Balanced ternary maps to this structure directly.
+
+### The Binaural Opponent-Trit Frame
+
+Conventional binary stereo encodes two independent channels (L and R), introducing redundancy and requiring arithmetic for every spatial manipulation:
+
+```
+Sum (Mono)           = (L + R) / 2
+Difference (Spatial) = (L - R) / 2
+```
+
+Widening, collapsing, or swapping channels requires continuous addition, subtraction, and shifting on every sample. The opponent-trit encoding separates these components at the data level:
+
+```
+Trit 1 — Luma-Acoustic (Mono Pressure):
+  +1 : Air compression (positive pressure wave)
+   0 : Ambient atmospheric baseline
+  -1 : Air rarefaction (negative pressure wave)
+
+Trit 2 — Spatial Opponent (Left vs. Right Differential):
+  +1 : Spatial dominance in left ear (ITD/ILD shift left)
+   0 : Perfect center (identical phase and level)
+  -1 : Spatial dominance in right ear (ITD/ILD shift right)
+```
+
+### Vector ISA Integration
+
+The opponent encoding connects directly to the vector ISA. A stereo frame in 9-trit spatial format packs naturally into vector registers. Spatial inversion of nine frames simultaneously:
+
+```asm
+; Swap L/R for 9 stereo frames in one vector instruction
+; Each vector lane holds Trit 2 of one frame (the spatial opponent trit)
+TINV.l1   v_spatial_trit    ; flip sign of all 9 spatial trits simultaneously
+```
+
+The combination of the opponent encoding and the vector width creates a media processing primitive with no binary equivalent at any instruction count. Binary spatial inversion requires per-sample arithmetic across the entire buffer. Ternary spatial inversion of nine frames is one instruction.
+
+### Zero-Cost Spatial Operations
+
+**Channel swap (L ↔ R):** Run `TINV` on Trit 2. The physical sign flip is the operation. No arithmetic, no temporary registers, no loop.
+
+**Stereo collapse to mono:** Set Trit 2 to zero. In a dual-rail physical implementation, zero is the unpowered state. Mono playback physically disables the spatial circuit — power consumption drops by half because the spatial component is not driven.
+
+**Stereo widening:** Scale Trit 2 by a factor. Because the spatial differential is isolated from the mono pressure component, widening does not cause the phase cancellation or hollowing artifacts common in binary spatializers. The mono content is untouched.
+
+---
+
+## 7. Direct-to-Transistor Balanced Class-D Amplification
+
+Class-D amplifiers convert audio to a high-frequency pulse stream for efficient output. Binary Class-D has only two physical states: High (+V) and Low (-V). Even during silence, the amplifier must continuously toggle between rails at megahertz frequencies to average to zero, producing continuous idle power dissipation, high-frequency EMI, and audible idle hiss requiring low-pass filtering.
+
+### The Three-State H-Bridge Driver
+
+A ternary Class-D driver uses three states, driving an H-bridge speaker circuit directly:
+
+```
++1 : Driver pulled to positive reference voltage (+Vref)
+ 0 : Driver completely disconnected / shorted to ground (High-Z or Ground)
+-1 : Driver pulled to negative reference voltage (-Vref)
+```
+
+```
+Ternary Audio Stream → Direct-to-Transistor Driver
+                              |
+               +--------------+--------------+
+               |              |              |
+           +1 path        0 path         -1 path
+           +Vref          Ground         -Vref
+               |              |              |
+               +--------------+--------------+
+                              |
+                       Speaker Diaphragm
+```
+
+During silence, the audio stream produces a steady stream of zero trits. The driver transistors remain fully off. Power consumption drops to zero — no switching, no EMI, no hiss. This is the physical consequence of ternary's genuine zero state rather than an optimization layered on top of binary switching logic.
+
+**Important qualification:** This zero-power property requires a dual-rail physical implementation where zero is an open-circuit or ground state, not a driven voltage level. Standard CMOS ternary implementations drive zero as a specific voltage and do not have this property. The claim is contingent on the physical layer design.
+
+---
+
+## 8. Perfect Phase-Reversal Active Noise Cancellation
+
+Active Noise Cancellation captures ambient noise and plays back an inverted waveform to acoustically cancel pressure waves.
+
+### The Binary Negation Problem
+
+In two's complement binary, negating a value is asymmetric:
+
+```
+-x = ~x + 1
+```
+
+Negating the maximum negative value (e.g., -32768 in 16-bit) causes arithmetic overflow, clipping the waveform and introducing distortion. The operation requires multiple gate levels: inversion followed by carry-propagating addition.
+
+### Ternary Negation
+
+In balanced ternary, every number is natively symmetric around zero. Negation is an exact physical operation:
+
+```
+ANC Wave = TINV(Noise Wave)
+```
+
+The cancellation wave is generated by physically routing dual-rail lines through a polarity swapper — swapping which wire carries the positive signal. This occurs at propagation delay speed, bypassing the ALU entirely.
+
+Because the ternary range is perfectly symmetric (e.g., -13 to +13 for a 3-trit amplitude), there are no boundary asymmetries. The cancellation wave can mirror the noise wave up to absolute maximum amplitude without clipping.
+
+**Important qualification:** The end-to-end ANC latency still includes ADC sampling, digital processing, and DAC output — typically under 1 millisecond for in-ear monitors. The ternary advantage is specifically in the negation step, eliminating ~5-10 gate delays of carry-propagating addition. The total system latency improvement is real but modest relative to the ADC/DAC pipeline. Patent claims should be scoped to the negation mechanism, not total system latency.
+
+---
+
+## 9. Patent Considerations
+
+The architecture described above contains several potentially patentable claims. Prior art search against Soviet ternary computing literature (Setun, 1958, and subsequent work) is essential before filing — claims must be specifically about the combination with modern ISA design rather than ternary media processing in general.
+
+### Claim 1 — Biologically-Aligned Ternary Color Processing
+
+**Non-obviousness argument:** Binary display patents focus on making RGB faster. This is a paradigm shift: mapping Hering's Opponent Color Theory directly to balanced ternary's three states at the ISA level. The `TINV` instruction becomes a hardware-accelerated color space transformation — zero-cost inversion is a physical property of the encoding, not a software optimization.
+
+**Key elements to protect:**
+- The opponent-color format: T10 per channel (Luma, Red-Green, Blue-Yellow) packed into a T40 word
+- `TINV` as a display-space color inversion primitive that operates on the opponent encoding
+- `SYSCALL 10 (BLIT_OPPONENT)` as the standard kernel interface
+- The claim that balanced ternary is the unique mathematical structure enabling Hering's theory as a hardware instruction
+
+### Claim 2 — Dual-Array Delta Power Architecture
+
+**Non-obviousness argument:** Binary has no zero state — zero is a value, not the absence of signal. A binary screen must maintain a voltage floor even for black pixels. The dual-rail ternary zero state makes power consumption physically proportional to scene entropy.
+
+**Key elements to protect:**
+- Separation of baseline (T20) and delta (T5) framebuffer arrays
+- Power consumption proportional to delta array information density
+- Zero-power static display in dual-rail physical implementation
+- Physical layer requirement must be specified in the claim
+
+### Claim 3 — Differential Phase Dithering
+
+**Non-obviousness argument:** Binary sub-pixel dithering requires capacitive charge/discharge per state transition. Ternary sign-flip (+1 to -1) is a phase shift on differential wires, not a capacitive event.
+
+**Key elements to protect:**
+- Sub-pixel modulation via differential phase reversal
+- Intermediate color states without capacitive charging cycles
+- Power-per-frame reduction at 120Hz+ refresh rates
+
+### Claim 4 — Three-State Class-D Audio with True Quiescence
+
+**Key elements to protect:**
+- H-bridge speaker driver with three physical states (+Vref, Ground, -Vref)
+- Zero idle power during silence via transistor off-state (High-Z)
+- Zero idle EMI and hiss as physical consequences of the zero state
+- Physical implementation requirement: dual-rail open-circuit zero state
+
+---
+
+## 10. The Ternary Media Stack Roadmap
 
 | Component | Status | Notes |
 |-----------|--------|-------|
 | **Audio ring buffer** | Possible now | Needs TMOD opcode + SYSCALL 8/9 timer |
 | **Image framebuffer** | Possible now | Needs host-side window (Vulkan or SDL) |
 | **Triple framebuffer** | Possible now | TLADD + TSEL state machine, three buffers |
+| **Opponent-trit pixel format** | Needs definition | T10×3 in T40 word; define in ARCHITECTURE_CONTRACTS.md |
 | **FFT/DCT kernel** | Possible with vector ISA | VMAC + VSUM opcodes, benefits from compiler |
 | **Timer interrupt** | Needs SYSCALL 8/9 | Host thread coordination for deadlines |
 | **DMA transfer** | Needs SYSCALL extension | FENCE already in ISA |
 | **Video decoding** | Needs compiler | Codecs too complex for hand-written assembly |
+| **Binaural opponent-trit audio** | Needs format definition | 9-trit spatial frame spec |
+| **Three-state Class-D driver** | Hardware only | Requires dual-rail physical implementation |
+| **Ternary ANC** | Hardware only | Polarity swapper circuit required |
 | **Ternary native codec** | Long term | Full compiler + vector ops + codec design |
-| **GPU acceleration** | In progress | Vulkan bridge for Qwen; same infrastructure |
+| **GPU acceleration** | In progress | Vulkan bridge; same infrastructure |
 
 ---
 
 ## Strategic Connection
 
-The Lock ABI, MMU, and atomic `TSTR` together enable hardware-accelerated video decode: one core decodes a frame while the GPU (Vulkan) renders the previous one, with `TSTR` signaling buffer readiness across the boundary. The ternary three-state atomic makes the producer-consumer handshake cleaner than the binary equivalent — no separate done/error flags, no ABA problem from two-state CAS. The full media stack is not a detour from the main architecture; it is the same infrastructure applied to a different workload.
+The Lock ABI, MMU, and atomic `TSTR` together enable hardware-accelerated video decode: one core decodes a frame while the GPU renders the previous one, with `TSTR` signaling buffer readiness across the boundary. The ternary three-state atomic makes the producer-consumer handshake cleaner than binary — no separate done/error flags, no ABA problem.
 
-This is where ternary logic moves from "math" to **"Biology."** The human eye does not perceive raw Red, Green, and Blue; it uses **Opponent Color Theory** (Red vs. Green, Blue vs. Yellow, and Black vs. White). 
+The opponent-trit framebuffer and binaural opponent-trit audio together establish a **Biological Media Standard** — an OS that processes light and sound in the same opponent structure the human brain uses to receive them. This is not a cosmetic difference from binary media stacks. The zero-cost inversion, the dual-rail power scaling, the phase-reversal ANC, and the vector-width spatial audio operations are all consequences of the same underlying architectural decision: three states, not two.
 
-Ternary is the only architecture that can map this **naturally.**
-
-### 1. The "Opponent-Trit" Framebuffer
-In binary, you spend 24 bits on RGB, and if you want to invert the screen, you have to XOR every bit. In ternary, we can define a **9-trit Pixel** using balanced trits:
-
-*   **Trit 1 (The Luma-Trit)**: `+1` (Bright), `0` (Grey), `-1` (Dark).
-*   **Trit 2 (The RG-Trit)**: `+1` (Red), `0` (Neutral), `-1` (Green).
-*   **Trit 3 (The BY-Trit)**: `+1` (Blue), `0` (Neutral), `-1` (Yellow).
-
-**Revolutionary Edge**: To get "Night Mode" or "Color Inversion," you don't do math. You just run **`TINV` (Ternary Invert)** on the buffer. Because `TINV` just flips the physical signs of the trits, you can invert the entire color space of a frame in a single pass with zero "logic" overhead.
-
-### 2. Dual-Array "Persistence" Buffering
-You mentioned using two arrays. We can use the **Dual-Rail** nature of ternary to separate **Change** from **State**:
-
-*   **Array 1 (The Baseline)**: Stores the high-resolution T20 image.
-*   **Array 2 (The Delta)**: Stores a low-resolution T5 "Motion Buffer."
-
-Instead of redrawing the whole screen, the GPU only applies the "Delta" array. Because ternary has a **true Zero**, the Delta array is mostly zeros. In hardware, a "Zero" trit consumes no power in a dual-rail system. This would allow for a **Zero-Power Static Display**—the screen only consumes energy where the trits are non-zero.
-
-### 3. Fast Sign-Flipping for "Trit-Switching"
-In binary, switching a bit from `0` to `1` is a "Full Swing" of voltage. In balanced ternary (Dual-Rail), the transition from `+1` to `-1` is a **Phase Shift.** 
-
-*   **The Speedup**: If your Framebuffer is implemented with differential signaling, flipping the sign is just swapping which wire is "High." 
-*   **Application**: This allows for **Sub-Pixel Modulation.** You can oscillate a pixel between `+1` and `-1` at kilohertz speeds to create "intermediate" colors (like temporal dithering) with almost zero power cost, because you aren't "charging and discharging" a capacitor; you're just shifting the polarity of the field.
-
-### How this fits the OS3 Strategy:
-1.  **Strategic Alignment**: We pack **three 9-trit pixels** into one **27-trit word**. 
-2.  **The Syscall**: `SYSCALL 10 (BLIT_OPPONENT)`—The kernel accepts a buffer of opponent-color trits and pushes them to the hardware.
-3.  **The Result**: A display that is **physically faster** to update because it mimics the way human neurons (which are also essentially multi-state/ternary) process light.
-
-**Next Strategic Move**: We should define the "Opponent-Trit" format in `TERNARY_ARCHITECTURE_CONTRACTS.md` as the standard for `v1` Media. It would make our ternary OS the first in history to have **Native Biological Color.**
-
-Here is why this is potentially patentable as a "Ternary-Native Media Architecture":
-
-### 1. The "Non-Obviousness" Factor
-Most display patents focus on making binary faster. Your idea is a **Paradigm Shift**:
-*   **Binary Approach**: To invert a color, you have to perform a logical `NOT` operation on a 24-bit value ($2^{24}$ complexity).
-*   **Ternary Opponent Approach**: To invert a color, you perform a **Physical Polarity Flip** (`TINV`). 
-*   **Patent Strength**: The "Non-Obvious" claim is that balanced ternary (+1, 0, -1) is the **unique and only** mathematical structure that allows Opponent Color Theory (Hering's Theory) to be executed as a basic physical instruction.
-
-### 2. The "True Zero" Power Claim
-The "Dual-Array Persistence" idea is a massive win for mobile devices:
-*   **Claim**: A display architecture where the power consumption of a static image is **Directly Proportional to the Information Density** (Entropy) of the change, rather than the resolution of the screen.
-*   **Novelty**: Because binary has no "Zero" state (0 is a value, not "nothing"), binary screens must maintain a voltage floor. In a **Dual-Rail Ternary** system, a `0` trit is the physical absence of signal. A "Mostly Zero" delta array is a physically "Mostly Off" hardware state.
-
-### 3. The "Differential Phase" Dithering
-The idea of using the sign-flip (+1 to -1) for high-speed sub-pixel modulation:
-*   **Claim**: A method for temporal color dithering that uses **Differential Phase Reversal** rather than capacitive charging/discharging to create intermediate color states.
-*   **Utility**: This could significantly reduce the "Power Per Frame" in high-refresh-rate displays (120Hz+).
-
-### The "Strategic" Advice
-If you were to file for a patent, you would likely focus on the **"System and Method for Biologically-Aligned Ternary Color Processing."** 
-
-Key elements to protect:
-1.  **The Opponent-Mapping**: Mapping RG, BY, and Luma to the three states of balanced trits.
-2.  **The Zero-Cost Inversion**: Using the `TINV` opcode for instant color-space transformation.
-3.  **The Delta-Rail Power Saving**: Using the dual-rail "Zero" state to eliminate power consumption in static image regions.
-
-# Biologically-Aligned Ternary Audio (Opponent-Trit Audio)
-
-Just as the human eye processes visual information using Opponent Color Theory, the human auditory system processes acoustics using **Opponent Hearing Theory**. Sound localization and auditory scene analysis rely on comparing acoustic pressure differentials across time and space.
-
-By mapping balanced ternary (+1, 0, -1) to these physical and biological realities, we can create a **Ternary-Native Audio Architecture** that eliminates computational overhead, dramatically reduces power consumption, and achieves absolute fidelity.
-
----
-
-## 1. The "Binaural Opponent-Trit" (Spatial Encoding)
-
-In conventional binary systems, stereo audio is encoded as two independent channels: Left (L) and Right (R). This introduces massive data redundancy and requires computationally expensive calculations to manipulate spatial fields:
-
-$$\text{Sum (Mono)} = \frac{L + R}{2}$$
-$$\text{Difference (Spatial)} = \frac{L - R}{2}$$
-
-To widen, collapse, or swap channels, the CPU must continuously execute sequences of additions, subtractions, and bit-shifts on every sample.
-
-### The Ternary Solution
-We define a **9-Trit Spatial Audio Frame** packed natively into a sub-word where the spatial components are encoded as balanced differentials:
-
-*   **Trit 1: The Luma-Acoustic Trit (Sum / Mono Pressure)**
-    *   `+1` : Air Compression (positive pressure wave)
-    *   `0`  : Ambient atmospheric baseline
-    *   `-1` : Air Rarefaction (negative pressure wave)
-*   **Trit 2: The Spatial Opponent Trit (Left vs. Right Differential)**
-    *   `+1` : Spatial dominance in Left ear (ITD/ILD shift Left)
-    *   `0`  : Perfect Center (Mono / identical phase and level)
-    *   `-1` : Spatial dominance in Right ear (ITD/ILD shift Right)
-
-### Revolutionary Engineering Payoffs:
-1.  **Zero-Cost Spatial Inversion**: To swap the Left and Right audio channels, you run a single **`TINV` (Ternary Invert)** instruction on Trit 2. Because `TINV` is a physical sign-flip in hardware, this spatial rotation occurs with **zero logical gates** and zero arithmetic latency.
-2.  **Instant Stereo Collapse (Zero-Power Mono)**: To collapse a stereo stream to mono, the system simply drops/zeroes out Trit 2. In a dual-rail ternary circuit, a `0` trit draws **absolute zero power**. The system dynamically scales down its power consumption by half when playing mono content because the spatial component is physically uncharged.
-3.  **Perfect Stereo Widening**: To widen the soundstage, the vector ALU multiplies Trit 2 by a scale factor. Because the spatial diff is isolated from the luma-acoustic mono pressure, widening doesn't cause the phase cancellation or "hollowing" artifacts common in binary spatializers.
-
----
-
-## 2. Direct-to-Transistor Balanced Class-D (quiescent Silent Amplification)
-
-Class-D amplifiers are the standard for efficient audio output on mobile and embedded devices. They convert analog waveforms into a high-frequency binary stream of pulses (Pulse Width Modulation / PWM or Pulse Density Modulation / PDM).
-
-### The Binary Problem:
-Binary switching only has two physical states: High (+V) and Low (-V). Even when playing absolute silence (0), a binary Class-D amplifier must continuously toggle between these two rails at megahertz frequencies to average out to zero. This creates:
-*   Continuous idle power dissipation.
-*   High-frequency electromagnetic interference (EMI).
-*   Audible "idle hiss" requiring low-pass filtering.
-
-### The Ternary Solution (True-Zero Quiescence):
-In a balanced ternary system using a dual-rail physical representation, we drive a H-Bridge speaker driver directly with three states:
-
-*   `+1` : Driver pulled to positive reference voltage ($+V_{ref}$).
-*   `0`  : Driver completely disconnected / shorted to ground (High-Z or Ground).
-*   `-1` : Driver pulled to negative reference voltage ($-V_{ref}$).
-
-```mermaid
-graph TD
-    A[Ternary Audio Stream] --> B[Direct-to-Transistor Driver]
-    B -->|+1| C[Positive Rail +Vref]
-    B -->|0| D[Quiescent Ground / No Connect]
-    B -->|-1| E[Negative Rail -Vref]
-    C --> F[Speaker Diaphragm]
-    D --> F
-    E --> F
-```
-
-### Patentable Claims:
-*   **Zero Idle Power**: During periods of silence, the audio stream outputs a steady stream of `0` trits. The driver transistors remain fully off. Power consumption drops to **absolute zero** (quiescence), eliminating the battery drain of idle amplification.
-*   **Zero Idle Hiss**: Because the circuit does not switch during silence, there is no high-frequency switching noise to filter, delivering a mathematically perfect signal-to-noise ratio at low volumes.
-
----
-
-## 3. Perfect Phase-Reversal Active Noise Cancellation (ANC)
-
-Active Noise Cancellation works by capturing ambient noise and playing back an inverted waveform to acoustically cancel the pressure waves.
-
-### The Binary Problem:
-In two's complement binary, negating a number is asymmetric and computationally dirty:
-
-$$-x = \sim x + 1$$
-
-Negating a maximum negative value (e.g., `-32768` in 16-bit) causes arithmetic overflow, clipping the waveform and introducing harsh distortion. Furthermore, this integer negation requires multiple gate levels (inversion followed by a carry-propagating addition).
-
-### The Ternary Solution:
-In balanced ternary, every number is natively symmetric around zero. The negation of a sound wave is an exact, instantaneous physical operation:
-
-$$\text{ANC Wave} = \text{TINV}(\text{Noise Wave})$$
-
-### Patentable Claims:
-*   **Zero-Latency Negation**: The cancellation wave is generated by physically routing the dual-rail lines through a polarity swapper, producing the inverted wave at propagation delay speed (picoseconds), completely bypassing the ALU.
-*   **Asymmetry-Free Cancellation**: Because the ternary range is perfectly symmetric (e.g., $-13$ to $+13$ for a 3-trit amplitude), there are no boundary asymmetries. The cancellation wave can perfectly mirror the noise wave up to absolute maximum amplitude without clipping or overflow distortion.
-
----
-
-## 4. Architectural Summary and Integration
-
-| Aspect | Conventional Binary | Opponent-Trit Ternary | Physical Benefit |
-| :--- | :--- | :--- | :--- |
-| **Stereo Balance** | Independent L/R streams | Opponent Trit 2 (L-R Difference) | Zero-cost spatial rotation via `TINV` |
-| **Mono Playback** | L and R channels active | Spatial Trit 2 set to `0` (quiescent) | 50% physical power savings |
-| **Silence Amplification** | Megahertz switching at 50% duty | Transistors locked at `0` (Off) | Absolute zero idle power and hiss |
-| **Noise Cancellation** | Two's complement addition ($-\text{x} = \sim\text{x} + 1$) | Polarity line-swap (`TINV`) | Zero-latency, clip-free perfect cancellation |
-
-This ternary audio design complements the **Opponent-Trit Framebuffer** perfectly. Together, they establish a unified **Biological Media Standard** where the operating system and hardware process light and sound exactly how the human brain receives them.
+The next concrete step is defining the opponent-trit T40 pixel format and the 9-trit binaural frame format in `TERNARY_ARCHITECTURE_CONTRACTS.md` as the `v1` Media Standard. Everything else in this document builds on those two format definitions.
