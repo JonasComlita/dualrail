@@ -98,6 +98,10 @@ add_executable(test_phase8_platform tests/test_phase8_platform.cpp)
 target_compile_features(test_phase8_platform PUBLIC cxx_std_17)
 target_compile_definitions(test_phase8_platform PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(run_phase8_demo run_phase8_demo.cpp)
+target_compile_features(run_phase8_demo PUBLIC cxx_std_17)
+target_compile_definitions(run_phase8_demo PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(tritc tritc.cpp)
 target_compile_features(tritc PUBLIC cxx_std_17)
 target_compile_definitions(tritc PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
