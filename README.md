@@ -1027,6 +1027,11 @@ Goal: Transition from the host-emulated C++ substrate facade to a fully native, 
 - **Block Cache Optimizations**: Implement a Least Recently Used (LRU) dirty block cache write-back mechanism to fully eliminate redundant mount, sync, and disk writes during heavy scheduling or process spawning cycles.
 - **Safety Hardening**: Refine pointer bounds verification and address translation checks on all kernel boundaries to ensure user processes cannot inject corrupt VM pointers.
 
+#### Track 9.9: Bridging the Simulation Realism Gap
+- **Address Physical Timing Discrepancies**: Address the critiques that our VM simplifies bare-metal hardware stresses (atomic instruction execution without pipeline stalls, uniform-latency $O(1)$ memory access, and sequential multitasking instead of parallel bus contention).
+- **Synthetic Cache & TLB Modeling**: Introduce synthetic latency cycles (e.g., 1 cycle for register access, 200 cycles for DRAM hits/page-table walks) and model a fixed-size Translation Lookaside Buffer (TLB) that experiences costly flushes during context switches.
+- **True Threaded Multicore Emulation**: Support launching parallel VM execution runners on separate host threads accessing a thread-safe shared `TernaryMemory` instance, validating our atomic locks under true hardware-level memory-bus contention.
+
 ## Phase 10: Security and Post-Quantum Crypto Primitives
 
 Status: future.
