@@ -120,3 +120,72 @@ fn max(a: t40, b: t40) -> t40 {
     }
 }
 
+fn char_is_digit(c: t40) -> t40 {
+    match sign(c - 48) {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match sign(57 - c) {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+}
+
+fn char_is_whitespace(c: t40) -> t40 {
+    match sign(c - 32) {
+        zero => { return 1; }
+        neg => {
+            match sign(c - 9) {
+                zero => { return 1; }
+                neg => { return 0; }
+                pos => {
+                    match sign(c - 10) {
+                        zero => { return 1; }
+                        neg => { return 0; }
+                        pos => {
+                            match sign(c - 13) {
+                                zero => { return 1; }
+                                neg => { return 0; }
+                                pos => { return 0; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pos => { return 0; }
+    }
+}
+
+fn char_to_lower(c: t40) -> t40 {
+    match sign(c - 65) {
+        neg => { return c; }
+        zero => { return c + 32; }
+        pos => {
+            match sign(90 - c) {
+                neg => { return c; }
+                zero => { return c + 32; }
+                pos => { return c + 32; }
+            }
+        }
+    }
+}
+
+fn char_to_upper(c: t40) -> t40 {
+    match sign(c - 97) {
+        neg => { return c; }
+        zero => { return c - 32; }
+        pos => {
+            match sign(122 - c) {
+                neg => { return c; }
+                zero => { return c - 32; }
+                pos => { return c - 32; }
+            }
+        }
+    }
+}
+
+
