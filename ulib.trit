@@ -188,4 +188,62 @@ fn char_to_upper(c: t40) -> t40 {
     }
 }
 
+fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
+    var argc: t40 = 0;
+    var i: t40 = 0;
+    var in_word: t40 = 0;
+    
+    while pos(1) {
+        var c: t40 = 0;
+        unsafe {
+            c = tldr(cmdline + i, 1);
+        }
+        
+        match sign(c) {
+            zero => {
+                if pos(in_word) {
+                    // end of last word
+                }
+                return argc;
+            }
+            neg => {
+                // handle negative characters safely
+                if zero(in_word) {
+                    unsafe {
+                        var temp = tstr(argv_buf + argc, cmdline + i, 0, 1);
+                    }
+                    argc = argc + 1;
+                    in_word = 1;
+                }
+            }
+            pos => {
+                var is_ws: t40 = char_is_whitespace(c);
+                match sign(is_ws) {
+                    pos => {
+                        if pos(in_word) {
+                            unsafe {
+                                var temp = tstr(cmdline + i, 0, c, 1);
+                            }
+                            in_word = 0;
+                        }
+                    }
+                    zero => {
+                        if zero(in_word) {
+                            unsafe {
+                                var temp = tstr(argv_buf + argc, cmdline + i, 0, 1);
+                            }
+                            argc = argc + 1;
+                            in_word = 1;
+                        }
+                    }
+                    neg => {}
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return argc;
+}
+
+
 
