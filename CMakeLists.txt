@@ -40,7 +40,15 @@ endforeach()
 
 add_custom_target(compile_shaders DEPENDS ${SPV_FILES})
 
-add_executable(test_multiwidth_vm tests/test_multiwidth_vm.cpp)
+add_executable(test_multiwidth_vm
+    tests/test_multiwidth_vm_main.cpp
+    tests/test_uint128.cpp
+    tests/test_formats.cpp
+    tests/test_isa_asm.cpp
+    tests/test_vm_widths.cpp
+    tests/test_kernel.cpp
+    tests/test_no_bridge.cpp
+)
 target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
 target_compile_definitions(test_multiwidth_vm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 

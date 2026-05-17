@@ -702,7 +702,11 @@ Non-goals:
 - Do not implement arbitrary memory-hard garbage collectors in the initial source language runtime.
 - Do not add target-specific backends directly inside the source language lowering phase.
 
-## Phase 7: Security and Post-Quantum Crypto Primitives
+## Phase 7 (Next): Build the high-level compiler toolchain with Hindley-Milner type inference, zero-cost pointer safety, and the SSA-based IR universal bus.
+
+## Phase 8 (The Platform Boot): Port a standard C library and compile a clean, modular Unix shell with a Device Tree abstraction.
+
+## Phase 9: Security and Post-Quantum Crypto Primitives
 
 Status: future.
 
@@ -721,7 +725,7 @@ Major goals:
 - Use published, peer-reviewed algorithms as the cryptographic basis; optimize
   the VM/hardware execution path, not secret proprietary crypto math.
 
-## Phase 8: FPGA/ASIC and Production Hardware Backends
+## Phase 10: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 
