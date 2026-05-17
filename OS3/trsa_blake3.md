@@ -94,3 +94,70 @@ Both algorithms would serve distinct, complementary roles inside a complete **Te
 
 * **Our C++ Montgomery/RSA-2048:** Gates **entry-level privilege and authorization**. It is executed by the bootloader and kernel trap handlers to verify program signatures, securely check the integrity of `/bin/init`, and establish identity when connecting to external networks.
 * **A Ternary Port of BLAKE3:** Operates as the **high-speed data workhorse**. Written in `.trit` or Rust, it would serve as the filesystem's block checksum generator (e.g., verifying that storage blocks loaded from virtual disks haven't corrupted), backing secure key derivation, fast cryptographic hashing, and supporting real-time data deduplication.
+
+---
+
+Viewed ternary_montgomery.h:42-89
+
+[ignoring loop detection]
+
+[ternary_montgomery.h](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h) is a **cryptographic extension** designed for the Ternary VM. It implements **Montgomery multiplication** and **RSA-2048 modular exponentiation** using balanced ternary math.
+
+Here is a comprehensive review of its architecture, use cases, and how it integrates into our operating system and user-space programs.
+
+---
+
+### 1. Key Architectural Decisions
+
+* **Ternary-Native Limbs:** Standard binary cryptography uses 32-bit or 64-bit limbs. [ternary_montgomery.h](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h) maps one limb directly to **one ISA word (27 trits)**. The radix base is $B = 3^{27} = 7,625,597,484,987$.
+* **Balanced Range:** Limbs use a balanced range: each digit is normalized within $(-\frac{3^{27}-1}{2}, +\frac{3^{27}-1}{2}]$.
+* **RSA-2048 Dimensioning:** $\lceil 2048 \times \log_3(2) \rceil = 1293$ trits are needed to match RSA-2048. With 27-trit limbs, we require exactly **48 limbs** ($48 \times 27 = 1296$ trits), which fits perfectly inside a `TritBigInt<48>` structure.
+* **Side-Channel Timing Resistance:** The modular exponentiation uses a **Montgomery Ladder** ([MontgomeryContext::modExpBinary](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h#L422-L442)). Both the `0` and `1` bit-paths execute exactly the same number of multiplications, preventing side-channel power and timing attacks.
+
+---
+
+### 2. Primary Operating System Use Cases
+
+In our operating system ([ternary_os.h](file:///c:/Users/jonas/Documents/trit/ternary_os.h)), [ternary_montgomery.h](file:///c:/Users/jonas/Documents/trit/ternary_os.h) is used for three critical security vectors:
+
+#### A. Secure Boot & Executable Verification
+Before loading a compiled binary (like `/bin/init`) via the `exec()` syscall, the kernel reads the program's signature block from the filesystem and calls [rsa2048Verify](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h#L607):
+* The kernel's public key is stored in a write-once, MMU-protected OTP memory section.
+* The kernel computes the message hash of the executable.
+* It verifies the signature: $\text{signature}^{\text{exponent}} \equiv \text{hash} \pmod N$.
+* If verification fails, the kernel aborts the `exec()` call and traps the process.
+
+#### B. Smart Card POST (Power-On Self-Test)
+During OS initialization ([OSKernel::boot](file:///c:/Users/jonas/Documents/trit/ternary_os.h)), the kernel runs [smartCardInit](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h#L794). This executes a toy RSA verification ([runToySelfTest](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h#L516)) to ensure the CPU's ALU and division structures are functioning perfectly. If a fault is injected (e.g., alpha particle strike or hardware glitch), the test fails, and the kernel immediately locks down secure operations.
+
+#### C. MMIO Hardware Accelerator Control
+Performing multi-limb multiplication in software is slow. In production systems, the Montgomery inner loop is mapped to a dedicated **FPGA hardware coprocessor** or an MMIO-mapped register block. The assembly sequence shown in [assembleMontgomeryOuterStep](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h#L669-L767) serves as the reference driver model for how the kernel's storage layers talk directly to the cryptographic accelerator.
+
+---
+
+### 3. How User Programs Can Use It
+
+A user application (such as an SSH client, secure package manager, or database encryptor) can access these cryptosystems in two ways:
+
+#### A. Via Kernel Syscalls (Safe Sandbox)
+The kernel can expose a secure cryptographic syscall:
+```cpp
+// User Space calling a syscall for signature verification
+int success = sys_crypto_verify(public_key_ptr, sig_ptr, hash_ptr);
+```
+This performs the heavy modular math inside kernel space where memory protection guards the keys, returning the $T1$ status result.
+
+#### B. As a Compiled Static Library
+Because [ternary_montgomery.h](file:///c:/Users/jonas/Documents/trit/ternary_montgomery.h) is written in pure C++ templates, our compiler [tritc.cpp](file:///c:/Users/jonas/Documents/trit/tritc.cpp) can compile these algorithms directly into a user space library. 
+
+For example, a user-space cryptography utility would declare:
+```cpp
+// trit-native code in user space
+let N = TritBigInt::from_trits(N_data);
+let s = TritBigInt::from_trits(signature_data);
+let m = TritBigInt::from_trits(message_hash);
+
+let ctx = MontgomeryContext::new(N);
+let is_valid = ctx.verify(s, public_exponent, m);
+```
+This executes entirely inside the user program's virtual memory pages, isolated by the MMU.
