@@ -1,0 +1,58 @@
+// =============================================================================
+// user_app.trit  -  A Demonstration user program linking with ulib.trit
+// =============================================================================
+
+struct Point {
+    x: t40;
+    y: t40;
+}
+
+fn fib(n: t40) -> t40 {
+    match sign(n - 2) {
+        neg => { return n; }
+        zero => { return n; }
+        pos => {
+            var a: t40 = fib(n - 1);
+            var b: t40 = fib(n - 2);
+            return a + b;
+        }
+    }
+}
+
+fn process_point(p: Point) -> t40 {
+    return p.x * p.y;
+}
+
+fn main() -> t40 {
+    // 1. Standalone CPU/VM Safe prints
+    print_int(11111); // Magic boundary marker
+    newline();
+
+    // 2. Multi-coordinate struct instantiation and processing
+    var pt: Point = Point { x: 5, y: 7 };
+    var area: t40 = process_point(pt);
+    print_int(area); // Should print 35
+    newline();
+
+    // 3. Array definition, indexing, and updating
+    var xs: [t40; 4] = [10, 20, 30, 40];
+    xs[2] = xs[0] + xs[1] + xs[3]; // 10 + 20 + 40 = 70
+    print_int(xs[2]); // Should print 70
+    newline();
+
+    // 4. Pattern matching with sign
+    var val: t40 = -45;
+    match sign(val) {
+        neg => { print_int(-999); }
+        zero => { print_int(0); }
+        pos => { print_int(999); }
+    }
+    newline();
+
+    // 5. Recursive Fibonacci computation
+    var f: t40 = fib(8); // 8th Fibonacci number is 34
+    print_int(f);
+    newline();
+
+    return 0;
+}

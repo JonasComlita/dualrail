@@ -704,11 +704,13 @@ struct LabelMaps {
 
 [[nodiscard]] inline bool labelAlreadySeen(
         const LabelMaps& labels,
-        const std::string& pending_text,
-        const std::string& pending_data,
+        const std::vector<std::string>& pending_text,
+        const std::vector<std::string>& pending_data,
         const std::string& label) {
-    return labels.text.count(label) || labels.data.count(label) ||
-           pending_text == label || pending_data == label;
+    if (labels.text.count(label) || labels.data.count(label)) return true;
+    for (const auto& p : pending_text) { if (p == label) return true; }
+    for (const auto& p : pending_data) { if (p == label) return true; }
+    return false;
 }
 
 [[nodiscard]] inline LabelMaps buildLabelMaps(
@@ -717,49 +719,51 @@ struct LabelMaps {
 
     LabelMaps labels;
 
-    std::string pending_text_label;
-    std::string pending_data_label;
+    std::vector<std::string> pending_text_labels;
+    std::vector<std::string> pending_data_labels;
     int pending_text_line = 0;
     int pending_data_line = 0;
 
     for (auto& sl : lines) {
         std::map<std::string, int>& section_labels =
             sl.section == AssemblySection::Text ? labels.text : labels.data;
-        std::string& pending_label =
-            sl.section == AssemblySection::Text ? pending_text_label : pending_data_label;
+        std::vector<std::string>& pending_labels =
+            sl.section == AssemblySection::Text ? pending_text_labels : pending_data_labels;
         int& pending_line =
             sl.section == AssemblySection::Text ? pending_text_line : pending_data_line;
 
         if (!sl.label.empty()) {
-            if (labelAlreadySeen(labels, pending_text_label, pending_data_label, sl.label)) {
+            if (labelAlreadySeen(labels, pending_text_labels, pending_data_labels, sl.label)) {
                 errors.push_back({sl.line_num,
                     "Duplicate label '" + sl.label + "'"});
             } else if (sl.address >= 0) {
                 section_labels[sl.label] = sl.address;
             } else {
-                pending_label = sl.label;
+                pending_labels.push_back(sl.label);
                 pending_line  = sl.line_num;
             }
         }
 
-        if (!pending_label.empty() && sl.address >= 0) {
-            if (section_labels.count(pending_label)) {
-                errors.push_back({pending_line,
-                    "Duplicate label '" + pending_label + "'"});
-            } else {
-                section_labels[pending_label] = sl.address;
+        if (!pending_labels.empty() && sl.address >= 0) {
+            for (const auto& pending : pending_labels) {
+                if (section_labels.count(pending)) {
+                    errors.push_back({pending_line,
+                        "Duplicate label '" + pending + "'"});
+                } else {
+                    section_labels[pending] = sl.address;
+                }
             }
-            pending_label.clear();
+            pending_labels.clear();
         }
     }
 
-    if (!pending_text_label.empty()) {
+    if (!pending_text_labels.empty()) {
         errors.push_back({pending_text_line,
-            "Label '" + pending_text_label + "' defined after last text instruction"});
+            "Label '" + pending_text_labels.front() + "' defined after last text instruction"});
     }
-    if (!pending_data_label.empty()) {
+    if (!pending_data_labels.empty()) {
         errors.push_back({pending_data_line,
-            "Label '" + pending_data_label + "' defined after last data word"});
+            "Label '" + pending_data_labels.front() + "' defined after last data word"});
     }
 
     return labels;

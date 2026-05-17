@@ -1,4 +1,4 @@
-#include "ternary_phase8.h"
+#include "ternary_os.h"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -24,10 +24,10 @@ void printMetric(const std::string& label, const std::string& val) {
     std::cout << "    \033[1m" << std::left << std::setw(28) << label << ":\033[0m " << val << "\n";
 }
 
-void printStatusResult(const std::string& syscall_name, const sandbox::phase8::StatusResult& res) {
-    std::string stat_str = (res.status == sandbox::phase8::T1_SUCCESS) ? "\033[1;32mSUCCESS (1)\033[0m" :
-                           (res.status == sandbox::phase8::T1_PENDING) ? "\033[1;33mPENDING (0)\033[0m" :
-                                                                         "\033[1;31mERROR (-1)\033[0m";
+void printStatusResult(const std::string& syscall_name, const sandbox::os::StatusResult& res) {
+    std::string stat_str = (res.status == sandbox::os::T1_SUCCESS) ? "\033[1;32mSUCCESS (1)\033[0m" :
+                           (res.status == sandbox::os::T1_PENDING) ? "\033[1;33mPENDING (0)\033[0m" :
+                                                                          "\033[1;31mERROR (-1)\033[0m";
     std::cout << "    Syscall " << std::left << std::setw(10) << syscall_name 
               << " -> Status: " << std::setw(20) << stat_str 
               << " | Payload: " << std::setw(6) << res.payload 
@@ -37,16 +37,16 @@ void printStatusResult(const std::string& syscall_name, const sandbox::phase8::S
 } // namespace
 
 int main() {
-    using namespace sandbox::phase8;
+    using namespace sandbox::os;
     using namespace sandbox::compiler;
 
     sandbox::LongTriple::initPowTable();
 
     std::cout << "\033[2J\033[H"; // Clear screen and reset cursor
     std::cout << "\033[1;35m===============================================================\033[0m\n";
-    std::cout << "\033[1;32m       Ternary OS3 Phase 8 Platform Substrate Demonstrator     \033[0m\n";
+    std::cout << "\033[1;32m            Trit OS Platform Substrate Demonstrator            \033[0m\n";
     std::cout << "\033[1;35m===============================================================\033[0m\n";
-    std::cout << " This demonstrator validates the Phase 8 concrete C++ hardware\n";
+    std::cout << " This demonstrator validates the Trit OS concrete C++ hardware \n";
     std::cout << " emulation substrate, memory allocations, process environments,\n";
     std::cout << " and filesystems before we route them into assembly kernel paths.\n";
     std::cout << "===============================================================\n";
@@ -134,8 +134,8 @@ int main() {
     // -------------------------------------------------------------------------
     printHeader("3. Process Lifecycles, Heaps, and Syscalls");
 
-    printStep("Booting Phase 8 Kernel Facade...");
-    Phase8Kernel kernel(128);
+    printStep("Booting OS Kernel Facade...");
+    OSKernel kernel(128);
     StatusResult boot_res = kernel.boot();
     printStatusResult("boot", boot_res);
 
@@ -219,7 +219,7 @@ int main() {
           return grown + child + status;
         }
     )";
-    CompileResult compiled = compileSource("phase8_codegen.trit", trit_src);
+    CompileResult compiled = compileSource("os_codegen.trit", trit_src);
     if (compiled.success) {
         printSuccess("High-level syscall wrappers successfully compiled into target instructions:");
         if (compiled.assembly.find("syscall 19") != std::string::npos) {
@@ -244,7 +244,7 @@ int main() {
     std::cout << "\n\033[1;36m===============================================================\033[0m\n";
     std::cout << "\033[1;33m                   ARCHITECTURAL BOUNDARY REMINDER             \033[0m\n";
     std::cout << "\033[1;36m===============================================================\033[0m\n";
-    std::cout << " Keep in mind: This is the concrete Phase 8 platform substrate/\n";
+    std::cout << " Keep in mind: This is the concrete Trit OS platform substrate/\n";
     std::cout << " facade and ABI reservation layer. The remaining work involves\n";
     std::cout << " routing these services into the hand-written assembly kernel\n";
     std::cout << " syscall path and replacing the host-side facade with VM-executed\n";

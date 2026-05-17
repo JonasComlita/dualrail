@@ -1,4 +1,4 @@
-#include "ternary_phase8.h"
+#include "ternary_os.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -32,8 +32,8 @@ bool hasDiagnostic(
 }
 
 void testDeviceTreeAndBlockDevice() {
-    std::cout << "[1] Phase 8 device tree and block storage\n";
-    using namespace sandbox::phase8;
+    std::cout << "[1] Trit OS device tree and block storage\n";
+    using namespace sandbox::os;
 
     DeviceTree tree = defaultDeviceTree(32);
     std::vector<std::string> errors;
@@ -66,8 +66,8 @@ void testDeviceTreeAndBlockDevice() {
 }
 
 void testTinyFileSystem() {
-    std::cout << "[2] Phase 8 tiny filesystem\n";
-    using namespace sandbox::phase8;
+    std::cout << "[2] Trit OS tiny filesystem\n";
+    using namespace sandbox::os;
 
     BlockDevice device(96);
     TinyFileSystem fs;
@@ -105,11 +105,11 @@ void testTinyFileSystem() {
 }
 
 void testSyscallsHeapForkAndExec() {
-    std::cout << "[3] Phase 8 syscall facade, heap, fork, and exec\n";
-    using namespace sandbox::phase8;
+    std::cout << "[3] Trit OS syscall facade, heap, fork, and exec\n";
+    using namespace sandbox::os;
 
-    Phase8Kernel kernel(128);
-    expect(kernel.boot().ok(), "phase8 kernel facade boots from device tree");
+    OSKernel kernel(128);
+    expect(kernel.boot().ok(), "OS kernel facade boots from device tree");
     constexpr int kPid = 1;
     expect(kernel.fs().createFile("/tmp", InodeKind::Directory).ok(), "tmp directory creates");
     expect(kernel.fs().createFile("/tmp/data").ok(), "data file creates");
@@ -165,8 +165,8 @@ void testSyscallsHeapForkAndExec() {
 }
 
 void testSharedStatusAndCompilerWrappers() {
-    std::cout << "[4] Phase 8 T1 status and compiler syscall wrappers\n";
-    using namespace sandbox::phase8;
+    std::cout << "[4] Trit OS T1 status and compiler syscall wrappers\n";
+    using namespace sandbox::os;
     using namespace sandbox::compiler;
 
     SharedWord word;
@@ -179,11 +179,11 @@ void testSharedStatusAndCompilerWrappers() {
     expect(runtime::sys_open == SYSCALL_OPEN &&
            runtime::sys_sbrk == SYSCALL_SBRK &&
            runtime::sys_exec == SYSCALL_EXEC,
-           "compiler runtime exports phase8 syscall ids");
+           "compiler runtime exports OS syscall ids");
     expect(sandbox::vm::SYSCALL_OPEN == SYSCALL_OPEN &&
            sandbox::vm::SYSCALL_FORK == SYSCALL_FORK &&
            sandbox::vm::SYSCALL_EXEC == SYSCALL_EXEC,
-           "VM ABI constants reserve phase8 syscall ids");
+           "VM ABI constants reserve OS syscall ids");
 
     const std::string src = R"(
         fn main() -> t40 {
@@ -193,11 +193,11 @@ void testSharedStatusAndCompilerWrappers() {
           return grown + child + status;
         }
     )";
-    CompileResult compiled = compileSource("phase8_wrappers.trit", src);
-    expect(compiled.success, "phase8 syscall wrapper source compiles");
+    CompileResult compiled = compileSource("os_wrappers.trit", src);
+    expect(compiled.success, "OS syscall wrapper source compiles");
     if (!compiled.success) {
         expect(!hasDiagnostic(compiled.diagnostics, "unknown function"),
-               "phase8 wrappers are known to type inference");
+               "OS wrappers are known to type inference");
     }
     expect(contains(compiled.assembly, "syscall 19"), "sys_sbrk lowers to syscall 19");
     expect(contains(compiled.assembly, "syscall 20"), "sys_fork lowers to syscall 20");
@@ -215,10 +215,10 @@ int main() {
     testSharedStatusAndCompilerWrappers();
 
     if (g_failures != 0) {
-        std::cout << "\n" << g_failures << " Phase 8 platform test failure(s)\n";
+        std::cout << "\n" << g_failures << " Trit OS platform test failure(s)\n";
         return EXIT_FAILURE;
     }
 
-    std::cout << "\nAll Phase 8 platform tests passed\n";
+    std::cout << "\nAll Trit OS platform tests passed\n";
     return EXIT_SUCCESS;
 }

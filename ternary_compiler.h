@@ -348,6 +348,7 @@ struct TypeEnv {
 
 struct Substitution {
     std::map<TypeVarId, TypeRef> bindings;
+    TypeRef last_numeric_widening = TypeRef::unknown();
 
     [[nodiscard]] TypeRef apply(const TypeRef& type) const {
         if (type.kind == TypeKind::TypeVar) {
@@ -406,7 +407,7 @@ inline bool unify(TypeRef left,
         return unify(right, left, subst, diagnostics, span, reason);
     }
     if (left.kind == TypeKind::Numeric && right.kind == TypeKind::Numeric) {
-        subst.bindings[-1] = commonNumericType(left, right);
+        subst.last_numeric_widening = commonNumericType(left, right);
         return true;
     }
     if (left.kind == right.kind && left.kind == TypeKind::Pointer &&
@@ -1585,7 +1586,7 @@ private:
         stmt.second_name = b.text;
         stmt.span = span;
         if (rb.text != b.text || ra.text != a.text) {
-            error(spanToken(span), "v1 tuple assignment only supports direct variable swap");
+            error(spanToken(span), "v1 tuple assignment only supports direct variable swap (e.g. '(a, b) = (b, a);')");
         }
         return stmt;
     }
@@ -2129,8 +2130,16 @@ private:
     }
 
     void emitDefaultReturn(FunctionContext& ctx) {
-        ctx.line("mov." + std::string(ir::suffix(ctx.ast->return_type.scalar)) + " r13, 0");
-        ctx.line("jmp " + ctx.ast->name + "_return");
+        bool has_ret = false;
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            if (ctx.block->instructions.back().opcode == InstrOpcode::Ret) {
+                has_ret = true;
+            }
+        }
+        if (!has_ret) {
+            ctx.line("mov." + std::string(ir::suffix(ctx.ast->return_type.scalar)) + " r13, 0");
+            ctx.line("jmp " + ctx.ast->name + "_return");
+        }
         emitEpilogue(ctx);
     }
 

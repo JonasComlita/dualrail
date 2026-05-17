@@ -25,6 +25,9 @@ void showUsage() {
     std::cout << "  \033[1;32m--stack <words>\033[0m         Set stack allocation size hint (default: 24)\n";
     std::cout << "  \033[1;32m--dump-ir\033[0m               Print structural SSA IR before lowering\n";
     std::cout << "  \033[1;32m--dump-passes\033[0m           Dump internal compiler optimizer pass telemetry\n";
+    std::cout << "  \033[1;32m--steps <count>\033[0m         Set VM execution step limit (default: 1000000)\n";
+    std::cout << "  \033[1;32m--input <string>\033[0m        Feed ASCII console input string to the VM in run mode\n";
+    std::cout << "  \033[1;32m--input-file <file>\033[0m     Feed console input from a file to the VM in run mode\n";
     std::cout << "  \033[1;32m--no-ansi\033[0m               Disable ANSI coloring in terminal outputs\n";
     std::cout << "  \033[1;32m--help / -h\033[0m             Display this help documentation\n\n";
     std::cout << "\033[1mExamples:\033[0m\n";
@@ -99,7 +102,8 @@ void printOptimizerStats(const sandbox::compiler::OptimizerStats& stats, bool us
 
 void printAllocationResult(const sandbox::compiler::AllocationResult& alloc, bool use_ansi) {
     if (use_ansi) {
-        std::cout << "\033[1;35m--- Register Allocator Telemetry ---\033[0m\n";
+        std::cout << "\033[1;35m--- Register Allocator Telemetry (Structural IR Profile Only) ---\033[0m\n";
+        std::cout << "  \033[1;33m[NOTE: Allocator results are profiled but not yet wired back into assembly emission]\033[0m\n";
         std::cout << "  Interference Graph Edges Resolved:   \033[1;32m" << alloc.interference_edges << "\033[0m\n";
         std::cout << "  Coalesced Copy Operations:           \033[1;32m" << alloc.coalesced_moves << "\033[0m\n";
         std::cout << "  Callee-Saved Registers Used:         \033[1;32m" << alloc.callee_saved_used.size() << "\033[0m\n";
@@ -110,7 +114,8 @@ void printAllocationResult(const sandbox::compiler::AllocationResult& alloc, boo
             std::cout << "  Active Stack Spill Slots Allocated:  \033[1;32m0\033[0m\n";
         }
     } else {
-        std::cout << "--- Register Allocator Telemetry ---\n";
+        std::cout << "--- Register Allocator Telemetry (Structural IR Profile Only) ---\n";
+        std::cout << "  [NOTE: Allocator results are profiled but not yet wired back into assembly emission]\n";
         std::cout << "  Interference Graph Edges Resolved:   " << alloc.interference_edges << "\n";
         std::cout << "  Coalesced Copy Operations:           " << alloc.coalesced_moves << "\n";
         std::cout << "  Callee-Saved Registers Used:         " << alloc.callee_saved_used.size() << "\n";
@@ -139,6 +144,8 @@ int main(int argc, char** argv) {
     bool dump_ir = false;
     bool dump_passes = false;
     bool use_ansi = true;
+    int step_limit = 1000000;
+    std::string console_input_str;
     
     CompilerOptions comp_options;
     LinkOptions link_options;
@@ -178,6 +185,32 @@ int main(int argc, char** argv) {
                 std::cerr << "Error: Missing stack size after --stack\n";
                 return 1;
             }
+        } else if (arg == "--steps") {
+            if (i + 1 < argc) {
+                step_limit = std::stoi(argv[++i]);
+            } else {
+                std::cerr << "Error: Missing step limit after --steps\n";
+                return 1;
+            }
+        } else if (arg == "--input") {
+            if (i + 1 < argc) {
+                console_input_str = argv[++i];
+            } else {
+                std::cerr << "Error: Missing input string after --input\n";
+                return 1;
+            }
+        } else if (arg == "--input-file") {
+            if (i + 1 < argc) {
+                std::string path = argv[++i];
+                console_input_str = readFile(path);
+                if (console_input_str.empty()) {
+                    std::cerr << "Error: Could not read or empty input file: " << path << "\n";
+                    return 1;
+                }
+            } else {
+                std::cerr << "Error: Missing file path after --input-file\n";
+                return 1;
+            }
         } else if (arg == "--dump-ir") {
             dump_ir = true;
         } else if (arg == "--dump-passes") {
@@ -202,80 +235,86 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (run_mode && source_paths.size() > 1) {
-        std::cerr << "Error: 'run' mode only accepts a single source file.\n";
+
+
+    // Read and concatenate all source files into a single translation unit
+    std::string combined_src;
+    std::string combined_filename;
+    for (size_t i = 0; i < source_paths.size(); ++i) {
+        std::string src = readFile(source_paths[i]);
+        if (src.empty()) {
+            std::cerr << "Error: Could not read source file: " << source_paths[i] << "\n";
+            return 1;
+        }
+        if (i > 0) {
+            combined_src += "\n\n// =============================================================================\n";
+            combined_src += "// Concatenated Source: " + source_paths[i] + "\n";
+            combined_src += "// =============================================================================\n\n";
+            combined_filename += " + ";
+        }
+        combined_src += src;
+        combined_filename += source_paths[i];
+    }
+
+    CompileResult compiled = compileSource(combined_filename, combined_src, comp_options);
+    
+    if (!compiled.diagnostics.empty()) {
+        printDiagnostics(compiled.diagnostics, use_ansi);
+    }
+
+    if (!compiled.success) {
+        std::cerr << "\033[1;31mCompilation failed for translation unit: " << combined_filename << "\033[0m\n";
         return 1;
     }
 
-    // Compilation of multiple source files
-    std::vector<ObjectModule> object_modules;
-    for (const auto& path : source_paths) {
-        std::string src = readFile(path);
-        if (src.empty()) {
-            std::cerr << "Error: Could not read source file: " << path << "\n";
-            return 1;
-        }
-
-        CompileResult compiled = compileSource(path, src, comp_options);
-        
-        if (!compiled.diagnostics.empty()) {
-            printDiagnostics(compiled.diagnostics, use_ansi);
-        }
-
-        if (!compiled.success) {
-            std::cerr << "\033[1;31mCompilation failed for file: " << path << "\033[0m\n";
-            return 1;
-        }
-
-        if (dump_ir) {
-            std::cout << "\n\033[1;36m=== Structural SSA IR Module for " << path << " ===\033[0m\n";
-            for (const auto& fn : compiled.ssa_module.functions) {
-                std::cout << "fn " << fn.name << "() {\n";
-                for (const auto& block : fn.blocks) {
-                    std::cout << "  block " << block.name << ":\n";
-                    for (const auto& instr : block.instructions) {
-                        std::cout << "    ";
-                        if (instr.def >= 0) std::cout << "%" << instr.def << " = ";
-                        std::cout << "instr_opcode_" << static_cast<int>(instr.opcode);
-                        if (!instr.args.empty()) {
-                            std::cout << " [";
-                            for (size_t k = 0; k < instr.args.size(); ++k) {
-                                if (k > 0) std::cout << ", ";
-                                std::cout << "%" << instr.args[k];
-                            }
-                            std::cout << "]";
+    if (dump_ir) {
+        std::cout << "\n\033[1;36m=== Structural SSA IR Module for " << combined_filename << " ===\033[0m\n";
+        for (const auto& fn : compiled.ssa_module.functions) {
+            std::cout << "fn " << fn.name << "() {\n";
+            for (const auto& block : fn.blocks) {
+                std::cout << "  block " << block.name << ":\n";
+                for (const auto& instr : block.instructions) {
+                    std::cout << "    ";
+                    if (instr.def >= 0) std::cout << "%" << instr.def << " = ";
+                    std::cout << "instr_opcode_" << static_cast<int>(instr.opcode);
+                    if (!instr.args.empty()) {
+                        std::cout << " [";
+                        for (size_t k = 0; k < instr.args.size(); ++k) {
+                            if (k > 0) std::cout << ", ";
+                            std::cout << "%" << instr.args[k];
                         }
-                        if (instr.imm != 0) std::cout << ", imm: " << instr.imm;
-                        std::cout << "\n";
+                        std::cout << "]";
                     }
-                    std::cout << "    terminator_" << static_cast<int>(block.terminator.kind) << "\n";
+                    if (instr.imm != 0) std::cout << ", imm: " << instr.imm;
+                    std::cout << "\n";
                 }
-                std::cout << "}\n";
+                std::cout << "    terminator_" << static_cast<int>(block.terminator.kind) << "\n";
             }
-            std::cout << "\033[1;36m========================================================\033[0m\n\n";
+            std::cout << "}\n";
         }
-
-        if (dump_passes && comp_options.optimization != OptimizationLevel::None) {
-            printOptimizerStats(compiled.optimizer_stats, use_ansi);
-            printAllocationResult(compiled.allocation, use_ansi);
-            std::cout << "\n";
-        }
-
-        if (assembly_only) {
-            if (output_path.empty()) {
-                std::cout << compiled.assembly << "\n";
-            } else {
-                if (!writeFile(output_path, compiled.assembly)) {
-                    std::cerr << "Error: Failed to write assembly file to: " << output_path << "\n";
-                    return 1;
-                }
-                std::cout << "Assembly successfully written to: " << output_path << "\n";
-            }
-            return 0;
-        }
-
-        object_modules.push_back(compiled.object);
+        std::cout << "\033[1;36m========================================================\033[0m\n\n";
     }
+
+    if (dump_passes && comp_options.optimization != OptimizationLevel::None) {
+        printOptimizerStats(compiled.optimizer_stats, use_ansi);
+        printAllocationResult(compiled.allocation, use_ansi);
+        std::cout << "\n";
+    }
+
+    if (assembly_only) {
+        if (output_path.empty()) {
+            std::cout << compiled.assembly;
+        } else {
+            if (!writeFile(output_path, compiled.assembly)) {
+                std::cerr << "Error: Failed to write assembly file to: " << output_path << "\n";
+                return 1;
+            }
+            std::cout << "Assembly successfully written to: " << output_path << "\n";
+        }
+        return 0;
+    }
+
+    std::vector<ObjectModule> object_modules = { compiled.object };
 
     // Linking stage
     LinkResult linked = linkModules(object_modules, link_options);
@@ -309,12 +348,16 @@ int main(int argc, char** argv) {
     std::cout << (use_ansi ? "\033[1;32mBooting compiled executable in Ternary VM...\033[0m\n\n" : "Booting compiled executable in Ternary VM...\n\n");
     
     vm::VMState vm(8192, 65536);
-    if (!vm::loadAndReset(vm, linked.assembled.program)) {
+    if (!vm::assembler::loadAndReset(vm, linked.assembled)) {
         std::cerr << "Error: Failed to load executable image into VM memory.\n";
         return 1;
     }
 
-    const auto run_result = vm::run(vm, 12000);
+    if (!console_input_str.empty()) {
+        vm.enqueueConsoleAscii(console_input_str);
+    }
+
+    const auto run_result = vm::run(vm, step_limit);
     
     if (use_ansi) {
         std::cout << "\n\033[1;36m========================================================\033[0m\n";

@@ -1,16 +1,16 @@
 // =============================================================================
-// ternary_phase8.h - Phase 8 xv6-class platform boot substrate
+// ternary_os.h - Trit OS xv6-class platform boot substrate
 // =============================================================================
 //
-// This header defines the first concrete Phase 8 platform services beside the
+// This header defines the first concrete Trit OS platform services beside the
 // frozen Phase 6/7 VM, ABI, and compiler contracts. It intentionally keeps the
 // existing syscall ids, executable header v1, task context layout, and PTE v1
 // compatible while adding device-tree, block-device, tiny filesystem, heap, and
 // process-lifecycle models that the assembly kernel can grow into.
 
 #pragma once
-#ifndef TERNARY_PHASE8_H
-#define TERNARY_PHASE8_H
+#ifndef TERNARY_OS_H
+#define TERNARY_OS_H
 
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
@@ -25,7 +25,7 @@
 #include <vector>
 
 namespace sandbox {
-namespace phase8 {
+namespace os {
 
 // =============================================================================
 // ABI/status constants
@@ -301,12 +301,82 @@ public:
         if (inode_count_ <= 0 || data_start_ <= 1 || data_start_ >= device.blockCount()) {
             return StatusResult::error(ERR_INVALID);
         }
-        if (inodes_.empty()) {
-            inodes_.assign(static_cast<std::size_t>(inode_count_), Inode{});
-            for (int i = 0; i < inode_count_; ++i) inodes_[static_cast<std::size_t>(i)].id = i;
-            inodes_[0].kind = InodeKind::Directory;
-            inodes_[0].entries = {{".", 0}, {"..", 0}};
+
+        // Read back the free blocks bitmap
+        std::vector<long long> bitmap;
+        if (!device.readBlock(1, bitmap).ok()) return StatusResult::error(ERR_INVALID);
+        free_blocks_.resize(static_cast<std::size_t>(device.blockCount()), true);
+        for (int i = 0; i < std::min(BLOCK_WORDS, static_cast<int>(free_blocks_.size())); ++i) {
+            free_blocks_[static_cast<std::size_t>(i)] = (bitmap[static_cast<std::size_t>(i)] == 1);
         }
+        for (int i = 0; i < data_start_ && i < device.blockCount(); ++i) {
+            free_blocks_[static_cast<std::size_t>(i)] = false;
+        }
+
+        // Read back all inodes
+        inodes_.assign(static_cast<std::size_t>(inode_count_), Inode{});
+        for (int i = 0; i < inode_count_; ++i) {
+            Inode& inode = inodes_[static_cast<std::size_t>(i)];
+            inode.id = i;
+            std::vector<long long> raw;
+            if (!device.readBlock(2 + i, raw).ok()) return StatusResult::error(ERR_INVALID);
+            inode.kind = static_cast<InodeKind>(raw[0]);
+            inode.size_words = static_cast<int>(raw[1]);
+            inode.executable = (raw[2] == 1);
+            inode.indirect_block = static_cast<int>(raw[3]);
+            for (int d = 0; d < DIRECT_BLOCKS; ++d) {
+                inode.direct[static_cast<std::size_t>(d)] = static_cast<int>(raw[4 + d]);
+            }
+            inode.exec_header.entry_virtual_pc = static_cast<int>(raw[12]);
+            inode.exec_header.text_pages = static_cast<int>(raw[13]);
+            inode.exec_header.data_pages = static_cast<int>(raw[14]);
+            inode.exec_header.stack_words = static_cast<int>(raw[15]);
+        }
+
+        // Read back file data and directory entries for all valid inodes
+        for (int i = 0; i < inode_count_; ++i) {
+            Inode& inode = inodes_[static_cast<std::size_t>(i)];
+            if (inode.kind == InodeKind::Free) continue;
+
+            if (inode.kind == InodeKind::Directory) {
+                std::vector<long long> dir_words;
+                for (int block : inode.direct) {
+                    if (block < 0) continue;
+                    std::vector<long long> raw;
+                    if (device.readBlock(block, raw).ok()) {
+                        dir_words.insert(dir_words.end(), raw.begin(), raw.end());
+                    }
+                }
+                if (!dir_words.empty() && dir_words[0] > 0) {
+                    inode.entries.clear();
+                    int num_entries = static_cast<int>(dir_words[0]);
+                    int idx = 1;
+                    for (int e = 0; e < num_entries && idx < static_cast<int>(dir_words.size()); ++e) {
+                        int entry_inode = static_cast<int>(dir_words[static_cast<std::size_t>(idx++)]);
+                        int name_len = static_cast<int>(dir_words[static_cast<std::size_t>(idx++)]);
+                        std::string name;
+                        for (int c = 0; c < name_len && idx < static_cast<int>(dir_words.size()); ++c) {
+                            name.push_back(static_cast<char>(dir_words[static_cast<std::size_t>(idx++)]));
+                        }
+                        inode.entries.push_back({name, entry_inode});
+                    }
+                }
+            } else {
+                inode.data.resize(static_cast<std::size_t>(inode.size_words), 0);
+                for (std::size_t d = 0; d < inode.direct.size(); ++d) {
+                    int block = inode.direct[d];
+                    if (block < 0) continue;
+                    std::vector<long long> raw;
+                    if (device.readBlock(block, raw).ok()) {
+                        int start = static_cast<int>(d) * BLOCK_WORDS;
+                        for (int w = 0; w < BLOCK_WORDS && start + w < inode.size_words; ++w) {
+                            inode.data[static_cast<std::size_t>(start + w)] = raw[static_cast<std::size_t>(w)];
+                        }
+                    }
+                }
+            }
+        }
+
         mounted_ = true;
         return StatusResult::success();
     }
@@ -470,6 +540,37 @@ public:
         status = device_->writeBlock(1, bitmap);
         if (!status.ok()) return status;
 
+        // Serialize directory entries into directory data blocks
+        for (Inode& inode : inodes_) {
+            if (inode.kind != InodeKind::Directory) continue;
+            std::vector<long long> dir_words;
+            dir_words.push_back(static_cast<long long>(inode.entries.size()));
+            for (const auto& entry : inode.entries) {
+                dir_words.push_back(static_cast<long long>(entry.inode));
+                dir_words.push_back(static_cast<long long>(entry.name.size()));
+                for (char c : entry.name) {
+                    dir_words.push_back(static_cast<long long>(c));
+                }
+            }
+            int needed = (static_cast<int>(dir_words.size()) + BLOCK_WORDS - 1) / BLOCK_WORDS;
+            for (int i = 0; i < std::min(needed, DIRECT_BLOCKS); ++i) {
+                if (inode.direct[static_cast<std::size_t>(i)] == -1) {
+                    inode.direct[static_cast<std::size_t>(i)] = allocateBlock();
+                }
+            }
+            for (int i = 0; i < std::min(needed, DIRECT_BLOCKS); ++i) {
+                int block = inode.direct[static_cast<std::size_t>(i)];
+                if (block < 0) continue;
+                std::vector<long long> raw(BLOCK_WORDS, 0);
+                int start = i * BLOCK_WORDS;
+                for (int w = 0; w < BLOCK_WORDS && start + w < static_cast<int>(dir_words.size()); ++w) {
+                    raw[static_cast<std::size_t>(w)] = dir_words[static_cast<std::size_t>(start + w)];
+                }
+                StatusResult wrote = device_->writeBlock(block, raw);
+                if (!wrote.ok()) return wrote;
+            }
+        }
+
         for (int i = 0; i < inode_count_ && 2 + i < device_->blockCount(); ++i) {
             const Inode& inode = inodes_[static_cast<std::size_t>(i)];
             std::vector<long long> raw(BLOCK_WORDS, 0);
@@ -605,9 +706,9 @@ struct Process {
     std::map<int, OpenFile> fds;
 };
 
-class Phase8Kernel {
+class OSKernel {
 public:
-    explicit Phase8Kernel(int blocks = 128)
+    explicit OSKernel(int blocks = 128)
         : device_tree_(defaultDeviceTree(blocks)), block_device_(blocks) {
         (void)fs_.format(block_device_);
         (void)createProcess(-1);
@@ -799,7 +900,7 @@ private:
     }
 };
 
-} // namespace phase8
+} // namespace os
 } // namespace sandbox
 
-#endif // TERNARY_PHASE8_H
+#endif // TERNARY_OS_H

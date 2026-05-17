@@ -991,7 +991,7 @@ void testOsSubstrate() {
                    assembled.executable_headers.count("exec_prog_b"),
                    "minimal kernel defines executable image metadata");
             expect(assembled.executable_headers.at("exec_shell").text_pages == 6,
-                   "minimal kernel maps expanded Phase 8 shell text");
+                   "minimal kernel maps expanded Trit OS shell text");
             expect(assembled.data_labels.count("proc_count") &&
                    assembled.data_labels.count("user_proc_count") &&
                    assembled.data_labels.count("idle_proc") &&
@@ -1024,10 +1024,10 @@ void testOsSubstrate() {
                    assembled.data_labels.count("proc_heap_limit") &&
                    assembled.data_labels.count("proc_forks") &&
                    assembled.data_labels.count("proc_execs") &&
-                   assembled.data_labels.count("phase8_fd_open") &&
-                   assembled.data_labels.count("phase8_file_size") &&
+                   assembled.data_labels.count("os_fd_open") &&
+                   assembled.data_labels.count("os_file_size") &&
                    assembled.data_labels.count("spare_data"),
-                   "minimal kernel defines Phase 8 syscall metadata");
+                   "minimal kernel defines Trit OS syscall metadata");
 
             VMState vm(2048, 768);
             expect(loadAndReset(vm, assembled), "minimal kernel image loads");
@@ -1121,56 +1121,56 @@ void testOsSubstrate() {
             expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
                    "failed spawn is not counted as a created process");
 
-            VMState phase8Vm(2048, 768);
-            expect(loadAndReset(phase8Vm, assembled), "Phase 8 syscall probe image loads");
-            phase8Vm.enqueueConsoleAscii("p x");
-            auto phase8Result = sandbox::vm::run(phase8Vm, 30000);
-            expect(phase8Result.timeout() && phase8Vm.isRunning(),
-                   "kernel keeps running after Phase 8 file and heap syscalls");
+            VMState osVm(2048, 768);
+            expect(loadAndReset(osVm, assembled), "Trit OS syscall probe image loads");
+            osVm.enqueueConsoleAscii("p x");
+            auto osResult = sandbox::vm::run(osVm, 30000);
+            expect(osResult.timeout() && osVm.isRunning(),
+                   "kernel keeps running after Trit OS file and heap syscalls");
             const int shellBase = assembled.data_labels.at("shell_data");
-            expect(loadPhysLong(phase8Vm, shellBase + 2) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 3) == 3 &&
-                   loadPhysLong(phase8Vm, shellBase + 4) == 0,
+            expect(loadPhysLong(osVm, shellBase + 2) == 1 &&
+                   loadPhysLong(osVm, shellBase + 3) == 3 &&
+                   loadPhysLong(osVm, shellBase + 4) == 0,
                    "open syscall returns T1 success, fd payload, and clear detail");
-            expect(loadPhysLong(phase8Vm, shellBase + 5) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 6) == 1,
+            expect(loadPhysLong(osVm, shellBase + 5) == 1 &&
+                   loadPhysLong(osVm, shellBase + 6) == 1,
                    "read syscall returns success and word count");
-            expect(loadPhysLong(phase8Vm, shellBase + 24) == 101,
+            expect(loadPhysLong(osVm, shellBase + 24) == 101,
                    "read syscall copies file data into the shell user buffer");
-            expect(loadPhysLong(phase8Vm, shellBase + 8) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 9) == 2,
+            expect(loadPhysLong(osVm, shellBase + 8) == 1 &&
+                   loadPhysLong(osVm, shellBase + 9) == 2,
                    "write syscall returns success and written word count");
-            expect(loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_file_words") + 3) == 404 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_file_words") + 4) == 505,
+            expect(loadPhysLong(osVm, assembled.data_labels.at("os_file_words") + 3) == 404 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_file_words") + 4) == 505,
                    "write syscall copies shell user buffer words into the kernel file image");
-            expect(loadPhysLong(phase8Vm, shellBase + 11) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 12) == 5,
+            expect(loadPhysLong(osVm, shellBase + 11) == 1 &&
+                   loadPhysLong(osVm, shellBase + 12) == 5,
                    "stat syscall reports updated file size");
-            expect(loadPhysLong(phase8Vm, shellBase + 14) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 15) == 2,
+            expect(loadPhysLong(osVm, shellBase + 14) == 1 &&
+                   loadPhysLong(osVm, shellBase + 15) == 2,
                    "readdir syscall reports directory entry count");
-            expect(loadPhysLong(phase8Vm, shellBase + 25) == 47 &&
-                   loadPhysLong(phase8Vm, shellBase + 26) == 102,
+            expect(loadPhysLong(osVm, shellBase + 25) == 47 &&
+                   loadPhysLong(osVm, shellBase + 26) == 102,
                    "readdir syscall copies directory words into the shell user buffer");
-            expect(loadPhysLong(phase8Vm, shellBase + 17) == 1 &&
-                   loadPhysLong(phase8Vm, shellBase + 18) == 7,
+            expect(loadPhysLong(osVm, shellBase + 17) == 1 &&
+                   loadPhysLong(osVm, shellBase + 18) == 7,
                    "sbrk syscall grows the shell heap break");
-            expect(loadPhysLong(phase8Vm, shellBase + 20) == -1 &&
-                   loadPhysLong(phase8Vm, shellBase + 22) == 3,
+            expect(loadPhysLong(osVm, shellBase + 20) == -1 &&
+                   loadPhysLong(osVm, shellBase + 22) == 3,
                    "brk syscall rejects out-of-range heap break");
-            expect(loadPhysLong(phase8Vm, shellBase + 23) == 1,
+            expect(loadPhysLong(osVm, shellBase + 23) == 1,
                    "close syscall returns success");
-            expect(loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_open_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_read_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_write_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_stat_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_readdir_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_close_count")) == 1 &&
-                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_sbrk_count")) == 1,
-                   "kernel accounts Phase 8 routed file and heap syscalls");
+            expect(loadPhysLong(osVm, assembled.data_labels.at("os_open_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_read_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_write_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_stat_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_readdir_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_close_count")) == 1 &&
+                   loadPhysLong(osVm, assembled.data_labels.at("os_sbrk_count")) == 1,
+                   "kernel accounts Trit OS routed file and heap syscalls");
 
             VMState badPathVm(2048, 768);
-            expect(loadAndReset(badPathVm, assembled), "Phase 8 bad path image loads");
+            expect(loadAndReset(badPathVm, assembled), "Trit OS bad path image loads");
             badPathVm.enqueueConsoleAscii("n x");
             auto badPathResult = sandbox::vm::run(badPathVm, 12000);
             expect(badPathResult.timeout() && badPathVm.isRunning(),
@@ -1179,11 +1179,11 @@ void testOsSubstrate() {
                    loadPhysLong(badPathVm, shellBase + 25) == 0 &&
                    loadPhysLong(badPathVm, shellBase + 26) == 1,
                    "open syscall rejects missing user path with T1 error detail");
-            expect(loadPhysLong(badPathVm, assembled.data_labels.at("phase8_open_count")) == 0,
+            expect(loadPhysLong(badPathVm, assembled.data_labels.at("os_open_count")) == 0,
                    "failed open is not counted as an opened file");
 
             VMState badPtrVm(2048, 768);
-            expect(loadAndReset(badPtrVm, assembled), "Phase 8 bad pointer image loads");
+            expect(loadAndReset(badPtrVm, assembled), "Trit OS bad pointer image loads");
             badPtrVm.enqueueConsoleAscii("v x");
             auto badPtrResult = sandbox::vm::run(badPtrVm, 12000);
             expect(badPtrResult.timeout() && badPtrVm.isRunning(),
@@ -1194,7 +1194,7 @@ void testOsSubstrate() {
                    "open syscall rejects invalid user pointer span with T1 error detail");
 
             VMState forkVm(2048, 768);
-            expect(loadAndReset(forkVm, assembled), "Phase 8 fork image loads");
+            expect(loadAndReset(forkVm, assembled), "Trit OS fork image loads");
             forkVm.enqueueConsoleAscii("f");
             auto forkResult = sandbox::vm::run(forkVm, 12000);
             expect(forkResult.timeout() && forkVm.isRunning(),
@@ -1212,7 +1212,7 @@ void testOsSubstrate() {
                    "fork child sees zero payload in copied user memory");
 
             VMState execVm(2048, 768);
-            expect(loadAndReset(execVm, assembled), "Phase 8 exec image loads");
+            expect(loadAndReset(execVm, assembled), "Trit OS exec image loads");
             execVm.enqueueConsoleAscii("e");
             auto execResult = sandbox::vm::run(execVm, 20000);
             expect(execResult.timeout() && execVm.isRunning(),

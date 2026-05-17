@@ -16,7 +16,7 @@
 //   • Side-channel: branchless conditional subtract; Montgomery ladder for
 //     exponentiation; no data-dependent control flow over key bits.
 //   • Smart card gate: runToySelfTest() passes before any cryptographic
-//     SYSCALL_EXEC is granted by the VM kernel (ternary_phase8.h).
+//     SYSCALL_EXEC is granted by the VM kernel (ternary_os.h).
 //   • Fault-injection check: after private-key sign, verify sig^e ≡ m.
 //
 // Dependencies:
@@ -595,7 +595,7 @@ struct SelfTestResult {
 //   • Load N, e, m, s from ROM (write-once OTP, mapped read-only by MMU).
 //   • Call rsa2048Verify() before granting any private-key access.
 //   • Store the pass/fail bit in a non-volatile write-once location.
-//   • Gate SYSCALL_EXEC on this bit (ternary_phase8.h Phase8Kernel).
+//   • Gate SYSCALL_EXEC on this bit (ternary_os.h OSKernel).
 
 struct RSA2048TestVector {
     std::vector<int8_t> N_trits;  // 1293-trit modulus (LST first)
@@ -773,7 +773,7 @@ struct RSA2048TestVector {
 // during the POST (power-on self-test) sequence before granting any crypto
 // syscall permissions.
 //
-// Usage pattern in ternary_phase8.h Phase8Kernel::boot():
+// Usage pattern in ternary_os.h OSKernel::boot():
 //
 //   SmartCardInitResult r = smartCardInit(kernel_vm);
 //   if (!r.self_test.passed) {

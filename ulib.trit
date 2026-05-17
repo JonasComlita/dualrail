@@ -1,0 +1,54 @@
+// =============================================================================
+// ulib.trit  -  Ternary User Standard Library
+// =============================================================================
+// A standard library written in high-level Trit that wraps the VM/OS syscall
+// ABI, facilitating console I/O, process management, and memory allocation.
+// =============================================================================
+
+fn print_int(x: t40) -> t40 {
+    return sys_write_int(x);
+}
+
+fn newline() -> t40 {
+    return sys_newline();
+}
+
+fn clear_console() -> t40 {
+    return sys_clear();
+}
+
+fn yield_cpu() -> t40 {
+    return sys_yield();
+}
+
+fn sleep_until_tick(tick: t40) -> t40 {
+    return sys_sleep_until_tick(tick);
+}
+
+fn exit(status: t40) -> t40 {
+    return sys_exit(status);
+}
+
+fn getpid() -> t40 {
+    return sys_getpid();
+}
+
+fn uptime() -> t40 {
+    return sys_uptime();
+}
+
+fn read_console_word() -> t40 {
+    return sys_read_console_word();
+}
+
+fn spawn_static(entry_pc: t40) -> t40 {
+    return sys_spawn_static(entry_pc);
+}
+
+fn waitpid(pid: t40) -> t40 {
+    return sys_waitpid(pid);
+}
+
+fn fork() -> t40 {
+    return sys_fork();
+}

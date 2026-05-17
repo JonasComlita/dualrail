@@ -929,7 +929,7 @@ and a clean modular shell.
 
 Current implementation note:
 
-- `ternary_phase8.h` adds the first concrete Phase 8 platform layer: device-tree
+- `ternary_os.h` adds the first concrete Phase 8 platform layer: device-tree
   validation, deterministic 27-word block storage, a tiny inode filesystem,
   `T1` syscall-style result triples, user pointer state wrappers, shared
   acquire-release word helpers, per-process heap metadata, fork copy semantics,
@@ -937,7 +937,7 @@ Current implementation note:
 - `ternary_compiler.h` now reserves runtime syscall wrapper ids `12-21` for
   `open`, `close`, `read`, `write`, `stat`, `readdir`, `brk`, `sbrk`, `fork`,
   and `exec`, while keeping ids `1-11` unchanged.
-- `test_phase8_platform` verifies the new platform contracts and compiler
+- `test_os_platform` verifies the new platform contracts and compiler
   lowering for the Phase 8 syscall wrappers.
 
 Accepted ternary-native policies:
@@ -983,7 +983,7 @@ Phase 8 completion criteria:
 - Storage, process creation, and heap allocation close the three current gaps
   between the Phase 6 microkernel and the xv6 alternative described in
   `OS3/xv6.md`.
-- The full regression gate includes `test_phase8_platform`,
+- The full regression gate includes `test_os_platform`,
   `test_phase7_compiler`, `test_kernel`, `test_ternary_ir`,
   `test_multiwidth_vm`, `test_ternary_lanes`, `test_native_ops`, and
   `test_numeric_workloads`.

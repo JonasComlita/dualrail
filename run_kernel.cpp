@@ -141,6 +141,19 @@ int main(int argc, char** argv) {
         const int addr_read_blocks = label("proc_read_blocks");
         const int addr_input_reads = label("proc_input_reads");
 
+        // Trit OS labels
+        const int addr_shell_data = label("shell_data");
+        const int addr_open_count = label("os_open_count");
+        const int addr_read_count = label("os_read_count");
+        const int addr_write_count = label("os_write_count");
+        const int addr_stat_count = label("os_stat_count");
+        const int addr_readdir_count = label("os_readdir_count");
+        const int addr_close_count = label("os_close_count");
+        const int addr_sbrk_count = label("os_sbrk_count");
+        const int addr_brk_count = label("os_brk_count");
+        const int addr_forks = label("proc_forks");
+        const int addr_execs = label("proc_execs");
+
         std::cout << (plain_mode ? "Kernel Booting...\n" : "\033[1;32mKernel Booting...\033[0m\n");
         if (!plain_mode) {
             std::cout << "Press [Enter] to begin step-by-step interactive simulation...\n";
@@ -152,7 +165,7 @@ int main(int argc, char** argv) {
         size_t last_pos = 0;
         int steps = 0;
         int next_input_step = 300;
-        std::string script = "awbu x";
+        std::string script = "awbupnvfe x";
         size_t script_idx = 0;
         PrivilegeMode last_priv = PrivilegeMode::Kernel;
         int last_active_proc = -1;
@@ -205,7 +218,56 @@ int main(int argc, char** argv) {
                           << std::setw(6) << spawns << "\n";
             }
 
+            int open_cnt = static_cast<int>(loadPhysLong(vm, addr_open_count));
+            int read_cnt = static_cast<int>(loadPhysLong(vm, addr_read_count));
+            int write_cnt = static_cast<int>(loadPhysLong(vm, addr_write_count));
+            int stat_cnt = static_cast<int>(loadPhysLong(vm, addr_stat_count));
+            int readdir_cnt = static_cast<int>(loadPhysLong(vm, addr_readdir_count));
+            int close_cnt = static_cast<int>(loadPhysLong(vm, addr_close_count));
+            int sbrk_cnt = static_cast<int>(loadPhysLong(vm, addr_sbrk_count));
+            int brk_cnt = static_cast<int>(loadPhysLong(vm, addr_brk_count));
+            int forks = static_cast<int>(loadPhysLong(vm, addr_forks));
+            int execs = static_cast<int>(loadPhysLong(vm, addr_execs));
+
             if (!plain_mode) {
+                std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+                std::cout << " \033[1;35mTrit OS Syscall Execution Counts (VM-Executed):\033[0m\n";
+                std::cout << "  Opens  : " << std::setw(3) << open_cnt 
+                          << " | Reads : " << std::setw(3) << read_cnt 
+                          << " | Writes: " << std::setw(3) << write_cnt 
+                          << " | Stats : " << std::setw(3) << stat_cnt << "\n";
+                std::cout << "  ReadDirs: " << std::setw(3) << readdir_cnt 
+                          << " | Closes: " << std::setw(3) << close_cnt 
+                          << " | sbrks  : " << std::setw(3) << sbrk_cnt 
+                          << " | brks  : " << std::setw(3) << brk_cnt << "\n";
+                std::cout << "  Forks  : " << std::setw(3) << forks 
+                          << " | Execs : " << std::setw(3) << execs << "\n";
+                
+                int probe_op_status = static_cast<int>(loadPhysLong(vm, addr_shell_data + 2));
+                int probe_op_fd = static_cast<int>(loadPhysLong(vm, addr_shell_data + 3));
+                int probe_op_det = static_cast<int>(loadPhysLong(vm, addr_shell_data + 4));
+                int probe_rd_status = static_cast<int>(loadPhysLong(vm, addr_shell_data + 5));
+                int probe_rd_char = static_cast<int>(loadPhysLong(vm, addr_shell_data + 24));
+                int probe_wr_status = static_cast<int>(loadPhysLong(vm, addr_shell_data + 8));
+                int probe_st_size = static_cast<int>(loadPhysLong(vm, addr_shell_data + 12));
+                int probe_dir_cnt = static_cast<int>(loadPhysLong(vm, addr_shell_data + 15));
+                int probe_sb_break = static_cast<int>(loadPhysLong(vm, addr_shell_data + 18));
+                int probe_bk_status = static_cast<int>(loadPhysLong(vm, addr_shell_data + 20));
+                
+                std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
+                std::cout << " \033[1;33mLast Probe Register/Memory Values:\033[0m\n";
+                std::cout << "  Open Result   : Status=" << std::setw(2) << probe_op_status 
+                          << ", FD=" << std::setw(2) << probe_op_fd 
+                          << ", Detail=" << probe_op_det << "\n";
+                std::cout << "  Read Result   : Status=" << std::setw(2) << probe_rd_status 
+                          << ", Read Char=" << std::setw(3) << probe_rd_char 
+                          << " ('" << (probe_rd_char > 31 && probe_rd_char < 127 ? static_cast<char>(probe_rd_char) : '?') << "')\n";
+                std::cout << "  Write/Stat    : WrStatus=" << std::setw(2) << probe_wr_status 
+                          << ", Stat Size=" << std::setw(2) << probe_st_size << "\n";
+                std::cout << "  ReadDir/Heap  : DirCount=" << std::setw(2) << probe_dir_cnt 
+                          << ", grownSbrk=" << std::setw(2) << probe_sb_break 
+                          << ", failBrkStatus=" << std::setw(2) << probe_bk_status << "\n";
+
                 std::cout << "\033[1;34m---------------------------------------------------------------\033[0m\n";
                 std::cout << " \033[1mVirtual Console Output:\033[0m\n ";
                 if (vm.syscall_buffer.empty()) {

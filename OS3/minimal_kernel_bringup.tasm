@@ -136,9 +136,18 @@ account_timer:
     load r3, r2, 0
     sub r3, r3, r4
     store r3, r2, 0
+
+    ; Check if idle process is active (runs continuously, bypasses quantum)
     load r2, zero, idle_proc
-    tcmp r3, r1, r2
-    brz r3, schedule_next
+    tcmp r5, r1, r2
+    brz r5, schedule_next
+
+    ; Gate preemption: if quantum is still positive (> 0), keep running
+    mov r2, 0
+    tcmp r5, r3, r2
+    brp r5, keep_running
+
+    ; Preemption path for active user process
     mov r2, proc_state
     add r2, r2, r1
     load r3, r2, 0
@@ -150,6 +159,12 @@ account_timer:
     store r3, r2, 0
     call enqueue_ready
     jmp schedule_next
+
+keep_running:
+    mov r2, proc_table
+    add r2, r2, r1
+    load r3, r2, 0
+    jmp restore_next
 
 schedule_next:
     call wake_events
@@ -695,13 +710,13 @@ syscall_open:
     brn r7, syscall_not_found_fail
     brp r7, syscall_not_found_fail
 syscall_open_match:
-    load r1, zero, phase8_open_count
+    load r1, zero, os_open_count
     mov r2, 1
     add r1, r1, r2
-    store r1, zero, phase8_open_count
-    store r2, zero, phase8_fd_open
+    store r1, zero, os_open_count
+    store r2, zero, os_fd_open
     mov r1, 0
-    store r1, zero, phase8_fd_offset
+    store r1, zero, os_fd_offset
     mov r1, 1
     store r1, sp, 18
     mov r1, 3
@@ -732,16 +747,16 @@ syscall_close:
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
     brp r3, syscall_fd_fail
-    load r1, zero, phase8_fd_open
+    load r1, zero, os_fd_open
     mov r2, 1
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
     brp r3, syscall_fd_fail
     mov r1, 0
-    store r1, zero, phase8_fd_open
-    load r1, zero, phase8_close_count
+    store r1, zero, os_fd_open
+    load r1, zero, os_close_count
     add r1, r1, r2
-    store r1, zero, phase8_close_count
+    store r1, zero, os_close_count
     mov r1, 1
     store r1, sp, 18
     mov r1, 0
@@ -755,7 +770,7 @@ syscall_read:
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
     brp r3, syscall_fd_fail
-    load r1, zero, phase8_fd_open
+    load r1, zero, os_fd_open
     mov r2, 1
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
@@ -769,8 +784,8 @@ syscall_read:
     tcmp r5, r3, r4
     brn r5, syscall_bad_ptr_fail
     brp r5, syscall_bad_ptr_fail
-    load r4, zero, phase8_fd_offset
-    load r5, zero, phase8_file_size
+    load r4, zero, os_fd_offset
+    load r5, zero, os_file_size
     mov r6, 0
 syscall_read_loop:
     tcmp r7, r6, r11
@@ -779,7 +794,7 @@ syscall_read_loop:
     tcmp r7, r4, r5
     brz r7, syscall_read_done
     brp r7, syscall_read_done
-    mov r8, phase8_file_words
+    mov r8, os_file_words
     add r8, r8, r4
     load r9, r8, 0
     add r1, r10, r6
@@ -793,12 +808,12 @@ syscall_read_done:
     mov r7, 0
     tcmp r8, r6, r7
     brz r8, syscall_read_eof
-    store r4, zero, phase8_fd_offset
-    store r6, zero, phase8_last_read_count
-    load r1, zero, phase8_read_count
+    store r4, zero, os_fd_offset
+    store r6, zero, os_last_read_count
+    load r1, zero, os_read_count
     mov r2, 1
     add r1, r1, r2
-    store r1, zero, phase8_read_count
+    store r1, zero, os_read_count
     mov r1, 1
     store r1, sp, 18
     store r6, sp, 19
@@ -819,7 +834,7 @@ syscall_file_write:
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
     brp r3, syscall_fd_fail
-    load r1, zero, phase8_fd_open
+    load r1, zero, os_fd_open
     mov r2, 1
     tcmp r3, r1, r2
     brn r3, syscall_fd_fail
@@ -833,7 +848,7 @@ syscall_file_write:
     tcmp r5, r3, r4
     brn r5, syscall_bad_ptr_fail
     brp r5, syscall_bad_ptr_fail
-    load r4, zero, phase8_file_size
+    load r4, zero, os_file_size
     add r5, r4, r11
     mov r6, 27
     tcmp r7, r5, r6
@@ -846,7 +861,7 @@ syscall_write_loop:
     add r1, r10, r6
     call translate_user_ptr
     load r9, r1, 0
-    mov r8, phase8_file_words
+    mov r8, os_file_words
     add r12, r4, r6
     add r8, r8, r12
     store r9, r8, 0
@@ -854,11 +869,11 @@ syscall_write_loop:
     add r6, r6, r8
     jmp syscall_write_loop
 syscall_write_done:
-    store r5, zero, phase8_file_size
-    load r2, zero, phase8_write_count
+    store r5, zero, os_file_size
+    load r2, zero, os_write_count
     mov r3, 1
     add r2, r2, r3
-    store r2, zero, phase8_write_count
+    store r2, zero, os_write_count
     mov r2, 1
     store r2, sp, 18
     store r11, sp, 19
@@ -885,16 +900,16 @@ syscall_stat:
     brp r5, syscall_bad_ptr_fail
     copy r1, r10
     call translate_user_ptr
-    load r4, zero, phase8_file_size
+    load r4, zero, os_file_size
     store r4, r1, 0
-    load r5, zero, phase8_dir_entries
+    load r5, zero, os_dir_entries
     store r5, r1, 1
     mov r5, 1
     store r5, r1, 2
-    load r1, zero, phase8_stat_count
+    load r1, zero, os_stat_count
     mov r2, 1
     add r1, r1, r2
-    store r1, zero, phase8_stat_count
+    store r1, zero, os_stat_count
     store r2, sp, 18
     store r4, sp, 19
     mov r1, 0
@@ -929,10 +944,10 @@ syscall_readdir:
     store r9, r1, 1
     mov r6, 2
 syscall_readdir_counted:
-    load r1, zero, phase8_readdir_count
+    load r1, zero, os_readdir_count
     mov r2, 1
     add r1, r1, r2
-    store r1, zero, phase8_readdir_count
+    store r1, zero, os_readdir_count
     store r2, sp, 18
     store r6, sp, 19
     mov r1, 0
@@ -961,10 +976,10 @@ syscall_brk:
     mov r2, proc_heap_break
     add r2, r2, r1
     store r5, r2, 0
-    load r7, zero, phase8_brk_count
+    load r7, zero, os_brk_count
     mov r8, 1
     add r7, r7, r8
-    store r7, zero, phase8_brk_count
+    store r7, zero, os_brk_count
     store r8, sp, 18
     store r5, sp, 19
     mov r8, 0
@@ -999,10 +1014,10 @@ syscall_sbrk:
     tcmp r9, r5, r8
     brp r9, syscall_sbrk_fail
     store r5, r2, 0
-    load r6, zero, phase8_sbrk_count
+    load r6, zero, os_sbrk_count
     mov r7, 1
     add r6, r6, r7
-    store r6, zero, phase8_sbrk_count
+    store r6, zero, os_sbrk_count
     store r7, sp, 18
     store r5, sp, 19
     mov r7, 0
@@ -1234,6 +1249,7 @@ syscall_advance_schedule:
 syscall_block_schedule:
     jmp schedule_next
 
+;; Page 50 * 27 = 1350 = shell_loop
 .org 1350
 shell_loop:
     syscall 9
@@ -1257,13 +1273,13 @@ shell_loop:
     brz r2, shell_fork
     mov r1, 112
     tcmp r2, r13, r1
-    brz r2, shell_phase8_probe
+    brz r2, shell_os_probe
     mov r1, 110
     tcmp r2, r13, r1
-    brz r2, shell_phase8_bad_open
+    brz r2, shell_os_bad_open
     mov r1, 118
     tcmp r2, r13, r1
-    brz r2, shell_phase8_bad_ptr
+    brz r2, shell_os_bad_ptr
     mov r1, 119
     tcmp r2, r13, r1
     brz r2, shell_wait
@@ -1300,7 +1316,7 @@ shell_uptime:
     syscall 1
     syscall 2
     jmp shell_loop
-shell_phase8_probe:
+shell_os_probe:
     mov r1, 47
     store r1, zero, 0
     mov r1, 102
@@ -1357,7 +1373,7 @@ shell_phase8_probe:
     syscall 13
     store r13, zero, 23
     jmp shell_loop
-shell_phase8_bad_open:
+shell_os_bad_open:
     mov r1, 47
     store r1, zero, 0
     mov r1, 122
@@ -1370,7 +1386,7 @@ shell_phase8_bad_open:
     store r14, zero, 25
     store r15, zero, 26
     jmp shell_loop
-shell_phase8_bad_ptr:
+shell_os_bad_ptr:
     mov r13, 26
     syscall 12
     store r13, zero, 24
@@ -1398,6 +1414,7 @@ shell_exit:
     syscall 6
     jmp shell_exit
 
+;; Page 56 * 27 = 1512 = prog_a
 .org 1512
 prog_a:
     load r1, zero, 0
@@ -1408,6 +1425,7 @@ prog_a:
     syscall 6
     jmp prog_a
 
+;; Page 57 * 27 = 1539 = prog_b
 .org 1539
 prog_b:
     load r1, zero, 0
@@ -1418,6 +1436,7 @@ prog_b:
     syscall 6
     jmp prog_b
 
+;; Page 58 * 27 = 1566 = idle_loop
 .org 1566
 idle_loop:
     load r1, zero, 0
@@ -1457,27 +1476,40 @@ exec_imem_table: .word imem_pt_a, imem_pt_b
 exec_dmem_table: .word dmem_pt_a, dmem_pt_b
 exec_slot_table: .word 1, 2
 
+;; --- Process Context Table (32-word aligned context blocks) ---
+;; Each block: 0..5 (VM parameters), 31 (sp stack pointer initialization)
+
+;; Context Block 0: Shell Context (offset 64 to 95)
 .org 64
 ctx_shell: .word 0, 35, imem_pt_shell, 6, dmem_pt_shell, 1
 .org 95
 .word 24
+
+;; Context Block 1: Program A Context (offset 96 to 127)
 .org 96
 ctx_a: .word 0, 35, imem_pt_a, 1, dmem_pt_a, 1
 .org 127
 .word 24
+
+;; Context Block 2: Program B Context (offset 128 to 159)
 .org 128
 ctx_b: .word 0, 35, imem_pt_b, 1, dmem_pt_b, 1
 .org 159
 .word 24
+
+;; Context Block 3: Spare Context (offset 160 to 191)
 .org 160
 ctx_spare: .word 0, 35, imem_pt_spare, 6, dmem_pt_spare, 1
 .org 191
 .word 24
+
+;; Context Block 4: Idle Context (offset 192 to 223)
 .org 192
 idle_ctx: .word 0, 35, imem_pt_idle, 1, dmem_pt_idle, 1
 .org 223
 .word 24
 
+;; --- Scheduler Control Variables ---
 .org 240
 proc_count: .word 5
 user_proc_count: .word 4
@@ -1514,33 +1546,42 @@ proc_heap_limit: .word 24, 24, 24, 24, 24
 proc_forks: .word 0, 0, 0, 0, 0
 proc_execs: .word 0, 0, 0, 0, 0
 proc_data_base: .word shell_data, prog_a_counter, prog_b_counter, spare_data, idle_counter
-phase8_fd_open: .word 0
-phase8_fd_offset: .word 0
-phase8_file_size: .word 3
-phase8_file_words: .word 101, 202, 303, 0, 0, 0, 0, 0, 0
+os_fd_open: .word 0
+os_fd_offset: .word 0
+os_file_size: .word 3
+os_file_words: .word 101, 202, 303, 0, 0, 0, 0, 0, 0
 .word 0, 0, 0, 0, 0, 0, 0, 0, 0
 .word 0, 0, 0, 0, 0, 0, 0, 0, 0
-phase8_dir_entries: .word 2
-phase8_last_read_count: .word 0
-phase8_open_count: .word 0
-phase8_close_count: .word 0
-phase8_read_count: .word 0
-phase8_write_count: .word 0
-phase8_stat_count: .word 0
-phase8_readdir_count: .word 0
-phase8_brk_count: .word 0
-phase8_sbrk_count: .word 0
+os_dir_entries: .word 2
+os_last_read_count: .word 0
+os_open_count: .word 0
+os_close_count: .word 0
+os_read_count: .word 0
+os_write_count: .word 0
+os_stat_count: .word 0
+os_readdir_count: .word 0
+os_brk_count: .word 0
+os_sbrk_count: .word 0
 
+;; Page 16 * 27 = 432 = shell_data
 .org 432
 shell_data: .word 0, 0, 0, 0, 0, 0, 0, 0, 0
 .word 0, 0, 0, 0, 0, 0, 0, 0, 0
 .word 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+;; Page 17 * 27 = 459 = prog_a_counter
 .org 459
 prog_a_counter: .word 0
+
+;; Page 18 * 27 = 486 = prog_b_counter
 .org 486
 prog_b_counter: .word 0
+
+;; Page 19 * 27 = 513 = idle_counter
 .org 513
 idle_counter: .word 0
+
+;; Page 20 * 27 = 540 = spare_data
 .org 540
 spare_data: .word 0, 0, 0, 0, 0, 0, 0, 0, 0
 .word 0, 0, 0, 0, 0, 0, 0, 0, 0
