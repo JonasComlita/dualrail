@@ -11,7 +11,7 @@ boot:
     csrw scratch, r1
     mov r1, imem_pt_shell
     csrw user_imem_ptbr, r1
-    mov r1, 3
+    mov r1, 6
     csrw user_imem_pages, r1
     mov r1, dmem_pt_shell
     csrw user_dmem_ptbr, r1
@@ -356,6 +356,36 @@ handle_syscall:
     mov r2, 11
     tcmp r2, r1, r2
     brz r2, syscall_waitpid
+    mov r2, 12
+    tcmp r2, r1, r2
+    brz r2, syscall_open
+    mov r2, 13
+    tcmp r2, r1, r2
+    brz r2, syscall_close
+    mov r2, 14
+    tcmp r2, r1, r2
+    brz r2, syscall_read
+    mov r2, 15
+    tcmp r2, r1, r2
+    brz r2, syscall_file_write
+    mov r2, 16
+    tcmp r2, r1, r2
+    brz r2, syscall_stat
+    mov r2, 17
+    tcmp r2, r1, r2
+    brz r2, syscall_readdir
+    mov r2, 18
+    tcmp r2, r1, r2
+    brz r2, syscall_brk
+    mov r2, 19
+    tcmp r2, r1, r2
+    brz r2, syscall_sbrk
+    mov r2, 20
+    tcmp r2, r1, r2
+    brz r2, syscall_fork
+    mov r2, 21
+    tcmp r2, r1, r2
+    brz r2, syscall_exec
     mov r1, -1
     store r1, sp, 18
     jmp syscall_advance_restore
@@ -615,6 +645,557 @@ syscall_waitpid_fail:
     mov r1, -1
     store r1, sp, 18
     jmp syscall_advance_restore
+
+translate_user_ptr:
+    load r2, zero, current_proc
+    mov r3, proc_data_base
+    add r3, r3, r2
+    load r3, r3, 0
+    add r1, r3, r1
+    ret
+
+validate_user_span:
+    mov r3, 0
+    tcmp r4, r1, r3
+    brn r4, validate_user_span_fail
+    tcmp r4, r2, r3
+    brn r4, validate_user_span_fail
+    add r4, r1, r2
+    mov r5, 27
+    tcmp r4, r4, r5
+    brp r4, validate_user_span_fail
+    mov r3, 1
+    ret
+validate_user_span_fail:
+    mov r3, -1
+    ret
+
+syscall_open:
+    load r10, sp, 18
+    copy r1, r10
+    mov r2, 3
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    copy r1, r10
+    call translate_user_ptr
+    load r4, r1, 0
+    load r5, r1, 1
+    mov r6, 47
+    tcmp r7, r4, r6
+    brn r7, syscall_not_found_fail
+    brp r7, syscall_not_found_fail
+    mov r6, 102
+    tcmp r7, r5, r6
+    brz r7, syscall_open_match
+    mov r6, 0
+    tcmp r7, r5, r6
+    brn r7, syscall_not_found_fail
+    brp r7, syscall_not_found_fail
+syscall_open_match:
+    load r1, zero, phase8_open_count
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, phase8_open_count
+    store r2, zero, phase8_fd_open
+    mov r1, 0
+    store r1, zero, phase8_fd_offset
+    mov r1, 1
+    store r1, sp, 18
+    mov r1, 3
+    store r1, sp, 19
+    mov r1, 0
+    store r1, sp, 20
+    jmp syscall_advance_restore
+syscall_not_found_fail:
+    mov r1, -1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    mov r1, 1
+    store r1, sp, 20
+    jmp syscall_advance_restore
+syscall_bad_ptr_fail:
+    mov r1, -1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    mov r1, 5
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_close:
+    load r1, sp, 18
+    mov r2, 3
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    load r1, zero, phase8_fd_open
+    mov r2, 1
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    mov r1, 0
+    store r1, zero, phase8_fd_open
+    load r1, zero, phase8_close_count
+    add r1, r1, r2
+    store r1, zero, phase8_close_count
+    mov r1, 1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_read:
+    load r1, sp, 18
+    mov r2, 3
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    load r1, zero, phase8_fd_open
+    mov r2, 1
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    load r10, sp, 19
+    load r11, sp, 20
+    copy r1, r10
+    copy r2, r11
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    load r4, zero, phase8_fd_offset
+    load r5, zero, phase8_file_size
+    mov r6, 0
+syscall_read_loop:
+    tcmp r7, r6, r11
+    brz r7, syscall_read_done
+    brp r7, syscall_read_done
+    tcmp r7, r4, r5
+    brz r7, syscall_read_done
+    brp r7, syscall_read_done
+    mov r8, phase8_file_words
+    add r8, r8, r4
+    load r9, r8, 0
+    add r1, r10, r6
+    call translate_user_ptr
+    store r9, r1, 0
+    mov r8, 1
+    add r4, r4, r8
+    add r6, r6, r8
+    jmp syscall_read_loop
+syscall_read_done:
+    mov r7, 0
+    tcmp r8, r6, r7
+    brz r8, syscall_read_eof
+    store r4, zero, phase8_fd_offset
+    store r6, zero, phase8_last_read_count
+    load r1, zero, phase8_read_count
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, phase8_read_count
+    mov r1, 1
+    store r1, sp, 18
+    store r6, sp, 19
+    mov r1, 0
+    store r1, sp, 20
+    jmp syscall_advance_restore
+syscall_read_eof:
+    mov r1, 0
+    store r1, sp, 18
+    store r1, sp, 19
+    mov r1, 9
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_file_write:
+    load r1, sp, 18
+    mov r2, 3
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    load r1, zero, phase8_fd_open
+    mov r2, 1
+    tcmp r3, r1, r2
+    brn r3, syscall_fd_fail
+    brp r3, syscall_fd_fail
+    load r10, sp, 19
+    load r11, sp, 20
+    copy r1, r10
+    copy r2, r11
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    load r4, zero, phase8_file_size
+    add r5, r4, r11
+    mov r6, 27
+    tcmp r7, r5, r6
+    brp r7, syscall_no_space_fail
+    mov r6, 0
+syscall_write_loop:
+    tcmp r7, r6, r11
+    brz r7, syscall_write_done
+    brp r7, syscall_write_done
+    add r1, r10, r6
+    call translate_user_ptr
+    load r9, r1, 0
+    mov r8, phase8_file_words
+    add r12, r4, r6
+    add r8, r8, r12
+    store r9, r8, 0
+    mov r8, 1
+    add r6, r6, r8
+    jmp syscall_write_loop
+syscall_write_done:
+    store r5, zero, phase8_file_size
+    load r2, zero, phase8_write_count
+    mov r3, 1
+    add r2, r2, r3
+    store r2, zero, phase8_write_count
+    mov r2, 1
+    store r2, sp, 18
+    store r11, sp, 19
+    mov r2, 0
+    store r2, sp, 20
+    jmp syscall_advance_restore
+syscall_no_space_fail:
+    mov r1, -1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    mov r1, 3
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_stat:
+    load r10, sp, 19
+    copy r1, r10
+    mov r2, 3
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    copy r1, r10
+    call translate_user_ptr
+    load r4, zero, phase8_file_size
+    store r4, r1, 0
+    load r5, zero, phase8_dir_entries
+    store r5, r1, 1
+    mov r5, 1
+    store r5, r1, 2
+    load r1, zero, phase8_stat_count
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, phase8_stat_count
+    store r2, sp, 18
+    store r4, sp, 19
+    mov r1, 0
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_readdir:
+    load r10, sp, 19
+    load r11, sp, 20
+    copy r1, r10
+    copy r2, r11
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    mov r6, 0
+    mov r7, 0
+    tcmp r8, r11, r7
+    brz r8, syscall_readdir_empty
+    brn r8, syscall_readdir_empty
+    copy r1, r10
+    call translate_user_ptr
+    mov r9, 47
+    store r9, r1, 0
+    mov r6, 1
+    mov r7, 1
+    tcmp r8, r11, r7
+    brz r8, syscall_readdir_counted
+    brn r8, syscall_readdir_counted
+    mov r9, 102
+    store r9, r1, 1
+    mov r6, 2
+syscall_readdir_counted:
+    load r1, zero, phase8_readdir_count
+    mov r2, 1
+    add r1, r1, r2
+    store r1, zero, phase8_readdir_count
+    store r2, sp, 18
+    store r6, sp, 19
+    mov r1, 0
+    store r1, sp, 20
+    jmp syscall_advance_restore
+syscall_readdir_empty:
+    mov r1, 0
+    store r1, sp, 18
+    store r1, sp, 19
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_brk:
+    load r1, zero, current_proc
+    mov r2, proc_heap_start
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r2, proc_heap_limit
+    add r2, r2, r1
+    load r4, r2, 0
+    load r5, sp, 18
+    tcmp r6, r5, r3
+    brn r6, syscall_brk_fail
+    tcmp r6, r5, r4
+    brp r6, syscall_brk_fail
+    mov r2, proc_heap_break
+    add r2, r2, r1
+    store r5, r2, 0
+    load r7, zero, phase8_brk_count
+    mov r8, 1
+    add r7, r7, r8
+    store r7, zero, phase8_brk_count
+    store r8, sp, 18
+    store r5, sp, 19
+    mov r8, 0
+    store r8, sp, 20
+    jmp syscall_advance_restore
+syscall_brk_fail:
+    mov r2, proc_heap_break
+    add r2, r2, r1
+    load r5, r2, 0
+    mov r8, -1
+    store r8, sp, 18
+    store r5, sp, 19
+    mov r8, 3
+    store r8, sp, 20
+    jmp syscall_advance_restore
+
+syscall_sbrk:
+    load r1, zero, current_proc
+    mov r2, proc_heap_break
+    add r2, r2, r1
+    load r3, r2, 0
+    load r4, sp, 18
+    add r5, r3, r4
+    mov r6, proc_heap_start
+    add r6, r6, r1
+    load r7, r6, 0
+    mov r6, proc_heap_limit
+    add r6, r6, r1
+    load r8, r6, 0
+    tcmp r9, r5, r7
+    brn r9, syscall_sbrk_fail
+    tcmp r9, r5, r8
+    brp r9, syscall_sbrk_fail
+    store r5, r2, 0
+    load r6, zero, phase8_sbrk_count
+    mov r7, 1
+    add r6, r6, r7
+    store r6, zero, phase8_sbrk_count
+    store r7, sp, 18
+    store r5, sp, 19
+    mov r7, 0
+    store r7, sp, 20
+    jmp syscall_advance_restore
+syscall_sbrk_fail:
+    mov r6, -1
+    store r6, sp, 18
+    store r3, sp, 19
+    mov r6, 3
+    store r6, sp, 20
+    jmp syscall_advance_restore
+
+syscall_fork:
+    mov r1, proc_state
+    mov r2, 3
+    add r1, r1, r2
+    load r3, r1, 0
+    mov r4, 0
+    tcmp r5, r3, r4
+    brn r5, syscall_fork_fail
+    brp r5, syscall_fork_fail
+    mov r4, 0
+    mov r5, 32
+    mov r8, ctx_spare
+fork_copy_context:
+    tcmp r6, r4, r5
+    brz r6, fork_context_done
+    brp r6, fork_context_done
+    add r7, sp, r4
+    load r9, r7, 0
+    add r10, r8, r4
+    store r9, r10, 0
+    mov r6, 1
+    add r4, r4, r6
+    jmp fork_copy_context
+fork_context_done:
+    load r4, zero, ctx_spare
+    mov r5, 1
+    add r4, r4, r5
+    store r4, zero, ctx_spare
+    mov r10, ctx_spare
+    mov r4, imem_pt_spare
+    store r4, r10, 2
+    mov r4, 6
+    store r4, r10, 3
+    mov r4, dmem_pt_spare
+    store r4, r10, 4
+    mov r4, 1
+    store r4, r10, 5
+    store r4, r10, 18
+    mov r4, 0
+    store r4, r10, 19
+    store r4, r10, 20
+    mov r4, 24
+    store r4, r10, 31
+    mov r4, 0
+    mov r5, 27
+fork_copy_dmem:
+    tcmp r6, r4, r5
+    brz r6, fork_dmem_done
+    brp r6, fork_dmem_done
+    mov r7, shell_data
+    add r7, r7, r4
+    load r9, r7, 0
+    mov r10, spare_data
+    add r10, r10, r4
+    store r9, r10, 0
+    mov r6, 1
+    add r4, r4, r6
+    jmp fork_copy_dmem
+fork_dmem_done:
+    load r1, zero, current_proc
+    mov r2, 1
+    add r3, r1, r2
+    mov r4, proc_parent_pid
+    mov r5, 3
+    add r4, r4, r5
+    store r3, r4, 0
+    mov r4, proc_exit_status
+    add r4, r4, r5
+    mov r3, 0
+    store r3, r4, 0
+    mov r4, proc_state
+    add r4, r4, r5
+    mov r3, 1
+    store r3, r4, 0
+    mov r4, proc_wait_channel
+    add r4, r4, r5
+    mov r3, 0
+    store r3, r4, 0
+    mov r4, proc_ready_next
+    add r4, r4, r5
+    mov r3, -1
+    store r3, r4, 0
+    mov r4, proc_heap_break
+    add r4, r4, r1
+    load r6, r4, 0
+    mov r4, proc_heap_break
+    add r4, r4, r5
+    store r6, r4, 0
+    mov r4, proc_heap_start
+    add r4, r4, r1
+    load r6, r4, 0
+    mov r4, proc_heap_start
+    add r4, r4, r5
+    store r6, r4, 0
+    mov r4, proc_heap_limit
+    add r4, r4, r1
+    load r6, r4, 0
+    mov r4, proc_heap_limit
+    add r4, r4, r5
+    store r6, r4, 0
+    copy r9, lr
+    mov r1, 3
+    call enqueue_ready
+    copy lr, r9
+    load r1, zero, current_proc
+    mov r4, proc_forks
+    add r4, r4, r1
+    load r6, r4, 0
+    mov r7, 1
+    add r6, r6, r7
+    store r6, r4, 0
+    store r7, sp, 18
+    mov r7, 4
+    store r7, sp, 19
+    mov r7, 0
+    store r7, sp, 20
+    jmp syscall_advance_restore
+syscall_fork_fail:
+    mov r1, -1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    mov r1, 3
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
+syscall_exec:
+    load r10, sp, 18
+    copy r1, r10
+    mov r2, 3
+    call validate_user_span
+    mov r4, 1
+    tcmp r5, r3, r4
+    brn r5, syscall_bad_ptr_fail
+    brp r5, syscall_bad_ptr_fail
+    copy r1, r10
+    call translate_user_ptr
+    load r4, r1, 0
+    load r5, r1, 1
+    mov r6, 47
+    tcmp r7, r4, r6
+    brn r7, syscall_not_found_fail
+    brp r7, syscall_not_found_fail
+    mov r6, 98
+    tcmp r7, r5, r6
+    brn r7, syscall_not_found_fail
+    brp r7, syscall_not_found_fail
+    load r1, zero, current_proc
+    mov r2, proc_execs
+    add r2, r2, r1
+    load r3, r2, 0
+    mov r4, 1
+    add r3, r3, r4
+    store r3, r2, 0
+    mov r3, 0
+    store r3, sp, 0
+    mov r3, 35
+    store r3, sp, 1
+    mov r3, imem_pt_b
+    store r3, sp, 2
+    mov r3, 1
+    store r3, sp, 3
+    mov r3, dmem_pt_b
+    store r3, sp, 4
+    mov r3, 1
+    store r3, sp, 5
+    mov r3, 24
+    store r3, sp, 31
+    copy r3, sp
+    jmp restore_next
+
+syscall_fd_fail:
+    mov r1, -1
+    store r1, sp, 18
+    mov r1, 0
+    store r1, sp, 19
+    mov r1, 4
+    store r1, sp, 20
+    jmp syscall_advance_restore
+
 syscall_exit:
     load r1, zero, current_proc
     mov r2, proc_exits
@@ -668,6 +1249,21 @@ shell_loop:
     mov r1, 98
     tcmp r2, r13, r1
     brz r2, shell_spawn_b
+    mov r1, 101
+    tcmp r2, r13, r1
+    brz r2, shell_exec
+    mov r1, 102
+    tcmp r2, r13, r1
+    brz r2, shell_fork
+    mov r1, 112
+    tcmp r2, r13, r1
+    brz r2, shell_phase8_probe
+    mov r1, 110
+    tcmp r2, r13, r1
+    brz r2, shell_phase8_bad_open
+    mov r1, 118
+    tcmp r2, r13, r1
+    brz r2, shell_phase8_bad_ptr
     mov r1, 119
     tcmp r2, r13, r1
     brz r2, shell_wait
@@ -704,12 +1300,105 @@ shell_uptime:
     syscall 1
     syscall 2
     jmp shell_loop
+shell_phase8_probe:
+    mov r1, 47
+    store r1, zero, 0
+    mov r1, 102
+    store r1, zero, 1
+    mov r1, 0
+    store r1, zero, 2
+    mov r13, 0
+    syscall 12
+    store r13, zero, 2
+    store r14, zero, 3
+    store r15, zero, 4
+    mov r13, 3
+    mov r14, 24
+    mov r15, 1
+    syscall 14
+    store r13, zero, 5
+    store r14, zero, 6
+    store r15, zero, 7
+    mov r1, 404
+    store r1, zero, 25
+    mov r1, 505
+    store r1, zero, 26
+    mov r13, 3
+    mov r14, 25
+    mov r15, 2
+    syscall 15
+    store r13, zero, 8
+    store r14, zero, 9
+    store r15, zero, 10
+    mov r13, 0
+    mov r14, 21
+    syscall 16
+    store r13, zero, 11
+    store r14, zero, 12
+    store r15, zero, 13
+    mov r13, 0
+    mov r14, 25
+    mov r15, 2
+    syscall 17
+    store r13, zero, 14
+    store r14, zero, 15
+    store r15, zero, 16
+    mov r13, 5
+    syscall 19
+    store r13, zero, 17
+    store r14, zero, 18
+    store r15, zero, 19
+    mov r13, 200
+    syscall 18
+    store r13, zero, 20
+    store r14, zero, 21
+    store r15, zero, 22
+    mov r13, 3
+    syscall 13
+    store r13, zero, 23
+    jmp shell_loop
+shell_phase8_bad_open:
+    mov r1, 47
+    store r1, zero, 0
+    mov r1, 122
+    store r1, zero, 1
+    mov r1, 0
+    store r1, zero, 2
+    mov r13, 0
+    syscall 12
+    store r13, zero, 24
+    store r14, zero, 25
+    store r15, zero, 26
+    jmp shell_loop
+shell_phase8_bad_ptr:
+    mov r13, 26
+    syscall 12
+    store r13, zero, 24
+    store r14, zero, 25
+    store r15, zero, 26
+    jmp shell_loop
+shell_fork:
+    syscall 20
+    store r13, zero, 24
+    store r14, zero, 25
+    store r15, zero, 26
+    jmp shell_loop
+shell_exec:
+    mov r1, 47
+    store r1, zero, 0
+    mov r1, 98
+    store r1, zero, 1
+    mov r1, 0
+    store r1, zero, 2
+    mov r13, 0
+    syscall 21
+    jmp shell_loop
 shell_exit:
     mov r13, 0
     syscall 6
     jmp shell_exit
 
-.org 1431
+.org 1512
 prog_a:
     load r1, zero, 0
     mov r2, 1
@@ -719,7 +1408,7 @@ prog_a:
     syscall 6
     jmp prog_a
 
-.org 1458
+.org 1539
 prog_b:
     load r1, zero, 0
     mov r2, 1
@@ -729,7 +1418,7 @@ prog_b:
     syscall 6
     jmp prog_b
 
-.org 1485
+.org 1566
 idle_loop:
     load r1, zero, 0
     mov r2, 1
@@ -741,15 +1430,25 @@ idle_loop:
 imem_pt_shell: .pte 50, 1, 0, 0, 1
 .pte 51, 1, 0, 0, 1
 .pte 52, 1, 0, 0, 1
+.pte 53, 1, 0, 0, 1
+.pte 54, 1, 0, 0, 1
+.pte 55, 1, 0, 0, 1
 dmem_pt_shell: .pte 16, 1, 1, 1, 0
-imem_pt_a: .pte 53, 1, 0, 0, 1
+imem_pt_a: .pte 56, 1, 0, 0, 1
 dmem_pt_a: .pte 17, 1, 1, 1, 0
-imem_pt_b: .pte 54, 1, 0, 0, 1
+imem_pt_b: .pte 57, 1, 0, 0, 1
 dmem_pt_b: .pte 18, 1, 1, 1, 0
-imem_pt_idle: .pte 55, 1, 0, 0, 1
+imem_pt_spare: .pte 50, 1, 0, 0, 1
+.pte 51, 1, 0, 0, 1
+.pte 52, 1, 0, 0, 1
+.pte 53, 1, 0, 0, 1
+.pte 54, 1, 0, 0, 1
+.pte 55, 1, 0, 0, 1
+dmem_pt_spare: .pte 20, 1, 1, 1, 0
+imem_pt_idle: .pte 58, 1, 0, 0, 1
 dmem_pt_idle: .pte 19, 1, 1, 1, 0
 
-exec_shell: .execheader 0, 3, 1, 24, 1, 0
+exec_shell: .execheader 0, 6, 1, 24, 1, 0
 exec_prog_a: .execheader 0, 1, 1, 24, 1, 0
 exec_prog_b: .execheader 0, 1, 1, 24, 1, 0
 
@@ -759,7 +1458,7 @@ exec_dmem_table: .word dmem_pt_a, dmem_pt_b
 exec_slot_table: .word 1, 2
 
 .org 64
-ctx_shell: .word 0, 35, imem_pt_shell, 3, dmem_pt_shell, 1
+ctx_shell: .word 0, 35, imem_pt_shell, 6, dmem_pt_shell, 1
 .org 95
 .word 24
 .org 96
@@ -771,7 +1470,7 @@ ctx_b: .word 0, 35, imem_pt_b, 1, dmem_pt_b, 1
 .org 159
 .word 24
 .org 160
-ctx_spare: .word 0, 35, imem_pt_a, 1, dmem_pt_a, 1
+ctx_spare: .word 0, 35, imem_pt_spare, 6, dmem_pt_spare, 1
 .org 191
 .word 24
 .org 192
@@ -809,12 +1508,40 @@ proc_waits: .word 0, 0, 0, 0, 0
 proc_read_blocks: .word 0, 0, 0, 0, 0
 proc_input_reads: .word 0, 0, 0, 0, 0
 proc_exit_status: .word 0, 0, 0, 0, 0
+proc_heap_start: .word 2, 2, 2, 2, 2
+proc_heap_break: .word 2, 2, 2, 2, 2
+proc_heap_limit: .word 24, 24, 24, 24, 24
+proc_forks: .word 0, 0, 0, 0, 0
+proc_execs: .word 0, 0, 0, 0, 0
+proc_data_base: .word shell_data, prog_a_counter, prog_b_counter, spare_data, idle_counter
+phase8_fd_open: .word 0
+phase8_fd_offset: .word 0
+phase8_file_size: .word 3
+phase8_file_words: .word 101, 202, 303, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0
+phase8_dir_entries: .word 2
+phase8_last_read_count: .word 0
+phase8_open_count: .word 0
+phase8_close_count: .word 0
+phase8_read_count: .word 0
+phase8_write_count: .word 0
+phase8_stat_count: .word 0
+phase8_readdir_count: .word 0
+phase8_brk_count: .word 0
+phase8_sbrk_count: .word 0
 
 .org 432
-shell_data: .word 0, 0
+shell_data: .word 0, 0, 0, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0
 .org 459
 prog_a_counter: .word 0
 .org 486
 prog_b_counter: .word 0
 .org 513
 idle_counter: .word 0
+.org 540
+spare_data: .word 0, 0, 0, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0
+.word 0, 0, 0, 0, 0, 0, 0, 0, 0

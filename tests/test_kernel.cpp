@@ -968,11 +968,11 @@ void testOsSubstrate() {
                    "minimal kernel boots at PC zero");
             expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * MMU_PAGE_WORDS,
                    "minimal kernel places shell code on mapped physical page");
-            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 53 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 56 * MMU_PAGE_WORDS,
                    "minimal kernel places static program A on mapped physical page");
-            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 54 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 57 * MMU_PAGE_WORDS,
                    "minimal kernel places static program B on mapped physical page");
-            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 55 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 58 * MMU_PAGE_WORDS,
                    "minimal kernel places idle task code on mapped physical page");
             expect(assembled.data_labels.count("shell_data") &&
                    assembled.data_labels.at("shell_data") == 16 * MMU_PAGE_WORDS,
@@ -990,6 +990,8 @@ void testOsSubstrate() {
                    assembled.executable_headers.count("exec_prog_a") &&
                    assembled.executable_headers.count("exec_prog_b"),
                    "minimal kernel defines executable image metadata");
+            expect(assembled.executable_headers.at("exec_shell").text_pages == 6,
+                   "minimal kernel maps expanded Phase 8 shell text");
             expect(assembled.data_labels.count("proc_count") &&
                    assembled.data_labels.count("user_proc_count") &&
                    assembled.data_labels.count("idle_proc") &&
@@ -1017,6 +1019,15 @@ void testOsSubstrate() {
                    assembled.data_labels.count("proc_read_blocks") &&
                    assembled.data_labels.count("proc_input_reads"),
                    "minimal kernel defines scheduler lifecycle metadata");
+            expect(assembled.data_labels.count("proc_heap_start") &&
+                   assembled.data_labels.count("proc_heap_break") &&
+                   assembled.data_labels.count("proc_heap_limit") &&
+                   assembled.data_labels.count("proc_forks") &&
+                   assembled.data_labels.count("proc_execs") &&
+                   assembled.data_labels.count("phase8_fd_open") &&
+                   assembled.data_labels.count("phase8_file_size") &&
+                   assembled.data_labels.count("spare_data"),
+                   "minimal kernel defines Phase 8 syscall metadata");
 
             VMState vm(2048, 768);
             expect(loadAndReset(vm, assembled), "minimal kernel image loads");
@@ -1109,6 +1120,108 @@ void testOsSubstrate() {
                    "spawn returns -1 when the static slot is not free");
             expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
                    "failed spawn is not counted as a created process");
+
+            VMState phase8Vm(2048, 768);
+            expect(loadAndReset(phase8Vm, assembled), "Phase 8 syscall probe image loads");
+            phase8Vm.enqueueConsoleAscii("p x");
+            auto phase8Result = sandbox::vm::run(phase8Vm, 30000);
+            expect(phase8Result.timeout() && phase8Vm.isRunning(),
+                   "kernel keeps running after Phase 8 file and heap syscalls");
+            const int shellBase = assembled.data_labels.at("shell_data");
+            expect(loadPhysLong(phase8Vm, shellBase + 2) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 3) == 3 &&
+                   loadPhysLong(phase8Vm, shellBase + 4) == 0,
+                   "open syscall returns T1 success, fd payload, and clear detail");
+            expect(loadPhysLong(phase8Vm, shellBase + 5) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 6) == 1,
+                   "read syscall returns success and word count");
+            expect(loadPhysLong(phase8Vm, shellBase + 24) == 101,
+                   "read syscall copies file data into the shell user buffer");
+            expect(loadPhysLong(phase8Vm, shellBase + 8) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 9) == 2,
+                   "write syscall returns success and written word count");
+            expect(loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_file_words") + 3) == 404 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_file_words") + 4) == 505,
+                   "write syscall copies shell user buffer words into the kernel file image");
+            expect(loadPhysLong(phase8Vm, shellBase + 11) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 12) == 5,
+                   "stat syscall reports updated file size");
+            expect(loadPhysLong(phase8Vm, shellBase + 14) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 15) == 2,
+                   "readdir syscall reports directory entry count");
+            expect(loadPhysLong(phase8Vm, shellBase + 25) == 47 &&
+                   loadPhysLong(phase8Vm, shellBase + 26) == 102,
+                   "readdir syscall copies directory words into the shell user buffer");
+            expect(loadPhysLong(phase8Vm, shellBase + 17) == 1 &&
+                   loadPhysLong(phase8Vm, shellBase + 18) == 7,
+                   "sbrk syscall grows the shell heap break");
+            expect(loadPhysLong(phase8Vm, shellBase + 20) == -1 &&
+                   loadPhysLong(phase8Vm, shellBase + 22) == 3,
+                   "brk syscall rejects out-of-range heap break");
+            expect(loadPhysLong(phase8Vm, shellBase + 23) == 1,
+                   "close syscall returns success");
+            expect(loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_open_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_read_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_write_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_stat_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_readdir_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_close_count")) == 1 &&
+                   loadPhysLong(phase8Vm, assembled.data_labels.at("phase8_sbrk_count")) == 1,
+                   "kernel accounts Phase 8 routed file and heap syscalls");
+
+            VMState badPathVm(2048, 768);
+            expect(loadAndReset(badPathVm, assembled), "Phase 8 bad path image loads");
+            badPathVm.enqueueConsoleAscii("n x");
+            auto badPathResult = sandbox::vm::run(badPathVm, 12000);
+            expect(badPathResult.timeout() && badPathVm.isRunning(),
+                   "kernel keeps running after bad path open");
+            expect(loadPhysLong(badPathVm, shellBase + 24) == -1 &&
+                   loadPhysLong(badPathVm, shellBase + 25) == 0 &&
+                   loadPhysLong(badPathVm, shellBase + 26) == 1,
+                   "open syscall rejects missing user path with T1 error detail");
+            expect(loadPhysLong(badPathVm, assembled.data_labels.at("phase8_open_count")) == 0,
+                   "failed open is not counted as an opened file");
+
+            VMState badPtrVm(2048, 768);
+            expect(loadAndReset(badPtrVm, assembled), "Phase 8 bad pointer image loads");
+            badPtrVm.enqueueConsoleAscii("v x");
+            auto badPtrResult = sandbox::vm::run(badPtrVm, 12000);
+            expect(badPtrResult.timeout() && badPtrVm.isRunning(),
+                   "kernel keeps running after bad pointer open");
+            expect(loadPhysLong(badPtrVm, shellBase + 24) == -1 &&
+                   loadPhysLong(badPtrVm, shellBase + 25) == 0 &&
+                   loadPhysLong(badPtrVm, shellBase + 26) == 5,
+                   "open syscall rejects invalid user pointer span with T1 error detail");
+
+            VMState forkVm(2048, 768);
+            expect(loadAndReset(forkVm, assembled), "Phase 8 fork image loads");
+            forkVm.enqueueConsoleAscii("f");
+            auto forkResult = sandbox::vm::run(forkVm, 12000);
+            expect(forkResult.timeout() && forkVm.isRunning(),
+                   "kernel keeps running after routed fork syscall");
+            expect(loadPhysLong(forkVm, shellBase + 24) == 1 &&
+                   loadPhysLong(forkVm, shellBase + 25) == 4 &&
+                   loadPhysLong(forkVm, shellBase + 26) == 0,
+                   "fork parent sees success and child pid payload");
+            expect(loadPhysLong(forkVm, assembled.data_labels.at("proc_parent_pid") + 3) == 1 &&
+                   loadPhysLong(forkVm, assembled.data_labels.at("proc_state") + 3) != PROC_STATE_FREE &&
+                   loadPhysLong(forkVm, assembled.data_labels.at("proc_forks")) == 1,
+                   "fork populates spare process metadata and accounting");
+            expect(loadPhysLong(forkVm, assembled.data_labels.at("spare_data") + 24) == 1 &&
+                   loadPhysLong(forkVm, assembled.data_labels.at("spare_data") + 25) == 0,
+                   "fork child sees zero payload in copied user memory");
+
+            VMState execVm(2048, 768);
+            expect(loadAndReset(execVm, assembled), "Phase 8 exec image loads");
+            execVm.enqueueConsoleAscii("e");
+            auto execResult = sandbox::vm::run(execVm, 20000);
+            expect(execResult.timeout() && execVm.isRunning(),
+                   "kernel keeps running after routed exec syscall");
+            expect(loadPhysLong(execVm, assembled.data_labels.at("prog_b_counter")) == 1,
+                   "exec replaces shell image with executable program B");
+            expect(loadPhysLong(execVm, assembled.data_labels.at("proc_execs")) == 1 &&
+                   loadPhysLong(execVm, assembled.data_labels.at("proc_exit_status")) == 22,
+                   "exec accounting is recorded and executed image exits with status");
         }
     }
 
