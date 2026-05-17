@@ -988,7 +988,46 @@ Phase 8 completion criteria:
   `test_multiwidth_vm`, `test_ternary_lanes`, `test_native_ops`, and
   `test_numeric_workloads`.
 
-## Phase 9: Security and Post-Quantum Crypto Primitives
+## Phase 9: Ternary xv6-Class Native Kernel and Userland Integration
+
+Status: planned.
+
+Goal: Transition from the host-emulated C++ substrate facade to a fully native, VM-executed kernel and userland stack, implementing the complete xv6-class operating system contract natively in our high-level systems language.
+
+### Scope and Implementation Tracks
+
+#### Track 9.1: Bridging the Host Facade vs Native Drivers
+- **Facade Deprecation**: Port memory management, page-table allocation, and block storage cache management from the C++ host facade (`ternary_os.h`) into high-level `.trit` source files executed directly by the VM.
+- **Unified OS Target**: Compile the OS kernel and drivers to run inside kernel-mode privilege rings, using host-emulated devices only for low-level MMIO or CSR register-mapped hardware boundaries (such as raw console I/O and block device physical read/write sectors).
+
+#### Track 9.2: The Native Inode Filesystem
+- **On-Disk Directory Structures**: Write a native, VM-executed library in `.trit` that implements direct and indirect block indexing, directory entry parsing (`namei`), and path-to-inode resolution entirely within the VM.
+- **File Descriptors**: Maintain a per-process file descriptor table inside the kernel's process table, mapping virtual FD integers to underlying native inode nodes and read/write offset pointers.
+
+#### Track 9.3: Kernel Heap Management (brk/sbrk)
+- **Dynamic Page Mapping**: Implement native kernel handlers for `brk` and `sbrk` syscalls that dynamically manipulate page table entries (PTEs) inside the active process's single-level virtual memory space.
+- **Page Allocator**: Maintain a physical page free list within the kernel memory space to allocate or free 27-word frames, cleanly reporting protection/page faults upon out-of-bounds heap operations.
+
+#### Track 9.4: Dynamic Lifecycle (fork/exec)
+- **Native Process Spawning**: Build a VM-native `fork()` syscall that creates a new process table entry, allocates new physical pages, and duplicates the active process memory block-for-block inside the VM.
+- **Disk-Backed Exec**: Build a VM-native `exec(path)` syscall that queries the native filesystem path, validates the self-describing executable header, wipes the current virtual address space, maps new text/data pages, and jumps to the new entry point virtual PC.
+
+#### Track 9.5: User-Space Dynamic Heap Allocator (malloc/free in .trit)
+- **Freestanding Allocator**: Write a robust dynamic memory allocator in `ulib.trit` using a first-fit or best-fit list algorithm.
+- **System Backing**: Drive the allocator's capacity by querying `sbrk()` syscalls when current block chunks are exhausted, establishing safe thread-local/process-local dynamic memory management for user applications.
+
+#### Track 9.6: Inter-Process Communication (IPC) Syscall Mechanism
+- **Ternary-Native Pipes**: Implement a buffered pipe buffer inside the kernel, allowing cooperative byte stream movement between file descriptors with read/write blocking.
+- **Event Signals & Synchronization**: Provide lightweight user-space communication gates using atomic memory-order fences (`FENCE.0`, `TLDR`/`TSTR`) and `T1` status signals to allow safe multi-task coordination.
+
+#### Track 9.7: Two-Pass Register Allocator Integration
+- **Closed Allocation Loop**: Upgrade the backend code generator in `tritc` to completely bind the code-generation phase to our two-pass graph-coloring allocator, ensuring that instruction selection is driven directly by liveness analysis rather than flat registers.
+
+#### Track 9.8: Redundant Mount Optimization & Substrate Refinement
+- **Block Cache Optimizations**: Implement a Least Recently Used (LRU) dirty block cache write-back mechanism to fully eliminate redundant mount, sync, and disk writes during heavy scheduling or process spawning cycles.
+- **Safety Hardening**: Refine pointer bounds verification and address translation checks on all kernel boundaries to ensure user processes cannot inject corrupt VM pointers.
+
+## Phase 10: Security and Post-Quantum Crypto Primitives
 
 Status: future.
 
@@ -1007,7 +1046,7 @@ Major goals:
 - Use published, peer-reviewed algorithms as the cryptographic basis; optimize
   the VM/hardware execution path, not secret proprietary crypto math.
 
-## Phase 10: FPGA/ASIC and Production Hardware Backends
+## Phase 11: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 
