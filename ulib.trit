@@ -3,50 +3,42 @@
 // =============================================================================
 // A standard library written in high-level Trit that wraps the VM/OS syscall
 // ABI, facilitating console I/O, process management, and memory allocation.
+//
+// Requires Phase 8 OS mode for: malloc/free, file I/O streams, env vars.
+// Console output (sys_write_int) prints integer values, not ASCII text;
+// print_string outputs each character's decimal code (VM limitation).
+//
+// Fixed DMEM metadata layout (data page, persists across calls):
+//   DMEM[20] = heap_initialized   (0 = no, 1 = yes)
+//   DMEM[22] = free_list_head     (address of first free block header, 0 = empty)
+//   DMEM[23] = env_tst_root       (TST root node address, 0 = empty)
+//
+// Heap block layout at address A (returned ptr = A + 1):
+//   A[0] = header  (negative = allocated, abs = data words;
+//                   positive = free,      value = data words)
+//   A[1] = next_free ptr when free (first data word when allocated)
+//   A[2..] = remaining data words
+//
+// Stream struct layout (6 words, malloc'd):
+//   [0]=fd  [1]=buf_ptr  [2]=buf_cap  [3]=buf_pos  [4]=buf_len  [5]=mode
+//
+// Vector struct layout (3 words, malloc'd):
+//   [0]=data_ptr  [1]=length  [2]=capacity
+//
+// TST node layout (6 words, malloc'd):
+//   [0]=splitter_char  [1]=left_ptr  [2]=equal_ptr  [3]=right_ptr
+//   [4]=value          [5]=is_terminal
+//
+// Ternary heap struct layout (3 words, malloc'd):
+//   [0]=data_ptr  [1]=size  [2]=capacity
+//
+// Ring buffer struct layout (4 words, malloc'd):
+//   [0]=data_ptr  [1]=capacity  [2]=read_pos  [3]=write_pos
 // =============================================================================
 
-//Category 1: Memory Management (std::malloc)
-//Backs dynamic allocations for user applications, converting raw sbrk pages into discrete blocks:
-//fn malloc(words: t40) -> t40 — Allocates a contiguous block of memory using a first-fit/best-fit list.
-//fn free(ptr: t40) — Frees the allocated block and coalesces adjacent free blocks to prevent fragmentation.
-//fn calloc(num: t40, size: t40) -> t40 — Allocates and zeroes out memory.
-//fn realloc(ptr: t40, new_size: t40) -> t40 — Resizes an existing heap block, copying data if relocation is necessary.
-
-//Category 2: String & Character Utilities (std::string)
-//Since balanced ternary represents text natively using characters, standard string-manipulation functions are crucial:
-//fn strlen(str: t40) -> t40 — Computes string length (terminated by 0).
-//fn strcmp(str1: t40, str2: t40) -> t1 — Performs a native three-way string comparison (-1 for <, 0 for ==, 1 for >).
-//fn strcpy(dest: t40, src: t40) & fn strcat(dest: t40, src: t40) — Copy and concatenate strings.
-//Ternary Conversions:
-//fn atoi_ternary(str: t40) -> t40 — Parses a balanced ternary string representation (e.g., using T, 0, 1 or -, 0, + symbols) into a native scalar word.
-//fn itoa_ternary(val: t40, buf: t40) — Formats a scalar word into a balanced ternary string.
-
-//Category 3: Buffered File I/O & Streams (std::io)
-//Wraps the raw integer file descriptor system calls into easy-to-use, buffered streams:
-//fn fopen(path: t40, mode: t40) -> t40 — Opens a file stream structure, allocating a memory read/write buffer.
-//fn fclose(stream: t40) -> t40 — Closes a stream, flushing any pending write buffers to disk first.
-//fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 — Performs buffered read.
-//fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 — Performs buffered write.
-//fn printf(format: t40, args: t40) — A formatted print utility supporting standard output routing.
-
-//Category 4: Process & Environment Control (std::process)
-//System wrappers for managing process states, parameters, and environment maps:
-//fn getenv(name: t40) -> t40 — Queries the process's environment variable table.
-//fn setenv(name: t40, value: t40) -> t40 — Updates/inserts environment variables.
-//Arguments Parsing:
-//fn parse_args(cmdline: t40, argv_buf: t40) -> t40 — Parses a raw command-line string into separate null-terminated strings, returning argc and building the argv[] pointer array for application entry points.
-
-//Category 5: Ternary Data Structures (std::collections)
-//High-level data structures optimized for ternary-native performance:
-//Ternary Search Tree (TST): A string-to-value map using three-way node branching (left, equal, right), matching our three-way branch instructions. Used for high-speed environment variable lookups.
-//Ternary Heap (PriorityQueue): An $O(\log_3 N)$ shallower priority heap to drive pathfinding or event loops.
-//Ternary Vector: A dynamically resizing contiguous array block.
-
-//Category 6: Freestanding Math & Carryless Operations (std::math)
-//Native math functions that take advantage of our ISA operations:
-//fn abs(val: t40) -> t40 — Balanced absolute value.
-//fn min(a: t40, b: t40) -> t40 & fn max(a: t40, b: t40) -> t40 — Native min/max selections.
-//fn clmul(a: t40, b: t40) -> t40 — Carryless multiplication helper for implementing polynomials and CRC checksum verification.
+// =============================================================================
+// SECTION 0 — Syscall wrappers
+// =============================================================================
 
 fn print_int(x: t40) -> t40 {
     return sys_write_int(x);
@@ -96,9 +88,13 @@ fn fork() -> t40 {
     return sys_fork();
 }
 
+// =============================================================================
+// SECTION 1 — Character and math helpers
+// =============================================================================
+
 fn abs(val: t40) -> t40 {
     match sign(val) {
-        neg => { return -val; }
+        neg => { return 0 - val; }
         zero => { return 0; }
         pos => { return val; }
     }
@@ -188,51 +184,75 @@ fn char_to_upper(c: t40) -> t40 {
     }
 }
 
+fn char_is_alpha(c: t40) -> t40 {
+    match sign(c - 65) {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match sign(90 - c) {
+                neg => {
+                    match sign(c - 97) {
+                        neg => { return 0; }
+                        zero => { return 1; }
+                        pos => {
+                            match sign(122 - c) {
+                                neg => { return 0; }
+                                zero => { return 1; }
+                                pos => { return 1; }
+                            }
+                        }
+                    }
+                }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+}
+
+fn char_is_alnum(c: t40) -> t40 {
+    var alpha: t40 = char_is_alpha(c);
+    match sign(alpha) {
+        pos => { return 1; }
+        zero => { return char_is_digit(c); }
+        neg => { return char_is_digit(c); }
+    }
+}
+
+// Parse a whitespace-delimited command line into an argv array.
+// cmdline: address of null-terminated word buffer.
+// argv_buf: address of word array to fill with pointers to each token start.
+// Returns argc (number of tokens found).
+// Modifies cmdline in-place by writing 0 over whitespace separators.
 fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
     var argc: t40 = 0;
     var i: t40 = 0;
     var in_word: t40 = 0;
-    
+
     while pos(1) {
         var c: t40 = 0;
-        unsafe {
-            c = load(cmdline + i);
-        }
-        
+        unsafe { c = load(cmdline + i); }
+
         match sign(c) {
+            // Null terminator: end of input.
             zero => {
                 match sign(in_word) {
-                    pos => {
-                        // end of last word
-                    }
+                    pos => {}
                     neg => {}
                     zero => {}
                 }
                 return argc;
             }
-            neg => {
-                // handle negative characters safely
-                match sign(in_word) {
-                    zero => {
-                        unsafe {
-                            store(argv_buf + argc, cmdline + i);
-                        }
-                        argc = argc + 1;
-                        in_word = 1;
-                    }
-                    neg => {}
-                    pos => {}
-                }
-            }
+            // Negative values are not valid ASCII; treat as end of input.
+            neg => { return argc; }
             pos => {
                 var is_ws: t40 = char_is_whitespace(c);
                 match sign(is_ws) {
                     pos => {
+                        // Whitespace: terminate current word if in one.
                         match sign(in_word) {
                             pos => {
-                                unsafe {
-                                    store(cmdline + i, 0);
-                                }
+                                unsafe { store(cmdline + i, 0); }
                                 in_word = 0;
                             }
                             neg => {}
@@ -240,11 +260,10 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
                         }
                     }
                     zero => {
+                        // Non-whitespace, not in a word: start new token.
                         match sign(in_word) {
                             zero => {
-                                unsafe {
-                                    store(argv_buf + argc, cmdline + i);
-                                }
+                                unsafe { store(argv_buf + argc, cmdline + i); }
                                 argc = argc + 1;
                                 in_word = 1;
                             }
@@ -261,5 +280,1942 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
     return argc;
 }
 
+// =============================================================================
+// SECTION 2 — Memory Management
+// Requires Phase 8 OS mode (sys_sbrk, syscall id 19).
+// =============================================================================
 
+// Initialize heap metadata at fixed DMEM addresses 20-23.
+fn heap_init() -> t40 {
+    var inited: t40 = 0;
+    unsafe { inited = load(20); }
+    match sign(inited) {
+        pos => { return 1; }
+        neg => { return 1; }
+        zero => {
+            unsafe {
+                store(20, 1);
+                store(22, 0);
+                store(23, 0);
+            }
+            return 1;
+        }
+    }
+}
 
+// Allocate a contiguous block of `words` data words from the heap.
+// Returns the data pointer (header is at ptr-1).
+// Uses first-fit free list; splits large blocks to reduce fragmentation.
+fn malloc(words: t40) -> t40 {
+    heap_init();
+
+    var sz: t40 = words;
+    match sign(sz - 1) {
+        neg => { sz = 1; }
+        zero => {}
+        pos => {}
+    }
+
+    var prev_slot: t40 = 22;
+    var curr: t40 = 0;
+    unsafe { curr = load(22); }
+
+    while pos(curr) {
+        var bsz: t40 = 0;
+        unsafe { bsz = load(curr); }
+
+        match sign(bsz - sz) {
+            neg => {
+                prev_slot = curr + 1;
+                unsafe { curr = load(curr + 1); }
+            }
+            zero => {
+                unsafe {
+                    var nxt: t40 = load(curr + 1);
+                    store(prev_slot, nxt);
+                    store(curr, 0 - sz);
+                }
+                return curr + 1;
+            }
+            pos => {
+                var leftover: t40 = bsz - sz - 1;
+                match sign(leftover - 1) {
+                    neg => {
+                        unsafe {
+                            var nxt: t40 = load(curr + 1);
+                            store(prev_slot, nxt);
+                            store(curr, 0 - bsz);
+                        }
+                    }
+                    zero => {
+                        unsafe {
+                            var nxt: t40 = load(curr + 1);
+                            store(prev_slot, nxt);
+                            store(curr, 0 - bsz);
+                        }
+                    }
+                    pos => {
+                        var split_addr: t40 = curr + sz + 1;
+                        unsafe {
+                            var nxt: t40 = load(curr + 1);
+                            store(split_addr, leftover);
+                            store(split_addr + 1, nxt);
+                            store(prev_slot, split_addr);
+                            store(curr, 0 - sz);
+                        }
+                    }
+                }
+                return curr + 1;
+            }
+        }
+    }
+
+    // No suitable free block — extend the heap via sbrk.
+    // sys_sbrk(delta) returns new break = old_break + delta.
+    // We need sz + 1 words (1 header + sz data).
+    // Old start = new_brk - (sz + 1).
+    var new_brk: t40 = sys_sbrk(sz + 1);
+    var hdr: t40 = new_brk - sz - 1;
+    unsafe { store(hdr, 0 - sz); }
+    return hdr + 1;
+}
+
+// Free a previously allocated block.
+// Marks it as free and prepends to the free list (LIFO).
+fn free(ptr: t40) -> t40 {
+    match sign(ptr) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var hdr: t40 = ptr - 1;
+            var hdr_val: t40 = 0;
+            unsafe { hdr_val = load(hdr); }
+            match sign(hdr_val) {
+                neg => {
+                    var fsz: t40 = 0 - hdr_val;
+                    var head: t40 = 0;
+                    unsafe { head = load(22); }
+                    unsafe {
+                        store(hdr, fsz);
+                        store(ptr, head);
+                        store(22, hdr);
+                    }
+                    return 0;
+                }
+                pos => { return 0; }    // already free (double-free guard)
+                zero => { return 0; }   // invalid block
+            }
+        }
+    }
+}
+
+// Allocate `num * size` words, zero-initialised.
+fn calloc(num: t40, size: t40) -> t40 {
+    var total: t40 = num * size;
+    var ptr: t40 = malloc(total);
+    match sign(ptr) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var i: t40 = 0;
+            while pos(total - i) {
+                unsafe { store(ptr + i, 0); }
+                i = i + 1;
+            }
+            return ptr;
+        }
+    }
+}
+
+// Resize an existing block; copies existing data, frees old pointer.
+// Returns new pointer, or 0 on failure.
+fn realloc(ptr: t40, new_size: t40) -> t40 {
+    match sign(ptr) {
+        zero => { return malloc(new_size); }
+        neg => { return 0; }
+        pos => {
+            var old_hdr: t40 = 0;
+            unsafe { old_hdr = load(ptr - 1); }
+            var old_sz: t40 = 0 - old_hdr;
+            match sign(old_hdr) {
+                pos => { return 0; }
+                zero => { return 0; }
+                neg => {
+                    var new_ptr: t40 = malloc(new_size);
+                    match sign(new_ptr) {
+                        zero => { return 0; }
+                        neg => { return 0; }
+                        pos => {
+                            var copy_words: t40 = min(old_sz, new_size);
+                            var i: t40 = 0;
+                            while pos(copy_words - i) {
+                                var w: t40 = 0;
+                                unsafe { w = load(ptr + i); }
+                                unsafe { store(new_ptr + i, w); }
+                                i = i + 1;
+                            }
+                            free(ptr);
+                            return new_ptr;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 3 — Memory Utilities
+// =============================================================================
+
+fn memset(ptr: t40, val: t40, size: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(size - i) {
+        unsafe { store(ptr + i, val); }
+        i = i + 1;
+    }
+    return ptr;
+}
+
+fn memcpy(dest: t40, src: t40, size: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(size - i) {
+        var w: t40 = 0;
+        unsafe { w = load(src + i); }
+        unsafe { store(dest + i, w); }
+        i = i + 1;
+    }
+    return dest;
+}
+
+// memmove: copy `size` words from src to dest, safe for overlapping regions.
+// If dest < src, copies forward. If dest > src, copies backward to avoid clobber.
+fn memmove(dest: t40, src: t40, size: t40) -> t40 {
+    match sign(dest - src) {
+        neg => {
+            // dest < src: safe to copy forward
+            var i: t40 = 0;
+            while pos(size - i) {
+                var w: t40 = 0;
+                unsafe { w = load(src + i); }
+                unsafe { store(dest + i, w); }
+                i = i + 1;
+            }
+        }
+        zero => {}  // same address, nothing to do
+        pos => {
+            // dest > src: copy backward to avoid clobbering src
+            var i: t40 = size - 1;
+            while pos(i + 1) {
+                var w: t40 = 0;
+                unsafe { w = load(src + i); }
+                unsafe { store(dest + i, w); }
+                i = i - 1;
+            }
+        }
+    }
+    return dest;
+}
+
+fn memcmp(ptr1: t40, ptr2: t40, size: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(size - i) {
+        var a: t40 = 0;
+        var b: t40 = 0;
+        unsafe { a = load(ptr1 + i); }
+        unsafe { b = load(ptr2 + i); }
+        match sign(a - b) {
+            neg => { return 0 - 1; }
+            pos => { return 1; }
+            zero => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// =============================================================================
+// SECTION 4 — String Utilities
+// Strings are null-terminated sequences of word-sized character codes.
+// =============================================================================
+
+fn strlen(str: t40) -> t40 {
+    var len: t40 = 0;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var c: t40 = 0;
+        unsafe { c = load(str + len); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => { len = len + 1; }
+            pos => { len = len + 1; }
+        }
+    }
+    return len;
+}
+
+fn strcmp(str1: t40, str2: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(1) {
+        var a: t40 = 0;
+        var b: t40 = 0;
+        unsafe { a = load(str1 + i); }
+        unsafe { b = load(str2 + i); }
+        match sign(a - b) {
+            neg => { return 0 - 1; }
+            pos => { return 1; }
+            zero => {
+                match sign(a) {
+                    zero => { return 0; }
+                    neg => {}
+                    pos => {}
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn strncmp(str1: t40, str2: t40, n: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(n - i) {
+        var a: t40 = 0;
+        var b: t40 = 0;
+        unsafe { a = load(str1 + i); }
+        unsafe { b = load(str2 + i); }
+        match sign(a - b) {
+            neg => { return 0 - 1; }
+            pos => { return 1; }
+            zero => {
+                match sign(a) {
+                    zero => { return 0; }
+                    neg => {}
+                    pos => {}
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn strcpy(dest: t40, src: t40) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var c: t40 = 0;
+        unsafe { c = load(src + i); }
+        unsafe { store(dest + i, c); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => { i = i + 1; }
+            pos => { i = i + 1; }
+        }
+    }
+    return dest;
+}
+
+fn strncpy(dest: t40, src: t40, n: t40) -> t40 {
+    var i: t40 = 0;
+    var past_null: t40 = 0;
+    while pos(n - i) {
+        match sign(past_null) {
+            pos => {
+                unsafe { store(dest + i, 0); }
+            }
+            zero => {
+                var c: t40 = 0;
+                unsafe { c = load(src + i); }
+                unsafe { store(dest + i, c); }
+                match sign(c) {
+                    zero => { past_null = 1; }
+                    neg => {}
+                    pos => {}
+                }
+            }
+            neg => {
+                unsafe { store(dest + i, 0); }
+            }
+        }
+        i = i + 1;
+    }
+    return dest;
+}
+
+fn strcat(dest: t40, src: t40) -> t40 {
+    var end_pos: t40 = strlen(dest);
+    strcpy(dest + end_pos, src);
+    return dest;
+}
+
+fn strchr(str: t40, ch: t40) -> t40 {
+    var i: t40 = 0;
+    while pos(1) {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match sign(c - ch) {
+            zero => { return str + i; }
+            neg => {}
+            pos => {}
+        }
+        match sign(c) {
+            zero => { return 0; }
+            neg => {}
+            pos => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Find the last occurrence of character ch in str.
+// Returns address of the match, or 0 if not found.
+fn strrchr(str: t40, ch: t40) -> t40 {
+    var i: t40 = 0;
+    var last: t40 = 0;
+    while pos(1) {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match sign(c - ch) {
+            zero => { last = str + i; }
+            neg => {}
+            pos => {}
+        }
+        match sign(c) {
+            zero => { return last; }
+            neg => { return last; }
+            pos => {}
+        }
+        i = i + 1;
+    }
+    return last;
+}
+
+fn strstr(haystack: t40, needle: t40) -> t40 {
+    var nlen: t40 = strlen(needle);
+    match sign(nlen) {
+        zero => { return haystack; }
+        neg => { return haystack; }
+        pos => {}
+    }
+    var i: t40 = 0;
+    var hlen: t40 = strlen(haystack);
+    while pos(hlen - nlen - i + 1) {
+        var matched: t40 = strncmp(haystack + i, needle, nlen);
+        match sign(matched) {
+            zero => { return haystack + i; }
+            neg => {}
+            pos => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Copy a null-terminated string from `src` into a fresh malloc'd buffer.
+fn strdup(src: t40) -> t40 {
+    var slen: t40 = strlen(src);
+    var buf: t40 = malloc(slen + 1);
+    match sign(buf) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            strcpy(buf, src);
+            return buf;
+        }
+    }
+}
+
+// Tokenize `str` in-place, similar to C strtok.
+// First call: pass the string address in `str` and 0 in `saved`.
+// Subsequent calls: pass 0 in `str` and the previous `saved` value.
+// `saved` is a pointer to a word that holds the scan position between calls.
+// Returns address of the next token, or 0 when exhausted.
+// Writes null over each delimiter found.
+fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
+    var pos_ptr: t40 = 0;
+    match sign(str) {
+        pos => { unsafe { store(saved, str); } pos_ptr = str; }
+        zero => { unsafe { pos_ptr = load(saved); } }
+        neg => { unsafe { pos_ptr = load(saved); } }
+    }
+
+    // Skip leading delimiters.
+    var done_skip: t40 = 0;
+    while pos(1 - done_skip) {
+        var c: t40 = 0;
+        unsafe { c = load(pos_ptr); }
+        match sign(c) {
+            zero => { unsafe { store(saved, 0); } return 0; }
+            neg => { unsafe { store(saved, 0); } return 0; }
+            pos => {
+                var dc: t40 = 0;
+                var found_delim: t40 = 0;
+                var di: t40 = 0;
+                while pos(1) {
+                    unsafe { dc = load(delim + di); }
+                    match sign(dc) {
+                        zero => { di = 9999; }    // break inner loop
+                        neg => { di = 9999; }
+                        pos => {
+                            match sign(c - dc) {
+                                zero => { found_delim = 1; di = 9999; }
+                                neg => {}
+                                pos => {}
+                            }
+                        }
+                    }
+                    match sign(di - 9999) {
+                        zero => { done_skip = 9999; }
+                        neg => { di = di + 1; }
+                        pos => {}
+                    }
+                    match sign(done_skip - 9999) {
+                        zero => { di = 9999; }
+                        neg => {}
+                        pos => {}
+                    }
+                }
+                match sign(found_delim) {
+                    pos => { pos_ptr = pos_ptr + 1; }
+                    zero => { done_skip = 1; }
+                    neg => { done_skip = 1; }
+                }
+            }
+        }
+    }
+
+    // pos_ptr now points to the start of a token.
+    var token_start: t40 = pos_ptr;
+
+    // Scan to the next delimiter or null.
+    var done_scan: t40 = 0;
+    while pos(1 - done_scan) {
+        var c: t40 = 0;
+        unsafe { c = load(pos_ptr); }
+        match sign(c) {
+            zero => { unsafe { store(saved, pos_ptr); } done_scan = 1; }
+            neg => { unsafe { store(saved, pos_ptr); } done_scan = 1; }
+            pos => {
+                var dc: t40 = 0;
+                var found_delim: t40 = 0;
+                var di: t40 = 0;
+                while pos(1) {
+                    unsafe { dc = load(delim + di); }
+                    match sign(dc) {
+                        zero => { di = 9999; }
+                        neg => { di = 9999; }
+                        pos => {
+                            match sign(c - dc) {
+                                zero => { found_delim = 1; di = 9999; }
+                                neg => {}
+                                pos => {}
+                            }
+                        }
+                    }
+                    match sign(di - 9999) {
+                        zero => { di = 0; di = 9999; }
+                        neg => { di = di + 1; }
+                        pos => {}
+                    }
+                }
+                match sign(found_delim) {
+                    pos => {
+                        unsafe { store(pos_ptr, 0); }
+                        unsafe { store(saved, pos_ptr + 1); }
+                        done_scan = 1;
+                    }
+                    zero => { pos_ptr = pos_ptr + 1; }
+                    neg => { pos_ptr = pos_ptr + 1; }
+                }
+            }
+        }
+    }
+
+    return token_start;
+}
+
+// =============================================================================
+// SECTION 5 — Number Conversion
+// =============================================================================
+
+fn atoi(str: t40) -> t40 {
+    var i: t40 = 0;
+    var result: t40 = 0;
+    var is_neg: t40 = 0;
+    var c: t40 = 0;
+
+    unsafe { c = load(str + i); }
+    var skipping: t40 = 1;
+    while pos(skipping) {
+        var wspc: t40 = char_is_whitespace(c);
+        match sign(wspc) {
+            pos => {
+                i = i + 1;
+                unsafe { c = load(str + i); }
+            }
+            zero => { skipping = 0; }
+            neg => { skipping = 0; }
+        }
+    }
+
+    match sign(c - 45) {
+        zero => {
+            is_neg = 1;
+            i = i + 1;
+            unsafe { c = load(str + i); }
+        }
+        neg => {}
+        pos => {
+            match sign(c - 43) {
+                zero => {
+                    i = i + 1;
+                    unsafe { c = load(str + i); }
+                }
+                neg => {}
+                pos => {}
+            }
+        }
+    }
+
+    var is_dig: t40 = char_is_digit(c);
+    while pos(is_dig) {
+        result = result * 10 + (c - 48);
+        i = i + 1;
+        unsafe { c = load(str + i); }
+        is_dig = char_is_digit(c);
+    }
+
+    match sign(is_neg) {
+        pos => { return 0 - result; }
+        zero => { return result; }
+        neg => { return result; }
+    }
+}
+
+fn itoa(val: t40, buf: t40) -> t40 {
+    match sign(val) {
+        zero => {
+            unsafe {
+                store(buf, 48);
+                store(buf + 1, 0);
+            }
+            return buf;
+        }
+        neg => {
+            unsafe { store(buf, 45); }
+            itoa(0 - val, buf + 1);
+            return buf;
+        }
+        pos => {
+            var ndigits: t40 = 0;
+            var tmp: t40 = val;
+            while pos(tmp) {
+                ndigits = ndigits + 1;
+                tmp = tmp / 10;
+            }
+            unsafe { store(buf + ndigits, 0); }
+            tmp = val;
+            var wpos: t40 = ndigits - 1;
+            while pos(tmp) {
+                var digit: t40 = tmp - (tmp / 10) * 10;
+                unsafe { store(buf + wpos, digit + 48); }
+                tmp = tmp / 10;
+                wpos = wpos - 1;
+            }
+            return buf;
+        }
+    }
+}
+
+// Parse a null-terminated unbalanced ternary string into an integer.
+fn atoi_ternary(str: t40) -> t40 {
+    var i: t40 = 0;
+    var result: t40 = 0;
+    var is_neg: t40 = 0;
+    var c: t40 = 0;
+
+    unsafe { c = load(str + i); }
+    match sign(c - 45) {
+        zero => {
+            is_neg = 1;
+            i = i + 1;
+            unsafe { c = load(str + i); }
+        }
+        neg => {}
+        pos => {}
+    }
+
+    var done: t40 = 0;
+    while pos(1 - done) {
+        unsafe { c = load(str + i); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => { done = 1; }
+            pos => {
+                match sign(c - 48) {
+                    zero => { result = result * 3; }
+                    neg => { done = 1; }
+                    pos => {
+                        match sign(c - 49) {
+                            zero => { result = result * 3 + 1; }
+                            neg => { done = 1; }
+                            pos => {
+                                match sign(c - 50) {
+                                    zero => { result = result * 3 + 2; }
+                                    neg => { done = 1; }
+                                    pos => { done = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                match sign(done) {
+                    zero => { i = i + 1; }
+                    neg => { i = i + 1; }
+                    pos => {}
+                }
+            }
+        }
+    }
+
+    match sign(is_neg) {
+        pos => { return 0 - result; }
+        zero => { return result; }
+        neg => { return result; }
+    }
+}
+
+fn itoa_ternary(val: t40, buf: t40) -> t40 {
+    match sign(val) {
+        zero => {
+            unsafe {
+                store(buf, 48);
+                store(buf + 1, 0);
+            }
+            return buf;
+        }
+        neg => {
+            unsafe { store(buf, 45); }
+            itoa_ternary(0 - val, buf + 1);
+            return buf;
+        }
+        pos => {
+            var ndigits: t40 = 0;
+            var tmp: t40 = val;
+            while pos(tmp) {
+                ndigits = ndigits + 1;
+                tmp = tmp / 3;
+            }
+            unsafe { store(buf + ndigits, 0); }
+            tmp = val;
+            var wpos: t40 = ndigits - 1;
+            while pos(tmp) {
+                var digit: t40 = tmp - (tmp / 3) * 3;
+                unsafe { store(buf + wpos, digit + 48); }
+                tmp = tmp / 3;
+                wpos = wpos - 1;
+            }
+            return buf;
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 6 — Output Helpers
+// NOTE: The VM console outputs integers, not raw ASCII characters.
+// print_char(c) prints c as a decimal integer (e.g., print_char(65) prints 65).
+// Full character rendering requires a VM print_char CSR extension.
+// =============================================================================
+
+fn print_char(c: t40) -> t40 {
+    return sys_write_int(c);
+}
+
+fn print_string(str: t40) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => {
+                sys_write_int(c);
+                i = i + 1;
+            }
+            pos => {
+                sys_write_int(c);
+                i = i + 1;
+            }
+        }
+    }
+    return 0;
+}
+
+// Print an integer followed by a newline. Common enough to be worth a helper.
+fn println_int(x: t40) -> t40 {
+    sys_write_int(x);
+    sys_newline();
+    return 0;
+}
+
+// printf: supports %d (decimal) and %t (ternary). Single argument only.
+// All other characters are printed as their decimal char code.
+fn printf(fmt: t40, arg: t40) -> t40 {
+    var i: t40 = 0;
+    var arg_used: t40 = 0;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var c: t40 = 0;
+        unsafe { c = load(fmt + i); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => { i = i + 1; }
+            pos => {
+                match sign(c - 37) {    // '%'
+                    zero => {
+                        i = i + 1;
+                        var spec: t40 = 0;
+                        unsafe { spec = load(fmt + i); }
+                        match sign(spec - 100) {    // 'd'
+                            zero => {
+                                match sign(arg_used) {
+                                    zero => { sys_write_int(arg); arg_used = 1; }
+                                    neg => { sys_write_int(0); }
+                                    pos => { sys_write_int(0); }
+                                }
+                            }
+                            neg => {}
+                            pos => {
+                                match sign(spec - 116) {    // 't'
+                                    zero => {
+                                        var tbuf: t40 = malloc(24);
+                                        match sign(tbuf) {
+                                            zero => {}
+                                            neg => {}
+                                            pos => {
+                                                itoa_ternary(arg, tbuf);
+                                                print_string(tbuf);
+                                                free(tbuf);
+                                                arg_used = 1;
+                                            }
+                                        }
+                                    }
+                                    neg => {}
+                                    pos => {}
+                                }
+                            }
+                        }
+                        i = i + 1;
+                    }
+                    neg => {
+                        match sign(c - 10) {    // '\n'
+                            zero => { sys_newline(); i = i + 1; }
+                            neg => { sys_write_int(c); i = i + 1; }
+                            pos => { sys_write_int(c); i = i + 1; }
+                        }
+                    }
+                    pos => {
+                        match sign(c - 10) {    // '\n'
+                            zero => { sys_newline(); i = i + 1; }
+                            neg => { sys_write_int(c); i = i + 1; }
+                            pos => { sys_write_int(c); i = i + 1; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// =============================================================================
+// SECTION 7 — Raw File I/O Wrappers
+// Syscall ABI: r13=status, r14=payload, r15=errno/detail
+// sys_read(fd, buf_ptr, count); sys_write(fd, buf_ptr, count)
+// =============================================================================
+
+fn open(path: t40, writable: t40) -> t40 {
+    return sys_open(path, writable);
+}
+
+fn close(fd: t40) -> t40 {
+    return sys_close(fd);
+}
+
+// FIX: was sys_read(fd, count) — missing buf argument.
+fn read(fd: t40, buf: t40, count: t40) -> t40 {
+    return sys_read(fd, buf, count);
+}
+
+// FIX: was sys_write(fd, buf) — missing count argument.
+fn write(fd: t40, buf: t40, count: t40) -> t40 {
+    return sys_write(fd, buf, count);
+}
+
+fn stat(path: t40) -> t40 {
+    return sys_stat(path);
+}
+
+fn exec(path: t40) -> t40 {
+    return sys_exec(path);
+}
+
+// =============================================================================
+// SECTION 8 — Buffered File I/O Streams
+// Stream struct: 6 malloc'd words [fd, buf_ptr, buf_cap, buf_pos, buf_len, mode]
+// mode: 0 = read, 1 = write.
+// =============================================================================
+
+fn fopen(path: t40, mode: t40) -> t40 {
+    var fd: t40 = sys_open(path, mode);
+    match sign(fd) {
+        neg => { return 0; }
+        zero => { return 0; }
+        pos => {
+            var stream: t40 = malloc(6);
+            match sign(stream) {
+                zero => { sys_close(fd); return 0; }
+                neg => { sys_close(fd); return 0; }
+                pos => {
+                    var buf: t40 = malloc(64);
+                    match sign(buf) {
+                        zero => { free(stream); sys_close(fd); return 0; }
+                        neg => { free(stream); sys_close(fd); return 0; }
+                        pos => {
+                            unsafe {
+                                store(stream,     fd);
+                                store(stream + 1, buf);
+                                store(stream + 2, 64);
+                                store(stream + 3, 0);
+                                store(stream + 4, 0);
+                                store(stream + 5, mode);
+                            }
+                            return stream;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// FIX: fflush now passes buf_len as the count argument to sys_write.
+fn fflush(stream: t40) -> t40 {
+    match sign(stream) {
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
+        pos => {
+            var mode: t40 = 0;
+            unsafe { mode = load(stream + 5); }
+            match sign(mode) {
+                zero => { return 0; }
+                neg => { return 0; }
+                pos => {
+                    var fd: t40 = 0;
+                    var buf_ptr: t40 = 0;
+                    var buf_len: t40 = 0;
+                    unsafe {
+                        fd      = load(stream);
+                        buf_ptr = load(stream + 1);
+                        buf_len = load(stream + 4);
+                    }
+                    match sign(buf_len) {
+                        zero => { return 0; }
+                        neg => { return 0; }
+                        pos => {
+                            // FIX: pass buf_len as count
+                            sys_write(fd, buf_ptr, buf_len);
+                            unsafe {
+                                store(stream + 3, 0);
+                                store(stream + 4, 0);
+                            }
+                            return 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn fclose(stream: t40) -> t40 {
+    match sign(stream) {
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
+        pos => {
+            fflush(stream);
+            var fd: t40 = 0;
+            var buf_ptr: t40 = 0;
+            unsafe {
+                fd      = load(stream);
+                buf_ptr = load(stream + 1);
+            }
+            match sign(buf_ptr) {
+                pos => { free(buf_ptr); }
+                zero => {}
+                neg => {}
+            }
+            sys_close(fd);
+            free(stream);
+            return 0;
+        }
+    }
+}
+
+// FIX: fread now passes buf as the destination address to sys_read.
+fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
+    match sign(stream) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var fd: t40 = 0;
+            unsafe { fd = load(stream); }
+            var total_words: t40 = size * count;
+            var words_read: t40 = sys_read(fd, buf, total_words);
+            match sign(words_read) {
+                neg => { return 0; }
+                zero => { return 0; }
+                pos => { return words_read / size; }
+            }
+        }
+    }
+}
+
+fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
+    match sign(stream) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var buf_ptr: t40 = 0;
+            var buf_cap: t40 = 0;
+            var buf_len: t40 = 0;
+            unsafe {
+                buf_ptr = load(stream + 1);
+                buf_cap = load(stream + 2);
+                buf_len = load(stream + 4);
+            }
+            var total: t40 = size * count;
+            var i: t40 = 0;
+            while pos(total - i) {
+                match sign(buf_len - buf_cap + 1) {
+                    neg => {}
+                    zero => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
+                    pos => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
+                }
+                var w: t40 = 0;
+                unsafe { w = load(buf + i); }
+                unsafe {
+                    store(buf_ptr + buf_len, w);
+                    buf_len = buf_len + 1;
+                    store(stream + 4, buf_len);
+                }
+                i = i + 1;
+            }
+            return count;
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 9 — Environment Variables
+// Uses a Ternary Search Tree rooted at DMEM[23].
+// Keys and values are null-terminated strings copied into malloc'd buffers.
+// =============================================================================
+
+fn tst_alloc_node(ch: t40) -> t40 {
+    var node: t40 = malloc(6);
+    match sign(node) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            unsafe {
+                store(node,     ch);
+                store(node + 1, 0);
+                store(node + 2, 0);
+                store(node + 3, 0);
+                store(node + 4, 0);
+                store(node + 5, 0);
+            }
+            return node;
+        }
+    }
+}
+
+fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
+    var ki: t40 = 0;
+    var kc: t40 = 0;
+    unsafe { kc = load(key + ki); }
+
+    var root: t40 = 0;
+    unsafe { root = load(root_slot); }
+    match sign(root) {
+        zero => {
+            var nd: t40 = tst_alloc_node(kc);
+            match sign(nd) {
+                zero => { return 0; }
+                neg => { return 0; }
+                pos => { unsafe { store(root_slot, nd); } root = nd; }
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+
+    var node: t40 = root;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var nc: t40 = 0;
+        unsafe { nc = load(node); }
+
+        match sign(kc - nc) {
+            neg => {
+                var left: t40 = 0;
+                unsafe { left = load(node + 1); }
+                match sign(left) {
+                    zero => {
+                        var nd: t40 = tst_alloc_node(kc);
+                        match sign(nd) {
+                            zero => { done = 1; }
+                            neg => { done = 1; }
+                            pos => { unsafe { store(node + 1, nd); } node = nd; }
+                        }
+                    }
+                    neg => { done = 1; }
+                    pos => { node = left; }
+                }
+            }
+            pos => {
+                var right: t40 = 0;
+                unsafe { right = load(node + 3); }
+                match sign(right) {
+                    zero => {
+                        var nd: t40 = tst_alloc_node(kc);
+                        match sign(nd) {
+                            zero => { done = 1; }
+                            neg => { done = 1; }
+                            pos => { unsafe { store(node + 3, nd); } node = nd; }
+                        }
+                    }
+                    neg => { done = 1; }
+                    pos => { node = right; }
+                }
+            }
+            zero => {
+                match sign(kc) {
+                    zero => {
+                        // FIX: on duplicate key, free old value before overwriting.
+                        var old_val: t40 = 0;
+                        unsafe { old_val = load(node + 4); }
+                        match sign(old_val) {
+                            pos => { free(old_val); }
+                            zero => {}
+                            neg => {}
+                        }
+                        unsafe {
+                            store(node + 4, val);
+                            store(node + 5, 1);
+                        }
+                        done = 1;
+                    }
+                    neg => { done = 1; }
+                    pos => {
+                        ki = ki + 1;
+                        unsafe { kc = load(key + ki); }
+                        var eq: t40 = 0;
+                        unsafe { eq = load(node + 2); }
+                        match sign(eq) {
+                            zero => {
+                                var nd: t40 = tst_alloc_node(kc);
+                                match sign(nd) {
+                                    zero => { done = 1; }
+                                    neg => { done = 1; }
+                                    pos => { unsafe { store(node + 2, nd); } node = nd; }
+                                }
+                            }
+                            neg => { done = 1; }
+                            pos => { node = eq; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+fn tst_find(root: t40, key: t40) -> t40 {
+    var node: t40 = root;
+    var ki: t40 = 0;
+    var kc: t40 = 0;
+    unsafe { kc = load(key + ki); }
+
+    while pos(node) {
+        var nc: t40 = 0;
+        unsafe { nc = load(node); }
+
+        match sign(kc - nc) {
+            neg => { unsafe { node = load(node + 1); } }
+            pos => { unsafe { node = load(node + 3); } }
+            zero => {
+                match sign(kc) {
+                    zero => {
+                        var is_term: t40 = 0;
+                        unsafe { is_term = load(node + 5); }
+                        match sign(is_term) {
+                            pos => { unsafe { var v: t40 = load(node + 4); return v; } }
+                            zero => { return 0; }
+                            neg => { return 0; }
+                        }
+                    }
+                    neg => { return 0; }
+                    pos => {
+                        ki = ki + 1;
+                        unsafe { kc = load(key + ki); }
+                        unsafe { node = load(node + 2); }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+fn getenv(name: t40) -> t40 {
+    var root: t40 = 0;
+    unsafe { root = load(23); }
+    return tst_find(root, name);
+}
+
+fn setenv(name: t40, value: t40) -> t40 {
+    heap_init();
+    var name_copy: t40 = strdup(name);
+    match sign(name_copy) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var val_copy: t40 = strdup(value);
+            match sign(val_copy) {
+                zero => { free(name_copy); return 0; }
+                neg => { free(name_copy); return 0; }
+                pos => {
+                    // tst_insert handles freeing the old value on duplicate key.
+                    tst_insert(23, name_copy, val_copy);
+                    return 1;
+                }
+            }
+        }
+    }
+}
+
+// FIX: unsetenv now frees the old value string before zeroing the node.
+fn unsetenv(name: t40) -> t40 {
+    var root: t40 = 0;
+    unsafe { root = load(23); }
+    var node: t40 = root;
+    var ki: t40 = 0;
+    var kc: t40 = 0;
+    unsafe { kc = load(name + ki); }
+
+    while pos(node) {
+        var nc: t40 = 0;
+        unsafe { nc = load(node); }
+
+        match sign(kc - nc) {
+            neg => { unsafe { node = load(node + 1); } }
+            pos => { unsafe { node = load(node + 3); } }
+            zero => {
+                match sign(kc) {
+                    zero => {
+                        var old_val: t40 = 0;
+                        unsafe { old_val = load(node + 4); }
+                        match sign(old_val) {
+                            pos => { free(old_val); }
+                            zero => {}
+                            neg => {}
+                        }
+                        unsafe {
+                            store(node + 4, 0);
+                            store(node + 5, 0);
+                        }
+                        return 1;
+                    }
+                    neg => { return 0; }
+                    pos => {
+                        ki = ki + 1;
+                        unsafe { kc = load(name + ki); }
+                        unsafe { node = load(node + 2); }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// =============================================================================
+// SECTION 10 — Math and Carryless Operations
+// =============================================================================
+
+fn clamp(val: t40, lo: t40, hi: t40) -> t40 {
+    return max(lo, min(val, hi));
+}
+
+// Ternary-native exponentiation: use base-3 exponent scanning
+// instead of base-2 to stay aligned with the machine.
+// Computes base^exp for exp >= 0.
+fn pow(base: t40, exp: t40) -> t40 {
+    var result: t40 = 1;
+    var e: t40 = exp;
+    var b: t40 = base;
+    while pos(e) {
+        // Extract lowest ternary digit (0, 1, or 2).
+        var third: t40 = e / 3;
+        var digit: t40 = e - third * 3;
+        // Multiply result by b^digit at this trit position.
+        match sign(digit) {
+            zero => {}
+            pos => {
+                match sign(digit - 1) {
+                    zero => { result = result * b; }
+                    neg => {}
+                    pos => { result = result * b * b; }   // digit == 2
+                }
+            }
+            neg => {}
+        }
+        b = b * b * b;    // advance base by one ternary digit (b^3)
+        e = third;
+    }
+    return result;
+}
+
+// Carryless (GF(3) polynomial) multiplication.
+fn clmul(a: t40, b: t40) -> t40 {
+    var result: t40 = 0;
+    var b_work: t40 = b;
+    var trit_weight: t40 = 1;
+    var j: t40 = 0;
+    while pos(40 - j) {
+        var b_q: t40 = b_work / 3;
+        var b_t: t40 = b_work - b_q * 3;
+        match sign(b_t) {
+            zero => {}
+            pos => { result = result + a * trit_weight; }
+            neg => { result = result - a * trit_weight; }
+        }
+        b_work = b_q;
+        trit_weight = trit_weight * 3;
+        j = j + 1;
+    }
+    return result;
+}
+
+fn trit_at(val: t40, pos_idx: t40) -> t40 {
+    var v: t40 = val;
+    var i: t40 = 0;
+    while pos(pos_idx - i) {
+        v = v / 3;
+        i = i + 1;
+    }
+    var q: t40 = v / 3;
+    var r: t40 = v - q * 3;
+    match sign(r - 2) {
+        zero => { return 0 - 1; }
+        neg => { return r; }
+        pos => { return r; }
+    }
+}
+
+fn popcount_trits(val: t40) -> t40 {
+    var count: t40 = 0;
+    var work: t40 = abs(val);
+    var i: t40 = 0;
+    while pos(40 - i) {
+        var q: t40 = work / 3;
+        var r: t40 = work - q * 3;
+        match sign(r) {
+            zero => {}
+            neg => { count = count + 1; }
+            pos => { count = count + 1; }
+        }
+        work = q;
+        i = i + 1;
+    }
+    return count;
+}
+
+// =============================================================================
+// SECTION 11 — Dynamic Vector (resizable contiguous array)
+// Struct (3 words, malloc'd): [0]=data_ptr, [1]=length, [2]=capacity
+// Growth factor is 3 (ternary-aligned, matching heap_push convention).
+// =============================================================================
+
+fn vec_new() -> t40 {
+    var vec: t40 = malloc(3);
+    match sign(vec) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc(9);
+            match sign(data) {
+                zero => { free(vec); return 0; }
+                neg => { free(vec); return 0; }
+                pos => {
+                    unsafe {
+                        store(vec,     data);
+                        store(vec + 1, 0);
+                        store(vec + 2, 9);
+                    }
+                    return vec;
+                }
+            }
+        }
+    }
+}
+
+fn vec_len(vec: t40) -> t40 {
+    var len: t40 = 0;
+    unsafe { len = load(vec + 1); }
+    return len;
+}
+
+fn vec_get(vec: t40, idx: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    var val: t40 = 0;
+    unsafe { val = load(data + idx); }
+    return val;
+}
+
+fn vec_set(vec: t40, idx: t40, val: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    unsafe { store(data + idx, val); }
+    return 0;
+}
+
+fn vec_push(vec: t40, val: t40) -> t40 {
+    var len: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        len = load(vec + 1);
+        cap = load(vec + 2);
+    }
+    // Grow by factor of 3 to stay ternary-aligned.
+    match sign(cap - len - 1) {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            var old_data: t40 = 0;
+            unsafe { old_data = load(vec); }
+            var new_data: t40 = malloc(new_cap);
+            match sign(new_data) {
+                zero => { return 0 - 1; }
+                neg => { return 0 - 1; }
+                pos => {
+                    memcpy(new_data, old_data, len);
+                    free(old_data);
+                    unsafe {
+                        store(vec,     new_data);
+                        store(vec + 2, new_cap);
+                    }
+                }
+            }
+        }
+        zero => {}
+        pos => {}
+    }
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    unsafe {
+        store(data + len, val);
+        store(vec + 1, len + 1);
+    }
+    return 0;
+}
+
+fn vec_pop(vec: t40) -> t40 {
+    var len: t40 = 0;
+    unsafe { len = load(vec + 1); }
+    match sign(len) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var new_len: t40 = len - 1;
+            var data: t40 = 0;
+            unsafe { data = load(vec); }
+            var val: t40 = 0;
+            unsafe { val = load(data + new_len); }
+            unsafe { store(vec + 1, new_len); }
+            return val;
+        }
+    }
+}
+
+// In-place insertion sort on a vec. Sorts ascending.
+// O(n^2) — acceptable for the small arrays typical in shell use.
+fn vec_sort(vec: t40) -> t40 {
+    var len: t40 = 0;
+    var data: t40 = 0;
+    unsafe {
+        len  = load(vec + 1);
+        data = load(vec);
+    }
+    var i: t40 = 1;
+    while pos(len - i) {
+        var key: t40 = 0;
+        unsafe { key = load(data + i); }
+        var j: t40 = i - 1;
+        var shifting: t40 = 1;
+        while pos(shifting) {
+            match sign(j) {
+                neg => { shifting = 0; }
+                zero => {
+                    var elem: t40 = 0;
+                    unsafe { elem = load(data + j); }
+                    match sign(elem - key) {
+                        pos => {
+                            unsafe { store(data + j + 1, elem); }
+                            j = j - 1;
+                        }
+                        zero => { shifting = 0; }
+                        neg => { shifting = 0; }
+                    }
+                }
+                pos => {
+                    var elem: t40 = 0;
+                    unsafe { elem = load(data + j); }
+                    match sign(elem - key) {
+                        pos => {
+                            unsafe { store(data + j + 1, elem); }
+                            j = j - 1;
+                        }
+                        zero => { shifting = 0; }
+                        neg => { shifting = 0; }
+                    }
+                }
+            }
+        }
+        unsafe { store(data + j + 1, key); }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn vec_free(vec: t40) -> t40 {
+    match sign(vec) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = 0;
+            unsafe { data = load(vec); }
+            match sign(data) {
+                pos => { free(data); }
+                zero => {}
+                neg => {}
+            }
+            free(vec);
+            return 0;
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 12 — Ternary Min-Heap (Priority Queue)
+// Struct (3 words, malloc'd): [0]=data_ptr, [1]=size, [2]=capacity
+// 3-ary min-heap: parent at i has children at 3i+1, 3i+2, 3i+3.
+// Parent of i: (i-1)/3.  O(log3 N) push and pop.
+// =============================================================================
+
+fn heap_new() -> t40 {
+    var h: t40 = malloc(3);
+    match sign(h) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc(9);
+            match sign(data) {
+                zero => { free(h); return 0; }
+                neg => { free(h); return 0; }
+                pos => {
+                    unsafe {
+                        store(h,     data);
+                        store(h + 1, 0);
+                        store(h + 2, 9);
+                    }
+                    return h;
+                }
+            }
+        }
+    }
+}
+
+fn heap_size(h: t40) -> t40 {
+    var sz: t40 = 0;
+    unsafe { sz = load(h + 1); }
+    return sz;
+}
+
+fn heap_peek(h: t40) -> t40 {
+    var sz: t40 = 0;
+    unsafe { sz = load(h + 1); }
+    match sign(sz) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = 0;
+            unsafe { data = load(h); }
+            var top: t40 = 0;
+            unsafe { top = load(data); }
+            return top;
+        }
+    }
+}
+
+fn heap_push(h: t40, val: t40) -> t40 {
+    var sz: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        sz  = load(h + 1);
+        cap = load(h + 2);
+    }
+    match sign(cap - sz - 1) {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            var old_data: t40 = 0;
+            unsafe { old_data = load(h); }
+            var new_data: t40 = malloc(new_cap);
+            match sign(new_data) {
+                zero => { return 0 - 1; }
+                neg => { return 0 - 1; }
+                pos => {
+                    memcpy(new_data, old_data, sz);
+                    free(old_data);
+                    unsafe {
+                        store(h,     new_data);
+                        store(h + 2, new_cap);
+                    }
+                }
+            }
+        }
+        zero => {}
+        pos => {}
+    }
+    var data: t40 = 0;
+    unsafe { data = load(h); }
+    unsafe { store(data + sz, val); }
+    var idx: t40 = sz;
+    unsafe { store(h + 1, sz + 1); }
+    var sifting: t40 = 1;
+    while pos(sifting) {
+        match sign(idx) {
+            zero => { sifting = 0; }
+            neg => { sifting = 0; }
+            pos => {
+                var parent: t40 = (idx - 1) / 3;
+                var pval: t40 = 0;
+                var ival: t40 = 0;
+                unsafe {
+                    pval = load(data + parent);
+                    ival = load(data + idx);
+                }
+                match sign(pval - ival) {
+                    pos => {
+                        unsafe {
+                            store(data + parent, ival);
+                            store(data + idx,    pval);
+                        }
+                        idx = parent;
+                    }
+                    zero => { sifting = 0; }
+                    neg => { sifting = 0; }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// Helper: compare child at index `ci` against current best, update best.
+// new_sz is used for bounds check: child exists iff ci < new_sz.
+// Returns new best index (changes best_idx and best_val through return protocol).
+// Note: because the language lacks reference parameters, the sift-down
+// loop is written inline in heap_pop to allow best_idx/best_val mutation.
+
+fn heap_pop(h: t40) -> t40 {
+    var sz: t40 = 0;
+    unsafe { sz = load(h + 1); }
+    match sign(sz) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = 0;
+            unsafe { data = load(h); }
+            var top: t40 = 0;
+            unsafe { top = load(data); }
+            var new_sz: t40 = sz - 1;
+            unsafe { store(h + 1, new_sz); }
+            match sign(new_sz) {
+                zero => { return top; }
+                neg => { return top; }
+                pos => {
+                    var last: t40 = 0;
+                    unsafe { last = load(data + new_sz); }
+                    unsafe { store(data, last); }
+                    var idx: t40 = 0;
+                    var sifting: t40 = 1;
+                    while pos(sifting) {
+                        var c1: t40 = 3 * idx + 1;
+                        var c2: t40 = 3 * idx + 2;
+                        var c3: t40 = 3 * idx + 3;
+                        var best: t40 = idx;
+                        var bval: t40 = 0;
+                        unsafe { bval = load(data + idx); }
+
+                        // FIX: bounds check is strict less-than (new_sz - ci > 0).
+                        // zero arm (ci == new_sz) is out of bounds — do not read.
+
+                        // Compare with child 1.
+                        match sign(new_sz - c1) {
+                            neg => {}
+                            zero => {}   // FIX: out of bounds, skip
+                            pos => {
+                                var cv: t40 = 0;
+                                unsafe { cv = load(data + c1); }
+                                match sign(bval - cv) {
+                                    pos => { best = c1; bval = cv; }
+                                    zero => {}
+                                    neg => {}
+                                }
+                            }
+                        }
+                        // Compare with child 2.
+                        match sign(new_sz - c2) {
+                            neg => {}
+                            zero => {}   // FIX: out of bounds, skip
+                            pos => {
+                                var cv: t40 = 0;
+                                unsafe { cv = load(data + c2); }
+                                match sign(bval - cv) {
+                                    pos => { best = c2; bval = cv; }
+                                    zero => {}
+                                    neg => {}
+                                }
+                            }
+                        }
+                        // Compare with child 3.
+                        match sign(new_sz - c3) {
+                            neg => {}
+                            zero => {}   // FIX: out of bounds, skip
+                            pos => {
+                                var cv: t40 = 0;
+                                unsafe { cv = load(data + c3); }
+                                match sign(bval - cv) {
+                                    pos => { best = c3; bval = cv; }
+                                    zero => {}
+                                    neg => {}
+                                }
+                            }
+                        }
+                        match sign(best - idx) {
+                            zero => { sifting = 0; }
+                            neg => { sifting = 0; }
+                            pos => {
+                                var cur_val: t40 = 0;
+                                unsafe { cur_val = load(data + idx); }
+                                unsafe {
+                                    store(data + idx,  bval);
+                                    store(data + best, cur_val);
+                                }
+                                idx = best;
+                            }
+                        }
+                    }
+                    return top;
+                }
+            }
+        }
+    }
+}
+
+fn heap_free_struct(h: t40) -> t40 {
+    match sign(h) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = 0;
+            unsafe { data = load(h); }
+            match sign(data) {
+                pos => { free(data); }
+                zero => {}
+                neg => {}
+            }
+            free(h);
+            return 0;
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 13 — Ring Buffer (Fixed-Capacity FIFO)
+// Struct (4 words, malloc'd): [0]=data_ptr, [1]=capacity, [2]=read_pos, [3]=write_pos
+// Used for IPC pipes and stream buffering.
+// Capacity must be a power of 3 for clean ternary wrap-around.
+// A buffer with capacity N can hold N-1 elements (one slot unused as full sentinel).
+// =============================================================================
+
+// Create a ring buffer with the given capacity (recommend 27 or 81).
+fn ring_new(capacity: t40) -> t40 {
+    var rb: t40 = malloc(4);
+    match sign(rb) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc(capacity);
+            match sign(data) {
+                zero => { free(rb); return 0; }
+                neg => { free(rb); return 0; }
+                pos => {
+                    unsafe {
+                        store(rb,     data);
+                        store(rb + 1, capacity);
+                        store(rb + 2, 0);
+                        store(rb + 3, 0);
+                    }
+                    return rb;
+                }
+            }
+        }
+    }
+}
+
+// Returns 1 if the ring buffer is empty, 0 otherwise.
+fn ring_empty(rb: t40) -> t40 {
+    var rpos: t40 = 0;
+    var wpos: t40 = 0;
+    unsafe {
+        rpos = load(rb + 2);
+        wpos = load(rb + 3);
+    }
+    match sign(rpos - wpos) {
+        zero => { return 1; }
+        neg => { return 0; }
+        pos => { return 0; }
+    }
+}
+
+// Returns 1 if the ring buffer is full, 0 otherwise.
+fn ring_full(rb: t40) -> t40 {
+    var cap: t40 = 0;
+    var rpos: t40 = 0;
+    var wpos: t40 = 0;
+    unsafe {
+        cap  = load(rb + 1);
+        rpos = load(rb + 2);
+        wpos = load(rb + 3);
+    }
+    var next_w: t40 = wpos + 1;
+    match sign(next_w - cap) {
+        neg => {}
+        zero => { next_w = 0; }
+        pos => { next_w = 0; }
+    }
+    match sign(next_w - rpos) {
+        zero => { return 1; }
+        neg => { return 0; }
+        pos => { return 0; }
+    }
+}
+
+// Write one word into the ring buffer. Returns 1 on success, 0 if full.
+fn ring_write(rb: t40, val: t40) -> t40 {
+    var is_full: t40 = ring_full(rb);
+    match sign(is_full) {
+        pos => { return 0; }
+        zero => {}
+        neg => {}
+    }
+    var cap: t40 = 0;
+    var wpos: t40 = 0;
+    var data: t40 = 0;
+    unsafe {
+        cap  = load(rb + 1);
+        wpos = load(rb + 3);
+        data = load(rb);
+    }
+    unsafe { store(data + wpos, val); }
+    var next_w: t40 = wpos + 1;
+    match sign(next_w - cap) {
+        neg => {}
+        zero => { next_w = 0; }
+        pos => { next_w = 0; }
+    }
+    unsafe { store(rb + 3, next_w); }
+    return 1;
+}
+
+// Read one word from the ring buffer. Returns the word, or 0 if empty.
+// Caller should check ring_empty first if 0 is a valid data value.
+fn ring_read(rb: t40) -> t40 {
+    var is_empty: t40 = ring_empty(rb);
+    match sign(is_empty) {
+        pos => { return 0; }
+        zero => {}
+        neg => {}
+    }
+    var cap: t40 = 0;
+    var rpos: t40 = 0;
+    var data: t40 = 0;
+    unsafe {
+        cap  = load(rb + 1);
+        rpos = load(rb + 2);
+        data = load(rb);
+    }
+    var val: t40 = 0;
+    unsafe { val = load(data + rpos); }
+    var next_r: t40 = rpos + 1;
+    match sign(next_r - cap) {
+        neg => {}
+        zero => { next_r = 0; }
+        pos => { next_r = 0; }
+    }
+    unsafe { store(rb + 2, next_r); }
+    return val;
+}
+
+// Count of words currently in the ring buffer.
+fn ring_len(rb: t40) -> t40 {
+    var cap: t40 = 0;
+    var rpos: t40 = 0;
+    var wpos: t40 = 0;
+    unsafe {
+        cap  = load(rb + 1);
+        rpos = load(rb + 2);
+        wpos = load(rb + 3);
+    }
+    match sign(wpos - rpos) {
+        neg => { return wpos - rpos + cap; }
+        zero => { return 0; }
+        pos => { return wpos - rpos; }
+    }
+}
+
+fn ring_free(rb: t40) -> t40 {
+    match sign(rb) {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = 0;
+            unsafe { data = load(rb); }
+            match sign(data) {
+                pos => { free(data); }
+                zero => {}
+                neg => {}
+            }
+            free(rb);
+            return 0;
+        }
+    }
+}
