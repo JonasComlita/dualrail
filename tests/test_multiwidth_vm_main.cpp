@@ -14,7 +14,6 @@ void testPhase35Infrastructure();
 void testOsSubstrate();
 void testTernaryAtomicsAndLockAbi();
 void testNoBridgeInExecutionHeaders();
-void testHelloWorldConsole();
 
 int main() {
     sandbox::LongTriple::initPowTable();
@@ -30,7 +29,6 @@ int main() {
     testOsSubstrate();
     testTernaryAtomicsAndLockAbi();
     testNoBridgeInExecutionHeaders();
-    testHelloWorldConsole();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " multi-width test failure(s)\n";

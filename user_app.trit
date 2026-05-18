@@ -2,57 +2,159 @@
 // user_app.trit  -  A Demonstration user program linking with ulib.trit
 // =============================================================================
 
-struct Point {
-    x: t40;
-    y: t40;
-}
+fn main() -> t40 {
+    // 1. Dynamic Vector Showcase
+    print_int(11111); // Stage 1 marker
+    newline();
 
-fn fib(n: t40) -> t40 {
-    match sign(n - 2) {
-        neg => { return n; }
-        zero => { return n; }
+    var vec: t40 = vec_new();
+    vec_push(vec, 40);
+    vec_push(vec, 10);
+    vec_push(vec, 30);
+    vec_push(vec, 20);
+
+    print_int(vec_len(vec)); // Should print 4
+    newline();
+
+    // Sort the vector in-place (ascending)
+    vec_sort(vec);
+
+    // Retrieve and print sorted vector elements
+    var i: t40 = 0;
+    var vlen: t40 = vec_len(vec);
+    while pos(vlen - i) {
+        print_int(vec_get(vec, i)); // Should print 10, then 20, then 30, then 40
+        newline();
+        i = i + 1;
+    }
+
+    vec_free(vec);
+
+    // 2. Ternary Min-Heap Showcase
+    print_int(22222); // Stage 2 marker
+    newline();
+
+    var hp: t40 = heap_new();
+    heap_push(hp, 300);
+    heap_push(hp, 100);
+    heap_push(hp, 400);
+    heap_push(hp, 200);
+
+    print_int(heap_size(hp)); // Should print 4
+    newline();
+
+    // Popping from a min-heap retrieves elements in ascending order
+    var hsz: t40 = heap_size(hp);
+    while pos(hsz) {
+        print_int(heap_pop(hp)); // Should print 100, then 200, then 300, then 400
+        newline();
+        hsz = heap_size(hp);
+    }
+
+    heap_free_struct(hp);
+
+    // 3. FIFO Ring Buffer Showcase
+    print_int(33333); // Stage 3 marker
+    newline();
+
+    var rb: t40 = ring_new(9);
+    ring_write(rb, 11);
+    ring_write(rb, 22);
+    ring_write(rb, 33);
+
+    print_int(ring_len(rb)); // Should print 3
+    newline();
+
+    // Read back in FIFO order
+    while pos(1 - ring_empty(rb)) {
+        print_int(ring_read(rb)); // Should print 11, then 22, then 33
+        newline();
+    }
+
+    ring_free(rb);
+
+    // 4. Ternary Search Tree (TST) Environment Showcase
+    print_int(44444); // Stage 4 marker
+    newline();
+
+    var name_str: t40 = malloc(4);
+    var value_str: t40 = malloc(4);
+    print_int(55555);
+    newline();
+
+    unsafe {
+        store(name_str, 65);     // 'A'
+        store(name_str + 1, 66); // 'B'
+        store(name_str + 2, 67); // 'C'
+        store(name_str + 3, 0);  // '\0'
+
+        store(value_str, 88);     // 'X'
+        store(value_str + 1, 89); // 'Y'
+        store(value_str + 2, 90); // 'Z'
+        store(value_str + 3, 0);  // '\0'
+    }
+
+    // Set env var ABC = XYZ
+    setenv(name_str, value_str);
+
+    // Retrieve env var
+    var retrieved: t40 = getenv(name_str);
+    match sign(retrieved) {
         pos => {
-            var a: t40 = fib(n - 1);
-            var b: t40 = fib(n - 2);
-            return a + b;
+            // A. Decimal representation (default ulib behavior)
+            print_string(retrieved); // Should output decimal codes for 'X', 'Y', 'Z' (88, 89, 90)
+            newline();
+
+            // B. ASCII text representation using the VM's premium hardware CSR character mode
+            print_real_string(name_str);     // Outputs "ABC"
+            print_real_string(retrieved);    // Outputs "XYZ"
+            newline();
+        }
+        zero => {
+            print_int(0 - 1);
+            newline();
+        }
+        neg => {
+            print_int(0 - 1);
+            newline();
         }
     }
-}
 
-fn process_point(p: Point) -> t40 {
-    return p.x * p.y;
-}
+    // Clean up env var
+    unsetenv(name_str);
 
-fn main() -> t40 {
-    // 1. Standalone CPU/VM Safe prints
-    print_int(11111); // Magic boundary marker
-    newline();
-
-    // 2. Multi-coordinate struct instantiation and processing
-    var pt: Point = Point { x: 5, y: 7 };
-    var area: t40 = process_point(pt);
-    print_int(area); // Should print 35
-    newline();
-
-    // 3. Array definition, indexing, and updating
-    var xs: [t40; 4] = [10, 20, 30, 40];
-    xs[2] = xs[0] + xs[1] + xs[3]; // 10 + 20 + 40 = 70
-    print_int(xs[2]); // Should print 70
-    newline();
-
-    // 4. Pattern matching with sign
-    var val: t40 = -45;
-    match sign(val) {
-        neg => { print_int(-999); }
-        zero => { print_int(0); }
-        pos => { print_int(999); }
-    }
-    newline();
-
-    // 5. Recursive Fibonacci computation
-    var f: t40 = fib(8); // 8th Fibonacci number is 34
-    print_int(f);
-    newline();
+    // Free the dynamically allocated strings
+    free(name_str);
+    free(value_str);
 
     return 0;
 }
+
+// Helper function utilizing the VM's hardware control registers to render raw ASCII characters
+fn print_real_string(str: t40) -> t40 {
+    unsafe {
+        csr_write(console_ctrl, 2); // Switch VM to character mode
+    }
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while pos(1 - done) {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match sign(c) {
+            zero => { done = 1; }
+            neg => {
+                unsafe { csr_write(console_out, c); }
+                i = i + 1;
+            }
+            pos => {
+                unsafe { csr_write(console_out, c); }
+                i = i + 1;
+            }
+        }
+    }
+    unsafe {
+        csr_write(console_ctrl, 3); // Restore standard integer/decimal mode
+    }
+    return 0;
+}
+

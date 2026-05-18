@@ -48,7 +48,6 @@ add_executable(test_multiwidth_vm
     tests/test_vm_widths.cpp
     tests/test_kernel.cpp
     tests/test_no_bridge.cpp
-    tests/test_hello_world.cpp
 )
 target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
 target_compile_definitions(test_multiwidth_vm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)

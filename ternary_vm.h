@@ -1762,6 +1762,12 @@ inline VMStatus step(VMState& vm) {
                 vm.syscall_buffer += "\n";
             } else if (iw.imm == 3) {
                 vm.syscall_buffer.clear();
+            } else if (iw.imm == 19) {
+                // Standalone sys_sbrk (syscall 19) helper
+                static long long host_heap_break = 2000;
+                long long delta = sandbox::vm::ops::toLong(vm.regfile.read(13));
+                host_heap_break += delta;
+                vm.regfile.write(13, sandbox::vm::ops::fromLong(host_heap_break));
             } else {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;

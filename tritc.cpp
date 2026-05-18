@@ -380,7 +380,7 @@ int main(int argc, char** argv) {
     // Run immediately on the VM (run mode)
     std::cout << (use_ansi ? "\033[1;32mBooting compiled executable in Ternary VM...\033[0m\n\n" : "Booting compiled executable in Ternary VM...\n\n");
     
-    vm::VMState vm(8192, 65536);
+    vm::VMState vm(32768, 65536);
     if (!vm::assembler::loadAndReset(vm, linked.assembled)) {
         std::cerr << "Error: Failed to load executable image into VM memory.\n";
         return 1;
@@ -397,6 +397,14 @@ int main(int argc, char** argv) {
         std::cout << "\033[1;35m            Ternary VM Execution Terminated            \033[0m\n";
         std::cout << "\033[1;36m========================================================\033[0m\n";
         std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+        if (vm.status == vm::VMStatus::TRAPPED) {
+            std::cout << "  Trap Cause:         \033[1;31m" << vm.cause << "\033[0m (PC: " << vm.pc << ")\n";
+            std::cout << "  Register File State:\n";
+            for (int r = 0; r <= 26; ++r) {
+                std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                          << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+            }
+        }
         std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
         if (!vm.syscall_buffer.empty()) {
             std::cout << "  Console Output:\n\033[1;32m" << vm.syscall_buffer << "\033[0m\n";
@@ -409,6 +417,14 @@ int main(int argc, char** argv) {
         std::cout << "            Ternary VM Execution Terminated            \n";
         std::cout << "========================================================\n";
         std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+        if (vm.status == vm::VMStatus::TRAPPED) {
+            std::cout << "  Trap Cause:         " << vm.cause << " (PC: " << vm.pc << ")\n";
+            std::cout << "  Register File State:\n";
+            for (int r = 0; r <= 26; ++r) {
+                std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                          << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+            }
+        }
         std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
         if (!vm.syscall_buffer.empty()) {
             std::cout << "  Console Output:\n" << vm.syscall_buffer << "\n";
