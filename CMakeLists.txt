@@ -48,6 +48,7 @@ add_executable(test_multiwidth_vm
     tests/test_vm_widths.cpp
     tests/test_kernel.cpp
     tests/test_no_bridge.cpp
+    tests/test_hello_world.cpp
 )
 target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
 target_compile_definitions(test_multiwidth_vm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -72,6 +73,7 @@ add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
 add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
 add_executable(run_kernel run_kernel.cpp)
+add_executable(run_gui_console run_gui_console.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
@@ -85,6 +87,9 @@ add_dependencies(run_qwen compile_shaders)
 
 target_compile_features(run_kernel PUBLIC cxx_std_17)
 target_compile_definitions(run_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+target_compile_features(run_gui_console PUBLIC cxx_std_17)
+target_compile_definitions(run_gui_console PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_ternary_ir tests/test_ternary_ir.cpp)
 target_compile_features(test_ternary_ir PUBLIC cxx_std_17)

@@ -196,44 +196,60 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
     while pos(1) {
         var c: t40 = 0;
         unsafe {
-            c = tldr(cmdline + i, 1);
+            c = load(cmdline + i);
         }
         
         match sign(c) {
             zero => {
-                if pos(in_word) {
-                    // end of last word
+                match sign(in_word) {
+                    pos => {
+                        // end of last word
+                    }
+                    neg => {}
+                    zero => {}
                 }
                 return argc;
             }
             neg => {
                 // handle negative characters safely
-                if zero(in_word) {
-                    unsafe {
-                        var temp = tstr(argv_buf + argc, cmdline + i, 0, 1);
+                match sign(in_word) {
+                    zero => {
+                        unsafe {
+                            store(argv_buf + argc, cmdline + i);
+                        }
+                        argc = argc + 1;
+                        in_word = 1;
                     }
-                    argc = argc + 1;
-                    in_word = 1;
+                    neg => {}
+                    pos => {}
                 }
             }
             pos => {
                 var is_ws: t40 = char_is_whitespace(c);
                 match sign(is_ws) {
                     pos => {
-                        if pos(in_word) {
-                            unsafe {
-                                var temp = tstr(cmdline + i, 0, c, 1);
+                        match sign(in_word) {
+                            pos => {
+                                unsafe {
+                                    store(cmdline + i, 0);
+                                }
+                                in_word = 0;
                             }
-                            in_word = 0;
+                            neg => {}
+                            zero => {}
                         }
                     }
                     zero => {
-                        if zero(in_word) {
-                            unsafe {
-                                var temp = tstr(argv_buf + argc, cmdline + i, 0, 1);
+                        match sign(in_word) {
+                            zero => {
+                                unsafe {
+                                    store(argv_buf + argc, cmdline + i);
+                                }
+                                argc = argc + 1;
+                                in_word = 1;
                             }
-                            argc = argc + 1;
-                            in_word = 1;
+                            neg => {}
+                            pos => {}
                         }
                     }
                     neg => {}

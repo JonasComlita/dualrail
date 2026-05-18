@@ -454,3 +454,10 @@ The Lock ABI, MMU, and atomic `TSTR` together enable hardware-accelerated video 
 The opponent-trit framebuffer and binaural opponent-trit audio together establish a **Biological Media Standard** — an OS that processes light and sound in the same opponent structure the human brain uses to receive them. This is not a cosmetic difference from binary media stacks. The zero-cost inversion, the dual-rail power scaling, the phase-reversal ANC, and the vector-width spatial audio operations are all consequences of the same underlying architectural decision: three states, not two.
 
 The next concrete step is defining the opponent-trit T40 pixel format and the 9-trit binaural frame format in `TERNARY_ARCHITECTURE_CONTRACTS.md` as the `v1` Media Standard. Everything else in this document builds on those two format definitions.
+
+---
+
+**NOTEABLE AND LATEST FORMATS**
+
+AV1, AV2, H.265, WEBM
+OPUS

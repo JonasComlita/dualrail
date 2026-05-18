@@ -1229,7 +1229,21 @@ struct VMState {
     int                      user_dmem_base = 0;
     int                      user_dmem_limit = 0;
     int                      syscall_id = 0;
+    bool                     console_char_mode = false;
     bool                     mmu_enable = false;
+    long long                mouse_x = 0;
+    long long                mouse_y = 0;
+    long long                mouse_btn = 0;
+    long long                gpu_x1 = 0;
+    long long                gpu_y1 = 0;
+    long long                gpu_x2 = 0;
+    long long                gpu_y2 = 0;
+    long long                gpu_color = 0;
+    long long                gpu_page = 0;
+    long long                gpu_mode = 0;
+    long long                sprite_x = 0;
+    long long                sprite_y = 0;
+    long long                sprite_attr = 0;
     int                      user_imem_ptbr = 0;
     int                      user_imem_pages = 0;
     int                      user_dmem_ptbr = 0;
@@ -1353,7 +1367,21 @@ struct VMState {
         user_dmem_base = 0;
         user_dmem_limit = dmem.size();
         syscall_id = 0;
+        console_char_mode = false;
         mmu_enable = false;
+        mouse_x = 0;
+        mouse_y = 0;
+        mouse_btn = 0;
+        gpu_x1 = 0;
+        gpu_y1 = 0;
+        gpu_x2 = 0;
+        gpu_y2 = 0;
+        gpu_color = 0;
+        gpu_page = 0;
+        gpu_mode = 0;
+        sprite_x = 0;
+        sprite_y = 0;
+        sprite_attr = 0;
         user_imem_ptbr = 0;
         user_imem_pages = 0;
         user_dmem_ptbr = 0;
@@ -1429,10 +1457,100 @@ struct VMState {
             case CSR_CONSOLE_CTRL: value = static_cast<long long>(syscall_buffer.size()); break;
             case CSR_CONSOLE_IN: value = peekConsoleInput(); break;
             case CSR_CONSOLE_IN_CTRL: value = consoleInputAvailable(); break;
+            case CSR_MOUSE_X: value = mouse_x; break;
+            case CSR_MOUSE_Y: value = mouse_y; break;
+            case CSR_MOUSE_BTN: value = mouse_btn; break;
+            case CSR_GPU_X1: value = gpu_x1; break;
+            case CSR_GPU_Y1: value = gpu_y1; break;
+            case CSR_GPU_X2: value = gpu_x2; break;
+            case CSR_GPU_Y2: value = gpu_y2; break;
+            case CSR_GPU_COLOR: value = gpu_color; break;
+            case CSR_GPU_CMD: value = 0; break;
+            case CSR_GPU_PAGE: value = gpu_page; break;
+            case CSR_GPU_DRAW_BASE: value = (gpu_page == 0) ? 55000 : 50000; break;
+            case CSR_GPU_MODE: value = gpu_mode; break;
+            case CSR_SPRITE_X: value = sprite_x; break;
+            case CSR_SPRITE_Y: value = sprite_y; break;
+            case CSR_SPRITE_ATTR: value = sprite_attr; break;
             default: return false;
         }
         out = ops::fromLong(value);
         return true;
+    }
+
+    void executeGpuCommand(long long cmd) {
+        int base_addr = (gpu_page == 0) ? 55000 : 50000;
+        int limit_addr = base_addr + 4800; // 80 * 60 = 4800
+
+        if (cmd == 1) { // Clear screen
+            for (int i = base_addr; i < limit_addr; ++i) {
+                if (i >= 0 && i < dmem.size()) {
+                    dmem.words[i] = ops::fromLong(gpu_color);
+                }
+            }
+        } else if (cmd == 2) { // Rect fill
+            int x_min = static_cast<int>(std::min(gpu_x1, gpu_x2));
+            int x_max = static_cast<int>(std::max(gpu_x1, gpu_x2));
+            int y_min = static_cast<int>(std::min(gpu_y1, gpu_y2));
+            int y_max = static_cast<int>(std::max(gpu_y1, gpu_y2));
+            for (int y = y_min; y <= y_max; ++y) {
+                for (int x = x_min; x <= x_max; ++x) {
+                    if (x >= 0 && x < 80 && y >= 0 && y < 60) {
+                        int addr = base_addr + y * 80 + x;
+                        if (addr >= 0 && addr < dmem.size()) {
+                            dmem.words[addr] = ops::fromLong(gpu_color);
+                        }
+                    }
+                }
+            }
+        } else if (cmd == 3) { // Bresenham Line
+            int x0 = static_cast<int>(gpu_x1), y0 = static_cast<int>(gpu_y1);
+            int x1 = static_cast<int>(gpu_x2), y1 = static_cast<int>(gpu_y2);
+            int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+            int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+            int err = dx + dy, e2;
+            while (true) {
+                if (x0 >= 0 && x0 < 80 && y0 >= 0 && y0 < 60) {
+                    int addr = base_addr + y0 * 80 + x0;
+                    if (addr >= 0 && addr < dmem.size()) {
+                        dmem.words[addr] = ops::fromLong(gpu_color);
+                    }
+                }
+                if (x0 == x1 && y0 == y1) break;
+                e2 = 2 * err;
+                if (e2 >= dy) { err += dy; x0 += sx; }
+                if (e2 <= dx) { err += dx; y0 += sy; }
+            }
+        } else if (cmd == 4) { // Rect border outline
+            int x_min = static_cast<int>(std::min(gpu_x1, gpu_x2));
+            int x_max = static_cast<int>(std::max(gpu_x1, gpu_x2));
+            int y_min = static_cast<int>(std::min(gpu_y1, gpu_y2));
+            int y_max = static_cast<int>(std::max(gpu_y1, gpu_y2));
+            for (int x = x_min; x <= x_max; ++x) {
+                if (x >= 0 && x < 80) {
+                    if (y_min >= 0 && y_min < 60) {
+                        int addr = base_addr + y_min * 80 + x;
+                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                    }
+                    if (y_max >= 0 && y_max < 60) {
+                        int addr = base_addr + y_max * 80 + x;
+                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                    }
+                }
+            }
+            for (int y = y_min; y <= y_max; ++y) {
+                if (y >= 0 && y < 60) {
+                    if (x_min >= 0 && x_min < 80) {
+                        int addr = base_addr + y * 80 + x_min;
+                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                    }
+                    if (x_max >= 0 && x_max < 80) {
+                        int addr = base_addr + y * 80 + x_max;
+                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                    }
+                }
+            }
+        }
     }
 
     [[nodiscard]] bool writeCSR(int id, TernaryValue in) {
@@ -1516,10 +1634,18 @@ struct VMState {
                 page_fault_access = static_cast<int>(value);
                 return true;
             case CSR_CONSOLE_OUT:
-                syscall_buffer += std::to_string(value);
+                if (console_char_mode) {
+                    syscall_buffer += static_cast<char>(value);
+                } else {
+                    syscall_buffer += std::to_string(value);
+                }
                 return true;
             case CSR_CONSOLE_CTRL:
-                if (value < 0) {
+                if (value == 2) {
+                    console_char_mode = true;
+                } else if (value == 3) {
+                    console_char_mode = false;
+                } else if (value < 0) {
                     syscall_buffer.clear();
                 } else if (value > 0) {
                     syscall_buffer += "\n";
@@ -1533,6 +1659,50 @@ struct VMState {
                 } else if (value > 0) {
                     consumeConsoleInput();
                 }
+                return true;
+            case CSR_MOUSE_X:
+                mouse_x = value;
+                return true;
+            case CSR_MOUSE_Y:
+                mouse_y = value;
+                return true;
+            case CSR_MOUSE_BTN:
+                mouse_btn = value;
+                return true;
+            case CSR_GPU_X1:
+                gpu_x1 = value;
+                return true;
+            case CSR_GPU_Y1:
+                gpu_y1 = value;
+                return true;
+            case CSR_GPU_X2:
+                gpu_x2 = value;
+                return true;
+            case CSR_GPU_Y2:
+                gpu_y2 = value;
+                return true;
+            case CSR_GPU_COLOR:
+                gpu_color = value;
+                return true;
+            case CSR_GPU_CMD:
+                executeGpuCommand(value);
+                return true;
+            case CSR_GPU_PAGE:
+                gpu_page = value;
+                return true;
+            case CSR_GPU_DRAW_BASE:
+                return false; // read-only
+            case CSR_GPU_MODE:
+                gpu_mode = value;
+                return true;
+            case CSR_SPRITE_X:
+                sprite_x = value;
+                return true;
+            case CSR_SPRITE_Y:
+                sprite_y = value;
+                return true;
+            case CSR_SPRITE_ATTR:
+                sprite_attr = value;
                 return true;
             default:
                 return false;

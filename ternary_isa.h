@@ -641,7 +641,22 @@ static constexpr int CSR_CONSOLE_OUT     = 22;
 static constexpr int CSR_CONSOLE_CTRL    = 23;
 static constexpr int CSR_CONSOLE_IN      = 24;
 static constexpr int CSR_CONSOLE_IN_CTRL = 25;
-static constexpr int CSR_MAX_ID          = CSR_CONSOLE_IN_CTRL;
+static constexpr int CSR_MOUSE_X         = 26;
+static constexpr int CSR_MOUSE_Y         = 27;
+static constexpr int CSR_MOUSE_BTN       = 28;
+static constexpr int CSR_GPU_X1         = 29;
+static constexpr int CSR_GPU_Y1         = 30;
+static constexpr int CSR_GPU_X2         = 31;
+static constexpr int CSR_GPU_Y2         = 32;
+static constexpr int CSR_GPU_COLOR      = 33;
+static constexpr int CSR_GPU_CMD        = 34;
+static constexpr int CSR_GPU_PAGE       = 35;
+static constexpr int CSR_GPU_DRAW_BASE  = 36;
+static constexpr int CSR_GPU_MODE       = 37;
+static constexpr int CSR_SPRITE_X       = 38;
+static constexpr int CSR_SPRITE_Y       = 39;
+static constexpr int CSR_SPRITE_ATTR    = 40;
+static constexpr int CSR_MAX_ID          = CSR_SPRITE_ATTR;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -675,6 +690,21 @@ static constexpr int CSR_MAX_ID          = CSR_CONSOLE_IN_CTRL;
         case CSR_CONSOLE_CTRL: return "console_ctrl";
         case CSR_CONSOLE_IN: return "console_in";
         case CSR_CONSOLE_IN_CTRL: return "console_in_ctrl";
+        case CSR_MOUSE_X: return "mouse_x";
+        case CSR_MOUSE_Y: return "mouse_y";
+        case CSR_MOUSE_BTN: return "mouse_btn";
+        case CSR_GPU_X1: return "gpu_x1";
+        case CSR_GPU_Y1: return "gpu_y1";
+        case CSR_GPU_X2: return "gpu_x2";
+        case CSR_GPU_Y2: return "gpu_y2";
+        case CSR_GPU_COLOR: return "gpu_color";
+        case CSR_GPU_CMD: return "gpu_cmd";
+        case CSR_GPU_PAGE: return "gpu_page";
+        case CSR_GPU_DRAW_BASE: return "gpu_draw_base";
+        case CSR_GPU_MODE: return "gpu_mode";
+        case CSR_SPRITE_X: return "sprite_x";
+        case CSR_SPRITE_Y: return "sprite_y";
+        case CSR_SPRITE_ATTR: return "sprite_attr";
         default: return "unknown";
     }
 }

@@ -1368,7 +1368,8 @@ private:
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
         return name == "csr_read" || name == "csr_write" ||
-               name == "tldr" || name == "tstr" || name == "fence";
+               name == "tldr" || name == "tstr" || name == "fence" ||
+               name == "load" || name == "store";
     }
 };
 
@@ -2837,6 +2838,44 @@ private:
             return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
         }
 
+        if (expr.text == "load") {
+            if (expr.args.empty()) {
+                diag("load requires an address", expr.span);
+                return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
+            ExprCode addr = emitExpr(expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
+            int out = ctx.acquire();
+            ctx.line("load r" + std::to_string(out) + ", r" + std::to_string(addr.reg) + ", 0");
+            ctx.release(addr.reg);
+            Instr instr;
+            instr.def = ctx.next_value++;
+            instr.opcode = InstrOpcode::Load;
+            instr.type = TypeRef::numeric(ir::Type::T40);
+            instr.effect = Effect::ReadMem;
+            instr.span = expr.span;
+            ctx.block->instructions.push_back(instr);
+            return ExprCode{out, TypeRef::numeric(ir::Type::T40)};
+        }
+
+        if (expr.text == "store") {
+            if (expr.args.size() < 2) {
+                diag("store requires address and value arguments", expr.span);
+                return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
+            ExprCode addr = emitExpr(expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
+            ExprCode val = emitExpr(expr.args[1], TypeRef::numeric(ir::Type::T40), ctx);
+            ctx.line("store r" + std::to_string(val.reg) + ", r" + std::to_string(addr.reg) + ", 0");
+            ctx.release(addr.reg);
+            ctx.release(val.reg);
+            Instr instr;
+            instr.opcode = InstrOpcode::Store;
+            instr.type = TypeRef::voidType();
+            instr.effect = Effect::WriteMem;
+            instr.span = expr.span;
+            ctx.block->instructions.push_back(instr);
+            return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+        }
+
         if (expr.text == "tldr") {
             if (expr.args.empty()) {
                 diag("tldr requires address and optional order", expr.span);
@@ -2931,7 +2970,8 @@ private:
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {
         return name == "csr_read" || name == "csr_write" ||
-               name == "tldr" || name == "tstr" || name == "fence";
+               name == "tldr" || name == "tstr" || name == "fence" ||
+               name == "load" || name == "store";
     }
 
     [[nodiscard]] static bool extractInteger(const ExprPtr& expr, int& out) {

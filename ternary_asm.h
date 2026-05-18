@@ -262,6 +262,21 @@ struct AssemblyResult {
     if (s == "console_ctrl") return CSR_CONSOLE_CTRL;
     if (s == "console_in") return CSR_CONSOLE_IN;
     if (s == "console_in_ctrl") return CSR_CONSOLE_IN_CTRL;
+    if (s == "mouse_x") return CSR_MOUSE_X;
+    if (s == "mouse_y") return CSR_MOUSE_Y;
+    if (s == "mouse_btn") return CSR_MOUSE_BTN;
+    if (s == "gpu_x1") return CSR_GPU_X1;
+    if (s == "gpu_y1") return CSR_GPU_Y1;
+    if (s == "gpu_x2") return CSR_GPU_X2;
+    if (s == "gpu_y2") return CSR_GPU_Y2;
+    if (s == "gpu_color") return CSR_GPU_COLOR;
+    if (s == "gpu_cmd") return CSR_GPU_CMD;
+    if (s == "gpu_page") return CSR_GPU_PAGE;
+    if (s == "gpu_draw_base") return CSR_GPU_DRAW_BASE;
+    if (s == "gpu_mode") return CSR_GPU_MODE;
+    if (s == "sprite_x") return CSR_SPRITE_X;
+    if (s == "sprite_y") return CSR_SPRITE_Y;
+    if (s == "sprite_attr") return CSR_SPRITE_ATTR;
 
     if (s.empty()) return -1;
     for (char c : s) {

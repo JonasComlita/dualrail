@@ -53,10 +53,41 @@ bool writeFile(const std::string& path, const std::string& data) {
     return out.good();
 }
 
-bool writeBinaryFile(const std::string& path, const std::vector<sandbox::isa::TritWord27>& data) {
+struct TritFileHeader {
+    char magic[4] = {'T', 'X', 'E', '3'};
+    uint32_t version = 1;
+    uint32_t endianness = 0x12345678;
+    uint32_t instruction_count = 0;
+    uint32_t data_count = 0;
+    uint32_t stack_words = 0;
+    uint32_t entry_pc = 0;
+    uint32_t abi_version = 0;
+    uint32_t reserved[4] = {0, 0, 0, 0};
+};
+
+bool writeBinaryFile(const std::string& path, const sandbox::compiler::LinkResult& linked) {
     std::ofstream out(path, std::ios::out | std::ios::binary);
     if (!out.good()) return false;
-    out.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(sandbox::isa::TritWord27));
+    
+    TritFileHeader header;
+    header.instruction_count = static_cast<uint32_t>(linked.assembled.program.size());
+    header.data_count = static_cast<uint32_t>(linked.assembled.data.size());
+    header.stack_words = static_cast<uint32_t>(linked.executable_header.stack_words);
+    header.entry_pc = static_cast<uint32_t>(linked.executable_header.entry_virtual_pc);
+    header.abi_version = static_cast<uint32_t>(linked.executable_header.abi_version);
+    
+    out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    if (!linked.assembled.program.empty()) {
+        out.write(reinterpret_cast<const char*>(linked.assembled.program.data()),
+                  linked.assembled.program.size() * sizeof(sandbox::isa::TritWord27));
+    }
+    
+    if (!linked.assembled.data.empty()) {
+        out.write(reinterpret_cast<const char*>(linked.assembled.data.data()),
+                  linked.assembled.data.size() * sizeof(sandbox::isa::TritWord27));
+    }
+    
     return out.good();
 }
 
@@ -202,11 +233,13 @@ int main(int argc, char** argv) {
         } else if (arg == "--input-file") {
             if (i + 1 < argc) {
                 std::string path = argv[++i];
-                console_input_str = readFile(path);
-                if (console_input_str.empty()) {
-                    std::cerr << "Error: Could not read or empty input file: " << path << "\n";
+                std::ifstream check(path, std::ios::in | std::ios::binary);
+                if (!check.good()) {
+                    std::cerr << "Error: Could not open or read input file: " << path << "\n";
                     return 1;
                 }
+                check.close();
+                console_input_str = readFile(path);
             } else {
                 std::cerr << "Error: Missing file path after --input-file\n";
                 return 1;
@@ -332,7 +365,7 @@ int main(int argc, char** argv) {
         if (output_path.empty()) {
             output_path = "app.exe";
         }
-        if (!writeBinaryFile(output_path, linked.assembled.program)) {
+        if (!writeBinaryFile(output_path, linked)) {
             std::cerr << "Error: Failed to write executable image to: " << output_path << "\n";
             return 1;
         }
