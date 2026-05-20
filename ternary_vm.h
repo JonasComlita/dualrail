@@ -1768,6 +1768,10 @@ inline VMStatus step(VMState& vm) {
                 long long delta = sandbox::vm::ops::toLong(vm.regfile.read(13));
                 host_heap_break += delta;
                 vm.regfile.write(13, sandbox::vm::ops::fromLong(host_heap_break));
+            } else if (iw.imm == 22) {
+                // sys_write_char: interpret r1 as an ASCII character code
+                long long charVal = sandbox::vm::ops::toLong(vm.regfile.read(1));
+                vm.syscall_buffer += static_cast<char>(charVal);
             } else {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;

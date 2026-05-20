@@ -93,7 +93,7 @@ fn fork() -> t40 {
 // =============================================================================
 
 fn abs(val: t40) -> t40 {
-    match sign(val) {
+    match val {
         neg => { return 0 - val; }
         zero => { return 0; }
         pos => { return val; }
@@ -101,7 +101,7 @@ fn abs(val: t40) -> t40 {
 }
 
 fn min(a: t40, b: t40) -> t40 {
-    match sign(a - b) {
+    match a - b {
         neg => { return a; }
         zero => { return a; }
         pos => { return b; }
@@ -109,7 +109,7 @@ fn min(a: t40, b: t40) -> t40 {
 }
 
 fn max(a: t40, b: t40) -> t40 {
-    match sign(a - b) {
+    match a - b {
         neg => { return b; }
         zero => { return a; }
         pos => { return a; }
@@ -117,11 +117,11 @@ fn max(a: t40, b: t40) -> t40 {
 }
 
 fn char_is_digit(c: t40) -> t40 {
-    match sign(c - 48) {
+    match c - 48 {
         neg => { return 0; }
         zero => { return 1; }
         pos => {
-            match sign(57 - c) {
+            match 57 - c {
                 neg => { return 0; }
                 zero => { return 1; }
                 pos => { return 1; }
@@ -131,18 +131,18 @@ fn char_is_digit(c: t40) -> t40 {
 }
 
 fn char_is_whitespace(c: t40) -> t40 {
-    match sign(c - 32) {
+    match c - 32 {
         zero => { return 1; }
         neg => {
-            match sign(c - 9) {
+            match c - 9 {
                 zero => { return 1; }
                 neg => { return 0; }
                 pos => {
-                    match sign(c - 10) {
+                    match c - 10 {
                         zero => { return 1; }
                         neg => { return 0; }
                         pos => {
-                            match sign(c - 13) {
+                            match c - 13 {
                                 zero => { return 1; }
                                 neg => { return 0; }
                                 pos => { return 0; }
@@ -157,11 +157,11 @@ fn char_is_whitespace(c: t40) -> t40 {
 }
 
 fn char_to_lower(c: t40) -> t40 {
-    match sign(c - 65) {
+    match c - 65 {
         neg => { return c; }
         zero => { return c + 32; }
         pos => {
-            match sign(90 - c) {
+            match 90 - c {
                 neg => { return c; }
                 zero => { return c + 32; }
                 pos => { return c + 32; }
@@ -171,11 +171,11 @@ fn char_to_lower(c: t40) -> t40 {
 }
 
 fn char_to_upper(c: t40) -> t40 {
-    match sign(c - 97) {
+    match c - 97 {
         neg => { return c; }
         zero => { return c - 32; }
         pos => {
-            match sign(122 - c) {
+            match 122 - c {
                 neg => { return c; }
                 zero => { return c - 32; }
                 pos => { return c - 32; }
@@ -185,17 +185,17 @@ fn char_to_upper(c: t40) -> t40 {
 }
 
 fn char_is_alpha(c: t40) -> t40 {
-    match sign(c - 65) {
+    match c - 65 {
         neg => { return 0; }
         zero => { return 1; }
         pos => {
-            match sign(90 - c) {
+            match 90 - c {
                 neg => {
-                    match sign(c - 97) {
+                    match c - 97 {
                         neg => { return 0; }
                         zero => { return 1; }
                         pos => {
-                            match sign(122 - c) {
+                            match 122 - c {
                                 neg => { return 0; }
                                 zero => { return 1; }
                                 pos => { return 1; }
@@ -212,7 +212,7 @@ fn char_is_alpha(c: t40) -> t40 {
 
 fn char_is_alnum(c: t40) -> t40 {
     var alpha: t40 = char_is_alpha(c);
-    match sign(alpha) {
+    match alpha {
         pos => { return 1; }
         zero => { return char_is_digit(c); }
         neg => { return char_is_digit(c); }
@@ -228,15 +228,16 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
     var argc: t40 = 0;
     var i: t40 = 0;
     var in_word: t40 = 0;
+    var parse_args_loop: t40 = 1;
 
-    while pos(1) {
+    while parse_args_loop > 0 {
         var c: t40 = 0;
         unsafe { c = load(cmdline + i); }
 
-        match sign(c) {
+        match c {
             // Null terminator: end of input.
             zero => {
-                match sign(in_word) {
+                match in_word {
                     pos => {}
                     neg => {}
                     zero => {}
@@ -247,10 +248,10 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
             neg => { return argc; }
             pos => {
                 var is_ws: t40 = char_is_whitespace(c);
-                match sign(is_ws) {
+                match is_ws {
                     pos => {
                         // Whitespace: terminate current word if in one.
-                        match sign(in_word) {
+                        match in_word {
                             pos => {
                                 unsafe { store(cmdline + i, 0); }
                                 in_word = 0;
@@ -261,7 +262,7 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
                     }
                     zero => {
                         // Non-whitespace, not in a word: start new token.
-                        match sign(in_word) {
+                        match in_word {
                             zero => {
                                 unsafe { store(argv_buf + argc, cmdline + i); }
                                 argc = argc + 1;
@@ -289,7 +290,7 @@ fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
 fn heap_init() -> t40 {
     var inited: t40 = 0;
     unsafe { inited = load(20); }
-    match sign(inited) {
+    match inited {
         pos => { return 1; }
         neg => { return 1; }
         zero => {
@@ -306,11 +307,11 @@ fn heap_init() -> t40 {
 // Allocate a contiguous block of `words` data words from the heap.
 // Returns the data pointer (header is at ptr-1).
 // Uses first-fit free list; splits large blocks to reduce fragmentation.
-fn malloc(words: t40) -> t40 {
+fn malloc_raw(words: t40) -> t40 {
     heap_init();
 
     var sz: t40 = words;
-    match sign(sz - 1) {
+    match sz - 1 {
         neg => { sz = 1; }
         zero => {}
         pos => {}
@@ -320,11 +321,11 @@ fn malloc(words: t40) -> t40 {
     var curr: t40 = 0;
     unsafe { curr = load(22); }
 
-    while pos(curr) {
+    while curr > 0 {
         var bsz: t40 = 0;
         unsafe { bsz = load(curr); }
 
-        match sign(bsz - sz) {
+        match bsz - sz {
             neg => {
                 prev_slot = curr + 1;
                 unsafe { curr = load(curr + 1); }
@@ -339,7 +340,7 @@ fn malloc(words: t40) -> t40 {
             }
             pos => {
                 var leftover: t40 = bsz - sz - 1;
-                match sign(leftover - 1) {
+                match leftover - 1 {
                     neg => {
                         unsafe {
                             var nxt: t40 = load(curr + 1);
@@ -380,17 +381,25 @@ fn malloc(words: t40) -> t40 {
     return hdr + 1;
 }
 
+fn alloc(words: t40) -> own<ptr<t40, unknown>> {
+    return malloc_raw(words);
+}
+
+fn malloc(words: t40) -> own<ptr<t40, unknown>> {
+    return malloc_raw(words);
+}
+
 // Free a previously allocated block.
 // Marks it as free and prepends to the free list (LIFO).
-fn free(ptr: t40) -> t40 {
-    match sign(ptr) {
+fn free_raw(ptr: t40) -> t40 {
+    match ptr {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var hdr: t40 = ptr - 1;
             var hdr_val: t40 = 0;
             unsafe { hdr_val = load(hdr); }
-            match sign(hdr_val) {
+            match hdr_val {
                 neg => {
                     var fsz: t40 = 0 - hdr_val;
                     var head: t40 = 0;
@@ -409,16 +418,20 @@ fn free(ptr: t40) -> t40 {
     }
 }
 
+fn free(ptr: borrow<ptr<t40, unknown>>) -> t40 {
+    return free_raw(ptr);
+}
+
 // Allocate `num * size` words, zero-initialised.
-fn calloc(num: t40, size: t40) -> t40 {
+fn calloc_raw(num: t40, size: t40) -> t40 {
     var total: t40 = num * size;
-    var ptr: t40 = malloc(total);
-    match sign(ptr) {
+    var ptr: t40 = malloc_raw(total);
+    match ptr {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var i: t40 = 0;
-            while pos(total - i) {
+            while total - i > 0 {
                 unsafe { store(ptr + i, 0); }
                 i = i + 1;
             }
@@ -427,34 +440,38 @@ fn calloc(num: t40, size: t40) -> t40 {
     }
 }
 
+fn calloc(num: t40, size: t40) -> own<ptr<t40, unknown>> {
+    return calloc_raw(num, size);
+}
+
 // Resize an existing block; copies existing data, frees old pointer.
 // Returns new pointer, or 0 on failure.
-fn realloc(ptr: t40, new_size: t40) -> t40 {
-    match sign(ptr) {
-        zero => { return malloc(new_size); }
+fn realloc_raw(ptr: t40, new_size: t40) -> t40 {
+    match ptr {
+        zero => { return malloc_raw(new_size); }
         neg => { return 0; }
         pos => {
             var old_hdr: t40 = 0;
             unsafe { old_hdr = load(ptr - 1); }
             var old_sz: t40 = 0 - old_hdr;
-            match sign(old_hdr) {
+            match old_hdr {
                 pos => { return 0; }
                 zero => { return 0; }
                 neg => {
-                    var new_ptr: t40 = malloc(new_size);
-                    match sign(new_ptr) {
+                    var new_ptr: t40 = malloc_raw(new_size);
+                    match new_ptr {
                         zero => { return 0; }
                         neg => { return 0; }
                         pos => {
                             var copy_words: t40 = min(old_sz, new_size);
                             var i: t40 = 0;
-                            while pos(copy_words - i) {
+                            while copy_words - i > 0 {
                                 var w: t40 = 0;
                                 unsafe { w = load(ptr + i); }
                                 unsafe { store(new_ptr + i, w); }
                                 i = i + 1;
                             }
-                            free(ptr);
+                            free_raw(ptr);
                             return new_ptr;
                         }
                     }
@@ -464,13 +481,17 @@ fn realloc(ptr: t40, new_size: t40) -> t40 {
     }
 }
 
+fn realloc(ptr: borrow<ptr<t40, unknown>>, new_size: t40) -> own<ptr<t40, unknown>> {
+    return realloc_raw(ptr, new_size);
+}
+
 // =============================================================================
 // SECTION 3 — Memory Utilities
 // =============================================================================
 
 fn memset(ptr: t40, val: t40, size: t40) -> t40 {
     var i: t40 = 0;
-    while pos(size - i) {
+    while size - i > 0 {
         unsafe { store(ptr + i, val); }
         i = i + 1;
     }
@@ -479,7 +500,7 @@ fn memset(ptr: t40, val: t40, size: t40) -> t40 {
 
 fn memcpy(dest: t40, src: t40, size: t40) -> t40 {
     var i: t40 = 0;
-    while pos(size - i) {
+    while size - i > 0 {
         var w: t40 = 0;
         unsafe { w = load(src + i); }
         unsafe { store(dest + i, w); }
@@ -491,11 +512,11 @@ fn memcpy(dest: t40, src: t40, size: t40) -> t40 {
 // memmove: copy `size` words from src to dest, safe for overlapping regions.
 // If dest < src, copies forward. If dest > src, copies backward to avoid clobber.
 fn memmove(dest: t40, src: t40, size: t40) -> t40 {
-    match sign(dest - src) {
+    match dest - src {
         neg => {
             // dest < src: safe to copy forward
             var i: t40 = 0;
-            while pos(size - i) {
+            while size - i > 0 {
                 var w: t40 = 0;
                 unsafe { w = load(src + i); }
                 unsafe { store(dest + i, w); }
@@ -506,7 +527,7 @@ fn memmove(dest: t40, src: t40, size: t40) -> t40 {
         pos => {
             // dest > src: copy backward to avoid clobbering src
             var i: t40 = size - 1;
-            while pos(i + 1) {
+            while i + 1 > 0 {
                 var w: t40 = 0;
                 unsafe { w = load(src + i); }
                 unsafe { store(dest + i, w); }
@@ -519,12 +540,12 @@ fn memmove(dest: t40, src: t40, size: t40) -> t40 {
 
 fn memcmp(ptr1: t40, ptr2: t40, size: t40) -> t40 {
     var i: t40 = 0;
-    while pos(size - i) {
+    while size - i > 0 {
         var a: t40 = 0;
         var b: t40 = 0;
         unsafe { a = load(ptr1 + i); }
         unsafe { b = load(ptr2 + i); }
-        match sign(a - b) {
+        match a - b {
             neg => { return 0 - 1; }
             pos => { return 1; }
             zero => {}
@@ -542,10 +563,10 @@ fn memcmp(ptr1: t40, ptr2: t40, size: t40) -> t40 {
 fn strlen(str: t40) -> t40 {
     var len: t40 = 0;
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         var c: t40 = 0;
         unsafe { c = load(str + len); }
-        match sign(c) {
+        match c {
             zero => { done = 1; }
             neg => { len = len + 1; }
             pos => { len = len + 1; }
@@ -556,16 +577,17 @@ fn strlen(str: t40) -> t40 {
 
 fn strcmp(str1: t40, str2: t40) -> t40 {
     var i: t40 = 0;
-    while pos(1) {
+    var strcmp_loop: t40 = 1;
+    while strcmp_loop > 0 {
         var a: t40 = 0;
         var b: t40 = 0;
         unsafe { a = load(str1 + i); }
         unsafe { b = load(str2 + i); }
-        match sign(a - b) {
+        match a - b {
             neg => { return 0 - 1; }
             pos => { return 1; }
             zero => {
-                match sign(a) {
+                match a {
                     zero => { return 0; }
                     neg => {}
                     pos => {}
@@ -579,16 +601,16 @@ fn strcmp(str1: t40, str2: t40) -> t40 {
 
 fn strncmp(str1: t40, str2: t40, n: t40) -> t40 {
     var i: t40 = 0;
-    while pos(n - i) {
+    while n - i > 0 {
         var a: t40 = 0;
         var b: t40 = 0;
         unsafe { a = load(str1 + i); }
         unsafe { b = load(str2 + i); }
-        match sign(a - b) {
+        match a - b {
             neg => { return 0 - 1; }
             pos => { return 1; }
             zero => {
-                match sign(a) {
+                match a {
                     zero => { return 0; }
                     neg => {}
                     pos => {}
@@ -603,11 +625,11 @@ fn strncmp(str1: t40, str2: t40, n: t40) -> t40 {
 fn strcpy(dest: t40, src: t40) -> t40 {
     var i: t40 = 0;
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         var c: t40 = 0;
         unsafe { c = load(src + i); }
         unsafe { store(dest + i, c); }
-        match sign(c) {
+        match c {
             zero => { done = 1; }
             neg => { i = i + 1; }
             pos => { i = i + 1; }
@@ -619,8 +641,8 @@ fn strcpy(dest: t40, src: t40) -> t40 {
 fn strncpy(dest: t40, src: t40, n: t40) -> t40 {
     var i: t40 = 0;
     var past_null: t40 = 0;
-    while pos(n - i) {
-        match sign(past_null) {
+    while n - i > 0 {
+        match past_null {
             pos => {
                 unsafe { store(dest + i, 0); }
             }
@@ -628,7 +650,7 @@ fn strncpy(dest: t40, src: t40, n: t40) -> t40 {
                 var c: t40 = 0;
                 unsafe { c = load(src + i); }
                 unsafe { store(dest + i, c); }
-                match sign(c) {
+                match c {
                     zero => { past_null = 1; }
                     neg => {}
                     pos => {}
@@ -651,15 +673,16 @@ fn strcat(dest: t40, src: t40) -> t40 {
 
 fn strchr(str: t40, ch: t40) -> t40 {
     var i: t40 = 0;
-    while pos(1) {
+    var strchr_loop: t40 = 1;
+    while strchr_loop > 0 {
         var c: t40 = 0;
         unsafe { c = load(str + i); }
-        match sign(c - ch) {
+        match c - ch {
             zero => { return str + i; }
             neg => {}
             pos => {}
         }
-        match sign(c) {
+        match c {
             zero => { return 0; }
             neg => {}
             pos => {}
@@ -674,15 +697,16 @@ fn strchr(str: t40, ch: t40) -> t40 {
 fn strrchr(str: t40, ch: t40) -> t40 {
     var i: t40 = 0;
     var last: t40 = 0;
-    while pos(1) {
+    var strrchr_loop: t40 = 1;
+    while strrchr_loop > 0 {
         var c: t40 = 0;
         unsafe { c = load(str + i); }
-        match sign(c - ch) {
+        match c - ch {
             zero => { last = str + i; }
             neg => {}
             pos => {}
         }
-        match sign(c) {
+        match c {
             zero => { return last; }
             neg => { return last; }
             pos => {}
@@ -694,16 +718,16 @@ fn strrchr(str: t40, ch: t40) -> t40 {
 
 fn strstr(haystack: t40, needle: t40) -> t40 {
     var nlen: t40 = strlen(needle);
-    match sign(nlen) {
+    match nlen {
         zero => { return haystack; }
         neg => { return haystack; }
         pos => {}
     }
     var i: t40 = 0;
     var hlen: t40 = strlen(haystack);
-    while pos(hlen - nlen - i + 1) {
+    while hlen - nlen - i + 1 > 0 {
         var matched: t40 = strncmp(haystack + i, needle, nlen);
-        match sign(matched) {
+        match matched {
             zero => { return haystack + i; }
             neg => {}
             pos => {}
@@ -716,8 +740,8 @@ fn strstr(haystack: t40, needle: t40) -> t40 {
 // Copy a null-terminated string from `src` into a fresh malloc'd buffer.
 fn strdup(src: t40) -> t40 {
     var slen: t40 = strlen(src);
-    var buf: t40 = malloc(slen + 1);
-    match sign(buf) {
+    var buf: t40 = malloc_raw(slen + 1);
+    match buf {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -735,7 +759,7 @@ fn strdup(src: t40) -> t40 {
 // Writes null over each delimiter found.
 fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
     var pos_ptr: t40 = 0;
-    match sign(str) {
+    match str {
         pos => { unsafe { store(saved, str); } pos_ptr = str; }
         zero => { unsafe { pos_ptr = load(saved); } }
         neg => { unsafe { pos_ptr = load(saved); } }
@@ -743,41 +767,42 @@ fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
 
     // Skip leading delimiters.
     var done_skip: t40 = 0;
-    while pos(1 - done_skip) {
+    while 1 - done_skip > 0 {
         var c: t40 = 0;
         unsafe { c = load(pos_ptr); }
-        match sign(c) {
+        match c {
             zero => { unsafe { store(saved, 0); } return 0; }
             neg => { unsafe { store(saved, 0); } return 0; }
             pos => {
                 var dc: t40 = 0;
                 var found_delim: t40 = 0;
                 var di: t40 = 0;
-                while pos(1) {
+                var skip_delim_loop: t40 = 1;
+                while skip_delim_loop > 0 {
                     unsafe { dc = load(delim + di); }
-                    match sign(dc) {
+                    match dc {
                         zero => { di = 9999; }    // break inner loop
                         neg => { di = 9999; }
                         pos => {
-                            match sign(c - dc) {
+                            match c - dc {
                                 zero => { found_delim = 1; di = 9999; }
                                 neg => {}
                                 pos => {}
                             }
                         }
                     }
-                    match sign(di - 9999) {
+                    match di - 9999 {
                         zero => { done_skip = 9999; }
                         neg => { di = di + 1; }
                         pos => {}
                     }
-                    match sign(done_skip - 9999) {
+                    match done_skip - 9999 {
                         zero => { di = 9999; }
                         neg => {}
                         pos => {}
                     }
                 }
-                match sign(found_delim) {
+                match found_delim {
                     pos => { pos_ptr = pos_ptr + 1; }
                     zero => { done_skip = 1; }
                     neg => { done_skip = 1; }
@@ -791,36 +816,37 @@ fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
 
     // Scan to the next delimiter or null.
     var done_scan: t40 = 0;
-    while pos(1 - done_scan) {
+    while 1 - done_scan > 0 {
         var c: t40 = 0;
         unsafe { c = load(pos_ptr); }
-        match sign(c) {
+        match c {
             zero => { unsafe { store(saved, pos_ptr); } done_scan = 1; }
             neg => { unsafe { store(saved, pos_ptr); } done_scan = 1; }
             pos => {
                 var dc: t40 = 0;
                 var found_delim: t40 = 0;
                 var di: t40 = 0;
-                while pos(1) {
+                var scan_delim_loop: t40 = 1;
+                while scan_delim_loop > 0 {
                     unsafe { dc = load(delim + di); }
-                    match sign(dc) {
+                    match dc {
                         zero => { di = 9999; }
                         neg => { di = 9999; }
                         pos => {
-                            match sign(c - dc) {
+                            match c - dc {
                                 zero => { found_delim = 1; di = 9999; }
                                 neg => {}
                                 pos => {}
                             }
                         }
                     }
-                    match sign(di - 9999) {
+                    match di - 9999 {
                         zero => { di = 0; di = 9999; }
                         neg => { di = di + 1; }
                         pos => {}
                     }
                 }
-                match sign(found_delim) {
+                match found_delim {
                     pos => {
                         unsafe { store(pos_ptr, 0); }
                         unsafe { store(saved, pos_ptr + 1); }
@@ -848,9 +874,9 @@ fn atoi(str: t40) -> t40 {
 
     unsafe { c = load(str + i); }
     var skipping: t40 = 1;
-    while pos(skipping) {
+    while skipping > 0 {
         var wspc: t40 = char_is_whitespace(c);
-        match sign(wspc) {
+        match wspc {
             pos => {
                 i = i + 1;
                 unsafe { c = load(str + i); }
@@ -860,7 +886,7 @@ fn atoi(str: t40) -> t40 {
         }
     }
 
-    match sign(c - 45) {
+    match c - 45 {
         zero => {
             is_neg = 1;
             i = i + 1;
@@ -868,7 +894,7 @@ fn atoi(str: t40) -> t40 {
         }
         neg => {}
         pos => {
-            match sign(c - 43) {
+            match c - 43 {
                 zero => {
                     i = i + 1;
                     unsafe { c = load(str + i); }
@@ -880,14 +906,14 @@ fn atoi(str: t40) -> t40 {
     }
 
     var is_dig: t40 = char_is_digit(c);
-    while pos(is_dig) {
+    while is_dig > 0 {
         result = result * 10 + (c - 48);
         i = i + 1;
         unsafe { c = load(str + i); }
         is_dig = char_is_digit(c);
     }
 
-    match sign(is_neg) {
+    match is_neg {
         pos => { return 0 - result; }
         zero => { return result; }
         neg => { return result; }
@@ -895,7 +921,7 @@ fn atoi(str: t40) -> t40 {
 }
 
 fn itoa(val: t40, buf: t40) -> t40 {
-    match sign(val) {
+    match val {
         zero => {
             unsafe {
                 store(buf, 48);
@@ -911,14 +937,14 @@ fn itoa(val: t40, buf: t40) -> t40 {
         pos => {
             var ndigits: t40 = 0;
             var tmp: t40 = val;
-            while pos(tmp) {
+            while tmp > 0 {
                 ndigits = ndigits + 1;
                 tmp = tmp / 10;
             }
             unsafe { store(buf + ndigits, 0); }
             tmp = val;
             var wpos: t40 = ndigits - 1;
-            while pos(tmp) {
+            while tmp > 0 {
                 var digit: t40 = tmp - (tmp / 10) * 10;
                 unsafe { store(buf + wpos, digit + 48); }
                 tmp = tmp / 10;
@@ -937,7 +963,7 @@ fn atoi_ternary(str: t40) -> t40 {
     var c: t40 = 0;
 
     unsafe { c = load(str + i); }
-    match sign(c - 45) {
+    match c - 45 {
         zero => {
             is_neg = 1;
             i = i + 1;
@@ -948,21 +974,21 @@ fn atoi_ternary(str: t40) -> t40 {
     }
 
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         unsafe { c = load(str + i); }
-        match sign(c) {
+        match c {
             zero => { done = 1; }
             neg => { done = 1; }
             pos => {
-                match sign(c - 48) {
+                match c - 48 {
                     zero => { result = result * 3; }
                     neg => { done = 1; }
                     pos => {
-                        match sign(c - 49) {
+                        match c - 49 {
                             zero => { result = result * 3 + 1; }
                             neg => { done = 1; }
                             pos => {
-                                match sign(c - 50) {
+                                match c - 50 {
                                     zero => { result = result * 3 + 2; }
                                     neg => { done = 1; }
                                     pos => { done = 1; }
@@ -971,7 +997,7 @@ fn atoi_ternary(str: t40) -> t40 {
                         }
                     }
                 }
-                match sign(done) {
+                match done {
                     zero => { i = i + 1; }
                     neg => { i = i + 1; }
                     pos => {}
@@ -980,7 +1006,7 @@ fn atoi_ternary(str: t40) -> t40 {
         }
     }
 
-    match sign(is_neg) {
+    match is_neg {
         pos => { return 0 - result; }
         zero => { return result; }
         neg => { return result; }
@@ -988,7 +1014,7 @@ fn atoi_ternary(str: t40) -> t40 {
 }
 
 fn itoa_ternary(val: t40, buf: t40) -> t40 {
-    match sign(val) {
+    match val {
         zero => {
             unsafe {
                 store(buf, 48);
@@ -1004,14 +1030,14 @@ fn itoa_ternary(val: t40, buf: t40) -> t40 {
         pos => {
             var ndigits: t40 = 0;
             var tmp: t40 = val;
-            while pos(tmp) {
+            while tmp > 0 {
                 ndigits = ndigits + 1;
                 tmp = tmp / 3;
             }
             unsafe { store(buf + ndigits, 0); }
             tmp = val;
             var wpos: t40 = ndigits - 1;
-            while pos(tmp) {
+            while tmp > 0 {
                 var digit: t40 = tmp - (tmp / 3) * 3;
                 unsafe { store(buf + wpos, digit + 48); }
                 tmp = tmp / 3;
@@ -1036,10 +1062,10 @@ fn print_char(c: t40) -> t40 {
 fn print_string(str: t40) -> t40 {
     var i: t40 = 0;
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         var c: t40 = 0;
         unsafe { c = load(str + i); }
-        match sign(c) {
+        match c {
             zero => { done = 1; }
             neg => {
                 sys_write_int(c);
@@ -1067,21 +1093,21 @@ fn printf(fmt: t40, arg: t40) -> t40 {
     var i: t40 = 0;
     var arg_used: t40 = 0;
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         var c: t40 = 0;
         unsafe { c = load(fmt + i); }
-        match sign(c) {
+        match c {
             zero => { done = 1; }
             neg => { i = i + 1; }
             pos => {
-                match sign(c - 37) {    // '%'
+                match c - 37 {    // '%'
                     zero => {
                         i = i + 1;
                         var spec: t40 = 0;
                         unsafe { spec = load(fmt + i); }
-                        match sign(spec - 100) {    // 'd'
+                        match spec - 100 {    // 'd'
                             zero => {
-                                match sign(arg_used) {
+                                match arg_used {
                                     zero => { sys_write_int(arg); arg_used = 1; }
                                     neg => { sys_write_int(0); }
                                     pos => { sys_write_int(0); }
@@ -1089,16 +1115,16 @@ fn printf(fmt: t40, arg: t40) -> t40 {
                             }
                             neg => {}
                             pos => {
-                                match sign(spec - 116) {    // 't'
+                                match spec - 116 {    // 't'
                                     zero => {
-                                        var tbuf: t40 = malloc(24);
-                                        match sign(tbuf) {
+                                        var tbuf: t40 = malloc_raw(24);
+                                        match tbuf {
                                             zero => {}
                                             neg => {}
                                             pos => {
                                                 itoa_ternary(arg, tbuf);
                                                 print_string(tbuf);
-                                                free(tbuf);
+                                                free_raw(tbuf);
                                                 arg_used = 1;
                                             }
                                         }
@@ -1111,14 +1137,14 @@ fn printf(fmt: t40, arg: t40) -> t40 {
                         i = i + 1;
                     }
                     neg => {
-                        match sign(c - 10) {    // '\n'
+                        match c - 10 {    // '\n'
                             zero => { sys_newline(); i = i + 1; }
                             neg => { sys_write_int(c); i = i + 1; }
                             pos => { sys_write_int(c); i = i + 1; }
                         }
                     }
                     pos => {
-                        match sign(c - 10) {    // '\n'
+                        match c - 10 {    // '\n'
                             zero => { sys_newline(); i = i + 1; }
                             neg => { sys_write_int(c); i = i + 1; }
                             pos => { sys_write_int(c); i = i + 1; }
@@ -1171,19 +1197,19 @@ fn exec(path: t40) -> t40 {
 
 fn fopen(path: t40, mode: t40) -> t40 {
     var fd: t40 = sys_open(path, mode);
-    match sign(fd) {
+    match fd {
         neg => { return 0; }
         zero => { return 0; }
         pos => {
-            var stream: t40 = malloc(6);
-            match sign(stream) {
+            var stream: t40 = malloc_raw(6);
+            match stream {
                 zero => { sys_close(fd); return 0; }
                 neg => { sys_close(fd); return 0; }
                 pos => {
-                    var buf: t40 = malloc(64);
-                    match sign(buf) {
-                        zero => { free(stream); sys_close(fd); return 0; }
-                        neg => { free(stream); sys_close(fd); return 0; }
+                    var buf: t40 = malloc_raw(64);
+                    match buf {
+                        zero => { free_raw(stream); sys_close(fd); return 0; }
+                        neg => { free_raw(stream); sys_close(fd); return 0; }
                         pos => {
                             unsafe {
                                 store(stream,     fd);
@@ -1204,13 +1230,13 @@ fn fopen(path: t40, mode: t40) -> t40 {
 
 // FIX: fflush now passes buf_len as the count argument to sys_write.
 fn fflush(stream: t40) -> t40 {
-    match sign(stream) {
+    match stream {
         zero => { return 0 - 1; }
         neg => { return 0 - 1; }
         pos => {
             var mode: t40 = 0;
             unsafe { mode = load(stream + 5); }
-            match sign(mode) {
+            match mode {
                 zero => { return 0; }
                 neg => { return 0; }
                 pos => {
@@ -1222,7 +1248,7 @@ fn fflush(stream: t40) -> t40 {
                         buf_ptr = load(stream + 1);
                         buf_len = load(stream + 4);
                     }
-                    match sign(buf_len) {
+                    match buf_len {
                         zero => { return 0; }
                         neg => { return 0; }
                         pos => {
@@ -1242,7 +1268,7 @@ fn fflush(stream: t40) -> t40 {
 }
 
 fn fclose(stream: t40) -> t40 {
-    match sign(stream) {
+    match stream {
         zero => { return 0 - 1; }
         neg => { return 0 - 1; }
         pos => {
@@ -1253,13 +1279,13 @@ fn fclose(stream: t40) -> t40 {
                 fd      = load(stream);
                 buf_ptr = load(stream + 1);
             }
-            match sign(buf_ptr) {
-                pos => { free(buf_ptr); }
+            match buf_ptr {
+                pos => { free_raw(buf_ptr); }
                 zero => {}
                 neg => {}
             }
             sys_close(fd);
-            free(stream);
+            free_raw(stream);
             return 0;
         }
     }
@@ -1267,7 +1293,7 @@ fn fclose(stream: t40) -> t40 {
 
 // FIX: fread now passes buf as the destination address to sys_read.
 fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
-    match sign(stream) {
+    match stream {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1275,7 +1301,7 @@ fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
             unsafe { fd = load(stream); }
             var total_words: t40 = size * count;
             var words_read: t40 = sys_read(fd, buf, total_words);
-            match sign(words_read) {
+            match words_read {
                 neg => { return 0; }
                 zero => { return 0; }
                 pos => { return words_read / size; }
@@ -1285,7 +1311,7 @@ fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
 }
 
 fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
-    match sign(stream) {
+    match stream {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1299,8 +1325,8 @@ fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
             }
             var total: t40 = size * count;
             var i: t40 = 0;
-            while pos(total - i) {
-                match sign(buf_len - buf_cap + 1) {
+            while total - i > 0 {
+                match buf_len - buf_cap + 1 {
                     neg => {}
                     zero => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
                     pos => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
@@ -1326,8 +1352,8 @@ fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
 // =============================================================================
 
 fn tst_alloc_node(ch: t40) -> t40 {
-    var node: t40 = malloc(6);
-    match sign(node) {
+    var node: t40 = malloc_raw(6);
+    match node {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1351,10 +1377,10 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
 
     var root: t40 = 0;
     unsafe { root = load(root_slot); }
-    match sign(root) {
+    match root {
         zero => {
             var nd: t40 = tst_alloc_node(kc);
-            match sign(nd) {
+            match nd {
                 zero => { return 0; }
                 neg => { return 0; }
                 pos => { unsafe { store(root_slot, nd); } root = nd; }
@@ -1366,18 +1392,18 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
 
     var node: t40 = root;
     var done: t40 = 0;
-    while pos(1 - done) {
+    while 1 - done > 0 {
         var nc: t40 = 0;
         unsafe { nc = load(node); }
 
-        match sign(kc - nc) {
+        match kc - nc {
             neg => {
                 var left: t40 = 0;
                 unsafe { left = load(node + 1); }
-                match sign(left) {
+                match left {
                     zero => {
                         var nd: t40 = tst_alloc_node(kc);
-                        match sign(nd) {
+                        match nd {
                             zero => { done = 1; }
                             neg => { done = 1; }
                             pos => { unsafe { store(node + 1, nd); } node = nd; }
@@ -1390,10 +1416,10 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
             pos => {
                 var right: t40 = 0;
                 unsafe { right = load(node + 3); }
-                match sign(right) {
+                match right {
                     zero => {
                         var nd: t40 = tst_alloc_node(kc);
-                        match sign(nd) {
+                        match nd {
                             zero => { done = 1; }
                             neg => { done = 1; }
                             pos => { unsafe { store(node + 3, nd); } node = nd; }
@@ -1404,13 +1430,13 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
                 }
             }
             zero => {
-                match sign(kc) {
+                match kc {
                     zero => {
                         // FIX: on duplicate key, free old value before overwriting.
                         var old_val: t40 = 0;
                         unsafe { old_val = load(node + 4); }
-                        match sign(old_val) {
-                            pos => { free(old_val); }
+                        match old_val {
+                            pos => { free_raw(old_val); }
                             zero => {}
                             neg => {}
                         }
@@ -1426,10 +1452,10 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
                         unsafe { kc = load(key + ki); }
                         var eq: t40 = 0;
                         unsafe { eq = load(node + 2); }
-                        match sign(eq) {
+                        match eq {
                             zero => {
                                 var nd: t40 = tst_alloc_node(kc);
-                                match sign(nd) {
+                                match nd {
                                     zero => { done = 1; }
                                     neg => { done = 1; }
                                     pos => { unsafe { store(node + 2, nd); } node = nd; }
@@ -1452,19 +1478,19 @@ fn tst_find(root: t40, key: t40) -> t40 {
     var kc: t40 = 0;
     unsafe { kc = load(key + ki); }
 
-    while pos(node) {
+    while node > 0 {
         var nc: t40 = 0;
         unsafe { nc = load(node); }
 
-        match sign(kc - nc) {
+        match kc - nc {
             neg => { unsafe { node = load(node + 1); } }
             pos => { unsafe { node = load(node + 3); } }
             zero => {
-                match sign(kc) {
+                match kc {
                     zero => {
                         var is_term: t40 = 0;
                         unsafe { is_term = load(node + 5); }
-                        match sign(is_term) {
+                        match is_term {
                             pos => { unsafe { var v: t40 = load(node + 4); return v; } }
                             zero => { return 0; }
                             neg => { return 0; }
@@ -1492,14 +1518,14 @@ fn getenv(name: t40) -> t40 {
 fn setenv(name: t40, value: t40) -> t40 {
     heap_init();
     var name_copy: t40 = strdup(name);
-    match sign(name_copy) {
+    match name_copy {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var val_copy: t40 = strdup(value);
-            match sign(val_copy) {
-                zero => { free(name_copy); return 0; }
-                neg => { free(name_copy); return 0; }
+            match val_copy {
+                zero => { free_raw(name_copy); return 0; }
+                neg => { free_raw(name_copy); return 0; }
                 pos => {
                     // tst_insert handles freeing the old value on duplicate key.
                     tst_insert(23, name_copy, val_copy);
@@ -1519,20 +1545,20 @@ fn unsetenv(name: t40) -> t40 {
     var kc: t40 = 0;
     unsafe { kc = load(name + ki); }
 
-    while pos(node) {
+    while node > 0 {
         var nc: t40 = 0;
         unsafe { nc = load(node); }
 
-        match sign(kc - nc) {
+        match kc - nc {
             neg => { unsafe { node = load(node + 1); } }
             pos => { unsafe { node = load(node + 3); } }
             zero => {
-                match sign(kc) {
+                match kc {
                     zero => {
                         var old_val: t40 = 0;
                         unsafe { old_val = load(node + 4); }
-                        match sign(old_val) {
-                            pos => { free(old_val); }
+                        match old_val {
+                            pos => { free_raw(old_val); }
                             zero => {}
                             neg => {}
                         }
@@ -1570,15 +1596,15 @@ fn pow(base: t40, exp: t40) -> t40 {
     var result: t40 = 1;
     var e: t40 = exp;
     var b: t40 = base;
-    while pos(e) {
+    while e > 0 {
         // Extract lowest ternary digit (0, 1, or 2).
         var third: t40 = e / 3;
         var digit: t40 = e - third * 3;
         // Multiply result by b^digit at this trit position.
-        match sign(digit) {
+        match digit {
             zero => {}
             pos => {
-                match sign(digit - 1) {
+                match digit - 1 {
                     zero => { result = result * b; }
                     neg => {}
                     pos => { result = result * b * b; }   // digit == 2
@@ -1598,10 +1624,10 @@ fn clmul(a: t40, b: t40) -> t40 {
     var b_work: t40 = b;
     var trit_weight: t40 = 1;
     var j: t40 = 0;
-    while pos(40 - j) {
+    while 40 - j > 0 {
         var b_q: t40 = b_work / 3;
         var b_t: t40 = b_work - b_q * 3;
-        match sign(b_t) {
+        match b_t {
             zero => {}
             pos => { result = result + a * trit_weight; }
             neg => { result = result - a * trit_weight; }
@@ -1616,13 +1642,13 @@ fn clmul(a: t40, b: t40) -> t40 {
 fn trit_at(val: t40, pos_idx: t40) -> t40 {
     var v: t40 = val;
     var i: t40 = 0;
-    while pos(pos_idx - i) {
+    while pos_idx - i > 0 {
         v = v / 3;
         i = i + 1;
     }
     var q: t40 = v / 3;
     var r: t40 = v - q * 3;
-    match sign(r - 2) {
+    match r - 2 {
         zero => { return 0 - 1; }
         neg => { return r; }
         pos => { return r; }
@@ -1633,10 +1659,10 @@ fn popcount_trits(val: t40) -> t40 {
     var count: t40 = 0;
     var work: t40 = abs(val);
     var i: t40 = 0;
-    while pos(40 - i) {
+    while 40 - i > 0 {
         var q: t40 = work / 3;
         var r: t40 = work - q * 3;
-        match sign(r) {
+        match r {
             zero => {}
             neg => { count = count + 1; }
             pos => { count = count + 1; }
@@ -1654,15 +1680,15 @@ fn popcount_trits(val: t40) -> t40 {
 // =============================================================================
 
 fn vec_new() -> t40 {
-    var vec: t40 = malloc(3);
-    match sign(vec) {
+    var vec: t40 = malloc_raw(3);
+    match vec {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
-            var data: t40 = malloc(9);
-            match sign(data) {
-                zero => { free(vec); return 0; }
-                neg => { free(vec); return 0; }
+            var data: t40 = malloc_raw(9);
+            match data {
+                zero => { free_raw(vec); return 0; }
+                neg => { free_raw(vec); return 0; }
                 pos => {
                     unsafe {
                         store(vec,     data);
@@ -1705,18 +1731,18 @@ fn vec_push(vec: t40, val: t40) -> t40 {
         cap = load(vec + 2);
     }
     // Grow by factor of 3 to stay ternary-aligned.
-    match sign(cap - len - 1) {
+    match cap - len - 1 {
         neg => {
             var new_cap: t40 = cap * 3;
             var old_data: t40 = 0;
             unsafe { old_data = load(vec); }
-            var new_data: t40 = malloc(new_cap);
-            match sign(new_data) {
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
                 zero => { return 0 - 1; }
                 neg => { return 0 - 1; }
                 pos => {
                     memcpy(new_data, old_data, len);
-                    free(old_data);
+                    free_raw(old_data);
                     unsafe {
                         store(vec,     new_data);
                         store(vec + 2, new_cap);
@@ -1739,7 +1765,7 @@ fn vec_push(vec: t40, val: t40) -> t40 {
 fn vec_pop(vec: t40) -> t40 {
     var len: t40 = 0;
     unsafe { len = load(vec + 1); }
-    match sign(len) {
+    match len {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1764,18 +1790,18 @@ fn vec_sort(vec: t40) -> t40 {
         data = load(vec);
     }
     var i: t40 = 1;
-    while pos(len - i) {
+    while len - i > 0 {
         var key: t40 = 0;
         unsafe { key = load(data + i); }
         var j: t40 = i - 1;
         var shifting: t40 = 1;
-        while pos(shifting) {
-            match sign(j) {
+        while shifting > 0 {
+            match j {
                 neg => { shifting = 0; }
                 zero => {
                     var elem: t40 = 0;
                     unsafe { elem = load(data + j); }
-                    match sign(elem - key) {
+                    match elem - key {
                         pos => {
                             unsafe { store(data + j + 1, elem); }
                             j = j - 1;
@@ -1787,7 +1813,7 @@ fn vec_sort(vec: t40) -> t40 {
                 pos => {
                     var elem: t40 = 0;
                     unsafe { elem = load(data + j); }
-                    match sign(elem - key) {
+                    match elem - key {
                         pos => {
                             unsafe { store(data + j + 1, elem); }
                             j = j - 1;
@@ -1805,18 +1831,18 @@ fn vec_sort(vec: t40) -> t40 {
 }
 
 fn vec_free(vec: t40) -> t40 {
-    match sign(vec) {
+    match vec {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var data: t40 = 0;
             unsafe { data = load(vec); }
-            match sign(data) {
-                pos => { free(data); }
+            match data {
+                pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free(vec);
+            free_raw(vec);
             return 0;
         }
     }
@@ -1830,15 +1856,15 @@ fn vec_free(vec: t40) -> t40 {
 // =============================================================================
 
 fn heap_new() -> t40 {
-    var h: t40 = malloc(3);
-    match sign(h) {
+    var h: t40 = malloc_raw(3);
+    match h {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
-            var data: t40 = malloc(9);
-            match sign(data) {
-                zero => { free(h); return 0; }
-                neg => { free(h); return 0; }
+            var data: t40 = malloc_raw(9);
+            match data {
+                zero => { free_raw(h); return 0; }
+                neg => { free_raw(h); return 0; }
                 pos => {
                     unsafe {
                         store(h,     data);
@@ -1861,7 +1887,7 @@ fn heap_size(h: t40) -> t40 {
 fn heap_peek(h: t40) -> t40 {
     var sz: t40 = 0;
     unsafe { sz = load(h + 1); }
-    match sign(sz) {
+    match sz {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1881,18 +1907,18 @@ fn heap_push(h: t40, val: t40) -> t40 {
         sz  = load(h + 1);
         cap = load(h + 2);
     }
-    match sign(cap - sz - 1) {
+    match cap - sz - 1 {
         neg => {
             var new_cap: t40 = cap * 3;
             var old_data: t40 = 0;
             unsafe { old_data = load(h); }
-            var new_data: t40 = malloc(new_cap);
-            match sign(new_data) {
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
                 zero => { return 0 - 1; }
                 neg => { return 0 - 1; }
                 pos => {
                     memcpy(new_data, old_data, sz);
-                    free(old_data);
+                    free_raw(old_data);
                     unsafe {
                         store(h,     new_data);
                         store(h + 2, new_cap);
@@ -1909,8 +1935,8 @@ fn heap_push(h: t40, val: t40) -> t40 {
     var idx: t40 = sz;
     unsafe { store(h + 1, sz + 1); }
     var sifting: t40 = 1;
-    while pos(sifting) {
-        match sign(idx) {
+    while sifting > 0 {
+        match idx {
             zero => { sifting = 0; }
             neg => { sifting = 0; }
             pos => {
@@ -1921,7 +1947,7 @@ fn heap_push(h: t40, val: t40) -> t40 {
                     pval = load(data + parent);
                     ival = load(data + idx);
                 }
-                match sign(pval - ival) {
+                match pval - ival {
                     pos => {
                         unsafe {
                             store(data + parent, ival);
@@ -1947,7 +1973,7 @@ fn heap_push(h: t40, val: t40) -> t40 {
 fn heap_pop(h: t40) -> t40 {
     var sz: t40 = 0;
     unsafe { sz = load(h + 1); }
-    match sign(sz) {
+    match sz {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
@@ -1957,7 +1983,7 @@ fn heap_pop(h: t40) -> t40 {
             unsafe { top = load(data); }
             var new_sz: t40 = sz - 1;
             unsafe { store(h + 1, new_sz); }
-            match sign(new_sz) {
+            match new_sz {
                 zero => { return top; }
                 neg => { return top; }
                 pos => {
@@ -1966,7 +1992,7 @@ fn heap_pop(h: t40) -> t40 {
                     unsafe { store(data, last); }
                     var idx: t40 = 0;
                     var sifting: t40 = 1;
-                    while pos(sifting) {
+                    while sifting > 0 {
                         var c1: t40 = 3 * idx + 1;
                         var c2: t40 = 3 * idx + 2;
                         var c3: t40 = 3 * idx + 3;
@@ -1978,13 +2004,13 @@ fn heap_pop(h: t40) -> t40 {
                         // zero arm (ci == new_sz) is out of bounds — do not read.
 
                         // Compare with child 1.
-                        match sign(new_sz - c1) {
+                        match new_sz - c1 {
                             neg => {}
                             zero => {}   // FIX: out of bounds, skip
                             pos => {
                                 var cv: t40 = 0;
                                 unsafe { cv = load(data + c1); }
-                                match sign(bval - cv) {
+                                match bval - cv {
                                     pos => { best = c1; bval = cv; }
                                     zero => {}
                                     neg => {}
@@ -1992,13 +2018,13 @@ fn heap_pop(h: t40) -> t40 {
                             }
                         }
                         // Compare with child 2.
-                        match sign(new_sz - c2) {
+                        match new_sz - c2 {
                             neg => {}
                             zero => {}   // FIX: out of bounds, skip
                             pos => {
                                 var cv: t40 = 0;
                                 unsafe { cv = load(data + c2); }
-                                match sign(bval - cv) {
+                                match bval - cv {
                                     pos => { best = c2; bval = cv; }
                                     zero => {}
                                     neg => {}
@@ -2006,20 +2032,20 @@ fn heap_pop(h: t40) -> t40 {
                             }
                         }
                         // Compare with child 3.
-                        match sign(new_sz - c3) {
+                        match new_sz - c3 {
                             neg => {}
                             zero => {}   // FIX: out of bounds, skip
                             pos => {
                                 var cv: t40 = 0;
                                 unsafe { cv = load(data + c3); }
-                                match sign(bval - cv) {
+                                match bval - cv {
                                     pos => { best = c3; bval = cv; }
                                     zero => {}
                                     neg => {}
                                 }
                             }
                         }
-                        match sign(best - idx) {
+                        match best - idx {
                             zero => { sifting = 0; }
                             neg => { sifting = 0; }
                             pos => {
@@ -2041,18 +2067,18 @@ fn heap_pop(h: t40) -> t40 {
 }
 
 fn heap_free_struct(h: t40) -> t40 {
-    match sign(h) {
+    match h {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var data: t40 = 0;
             unsafe { data = load(h); }
-            match sign(data) {
-                pos => { free(data); }
+            match data {
+                pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free(h);
+            free_raw(h);
             return 0;
         }
     }
@@ -2068,15 +2094,15 @@ fn heap_free_struct(h: t40) -> t40 {
 
 // Create a ring buffer with the given capacity (recommend 27 or 81).
 fn ring_new(capacity: t40) -> t40 {
-    var rb: t40 = malloc(4);
-    match sign(rb) {
+    var rb: t40 = malloc_raw(4);
+    match rb {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
-            var data: t40 = malloc(capacity);
-            match sign(data) {
-                zero => { free(rb); return 0; }
-                neg => { free(rb); return 0; }
+            var data: t40 = malloc_raw(capacity);
+            match data {
+                zero => { free_raw(rb); return 0; }
+                neg => { free_raw(rb); return 0; }
                 pos => {
                     unsafe {
                         store(rb,     data);
@@ -2099,7 +2125,7 @@ fn ring_empty(rb: t40) -> t40 {
         rpos = load(rb + 2);
         wpos = load(rb + 3);
     }
-    match sign(rpos - wpos) {
+    match rpos - wpos {
         zero => { return 1; }
         neg => { return 0; }
         pos => { return 0; }
@@ -2117,12 +2143,12 @@ fn ring_full(rb: t40) -> t40 {
         wpos = load(rb + 3);
     }
     var next_w: t40 = wpos + 1;
-    match sign(next_w - cap) {
+    match next_w - cap {
         neg => {}
         zero => { next_w = 0; }
         pos => { next_w = 0; }
     }
-    match sign(next_w - rpos) {
+    match next_w - rpos {
         zero => { return 1; }
         neg => { return 0; }
         pos => { return 0; }
@@ -2132,7 +2158,7 @@ fn ring_full(rb: t40) -> t40 {
 // Write one word into the ring buffer. Returns 1 on success, 0 if full.
 fn ring_write(rb: t40, val: t40) -> t40 {
     var is_full: t40 = ring_full(rb);
-    match sign(is_full) {
+    match is_full {
         pos => { return 0; }
         zero => {}
         neg => {}
@@ -2147,7 +2173,7 @@ fn ring_write(rb: t40, val: t40) -> t40 {
     }
     unsafe { store(data + wpos, val); }
     var next_w: t40 = wpos + 1;
-    match sign(next_w - cap) {
+    match next_w - cap {
         neg => {}
         zero => { next_w = 0; }
         pos => { next_w = 0; }
@@ -2160,7 +2186,7 @@ fn ring_write(rb: t40, val: t40) -> t40 {
 // Caller should check ring_empty first if 0 is a valid data value.
 fn ring_read(rb: t40) -> t40 {
     var is_empty: t40 = ring_empty(rb);
-    match sign(is_empty) {
+    match is_empty {
         pos => { return 0; }
         zero => {}
         neg => {}
@@ -2176,7 +2202,7 @@ fn ring_read(rb: t40) -> t40 {
     var val: t40 = 0;
     unsafe { val = load(data + rpos); }
     var next_r: t40 = rpos + 1;
-    match sign(next_r - cap) {
+    match next_r - cap {
         neg => {}
         zero => { next_r = 0; }
         pos => { next_r = 0; }
@@ -2195,7 +2221,7 @@ fn ring_len(rb: t40) -> t40 {
         rpos = load(rb + 2);
         wpos = load(rb + 3);
     }
-    match sign(wpos - rpos) {
+    match wpos - rpos {
         neg => { return wpos - rpos + cap; }
         zero => { return 0; }
         pos => { return wpos - rpos; }
@@ -2203,18 +2229,18 @@ fn ring_len(rb: t40) -> t40 {
 }
 
 fn ring_free(rb: t40) -> t40 {
-    match sign(rb) {
+    match rb {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
             var data: t40 = 0;
             unsafe { data = load(rb); }
-            match sign(data) {
-                pos => { free(data); }
+            match data {
+                pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free(rb);
+            free_raw(rb);
             return 0;
         }
     }

@@ -942,6 +942,7 @@ static constexpr int SYSCALL_BRK              = 18;
 static constexpr int SYSCALL_SBRK             = 19;
 static constexpr int SYSCALL_FORK             = 20;
 static constexpr int SYSCALL_EXEC             = 21;
+static constexpr int SYSCALL_WRITE_CHAR       = 22;
 
 static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;

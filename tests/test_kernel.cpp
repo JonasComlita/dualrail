@@ -269,6 +269,7 @@ void testOsSubstrate() {
     };
 
     {
+        std::cerr << "DEBUG: OS sub-test 1" << std::endl;
         VMState vm(64, 64);
         auto assembled = assemble(R"(
             mov r1, handler
@@ -290,6 +291,7 @@ void testOsSubstrate() {
         )");
         expect(assembled.success, "routed div-zero program assembles");
         if (assembled.success) {
+            std::cerr << "DEBUG: success=" << assembled.success << " count(fault_div)=" << assembled.labels.count("fault_div") << std::endl;
             expect(loadAndReset(vm, assembled), "routed div-zero program loads");
             auto result = sandbox::vm::run(vm, 64);
             expect(result.halted(), "routed div-zero handler returns to halt");
@@ -367,6 +369,7 @@ void testOsSubstrate() {
     }
 
     {
+        std::cerr << "DEBUG: OS sub-test 5" << std::endl;
         VMState vm(64, 64);
         auto assembled = assemble(R"(
             mov r1, handler
@@ -515,6 +518,7 @@ void testOsSubstrate() {
     }
 
     {
+        std::cerr << "DEBUG: OS sub-test 10" << std::endl;
         VMState vm(64, 64);
         auto assembled = assemble(R"(
             nop
@@ -662,6 +666,7 @@ void testOsSubstrate() {
     }
 
     {
+        std::cerr << "DEBUG: OS sub-test 15" << std::endl;
         VMState vm(96, 96);
         auto user = assembleOrThrow(R"(
             mov r1, 42
@@ -959,11 +964,17 @@ void testOsSubstrate() {
     }
 
     {
+        std::cerr << "DEBUG: OS sub-test 15 - bringup" << std::endl;
         const std::string source = readTextFile("OS3/minimal_kernel_bringup.tasm");
         expect(!source.empty(), "minimal kernel bring-up artifact is readable");
         auto assembled = assemble(source);
         expect(assembled.success, "minimal kernel bring-up artifact assembles");
         if (assembled.success) {
+            std::cerr << "DEBUG: executable_headers keys:";
+            for (auto const& [key, val] : assembled.executable_headers) std::cerr << " " << key;
+            std::cerr << "\nDEBUG: data_labels keys:";
+            for (auto const& [key, val] : assembled.data_labels) std::cerr << " " << key;
+            std::cerr << std::endl;
             expect(assembled.labels.count("boot") && assembled.labels.at("boot") == 0,
                    "minimal kernel boots at PC zero");
             expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * MMU_PAGE_WORDS,
@@ -1110,6 +1121,7 @@ void testOsSubstrate() {
                    loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining") + 4) <= PROC_DEFAULT_QUANTUM,
                    "minimal kernel tracks per-process quantum remaining");
 
+            std::cerr << "DEBUG: OS sub-test 15 - spawn exhaustion" << std::endl;
             VMState exhaustedVm(2048, 768);
             expect(loadAndReset(exhaustedVm, assembled), "spawn exhaustion image loads");
             exhaustedVm.enqueueConsoleAscii("aa x");
@@ -1121,6 +1133,7 @@ void testOsSubstrate() {
             expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
                    "failed spawn is not counted as a created process");
 
+            std::cerr << "DEBUG: OS sub-test 15 - syscall probe" << std::endl;
             VMState osVm(2048, 768);
             expect(loadAndReset(osVm, assembled), "Trit OS syscall probe image loads");
             osVm.enqueueConsoleAscii("p x");
@@ -1169,6 +1182,7 @@ void testOsSubstrate() {
                    loadPhysLong(osVm, assembled.data_labels.at("os_sbrk_count")) == 1,
                    "kernel accounts Trit OS routed file and heap syscalls");
 
+            std::cerr << "DEBUG: OS sub-test 15 - bad path" << std::endl;
             VMState badPathVm(2048, 768);
             expect(loadAndReset(badPathVm, assembled), "Trit OS bad path image loads");
             badPathVm.enqueueConsoleAscii("n x");
@@ -1182,6 +1196,7 @@ void testOsSubstrate() {
             expect(loadPhysLong(badPathVm, assembled.data_labels.at("os_open_count")) == 0,
                    "failed open is not counted as an opened file");
 
+            std::cerr << "DEBUG: OS sub-test 15 - bad ptr" << std::endl;
             VMState badPtrVm(2048, 768);
             expect(loadAndReset(badPtrVm, assembled), "Trit OS bad pointer image loads");
             badPtrVm.enqueueConsoleAscii("v x");
@@ -1193,6 +1208,7 @@ void testOsSubstrate() {
                    loadPhysLong(badPtrVm, shellBase + 26) == 5,
                    "open syscall rejects invalid user pointer span with T1 error detail");
 
+            std::cerr << "DEBUG: OS sub-test 15 - fork" << std::endl;
             VMState forkVm(2048, 768);
             expect(loadAndReset(forkVm, assembled), "Trit OS fork image loads");
             forkVm.enqueueConsoleAscii("f");
@@ -1211,6 +1227,7 @@ void testOsSubstrate() {
                    loadPhysLong(forkVm, assembled.data_labels.at("spare_data") + 25) == 0,
                    "fork child sees zero payload in copied user memory");
 
+            std::cerr << "DEBUG: OS sub-test 15 - exec" << std::endl;
             VMState execVm(2048, 768);
             expect(loadAndReset(execVm, assembled), "Trit OS exec image loads");
             execVm.enqueueConsoleAscii("e");

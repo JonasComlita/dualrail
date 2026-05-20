@@ -1,0 +1,107 @@
+// Phase B native frontend token stream.
+// Layout: a token stream is a ulib vec containing triples:
+//   kind, source_start, source_length_or_value
+
+const TCL_TK_EOF: t40 = 0;
+const TCL_TK_IDENT: t40 = 1;
+const TCL_TK_NUMBER: t40 = 2;
+const TCL_TK_ERROR: t40 = 3;
+
+const TCL_TK_FN: t40 = 10;
+const TCL_TK_LET: t40 = 11;
+const TCL_TK_VAR: t40 = 12;
+const TCL_TK_RETURN: t40 = 13;
+const TCL_TK_MATCH: t40 = 14;
+const TCL_TK_WHILE: t40 = 15;
+const TCL_TK_IF: t40 = 16;
+const TCL_TK_ELSE: t40 = 17;
+const TCL_TK_TRIT: t40 = 18;
+const TCL_TK_REGION: t40 = 19;
+const TCL_TK_OWN: t40 = 20;
+const TCL_TK_BORROW: t40 = 21;
+const TCL_TK_BORROW_MUT: t40 = 22;
+const TCL_TK_SHARED: t40 = 23;
+const TCL_TK_PTR: t40 = 24;
+const TCL_TK_NULL: t40 = 25;
+const TCL_TK_UNKNOWN: t40 = 26;
+const TCL_TK_VALID: t40 = 27;
+const TCL_TK_TYPE: t40 = 28;
+const TCL_TK_STRUCT: t40 = 29;
+const TCL_TK_ENUM: t40 = 30;
+const TCL_TK_WHERE: t40 = 31;
+const TCL_TK_UNSAFE: t40 = 32;
+const TCL_TK_IMPORT: t40 = 33;
+const TCL_TK_PUB: t40 = 34;
+const TCL_TK_AS: t40 = 35;
+const TCL_TK_IN: t40 = 36;
+const TCL_TK_TRUE: t40 = 37;
+const TCL_TK_FALSE: t40 = 38;
+const TCL_TK_BREAK: t40 = 39;
+const TCL_TK_CONTINUE: t40 = 40;
+
+const TCL_TK_LPAREN: t40 = 100;
+const TCL_TK_RPAREN: t40 = 101;
+const TCL_TK_LBRACE: t40 = 102;
+const TCL_TK_RBRACE: t40 = 103;
+const TCL_TK_LBRACKET: t40 = 104;
+const TCL_TK_RBRACKET: t40 = 105;
+const TCL_TK_COMMA: t40 = 106;
+const TCL_TK_COLON: t40 = 107;
+const TCL_TK_SEMICOLON: t40 = 108;
+const TCL_TK_DOT: t40 = 109;
+const TCL_TK_PLUS: t40 = 110;
+const TCL_TK_MINUS: t40 = 111;
+const TCL_TK_STAR: t40 = 112;
+const TCL_TK_SLASH: t40 = 113;
+const TCL_TK_AMP: t40 = 114;
+const TCL_TK_EQUAL: t40 = 115;
+const TCL_TK_BANG: t40 = 116;
+const TCL_TK_LESS: t40 = 117;
+const TCL_TK_GREATER: t40 = 118;
+const TCL_TK_ARROW: t40 = 119;
+const TCL_TK_FAT_ARROW: t40 = 120;
+const TCL_TK_EQUAL_EQUAL: t40 = 121;
+const TCL_TK_BANG_EQUAL: t40 = 122;
+const TCL_TK_LESS_EQUAL: t40 = 123;
+const TCL_TK_GREATER_EQUAL: t40 = 124;
+
+const TCL_TOKEN_WORDS: t40 = 3;
+
+fn tcl_token_stream_new() -> t40 {
+    return vec_new();
+}
+
+fn tcl_token_emit(tokens: t40, kind: t40, start: t40, length_or_value: t40) -> t40 {
+    var status: t40 = 0;
+    status = status + vec_push(tokens, kind);
+    status = status + vec_push(tokens, start);
+    status = status + vec_push(tokens, length_or_value);
+    return status;
+}
+
+fn tcl_token_count(tokens: t40) -> t40 {
+    return vec_len(tokens) / TCL_TOKEN_WORDS;
+}
+
+fn tcl_token_base(index: t40) -> t40 {
+    return index * TCL_TOKEN_WORDS;
+}
+
+fn tcl_token_kind(tokens: t40, index: t40) -> t40 {
+    var base: t40 = tcl_token_base(index);
+    return vec_get(tokens, base);
+}
+
+fn tcl_token_start(tokens: t40, index: t40) -> t40 {
+    var base: t40 = tcl_token_base(index);
+    return vec_get(tokens, base + 1);
+}
+
+fn tcl_token_len(tokens: t40, index: t40) -> t40 {
+    var base: t40 = tcl_token_base(index);
+    return vec_get(tokens, base + 2);
+}
+
+fn tcl_token_free(tokens: t40) -> t40 {
+    return vec_free(tokens);
+}

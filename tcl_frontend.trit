@@ -1,0 +1,26 @@
+// Phase B native TCL frontend facade.
+// `tritc.trit` is reserved for the eventual native compiler driver.
+
+fn tcl_frontend_lex(src: t40, len: t40) -> t40 {
+    return tcl_lex(src, len);
+}
+
+fn tcl_frontend_token_count(tokens: t40) -> t40 {
+    return tcl_token_count(tokens);
+}
+
+fn tcl_frontend_token_kind(tokens: t40, index: t40) -> t40 {
+    return tcl_token_kind(tokens, index);
+}
+
+fn tcl_frontend_token_start(tokens: t40, index: t40) -> t40 {
+    return tcl_token_start(tokens, index);
+}
+
+fn tcl_frontend_token_len(tokens: t40, index: t40) -> t40 {
+    return tcl_token_len(tokens, index);
+}
+
+fn tcl_frontend_free(tokens: t40) -> t40 {
+    return tcl_token_free(tokens);
+}

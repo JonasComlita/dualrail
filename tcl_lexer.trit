@@ -1,0 +1,644 @@
+// Phase B native TCL lexer.
+
+fn tcl_char_at(src: t40, index: t40) -> t40 {
+    var c: t40 = 0;
+    unsafe { c = load(src + index); }
+    return c;
+}
+
+fn tcl_peek(src: t40, len: t40, index: t40) -> t40 {
+    match len - index {
+        pos => { return tcl_char_at(src, index); }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_in_range(c: t40, lo: t40, hi: t40) -> t40 {
+    match c - lo {
+        neg => { return 0; }
+        zero => {}
+        pos => {}
+    }
+    match hi - c {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => { return 1; }
+    }
+}
+
+fn tcl_char_eq_at(src: t40, index: t40, want: t40) -> t40 {
+    var c: t40 = tcl_char_at(src, index);
+    match c - want {
+        zero => { return 1; }
+        neg => { return 0; }
+        pos => { return 0; }
+    }
+}
+
+fn tcl_is_digit(c: t40) -> t40 {
+    return tcl_in_range(c, 48, 57);
+}
+
+fn tcl_is_alpha(c: t40) -> t40 {
+    match tcl_in_range(c, 65, 90) {
+        pos => { return 1; }
+        zero => {}
+        neg => {}
+    }
+    return tcl_in_range(c, 97, 122);
+}
+
+fn tcl_is_ident_start(c: t40) -> t40 {
+    match c - 95 {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    return tcl_is_alpha(c);
+}
+
+fn tcl_is_ident_continue(c: t40) -> t40 {
+    match tcl_is_ident_start(c) {
+        pos => { return 1; }
+        zero => {}
+        neg => {}
+    }
+    return tcl_is_digit(c);
+}
+
+fn tcl_is_space(c: t40) -> t40 {
+    match c - 32 {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    match c - 9 {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    match c - 10 {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    match c - 13 {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    return 0;
+}
+
+fn tcl_kw2(src: t40, start: t40, c0: t40, c1: t40, kind: t40) -> t40 {
+    match tcl_char_eq_at(src, start, c0) {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_char_eq_at(src, start + 1, c1) {
+        pos => { return kind; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_kw3(src: t40, start: t40, c0: t40, c1: t40, c2: t40, kind: t40) -> t40 {
+    match tcl_kw2(src, start, c0, c1, kind) {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_char_eq_at(src, start + 2, c2) {
+        pos => { return kind; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_chars4(src: t40, start: t40, c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    match tcl_char_eq_at(src, start, c0) {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_char_eq_at(src, start + 1, c1) {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_char_eq_at(src, start + 2, c2) {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_char_eq_at(src, start + 3, c3) {
+        pos => { return 1; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_keyword_kind(src: t40, start: t40, len: t40) -> t40 {
+    var kind: t40 = 0;
+    match len - 2 {
+        zero => {
+            kind = tcl_kw2(src, start, 102, 110, TCL_TK_FN);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw2(src, start, 105, 102, TCL_TK_IF);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw2(src, start, 97, 115, TCL_TK_AS);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw2(src, start, 105, 110, TCL_TK_IN);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 3 {
+        zero => {
+            kind = tcl_kw3(src, start, 108, 101, 116, TCL_TK_LET);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw3(src, start, 118, 97, 114, TCL_TK_VAR);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw3(src, start, 111, 119, 110, TCL_TK_OWN);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw3(src, start, 112, 116, 114, TCL_TK_PTR);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+            kind = tcl_kw3(src, start, 112, 117, 98, TCL_TK_PUB);
+            match kind { pos => { return kind; } zero => {} neg => {} }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 4 {
+        zero => {
+            kind = tcl_chars4(src, start, 101, 108, 115, 101);
+            match kind { pos => { return TCL_TK_ELSE; } zero => {} neg => {} }
+            kind = tcl_chars4(src, start, 116, 114, 105, 116);
+            match kind { pos => { return TCL_TK_TRIT; } zero => {} neg => {} }
+            kind = tcl_chars4(src, start, 110, 117, 108, 108);
+            match kind { pos => { return TCL_TK_NULL; } zero => {} neg => {} }
+            kind = tcl_chars4(src, start, 116, 121, 112, 101);
+            match kind { pos => { return TCL_TK_TYPE; } zero => {} neg => {} }
+            kind = tcl_chars4(src, start, 101, 110, 117, 109);
+            match kind { pos => { return TCL_TK_ENUM; } zero => {} neg => {} }
+            kind = tcl_chars4(src, start, 116, 114, 117, 101);
+            match kind { pos => { return TCL_TK_TRUE; } zero => {} neg => {} }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 5 {
+        zero => {
+            kind = tcl_chars4(src, start, 119, 104, 105, 108);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 101) { pos => { return TCL_TK_WHILE; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 109, 97, 116, 99);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 104) { pos => { return TCL_TK_MATCH; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 118, 97, 108, 105);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 100) { pos => { return TCL_TK_VALID; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 119, 104, 101, 114);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 101) { pos => { return TCL_TK_WHERE; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 102, 97, 108, 115);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 101) { pos => { return TCL_TK_FALSE; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 98, 114, 101, 97);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 107) { pos => { return TCL_TK_BREAK; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 6 {
+        zero => {
+            kind = tcl_chars4(src, start, 114, 101, 116, 117);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 114) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 110) { pos => { return TCL_TK_RETURN; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 114, 101, 103, 105);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 111) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 110) { pos => { return TCL_TK_REGION; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 98, 111, 114, 114);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 111) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 119) { pos => { return TCL_TK_BORROW; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 115, 104, 97, 114);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 101) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 100) { pos => { return TCL_TK_SHARED; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 115, 116, 114, 117);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 99) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 116) { pos => { return TCL_TK_STRUCT; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 117, 110, 115, 97);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 102) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 101) { pos => { return TCL_TK_UNSAFE; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+            kind = tcl_chars4(src, start, 105, 109, 112, 111);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 114) {
+                        pos => { match tcl_char_eq_at(src, start + 5, 116) { pos => { return TCL_TK_IMPORT; } zero => {} neg => {} } }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 7 {
+        zero => {
+            kind = tcl_chars4(src, start, 117, 110, 107, 110);
+            match kind {
+                pos => {
+                    kind = tcl_chars4(src, start + 3, 110, 111, 119, 110);
+                    match kind { pos => { return TCL_TK_UNKNOWN; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 8 {
+        zero => {
+            kind = tcl_chars4(src, start, 99, 111, 110, 116);
+            match kind {
+                pos => {
+                    kind = tcl_chars4(src, start + 4, 105, 110, 117, 101);
+                    match kind { pos => { return TCL_TK_CONTINUE; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match len - 10 {
+        zero => {
+            kind = tcl_chars4(src, start, 98, 111, 114, 114);
+            match kind {
+                pos => {
+                    kind = tcl_chars4(src, start + 4, 111, 119, 95, 109);
+                    match kind {
+                        pos => {
+                            match tcl_char_eq_at(src, start + 8, 117) {
+                                pos => { match tcl_char_eq_at(src, start + 9, 116) { pos => { return TCL_TK_BORROW_MUT; } zero => {} neg => {} } }
+                                zero => {}
+                                neg => {}
+                            }
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    return TCL_TK_IDENT;
+}
+
+fn tcl_two_char_kind(c: t40, n: t40) -> t40 {
+    match c - 45 {
+        zero => {
+            match n - 62 {
+                zero => { return TCL_TK_ARROW; }
+                neg => {}
+                pos => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match c - 61 {
+        zero => {
+            match n - 62 {
+                zero => { return TCL_TK_FAT_ARROW; }
+                neg => {}
+                pos => {}
+            }
+            match n - 61 {
+                zero => { return TCL_TK_EQUAL_EQUAL; }
+                neg => {}
+                pos => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match c - 33 {
+        zero => {
+            match n - 61 {
+                zero => { return TCL_TK_BANG_EQUAL; }
+                neg => {}
+                pos => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match c - 60 {
+        zero => {
+            match n - 61 {
+                zero => { return TCL_TK_LESS_EQUAL; }
+                neg => {}
+                pos => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    match c - 62 {
+        zero => {
+            match n - 61 {
+                zero => { return TCL_TK_GREATER_EQUAL; }
+                neg => {}
+                pos => {}
+            }
+        }
+        neg => {}
+        pos => {}
+    }
+    return 0;
+}
+
+fn tcl_one_char_kind(c: t40) -> t40 {
+    match c - 40 { zero => { return TCL_TK_LPAREN; } neg => {} pos => {} }
+    match c - 41 { zero => { return TCL_TK_RPAREN; } neg => {} pos => {} }
+    match c - 123 { zero => { return TCL_TK_LBRACE; } neg => {} pos => {} }
+    match c - 125 { zero => { return TCL_TK_RBRACE; } neg => {} pos => {} }
+    match c - 91 { zero => { return TCL_TK_LBRACKET; } neg => {} pos => {} }
+    match c - 93 { zero => { return TCL_TK_RBRACKET; } neg => {} pos => {} }
+    match c - 44 { zero => { return TCL_TK_COMMA; } neg => {} pos => {} }
+    match c - 58 { zero => { return TCL_TK_COLON; } neg => {} pos => {} }
+    match c - 59 { zero => { return TCL_TK_SEMICOLON; } neg => {} pos => {} }
+    match c - 46 { zero => { return TCL_TK_DOT; } neg => {} pos => {} }
+    match c - 43 { zero => { return TCL_TK_PLUS; } neg => {} pos => {} }
+    match c - 45 { zero => { return TCL_TK_MINUS; } neg => {} pos => {} }
+    match c - 42 { zero => { return TCL_TK_STAR; } neg => {} pos => {} }
+    match c - 47 { zero => { return TCL_TK_SLASH; } neg => {} pos => {} }
+    match c - 38 { zero => { return TCL_TK_AMP; } neg => {} pos => {} }
+    match c - 61 { zero => { return TCL_TK_EQUAL; } neg => {} pos => {} }
+    match c - 33 { zero => { return TCL_TK_BANG; } neg => {} pos => {} }
+    match c - 60 { zero => { return TCL_TK_LESS; } neg => {} pos => {} }
+    match c - 62 { zero => { return TCL_TK_GREATER; } neg => {} pos => {} }
+    return 0;
+}
+
+fn tcl_scan_line_comment(src: t40, len: t40, index: t40) -> t40 {
+    var i: t40 = index;
+    var scanning: t40 = 1;
+    while scanning > 0 {
+        match len - i {
+            pos => {
+                var c: t40 = tcl_char_at(src, i);
+                match c - 10 {
+                    zero => { scanning = 0; }
+                    neg => { i = i + 1; }
+                    pos => { i = i + 1; }
+                }
+            }
+            zero => { scanning = 0; }
+            neg => { scanning = 0; }
+        }
+    }
+    return i;
+}
+
+fn tcl_lex_identifier(src: t40, len: t40, tokens: t40, start: t40) -> t40 {
+    var i: t40 = start + 1;
+    var scanning: t40 = 1;
+    while scanning > 0 {
+        match len - i {
+            pos => {
+                var c: t40 = tcl_char_at(src, i);
+                match tcl_is_ident_continue(c) {
+                    pos => { i = i + 1; }
+                    zero => { scanning = 0; }
+                    neg => { scanning = 0; }
+                }
+            }
+            zero => { scanning = 0; }
+            neg => { scanning = 0; }
+        }
+    }
+    var text_len: t40 = i - start;
+    var kind: t40 = tcl_keyword_kind(src, start, text_len);
+    tcl_token_emit(tokens, kind, start, text_len);
+    return i;
+}
+
+fn tcl_lex_number(src: t40, len: t40, tokens: t40, start: t40) -> t40 {
+    var i: t40 = start + 1;
+    var scanning: t40 = 1;
+    while scanning > 0 {
+        match len - i {
+            pos => {
+                var c: t40 = tcl_char_at(src, i);
+                match tcl_is_ident_continue(c) {
+                    pos => { i = i + 1; }
+                    zero => { scanning = 0; }
+                    neg => { scanning = 0; }
+                }
+            }
+            zero => { scanning = 0; }
+            neg => { scanning = 0; }
+        }
+    }
+    tcl_token_emit(tokens, TCL_TK_NUMBER, start, i - start);
+    return i;
+}
+
+fn tcl_lex(src: t40, len: t40) -> t40 {
+    var tokens: t40 = tcl_token_stream_new();
+    var i: t40 = 0;
+    while len - i > 0 {
+        var c: t40 = tcl_char_at(src, i);
+        var handled: t40 = 0;
+
+        match tcl_is_space(c) {
+            pos => { i = i + 1; handled = 1; }
+            zero => {}
+            neg => {}
+        }
+
+        match handled {
+            zero => {
+                match c - 47 {
+                    zero => {
+                        var n: t40 = tcl_peek(src, len, i + 1);
+                        match n - 47 {
+                            zero => { i = tcl_scan_line_comment(src, len, i + 2); handled = 1; }
+                            neg => {}
+                            pos => {}
+                        }
+                    }
+                    neg => {}
+                    pos => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+
+        match handled {
+            zero => {
+                match tcl_is_ident_start(c) {
+                    pos => { i = tcl_lex_identifier(src, len, tokens, i); handled = 1; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+
+        match handled {
+            zero => {
+                match tcl_is_digit(c) {
+                    pos => { i = tcl_lex_number(src, len, tokens, i); handled = 1; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+
+        match handled {
+            zero => {
+                var next: t40 = tcl_peek(src, len, i + 1);
+                var kind: t40 = tcl_two_char_kind(c, next);
+                match kind {
+                    pos => {
+                        tcl_token_emit(tokens, kind, i, 2);
+                        i = i + 2;
+                        handled = 1;
+                    }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+
+        match handled {
+            zero => {
+                var one: t40 = tcl_one_char_kind(c);
+                match one {
+                    pos => {
+                        tcl_token_emit(tokens, one, i, 1);
+                        i = i + 1;
+                    }
+                    zero => {
+                        tcl_token_emit(tokens, TCL_TK_ERROR, i, 1);
+                        i = i + 1;
+                    }
+                    neg => {
+                        tcl_token_emit(tokens, TCL_TK_ERROR, i, 1);
+                        i = i + 1;
+                    }
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+    }
+    tcl_token_emit(tokens, TCL_TK_EOF, len, 0);
+    return tokens;
+}

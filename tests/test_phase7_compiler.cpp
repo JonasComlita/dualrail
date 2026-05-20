@@ -44,7 +44,7 @@ void testCompileAndRunMatchProgram() {
     const std::string src = R"(
         fn main() -> t40 {
           let x = 3;
-          match sign(x) {
+          match x {
             neg => { return -1; }
             zero => { return 0; }
             pos => { return x + 4; }
@@ -53,6 +53,12 @@ void testCompileAndRunMatchProgram() {
     )";
 
     CompileResult compiled = compileSource("phase7_match.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS:" << std::endl;
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << std::endl;
+        }
+    }
     expect(compiled.success, "match source compiles");
     expect(compiled.ssa_module.functions.size() == 1, "compile result includes SSA function");
     expect(contains(compiled.assembly, "brn"), "match lowers negative branch");
@@ -117,7 +123,7 @@ void testFunctionCallAndWhileLoop() {
 
         fn main() -> t40 {
           var i: t40 = 0;
-          while pos(3 - i) {
+          while (3 - i > 0) {
             i = inc(i);
           }
           return i;
@@ -125,6 +131,12 @@ void testFunctionCallAndWhileLoop() {
     )";
 
     CompileResult compiled = compileSource("phase7_call_loop.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR CALL_LOOP:" << std::endl;
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << std::endl;
+        }
+    }
     expect(compiled.success, "function call and while source compiles");
     expect(contains(compiled.assembly, "call inc"), "direct function call lowers to CALL");
     expect(contains(compiled.assembly, "brp"), "while pos lowers to positive branch");
@@ -174,7 +186,7 @@ void testTypeDiagnostics() {
         const std::string src = R"(
             fn main() -> t40 {
               let x = 0;
-              match sign(x) {
+              match x {
                 zero => { return 0; }
                 pos => { return 1; }
               }
@@ -473,9 +485,516 @@ void testOptimizerAndGraphColoringDetails() {
     expect(coalesced.coalesced_moves >= 1, "allocator coalesces non-interfering moves");
 }
 
+void testConcurrencyFeatures() {
+    std::cout << "[9] Concurrency features (shared, atomic_load, atomic_store)\n";
+    using namespace sandbox::compiler;
+
+    // Test 1: Successful compilation and execution of a valid atomic count increment
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                let counter: shared<t40, ACQ_REL> = shared_alloc(5);
+                let val: t40 = atomic_load(counter, ACQ_REL);
+                atomic_store(counter, val + 1, ACQ_REL);
+                let val2: t40 = atomic_load(counter, ACQ_REL);
+                return val2;
+            }
+        )";
+
+        CompileResult compiled = compileSource("phase7_concurrency_ok.trit", src);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS:" << std::endl;
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << std::endl;
+            }
+        }
+        expect(compiled.success, "compiling atomic increment program succeeds");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "linked concurrency executable assembles");
+
+        sandbox::vm::VMState vm(256, 4096);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "linked image loads");
+            const auto result = sandbox::vm::run(vm, 2000);
+            if (!result.halted() || regLong(vm, 13) != 6) {
+                std::cout << "VM execution failed! Halted: " << result.halted() 
+                          << ", Status: " << static_cast<int>(result.status)
+                          << ", r13: " << regLong(vm, 13) << "\n";
+                std::cout << "Trap reg: " << sandbox::vm::ops::toLong(vm.trap_reg) << "\n";
+                std::cout << "Trap cause CSR: " << vm.cause << "\n";
+                std::cout << "PC at trap: " << vm.pc << "\n";
+                std::cout << "Assembled instructions:\n";
+                for (size_t i = 0; i < linked.assembled.program.size(); ++i) {
+                    auto iw = sandbox::isa::InstructionWord::decode(linked.assembled.program[i]);
+                    std::cout << "  PC " << i << ": opcode=" << static_cast<int>(iw.opcode)
+                              << " (" << sandbox::isa::opcodeToString(iw.opcode) << ")"
+                              << ", rd=" << static_cast<int>(iw.rd)
+                              << ", rs1=" << static_cast<int>(iw.rs1)
+                              << ", rs2=" << static_cast<int>(iw.rs2)
+                              << ", rs3=" << static_cast<int>(iw.rs3)
+                              << ", imm=" << iw.imm
+                              << ", offset=" << iw.offset << "\n";
+                }
+                if (vm.pc >= 0 && vm.pc < (int)linked.assembled.program.size()) {
+                    auto iw = sandbox::isa::InstructionWord::decode(linked.assembled.program[vm.pc]);
+                    std::cout << "Instruction at PC: opcode=" << static_cast<int>(iw.opcode) 
+                              << ", fmt=" << static_cast<int>(iw.fmt) 
+                              << ", rd=" << static_cast<int>(iw.rd)
+                              << ", rs1=" << static_cast<int>(iw.rs1)
+                              << ", rs2=" << static_cast<int>(iw.rs2)
+                              << ", rs3=" << static_cast<int>(iw.rs3) << "\n";
+                }
+                std::cout << "Registers:\n";
+                for (int r = 0; r < 27; ++r) {
+                    auto val = vm.regfile.read(r);
+                    std::cout << "  r" << r << ": val=" << sandbox::vm::ops::toLong(val) 
+                              << ", mode=" << static_cast<int>(val.mode) << "\n";
+                }
+                std::cout << "Generated assembly:\n" << compiled.assembly << "\n";
+            }
+            expect(result.halted(), "linked image halts successfully");
+            expect(regLong(vm, 13) == 6, "atomic increment returned correct value");
+        }
+    }
+
+    // Test 2: Type checking diagnosis of order mismatch (weaker order passed)
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                let counter: shared<t40, SEQ_CST> = shared_alloc(5);
+                let val: t40 = atomic_load(counter, ACQ_REL);
+                return val;
+            }
+        )";
+
+        CompileResult compiled = compileSource("phase7_concurrency_err.trit", src);
+        expect(!compiled.success, "weak memory order load is rejected");
+        expect(hasDiagnostic(compiled.diagnostics, "weaker than declared order"),
+               "diagnostics contain weaker order message");
+    }
+}
+
+void testSysWriteChar() {
+    std::cout << "[10] sys_write_char syscall 22 test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn main() -> t40 {
+            sys_write_char(65); // 'A'
+            sys_write_char(66); // 'B'
+            sys_write_char(10); // '\n'
+            return 0;
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_sys_write_char.trit", src);
+    expect(compiled.success, "sys_write_char compiles");
+    expect(contains(compiled.assembly, "syscall 22"), "sys_write_char wrapper emits syscall 22");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "sys_write_char links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "sys_write_char image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "sys_write_char image halts");
+        expect(vm.syscall_buffer == "AB\n", "console buffer has the correct characters");
+    }
+}
+
+void testMatchWildcard() {
+    std::cout << "[11] match statement wildcard arm test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn main() -> t40 {
+            let x = 0;
+            match x {
+                pos => { return 10; }
+                _ => { return 20; }
+            }
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_match_wildcard.trit", src);
+    expect(compiled.success, "match wildcard compiles");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "match wildcard links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "match wildcard image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "match wildcard image halts");
+        expect(regLong(vm, 13) == 20, "wildcard arm is executed for zero value");
+    }
+}
+
+void testConstants() {
+    std::cout << "[12] compile-time constants (const NAME: TYPE = EXPR) test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        const FILE_CONST: t40 = 5 * 2;
+        
+        fn main() -> t40 {
+            const LOCAL_CONST: t10 = FILE_CONST + 1;
+            let x: t40 = LOCAL_CONST;
+            return x;
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_constants.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR CONSTANTS:" << std::endl;
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << std::endl;
+        }
+    }
+    expect(compiled.success, "constants compile");
+    expect(contains(compiled.assembly, "11"), "constant is folded to 11");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "constants link");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "constants image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "constants image halts");
+        expect(regLong(vm, 13) == 11, "constants return correct value");
+    }
+}
+
+void testParametricWidthFunctions() {
+    std::cout << "[13] width-parametric functions (fn f<W: TritWidth>) test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn double<W: TritWidth>(x: T<W>) -> T<W> {
+            return x + x;
+        }
+
+        fn main() -> t50 {
+            let a: t40 = 5;
+            let b: t50 = 10;
+            let res_a: t40 = double(a);
+            let res_b: t50 = double(b);
+            return res_a + res_b;
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_parametric.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR PARAMETRIC:" << std::endl;
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << std::endl;
+        }
+    }
+    expect(compiled.success, "parametric functions compile");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "parametric functions link");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "parametric image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "parametric image halts");
+        expect(regLong(vm, 13) == 30, "parametric functions return correct value");
+    }
+}
+
+void testWidthParametricFunctionsPhaseA() {
+    std::cout << "[14] Phase A width-parametric monomorphization test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn accumulate<W: TritWidth>(val: T<W>) -> T<W> {
+            return val + 1;
+        }
+
+        fn main() -> t40 {
+            let a: t40 = 5;
+            let b: t20 = 10;
+            let ra: t40 = accumulate(a);
+            let rb: t20 = accumulate(b);
+            return ra + rb;
+        }
+    )";
+
+    CompileResult compiled = compileSource("phaseA_width.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR PHASE A WIDTH:\n";
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << "\n";
+        }
+    }
+    expect(compiled.success, "width-parametric accumulate compiles");
+    expect(contains(compiled.assembly, "accumulate__Wt40"),
+           "t40 width instantiation is emitted");
+    expect(contains(compiled.assembly, "accumulate__Wt20"),
+           "t20 width instantiation is emitted");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "width-parametric accumulate links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "width-parametric image loads");
+        const auto result = sandbox::vm::run(vm, 512);
+        expect(result.halted(), "width-parametric image halts");
+        expect(regLong(vm, 13) == 17, "width-parametric calls return expected value");
+    }
+}
+
+void testPointerValidationPhaseA() {
+    std::cout << "[15] Phase A pointer validation and valid-arm promotion test\n";
+    using namespace sandbox::compiler;
+
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                let p: ptr<t40, unknown> = 1;
+                return *p;
+            }
+        )";
+        CompileResult compiled = compileSource("phaseA_ptr_unknown.trit", src);
+        expect(!compiled.success, "unknown pointer dereference is rejected");
+        expect(hasDiagnostic(compiled.diagnostics, "proving it is valid"),
+               "unknown pointer diagnostic requests validity proof");
+    }
+
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                let p: ptr<t40, null> = 0;
+                return *p;
+            }
+        )";
+        CompileResult compiled = compileSource("phaseA_ptr_null.trit", src);
+        expect(!compiled.success, "null pointer dereference is rejected");
+        expect(hasDiagnostic(compiled.diagnostics, "proving it is valid"),
+               "null pointer diagnostic requests validity proof");
+    }
+
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                let p: ptr<t40, unknown> = 1;
+                match p {
+                    null => { return 0; }
+                    unknown => { return 0; }
+                    valid(q) => { return *q; }
+                }
+            }
+        )";
+        CompileResult compiled = compileSource("phaseA_ptr_valid_match.trit", src);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR VALID MATCH:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "valid(p) match arm promotes pointer to valid");
+    }
+}
+
+void testOwnershipAndAutoDropPhaseA() {
+    std::cout << "[16] Phase A ownership move tracking and auto-drop test\n";
+    using namespace sandbox::compiler;
+
+    {
+        const std::string src = R"(
+            fn alloc(words: t40) -> own<ptr<t40, unknown>> {
+                return 44;
+            }
+
+            fn free(ptr: borrow<ptr<t40, unknown>>) -> t40 {
+                return 0;
+            }
+
+            fn take(x: own<ptr<t40, unknown>>) -> t40 {
+                return 0;
+            }
+
+            fn main() -> t40 {
+                let x: own<ptr<t40, unknown>> = alloc(12);
+                take(x);
+                return x;
+            }
+        )";
+        CompileResult compiled = compileSource("phaseA_owned_move.trit", src);
+        expect(!compiled.success, "using an owned value after move is rejected");
+        expect(hasDiagnostic(compiled.diagnostics, "use of moved value 'x'"),
+               "owned move diagnostic names the moved binding");
+    }
+
+    {
+        const std::string src = R"(
+            fn alloc(words: t40) -> own<ptr<t40, unknown>> {
+                return 44;
+            }
+
+            fn free(ptr: borrow<ptr<t40, unknown>>) -> t40 {
+                return 0;
+            }
+
+            fn main() -> t40 {
+                let x: own<ptr<t40, unknown>> = alloc(12);
+                return 7;
+            }
+        )";
+        CompileResult compiled = compileSource("phaseA_auto_drop.trit", src);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR AUTO DROP:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "live owned value at return compiles");
+        expect(contains(compiled.assembly, "call free"),
+               "auto-drop inserts a call to free before returning");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "auto-drop program links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "auto-drop image loads");
+            const auto result = sandbox::vm::run(vm, 512);
+            expect(result.halted(), "auto-drop image halts");
+            expect(regLong(vm, 13) == 7, "auto-drop preserves the explicit return value");
+        }
+    }
+}
+
+void testRegisterAllocationWiringPhaseA() {
+    std::cout << "[17] Phase A codegen register allocation wiring test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn touch(x: t40) -> t40 {
+            return x + 1;
+        }
+
+        fn main() -> t40 {
+            return (((((1 + 2) + 3) + 4) + 5) + 6) + touch(10);
+        }
+    )";
+
+    CompileResult compiled = compileSource("phaseA_regalloc.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR REGALLOC:\n";
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << "\n";
+        }
+        std::cerr << compiled.assembly << "\n";
+    }
+    expect(compiled.success, "register allocation wiring source compiles");
+    bool savesCallee = false;
+    bool restoresCallee = false;
+    for (int reg = 1; reg <= 12; ++reg) {
+        savesCallee = savesCallee ||
+            contains(compiled.assembly, "store r" + std::to_string(reg) + ", sp");
+        restoresCallee = restoresCallee ||
+            contains(compiled.assembly, "load r" + std::to_string(reg) + ", sp");
+    }
+    expect(savesCallee, "callee-saved registers beyond r19-r23 are used and saved");
+    expect(restoresCallee, "callee-saved registers are restored in the epilogue");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "register allocation wiring program links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "register allocation image loads");
+        const auto result = sandbox::vm::run(vm, 512);
+        expect(result.halted(), "register allocation image halts");
+        expect(regLong(vm, 13) == 32, "register-colored function returns expected value");
+    }
+}
+
+void testUlibOwnershipRawHeapSnippetPhaseA() {
+    std::cout << "[18] Phase A ulib ownership/raw heap snippet test\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn malloc_raw(words: t40) -> t40 {
+            return 40 + words;
+        }
+
+        fn free_raw(ptr: t40) -> t40 {
+            match ptr {
+                neg => { return 0; }
+                zero => { return 0; }
+                pos => { return 0; }
+            }
+        }
+
+        fn malloc(words: t40) -> own<ptr<t40, unknown>> {
+            return malloc_raw(words);
+        }
+
+        fn alloc(words: t40) -> own<ptr<t40, unknown>> {
+            return malloc_raw(words);
+        }
+
+        fn free(ptr: borrow<ptr<t40, unknown>>) -> t40 {
+            return free_raw(ptr);
+        }
+
+        fn vec_new() -> t40 {
+            var vec: t40 = malloc_raw(3);
+            match vec {
+                neg => { return 0; }
+                zero => { return 0; }
+                pos => { return vec; }
+            }
+        }
+
+        fn vec_free(vec: t40) -> t40 {
+            match vec {
+                neg => { return 0; }
+                zero => { return 0; }
+                pos => { return free_raw(vec); }
+            }
+        }
+
+        fn main() -> t40 {
+            let owned: own<ptr<t40, unknown>> = alloc(4);
+            var vec: t40 = vec_new();
+            vec_free(vec);
+            return 3;
+        }
+    )";
+
+    CompileResult compiled = compileSource("phaseA_ulib_heap_snippet.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR ULIB HEAP SNIPPET:\n";
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << "\n";
+        }
+    }
+    expect(compiled.success, "ulib ownership/raw heap snippet compiles");
+    expect(contains(compiled.assembly, "call malloc_raw"),
+           "raw heap allocation helper is called by internal code");
+    expect(contains(compiled.assembly, "call free_raw"),
+           "raw heap free helper is called by internal code");
+    expect(contains(compiled.assembly, "call free"),
+           "owned public value is auto-dropped through public free");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "ulib ownership/raw heap snippet links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "ulib heap snippet image loads");
+        const auto result = sandbox::vm::run(vm, 512);
+        expect(result.halted(), "ulib heap snippet image halts");
+        expect(regLong(vm, 13) == 3, "ulib heap snippet preserves explicit return");
+    }
+}
+
 } // namespace
 
 int main() {
+    std::cout << std::unitbuf;
     sandbox::LongTriple::initPowTable();
 
     testCompileAndRunMatchProgram();
@@ -486,6 +1005,16 @@ int main() {
     testHMGeneralizationAndLayouts();
     testAggregatesEndToEnd();
     testOptimizerAndGraphColoringDetails();
+    testConcurrencyFeatures();
+    testSysWriteChar();
+    testMatchWildcard();
+    testConstants();
+    testParametricWidthFunctions();
+    testWidthParametricFunctionsPhaseA();
+    testPointerValidationPhaseA();
+    testOwnershipAndAutoDropPhaseA();
+    testRegisterAllocationWiringPhaseA();
+    testUlibOwnershipRawHeapSnippetPhaseA();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " Phase 7 compiler test failure(s)\n";

@@ -133,8 +133,8 @@ void printOptimizerStats(const sandbox::compiler::OptimizerStats& stats, bool us
 
 void printAllocationResult(const sandbox::compiler::AllocationResult& alloc, bool use_ansi) {
     if (use_ansi) {
-        std::cout << "\033[1;35m--- Register Allocator Telemetry (Structural IR Profile Only) ---\033[0m\n";
-        std::cout << "  \033[1;33m[NOTE: Allocator results are profiled but not yet wired back into assembly emission]\033[0m\n";
+        std::cout << "\033[1;35m--- Register Allocator Telemetry ---\033[0m\n";
+        std::cout << "  \033[1;32m[Allocator colors are wired into assembly emission]\033[0m\n";
         std::cout << "  Interference Graph Edges Resolved:   \033[1;32m" << alloc.interference_edges << "\033[0m\n";
         std::cout << "  Coalesced Copy Operations:           \033[1;32m" << alloc.coalesced_moves << "\033[0m\n";
         std::cout << "  Callee-Saved Registers Used:         \033[1;32m" << alloc.callee_saved_used.size() << "\033[0m\n";
@@ -145,8 +145,8 @@ void printAllocationResult(const sandbox::compiler::AllocationResult& alloc, boo
             std::cout << "  Active Stack Spill Slots Allocated:  \033[1;32m0\033[0m\n";
         }
     } else {
-        std::cout << "--- Register Allocator Telemetry (Structural IR Profile Only) ---\n";
-        std::cout << "  [NOTE: Allocator results are profiled but not yet wired back into assembly emission]\n";
+        std::cout << "--- Register Allocator Telemetry ---\n";
+        std::cout << "  [Allocator colors are wired into assembly emission]\n";
         std::cout << "  Interference Graph Edges Resolved:   " << alloc.interference_edges << "\n";
         std::cout << "  Coalesced Copy Operations:           " << alloc.coalesced_moves << "\n";
         std::cout << "  Callee-Saved Registers Used:         " << alloc.callee_saved_used.size() << "\n";
