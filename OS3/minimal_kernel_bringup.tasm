@@ -401,6 +401,9 @@ handle_syscall:
     mov r2, 21
     tcmp r2, r1, r2
     brz r2, syscall_exec
+    mov r2, 22
+    tcmp r2, r1, r2
+    brz r2, syscall_write_char
     mov r1, -1
     store r1, sp, 18
     jmp syscall_advance_restore
@@ -418,6 +421,15 @@ syscall_newline:
     jmp syscall_advance_restore
 syscall_clear:
     mov r1, -1
+    csrw console_ctrl, r1
+    mov r1, 0
+    store r1, sp, 18
+    jmp syscall_advance_restore
+syscall_write_char:
+    mov r1, 2
+    csrw console_ctrl, r1
+    csrw console_out, r13
+    mov r1, 3
     csrw console_ctrl, r1
     mov r1, 0
     store r1, sp, 18
@@ -1265,6 +1277,9 @@ shell_loop:
     mov r1, 98
     tcmp r2, r13, r1
     brz r2, shell_spawn_b
+    mov r1, 99
+    tcmp r2, r13, r1
+    brz r2, shell_char_probe
     mov r1, 101
     tcmp r2, r13, r1
     brz r2, shell_exec
@@ -1303,6 +1318,12 @@ shell_spawn_b:
     store r13, zero, 0
     syscall 1
     syscall 2
+    jmp shell_loop
+shell_char_probe:
+    mov r13, 75
+    syscall 22
+    mov r13, 10
+    syscall 22
     jmp shell_loop
 shell_wait:
     load r13, zero, 0

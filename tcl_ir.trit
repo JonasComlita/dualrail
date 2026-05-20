@@ -16,6 +16,8 @@ const TCL_IR_DROP: t40 = 10;
 const TCL_IR_BRANCH3: t40 = 11;
 const TCL_IR_JUMP: t40 = 12;
 const TCL_IR_RETURN: t40 = 13;
+const TCL_IR_ARG: t40 = 14;
+const TCL_IR_STORE_INDEX: t40 = 15;
 
 const TCL_IR_INSTR_WORDS: t40 = 5;
 
@@ -279,7 +281,8 @@ fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
             i = 0;
             while len - i > 0 {
                 arg = vec_get(args, i);
-                tcl_ir_lower_expr(cfg, ast, block, arg);
+                var arg_value: t40 = tcl_ir_lower_expr(cfg, ast, block, arg);
+                tcl_ir_emit(block, TCL_IR_ARG, 0, arg_value, i, 0);
                 i = i + 1;
             }
             dest = tcl_ir_next_value(cfg);
@@ -319,7 +322,8 @@ fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
             i = 0;
             while len - i > 0 {
                 arg = vec_get(args, i);
-                tcl_ir_lower_expr(cfg, ast, block, arg);
+                var array_arg_value: t40 = tcl_ir_lower_expr(cfg, ast, block, arg);
+                tcl_ir_emit(block, TCL_IR_ARG, 0, array_arg_value, i, 0);
                 i = i + 1;
             }
             dest = tcl_ir_next_value(cfg);
@@ -336,7 +340,8 @@ fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
             i = 1;
             while len - i > 0 {
                 arg = vec_get(args, i);
-                tcl_ir_lower_expr(cfg, ast, block, arg);
+                var struct_arg_value: t40 = tcl_ir_lower_expr(cfg, ast, block, arg);
+                tcl_ir_emit(block, TCL_IR_ARG, 0, struct_arg_value, i / 2, 0);
                 i = i + 2;
             }
             dest = tcl_ir_next_value(cfg);
@@ -512,8 +517,23 @@ fn tcl_ir_lower_stmt(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
                     tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, tok, value, 0);
                 }
                 pos => {
-                    var target: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
-                    tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, target, value, 0);
+                    match (tcl_expr_kind(ast, expr1) - TCL_EXPR_INDEX) {
+                        zero => {
+                            var base_expr: t40 = tcl_expr_left(ast, expr1);
+                            var idx_expr: t40 = tcl_expr_right(ast, expr1);
+                            var base_val: t40 = tcl_ir_lower_expr(cfg, ast, block, base_expr);
+                            var idx_val: t40 = tcl_ir_lower_expr(cfg, ast, block, idx_expr);
+                            tcl_ir_emit(block, TCL_IR_STORE_INDEX, 0, base_val, idx_val, value);
+                        }
+                        pos => {
+                            var target: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
+                            tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, target, value, 0);
+                        }
+                        neg => {
+                            var target_neg: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
+                            tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, target_neg, value, 0);
+                        }
+                    }
                 }
                 neg => {
                     var target_neg: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);

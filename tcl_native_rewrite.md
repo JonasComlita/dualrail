@@ -79,6 +79,20 @@ Transforms Phase B IR into raw `tasm` assembly text. Compiled by the Phase A com
 
 ---
 
+## Phase C.5 - Pre-D Consolidation Gate
+
+Phase D is not allowed to begin until the compiler/runtime/VM surface below is proven in isolation. This phase exists to avoid debugging the native kernel, VM privilege mechanics, and standard library ownership model at the same time.
+
+* **C.5a. Text Diagnostics and `sys_write_char`:** Keep syscall id `22` reserved for `sys_write_char(c: T40) -> T40`. The C++ bootstrap compiler, VM legacy syscall path, routed kernel syscall path, and `ulib.trit` output helpers (`print_char`, `print_string`, and non-format literal output in `printf`) must render ASCII text, not decimal character codes. Any kernel that routes syscalls must either provide a raw character console CSR path or explicitly switch the console device into character mode around `console_out`.
+
+* **C.5b. TCL 1.0 `ulib.trit` Ownership Rewrite:** Public allocation APIs must expose `own<ptr<T, unknown>>`, release APIs must accept `borrow<ptr<T, unknown>>` or `borrow_mut<...>` as appropriate, and user/kernel buffer parameters must use `ptr<T, user, S>` or `ptr<T, kernel, S>` states where the caller relies on validation. Raw integer address helpers may remain as private/internal compatibility functions only when they are isolated behind typed public wrappers. The entire native compiler source set must compile cleanly against the rewritten ulib before Phase D.
+
+* **C.5c. Compiler Golden Program Suite:** Maintain 15-20 small TCL 1.0 programs with known outputs covering arithmetic, control flow, recursion, structs, arrays, constants, width-parametric functions, ownership moves/drops, pointer state transitions, unsafe load/store, atomics, vector helpers, and ulib text output. Each case must run through the C++ bootstrap compiler and VM now, and through the native compiler as soon as Phase B/C can emit runnable images. Phase D requires output equality between the bootstrap and native compiler for this suite.
+
+* **C.5d. Privilege/Trap Harness:** Maintain a raw TASM harness that installs `TVEC`, enters user mode, triggers a syscall/trap, observes handler-mode CSR state, returns through `ERET`, and verifies that `EPC`, `CAUSE`, `STATUS`, previous privilege, and final user privilege are correct. D1's trap entry stub depends on this exact machine sequence.
+
+---
+
 ## Phase D — Native OS Kernel (`kernel.trit`)
 
 Replaces `minimal_kernel_bringup.tasm` and `ternary_os.h`. Written in `.trit`, compiled by the Phase A/B/C pipeline, and executed in kernel privilege mode.
@@ -219,15 +233,17 @@ Implement `fork()` as an O(1) metadata operation that duplicates PTEs and marks 
 ## Dependency Order Summary
 
 ```
-A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8
-                          ↓
-                    B1 → B2 → B3 → B4 → B5 → B6
-                                      ↓
-                                C1 → C2 → C3 → C4 → C5 → C6
-                                                  ↓
-                                            D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9
-                                                                                  ↓
-                                                                             E1 → E2 → E3
+A1 -> A2 -> A3 -> A4 -> A5 -> A6 -> A7 -> A8
+                          |
+                    B1 -> B2 -> B3 -> B4 -> B5 -> B6
+                                      |
+                                C1 -> C2 -> C3 -> C4 -> C5 -> C6
+                                                  |
+                                                C.5
+                                                  |
+                                            D1 -> D2 -> D3 -> D4 -> D5 -> D6 -> D7 -> D8 -> D9
+                                                                                  |
+                                                                             E1 -> E2 -> E3
 ```
 
 > **Critical Guardrail for Implementing Agent:** Do not attempt to optimize early phases by building high-level relational paradigms prematurely. Phase D must follow the structural sequence exactly: the raw bootstrap page array (`D2`) and basic buffer pages (`D3`) must be completely stable before the transactional relational store engine (`D5`) is initialized.

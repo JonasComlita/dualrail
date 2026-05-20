@@ -1,4 +1,4 @@
-﻿// ternary_compiler_codegen.h - Type inference, code generation, verification, and optimization
+// ternary_compiler_codegen.h - Type inference, code generation, verification, and optimization
 
 #pragma once
 #ifndef TERNARY_COMPILER_CODEGEN_H
@@ -732,6 +732,7 @@ struct FunctionContext {
         bool first_reg = true;
         std::string result;
         std::size_t i = 0;
+        int pending_dest_reg = -1;
         while (i < line.size()) {
             if (line[i] == 'r' && i + 1 < line.size() && std::isdigit(line[i + 1])) {
                 std::size_t j = i + 1;
@@ -743,6 +744,7 @@ struct FunctionContext {
                 if (has_dest && first_reg) {
                     is_dest = true;
                     first_reg = false;
+                    pending_dest_reg = reg;
                 }
                 result += colorRegister(reg, is_dest);
                 i = j;
@@ -750,6 +752,9 @@ struct FunctionContext {
                 result += line[i];
                 ++i;
             }
+        }
+        if (pending_dest_reg != -1 && isColorableTemporary(pending_dest_reg)) {
+            reg_to_value[pending_dest_reg] = next_value;
         }
         return result;
     }

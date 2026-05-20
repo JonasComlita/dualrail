@@ -584,9 +584,9 @@ Current integration note:
 - **Kernel Acceptance Test**: The VM now runs the artifact as a boot image and verifies timer-driven switching between two user tasks with separate physical counters.
 
 #### Track 6.8: Kernel Syscall and Console Device Path (Implemented)
-- **Console CSRs**: Added `console_out` and `console_ctrl` as kernel-visible device CSRs. `console_out` appends a decimal word to the VM output buffer; `console_ctrl` appends newline for positive writes, clears for negative writes, and reads back output length.
-- **Syscall ABI v1**: Routed user `SYSCALL imm` keeps the syscall id in `SYSCALL_ID`, passes arguments in `r13-r18`, and returns status/value in `r13`.
-- **Kernel-Mediated I/O**: The minimal kernel artifact now handles syscall ids `1` write integer, `2` newline, and `3` clear through the console CSRs while preserving timer preemption.
+- **Console CSRs**: Added `console_out` and `console_ctrl` as kernel-visible device CSRs. `console_out` appends a decimal word to the VM output buffer by default; `console_ctrl` appends newline for `1`, enables character mode for `2`, disables character mode for `3`, clears for negative writes, and reads back output length.
+- **Syscall ABI v1**: Routed user `SYSCALL imm` keeps the syscall id in `SYSCALL_ID`, passes arguments in `r13-r18`, and returns status/value in `r13`. Syscall `22` is `sys_write_char`, used by text diagnostics and ulib character output.
+- **Kernel-Mediated I/O**: The minimal kernel artifact now handles syscall ids `1` write integer, `2` newline, `3` clear, and `22` write character through the console CSRs while preserving timer preemption.
 
 #### Track 6.9: Critical Sections and Process Table Seed (Implemented)
 - **Interrupt-Disable Critical Sections**: Verified that timer interrupts remain pending while interrupts are disabled and route precisely once kernel code re-enables interrupts through `STATUS`.

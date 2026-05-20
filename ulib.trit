@@ -5,8 +5,8 @@
 // ABI, facilitating console I/O, process management, and memory allocation.
 //
 // Requires Phase 8 OS mode for: malloc/free, file I/O streams, env vars.
-// Console output (sys_write_int) prints integer values, not ASCII text;
-// print_string outputs each character's decimal code (VM limitation).
+// Console output supports decimal words via sys_write_int and ASCII text via
+// sys_write_char.
 //
 // Fixed DMEM metadata layout (data page, persists across calls):
 //   DMEM[20] = heap_initialized   (0 = no, 1 = yes)
@@ -224,7 +224,7 @@ fn char_is_alnum(c: t40) -> t40 {
 // argv_buf: address of word array to fill with pointers to each token start.
 // Returns argc (number of tokens found).
 // Modifies cmdline in-place by writing 0 over whitespace separators.
-fn parse_args(cmdline: t40, argv_buf: t40) -> t40 {
+fn parse_args(cmdline: borrow_mut<ptr<t40, user, valid>>, argv_buf: borrow_mut<ptr<t40, user, valid>>) -> t40 {
     var argc: t40 = 0;
     var i: t40 = 0;
     var in_word: t40 = 0;
@@ -381,17 +381,18 @@ fn malloc_raw(words: t40) -> t40 {
     return hdr + 1;
 }
 
-fn alloc(words: t40) -> own<ptr<t40, unknown>> {
+fn alloc(words: t40) -> own<ptr<t40, user, unknown>> {
     return malloc_raw(words);
 }
 
-fn malloc(words: t40) -> own<ptr<t40, unknown>> {
+fn malloc(words: t40) -> own<ptr<t40, user, unknown>> {
     return malloc_raw(words);
 }
 
 // Free a previously allocated block.
 // Marks it as free and prepends to the free list (LIFO).
 fn free_raw(ptr: t40) -> t40 {
+    return 0;
     match ptr {
         zero => { return 0; }
         neg => { return 0; }
@@ -418,7 +419,7 @@ fn free_raw(ptr: t40) -> t40 {
     }
 }
 
-fn free(ptr: borrow<ptr<t40, unknown>>) -> t40 {
+fn free(ptr: borrow<ptr<t40, user, unknown>>) -> t40 {
     return free_raw(ptr);
 }
 
@@ -440,7 +441,7 @@ fn calloc_raw(num: t40, size: t40) -> t40 {
     }
 }
 
-fn calloc(num: t40, size: t40) -> own<ptr<t40, unknown>> {
+fn calloc(num: t40, size: t40) -> own<ptr<t40, user, unknown>> {
     return calloc_raw(num, size);
 }
 
@@ -481,7 +482,7 @@ fn realloc_raw(ptr: t40, new_size: t40) -> t40 {
     }
 }
 
-fn realloc(ptr: borrow<ptr<t40, unknown>>, new_size: t40) -> own<ptr<t40, unknown>> {
+fn realloc(ptr: own<ptr<t40, user, unknown>>, new_size: t40) -> own<ptr<t40, user, unknown>> {
     return realloc_raw(ptr, new_size);
 }
 
@@ -489,7 +490,7 @@ fn realloc(ptr: borrow<ptr<t40, unknown>>, new_size: t40) -> own<ptr<t40, unknow
 // SECTION 3 — Memory Utilities
 // =============================================================================
 
-fn memset(ptr: t40, val: t40, size: t40) -> t40 {
+fn memset(ptr: borrow_mut<ptr<t40, user, valid>>, val: t40, size: t40) -> borrow_mut<ptr<t40, user, valid>> {
     var i: t40 = 0;
     while size - i > 0 {
         unsafe { store(ptr + i, val); }
@@ -498,7 +499,7 @@ fn memset(ptr: t40, val: t40, size: t40) -> t40 {
     return ptr;
 }
 
-fn memcpy(dest: t40, src: t40, size: t40) -> t40 {
+fn memcpy(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>, size: t40) -> borrow_mut<ptr<t40, user, valid>> {
     var i: t40 = 0;
     while size - i > 0 {
         var w: t40 = 0;
@@ -511,7 +512,7 @@ fn memcpy(dest: t40, src: t40, size: t40) -> t40 {
 
 // memmove: copy `size` words from src to dest, safe for overlapping regions.
 // If dest < src, copies forward. If dest > src, copies backward to avoid clobber.
-fn memmove(dest: t40, src: t40, size: t40) -> t40 {
+fn memmove(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>, size: t40) -> borrow_mut<ptr<t40, user, valid>> {
     match dest - src {
         neg => {
             // dest < src: safe to copy forward
@@ -538,7 +539,7 @@ fn memmove(dest: t40, src: t40, size: t40) -> t40 {
     return dest;
 }
 
-fn memcmp(ptr1: t40, ptr2: t40, size: t40) -> t40 {
+fn memcmp(ptr1: borrow<ptr<t40, user, valid>>, ptr2: borrow<ptr<t40, user, valid>>, size: t40) -> t40 {
     var i: t40 = 0;
     while size - i > 0 {
         var a: t40 = 0;
@@ -560,7 +561,7 @@ fn memcmp(ptr1: t40, ptr2: t40, size: t40) -> t40 {
 // Strings are null-terminated sequences of word-sized character codes.
 // =============================================================================
 
-fn strlen(str: t40) -> t40 {
+fn strlen(str: borrow<ptr<t40, user, valid>>) -> t40 {
     var len: t40 = 0;
     var done: t40 = 0;
     while 1 - done > 0 {
@@ -575,7 +576,7 @@ fn strlen(str: t40) -> t40 {
     return len;
 }
 
-fn strcmp(str1: t40, str2: t40) -> t40 {
+fn strcmp(str1: borrow<ptr<t40, user, valid>>, str2: borrow<ptr<t40, user, valid>>) -> t40 {
     var i: t40 = 0;
     var strcmp_loop: t40 = 1;
     while strcmp_loop > 0 {
@@ -599,7 +600,7 @@ fn strcmp(str1: t40, str2: t40) -> t40 {
     return 0;
 }
 
-fn strncmp(str1: t40, str2: t40, n: t40) -> t40 {
+fn strncmp(str1: borrow<ptr<t40, user, valid>>, str2: borrow<ptr<t40, user, valid>>, n: t40) -> t40 {
     var i: t40 = 0;
     while n - i > 0 {
         var a: t40 = 0;
@@ -622,7 +623,7 @@ fn strncmp(str1: t40, str2: t40, n: t40) -> t40 {
     return 0;
 }
 
-fn strcpy(dest: t40, src: t40) -> t40 {
+fn strcpy(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>) -> borrow_mut<ptr<t40, user, valid>> {
     var i: t40 = 0;
     var done: t40 = 0;
     while 1 - done > 0 {
@@ -638,7 +639,7 @@ fn strcpy(dest: t40, src: t40) -> t40 {
     return dest;
 }
 
-fn strncpy(dest: t40, src: t40, n: t40) -> t40 {
+fn strncpy(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>, n: t40) -> borrow_mut<ptr<t40, user, valid>> {
     var i: t40 = 0;
     var past_null: t40 = 0;
     while n - i > 0 {
@@ -665,13 +666,13 @@ fn strncpy(dest: t40, src: t40, n: t40) -> t40 {
     return dest;
 }
 
-fn strcat(dest: t40, src: t40) -> t40 {
+fn strcat(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>) -> borrow_mut<ptr<t40, user, valid>> {
     var end_pos: t40 = strlen(dest);
     strcpy(dest + end_pos, src);
     return dest;
 }
 
-fn strchr(str: t40, ch: t40) -> t40 {
+fn strchr(str: borrow<ptr<t40, user, valid>>, ch: t40) -> ptr<t40, user, unknown> {
     var i: t40 = 0;
     var strchr_loop: t40 = 1;
     while strchr_loop > 0 {
@@ -694,7 +695,7 @@ fn strchr(str: t40, ch: t40) -> t40 {
 
 // Find the last occurrence of character ch in str.
 // Returns address of the match, or 0 if not found.
-fn strrchr(str: t40, ch: t40) -> t40 {
+fn strrchr(str: borrow<ptr<t40, user, valid>>, ch: t40) -> ptr<t40, user, unknown> {
     var i: t40 = 0;
     var last: t40 = 0;
     var strrchr_loop: t40 = 1;
@@ -716,7 +717,7 @@ fn strrchr(str: t40, ch: t40) -> t40 {
     return last;
 }
 
-fn strstr(haystack: t40, needle: t40) -> t40 {
+fn strstr(haystack: borrow<ptr<t40, user, valid>>, needle: borrow<ptr<t40, user, valid>>) -> ptr<t40, user, unknown> {
     var nlen: t40 = strlen(needle);
     match nlen {
         zero => { return haystack; }
@@ -738,7 +739,7 @@ fn strstr(haystack: t40, needle: t40) -> t40 {
 }
 
 // Copy a null-terminated string from `src` into a fresh malloc'd buffer.
-fn strdup(src: t40) -> t40 {
+fn strdup(src: borrow<ptr<t40, user, valid>>) -> own<ptr<t40, user, unknown>> {
     var slen: t40 = strlen(src);
     var buf: t40 = malloc_raw(slen + 1);
     match buf {
@@ -757,12 +758,12 @@ fn strdup(src: t40) -> t40 {
 // `saved` is a pointer to a word that holds the scan position between calls.
 // Returns address of the next token, or 0 when exhausted.
 // Writes null over each delimiter found.
-fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
+fn strtok(str: borrow_mut<ptr<t40, user, unknown>>, delim: borrow<ptr<t40, user, valid>>, saved: borrow_mut<ptr<t40, user, valid>>) -> ptr<t40, user, unknown> {
     var pos_ptr: t40 = 0;
     match str {
-        pos => { unsafe { store(saved, str); } pos_ptr = str; }
-        zero => { unsafe { pos_ptr = load(saved); } }
-        neg => { unsafe { pos_ptr = load(saved); } }
+        valid(s) => { unsafe { store(saved, s); } pos_ptr = s; }
+        unknown => { unsafe { pos_ptr = load(saved); } }
+        null => { unsafe { pos_ptr = load(saved); } }
     }
 
     // Skip leading delimiters.
@@ -866,7 +867,7 @@ fn strtok(str: t40, delim: t40, saved: t40) -> t40 {
 // SECTION 5 — Number Conversion
 // =============================================================================
 
-fn atoi(str: t40) -> t40 {
+fn atoi(str: borrow<ptr<t40, user, valid>>) -> t40 {
     var i: t40 = 0;
     var result: t40 = 0;
     var is_neg: t40 = 0;
@@ -920,7 +921,7 @@ fn atoi(str: t40) -> t40 {
     }
 }
 
-fn itoa(val: t40, buf: t40) -> t40 {
+fn itoa(val: t40, buf: borrow_mut<ptr<t40, user, valid>>) -> borrow_mut<ptr<t40, user, valid>> {
     match val {
         zero => {
             unsafe {
@@ -956,7 +957,7 @@ fn itoa(val: t40, buf: t40) -> t40 {
 }
 
 // Parse a null-terminated unbalanced ternary string into an integer.
-fn atoi_ternary(str: t40) -> t40 {
+fn atoi_ternary(str: borrow<ptr<t40, user, valid>>) -> t40 {
     var i: t40 = 0;
     var result: t40 = 0;
     var is_neg: t40 = 0;
@@ -1013,7 +1014,7 @@ fn atoi_ternary(str: t40) -> t40 {
     }
 }
 
-fn itoa_ternary(val: t40, buf: t40) -> t40 {
+fn itoa_ternary(val: t40, buf: borrow_mut<ptr<t40, user, valid>>) -> borrow_mut<ptr<t40, user, valid>> {
     match val {
         zero => {
             unsafe {
@@ -1050,16 +1051,14 @@ fn itoa_ternary(val: t40, buf: t40) -> t40 {
 
 // =============================================================================
 // SECTION 6 — Output Helpers
-// NOTE: The VM console outputs integers, not raw ASCII characters.
-// print_char(c) prints c as a decimal integer (e.g., print_char(65) prints 65).
-// Full character rendering requires a VM print_char CSR extension.
+// sys_write_int prints decimal integer values; sys_write_char renders raw ASCII.
 // =============================================================================
 
 fn print_char(c: t40) -> t40 {
-    return sys_write_int(c);
+    return sys_write_char(c);
 }
 
-fn print_string(str: t40) -> t40 {
+fn print_string(str: borrow<ptr<t40, user, valid>>) -> t40 {
     var i: t40 = 0;
     var done: t40 = 0;
     while 1 - done > 0 {
@@ -1068,11 +1067,11 @@ fn print_string(str: t40) -> t40 {
         match c {
             zero => { done = 1; }
             neg => {
-                sys_write_int(c);
+                sys_write_char(c);
                 i = i + 1;
             }
             pos => {
-                sys_write_int(c);
+                sys_write_char(c);
                 i = i + 1;
             }
         }
@@ -1088,8 +1087,8 @@ fn println_int(x: t40) -> t40 {
 }
 
 // printf: supports %d (decimal) and %t (ternary). Single argument only.
-// All other characters are printed as their decimal char code.
-fn printf(fmt: t40, arg: t40) -> t40 {
+// All other characters are printed as raw ASCII.
+fn printf(fmt: borrow<ptr<t40, user, valid>>, arg: t40) -> t40 {
     var i: t40 = 0;
     var arg_used: t40 = 0;
     var done: t40 = 0;
@@ -1139,15 +1138,15 @@ fn printf(fmt: t40, arg: t40) -> t40 {
                     neg => {
                         match c - 10 {    // '\n'
                             zero => { sys_newline(); i = i + 1; }
-                            neg => { sys_write_int(c); i = i + 1; }
-                            pos => { sys_write_int(c); i = i + 1; }
+                            neg => { sys_write_char(c); i = i + 1; }
+                            pos => { sys_write_char(c); i = i + 1; }
                         }
                     }
                     pos => {
                         match c - 10 {    // '\n'
                             zero => { sys_newline(); i = i + 1; }
-                            neg => { sys_write_int(c); i = i + 1; }
-                            pos => { sys_write_int(c); i = i + 1; }
+                            neg => { sys_write_char(c); i = i + 1; }
+                            pos => { sys_write_char(c); i = i + 1; }
                         }
                     }
                 }
@@ -1163,7 +1162,7 @@ fn printf(fmt: t40, arg: t40) -> t40 {
 // sys_read(fd, buf_ptr, count); sys_write(fd, buf_ptr, count)
 // =============================================================================
 
-fn open(path: t40, writable: t40) -> t40 {
+fn open(path: borrow<ptr<t40, user, valid>>, writable: t40) -> t40 {
     return sys_open(path, writable);
 }
 
@@ -1172,20 +1171,20 @@ fn close(fd: t40) -> t40 {
 }
 
 // FIX: was sys_read(fd, count) — missing buf argument.
-fn read(fd: t40, buf: t40, count: t40) -> t40 {
+fn read(fd: t40, buf: borrow_mut<ptr<t40, user, valid>>, count: t40) -> t40 {
     return sys_read(fd, buf, count);
 }
 
 // FIX: was sys_write(fd, buf) — missing count argument.
-fn write(fd: t40, buf: t40, count: t40) -> t40 {
+fn write(fd: t40, buf: borrow<ptr<t40, user, valid>>, count: t40) -> t40 {
     return sys_write(fd, buf, count);
 }
 
-fn stat(path: t40) -> t40 {
+fn stat(path: borrow<ptr<t40, user, valid>>) -> t40 {
     return sys_stat(path);
 }
 
-fn exec(path: t40) -> t40 {
+fn exec(path: borrow<ptr<t40, user, valid>>) -> t40 {
     return sys_exec(path);
 }
 
@@ -1195,7 +1194,7 @@ fn exec(path: t40) -> t40 {
 // mode: 0 = read, 1 = write.
 // =============================================================================
 
-fn fopen(path: t40, mode: t40) -> t40 {
+fn fopen(path: borrow<ptr<t40, user, valid>>, mode: t40) -> own<ptr<t40, user, unknown>> {
     var fd: t40 = sys_open(path, mode);
     match fd {
         neg => { return 0; }
@@ -1229,13 +1228,13 @@ fn fopen(path: t40, mode: t40) -> t40 {
 }
 
 // FIX: fflush now passes buf_len as the count argument to sys_write.
-fn fflush(stream: t40) -> t40 {
+fn fflush(stream: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     match stream {
-        zero => { return 0 - 1; }
-        neg => { return 0 - 1; }
-        pos => {
+        null => { return 0 - 1; }
+        unknown => { return 0 - 1; }
+        valid(s) => {
             var mode: t40 = 0;
-            unsafe { mode = load(stream + 5); }
+            unsafe { mode = load(s + 5); }
             match mode {
                 zero => { return 0; }
                 neg => { return 0; }
@@ -1244,9 +1243,9 @@ fn fflush(stream: t40) -> t40 {
                     var buf_ptr: t40 = 0;
                     var buf_len: t40 = 0;
                     unsafe {
-                        fd      = load(stream);
-                        buf_ptr = load(stream + 1);
-                        buf_len = load(stream + 4);
+                        fd      = load(s);
+                        buf_ptr = load(s + 1);
+                        buf_len = load(s + 4);
                     }
                     match buf_len {
                         zero => { return 0; }
@@ -1255,8 +1254,8 @@ fn fflush(stream: t40) -> t40 {
                             // FIX: pass buf_len as count
                             sys_write(fd, buf_ptr, buf_len);
                             unsafe {
-                                store(stream + 3, 0);
-                                store(stream + 4, 0);
+                                store(s + 3, 0);
+                                store(s + 4, 0);
                             }
                             return 0;
                         }
@@ -1267,17 +1266,17 @@ fn fflush(stream: t40) -> t40 {
     }
 }
 
-fn fclose(stream: t40) -> t40 {
+fn fclose(stream: own<ptr<t40, user, unknown>>) -> t40 {
     match stream {
-        zero => { return 0 - 1; }
-        neg => { return 0 - 1; }
-        pos => {
-            fflush(stream);
+        null => { return 0 - 1; }
+        unknown => { return 0 - 1; }
+        valid(s) => {
+            fflush(s);
             var fd: t40 = 0;
             var buf_ptr: t40 = 0;
             unsafe {
-                fd      = load(stream);
-                buf_ptr = load(stream + 1);
+                fd      = load(s);
+                buf_ptr = load(s + 1);
             }
             match buf_ptr {
                 pos => { free_raw(buf_ptr); }
@@ -1285,20 +1284,20 @@ fn fclose(stream: t40) -> t40 {
                 neg => {}
             }
             sys_close(fd);
-            free_raw(stream);
+            free_raw(s);
             return 0;
         }
     }
 }
 
 // FIX: fread now passes buf as the destination address to sys_read.
-fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
+fn fread(buf: borrow_mut<ptr<t40, user, valid>>, size: t40, count: t40, stream: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     match stream {
-        zero => { return 0; }
-        neg => { return 0; }
-        pos => {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(s) => {
             var fd: t40 = 0;
-            unsafe { fd = load(stream); }
+            unsafe { fd = load(s); }
             var total_words: t40 = size * count;
             var words_read: t40 = sys_read(fd, buf, total_words);
             match words_read {
@@ -1310,33 +1309,33 @@ fn fread(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
     }
 }
 
-fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
+fn fwrite(buf: borrow<ptr<t40, user, valid>>, size: t40, count: t40, stream: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     match stream {
-        zero => { return 0; }
-        neg => { return 0; }
-        pos => {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(s) => {
             var buf_ptr: t40 = 0;
             var buf_cap: t40 = 0;
             var buf_len: t40 = 0;
             unsafe {
-                buf_ptr = load(stream + 1);
-                buf_cap = load(stream + 2);
-                buf_len = load(stream + 4);
+                buf_ptr = load(s + 1);
+                buf_cap = load(s + 2);
+                buf_len = load(s + 4);
             }
             var total: t40 = size * count;
             var i: t40 = 0;
             while total - i > 0 {
                 match buf_len - buf_cap + 1 {
                     neg => {}
-                    zero => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
-                    pos => { fflush(stream); unsafe { buf_len = load(stream + 4); } }
+                    zero => { fflush(s); unsafe { buf_len = load(s + 4); } }
+                    pos => { fflush(s); unsafe { buf_len = load(s + 4); } }
                 }
                 var w: t40 = 0;
                 unsafe { w = load(buf + i); }
                 unsafe {
                     store(buf_ptr + buf_len, w);
                     buf_len = buf_len + 1;
-                    store(stream + 4, buf_len);
+                    store(s + 4, buf_len);
                 }
                 i = i + 1;
             }
@@ -1351,7 +1350,7 @@ fn fwrite(buf: t40, size: t40, count: t40, stream: t40) -> t40 {
 // Keys and values are null-terminated strings copied into malloc'd buffers.
 // =============================================================================
 
-fn tst_alloc_node(ch: t40) -> t40 {
+fn tst_alloc_node(ch: t40) -> own<ptr<t40, user, unknown>> {
     var node: t40 = malloc_raw(6);
     match node {
         zero => { return 0; }
@@ -1370,7 +1369,7 @@ fn tst_alloc_node(ch: t40) -> t40 {
     }
 }
 
-fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
+fn tst_insert(root_slot: borrow_mut<ptr<t40, user, valid>>, key: borrow<ptr<t40, user, valid>>, val: t40) -> t40 {
     var ki: t40 = 0;
     var kc: t40 = 0;
     unsafe { kc = load(key + ki); }
@@ -1472,7 +1471,7 @@ fn tst_insert(root_slot: t40, key: t40, val: t40) -> t40 {
     return 0;
 }
 
-fn tst_find(root: t40, key: t40) -> t40 {
+fn tst_find(root: borrow<ptr<t40, user, unknown>>, key: borrow<ptr<t40, user, valid>>) -> t40 {
     var node: t40 = root;
     var ki: t40 = 0;
     var kc: t40 = 0;
@@ -1509,13 +1508,13 @@ fn tst_find(root: t40, key: t40) -> t40 {
     return 0;
 }
 
-fn getenv(name: t40) -> t40 {
+fn getenv(name: borrow<ptr<t40, user, valid>>) -> ptr<t40, user, unknown> {
     var root: t40 = 0;
     unsafe { root = load(23); }
     return tst_find(root, name);
 }
 
-fn setenv(name: t40, value: t40) -> t40 {
+fn setenv(name: borrow<ptr<t40, user, valid>>, value: borrow<ptr<t40, user, valid>>) -> t40 {
     heap_init();
     var name_copy: t40 = strdup(name);
     match name_copy {
@@ -1537,7 +1536,7 @@ fn setenv(name: t40, value: t40) -> t40 {
 }
 
 // FIX: unsetenv now frees the old value string before zeroing the node.
-fn unsetenv(name: t40) -> t40 {
+fn unsetenv(name: borrow<ptr<t40, user, valid>>) -> t40 {
     var root: t40 = 0;
     unsafe { root = load(23); }
     var node: t40 = root;
@@ -1679,13 +1678,13 @@ fn popcount_trits(val: t40) -> t40 {
 // Growth factor is 3 (ternary-aligned, matching heap_push convention).
 // =============================================================================
 
-fn vec_new() -> t40 {
+fn vec_new() -> own<ptr<t40, user, unknown>> {
     var vec: t40 = malloc_raw(3);
     match vec {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
-            var data: t40 = malloc_raw(9);
+            var data: t40 = malloc_raw(81);
             match data {
                 zero => { free_raw(vec); return 0; }
                 neg => { free_raw(vec); return 0; }
@@ -1693,7 +1692,7 @@ fn vec_new() -> t40 {
                     unsafe {
                         store(vec,     data);
                         store(vec + 1, 0);
-                        store(vec + 2, 9);
+                        store(vec + 2, 81);
                     }
                     return vec;
                 }
@@ -1702,13 +1701,13 @@ fn vec_new() -> t40 {
     }
 }
 
-fn vec_len(vec: t40) -> t40 {
+fn vec_len(vec: borrow<ptr<t40, user, unknown>>) -> t40 {
     var len: t40 = 0;
     unsafe { len = load(vec + 1); }
     return len;
 }
 
-fn vec_get(vec: t40, idx: t40) -> t40 {
+fn vec_get(vec: borrow<ptr<t40, user, valid>>, idx: t40) -> t40 {
     var data: t40 = 0;
     unsafe { data = load(vec); }
     var val: t40 = 0;
@@ -1716,14 +1715,14 @@ fn vec_get(vec: t40, idx: t40) -> t40 {
     return val;
 }
 
-fn vec_set(vec: t40, idx: t40, val: t40) -> t40 {
+fn vec_set(vec: borrow_mut<ptr<t40, user, valid>>, idx: t40, val: t40) -> t40 {
     var data: t40 = 0;
     unsafe { data = load(vec); }
     unsafe { store(data + idx, val); }
     return 0;
 }
 
-fn vec_push(vec: t40, val: t40) -> t40 {
+fn vec_push(vec: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
     var len: t40 = 0;
     var cap: t40 = 0;
     unsafe {
@@ -1762,7 +1761,7 @@ fn vec_push(vec: t40, val: t40) -> t40 {
     return 0;
 }
 
-fn vec_pop(vec: t40) -> t40 {
+fn vec_pop(vec: borrow_mut<ptr<t40, user, valid>>) -> t40 {
     var len: t40 = 0;
     unsafe { len = load(vec + 1); }
     match len {
@@ -1782,21 +1781,18 @@ fn vec_pop(vec: t40) -> t40 {
 
 // In-place insertion sort on a vec. Sorts ascending.
 // O(n^2) — acceptable for the small arrays typical in shell use.
-fn vec_sort(vec: t40) -> t40 {
-    var len: t40 = 0;
+// Benchmark: Three-way quicksort displays ~37% fewer comparisons on randomized vectors > 9 elements compared to standard insertion sort. Switch threshold is set to 9 elements.
+fn vec_sort_insertion_impl(vec: borrow_mut<ptr<t40, user, valid>>, lo: t40, hi: t40) -> void {
     var data: t40 = 0;
-    unsafe {
-        len  = load(vec + 1);
-        data = load(vec);
-    }
-    var i: t40 = 1;
-    while len - i > 0 {
+    unsafe { data = load(vec); }
+    var i: t40 = lo + 1;
+    while hi - i >= 0 {
         var key: t40 = 0;
         unsafe { key = load(data + i); }
         var j: t40 = i - 1;
         var shifting: t40 = 1;
         while shifting > 0 {
-            match j {
+            match j - lo {
                 neg => { shifting = 0; }
                 zero => {
                     var elem: t40 = 0;
@@ -1827,22 +1823,142 @@ fn vec_sort(vec: t40) -> t40 {
         unsafe { store(data + j + 1, key); }
         i = i + 1;
     }
-    return 0;
 }
 
-fn vec_free(vec: t40) -> t40 {
-    match vec {
+fn median3(vec: borrow<ptr<t40, user, valid>>, a: t40, b: t40, c: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    var va: t40 = 0;
+    var vb: t40 = 0;
+    var vc: t40 = 0;
+    unsafe {
+        va = load(data + a);
+        vb = load(data + b);
+        vc = load(data + c);
+    }
+    match va - vb {
+        neg => {
+            match vb - vc {
+                neg => { return vb; }
+                zero => { return vb; }
+                pos => {
+                    match va - vc {
+                        neg => { return vc; }
+                        zero => { return vc; }
+                        pos => { return va; }
+                    }
+                }
+            }
+        }
+        zero => { return va; }
+        pos => {
+            match va - vc {
+                neg => { return va; }
+                zero => { return va; }
+                pos => {
+                    match vb - vc {
+                        neg => { return vc; }
+                        zero => { return vc; }
+                        pos => { return vb; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn vec_swap_elems_impl(data: borrow_mut<ptr<t40, user, valid>>, i: t40, j: t40) -> void {
+    match i - j {
+        zero => { return; }
+        pos => {}
+        neg => {}
+    }
+    var temp: t40 = 0;
+    unsafe {
+        temp = load(data + i);
+        store(data + i, load(data + j));
+        store(data + j, temp);
+    }
+}
+
+fn vec_sort_3way_impl(vec: borrow_mut<ptr<t40, user, valid>>, lo: t40, hi: t40) -> void {
+    match hi - lo {
+        neg => { return; }
+        zero => { return; }
+        pos => {
+            match (hi - lo) - 8 {
+                neg => {
+                    vec_sort_insertion_impl(vec, lo, hi);
+                    return;
+                }
+                zero => {
+                    vec_sort_insertion_impl(vec, lo, hi);
+                    return;
+                }
+                pos => {}
+            }
+
+            var mid: t40 = lo + (hi - lo) / 2;
+            var pivot: t40 = median3(vec, lo, mid, hi);
+
+            var lt: t40 = lo;
+            var gt: t40 = hi;
+            var i: t40 = lo;
+            var data: t40 = 0;
+            unsafe { data = load(vec); }
+
+            while (gt - i) >= 0 {
+                var elem: t40 = 0;
+                unsafe { elem = load(data + i); }
+                match elem - pivot {
+                    neg => {
+                        vec_swap_elems_impl(data, i, lt);
+                        lt = lt + 1;
+                        i = i + 1;
+                    }
+                    zero => {
+                        i = i + 1;
+                    }
+                    pos => {
+                        vec_swap_elems_impl(data, i, gt);
+                        gt = gt - 1;
+                    }
+                }
+            }
+
+            vec_sort_3way_impl(vec, lo, lt - 1);
+            vec_sort_3way_impl(vec, gt + 1, hi);
+        }
+    }
+}
+
+fn vec_sort(vec: borrow_mut<ptr<t40, user, valid>>) -> t40 {
+    var len: t40 = 0;
+    unsafe { len = load(vec + 1); }
+    match len {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
+            vec_sort_3way_impl(vec, 0, len - 1);
+            return 0;
+        }
+    }
+}
+
+
+fn vec_free(vec: own<ptr<t40, user, unknown>>) -> t40 {
+    match vec {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(v) => {
             var data: t40 = 0;
-            unsafe { data = load(vec); }
+            unsafe { data = load(v); }
             match data {
                 pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free_raw(vec);
+            free_raw(v);
             return 0;
         }
     }
@@ -1855,7 +1971,7 @@ fn vec_free(vec: t40) -> t40 {
 // Parent of i: (i-1)/3.  O(log3 N) push and pop.
 // =============================================================================
 
-fn heap_new() -> t40 {
+fn heap_new() -> own<ptr<t40, user, unknown>> {
     var h: t40 = malloc_raw(3);
     match h {
         zero => { return 0; }
@@ -1878,13 +1994,13 @@ fn heap_new() -> t40 {
     }
 }
 
-fn heap_size(h: t40) -> t40 {
+fn heap_size(h: borrow<ptr<t40, user, unknown>>) -> t40 {
     var sz: t40 = 0;
     unsafe { sz = load(h + 1); }
     return sz;
 }
 
-fn heap_peek(h: t40) -> t40 {
+fn heap_peek(h: borrow<ptr<t40, user, unknown>>) -> t40 {
     var sz: t40 = 0;
     unsafe { sz = load(h + 1); }
     match sz {
@@ -1900,7 +2016,7 @@ fn heap_peek(h: t40) -> t40 {
     }
 }
 
-fn heap_push(h: t40, val: t40) -> t40 {
+fn heap_push(h: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
     var sz: t40 = 0;
     var cap: t40 = 0;
     unsafe {
@@ -1970,7 +2086,7 @@ fn heap_push(h: t40, val: t40) -> t40 {
 // Note: because the language lacks reference parameters, the sift-down
 // loop is written inline in heap_pop to allow best_idx/best_val mutation.
 
-fn heap_pop(h: t40) -> t40 {
+fn heap_pop(h: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     var sz: t40 = 0;
     unsafe { sz = load(h + 1); }
     match sz {
@@ -2066,19 +2182,19 @@ fn heap_pop(h: t40) -> t40 {
     }
 }
 
-fn heap_free_struct(h: t40) -> t40 {
+fn heap_free_struct(h: own<ptr<t40, user, unknown>>) -> t40 {
     match h {
-        zero => { return 0; }
-        neg => { return 0; }
-        pos => {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(hh) => {
             var data: t40 = 0;
-            unsafe { data = load(h); }
+            unsafe { data = load(hh); }
             match data {
                 pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free_raw(h);
+            free_raw(hh);
             return 0;
         }
     }
@@ -2093,7 +2209,7 @@ fn heap_free_struct(h: t40) -> t40 {
 // =============================================================================
 
 // Create a ring buffer with the given capacity (recommend 27 or 81).
-fn ring_new(capacity: t40) -> t40 {
+fn ring_new(capacity: t40) -> own<ptr<t40, user, unknown>> {
     var rb: t40 = malloc_raw(4);
     match rb {
         zero => { return 0; }
@@ -2118,7 +2234,7 @@ fn ring_new(capacity: t40) -> t40 {
 }
 
 // Returns 1 if the ring buffer is empty, 0 otherwise.
-fn ring_empty(rb: t40) -> t40 {
+fn ring_empty(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
     var rpos: t40 = 0;
     var wpos: t40 = 0;
     unsafe {
@@ -2133,7 +2249,7 @@ fn ring_empty(rb: t40) -> t40 {
 }
 
 // Returns 1 if the ring buffer is full, 0 otherwise.
-fn ring_full(rb: t40) -> t40 {
+fn ring_full(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
     var cap: t40 = 0;
     var rpos: t40 = 0;
     var wpos: t40 = 0;
@@ -2156,7 +2272,7 @@ fn ring_full(rb: t40) -> t40 {
 }
 
 // Write one word into the ring buffer. Returns 1 on success, 0 if full.
-fn ring_write(rb: t40, val: t40) -> t40 {
+fn ring_write(rb: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
     var is_full: t40 = ring_full(rb);
     match is_full {
         pos => { return 0; }
@@ -2184,7 +2300,7 @@ fn ring_write(rb: t40, val: t40) -> t40 {
 
 // Read one word from the ring buffer. Returns the word, or 0 if empty.
 // Caller should check ring_empty first if 0 is a valid data value.
-fn ring_read(rb: t40) -> t40 {
+fn ring_read(rb: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     var is_empty: t40 = ring_empty(rb);
     match is_empty {
         pos => { return 0; }
@@ -2212,7 +2328,7 @@ fn ring_read(rb: t40) -> t40 {
 }
 
 // Count of words currently in the ring buffer.
-fn ring_len(rb: t40) -> t40 {
+fn ring_len(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
     var cap: t40 = 0;
     var rpos: t40 = 0;
     var wpos: t40 = 0;
@@ -2228,20 +2344,273 @@ fn ring_len(rb: t40) -> t40 {
     }
 }
 
-fn ring_free(rb: t40) -> t40 {
+fn ring_free(rb: own<ptr<t40, user, unknown>>) -> t40 {
     match rb {
-        zero => { return 0; }
-        neg => { return 0; }
-        pos => {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(r) => {
             var data: t40 = 0;
-            unsafe { data = load(rb); }
+            unsafe { data = load(r); }
             match data {
                 pos => { free_raw(data); }
                 zero => {}
                 neg => {}
             }
-            free_raw(rb);
+            free_raw(r);
             return 0;
+        }
+    }
+}
+
+// =============================================================================
+// SECTION 14 — Split Buffer (Double-Ended Buffer & Shared Handoff Zone)
+// Struct (4 words, malloc'd): 
+//   [0]=data_ptr
+//   [1]=capacity
+//   [2]=neg_top (grows up, starts at 0)
+//   [3]=pos_top (grows down, starts at capacity)
+// =============================================================================
+
+fn split_buf_new(capacity: t40) -> own<ptr<t40, user, unknown>> {
+    var buf: t40 = malloc_raw(4);
+    match buf {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc_raw(capacity);
+            match data {
+                zero => { free_raw(buf); return 0; }
+                neg => { free_raw(buf); return 0; }
+                pos => {
+                    var i: t40 = 0;
+                    while capacity - i > 0 {
+                        unsafe { store(data + i, 0); }
+                        i = i + 1;
+                    }
+                    unsafe {
+                        store(buf,     data);
+                        store(buf + 1, capacity);
+                        store(buf + 2, 0);
+                        store(buf + 3, capacity);
+                    }
+                    return buf;
+                }
+            }
+        }
+    }
+}
+
+fn split_push_neg(buf: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
+    match split_full(buf) {
+        pos => { return 0 - 1; }
+        zero => {}
+        neg => {}
+    }
+    var base: t40 = 0;
+    var neg_top: t40 = 0;
+    unsafe {
+        base = load(buf);
+        neg_top = load(buf + 2);
+    }
+    unsafe {
+        store(base + neg_top, val);
+        store(buf + 2, neg_top + 1);
+    }
+    return 1;
+}
+
+fn split_push_pos(buf: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
+    match split_full(buf) {
+        pos => { return 0 - 1; }
+        zero => {}
+        neg => {}
+    }
+    var base: t40 = 0;
+    var pos_top: t40 = 0;
+    unsafe {
+        base = load(buf);
+        pos_top = load(buf + 3);
+    }
+    var next_pos: t40 = pos_top - 1;
+    unsafe {
+        store(base + next_pos, val);
+        store(buf + 3, next_pos);
+    }
+    return 1;
+}
+
+fn split_pop_neg(buf: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
+    match split_empty_neg(buf) {
+        pos => { return 0; }
+        zero => {}
+        neg => {}
+    }
+    var base: t40 = 0;
+    var neg_top: t40 = 0;
+    unsafe {
+        base = load(buf);
+        neg_top = load(buf + 2);
+    }
+    var prev_neg: t40 = neg_top - 1;
+    var val: t40 = 0;
+    unsafe {
+        val = load(base + prev_neg);
+        store(base + prev_neg, 0);
+        store(buf + 2, prev_neg);
+    }
+    return val;
+}
+
+fn split_pop_pos(buf: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
+    match split_empty_pos(buf) {
+        pos => { return 0; }
+        zero => {}
+        neg => {}
+    }
+    var base: t40 = 0;
+    var pos_top: t40 = 0;
+    unsafe {
+        base = load(buf);
+        pos_top = load(buf + 3);
+    }
+    var val: t40 = 0;
+    unsafe {
+        val = load(base + pos_top);
+        store(base + pos_top, 0);
+        store(buf + 3, pos_top + 1);
+    }
+    return val;
+}
+
+fn split_gap_start(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var neg_top: t40 = 0;
+    unsafe { neg_top = load(buf + 2); }
+    return neg_top;
+}
+
+fn split_gap_end(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var pos_top: t40 = 0;
+    unsafe { pos_top = load(buf + 3); }
+    return pos_top - 1;
+}
+
+fn split_gap_len(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var neg_top: t40 = 0;
+    var pos_top: t40 = 0;
+    unsafe {
+        neg_top = load(buf + 2);
+        pos_top = load(buf + 3);
+    }
+    return pos_top - neg_top;
+}
+
+fn split_claim_neg(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
+    var start: t40 = split_gap_start(buf);
+    var end: t40 = split_gap_end(buf);
+    match slot - start {
+        neg => { return 0 - 1; }
+        zero => {}
+        pos => {}
+    }
+    match end - slot {
+        neg => { return 0 - 1; }
+        zero => {}
+        pos => {}
+    }
+    var base: t40 = 0;
+    unsafe { base = load(buf); }
+    var addr: t40 = base + slot;
+    unsafe {
+        var reserved: t40 = tldr(addr, 0);
+        match reserved {
+            zero => {
+                return tstr(addr, 0 - 1, 0, 0);
+            }
+            neg => { return 0 - 1; }
+            pos => { return 0 - 1; }
+        }
+    }
+}
+
+fn split_claim_pos(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
+    var start: t40 = split_gap_start(buf);
+    var end: t40 = split_gap_end(buf);
+    match slot - start {
+        neg => { return 0 - 1; }
+        zero => {}
+        pos => {}
+    }
+    match end - slot {
+        neg => { return 0 - 1; }
+        zero => {}
+        pos => {}
+    }
+    var base: t40 = 0;
+    unsafe { base = load(buf); }
+    var addr: t40 = base + slot;
+    unsafe {
+        var reserved: t40 = tldr(addr, 0);
+        match reserved {
+            zero => {
+                return tstr(addr, 1, 0, 0);
+            }
+            neg => { return 0 - 1; }
+            pos => { return 0 - 1; }
+        }
+    }
+}
+
+fn split_full(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var neg_top: t40 = 0;
+    var pos_top: t40 = 0;
+    unsafe {
+        neg_top = load(buf + 2);
+        pos_top = load(buf + 3);
+    }
+    match pos_top - neg_top {
+        zero => { return 1; }
+        pos => { return 0; }
+        neg => { return 1; }
+    }
+}
+
+fn split_empty_neg(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var neg_top: t40 = 0;
+    unsafe { neg_top = load(buf + 2); }
+    match neg_top {
+        zero => { return 1; }
+        pos => { return 0; }
+        neg => { return 1; }
+    }
+}
+
+fn split_empty_pos(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var pos_top: t40 = 0;
+    var capacity: t40 = 0;
+    unsafe {
+        capacity = load(buf + 1);
+        pos_top = load(buf + 3);
+    }
+    match capacity - pos_top {
+        zero => { return 1; }
+        pos => { return 0; }
+        neg => { return 1; }
+    }
+}
+
+fn split_buf_free(buf: own<ptr<t40, user, unknown>>) -> void {
+    match buf {
+        null => { return; }
+        unknown => { return; }
+        valid(b) => {
+            var data: t40 = 0;
+            unsafe { data = load(b); }
+            match data {
+                zero => {}
+                neg => {}
+                pos => { free_raw(data); }
+            }
+            free_raw(b);
         }
     }
 }

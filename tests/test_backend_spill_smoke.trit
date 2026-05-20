@@ -30,7 +30,7 @@ fn main() -> t40 {
     match errors { zero => {} pos => { ok = 0; } neg => { ok = 0; } }
     tcl_backend_alloc_free(alloc);
 
-    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 99);
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 0, 99);
     var text_len: t40 = vec_len(text);
     match text_len { pos => {} zero => { ok = 0; } neg => { ok = 0; } }
 

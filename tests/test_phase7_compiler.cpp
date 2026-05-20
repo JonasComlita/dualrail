@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
 
 namespace {
 
@@ -991,6 +993,289 @@ void testUlibOwnershipRawHeapSnippetPhaseA() {
     }
 }
 
+std::string readTritFile(const std::string& name) {
+    std::ifstream f(name);
+    if (!f.is_open()) {
+        f.open("../" + name);
+    }
+    if (!f.is_open()) {
+        f.open("../../" + name);
+    }
+    if (!f.is_open()) {
+        return "";
+    }
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+std::string readUlibTrit() {
+    return readTritFile("ulib.trit");
+}
+
+void testTclTernaryErgonomicsExtensions() {
+    std::cout << "[19] Phase B/C Ergonomics and stdlib extensions test\n";
+    using namespace sandbox::compiler;
+
+    std::string native_compiler_src = 
+        readTritFile("ulib.trit") + "\n" +
+        readTritFile("tcl_token.trit") + "\n" +
+        readTritFile("tcl_lexer.trit") + "\n" +
+        readTritFile("tcl_ast.trit") + "\n" +
+        readTritFile("tcl_type.trit") + "\n" +
+        readTritFile("tcl_parser.trit") + "\n";
+
+    // 1. Test single-arm guards (if pos, if neg, if zero) in the native parser
+    {
+        expect(!native_compiler_src.empty(), "successfully read native parser source files from disk");
+        std::string test_driver = R"(
+            fn main() -> t40 {
+                var src: t40 = malloc_raw(100);
+                unsafe {
+                    var s: ptr<t1, user, valid> = src;
+                    store(s + 0, 102); store(s + 1, 110); store(s + 2, 32); store(s + 3, 102);
+                    store(s + 4, 40); store(s + 5, 41); store(s + 6, 32); store(s + 7, 45);
+                    store(s + 8, 62); store(s + 9, 32); store(s + 10, 118); store(s + 11, 111);
+                    store(s + 12, 105); store(s + 13, 100); store(s + 14, 32); store(s + 15, 123);
+                    store(s + 16, 32); store(s + 17, 105); store(s + 18, 102); store(s + 19, 32);
+                    store(s + 20, 112); store(s + 21, 111); store(s + 22, 115); store(s + 23, 40);
+                    store(s + 24, 53); store(s + 25, 41); store(s + 26, 32); store(s + 27, 123);
+                    store(s + 28, 32); store(s + 29, 114); store(s + 30, 101); store(s + 31, 116);
+                    store(s + 32, 117); store(s + 33, 114); store(s + 34, 110); store(s + 35, 59);
+                    store(s + 36, 32); store(s + 37, 125); store(s + 38, 32); store(s + 39, 125);
+                }
+                var tokens: t40 = tcl_lex(src, 40);
+                var p: t40 = tcl_parser_new(tokens, src);
+                var ast: t40 = tcl_ast_new(0);
+                tcl_parser_parse(p, ast);
+
+                var errs: t40 = tcl_parser_errors(p);
+                
+                tcl_parser_free(p);
+                tcl_ast_free(ast);
+                tcl_token_free(tokens);
+                free_raw(src);
+
+                match errs {
+                    neg => { return 1; }
+                    zero => { return 1; }
+                    pos => { return 0; }
+                }
+            }
+        )";
+
+        CompileResult compiled = compileSource("native_guard_test.trit", native_compiler_src + test_driver);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR NATIVE GUARD TEST:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "native guard test compiles successfully");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "native guard test links");
+        sandbox::vm::VMState vm(65536, 65536);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native guard test VM image loads");
+            const auto result = sandbox::vm::run(vm, 500000);
+            expect(result.halted(), "native guard test halts");
+            expect(regLong(vm, 13) == 1, "native parser successfully parses if pos block");
+        }
+    }
+
+    // 2. Test guard syntax diagnostics for invalid guard keyword in the native parser
+    {
+        std::string test_driver = R"(
+            fn main() -> t40 {
+                var src: t40 = malloc_raw(100);
+                unsafe {
+                    var s: ptr<t1, user, valid> = src;
+                    store(s + 0, 102); store(s + 1, 110); store(s + 2, 32); store(s + 3, 102);
+                    store(s + 4, 40); store(s + 5, 41); store(s + 6, 32); store(s + 7, 45);
+                    store(s + 8, 62); store(s + 9, 32); store(s + 10, 118); store(s + 11, 111);
+                    store(s + 12, 105); store(s + 13, 100); store(s + 14, 32); store(s + 15, 123);
+                    store(s + 16, 32); store(s + 17, 105); store(s + 18, 102); store(s + 19, 32);
+                    store(s + 20, 111); store(s + 21, 116); store(s + 22, 104); store(s + 23, 101);
+                    store(s + 24, 114); store(s + 25, 40); store(s + 26, 53); store(s + 27, 41);
+                    store(s + 28, 32); store(s + 29, 123); store(s + 30, 32); store(s + 31, 114);
+                    store(s + 32, 101); store(s + 33, 116); store(s + 34, 117); store(s + 35, 114);
+                    store(s + 36, 110); store(s + 37, 59); store(s + 38, 32); store(s + 39, 125);
+                    store(s + 40, 32); store(s + 41, 125);
+                }
+                var tokens: t40 = tcl_lex(src, 42);
+                var p: t40 = tcl_parser_new(tokens, src);
+                var ast: t40 = tcl_ast_new(0);
+                tcl_parser_parse(p, ast);
+
+                var errs: t40 = tcl_parser_errors(p);
+                var has_invalid_guard_err: t40 = 0;
+                
+                match errs {
+                    neg => {}
+                    zero => {}
+                    pos => {
+                        var diags: t40 = tcl_parser_diagnostics(p);
+                        var len: t40 = vec_len(diags);
+                        var i: t40 = 0;
+                        while len - i > 0 {
+                            var err_code: t40 = vec_get(diags, i + 1);
+                            match err_code - 29 {
+                                zero => { has_invalid_guard_err = 1; }
+                                neg => {}
+                                pos => {}
+                            }
+                            i = i + 2;
+                        }
+                    }
+                }
+                
+                tcl_parser_free(p);
+                tcl_ast_free(ast);
+                tcl_token_free(tokens);
+                free_raw(src);
+
+                return has_invalid_guard_err;
+            }
+        )";
+
+        CompileResult compiled = compileSource("native_bad_guard_test.trit", native_compiler_src + test_driver);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR NATIVE BAD GUARD TEST:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "native bad guard test compiles successfully");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "native bad guard test links");
+        sandbox::vm::VMState vm(65536, 65536);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native bad guard test VM image loads");
+            const auto result = sandbox::vm::run(vm, 500000);
+            expect(result.halted(), "native bad guard test halts");
+            expect(regLong(vm, 13) == 1, "native parser flags invalid guard keyword with error code 29");
+        }
+    }
+
+    // 3. Test vec_sort_3way using ulib.trit
+    {
+        std::string ulib_src = readUlibTrit();
+        expect(!ulib_src.empty(), "successfully read ulib.trit from disk");
+
+        std::string sort_test_src = ulib_src + R"(
+            fn main() -> t40 {
+                var v: t40 = vec_new();
+                sys_write_int(v); sys_newline();
+                
+                vec_push(v, 15);
+                vec_push(v, 0 - 3);
+                vec_push(v, 42);
+                vec_push(v, 0);
+                vec_push(v, 0 - 3);
+                vec_push(v, 8);
+                vec_push(v, 100);
+                vec_push(v, 0 - 50);
+                vec_push(v, 15);
+                vec_push(v, 4);
+
+                var len: t40 = 0;
+                unsafe { len = load(v + 1); }
+                sys_write_int(len); sys_newline();
+
+                vec_sort(v);
+
+                var data: t40 = 0;
+                unsafe {
+                    data = load(v);
+                    len = load(v + 1);
+                }
+                
+                var i: t40 = 0;
+                while len - i > 0 {
+                    var val: t40 = 0;
+                    unsafe { val = load(data + i); }
+                    sys_write_int(val); sys_newline();
+                    i = i + 1;
+                }
+
+                vec_free(v);
+                return 1;
+            }
+        )";
+
+        CompileResult compiled = compileSource("sort_test.trit", sort_test_src);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR SORT TEST:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "ulib + sort test compiles successfully");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "sort test links");
+        sandbox::vm::VMState vm(65536, 65536);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "sort test VM image loads");
+            const auto result = sandbox::vm::run(vm, 50000);
+            std::cout << "VM SYSCALL BUFFER FOR SORT:\n" << vm.syscall_buffer << "\n";
+            expect(result.halted(), "sort test halts");
+            std::cout << "DEBUG: sort test reg 13 = " << regLong(vm, 13) << "\n";
+            expect(regLong(vm, 13) == 1, "vec_sort correctly sorts elements in ascending order");
+        }
+    }
+
+    // 4. Test SplitBuf push/pop/gap/claim API using ulib.trit
+    {
+        std::string ulib_src = readUlibTrit();
+        std::string split_test_src = ulib_src + R"(
+            fn main() -> t40 {
+                var sb: t40 = split_buf_new(10);
+                match sb {
+                    neg => { return 0; }
+                    zero => { return 0; }
+                    pos => {
+                        sys_write_int(sb); sys_newline();
+                        
+                        var push_neg1: t40 = split_push_neg(sb, 0 - 10);
+                        var push_neg2: t40 = split_push_neg(sb, 0 - 20);
+                        sys_write_int(push_neg1); sys_write_int(push_neg2); sys_newline();
+
+                        var n: t40 = split_pop_neg(sb);
+                        sys_write_int(n); sys_newline();
+                        match n - (0 - 20) {
+                            neg => { return 0; }
+                            zero => { return 1; }
+                            pos => { return 0; }
+                        }
+                    }
+                }
+                return 0;
+            }
+        )";
+
+        CompileResult compiled = compileSource("split_test.trit", split_test_src);
+        if (!compiled.success) {
+            std::cerr << "COMPILE FAIL DIAGNOSTICS FOR SPLIT BUFFER TEST:\n";
+            for (const auto& diag : compiled.diagnostics) {
+                std::cerr << "  " << diag.format() << "\n";
+            }
+        }
+        expect(compiled.success, "ulib + split buffer test compiles successfully");
+        std::cout << "=== SPLIT BUFFER TEST ASSEMBLY ===\n" << compiled.object.assembly << "\n==================================\n";
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success, "split buffer test links");
+        sandbox::vm::VMState vm(65536, 65536);
+        if (linked.success) {
+            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "split buffer test VM image loads");
+            const auto result = sandbox::vm::run(vm, 10000);
+            std::cout << "VM SYSCALL BUFFER FOR SPLIT BUFFER:\n" << vm.syscall_buffer << "\n";
+            expect(result.halted(), "split buffer test halts");
+            std::cout << "DEBUG: split test reg 13 = " << regLong(vm, 13) << "\n";
+            expect(regLong(vm, 13) == 1, "SplitBuf operations work correctly");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -1015,6 +1300,7 @@ int main() {
     testOwnershipAndAutoDropPhaseA();
     testRegisterAllocationWiringPhaseA();
     testUlibOwnershipRawHeapSnippetPhaseA();
+    testTclTernaryErgonomicsExtensions();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " Phase 7 compiler test failure(s)\n";

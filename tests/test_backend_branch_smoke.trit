@@ -20,7 +20,7 @@ fn main() -> t40 {
     tcl_ir_emit(zero_block, TCL_IR_RETURN, 0, 1, 0, 0);
     tcl_ir_emit(pos_block, TCL_IR_RETURN, 0, 1, 0, 0);
 
-    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 100);
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 0, 100);
     var text_len: t40 = vec_len(text);
     var ok: t40 = 1;
     match text_len { pos => {} zero => { ok = 0; } neg => { ok = 0; } }

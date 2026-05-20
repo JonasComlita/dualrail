@@ -473,6 +473,49 @@ void testOsSubstrate() {
     }
 
     {
+        VMState vm(96, 96);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r13, 88
+            syscall 22
+        after_syscall:
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, syscall_id
+            csrr r6, status
+            mov r1, 2
+            csrw console_ctrl, r1
+            csrw console_out, r13
+            mov r1, 3
+            csrw console_ctrl, r1
+            mov r13, 0
+            mov r1, after_syscall
+            csrw epc, r1
+            eret
+        )");
+        expect(assembled.success, "routed sys_write_char program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "routed sys_write_char program loads");
+            auto result = sandbox::vm::run(vm, 96);
+            expect(result.halted(), "routed sys_write_char handler returns");
+            expect(vm.syscall_buffer == "X", "kernel character-mode CSR writes routed char output");
+            expect(asLong(vm, R4) == OS_CAUSE_SYSCALL, "sys_write_char routes ECALL cause");
+            expect(asLong(vm, R5) == SYSCALL_WRITE_CHAR, "sys_write_char records syscall id");
+            expect(VMState::tritAt(asLong(vm, R6), 0) == T_NEG,
+                   "trap handler observes kernel privilege in status CSR");
+            expect(VMState::tritAt(asLong(vm, R6), 2) == T_POS,
+                   "trap handler status records previous user privilege");
+            expect(vm.privilege == PrivilegeMode::User,
+                   "ERET restores user privilege after sys_write_char");
+            expect(asLong(vm, 13) == 0, "sys_write_char returns success in r13");
+        }
+    }
+
+    {
         VMState vm(32, 64);
         auto program = assembleOrThrow(R"(
             mov r1, -1
@@ -1132,6 +1175,16 @@ void testOsSubstrate() {
                    "spawn returns -1 when the static slot is not free");
             expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
                    "failed spawn is not counted as a created process");
+
+            std::cerr << "DEBUG: OS sub-test 15 - char syscall" << std::endl;
+            VMState charVm(2048, 768);
+            expect(loadAndReset(charVm, assembled), "Trit OS char syscall image loads");
+            charVm.enqueueConsoleAscii("c x");
+            auto charResult = sandbox::vm::run(charVm, 12000);
+            expect(charResult.timeout() && charVm.isRunning(),
+                   "kernel keeps running after sys_write_char probe");
+            expect(charVm.syscall_buffer.find("K\n") != std::string::npos,
+                   "minimal kernel routes sys_write_char through character console mode");
 
             std::cerr << "DEBUG: OS sub-test 15 - syscall probe" << std::endl;
             VMState osVm(2048, 768);

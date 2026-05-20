@@ -89,7 +89,7 @@ fn phasec_backend_smoke() -> t40 {
     ok = phasec_require_pos(frame, ok);
     tcl_backend_alloc_free(alloc);
 
-    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, tokens, fn_id);
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, tokens, 0, fn_id);
     var text_len: t40 = vec_len(text);
     ok = phasec_require_pos(text_len, ok);
     var c0: t40 = vec_get(text, 0);
