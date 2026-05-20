@@ -1,0 +1,403 @@
+// =============================================================================
+// tcl_ast.trit - Phase B Native Compiler AST representations
+// =============================================================================
+
+// Type Kinds
+const TCL_TYPE_UNKNOWN: t40 = 0;
+const TCL_TYPE_VOID: t40 = 1;
+const TCL_TYPE_NUMERIC: t40 = 2;
+const TCL_TYPE_LANE: t40 = 3;
+const TCL_TYPE_VECTOR: t40 = 4;
+const TCL_TYPE_POINTER: t40 = 5;
+const TCL_TYPE_SHARED: t40 = 6;
+const TCL_TYPE_STRUCT: t40 = 7;
+const TCL_TYPE_ARRAY: t40 = 8;
+const TCL_TYPE_FUNCTION: t40 = 9;
+const TCL_TYPE_TYPEVAR: t40 = 10;
+const TCL_TYPE_TRIT: t40 = 11;
+const TCL_TYPE_OWNED: t40 = 12;
+const TCL_TYPE_BORROW: t40 = 13;
+const TCL_TYPE_BORROW_MUT: t40 = 14;
+
+// Pointer Regions
+const TCL_PTR_REG_STACK: t40 = 0;
+const TCL_PTR_REG_STATIC: t40 = 1;
+const TCL_PTR_REG_USER: t40 = 2;
+const TCL_PTR_REG_KERNEL: t40 = 3;
+
+// Pointer States
+const TCL_PTR_STATE_VALID: t40 = 0;
+const TCL_PTR_STATE_UNKNOWN: t40 = 1;
+const TCL_PTR_STATE_NULL: t40 = 2;
+
+// Memory Orders
+const TCL_MEM_ORDER_RELAXED: t40 = 0 - 1; // -1
+const TCL_MEM_ORDER_ACQ_REL: t40 = 0;
+const TCL_MEM_ORDER_SEQ_CST: t40 = 1;
+
+// Expression Kinds
+const TCL_EXPR_NUMBER: t40 = 0;
+const TCL_EXPR_NAME: t40 = 1;
+const TCL_EXPR_BINARY: t40 = 2;
+const TCL_EXPR_UNARY: t40 = 3;
+const TCL_EXPR_CALL: t40 = 4;
+const TCL_EXPR_FIELD: t40 = 5;
+const TCL_EXPR_INDEX: t40 = 6;
+const TCL_EXPR_STRUCT_LIT: t40 = 7;
+const TCL_EXPR_ARRAY_LIT: t40 = 8;
+
+// Statement Kinds
+const TCL_STMT_LET: t40 = 0;
+const TCL_STMT_ASSIGN: t40 = 1;
+const TCL_STMT_RETURN: t40 = 2;
+const TCL_STMT_EXPR: t40 = 3;
+const TCL_STMT_WHILE: t40 = 4;
+const TCL_STMT_MATCH: t40 = 5;
+const TCL_STMT_UNSAFE: t40 = 6;
+const TCL_STMT_TUPLE_SWAP: t40 = 7;
+const TCL_STMT_CONST: t40 = 8;
+
+// =============================================================================
+// AST Arena Allocation & Deallocation
+// =============================================================================
+
+// AST master layout (13 words):
+// [0] module_name_token
+// [1] imports_vec (vector of import IDs)
+// [2] structs_vec (vector of struct IDs)
+// [3] functions_vec (vector of function IDs)
+// [4] consts_vec (vector of constant IDs)
+// [5] type_arena (flat vector of Type slots)
+// [6] expr_arena (flat vector of Expression slots)
+// [7] stmt_arena (flat vector of Statement slots)
+// [8] match_arm_arena (flat vector of MatchArm slots)
+// [9] function_arena (flat vector of Function slots)
+// [10] struct_arena (flat vector of Struct slots)
+// [11] const_arena (flat vector of ConstDecl slots)
+// [12] import_arena (flat vector of ImportDecl slots)
+fn tcl_ast_new(name_token: t40) -> t40 {
+    var ast: t40 = malloc_raw(13);
+    match ast {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var imports_vec: t40 = vec_new();
+            var structs_vec: t40 = vec_new();
+            var functions_vec: t40 = vec_new();
+            var consts_vec: t40 = vec_new();
+            var type_arena: t40 = vec_new();
+            var expr_arena: t40 = vec_new();
+            var stmt_arena: t40 = vec_new();
+            var match_arm_arena: t40 = vec_new();
+            var function_arena: t40 = vec_new();
+            var struct_arena: t40 = vec_new();
+            var const_arena: t40 = vec_new();
+            var import_arena: t40 = vec_new();
+            unsafe {
+                store(ast,      name_token);
+                store(ast + 1,  imports_vec);
+                store(ast + 2,  structs_vec);
+                store(ast + 3,  functions_vec);
+                store(ast + 4,  consts_vec);
+                store(ast + 5,  type_arena);
+                store(ast + 6,  expr_arena);
+                store(ast + 7,  stmt_arena);
+                store(ast + 8,  match_arm_arena);
+                store(ast + 9,  function_arena);
+                store(ast + 10, struct_arena);
+                store(ast + 11, const_arena);
+                store(ast + 12, import_arena);
+            }
+            return ast;
+        }
+    }
+}
+
+fn tcl_ast_free(ast: t40) -> t40 {
+    match ast {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            // 1. Free nested vectors inside functions
+            var function_arena: t40 = 0;
+            unsafe { function_arena = load(ast + 9); }
+            var num_funcs: t40 = vec_len(function_arena) / 7;
+            var i: t40 = 0;
+            while num_funcs - i > 0 {
+                var base: t40 = i * 7;
+                var params_vec: t40 = vec_get(function_arena, base + 1);
+                match params_vec { pos => { vec_free(params_vec); } zero => {} neg => {} }
+                var body_vec: t40 = vec_get(function_arena, base + 3);
+                match body_vec { pos => { vec_free(body_vec); } zero => {} neg => {} }
+                var width_params_vec: t40 = vec_get(function_arena, base + 4);
+                match width_params_vec { pos => { vec_free(width_params_vec); } zero => {} neg => {} }
+                i = i + 1;
+            }
+
+            // 2. Free nested vectors inside structs
+            var struct_arena: t40 = 0;
+            unsafe { struct_arena = load(ast + 10); }
+            var num_structs: t40 = vec_len(struct_arena) / 4;
+            i = 0;
+            while num_structs - i > 0 {
+                var base: t40 = i * 4;
+                var fields_vec: t40 = vec_get(struct_arena, base + 1);
+                match fields_vec { pos => { vec_free(fields_vec); } zero => {} neg => {} }
+                i = i + 1;
+            }
+
+            // 3. Free nested vectors inside expressions
+            var expr_arena: t40 = 0;
+            unsafe { expr_arena = load(ast + 6); }
+            var num_exprs: t40 = vec_len(expr_arena) / 5;
+            i = 0;
+            while num_exprs - i > 0 {
+                var base: t40 = i * 5;
+                var args_vec: t40 = vec_get(expr_arena, base + 4);
+                match args_vec { pos => { vec_free(args_vec); } zero => {} neg => {} }
+                i = i + 1;
+            }
+
+            // 4. Free nested vectors inside statements
+            var stmt_arena: t40 = 0;
+            unsafe { stmt_arena = load(ast + 7); }
+            var num_stmts: t40 = vec_len(stmt_arena) / 8;
+            i = 0;
+            while num_stmts - i > 0 {
+                var base: t40 = i * 8;
+                var body_vec: t40 = vec_get(stmt_arena, base + 5);
+                match body_vec { pos => { vec_free(body_vec); } zero => {} neg => {} }
+                var arms_vec: t40 = vec_get(stmt_arena, base + 6);
+                match arms_vec { pos => { vec_free(arms_vec); } zero => {} neg => {} }
+                i = i + 1;
+            }
+
+            // 5. Free nested vectors inside match arms
+            var match_arm_arena: t40 = 0;
+            unsafe { match_arm_arena = load(ast + 8); }
+            var num_arms: t40 = vec_len(match_arm_arena) / 4;
+            i = 0;
+            while num_arms - i > 0 {
+                var base: t40 = i * 4;
+                var body_vec: t40 = vec_get(match_arm_arena, base + 2);
+                match body_vec { pos => { vec_free(body_vec); } zero => {} neg => {} }
+                i = i + 1;
+            }
+
+            // 6. Free all arena vectors and master block
+            var v: t40 = 0;
+            i = 1;
+            while 13 - i > 0 {
+                unsafe { v = load(ast + i); }
+                vec_free(v);
+                i = i + 1;
+            }
+            free_raw(ast);
+            return 0;
+        }
+    }
+}
+
+// =============================================================================
+// Arena Accessors
+// =============================================================================
+fn tcl_ast_imports(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 1); } return v; }
+fn tcl_ast_structs(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 2); } return v; }
+fn tcl_ast_functions(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 3); } return v; }
+fn tcl_ast_consts(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 4); } return v; }
+
+fn tcl_ast_type_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 5); } return v; }
+fn tcl_ast_expr_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 6); } return v; }
+fn tcl_ast_stmt_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 7); } return v; }
+fn tcl_ast_match_arm_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 8); } return v; }
+fn tcl_ast_function_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 9); } return v; }
+fn tcl_ast_struct_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 10); } return v; }
+fn tcl_ast_const_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 11); } return v; }
+fn tcl_ast_import_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 12); } return v; }
+
+// =============================================================================
+// Type Node APIs (Slot Size: 4 words)
+// =============================================================================
+fn tcl_type_new(ast: t40, kind: t40, element: t40, extra: t40, name_token: t40) -> t40 {
+    var arena: t40 = tcl_ast_type_arena(ast);
+    var id: t40 = vec_len(arena) / 4 + 1;
+    vec_push(arena, kind);
+    vec_push(arena, element);
+    vec_push(arena, extra);
+    vec_push(arena, name_token);
+    return id;
+}
+fn tcl_type_base(id: t40) -> t40 { return (id - 1) * 4; }
+fn tcl_type_kind(ast: t40, id: t40) -> t40 {
+    match id {
+        pos => { var arena: t40 = tcl_ast_type_arena(ast); var base: t40 = tcl_type_base(id); return vec_get(arena, base); }
+        zero => { return TCL_TYPE_UNKNOWN; }
+        neg => { return TCL_TYPE_UNKNOWN; }
+    }
+}
+fn tcl_type_element(ast: t40, id: t40) -> t40 {
+    match id {
+        pos => { var arena: t40 = tcl_ast_type_arena(ast); var base: t40 = tcl_type_base(id); return vec_get(arena, base + 1); }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+fn tcl_type_extra(ast: t40, id: t40) -> t40 {
+    match id {
+        pos => { var arena: t40 = tcl_ast_type_arena(ast); var base: t40 = tcl_type_base(id); return vec_get(arena, base + 2); }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+fn tcl_type_name_token(ast: t40, id: t40) -> t40 {
+    match id {
+        pos => { var arena: t40 = tcl_ast_type_arena(ast); var base: t40 = tcl_type_base(id); return vec_get(arena, base + 3); }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+// =============================================================================
+// Expression Node APIs (Slot Size: 5 words)
+// =============================================================================
+fn tcl_expr_new(ast: t40, kind: t40, token_idx: t40, left: t40, right: t40, args_vec: t40) -> t40 {
+    var arena: t40 = tcl_ast_expr_arena(ast);
+    var id: t40 = vec_len(arena) / 5 + 1;
+    vec_push(arena, kind);
+    vec_push(arena, token_idx);
+    vec_push(arena, left);
+    vec_push(arena, right);
+    vec_push(arena, args_vec);
+    return id;
+}
+fn tcl_expr_base(id: t40) -> t40 { return (id - 1) * 5; }
+fn tcl_expr_kind(ast: t40, id: t40) -> t40 {
+    match id { pos => { var arena: t40 = tcl_ast_expr_arena(ast); var base: t40 = tcl_expr_base(id); return vec_get(arena, base); } zero => { return 0 - 1; } neg => { return 0 - 1; } }
+}
+fn tcl_expr_token_idx(ast: t40, id: t40) -> t40 {
+    match id { pos => { var arena: t40 = tcl_ast_expr_arena(ast); var base: t40 = tcl_expr_base(id); return vec_get(arena, base + 1); } zero => { return 0; } neg => { return 0; } }
+}
+fn tcl_expr_left(ast: t40, id: t40) -> t40 {
+    match id { pos => { var arena: t40 = tcl_ast_expr_arena(ast); var base: t40 = tcl_expr_base(id); return vec_get(arena, base + 2); } zero => { return 0; } neg => { return 0; } }
+}
+fn tcl_expr_right(ast: t40, id: t40) -> t40 {
+    match id { pos => { var arena: t40 = tcl_ast_expr_arena(ast); var base: t40 = tcl_expr_base(id); return vec_get(arena, base + 3); } zero => { return 0; } neg => { return 0; } }
+}
+fn tcl_expr_args_vec(ast: t40, id: t40) -> t40 {
+    match id { pos => { var arena: t40 = tcl_ast_expr_arena(ast); var base: t40 = tcl_expr_base(id); return vec_get(arena, base + 4); } zero => { return 0; } neg => { return 0; } }
+}
+
+// =============================================================================
+// Statement Node APIs (Slot Size: 8 words)
+// =============================================================================
+fn tcl_stmt_new(ast: t40, kind: t40, token_idx: t40, expr1: t40, expr2: t40, type_id: t40, body_vec: t40, arms_vec: t40) -> t40 {
+    var arena: t40 = tcl_ast_stmt_arena(ast);
+    var id: t40 = vec_len(arena) / 8 + 1;
+    vec_push(arena, kind);
+    vec_push(arena, token_idx);
+    vec_push(arena, expr1);
+    vec_push(arena, expr2);
+    vec_push(arena, type_id);
+    vec_push(arena, body_vec);
+    vec_push(arena, arms_vec);
+    vec_push(arena, 0); // Padding
+    return id;
+}
+fn tcl_stmt_base(id: t40) -> t40 { return (id - 1) * 8; }
+fn tcl_stmt_kind(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base); } zero => { return 0 - 1; } neg => { return 0 - 1; } } }
+fn tcl_stmt_token_idx(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 1); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_expr1(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 2); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_expr2(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 3); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_type_id(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 4); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_body_vec(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 5); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_arms_vec(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 6); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_mutable(ast: t40, id: t40) -> t40 { match id { pos => { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); return vec_get(arena, base + 7); } zero => { return 0; } neg => { return 0; } } }
+fn tcl_stmt_set_mutable(ast: t40, id: t40, val: t40) -> t40 { var arena: t40 = tcl_ast_stmt_arena(ast); var base: t40 = tcl_stmt_base(id); vec_set(arena, base + 7, val); return 0; }
+
+// =============================================================================
+// Match Arm Node APIs (Slot Size: 4 words)
+// =============================================================================
+fn tcl_match_arm_new(ast: t40, name_token: t40, binding_token: t40, body_vec: t40, start_token: t40) -> t40 {
+    var arena: t40 = tcl_ast_match_arm_arena(ast);
+    var id: t40 = vec_len(arena) / 4 + 1;
+    vec_push(arena, name_token);
+    vec_push(arena, binding_token);
+    vec_push(arena, body_vec);
+    vec_push(arena, start_token);
+    return id;
+}
+fn tcl_match_arm_base(id: t40) -> t40 { return (id - 1) * 4; }
+fn tcl_match_arm_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_match_arm_arena(ast); var base: t40 = tcl_match_arm_base(id); return vec_get(arena, base); }
+fn tcl_match_arm_binding_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_match_arm_arena(ast); var base: t40 = tcl_match_arm_base(id); return vec_get(arena, base + 1); }
+fn tcl_match_arm_body_vec(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_match_arm_arena(ast); var base: t40 = tcl_match_arm_base(id); return vec_get(arena, base + 2); }
+fn tcl_match_arm_start_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_match_arm_arena(ast); var base: t40 = tcl_match_arm_base(id); return vec_get(arena, base + 3); }
+
+// =============================================================================
+// Function Node APIs (Slot Size: 7 words)
+// =============================================================================
+fn tcl_function_new(ast: t40, name_token: t40, params_vec: t40, return_type_id: t40, body_vec: t40, width_params_vec: t40, is_pub: t40) -> t40 {
+    var arena: t40 = tcl_ast_function_arena(ast);
+    var id: t40 = vec_len(arena) / 7 + 1;
+    vec_push(arena, name_token);
+    vec_push(arena, params_vec);
+    vec_push(arena, return_type_id);
+    vec_push(arena, body_vec);
+    vec_push(arena, width_params_vec);
+    vec_push(arena, is_pub);
+    vec_push(arena, 0); // Padding
+    return id;
+}
+fn tcl_function_base(id: t40) -> t40 { return (id - 1) * 7; }
+fn tcl_function_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base); }
+fn tcl_function_params_vec(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base + 1); }
+fn tcl_function_return_type(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base + 2); }
+fn tcl_function_body_vec(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base + 3); }
+fn tcl_function_width_params_vec(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base + 4); }
+fn tcl_function_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_function_arena(ast); var base: t40 = tcl_function_base(id); return vec_get(arena, base + 5); }
+
+// =============================================================================
+// Struct Node APIs (Slot Size: 4 words)
+// =============================================================================
+fn tcl_struct_new(ast: t40, name_token: t40, fields_vec: t40, is_pub: t40) -> t40 {
+    var arena: t40 = tcl_ast_struct_arena(ast);
+    var id: t40 = vec_len(arena) / 4 + 1;
+    vec_push(arena, name_token);
+    vec_push(arena, fields_vec);
+    vec_push(arena, is_pub);
+    vec_push(arena, 0); // Padding
+    return id;
+}
+fn tcl_struct_base(id: t40) -> t40 { return (id - 1) * 4; }
+fn tcl_struct_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_struct_arena(ast); var base: t40 = tcl_struct_base(id); return vec_get(arena, base); }
+fn tcl_struct_fields_vec(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_struct_arena(ast); var base: t40 = tcl_struct_base(id); return vec_get(arena, base + 1); }
+fn tcl_struct_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_struct_arena(ast); var base: t40 = tcl_struct_base(id); return vec_get(arena, base + 2); }
+
+// =============================================================================
+// Constant Node APIs (Slot Size: 4 words)
+// =============================================================================
+fn tcl_const_new(ast: t40, name_token: t40, type_id: t40, expr_id: t40, is_pub: t40) -> t40 {
+    var arena: t40 = tcl_ast_const_arena(ast);
+    var id: t40 = vec_len(arena) / 4 + 1;
+    vec_push(arena, name_token);
+    vec_push(arena, type_id);
+    vec_push(arena, expr_id);
+    vec_push(arena, is_pub);
+    return id;
+}
+fn tcl_const_base(id: t40) -> t40 { return (id - 1) * 4; }
+fn tcl_const_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_const_arena(ast); var base: t40 = tcl_const_base(id); return vec_get(arena, base); }
+fn tcl_const_type(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_const_arena(ast); var base: t40 = tcl_const_base(id); return vec_get(arena, base + 1); }
+fn tcl_const_expr(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_const_arena(ast); var base: t40 = tcl_const_base(id); return vec_get(arena, base + 2); }
+fn tcl_const_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_const_arena(ast); var base: t40 = tcl_const_base(id); return vec_get(arena, base + 3); }
+
+// =============================================================================
+// Import Node APIs (Slot Size: 2 words)
+// =============================================================================
+fn tcl_import_new(ast: t40, name_token: t40) -> t40 {
+    var arena: t40 = tcl_ast_import_arena(ast);
+    var id: t40 = vec_len(arena) / 2 + 1;
+    vec_push(arena, name_token);
+    vec_push(arena, 0); // Padding
+    return id;
+}
+fn tcl_import_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_import_arena(ast); var base: t40 = (id - 1) * 2; return vec_get(arena, base); }

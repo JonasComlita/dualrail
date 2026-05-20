@@ -38,6 +38,7 @@ const TCL_TK_TRUE: t40 = 37;
 const TCL_TK_FALSE: t40 = 38;
 const TCL_TK_BREAK: t40 = 39;
 const TCL_TK_CONTINUE: t40 = 40;
+const TCL_TK_CONST: t40 = 41;
 
 const TCL_TK_LPAREN: t40 = 100;
 const TCL_TK_RPAREN: t40 = 101;

@@ -1,0 +1,235 @@
+// =============================================================================
+// test_compiler_frontend_smoke.trit - Phase B native compiler frontend smoke
+// =============================================================================
+
+fn phaseb_check(actual: t40, expected: t40, ok: t40) -> t40 {
+    match ok {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+    match (actual - expected) {
+        zero => { return ok; }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn phaseb_require_pos(value: t40, ok: t40) -> t40 {
+    match ok {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+    match value {
+        pos => { return ok; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn phaseb_make_add_source() -> t40 {
+    var src: t40 = malloc_raw(48);
+    unsafe {
+        store(src + 0, 102);
+        store(src + 1, 110);
+        store(src + 2, 32);
+        store(src + 3, 97);
+        store(src + 4, 100);
+        store(src + 5, 100);
+        store(src + 6, 40);
+        store(src + 7, 120);
+        store(src + 8, 58);
+        store(src + 9, 32);
+        store(src + 10, 116);
+        store(src + 11, 52);
+        store(src + 12, 48);
+        store(src + 13, 44);
+        store(src + 14, 32);
+        store(src + 15, 121);
+        store(src + 16, 58);
+        store(src + 17, 32);
+        store(src + 18, 116);
+        store(src + 19, 52);
+        store(src + 20, 48);
+        store(src + 21, 41);
+        store(src + 22, 32);
+        store(src + 23, 45);
+        store(src + 24, 62);
+        store(src + 25, 32);
+        store(src + 26, 116);
+        store(src + 27, 52);
+        store(src + 28, 48);
+        store(src + 29, 32);
+        store(src + 30, 123);
+        store(src + 31, 32);
+        store(src + 32, 114);
+        store(src + 33, 101);
+        store(src + 34, 116);
+        store(src + 35, 117);
+        store(src + 36, 114);
+        store(src + 37, 110);
+        store(src + 38, 32);
+        store(src + 39, 120);
+        store(src + 40, 32);
+        store(src + 41, 43);
+        store(src + 42, 32);
+        store(src + 43, 121);
+        store(src + 44, 59);
+        store(src + 45, 32);
+        store(src + 46, 125);
+        store(src + 47, 10);
+    }
+    return src;
+}
+
+fn phaseb_parser_infer_ir_smoke() -> t40 {
+    var src: t40 = phaseb_make_add_source();
+    var tokens: t40 = tcl_frontend_lex(src, 48);
+    var parser: t40 = tcl_parser_new(tokens, src);
+    var ast: t40 = tcl_ast_new(0);
+    var ok: t40 = 1;
+
+    tcl_parser_parse(parser, ast);
+
+    var parse_errors: t40 = tcl_parser_errors(parser);
+    ok = phaseb_check(parse_errors, 0, ok);
+
+    var funcs: t40 = tcl_ast_functions(ast);
+    var func_count: t40 = vec_len(funcs);
+    ok = phaseb_check(func_count, 1, ok);
+
+    var fn_id: t40 = vec_get(funcs, 0);
+    var type_ctx: t40 = tcl_type_ctx_new(tokens, src);
+    tcl_infer_ast(type_ctx, ast);
+    var type_errors: t40 = tcl_type_ctx_errors(type_ctx);
+    ok = phaseb_check(type_errors, 0, ok);
+
+    var flow_ctx: t40 = tcl_ptr_flow_ctx_new(tokens, src);
+    var flow_errors: t40 = tcl_analyze_pointer_flow(flow_ctx, ast, fn_id);
+    ok = phaseb_check(flow_errors, 0, ok);
+
+    var cfg: t40 = tcl_lower_function(ast, fn_id);
+    var block_count: t40 = tcl_ir_cfg_block_count(cfg);
+    ok = phaseb_require_pos(block_count, ok);
+    var entry: t40 = tcl_ir_cfg_block_at(cfg, 0);
+    var instr_count: t40 = tcl_ir_block_instr_count(entry);
+    ok = phaseb_require_pos(instr_count, ok);
+
+    tcl_ir_cfg_free(cfg);
+    tcl_ptr_flow_ctx_free(flow_ctx);
+    tcl_type_ctx_free(type_ctx);
+    tcl_parser_free(parser);
+    tcl_ast_free(ast);
+    tcl_frontend_free(tokens);
+    free_raw(src);
+    return ok;
+}
+
+fn phaseb_pointer_invalid_smoke() -> t40 {
+    var tokens: t40 = tcl_token_stream_new();
+    var src: t40 = vec_new();
+    tcl_token_emit(tokens, TCL_TK_IDENT, 0, 1);
+    tcl_token_emit(tokens, TCL_TK_STAR, 1, 1);
+
+    var ast: t40 = tcl_ast_new(0);
+    var t_num: t40 = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0);
+    var ptr_unknown: t40 = tcl_type_new(ast, TCL_TYPE_POINTER, t_num, TCL_PTR_STATE_UNKNOWN, 0);
+    var num_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NUMBER, 0, 0, 0, 0);
+    var let_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_LET, 0, num_expr, 0, ptr_unknown, 0, 0);
+    var name_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NAME, 0, 0, 0, 0);
+    var deref_expr: t40 = tcl_expr_new(ast, TCL_EXPR_UNARY, 1, name_expr, 0, 0);
+    var ret_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_RETURN, 1, deref_expr, 0, 0, 0, 0);
+    var body: t40 = vec_new();
+    vec_push(body, let_stmt);
+    vec_push(body, ret_stmt);
+    var params: t40 = vec_new();
+    var widths: t40 = vec_new();
+    var fn_id: t40 = tcl_function_new(ast, 0, params, t_num, body, widths, 0);
+    var funcs: t40 = tcl_ast_functions(ast);
+    vec_push(funcs, fn_id);
+
+    var flow_ctx: t40 = tcl_ptr_flow_ctx_new(tokens, src);
+    var errors: t40 = tcl_analyze_pointer_flow(flow_ctx, ast, fn_id);
+    var ok: t40 = phaseb_check(errors, 1, 1);
+
+    tcl_ptr_flow_ctx_free(flow_ctx);
+    tcl_ast_free(ast);
+    tcl_token_free(tokens);
+    vec_free(src);
+    return ok;
+}
+
+fn phaseb_make_valid_source() -> t40 {
+    var src: t40 = malloc_raw(11);
+    unsafe {
+        store(src + 0, 112);
+        store(src + 1, 32);
+        store(src + 2, 118);
+        store(src + 3, 97);
+        store(src + 4, 108);
+        store(src + 5, 105);
+        store(src + 6, 100);
+        store(src + 7, 32);
+        store(src + 8, 113);
+        store(src + 9, 32);
+        store(src + 10, 42);
+    }
+    return src;
+}
+
+fn phaseb_pointer_valid_match_smoke() -> t40 {
+    var tokens: t40 = tcl_token_stream_new();
+    var src: t40 = phaseb_make_valid_source();
+    tcl_token_emit(tokens, TCL_TK_IDENT, 0, 1);
+    tcl_token_emit(tokens, TCL_TK_VALID, 2, 5);
+    tcl_token_emit(tokens, TCL_TK_IDENT, 8, 1);
+    tcl_token_emit(tokens, TCL_TK_STAR, 10, 1);
+
+    var ast: t40 = tcl_ast_new(0);
+    var t_num: t40 = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0);
+    var ptr_unknown: t40 = tcl_type_new(ast, TCL_TYPE_POINTER, t_num, TCL_PTR_STATE_UNKNOWN, 0);
+    var params: t40 = vec_new();
+    vec_push(params, 0);
+    vec_push(params, ptr_unknown);
+
+    var cond_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NAME, 0, 0, 0, 0);
+    var q_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NAME, 2, 0, 0, 0);
+    var deref_expr: t40 = tcl_expr_new(ast, TCL_EXPR_UNARY, 3, q_expr, 0, 0);
+    var ret_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_RETURN, 3, deref_expr, 0, 0, 0, 0);
+    var arm_body: t40 = vec_new();
+    vec_push(arm_body, ret_stmt);
+    var arm_id: t40 = tcl_match_arm_new(ast, 1, 2, arm_body, 1);
+    var arms: t40 = vec_new();
+    vec_push(arms, arm_id);
+    var match_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_MATCH, 1, cond_expr, 0, 0, 0, arms);
+    var body: t40 = vec_new();
+    vec_push(body, match_stmt);
+    var widths: t40 = vec_new();
+    var fn_id: t40 = tcl_function_new(ast, 0, params, t_num, body, widths, 0);
+    var funcs: t40 = tcl_ast_functions(ast);
+    vec_push(funcs, fn_id);
+
+    var flow_ctx: t40 = tcl_ptr_flow_ctx_new(tokens, src);
+    var errors: t40 = tcl_analyze_pointer_flow(flow_ctx, ast, fn_id);
+    var ok: t40 = phaseb_check(errors, 0, 1);
+
+    tcl_ptr_flow_ctx_free(flow_ctx);
+    tcl_ast_free(ast);
+    tcl_token_free(tokens);
+    free_raw(src);
+    return ok;
+}
+
+fn main() -> t40 {
+    var ok: t40 = 1;
+    var parser_ok: t40 = phaseb_parser_infer_ir_smoke();
+    ok = phaseb_check(parser_ok, 1, ok);
+    var invalid_ok: t40 = phaseb_pointer_invalid_smoke();
+    ok = phaseb_check(invalid_ok, 1, ok);
+    var valid_ok: t40 = phaseb_pointer_valid_match_smoke();
+    ok = phaseb_check(valid_ok, 1, ok);
+    print_int(ok);
+    newline();
+    return ok;
+}

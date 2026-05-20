@@ -240,6 +240,14 @@ fn tcl_keyword_kind(src: t40, start: t40, len: t40) -> t40 {
                 zero => {}
                 neg => {}
             }
+            kind = tcl_chars4(src, start, 99, 111, 110, 115);
+            match kind {
+                pos => {
+                    match tcl_char_eq_at(src, start + 4, 116) { pos => { return TCL_TK_CONST; } zero => {} neg => {} }
+                }
+                zero => {}
+                neg => {}
+            }
         }
         neg => {}
         pos => {}

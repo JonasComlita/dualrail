@@ -1,0 +1,54 @@
+fn tcl_int_div(a: t40, b: t40) -> t40 {
+    var quot: t40 = 0;
+    var rem: t40 = a;
+    while rem - b >= 0 {
+        rem = rem - b;
+        quot = quot + 1;
+    }
+    return quot;
+}
+
+fn tcl_get_trit(val: t40, idx: t40) -> t40 {
+    var temp: t40 = val;
+    var i: t40 = 0;
+    while idx - i > 0 {
+        var r: t40 = tcl_int_div(temp + 1, 3);
+        r = (temp + 1) - r * 3; // (temp + 1) % 3
+        r = r - 1;
+        temp = tcl_int_div(temp - r, 3);
+        i = i + 1;
+    }
+    var r2: t40 = tcl_int_div(temp + 1, 3);
+    r2 = (temp + 1) - r2 * 3;
+    return r2 - 1;
+}
+
+fn main() -> t40 {
+    var val: t40 = 5;
+    // 5 in ternary: idx 0 = -1, idx 1 = -1, idx 2 = 1
+    print_int(tcl_get_trit(val, 0));
+    newline();
+    print_int(tcl_get_trit(val, 1));
+    newline();
+    print_int(tcl_get_trit(val, 2));
+    newline();
+
+    val = 14; // 14 = 9 + 3 + 2 = 27 - 9 - 3 - 1 = 1 -1 -1 -1
+    // Let's check for 14: 14 = 1 * 9 + 1 * 3 + 2 * 1?
+    // Wait, 14 in balanced ternary:
+    // 14 / 3 = 5 rem -1
+    // 5 / 3 = 2 rem -1
+    // 2 / 3 = 1 rem -1
+    // 1 / 3 = 0 rem 1
+    // So trits are: idx 0 = -1, idx 1 = -1, idx 2 = -1, idx 3 = 1
+    print_int(tcl_get_trit(val, 0));
+    newline();
+    print_int(tcl_get_trit(val, 1));
+    newline();
+    print_int(tcl_get_trit(val, 2));
+    newline();
+    print_int(tcl_get_trit(val, 3));
+    newline();
+
+    return 0;
+}

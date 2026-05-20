@@ -1,0 +1,86 @@
+fn print_bool(b: t40) -> t40 {
+    match b {
+        zero => { print_int(0); }
+        pos => { print_int(1); }
+        neg => { print_int(0); }
+    }
+    return 0;
+}
+
+fn main() -> t40 {
+    // 1. Create a dummy tokens vector & source string
+    // Let's create dummy vectors
+    var tokens: t40 = vec_new();
+    var src: t40 = vec_new(); // Empty source string is fine for now
+
+    // 2. Create type checker context
+    var ctx: t40 = tcl_type_ctx_new(tokens, src);
+
+    // 3. Create AST master block
+    var ast: t40 = tcl_ast_new(0);
+
+    // 4. Create types:
+    // t5 (Numeric width 1)
+    var t5: t40 = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 1, 0);
+    // t40 (Numeric width 4)
+    var t40_type: t40 = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0);
+
+    // 5. Test numeric widening ranking
+    print_int(tcl_numeric_rank(ast, t5)); // Should print 1
+    newline();
+    print_int(tcl_numeric_rank(ast, t40_type)); // Should print 4
+    newline();
+
+    // 6. Test tcl_type_can_widen
+    print_bool(tcl_type_can_widen(ast, t5, t40_type)); // 1 (t5 can widen to t40)
+    newline();
+    print_bool(tcl_type_can_widen(ast, t40_type, t5)); // 0 (t40 cannot widen to t5)
+    newline();
+
+    // 7. Test TypeVars and substitution lookup
+    var tv1: t40 = tcl_next_type_var(ctx, ast); // TypeVar 1
+    var tv2: t40 = tcl_next_type_var(ctx, ast); // TypeVar 2
+
+    // Unify TypeVar 1 with t5
+    print_bool(tcl_type_unify(ctx, ast, tv1, t5, 0)); // Should print 1
+    newline();
+
+    // Resolve TypeVar 1, should resolve to t5
+    var res1: t40 = tcl_type_apply(ctx, ast, tv1);
+    print_int(tcl_type_kind(ast, res1)); // Should print 2 (TCL_TYPE_NUMERIC)
+    newline();
+    print_int(tcl_type_extra(ast, res1)); // Should print 1 (width of t5)
+    newline();
+
+    // Unify TypeVar 2 with TypeVar 1 (which resolves to t5)
+    print_bool(tcl_type_unify(ctx, ast, tv2, tv1, 0)); // Should print 1
+    newline();
+    var res2: t40 = tcl_type_apply(ctx, ast, tv2);
+    print_int(tcl_type_kind(ast, res2)); // Should print 2
+    newline();
+
+    // 8. Test occurs check
+    var tv3: t40 = tcl_next_type_var(ctx, ast);
+    // Create a pointer to tv3
+    var ptr_tv3: t40 = tcl_type_new(ast, TCL_TYPE_POINTER, tv3, 0, 0);
+    // Unify tv3 with ptr_tv3 (should fail due to occurs check!)
+    print_bool(tcl_type_unify(ctx, ast, tv3, ptr_tv3, 123)); // Should print 0
+    newline();
+
+    // Check that we got an occurs check error
+    print_int(tcl_type_ctx_errors(ctx)); // Should print 1
+    newline();
+    var diags: t40 = tcl_type_ctx_diagnostics(ctx);
+    print_int(vec_get(diags, 0)); // Token index: 123
+    newline();
+    print_int(vec_get(diags, 1)); // Error code: TCL_ERR_OCCURS_CHECK (30)
+    newline();
+
+    // Clean up
+    tcl_ast_free(ast);
+    tcl_type_ctx_free(ctx);
+    vec_free(tokens);
+    vec_free(src);
+
+    return 0;
+}

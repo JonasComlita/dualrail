@@ -1,0 +1,951 @@
+// =============================================================================
+// tcl_infer.trit - Algorithm W / HM Type Inference Engine
+// =============================================================================
+
+// =============================================================================
+// Environment Scope Frame (BST frame list)
+// Layout: [parent_frame, map_root]
+// =============================================================================
+
+fn tcl_env_new() -> t40 {
+    return 0;
+}
+
+fn tcl_env_push(parent: t40) -> t40 {
+    var frame: t40 = malloc_raw(2);
+    unsafe {
+        store(frame, parent);
+        store(frame + 1, 0);
+    }
+    return frame;
+}
+
+fn tcl_env_pop(frame: t40) -> t40 {
+    var parent: t40 = 0;
+    var root: t40 = 0;
+    match frame {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            unsafe {
+                parent = load(frame);
+                root = load(frame + 1);
+            }
+            tcl_map_free(root);
+            free_raw(frame);
+            return parent;
+        }
+    }
+}
+
+fn tcl_env_insert(frame: t40, token: t40, scheme: t40) -> t40 {
+    match frame {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            return tcl_map_insert(frame + 1, token, scheme);
+        }
+    }
+}
+
+fn tcl_env_lookup(frame: t40, token: t40) -> t40 {
+    var curr: t40 = frame;
+    var root: t40 = 0;
+    var val: t40 = 0;
+    while curr - 0 > 0 {
+        unsafe { root = load(curr + 1); }
+        val = tcl_map_lookup(root, token);
+        match val {
+            pos => { return val; }
+            zero => {}
+            neg => {}
+        }
+        unsafe { curr = load(curr); }
+    }
+    return 0;
+}
+
+// =============================================================================
+// Generalization & Instantiation Helper Functions
+// =============================================================================
+
+fn tcl_find_free_vars(ctx: t40, ast: t40, type_id: t40, free_vars: t40) -> t40 {
+    var resolved: t40 = tcl_type_apply(ctx, ast, type_id);
+    var kind: t40 = tcl_type_kind(ast, resolved);
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var found: t40 = 0;
+    var v: t40 = 0;
+    var has_elem: t40 = 0;
+    var elem: t40 = 0;
+    var params: t40 = 0;
+    var ret: t40 = 0;
+    
+    match (kind - TCL_TYPE_TYPEVAR) {
+        zero => {
+            len = vec_len(free_vars);
+            i = 0;
+            found = 0;
+            while len - i > 0 {
+                v = vec_get(free_vars, i);
+                match (v - resolved) {
+                    zero => { found = 1; }
+                    pos => {}
+                    neg => {}
+                }
+                i = i + 1;
+            }
+            match found {
+                zero => {
+                    vec_push(free_vars, resolved);
+                }
+                pos => {}
+                neg => {}
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_TYPE_POINTER) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_VECTOR) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_ARRAY) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_SHARED) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_OWNED) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_BORROW) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_BORROW_MUT) { zero => { has_elem = 1; } pos => {} neg => {} }
+    
+    match has_elem {
+        pos => {
+            elem = tcl_type_element(ast, resolved);
+            tcl_find_free_vars(ctx, ast, elem, free_vars);
+        }
+        zero => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_TYPE_FUNCTION) {
+        zero => {
+            params = tcl_type_extra(ast, resolved);
+            ret = tcl_type_element(ast, resolved);
+            tcl_find_free_vars(ctx, ast, ret, free_vars);
+            len = vec_len(params);
+            i = 0;
+            while len - i > 0 {
+                tcl_find_free_vars(ctx, ast, vec_get(params, i), free_vars);
+                i = i + 1;
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    return 0;
+}
+
+fn tcl_generalize(ctx: t40, ast: t40, type_id: t40) -> t40 {
+    var quantified: t40 = vec_new();
+    var scheme: t40 = malloc_raw(2);
+    // In our simplified HM context, we generalize all free variables
+    tcl_find_free_vars(ctx, ast, type_id, quantified);
+    unsafe {
+        store(scheme, quantified);
+        store(scheme + 1, type_id);
+    }
+    return scheme;
+}
+
+fn tcl_type_subst(ctx: t40, ast: t40, type_id: t40, subst_map: t40) -> t40 {
+    var resolved: t40 = tcl_type_apply(ctx, ast, type_id);
+    var kind: t40 = tcl_type_kind(ast, resolved);
+    var name_tok: t40 = 0;
+    var key: t40 = 0;
+    var mapped: t40 = 0;
+    var has_elem: t40 = 0;
+    var elem: t40 = 0;
+    var new_elem: t40 = 0;
+    var params: t40 = 0;
+    var ret: t40 = 0;
+    var new_ret: t40 = 0;
+    var new_params: t40 = 0;
+    var changed: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var p: t40 = 0;
+    var np: t40 = 0;
+    
+    match (kind - TCL_TYPE_TYPEVAR) {
+        zero => {
+            name_tok = tcl_type_name_token(ast, resolved);
+            key = name_tok;
+            match key {
+                zero => { key = 10000 + tcl_type_extra(ast, resolved); }
+                pos => {}
+                neg => {}
+            }
+            mapped = tcl_map_lookup(subst_map, key);
+            match mapped {
+                zero => { return resolved; }
+                pos => { return mapped - 1; }
+                neg => { return resolved; }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_TYPE_POINTER) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_VECTOR) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_ARRAY) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_SHARED) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_OWNED) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_BORROW) { zero => { has_elem = 1; } pos => {} neg => {} }
+    match (kind - TCL_TYPE_BORROW_MUT) { zero => { has_elem = 1; } pos => {} neg => {} }
+    
+    match has_elem {
+        pos => {
+            elem = tcl_type_element(ast, resolved);
+            new_elem = tcl_type_subst(ctx, ast, elem, subst_map);
+            match (elem - new_elem) {
+                zero => { return resolved; }
+                pos => {
+                    return tcl_type_new(ast, kind, new_elem, tcl_type_extra(ast, resolved), tcl_type_name_token(ast, resolved));
+                }
+                neg => {
+                    return tcl_type_new(ast, kind, new_elem, tcl_type_extra(ast, resolved), tcl_type_name_token(ast, resolved));
+                }
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_TYPE_FUNCTION) {
+        zero => {
+            params = tcl_type_extra(ast, resolved);
+            ret = tcl_type_element(ast, resolved);
+            new_ret = tcl_type_subst(ctx, ast, ret, subst_map);
+            new_params = vec_new();
+            changed = 0;
+            match (ret - new_ret) { zero => {} pos => { changed = 1; } neg => { changed = 1; } }
+            len = vec_len(params);
+            i = 0;
+            while len - i > 0 {
+                p = vec_get(params, i);
+                np = tcl_type_subst(ctx, ast, p, subst_map);
+                vec_push(new_params, np);
+                match (p - np) { zero => {} pos => { changed = 1; } neg => { changed = 1; } }
+                i = i + 1;
+            }
+            match changed {
+                pos => {
+                    return tcl_type_new(ast, TCL_TYPE_FUNCTION, new_ret, new_params, 0);
+                }
+                zero => {
+                    vec_free(new_params);
+                    return resolved;
+                }
+                neg => {
+                    vec_free(new_params);
+                    return resolved;
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    return resolved;
+}
+
+fn tcl_instantiate(ctx: t40, ast: t40, scheme_id: t40) -> t40 {
+    var quantified: t40 = 0;
+    var root_type: t40 = 0;
+    unsafe {
+        quantified = load(scheme_id);
+        root_type = load(scheme_id + 1);
+    }
+    var len: t40 = vec_len(quantified);
+    match len {
+        zero => { return root_type; }
+        neg => { return root_type; }
+        pos => {}
+    }
+    
+    var subst_box: t40 = malloc_raw(1);
+    var subst_map: t40 = 0;
+    var i: t40 = 0;
+    var v: t40 = 0;
+    var name_tok: t40 = 0;
+    var key: t40 = 0;
+    var new_var: t40 = 0;
+    var instantiated: t40 = 0;
+    unsafe { store(subst_box, 0); }
+    
+    while len - i > 0 {
+        v = vec_get(quantified, i);
+        name_tok = tcl_type_name_token(ast, v);
+        key = name_tok;
+        match key {
+            zero => { key = 10000 + tcl_type_extra(ast, v); }
+            pos => {}
+            neg => {}
+        }
+        new_var = tcl_next_type_var(ctx, ast);
+        tcl_map_insert(subst_box, key, new_var + 1);
+        i = i + 1;
+    }
+    unsafe { subst_map = load(subst_box); }
+    instantiated = tcl_type_subst(ctx, ast, root_type, subst_map);
+    tcl_map_free(subst_map);
+    free_raw(subst_box);
+    return instantiated;
+}
+
+// =============================================================================
+// Helper: Scope & String/Token Name Comparisons
+// =============================================================================
+
+fn tcl_infer_tokens_eq(ctx: t40, t1: t40, t2: t40) -> t40 {
+    var tokens: t40 = 0;
+    var src: t40 = 0;
+    unsafe {
+        tokens = load(ctx + 4);
+        src = load(ctx + 5);
+    }
+    return tcl_tokens_eq_raw(tokens, src, t1, t2);
+}
+
+fn tcl_token_is_valid(ctx: t40, tok: t40) -> t40 {
+    var tokens: t40 = 0;
+    var src: t40 = 0;
+    var start: t40 = 0;
+    unsafe {
+        tokens = load(ctx + 4);
+        src = load(ctx + 5);
+    }
+    match tcl_token_len(tokens, tok) - 5 {
+        zero => {
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - 118 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - 97 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - 108 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - 105 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - 100 {
+                                                zero => { return 1; }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_find_struct_by_name(ctx: t40, ast: t40, name_tok: t40) -> t40 {
+    var structs: t40 = tcl_ast_structs(ast);
+    var len: t40 = vec_len(structs);
+    var i: t40 = 0;
+    var struct_id: t40 = 0;
+    var s_name: t40 = 0;
+    while len - i > 0 {
+        struct_id = vec_get(structs, i);
+        s_name = tcl_struct_name_token(ast, struct_id);
+        match tcl_infer_tokens_eq(ctx, name_tok, s_name) {
+            pos => { return struct_id; }
+            zero => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn tcl_find_struct_field_type(ctx: t40, ast: t40, struct_id: t40, field_tok: t40) -> t40 {
+    var fields: t40 = tcl_struct_fields_vec(ast, struct_id);
+    var len: t40 = vec_len(fields);
+    var i: t40 = 0;
+    var f_name: t40 = 0;
+    var f_type: t40 = 0;
+    while len - i > 0 {
+        f_name = vec_get(fields, i);
+        f_type = vec_get(fields, i + 1);
+        match tcl_infer_tokens_eq(ctx, field_tok, f_name) {
+            pos => { return f_type; }
+            zero => {}
+            neg => {}
+        }
+        i = i + 2;
+    }
+    return 0; // Not found
+}
+
+// =============================================================================
+// HM / Algorithm W Expression Type Inference
+// =============================================================================
+
+fn tcl_infer_expr(ctx: t40, env: t40, ast: t40, expr_id: t40) -> t40 {
+    match expr_id {
+        zero => { return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0); }
+        neg => { return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0); }
+        pos => {}
+    }
+    
+    var kind: t40 = tcl_expr_kind(ast, expr_id);
+    var tok_idx: t40 = tcl_expr_token_idx(ast, expr_id);
+    var left: t40 = tcl_expr_left(ast, expr_id);
+    var right: t40 = tcl_expr_right(ast, expr_id);
+    var args_vec: t40 = tcl_expr_args_vec(ast, expr_id);
+    
+    // Type Var helpers
+    var scheme: t40 = 0;
+    var t_left: t40 = 0;
+    var t_right: t40 = 0;
+    var last_widen: t40 = 0;
+    var t_fn: t40 = 0;
+    var t_args: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var t_arg: t40 = 0;
+    var t_ret: t40 = 0;
+    var t_call_fn: t40 = 0;
+    var unwrapped: t40 = 0;
+    var unwrapped_kind: t40 = 0;
+    var name_tok: t40 = 0;
+    var struct_id: t40 = 0;
+    var f_type: t40 = 0;
+    var f_tok: t40 = 0;
+    var f_val_expr: t40 = 0;
+    var t_val: t40 = 0;
+    var t_expected: t40 = 0;
+    var t_elem: t40 = 0;
+    var t_array: t40 = 0;
+    var t_idx: t40 = 0;
+    var t_cond: t40 = 0;
+    
+    match kind {
+        // TCL_EXPR_NUMBER
+        zero => {
+            return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0); // Default to t40
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_NAME) {
+        zero => {
+            scheme = tcl_env_lookup(env, tok_idx);
+            match scheme {
+                zero => {
+                    // Record unbound variable error
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    var type_diags: t40 = vec_get(ctx, 3);
+                    vec_push(type_diags, tok_idx);
+                    vec_push(type_diags, 29); // TCL_ERR_TYPE_MISMATCH
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+                pos => {
+                    return tcl_instantiate(ctx, ast, scheme);
+                }
+                neg => {
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_BINARY) {
+        zero => {
+            t_left = tcl_infer_expr(ctx, env, ast, left);
+            t_right = tcl_infer_expr(ctx, env, ast, right);
+            tcl_type_unify(ctx, ast, t_left, t_right, tok_idx);
+            last_widen = tcl_type_ctx_last_widening(ctx);
+            match last_widen {
+                zero => { return tcl_type_apply(ctx, ast, t_left); }
+                pos => {
+                    unsafe { store(ctx + 6, 0); } // Reset last_widening
+                    return last_widen;
+                }
+                neg => { return tcl_type_apply(ctx, ast, t_left); }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_UNARY) {
+        zero => {
+            return tcl_infer_expr(ctx, env, ast, left);
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_CALL) {
+        zero => {
+            t_fn = tcl_infer_expr(ctx, env, ast, left);
+            t_args = vec_new();
+            len = vec_len(args_vec);
+            i = 0;
+            while len - i > 0 {
+                t_arg = tcl_infer_expr(ctx, env, ast, vec_get(args_vec, i));
+                vec_push(t_args, t_arg);
+                i = i + 1;
+            }
+            t_ret = tcl_next_type_var(ctx, ast);
+            t_call_fn = tcl_type_new(ast, TCL_TYPE_FUNCTION, t_ret, t_args, 0);
+            tcl_type_unify(ctx, ast, t_fn, t_call_fn, tok_idx);
+            return tcl_type_apply(ctx, ast, t_ret);
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_FIELD) {
+        zero => {
+            t_left = tcl_infer_expr(ctx, env, ast, left);
+            unwrapped = tcl_pointer_type_view(ast, t_left);
+            unwrapped_kind = tcl_type_kind(ast, unwrapped);
+            match (unwrapped_kind - TCL_TYPE_STRUCT) {
+                zero => {
+                    name_tok = tcl_type_name_token(ast, unwrapped);
+                    struct_id = tcl_find_struct_by_name(ctx, ast, name_tok);
+                    var ok_struct: t40 = 0;
+                    match struct_id {
+                        neg => {}
+                        zero => { ok_struct = 1; }
+                        pos => { ok_struct = 1; }
+                    }
+                    match ok_struct {
+                        zero => {
+                            unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                            return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                        }
+                        pos => {
+                            f_type = tcl_find_struct_field_type(ctx, ast, struct_id, tok_idx);
+                            match f_type {
+                                zero => {
+                                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                                }
+                                pos => { return f_type; }
+                                neg => { return f_type; }
+                            }
+                        }
+                        neg => {
+                            return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                        }
+                    }
+                }
+                pos => {
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+                neg => {
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_INDEX) {
+        zero => {
+            t_array = tcl_infer_expr(ctx, env, ast, left);
+            t_idx = tcl_infer_expr(ctx, env, ast, right);
+            // Index type must be numeric
+            t_cond = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0);
+            tcl_type_unify(ctx, ast, t_idx, t_cond, tok_idx);
+            
+            unwrapped = tcl_pointer_type_view(ast, t_array);
+            unwrapped_kind = tcl_type_kind(ast, unwrapped);
+            
+            var is_container: t40 = 0;
+            match (unwrapped_kind - TCL_TYPE_ARRAY) { zero => { is_container = 1; } pos => {} neg => {} }
+            match (unwrapped_kind - TCL_TYPE_VECTOR) { zero => { is_container = 1; } pos => {} neg => {} }
+            
+            match is_container {
+                pos => {
+                    return tcl_type_element(ast, unwrapped);
+                }
+                zero => {
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+                neg => {
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_STRUCT_LIT) {
+        zero => {
+            struct_id = tcl_find_struct_by_name(ctx, ast, tok_idx);
+            var ok_lit: t40 = 0;
+            match struct_id {
+                neg => {}
+                zero => { ok_lit = 1; }
+                pos => { ok_lit = 1; }
+            }
+            match ok_lit {
+                zero => {
+                    unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+                pos => {
+                    t_array = tcl_type_new(ast, TCL_TYPE_STRUCT, 0, 0, tok_idx);
+                    len = vec_len(args_vec);
+                    i = 0;
+                    while len - i > 0 {
+                        f_tok = vec_get(args_vec, i);
+                        f_val_expr = vec_get(args_vec, i + 1);
+                        t_val = tcl_infer_expr(ctx, env, ast, f_val_expr);
+                        t_expected = tcl_find_struct_field_type(ctx, ast, struct_id, f_tok);
+                        match t_expected {
+                            zero => {
+                                unsafe { store(ctx + 2, load(ctx + 2) + 1); }
+                            }
+                            pos => {
+                                tcl_type_unify(ctx, ast, t_expected, t_val, f_tok);
+                            }
+                            neg => {
+                                tcl_type_unify(ctx, ast, t_expected, t_val, f_tok);
+                            }
+                        }
+                        i = i + 2;
+                    }
+                    return t_array;
+                }
+                neg => {
+                    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_EXPR_ARRAY_LIT) {
+        zero => {
+            t_elem = tcl_next_type_var(ctx, ast);
+            len = vec_len(args_vec);
+            i = 0;
+            while len - i > 0 {
+                t_val = tcl_infer_expr(ctx, env, ast, vec_get(args_vec, i));
+                tcl_type_unify(ctx, ast, t_elem, t_val, tok_idx);
+                i = i + 1;
+            }
+            return tcl_type_new(ast, TCL_TYPE_ARRAY, t_elem, len, 0);
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    return tcl_type_new(ast, TCL_TYPE_UNKNOWN, 0, 0, 0);
+}
+
+// =============================================================================
+// Statement and Block Type Checking
+// =============================================================================
+
+fn tcl_infer_stmt(ctx: t40, env: t40, ast: t40, stmt_id: t40) -> t40 {
+    match stmt_id {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+    
+    var kind: t40 = tcl_stmt_kind(ast, stmt_id);
+    var tok_idx: t40 = tcl_stmt_token_idx(ast, stmt_id);
+    var expr1: t40 = tcl_stmt_expr1(ast, stmt_id);
+    var expr2: t40 = tcl_stmt_expr2(ast, stmt_id);
+    var type_annot: t40 = tcl_stmt_type_id(ast, stmt_id);
+    var body_vec: t40 = tcl_stmt_body_vec(ast, stmt_id);
+    var arms_vec: t40 = tcl_stmt_arms_vec(ast, stmt_id);
+    
+    var t_rhs: t40 = 0;
+    var t_lhs: t40 = 0;
+    var scheme: t40 = 0;
+    var t_cond: t40 = 0;
+    var t_trit: t40 = 0;
+    var t_a: t40 = 0;
+    var t_b: t40 = 0;
+    var t_expected_ret: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var arm_id: t40 = 0;
+    var arm_tok: t40 = 0;
+    var binding_tok: t40 = 0;
+    var arm_body: t40 = 0;
+    var t_ptr: t40 = 0;
+    var t_borrow: t40 = 0;
+    var t_elem: t40 = 0;
+    var arm_env: t40 = 0;
+    
+    // TCL_STMT_LET or TCL_STMT_CONST
+    var is_let: t40 = 0;
+    match (kind - TCL_STMT_LET) { zero => { is_let = 1; } pos => {} neg => {} }
+    match (kind - TCL_STMT_CONST) { zero => { is_let = 1; } pos => {} neg => {} }
+    
+    match is_let {
+        pos => {
+            t_rhs = tcl_infer_expr(ctx, env, ast, expr1);
+            match type_annot {
+                pos => {
+                    tcl_type_unify(ctx, ast, type_annot, t_rhs, tok_idx);
+                }
+                zero => {}
+                neg => {}
+            }
+            scheme = tcl_generalize(ctx, ast, t_rhs);
+            tcl_env_insert(env, tok_idx, scheme);
+            return 0;
+        }
+        zero => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_ASSIGN) {
+        zero => {
+            t_lhs = tcl_infer_expr(ctx, env, ast, expr1);
+            t_rhs = tcl_infer_expr(ctx, env, ast, expr2);
+            tcl_type_unify(ctx, ast, t_lhs, t_rhs, tok_idx);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_RETURN) {
+        zero => {
+            t_rhs = tcl_infer_expr(ctx, env, ast, expr1);
+            unsafe { t_expected_ret = load(ctx + 7); }
+            match t_expected_ret {
+                pos => {
+                    tcl_type_unify(ctx, ast, t_expected_ret, t_rhs, tok_idx);
+                }
+                zero => {}
+                neg => {}
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_EXPR) {
+        zero => {
+            tcl_infer_expr(ctx, env, ast, expr1);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_WHILE) {
+        zero => {
+            t_cond = tcl_infer_expr(ctx, env, ast, expr1);
+            t_trit = tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, 0);
+            tcl_type_unify(ctx, ast, t_trit, t_cond, tok_idx);
+            tcl_infer_block(ctx, env, ast, body_vec);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_UNSAFE) {
+        zero => {
+            tcl_infer_block(ctx, env, ast, body_vec);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_TUPLE_SWAP) {
+        zero => {
+            t_a = tcl_infer_expr(ctx, env, ast, expr1);
+            t_b = tcl_infer_expr(ctx, env, ast, expr2);
+            tcl_type_unify(ctx, ast, t_a, t_b, tok_idx);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    match (kind - TCL_STMT_MATCH) {
+        zero => {
+            t_cond = tcl_infer_expr(ctx, env, ast, expr1);
+            len = vec_len(arms_vec);
+            i = 0;
+            while len - i > 0 {
+                arm_id = vec_get(arms_vec, i);
+                arm_tok = tcl_match_arm_name_token(ast, arm_id);
+                binding_tok = tcl_match_arm_binding_token(ast, arm_id);
+                arm_body = tcl_match_arm_body_vec(ast, arm_id);
+                
+                arm_env = tcl_env_push(env);
+                
+                // If the arm is valid(x), unify condition with pointer type
+                match tcl_token_is_valid(ctx, arm_tok) { // "valid"
+                    pos => {
+                        t_ptr = tcl_next_type_var(ctx, ast);
+                        t_borrow = tcl_type_new(ast, TCL_TYPE_BORROW, t_ptr, 0, 0);
+                        tcl_type_unify(ctx, ast, t_cond, t_borrow, arm_tok);
+                        
+                        t_elem = tcl_pointer_type_view(ast, t_cond);
+                        t_elem = tcl_type_element(ast, t_elem);
+                        scheme = tcl_generalize(ctx, ast, t_elem);
+                        tcl_env_insert(arm_env, binding_tok, scheme);
+                    }
+                    zero => {}
+                    neg => {}
+                }
+                
+                tcl_infer_block(ctx, arm_env, ast, arm_body);
+                tcl_env_pop(arm_env);
+                i = i + 1;
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+    
+    return 0;
+}
+
+fn tcl_infer_block(ctx: t40, env: t40, ast: t40, block_vec: t40) -> t40 {
+    var len: t40 = vec_len(block_vec);
+    var i: t40 = 0;
+    var block_env: t40 = tcl_env_push(env);
+    while len - i > 0 {
+        tcl_infer_stmt(ctx, block_env, ast, vec_get(block_vec, i));
+        i = i + 1;
+    }
+    tcl_env_pop(block_env);
+    return 0;
+}
+
+// =============================================================================
+// Top-Level AST Type Checking & Inference
+// =============================================================================
+
+fn tcl_infer_ast(ctx: t40, ast: t40) -> t40 {
+    var root_env: t40 = tcl_env_new();
+    var env: t40 = tcl_env_push(root_env);
+    
+    var consts: t40 = tcl_ast_consts(ast);
+    var n_consts: t40 = vec_len(consts);
+    var i: t40 = 0;
+    var const_id: t40 = 0;
+    var c_type: t40 = 0;
+    var c_expr: t40 = 0;
+    var t_expr: t40 = 0;
+    var scheme: t40 = 0;
+    
+    while n_consts - i > 0 {
+        const_id = vec_get(consts, i);
+        c_type = tcl_const_type(ast, const_id);
+        c_expr = tcl_const_expr(ast, const_id);
+        t_expr = tcl_infer_expr(ctx, env, ast, c_expr);
+        tcl_type_unify(ctx, ast, c_type, t_expr, tcl_const_name_token(ast, const_id));
+        scheme = tcl_generalize(ctx, ast, c_type);
+        tcl_env_insert(env, tcl_const_name_token(ast, const_id), scheme);
+        i = i + 1;
+    }
+    
+    var funcs: t40 = tcl_ast_functions(ast);
+    var n_funcs: t40 = vec_len(funcs);
+    var fn_id: t40 = 0;
+    var name_tok: t40 = 0;
+    var params_vec: t40 = 0;
+    var ret_type: t40 = 0;
+    var t_params: t40 = 0;
+    var len: t40 = 0;
+    var j: t40 = 0;
+    var p_name: t40 = 0;
+    var p_type: t40 = 0;
+    var t_fn: t40 = 0;
+    var fn_env: t40 = 0;
+    
+    // Phase 1: Declare all function signatures in env (allow recursion)
+    i = 0;
+    while n_funcs - i > 0 {
+        fn_id = vec_get(funcs, i);
+        name_tok = tcl_function_name_token(ast, fn_id);
+        params_vec = tcl_function_params_vec(ast, fn_id);
+        ret_type = tcl_function_return_type(ast, fn_id);
+        
+        t_params = vec_new();
+        len = vec_len(params_vec);
+        j = 0;
+        while len - j > 0 {
+            p_type = vec_get(params_vec, j + 1);
+            vec_push(t_params, p_type);
+            j = j + 2;
+        }
+        
+        t_fn = tcl_type_new(ast, TCL_TYPE_FUNCTION, ret_type, t_params, 0);
+        scheme = tcl_generalize(ctx, ast, t_fn);
+        tcl_env_insert(env, name_tok, scheme);
+        i = i + 1;
+    }
+    
+    // Phase 2: Check function bodies
+    i = 0;
+    while n_funcs - i > 0 {
+        fn_id = vec_get(funcs, i);
+        params_vec = tcl_function_params_vec(ast, fn_id);
+        ret_type = tcl_function_return_type(ast, fn_id);
+        
+        fn_env = tcl_env_push(env);
+        len = vec_len(params_vec);
+        j = 0;
+        while len - j > 0 {
+            p_name = vec_get(params_vec, j);
+            p_type = vec_get(params_vec, j + 1);
+            scheme = tcl_generalize(ctx, ast, p_type);
+            tcl_env_insert(fn_env, p_name, scheme);
+            j = j + 2;
+        }
+        
+        unsafe { store(ctx + 7, ret_type); } // Store return type in context
+        tcl_infer_block(ctx, fn_env, ast, tcl_function_body_vec(ast, fn_id));
+        tcl_env_pop(fn_env);
+        i = i + 1;
+    }
+    
+    tcl_env_pop(env);
+    return 0;
+}

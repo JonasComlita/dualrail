@@ -16,8 +16,8 @@ To prevent systemic performance and bootstrapping traps common in historic advan
 
 These steps extend the existing C++ compiler to accept TCL 1.0 language features. The output is still `tasm`. This temporary compiler is strictly used to compile the native rewrite.
 
-* **A1. Replace `match sign(expr)` with `match expr { neg / zero / pos }**`
-* *Parser:* Eliminate the `sign(...)` wrapper requirement. Arm identifiers are now native ternary keywords. Enforce that all three arms are present or emit a type compile-time error.
+* **A1. Replace `match sign(expr)` with `match expr { neg / zero / pos }`**
+* *Parser:* Eliminate the `sign(...)` wrapper requirement. Arm identifiers are now native ternary keywords. Enforce that all three arms are present or emit a compile-time error.
 
 
 * **A2. Add `T1` as a First-Class Type**
@@ -49,7 +49,6 @@ These steps extend the existing C++ compiler to accept TCL 1.0 language features
 
 * **A8. Add `own<T>` to `ulib.trit` Signatures**
 * Rewrite the core standard library function signatures to use TCL 1.0 ownership types. Verify clean compilation across all modules.
-
 
 
 ---
@@ -93,7 +92,31 @@ To break the bootstrap paradox (where the buffer pool requires relations, but re
 **Critical Implementation Note:** The bootstrap bitmap must be completely independent of relational state. Every allocation from `alloc_bootstrap_page()` must be trivially traceable—use a simple bitfield scan with zero relational queries. When Phase D5 migration begins, a single-pass scan must populate the formal `allocations` relation with every entry from the bootstrap bitmap. If any bootstrap allocation lacks a corresponding relational row, the migration is corrupted and unrecoverable.
 
 3. **D3. Transactional Buffer Pool Manager:** The Memory Engine (Phase D2b).
-Construct the formal Buffer Pool Manager on top of the bootstrap allocator. Every tracked physical page frame must carry a pin count (T40), dirty flag (T1), version identifier (T40), and an LRU clock position tracking entry (T40). Eviction targets the oldest unpinned clean page. Page versions map directly to language-level `ptr<T, S>` states.
+Construct the formal Buffer Pool Manager on top of the bootstrap allocator. Every tracked physical page frame is described by a `PageHeader` struct. This struct must be defined exactly as follows and must not be changed after D3 is complete, as every subsequent phase depends on it:
+
+```
+struct PageHeader {
+    ppn:       T40,   // physical page number
+    pin_count: T40,   // number of active DMA or accelerator references;
+                      //   >0 means the page cannot be evicted or remapped
+    dirty:     T1,    // pos = page has uncommitted writes
+    version:   T40,   // MVCC version identifier; maps to ptr<T, S> states
+    lru_clock: T40,   // position in the LRU eviction clock
+    namespace: T40,   // owning namespace ID, matches PTE namespace field
+}
+```
+
+**Eviction rule:** The eviction path must check `pin_count` before selecting a candidate. A page with `pin_count > 0` is ineligible for eviction regardless of LRU position. This check must be in the eviction hot path from the start — retrofitting it after the eviction logic is written requires rewriting the entire path.
+
+**`pin_count` interaction contracts** — three interactions with other kernel subsystems must be resolved at D3, before those subsystems are built, so that each subsystem is designed with the constraint in mind from the start:
+
+* **COW interaction (relevant at D9):** The COW fault handler remaps pages on write. A page with `pin_count > 0` holds a live physical address reference from an external agent. The COW handler must read `pin_count` before remapping and must block or return an error if the page is pinned. It must not remap a pinned page under any circumstance.
+* **Fork interaction (relevant at D9):** `fork()` copies page table entries. If a parent process holds DMA-pinned pages, the child's address space cannot safely share those physical pages with an in-flight external operation. Fork must either refuse to copy pinned PTEs into the child, or wait for all operations on those pages to drain to `pin_count == 0` before proceeding.
+* **MVCC version chain interaction (relevant at D4/D5):** A write operation that pins a page for external access must ensure no reader holds a reference to a version of that page that will be overwritten. This is the same acquire-release problem as `shared<T, ACQ_REL>` in the type system and must use the same `TLDR`/`TSTR` primitives to coordinate. The version field in `PageHeader` is the authoritative record of which MVCC generation is currently pinned.
+
+These are not future concerns. They are constraints on the design of D9's COW handler and fork logic, and they must be stated here so that D9 is not designed in ignorance of them.
+
+Page versions map directly to language-level `ptr<T, S>` states.
 
 4. **D4. Write-Ahead Log (WAL) Engine:** ACID Bedrock.
 Implement the kernel-managed transaction log as a structural ring buffer tied directly to the underlying block storage device. Every transactional modification must serialize a log entry containing `(block_address, old_data, new_data, transaction_id)` before flushing dirty data frames to storage. Expose four structural system primitives: `log_write`, `log_commit`, `log_abort`, and `log_checkpoint`.
@@ -110,56 +133,78 @@ Construct fixed-size relational tables (Process Table, File Descriptor Table, Qu
 This ensures no in-flight transaction state is lost or corrupted during the architectural transition from bootstrap mode to relational mode.
 
 6. **D6. Two-Tiered Scheduler: O(1) Micro-Engine:** Tier-1 Scheduling Micro-Mechanics.
-To prevent relational lookup overhead from destroying context-switch times, split scheduling into two isolated tiers. Tier-1 is the micro-scheduler: implemented as a highly optimized, flat, non-relational $O(1)$ run-queue array. The core timer-interrupt handler (D1) only interacts with this flat Tier-1 layer, popping the next runnable task thread in microsecond time horizons without touching any relational B-trees.
+To prevent relational lookup overhead from destroying context-switch times, split scheduling into two isolated tiers. Tier-1 is the micro-scheduler: implemented as a highly optimized, flat, non-relational O(1) run-queue array. The core timer-interrupt handler (D1) only interacts with this flat Tier-1 layer, popping the next runnable task thread in microsecond time horizons without touching any relational B-trees.
 
 7. **D7. Two-Tiered Scheduler: Macro-Reconciliation Loop:** Tier-2 Scheduling Policy.
-Implement Tier-2 of the scheduler as a background macro-horizon reconciliation loop executing strictly every $10\text{--}50\text{ ms}$. This loop queries the formal `desired_processes` and `quotas` relations, evaluates priority shifts and resource usage balances, and flushes the resulting top-tier runnable threads into the flat Tier-1 $O(1)$ run-queue array.
+Implement Tier-2 of the scheduler as a background macro-horizon reconciliation loop executing strictly every 10–50 ms. This loop queries the formal `desired_processes` and `quotas` relations, evaluates priority shifts and resource usage balances, and flushes the resulting top-tier runnable threads into the flat Tier-1 O(1) run-queue array.
 
-Here is the rewritten, highly optimized specification for **Phase D8 (Virtual File System Isolation & Vector Data Plane)**. This version integrates our 9-trit sub-word packing strategy and the 27-lane hardware vector mechanics straight into the Virtual File System (VFS) to maximize spatial cache tiling for linear data streaming.
-
----
+8. **D8. VFS Isolation: Relational Control vs. Linear Vector Data Plane.**
 
 To prevent transactional locking and metadata update overhead from throttling raw throughput, the Virtual File System is bisected into two isolated operational planes that share the underlying Buffer Pool and Write-Ahead Log (WAL) substrate.
 
-#### D8a. The Relational Control Plane (Metadata & Structural Trees)
+### D8a. The Relational Control Plane (Metadata & Structural Trees)
 
 * **Mechanics:** All file system metadata—including directories, inodes, permissions, namespace identifiers, and block allocation extent maps—are stored as strict, B-tree-indexed relational tables within the kernel's private buffer pool.
 * **Transaction Guarding:** Every modification to the file hierarchy (such as creating a file, updating directory records, or extending file blocks) acts as a formal database transaction. These mutations are validated against the active process namespace column and written to the block-layer WAL before any changes are committed to disk.
 
-#### D8b. The Linear Vector Data Plane (The Stream Engine)
+### D8b. The Linear Vector Data Plane (The Stream Engine)
 
-* **Mechanics:** Raw file payload storage completely bypasses the B-tree relational indexing engine during active read and write operations. High-throughput data flows sequentially through raw physical page frame extents managed directly by the Buffer Pool.
-* **The Commit Boundary:** Relational files system attributes (such as total file length, modified timestamps, and terminal block allocations) are only updated in the Relational Control Plane upon explicit file closure or transaction commit, keeping the sequential execution path free of relational lock contention.
+* **Mechanics:** Raw file payload storage completely bypasses the B-tree relational indexing engine during active, ongoing read and write operations. High-throughput data flows sequentially through raw physical page frame extents managed directly by the Buffer Pool.
+* **The Extent Resolution Boundary:** Before data streaming can begin, the initial file offset must be translated to a physical page number. This mapping step explicitly queries the extent maps residing within the Relational Control Plane. Once this initial extent resolution is complete, the hot path for sequential I/O completely avoids per-block relational updates.
+* **The Commit Boundary:** Relational file system attributes (such as total file length, modified timestamps, and terminal block allocations) are only updated in the Relational Control Plane upon explicit file closure or transaction commit, keeping the sequential execution path free of relational lock contention.
 
-#### D8c. Native 3-Element Sub-Word Layout Optimization
+### D8c. Recommended 3-Element Sub-Word Layout Optimization
 
-* **The Data Layout:** To exploit our hardware architecture, all sequential file payloads and media streams are packed and structured as native **3-element vector arrays** within each 27-trit machine word. Each word natively encapsulates a 3-dimensional coordinate tensor, an opponent-trit color slice, or a 3-part data frame:
+* **The Data Layout:** To maximize performance on data structures that naturally decompose into multi-dimensional components (such as spatial coordinates, color channels, or tensor slices), the platform establishes a recommended 3-element vector layout within each 27-trit machine word:
+
 ```
 [ Word Layout: 27-trits ] -> [ 9-trit Short A | 9-trit Short B | 9-trit Short C ]
 
 ```
 
+* **VFS Neutrality:** This layout is a *recommendation* for specialized workloads, **not a mandatory VFS invariant**. The VFS functions strictly as a neutral data router; it does not perform data transformations, packing, or chunking on arbitrary streams. Applications requiring raw, un-transformed byte streams (e.g., text files, source code, executables) receive raw data without VFS overhead or forced alignment.
+* **Spatial Cache Tiling:** For files matching this layout, data is arranged sequentially in blocks aligned to the CPU's L1 cache boundaries. Multi-word lookups populate the cache with zero bit-shifting or unpacking overhead, minimizing DRAM bus starvation during intense streaming pipelines.
 
-* **Spatial Cache Tiling:** The Linear Data Plane reads and writes file bytes in blocks that are structurally aligned to the CPU's L1 cache boundaries. Because data is natively arranged in these 3-element packets, multi-word lookups populate the cache with zero bit-shifting or unpacking overhead. This layout completely avoids DRAM bus starvation during intense streaming operations.
+### D8d. Hardware Vector Pipeline Unification & Execution Boundaries
 
-#### D8d. Hardware Vector Pipeline Unification
-
-* **Lining up the Lanes:** The Triton-27 CPU core defines a native hardware vector length of **27 lanes**. Because every single word handles exactly three 9-trit sub-words, a data block read of exactly **9 words** pulls precisely **27 distinct data elements** into the hardware register track ($9 \times 3 = 27$).
-* **Zero-Copy Execution:** When an application executes a linear read or compute pass, the VFS streams these 9-word blocks directly out of the Buffer Pool into the CPU's native vector registers in a single transaction. A parallel operation (such as a media transformation, a cryptographic hash computation, or an array reduction) can process all 27 data elements simultaneously across the hardware lanes in a single clock cycle.
+* **Lining up the Lanes:** The Triton-27 CPU core defines a native hardware vector length of **27 lanes**. When an application utilizes the recommended layout, a sequential data block read of exactly 9 words pulls precisely 27 distinct data elements into the hardware register track (9 words × 3 sub-words = 27 data elements).
+* **Instruction Efficiency:** A parallel compute pass (such as a media transformation, a cryptographic hash computation, or an array reduction) can process all 27 data elements simultaneously across the hardware lanes using a **single vector instruction**. *Note: Actual clock cycle retirement per instruction depends on execution unit latencies (e.g., multiplies vs. additions) and cache pipeline state.*
+* **Separation of Concerns:** The VFS responsibility terminates at delivering cache-line-aligned data blocks to the buffer pool. The mechanisms for exploiting sub-word layouts and managing how data lands in vector registers are exclusively owned by the compiler (via width-parametric functions and the `#[parallel]` path) and the runtime, keeping file system layout completely decoupled from future shifts in the hardware execution model.
 
 ---
 
 ### Technical Guardrail for the Implementing Agent
 
 > **Implementation Rule:** In `kernel.trit`, do not allow raw sequential read/write system calls (`sys_read`/`sys_write`) to invoke individual B-tree inserts or metadata updates per block.
-> The user-space buffer pointer must be validated as a `ptr<T40, valid>` reference, mapped to raw physical memory extents via the Buffer Pool, and chunked into the 9-word (27-element) sub-word alignment before streaming. All relational index changes must be deferred and batched into a single WAL-backed atomic transaction at the end of the operation.
+> The user-space buffer pointer must be validated as a `ptr<T40, valid>` reference and mapped to raw physical memory extents via the Buffer Pool. The VFS must deliver data as a transparent stream without enforcing arbitrary layout transformations on the payload. All relational index changes must be deferred and batched into a single WAL-backed atomic transaction at the end of the operation.
 
-1. **The Relational Control Plane:** Manages directories, inodes, metadata, permissions, and file extensions through strict WAL-backed transactional relations.
-2. **The Linear Data Plane:** Bypasses the transactional store entirely. Large sequential block streams utilize raw block extents and flow directly through raw buffer pool frames. File sizes and completion pointers are updated relationally *only* upon final transaction commit.
+---
 
-9. **D9. COW Fork, Namespaces, and Process Caching:** System Complete.
-Extend Page Table Entries (PTE) with copy-on-write (COW) and namespace ID trit fields. Implement `fork()` as an $O(1)$ metadata operation that duplicates entries and marks pages as COW, postponing duplication until write-fault entry. Enforce namespace filters automatically during table queries. To bypass system call traps for reading static data, maintain a process-local memory cache of observed state; mutations invalidate this cache via a fast hardware `FENCE.0` sequence. Conclude by initializing the user-space `shell_main()`.
+9. **D9. COW Fork, Namespaces, Process Caching, and Final PTE Layout:** System Complete.
 
+#### PTE Layout (27-trit word — finalised here, frozen after D9)
+
+The original PTE design allocated all 27 trits without a spare for MMIO region marking. MMIO regions must be excluded from COW copies and snapshots, which requires a dedicated permission trit. To accommodate this without expanding the word, the Namespace ID field is narrowed from 6 trits to 5 trits:
+
+| Trits  | Field        | Encoding                                              | Notes                                      |
+|--------|--------------|-------------------------------------------------------|--------------------------------------------|
+| 0–14   | PPN          | 3^15 = 14,348,907 physical page addresses             | Unchanged                                  |
+| 15–19  | Namespace ID | 3^5 = 243 hardware-isolated address domains           | Narrowed from 6 trits (729) to free trit 20 |
+| 20     | MMIO         | neg = normal memory;  pos = MMIO-mapped region        | New. MMIO pages excluded from COW and snapshots |
+| 21     | COW          | neg = writable;  pos = copy-on-write active           | Unchanged                                  |
+| 22     | R            | neg = read disabled;  pos = read allowed              | Unchanged                                  |
+| 23     | W            | neg = write disabled;  pos = write allowed            | Unchanged                                  |
+| 24     | X            | neg = non-executable;  pos = executable               | Unchanged                                  |
+| 25     | Privilege    | neg = kernel;  zero = supervisor;  pos = user         | Unchanged                                  |
+| 26     | Valid        | neg = fault/unmapped;  zero = reserved;  pos = present | zero state explicitly reserved — see note  |
+
+**Rationale for narrowing Namespace ID:** 243 hardware-isolated address domains is sufficient for any foreseeable single-node deployment. The practical ceiling for concurrent isolated namespaces on a single Triton-27 core is constrained well below 243 by process table size and scheduler capacity long before the namespace field saturates. The 486-domain reduction in theoretical capacity (729 → 243) has no practical cost and frees the trit needed for MMIO without requiring a second PTE word.
+
+**Valid field zero state:** The `zero` state is explicitly reserved as transitional/undefined. On cold boot, DMEM initialises to zero, meaning all PTEs start in the `zero` (reserved) state, not in the `neg` (fault) state. The MMU fault handler must treat `zero` the same as `neg` — as an unmapped page that triggers a fault. This must be implemented in the MMU RTL and in the software page-walk code. Do not assume a zeroed PTE is safe to dereference.
+
+**MMIO trit behaviour:** Pages with the MMIO trit set to `pos` must be excluded from COW duplication, fork propagation, and snapshot inclusion. The COW fault handler, the fork path, and any snapshotting mechanism must check this trit before operating on a page. The `pin_count` constraint from D3 also applies to MMIO-mapped pages — an MMIO page is implicitly pinned for the lifetime of the MMIO mapping and must not be evicted.
+
+Implement `fork()` as an O(1) metadata operation that duplicates PTEs and marks non-MMIO pages as COW, postponing physical duplication until write-fault entry. Enforce namespace filters automatically during table queries. To bypass system call traps for reading static data, maintain a process-local memory cache of observed state; mutations invalidate this cache via a fast hardware `FENCE.0` sequence. Conclude by initializing the user-space `shell_main()`.
 
 ---
 
@@ -183,7 +228,6 @@ A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8
                                             D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9
                                                                                   ↓
                                                                              E1 → E2 → E3
-
 ```
 
-> **Critical Guardrail for Implementing Agent:** Do not attempt to optimize early phases by building high-level relational paradigms prematurely. Phase D must follow the structural sequence exactly: the raw bootstrap page array (`D2`) and basic buffer pages (`D3`) must be completely stable before the transactional relational store engine (`D5`) is initialized.</Vec</T40,></T,></T40,></T40,></T,></W:>
+> **Critical Guardrail for Implementing Agent:** Do not attempt to optimize early phases by building high-level relational paradigms prematurely. Phase D must follow the structural sequence exactly: the raw bootstrap page array (`D2`) and basic buffer pages (`D3`) must be completely stable before the transactional relational store engine (`D5`) is initialized.

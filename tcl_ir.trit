@@ -1,0 +1,603 @@
+// =============================================================================
+// tcl_ir.trit - Phase B AST-to-SSA IR lowering
+// =============================================================================
+
+const TCL_IR_NOP: t40 = 0;
+const TCL_IR_CONST: t40 = 1;
+const TCL_IR_LOAD_NAME: t40 = 2;
+const TCL_IR_STORE_NAME: t40 = 3;
+const TCL_IR_BINARY: t40 = 4;
+const TCL_IR_UNARY: t40 = 5;
+const TCL_IR_CALL: t40 = 6;
+const TCL_IR_FIELD: t40 = 7;
+const TCL_IR_INDEX: t40 = 8;
+const TCL_IR_ALLOC: t40 = 9;
+const TCL_IR_DROP: t40 = 10;
+const TCL_IR_BRANCH3: t40 = 11;
+const TCL_IR_JUMP: t40 = 12;
+const TCL_IR_RETURN: t40 = 13;
+
+const TCL_IR_INSTR_WORDS: t40 = 5;
+
+// CFG layout:
+// [0] blocks vec
+// [1] next block id
+// [2] next SSA value id
+// [3] errors
+// [4] diagnostics vec
+fn tcl_ir_cfg_new() -> t40 {
+    var cfg: t40 = malloc_raw(5);
+    var blocks: t40 = vec_new();
+    var diags: t40 = vec_new();
+    unsafe {
+        store(cfg, blocks);
+        store(cfg + 1, 1);
+        store(cfg + 2, 1);
+        store(cfg + 3, 0);
+        store(cfg + 4, diags);
+    }
+    return cfg;
+}
+
+fn tcl_ir_cfg_blocks(cfg: t40) -> t40 {
+    var blocks: t40 = 0;
+    unsafe { blocks = load(cfg); }
+    return blocks;
+}
+
+fn tcl_ir_cfg_diagnostics(cfg: t40) -> t40 {
+    var diags: t40 = 0;
+    unsafe { diags = load(cfg + 4); }
+    return diags;
+}
+
+fn tcl_ir_block_new(id: t40, label_token: t40) -> t40 {
+    var block: t40 = malloc_raw(5);
+    var instrs: t40 = vec_new();
+    var successors: t40 = vec_new();
+    unsafe {
+        store(block, id);
+        store(block + 1, label_token);
+        store(block + 2, instrs);
+        store(block + 3, successors);
+        store(block + 4, TCL_IR_NOP);
+    }
+    return block;
+}
+
+fn tcl_ir_block_free(block: t40) -> t40 {
+    match block {
+        pos => {
+            var instrs: t40 = 0;
+            var successors: t40 = 0;
+            unsafe {
+                instrs = load(block + 2);
+                successors = load(block + 3);
+            }
+            vec_free(instrs);
+            vec_free(successors);
+            free_raw(block);
+        }
+        zero => {}
+        neg => {}
+    }
+    return 0;
+}
+
+fn tcl_ir_cfg_free(cfg: t40) -> t40 {
+    match cfg {
+        pos => {
+            var blocks: t40 = tcl_ir_cfg_blocks(cfg);
+            var diags: t40 = tcl_ir_cfg_diagnostics(cfg);
+            var len: t40 = vec_len(blocks);
+            var i: t40 = 0;
+            var block: t40 = 0;
+            while len - i > 0 {
+                block = vec_get(blocks, i);
+                tcl_ir_block_free(block);
+                i = i + 1;
+            }
+            vec_free(blocks);
+            vec_free(diags);
+            free_raw(cfg);
+        }
+        zero => {}
+        neg => {}
+    }
+    return 0;
+}
+
+fn tcl_ir_block_id(block: t40) -> t40 {
+    var id: t40 = 0;
+    unsafe { id = load(block); }
+    return id;
+}
+
+fn tcl_ir_block_label_token(block: t40) -> t40 {
+    var label: t40 = 0;
+    unsafe { label = load(block + 1); }
+    return label;
+}
+
+fn tcl_ir_block_instrs(block: t40) -> t40 {
+    var instrs: t40 = 0;
+    unsafe { instrs = load(block + 2); }
+    return instrs;
+}
+
+fn tcl_ir_block_successors(block: t40) -> t40 {
+    var successors: t40 = 0;
+    unsafe { successors = load(block + 3); }
+    return successors;
+}
+
+fn tcl_ir_block_terminator(block: t40) -> t40 {
+    var term: t40 = 0;
+    unsafe { term = load(block + 4); }
+    return term;
+}
+
+fn tcl_ir_block_set_terminator(block: t40, term: t40) -> t40 {
+    unsafe { store(block + 4, term); }
+    return 0;
+}
+
+fn tcl_ir_cfg_block_count(cfg: t40) -> t40 {
+    var blocks: t40 = tcl_ir_cfg_blocks(cfg);
+    return vec_len(blocks);
+}
+
+fn tcl_ir_cfg_block_at(cfg: t40, idx: t40) -> t40 {
+    var blocks: t40 = tcl_ir_cfg_blocks(cfg);
+    return vec_get(blocks, idx);
+}
+
+fn tcl_ir_block_instr_count(block: t40) -> t40 {
+    var instrs: t40 = tcl_ir_block_instrs(block);
+    return vec_len(instrs) / TCL_IR_INSTR_WORDS;
+}
+
+fn tcl_ir_block_successor_count(block: t40) -> t40 {
+    var successors: t40 = tcl_ir_block_successors(block);
+    return vec_len(successors);
+}
+
+fn tcl_ir_cfg_add_block(cfg: t40, label_token: t40) -> t40 {
+    var id: t40 = 0;
+    unsafe { id = load(cfg + 1); }
+    unsafe { store(cfg + 1, id + 1); }
+    var block: t40 = tcl_ir_block_new(id, label_token);
+    var blocks: t40 = tcl_ir_cfg_blocks(cfg);
+    vec_push(blocks, block);
+    return block;
+}
+
+fn tcl_ir_next_value(cfg: t40) -> t40 {
+    var id: t40 = 0;
+    unsafe { id = load(cfg + 2); }
+    unsafe { store(cfg + 2, id + 1); }
+    return id;
+}
+
+fn tcl_ir_emit(block: t40, op: t40, dest: t40, src1: t40, src2: t40, type_id: t40) -> t40 {
+    var instrs: t40 = tcl_ir_block_instrs(block);
+    vec_push(instrs, op);
+    vec_push(instrs, dest);
+    vec_push(instrs, src1);
+    vec_push(instrs, src2);
+    vec_push(instrs, type_id);
+    return dest;
+}
+
+fn tcl_ir_add_successor(block: t40, succ: t40) -> t40 {
+    var successors: t40 = tcl_ir_block_successors(block);
+    var succ_id: t40 = tcl_ir_block_id(succ);
+    vec_push(successors, succ_id);
+    return succ_id;
+}
+
+fn tcl_ir_type_is_owned(ast: t40, type_id: t40) -> t40 {
+    match type_id {
+        pos => {
+            var kind: t40 = tcl_type_kind(ast, type_id);
+            match (kind - TCL_TYPE_OWNED) {
+                zero => { return 1; }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
+    match expr_id {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+
+    var kind: t40 = tcl_expr_kind(ast, expr_id);
+    var tok: t40 = tcl_expr_token_idx(ast, expr_id);
+    var left: t40 = tcl_expr_left(ast, expr_id);
+    var right: t40 = tcl_expr_right(ast, expr_id);
+    var args: t40 = tcl_expr_args_vec(ast, expr_id);
+    var dest: t40 = 0;
+    var left_val: t40 = 0;
+    var right_val: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var arg: t40 = 0;
+
+    match (kind - TCL_EXPR_NUMBER) {
+        zero => {
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_CONST, dest, tok, 0, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_NAME) {
+        zero => {
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_LOAD_NAME, dest, tok, 0, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_BINARY) {
+        zero => {
+            left_val = tcl_ir_lower_expr(cfg, ast, block, left);
+            right_val = tcl_ir_lower_expr(cfg, ast, block, right);
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_BINARY, dest, left_val, right_val, tok);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_UNARY) {
+        zero => {
+            left_val = tcl_ir_lower_expr(cfg, ast, block, left);
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_UNARY, dest, left_val, tok, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_CALL) {
+        zero => {
+            len = vec_len(args);
+            i = 0;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ir_lower_expr(cfg, ast, block, arg);
+                i = i + 1;
+            }
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_CALL, dest, tok, len, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_FIELD) {
+        zero => {
+            left_val = tcl_ir_lower_expr(cfg, ast, block, left);
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_FIELD, dest, left_val, tok, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_INDEX) {
+        zero => {
+            left_val = tcl_ir_lower_expr(cfg, ast, block, left);
+            right_val = tcl_ir_lower_expr(cfg, ast, block, right);
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_INDEX, dest, left_val, right_val, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_ARRAY_LIT) {
+        zero => {
+            len = vec_len(args);
+            i = 0;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ir_lower_expr(cfg, ast, block, arg);
+                i = i + 1;
+            }
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_ALLOC, dest, tok, len, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_STRUCT_LIT) {
+        zero => {
+            len = vec_len(args);
+            i = 1;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ir_lower_expr(cfg, ast, block, arg);
+                i = i + 2;
+            }
+            dest = tcl_ir_next_value(cfg);
+            tcl_ir_emit(block, TCL_IR_ALLOC, dest, tok, len, 0);
+            return dest;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    return 0;
+}
+
+fn tcl_ir_emit_owned_drops(ast: t40, block: t40, body_vec: t40) -> t40 {
+    var len: t40 = vec_len(body_vec);
+    var i: t40 = 0;
+    var stmt_id: t40 = 0;
+    var kind: t40 = 0;
+    var type_id: t40 = 0;
+    var tok: t40 = 0;
+    while len - i > 0 {
+        stmt_id = vec_get(body_vec, i);
+        kind = tcl_stmt_kind(ast, stmt_id);
+        match (kind - TCL_STMT_LET) {
+            zero => {
+                type_id = tcl_stmt_type_id(ast, stmt_id);
+                match tcl_ir_type_is_owned(ast, type_id) {
+                    pos => {
+                        tok = tcl_stmt_token_idx(ast, stmt_id);
+                        tcl_ir_emit(block, TCL_IR_DROP, 0, tok, 0, type_id);
+                    }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_ir_lower_block(cfg: t40, ast: t40, block: t40, body_vec: t40) -> t40 {
+    var len: t40 = vec_len(body_vec);
+    var i: t40 = 0;
+    var stmt_id: t40 = 0;
+    var curr: t40 = block;
+    while len - i > 0 {
+        stmt_id = vec_get(body_vec, i);
+        curr = tcl_ir_lower_stmt(cfg, ast, curr, stmt_id);
+        i = i + 1;
+    }
+    tcl_ir_emit_owned_drops(ast, curr, body_vec);
+    return curr;
+}
+
+fn tcl_ir_lower_match(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
+    var cond_expr: t40 = tcl_stmt_expr1(ast, stmt_id);
+    var cond_val: t40 = tcl_ir_lower_expr(cfg, ast, block, cond_expr);
+    var arms: t40 = tcl_stmt_arms_vec(ast, stmt_id);
+    var after_block: t40 = tcl_ir_cfg_add_block(cfg, tcl_stmt_token_idx(ast, stmt_id));
+    var len: t40 = vec_len(arms);
+    var i: t40 = 0;
+    var arm_id: t40 = 0;
+    var arm_block: t40 = 0;
+    var arm_tail: t40 = 0;
+    var first_arm_id: t40 = 0;
+    var second_arm_id: t40 = 0;
+    var arm_body: t40 = 0;
+
+    while len - i > 0 {
+        arm_id = vec_get(arms, i);
+        arm_block = tcl_ir_cfg_add_block(cfg, tcl_match_arm_start_token(ast, arm_id));
+        tcl_ir_add_successor(block, arm_block);
+        match i {
+            zero => { first_arm_id = tcl_ir_block_id(arm_block); }
+            pos => {
+                match second_arm_id {
+                    zero => { second_arm_id = tcl_ir_block_id(arm_block); }
+                    pos => {}
+                    neg => {}
+                }
+            }
+            neg => {}
+        }
+        arm_body = tcl_match_arm_body_vec(ast, arm_id);
+        arm_tail = tcl_ir_lower_block(cfg, ast, arm_block, arm_body);
+        tcl_ir_add_successor(arm_tail, after_block);
+        tcl_ir_emit(arm_tail, TCL_IR_JUMP, 0, tcl_ir_block_id(after_block), 0, 0);
+        tcl_ir_block_set_terminator(arm_tail, TCL_IR_JUMP);
+        i = i + 1;
+    }
+
+    tcl_ir_emit(block, TCL_IR_BRANCH3, 0, cond_val, first_arm_id, second_arm_id);
+    tcl_ir_block_set_terminator(block, TCL_IR_BRANCH3);
+    return after_block;
+}
+
+fn tcl_ir_lower_while(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
+    var label: t40 = tcl_stmt_token_idx(ast, stmt_id);
+    var cond_block: t40 = tcl_ir_cfg_add_block(cfg, label);
+    var body_block: t40 = tcl_ir_cfg_add_block(cfg, label);
+    var after_block: t40 = tcl_ir_cfg_add_block(cfg, label);
+    var cond_expr: t40 = tcl_stmt_expr1(ast, stmt_id);
+    var body_vec: t40 = tcl_stmt_body_vec(ast, stmt_id);
+    var cond_val: t40 = 0;
+    var body_tail: t40 = 0;
+
+    tcl_ir_add_successor(block, cond_block);
+    tcl_ir_emit(block, TCL_IR_JUMP, 0, tcl_ir_block_id(cond_block), 0, 0);
+    tcl_ir_block_set_terminator(block, TCL_IR_JUMP);
+
+    cond_val = tcl_ir_lower_expr(cfg, ast, cond_block, cond_expr);
+    tcl_ir_add_successor(cond_block, body_block);
+    tcl_ir_add_successor(cond_block, after_block);
+    tcl_ir_emit(cond_block, TCL_IR_BRANCH3, 0, cond_val, tcl_ir_block_id(body_block), tcl_ir_block_id(after_block));
+    tcl_ir_block_set_terminator(cond_block, TCL_IR_BRANCH3);
+
+    body_tail = tcl_ir_lower_block(cfg, ast, body_block, body_vec);
+    tcl_ir_add_successor(body_tail, cond_block);
+    tcl_ir_emit(body_tail, TCL_IR_JUMP, 0, tcl_ir_block_id(cond_block), 0, 0);
+    tcl_ir_block_set_terminator(body_tail, TCL_IR_JUMP);
+    return after_block;
+}
+
+fn tcl_ir_lower_stmt(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
+    match stmt_id {
+        zero => { return block; }
+        neg => { return block; }
+        pos => {}
+    }
+
+    var kind: t40 = tcl_stmt_kind(ast, stmt_id);
+    var tok: t40 = tcl_stmt_token_idx(ast, stmt_id);
+    var expr1: t40 = tcl_stmt_expr1(ast, stmt_id);
+    var expr2: t40 = tcl_stmt_expr2(ast, stmt_id);
+    var type_id: t40 = tcl_stmt_type_id(ast, stmt_id);
+    var body: t40 = tcl_stmt_body_vec(ast, stmt_id);
+    var value: t40 = 0;
+
+    match (kind - TCL_STMT_LET) {
+        zero => {
+            value = tcl_ir_lower_expr(cfg, ast, block, expr1);
+            match tcl_ir_type_is_owned(ast, type_id) {
+                pos => { tcl_ir_emit(block, TCL_IR_ALLOC, value, tok, 0, type_id); }
+                zero => {}
+                neg => {}
+            }
+            tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, tok, value, type_id);
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_CONST) {
+        zero => {
+            value = tcl_ir_lower_expr(cfg, ast, block, expr1);
+            tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, tok, value, type_id);
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_ASSIGN) {
+        zero => {
+            value = tcl_ir_lower_expr(cfg, ast, block, expr2);
+            match (tcl_expr_kind(ast, expr1) - TCL_EXPR_NAME) {
+                zero => {
+                    tok = tcl_expr_token_idx(ast, expr1);
+                    tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, tok, value, 0);
+                }
+                pos => {
+                    var target: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
+                    tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, target, value, 0);
+                }
+                neg => {
+                    var target_neg: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
+                    tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, target_neg, value, 0);
+                }
+            }
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_RETURN) {
+        zero => {
+            value = tcl_ir_lower_expr(cfg, ast, block, expr1);
+            tcl_ir_emit(block, TCL_IR_RETURN, 0, value, 0, 0);
+            tcl_ir_block_set_terminator(block, TCL_IR_RETURN);
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_EXPR) {
+        zero => {
+            tcl_ir_lower_expr(cfg, ast, block, expr1);
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_WHILE) {
+        zero => { return tcl_ir_lower_while(cfg, ast, block, stmt_id); }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_MATCH) {
+        zero => { return tcl_ir_lower_match(cfg, ast, block, stmt_id); }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_UNSAFE) {
+        zero => { return tcl_ir_lower_block(cfg, ast, block, body); }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_TUPLE_SWAP) {
+        zero => {
+            var left_val: t40 = tcl_ir_lower_expr(cfg, ast, block, expr1);
+            var right_val: t40 = tcl_ir_lower_expr(cfg, ast, block, expr2);
+            tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, left_val, right_val, 0);
+            return block;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    return block;
+}
+
+fn tcl_lower_function(ast: t40, fn_id: t40) -> t40 {
+    var label: t40 = tcl_function_name_token(ast, fn_id);
+    var cfg: t40 = tcl_ir_cfg_new();
+    var entry: t40 = tcl_ir_cfg_add_block(cfg, label);
+    var params: t40 = tcl_function_params_vec(ast, fn_id);
+    var body: t40 = tcl_function_body_vec(ast, fn_id);
+    var len: t40 = vec_len(params);
+    var i: t40 = 0;
+    var name_tok: t40 = 0;
+    var type_id: t40 = 0;
+    var value: t40 = 0;
+
+    while len - i > 0 {
+        name_tok = vec_get(params, i);
+        type_id = vec_get(params, i + 1);
+        value = tcl_ir_next_value(cfg);
+        tcl_ir_emit(entry, TCL_IR_LOAD_NAME, value, name_tok, 0, type_id);
+        i = i + 2;
+    }
+
+    tcl_ir_lower_block(cfg, ast, entry, body);
+    return cfg;
+}

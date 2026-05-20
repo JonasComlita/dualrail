@@ -1,0 +1,113 @@
+// =============================================================================
+// test_backend_smoke.trit - Phase C native backend smoke
+// =============================================================================
+
+fn phasec_check(actual: t40, expected: t40, ok: t40) -> t40 {
+    match ok {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+    match (actual - expected) {
+        zero => { return ok; }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn phasec_require_pos(value: t40, ok: t40) -> t40 {
+    match ok {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+    match value {
+        pos => { return ok; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn phasec_make_tokens() -> t40 {
+    var tokens: t40 = tcl_token_stream_new();
+    tcl_token_emit(tokens, TCL_TK_IDENT, 0, 1);
+    tcl_token_emit(tokens, TCL_TK_NUMBER, 0, 5);
+    tcl_token_emit(tokens, TCL_TK_PLUS, 0, 1);
+    tcl_token_emit(tokens, TCL_TK_IDENT, 0, 1);
+    return tokens;
+}
+
+fn phasec_make_ast(tokens: t40) -> t40 {
+    var ast: t40 = tcl_ast_new(0);
+    var t_num: t40 = tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, 0);
+    var params: t40 = vec_new();
+    vec_push(params, 0);
+    vec_push(params, t_num);
+
+    var x_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NAME, 0, 0, 0, 0);
+    var n_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NUMBER, 1, 0, 0, 0);
+    var sum_expr: t40 = tcl_expr_new(ast, TCL_EXPR_BINARY, 2, x_expr, n_expr, 0);
+    var let_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_LET, 3, sum_expr, 0, t_num, 0, 0);
+    var y_expr: t40 = tcl_expr_new(ast, TCL_EXPR_NAME, 3, 0, 0, 0);
+    var ret_stmt: t40 = tcl_stmt_new(ast, TCL_STMT_RETURN, 3, y_expr, 0, 0, 0, 0);
+
+    var body: t40 = vec_new();
+    vec_push(body, let_stmt);
+    vec_push(body, ret_stmt);
+    var widths: t40 = vec_new();
+    var fn_id: t40 = tcl_function_new(ast, 0, params, t_num, body, widths, 0);
+    var funcs: t40 = tcl_ast_functions(ast);
+    vec_push(funcs, fn_id);
+    return ast;
+}
+
+fn phasec_backend_smoke() -> t40 {
+    var tokens: t40 = phasec_make_tokens();
+    var ast: t40 = phasec_make_ast(tokens);
+    var funcs: t40 = tcl_ast_functions(ast);
+    var fn_id: t40 = vec_get(funcs, 0);
+    var ok: t40 = 1;
+
+    var cfg_mem: t40 = tcl_lower_function(ast, fn_id);
+    var promoted: t40 = tcl_backend_mem2reg_cfg(cfg_mem);
+    ok = phasec_require_pos(promoted, ok);
+    tcl_ir_cfg_free(cfg_mem);
+
+    var cfg: t40 = tcl_lower_function(ast, fn_id);
+    var ctx: t40 = tcl_backend_ctx_new();
+    var mono1: t40 = tcl_backend_monomorphize_function(ctx, fn_id, 4);
+    var mono2: t40 = tcl_backend_monomorphize_function(ctx, fn_id, 4);
+    ok = phasec_require_pos(mono1, ok);
+    ok = phasec_check(mono1, mono2, ok);
+
+    var alloc: t40 = tcl_backend_allocate_registers(ctx, cfg);
+    var spills: t40 = tcl_backend_alloc_spills(alloc);
+    ok = phasec_check(spills, 0, ok);
+    var r1: t40 = tcl_backend_alloc_register(alloc, 1);
+    ok = phasec_require_pos(r1, ok);
+    var frame: t40 = tcl_backend_frame_words(alloc);
+    ok = phasec_require_pos(frame, ok);
+    tcl_backend_alloc_free(alloc);
+
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, tokens, fn_id);
+    var text_len: t40 = vec_len(text);
+    ok = phasec_require_pos(text_len, ok);
+    var c0: t40 = vec_get(text, 0);
+    var c1: t40 = vec_get(text, 1);
+    ok = phasec_check(c0, 102, ok);
+    ok = phasec_check(c1, 110, ok);
+
+    tcl_backend_text_free(text);
+    tcl_backend_ctx_free(ctx);
+    tcl_ir_cfg_free(cfg);
+    tcl_ast_free(ast);
+    tcl_token_free(tokens);
+    return ok;
+}
+
+fn main() -> t40 {
+    var ok: t40 = phasec_backend_smoke();
+    print_int(ok);
+    newline();
+    return ok;
+}

@@ -1,0 +1,1866 @@
+// =============================================================================
+// tcl_parser.trit - Phase B Native Recursive Descent Parser
+// =============================================================================
+
+// Parser Error Codes
+const TCL_ERR_EXPECTED_SEMICOLON: t40 = 1;
+const TCL_ERR_EXPECTED_RBRACKET: t40 = 2;
+const TCL_ERR_ARRAY_LEN_CONST: t40 = 3;
+const TCL_ERR_EXPECTED_LESS: t40 = 4;
+const TCL_ERR_EXPECTED_GREATER: t40 = 5;
+const TCL_ERR_EXPECTED_COMMA: t40 = 6;
+const TCL_ERR_EXPECTED_QUALIFIER: t40 = 7;
+const TCL_ERR_UNKNOWN_PTR_STATE: t40 = 8;
+const TCL_ERR_UNKNOWN_PTR_REGION: t40 = 9;
+const TCL_ERR_INVALID_MEM_ORDER: t40 = 10;
+const TCL_ERR_EXPECTED_TYPE_NAME: t40 = 11;
+const TCL_ERR_UNDEFINED_WIDTH_PARAM: t40 = 12;
+const TCL_ERR_CALL_FN_NAME: t40 = 13;
+const TCL_ERR_EXPECTED_RPAREN: t40 = 14;
+const TCL_ERR_EXPECTED_FIELD_NAME: t40 = 15;
+const TCL_ERR_EXPECTED_EXPR: t40 = 16;
+const TCL_ERR_EXPECTED_COLON: t40 = 17;
+const TCL_ERR_EXPECTED_EQUAL: t40 = 18;
+const TCL_ERR_EXPECTED_LBRACE: t40 = 19;
+const TCL_ERR_INVALID_MATCH_ARM: t40 = 20;
+const TCL_ERR_EXPECTED_FAT_ARROW: t40 = 21;
+const TCL_ERR_EXPECTED_RBRACE: t40 = 22;
+const TCL_ERR_INVALID_TUPLE_SWAP: t40 = 23;
+const TCL_ERR_EXPECTED_DECL: t40 = 24;
+const TCL_ERR_EXPECTED_CONSTRAINT: t40 = 25;
+const TCL_ERR_EXPECTED_ARROW: t40 = 26;
+const TCL_ERR_EXPECTED_IDENT: t40 = 27;
+const TCL_ERR_EXPECTED_LPAREN: t40 = 28;
+
+// =============================================================================
+// Parser Struct Accessors & Lifecycle
+// =============================================================================
+
+// Parser State Layout (6 words):
+// [0] tokens (token stream vector)
+// [1] src (pointer to source code string)
+// [2] current (current token index)
+// [3] errors (errors count)
+// [4] diagnostics (diagnostics vector: pairs of [token_idx, error_code])
+// [5] width_params (vector of active width parameters for the current function)
+
+fn tcl_parser_tokens(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p); } return v; }
+fn tcl_parser_src(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 1); } return v; }
+fn tcl_parser_current(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 2); } return v; }
+fn tcl_parser_set_current(p: t40, val: t40) -> t40 { unsafe { store(p + 2, val); } return 0; }
+fn tcl_parser_errors(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 3); } return v; }
+fn tcl_parser_set_errors(p: t40, val: t40) -> t40 { unsafe { store(p + 3, val); } return 0; }
+fn tcl_parser_diagnostics(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 4); } return v; }
+fn tcl_parser_width_params(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 5); } return v; }
+
+fn tcl_parser_new(tokens: t40, src: t40) -> t40 {
+    var p: t40 = malloc_raw(6);
+    match p {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            unsafe {
+                store(p, tokens);
+                store(p + 1, src);
+                store(p + 2, 0); // current = 0
+                store(p + 3, 0); // errors = 0
+                store(p + 4, vec_new()); // diagnostics
+                store(p + 5, vec_new()); // width_params
+            }
+            return p;
+        }
+    }
+}
+
+fn tcl_parser_free(p: t40) -> t40 {
+    var diags: t40 = 0;
+    var wparams: t40 = 0;
+    match p {
+        zero => {}
+        neg => {}
+        pos => {
+            diags = tcl_parser_diagnostics(p);
+            match diags { pos => { vec_free(diags); } zero => {} neg => {} }
+            wparams = tcl_parser_width_params(p);
+            match wparams { pos => { vec_free(wparams); } zero => {} neg => {} }
+            free_raw(p);
+        }
+    }
+    return 0;
+}
+
+fn tcl_parser_clear_width_params(p: t40) -> t40 {
+    var wp: t40 = tcl_parser_width_params(p);
+    vec_free(wp);
+    unsafe { store(p + 5, vec_new()); }
+    return 0;
+}
+
+// =============================================================================
+// Spelling & Token Comparison Helpers
+// =============================================================================
+
+fn tcl_token_is_1(p: t40, tok: t40, c0: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 1 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => { return 1; }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_2(p: t40, tok: t40, c0: t40, c1: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 2 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => { return 1; }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_3(p: t40, tok: t40, c0: t40, c1: t40, c2: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 3 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => { return 1; }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_4(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 4 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => { return 1; }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_5(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 5 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - c4 {
+                                                zero => { return 1; }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_6(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 6 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - c4 {
+                                                zero => {
+                                                    match tcl_char_at(src, start + 5) - c5 {
+                                                        zero => { return 1; }
+                                                        pos => { return 0; }
+                                                        neg => { return 0; }
+                                                    }
+                                                }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_7(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 7 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - c4 {
+                                                zero => {
+                                                    match tcl_char_at(src, start + 5) - c5 {
+                                                        zero => {
+                                                            match tcl_char_at(src, start + 6) - c6 {
+                                                                zero => { return 1; }
+                                                                pos => { return 0; }
+                                                                neg => { return 0; }
+                                                            }
+                                                        }
+                                                        pos => { return 0; }
+                                                        neg => { return 0; }
+                                                    }
+                                                }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_8(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40, c7: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 8 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - c4 {
+                                                zero => {
+                                                    match tcl_char_at(src, start + 5) - c5 {
+                                                        zero => {
+                                                            match tcl_char_at(src, start + 6) - c6 {
+                                                                zero => {
+                                                                    match tcl_char_at(src, start + 7) - c7 {
+                                                                        zero => { return 1; }
+                                                                        pos => { return 0; }
+                                                                        neg => { return 0; }
+                                                                    }
+                                                                }
+                                                                pos => { return 0; }
+                                                                neg => { return 0; }
+                                                            }
+                                                        }
+                                                        pos => { return 0; }
+                                                        neg => { return 0; }
+                                                    }
+                                                }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_token_is_9(p: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40, c7: t40, c8: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = 0;
+    var start: t40 = 0;
+    match tcl_token_len(tokens, tok) - 9 {
+        zero => {
+            src = tcl_parser_src(p);
+            start = tcl_token_start(tokens, tok);
+            match tcl_char_at(src, start) - c0 {
+                zero => {
+                    match tcl_char_at(src, start + 1) - c1 {
+                        zero => {
+                            match tcl_char_at(src, start + 2) - c2 {
+                                zero => {
+                                    match tcl_char_at(src, start + 3) - c3 {
+                                        zero => {
+                                            match tcl_char_at(src, start + 4) - c4 {
+                                                zero => {
+                                                    match tcl_char_at(src, start + 5) - c5 {
+                                                        zero => {
+                                                            match tcl_char_at(src, start + 6) - c6 {
+                                                                zero => {
+                                                                    match tcl_char_at(src, start + 7) - c7 {
+                                                                        zero => {
+                                                                            match tcl_char_at(src, start + 8) - c8 {
+                                                                                zero => { return 1; }
+                                                                                pos => { return 0; }
+                                                                                neg => { return 0; }
+                                                                            }
+                                                                        }
+                                                                        pos => { return 0; }
+                                                                        neg => { return 0; }
+                                                                    }
+                                                                }
+                                                                pos => { return 0; }
+                                                                neg => { return 0; }
+                                                            }
+                                                        }
+                                                        pos => { return 0; }
+                                                        neg => { return 0; }
+                                                    }
+                                                }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_tokens_eq(p: t40, t1: t40, t2: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var len1: t40 = tcl_token_len(tokens, t1);
+    var len2: t40 = tcl_token_len(tokens, t2);
+    var src: t40 = 0;
+    var start1: t40 = 0;
+    var start2: t40 = 0;
+    var i: t40 = 0;
+    var match_ok: t40 = 1;
+    var c1: t40 = 0;
+    var c2: t40 = 0;
+    match len1 - len2 {
+        zero => {
+            src = tcl_parser_src(p);
+            start1 = tcl_token_start(tokens, t1);
+            start2 = tcl_token_start(tokens, t2);
+            i = 0;
+            match_ok = 1;
+            while len1 - i > 0 {
+                c1 = tcl_char_at(src, start1 + i);
+                c2 = tcl_char_at(src, start2 + i);
+                match c1 - c2 {
+                    zero => {}
+                    pos => { match_ok = 0; }
+                    neg => { match_ok = 0; }
+                }
+                i = i + 1;
+            }
+            return match_ok;
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+// =============================================================================
+// Cursor Navigation Primitives
+// =============================================================================
+
+fn tcl_parser_peek(p: t40) -> t40 {
+    return tcl_parser_current(p);
+}
+
+fn tcl_parser_peek_kind(p: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var cur: t40 = tcl_parser_current(p);
+    return tcl_token_kind(tokens, cur);
+}
+
+fn tcl_parser_check(p: t40, kind: t40) -> t40 {
+    match tcl_parser_peek_kind(p) - kind {
+        zero => { return 1; }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_parser_is_at_end(p: t40) -> t40 {
+    return tcl_parser_check(p, TCL_TK_EOF);
+}
+
+fn tcl_parser_advance(p: t40) -> t40 {
+    var cur: t40 = 0;
+    match tcl_parser_is_at_end(p) {
+        zero => {
+            cur = tcl_parser_current(p);
+            tcl_parser_set_current(p, cur + 1);
+            return cur;
+        }
+        pos => {
+            return tcl_parser_current(p);
+        }
+        neg => {
+            return tcl_parser_current(p);
+        }
+    }
+}
+
+fn tcl_parser_previous(p: t40) -> t40 {
+    var cur: t40 = tcl_parser_current(p);
+    match cur {
+        zero => { return 0; }
+        pos => { return cur - 1; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_parser_match(p: t40, kind: t40) -> t40 {
+    match tcl_parser_check(p, kind) {
+        pos => {
+            tcl_parser_advance(p);
+            return 1;
+        }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_parser_error(p: t40, token_idx: t40, error_code: t40) -> t40 {
+    var errs: t40 = tcl_parser_errors(p);
+    var diags: t40 = 0;
+    tcl_parser_set_errors(p, errs + 1);
+    diags = tcl_parser_diagnostics(p);
+    vec_push(diags, token_idx);
+    vec_push(diags, error_code);
+    return 0;
+}
+
+fn tcl_parser_consume(p: t40, kind: t40, error_code: t40) -> t40 {
+    var cur: t40 = 0;
+    match tcl_parser_check(p, kind) {
+        pos => {
+            return tcl_parser_advance(p);
+        }
+        zero => {
+            cur = tcl_parser_current(p);
+            tcl_parser_error(p, cur, error_code);
+            return cur;
+        }
+        neg => {
+            cur = tcl_parser_current(p);
+            tcl_parser_error(p, cur, error_code);
+            return cur;
+        }
+    }
+}
+
+fn tcl_parser_consume_identifier(p: t40, error_code: t40) -> t40 {
+    var cur: t40 = 0;
+    var kind: t40 = tcl_parser_peek_kind(p);
+    var ok: t40 = 0;
+    match (kind - TCL_TK_IDENT) { zero => { ok = 1; } pos => {} neg => {} }
+    match (kind - TCL_TK_VALID) { zero => { ok = 1; } pos => {} neg => {} }
+    match (kind - TCL_TK_UNKNOWN) { zero => { ok = 1; } pos => {} neg => {} }
+    match (kind - TCL_TK_NULL) { zero => { ok = 1; } pos => {} neg => {} }
+    match ok {
+        pos => {
+            return tcl_parser_advance(p);
+        }
+        zero => {
+            cur = tcl_parser_current(p);
+            tcl_parser_error(p, cur, error_code);
+            return cur;
+        }
+        neg => {
+            cur = tcl_parser_current(p);
+            tcl_parser_error(p, cur, error_code);
+            return cur;
+        }
+    }
+}
+
+// =============================================================================
+// Pointer State & Region Parsing Helpers
+// =============================================================================
+
+fn tcl_parse_ptr_state(p: t40, tok: t40) -> t40 {
+    match tcl_token_is_5(p, tok, 118, 97, 108, 105, 100) { // "valid"
+        pos => { return TCL_PTR_STATE_VALID; }
+        zero => {
+            match tcl_token_is_7(p, tok, 117, 110, 107, 110, 111, 119, 110) { // "unknown"
+                pos => { return TCL_PTR_STATE_UNKNOWN; }
+                zero => {
+                    match tcl_token_is_4(p, tok, 110, 117, 108, 108) { // "null"
+                        pos => { return TCL_PTR_STATE_NULL; }
+                        zero => { return 0 - 1; }
+                        neg => { return 0 - 1; }
+                    }
+                }
+                neg => { return 0 - 1; }
+            }
+        }
+        neg => { return 0 - 1; }
+    }
+}
+
+fn tcl_parse_ptr_region(p: t40, tok: t40) -> t40 {
+    match tcl_token_is_5(p, tok, 115, 116, 97, 99, 107) { // "stack"
+        pos => { return TCL_PTR_REG_STACK; }
+        zero => {
+            match tcl_token_is_6(p, tok, 115, 116, 97, 116, 105, 99) { // "static"
+                pos => { return TCL_PTR_REG_STATIC; }
+                zero => {
+                    match tcl_token_is_4(p, tok, 117, 115, 101, 114) { // "user"
+                        pos => { return TCL_PTR_REG_USER; }
+                        zero => {
+                            match tcl_token_is_6(p, tok, 107, 101, 114, 110, 101, 108) { // "kernel"
+                                pos => { return TCL_PTR_REG_KERNEL; }
+                                zero => { return 0 - 1; }
+                                neg => { return 0 - 1; }
+                            }
+                        }
+                        neg => { return 0 - 1; }
+                    }
+                }
+                neg => { return 0 - 1; }
+            }
+        }
+        neg => { return 0 - 1; }
+    }
+}
+
+// =============================================================================
+// Parsing Types
+// =============================================================================
+
+fn tcl_parse_ptr_type_helper(p: t40, ast: t40, elem: t40) -> t40 {
+    var region: t40 = TCL_PTR_REG_STACK;
+    var state: t40 = TCL_PTR_STATE_VALID;
+    var qual: t40 = 0;
+    var r_val: t40 = 0;
+    var s_tok: t40 = 0;
+    var s_val: t40 = 0;
+
+    match tcl_parser_match(p, TCL_TK_COMMA) {
+        pos => {
+            qual = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_QUALIFIER);
+            r_val = tcl_parse_ptr_region(p, qual);
+            match r_val + 1 {
+                zero => {
+                    s_val = tcl_parse_ptr_state(p, qual);
+                    match s_val + 1 {
+                        zero => {
+                            tcl_parser_error(p, qual, TCL_ERR_UNKNOWN_PTR_STATE);
+                        }
+                        pos => { state = s_val; }
+                        neg => { state = s_val; }
+                    }
+                }
+                pos => {
+                    region = r_val;
+                    match tcl_parser_match(p, TCL_TK_COMMA) {
+                        pos => {
+                            s_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                            s_val = tcl_parse_ptr_state(p, s_tok);
+                            match s_val + 1 {
+                                zero => {
+                                    tcl_parser_error(p, s_tok, TCL_ERR_UNKNOWN_PTR_STATE);
+                                }
+                                pos => { state = s_val; }
+                                neg => { state = s_val; }
+                            }
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+                neg => {
+                    region = r_val;
+                    match tcl_parser_match(p, TCL_TK_COMMA) {
+                        pos => {
+                            s_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                            s_val = tcl_parse_ptr_state(p, s_tok);
+                            match s_val + 1 {
+                                zero => {
+                                    tcl_parser_error(p, s_tok, TCL_ERR_UNKNOWN_PTR_STATE);
+                                }
+                                pos => { state = s_val; }
+                                neg => { state = s_val; }
+                            }
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                }
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+    return tcl_type_new(ast, TCL_TYPE_POINTER, elem, region * 3 + state, 0);
+}
+
+fn tcl_parse_shared_type_helper(p: t40, ast: t40, elem: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var order_tok: t40 = 0;
+    var num_val: t40 = 0;
+
+    tcl_parser_consume(p, TCL_TK_COMMA, TCL_ERR_EXPECTED_COMMA);
+    order_tok = tcl_parser_peek(p);
+
+    match tcl_token_is_7(p, order_tok, 82, 69, 76, 65, 88, 69, 68) { // "RELAXED"
+        pos => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_RELAXED, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    match tcl_token_is_7(p, order_tok, 65, 67, 81, 95, 82, 69, 76) { // "ACQ_REL"
+        pos => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_ACQ_REL, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    match tcl_token_is_7(p, order_tok, 83, 69, 81, 95, 67, 83, 84) { // "SEQ_CST"
+        pos => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    // Otherwise, it must be a number or an error
+    match tcl_parser_match(p, TCL_TK_NUMBER) {
+        pos => {
+            order_tok = tcl_parser_previous(p);
+            num_val = tcl_token_len(tokens, order_tok);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+
+            match num_val {
+                zero => {
+                    return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_ACQ_REL, 0);
+                }
+                pos => {
+                    match num_val - 1 {
+                        zero => {
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+                        }
+                        pos => {
+                            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+                        }
+                        neg => {
+                            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+                        }
+                    }
+                }
+                neg => {
+                    match num_val + 1 {
+                        zero => {
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_RELAXED, 0);
+                        }
+                        pos => {
+                            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_RELAXED, 0);
+                        }
+                        neg => {
+                            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+                            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_RELAXED, 0);
+                        }
+                    }
+                }
+            }
+        }
+        zero => {
+            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+        }
+        neg => {
+            tcl_parser_error(p, order_tok, TCL_ERR_INVALID_MEM_ORDER);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_SHARED, elem, TCL_MEM_ORDER_SEQ_CST, 0);
+        }
+    }
+}
+
+fn tcl_parse_base_type_helper(p: t40, ast: t40, name_tok: t40) -> t40 {
+    var elem: t40 = 0;
+    var w_tok: t40 = 0;
+    var wparams: t40 = 0;
+    var found: t40 = 0;
+    var i: t40 = 0;
+    var n_wparams: t40 = 0;
+    var wp_tok: t40 = 0;
+
+    match tcl_token_is_3(p, name_tok, 118, 101, 99) { // "vec"
+        pos => {
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_VECTOR, elem, 0, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    match tcl_token_is_1(p, name_tok, 84) { // "T"
+        pos => {
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            w_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+
+            wparams = tcl_parser_width_params(p);
+            found = 0;
+            i = 0;
+            n_wparams = vec_len(wparams);
+            while n_wparams - i > 0 {
+                wp_tok = vec_get(wparams, i);
+                match tcl_tokens_eq(p, wp_tok, w_tok) {
+                    pos => { found = 1; }
+                    zero => {}
+                    neg => {}
+                }
+                i = i + 1;
+            }
+            match found {
+                zero => {
+                    tcl_parser_error(p, w_tok, TCL_ERR_UNDEFINED_WIDTH_PARAM);
+                }
+                pos => {}
+                neg => {}
+            }
+
+            return tcl_type_new(ast, TCL_TYPE_TYPEVAR, 0, 0, w_tok);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    match tcl_token_is_2(p, name_tok, 116, 49) { pos => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); } zero => {} neg => {} } // "t1"
+    match tcl_token_is_4(p, name_tok, 116, 114, 105, 116) { pos => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); } zero => {} neg => {} } // "trit"
+    match tcl_token_is_2(p, name_tok, 116, 53) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 1, name_tok); } zero => {} neg => {} } // "t5"
+    match tcl_token_is_3(p, name_tok, 116, 49, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 2, name_tok); } zero => {} neg => {} } // "t10"
+    match tcl_token_is_3(p, name_tok, 116, 50, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 3, name_tok); } zero => {} neg => {} } // "t20"
+    match tcl_token_is_3(p, name_tok, 116, 52, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, name_tok); } zero => {} neg => {} } // "t40"
+    match tcl_token_is_3(p, name_tok, 116, 53, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 5, name_tok); } zero => {} neg => {} } // "t50"
+
+    match tcl_token_is_2(p, name_tok, 108, 49) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 6, name_tok); } zero => {} neg => {} } // "l1"
+    match tcl_token_is_2(p, name_tok, 108, 53) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 7, name_tok); } zero => {} neg => {} } // "l5"
+    match tcl_token_is_3(p, name_tok, 108, 49, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 8, name_tok); } zero => {} neg => {} } // "l10"
+    match tcl_token_is_3(p, name_tok, 108, 50, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 9, name_tok); } zero => {} neg => {} } // "l20"
+    match tcl_token_is_3(p, name_tok, 108, 52, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 10, name_tok); } zero => {} neg => {} } // "l40"
+    match tcl_token_is_3(p, name_tok, 108, 53, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 11, name_tok); } zero => {} neg => {} } // "l50"
+
+    return tcl_type_new(ast, TCL_TYPE_STRUCT, 0, 0, name_tok);
+}
+
+fn tcl_parse_type(p: t40, ast: t40) -> t40 {
+    var tokens: t40 = tcl_parser_tokens(p);
+    var cur: t40 = tcl_parser_current(p);
+    var kind: t40 = tcl_token_kind(tokens, cur);
+    var elem: t40 = 0;
+    var name_tok: t40 = 0;
+    var t1: t40 = 0;
+    var t2: t40 = 0;
+
+    // 1. void
+    match tcl_token_is_4(p, cur, 118, 111, 105, 100) { // "void"
+        pos => {
+            tcl_parser_advance(p);
+            return tcl_type_new(ast, TCL_TYPE_VOID, 0, 0, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    // 2. Bracket array [type; size]
+    match (kind - TCL_TK_LBRACKET) {
+        zero => {
+            tcl_parser_advance(p);
+            elem = tcl_parse_type(p, ast);
+            tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+            t1 = tcl_parser_consume(p, TCL_TK_NUMBER, TCL_ERR_EXPECTED_EXPR);
+            t2 = tcl_token_len(tokens, t1);
+            tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
+            return tcl_type_new(ast, TCL_TYPE_ARRAY, elem, t2, 0);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    // 3. Pointer types
+    match (kind - TCL_TK_PTR) {
+        zero => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            return tcl_parse_ptr_type_helper(p, ast, elem);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    // 4. Shared types
+    match (kind - TCL_TK_SHARED) {
+        zero => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            return tcl_parse_shared_type_helper(p, ast, elem);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    // 5. Own, Borrow, BorrowMut
+    match (kind - TCL_TK_OWN) {
+        zero => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_OWNED, elem, 0, 0);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_TK_BORROW) {
+        zero => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_BORROW, elem, 0, 0);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_TK_BORROW_MUT) {
+        zero => {
+            tcl_parser_advance(p);
+            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+            elem = tcl_parse_type(p, ast);
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+            return tcl_type_new(ast, TCL_TYPE_BORROW_MUT, elem, 0, 0);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    // 6. Base / Named types
+    name_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_TYPE_NAME);
+    return tcl_parse_base_type_helper(p, ast, name_tok);
+}
+
+// =============================================================================
+// Parsing Expressions
+// =============================================================================
+
+fn tcl_parse_expr(p: t40, ast: t40) -> t40 {
+    return tcl_parse_comparison(p, ast);
+}
+
+fn tcl_parse_comparison(p: t40, ast: t40) -> t40 {
+    var expr: t40 = tcl_parse_add_sub(p, ast);
+    var loop: t40 = 1;
+    var op_tok: t40 = 0;
+    var is_comp: t40 = 0;
+    var rhs: t40 = 0;
+    while loop > 0 {
+        is_comp = 0;
+        match tcl_parser_check(p, TCL_TK_LESS) { pos => { is_comp = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_GREATER) { pos => { is_comp = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_EQUAL_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_BANG_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_LESS_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_GREATER_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
+
+        match is_comp {
+            pos => {
+                op_tok = tcl_parser_advance(p);
+                rhs = tcl_parse_add_sub(p, ast);
+                expr = tcl_expr_new(ast, TCL_EXPR_BINARY, op_tok, expr, rhs, 0);
+            }
+            zero => { loop = 0; }
+            neg => { loop = 0; }
+        }
+    }
+    return expr;
+}
+
+fn tcl_parse_add_sub(p: t40, ast: t40) -> t40 {
+    var expr: t40 = tcl_parse_mul_div(p, ast);
+    var loop: t40 = 1;
+    var op_tok: t40 = 0;
+    var is_op: t40 = 0;
+    var rhs: t40 = 0;
+    while loop > 0 {
+        is_op = 0;
+        match tcl_parser_check(p, TCL_TK_PLUS) { pos => { is_op = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_MINUS) { pos => { is_op = 1; } zero => {} neg => {} }
+
+        match is_op {
+            pos => {
+                op_tok = tcl_parser_advance(p);
+                rhs = tcl_parse_mul_div(p, ast);
+                expr = tcl_expr_new(ast, TCL_EXPR_BINARY, op_tok, expr, rhs, 0);
+            }
+            zero => { loop = 0; }
+            neg => { loop = 0; }
+        }
+    }
+    return expr;
+}
+
+fn tcl_parse_mul_div(p: t40, ast: t40) -> t40 {
+    var expr: t40 = tcl_parse_unary(p, ast);
+    var loop: t40 = 1;
+    var op_tok: t40 = 0;
+    var is_op: t40 = 0;
+    var rhs: t40 = 0;
+    while loop > 0 {
+        is_op = 0;
+        match tcl_parser_check(p, TCL_TK_STAR) { pos => { is_op = 1; } zero => {} neg => {} }
+        match tcl_parser_check(p, TCL_TK_SLASH) { pos => { is_op = 1; } zero => {} neg => {} }
+
+        match is_op {
+            pos => {
+                op_tok = tcl_parser_advance(p);
+                rhs = tcl_parse_unary(p, ast);
+                expr = tcl_expr_new(ast, TCL_EXPR_BINARY, op_tok, expr, rhs, 0);
+            }
+            zero => { loop = 0; }
+            neg => { loop = 0; }
+        }
+    }
+    return expr;
+}
+
+fn tcl_parse_unary(p: t40, ast: t40) -> t40 {
+    var is_op: t40 = 0;
+    var op_tok: t40 = 0;
+    var left: t40 = 0;
+    match tcl_parser_check(p, TCL_TK_MINUS) { pos => { is_op = 1; } zero => {} neg => {} }
+    match tcl_parser_check(p, TCL_TK_AMP) { pos => { is_op = 1; } zero => {} neg => {} }
+    match tcl_parser_check(p, TCL_TK_STAR) { pos => { is_op = 1; } zero => {} neg => {} }
+
+    match is_op {
+        pos => {
+            op_tok = tcl_parser_advance(p);
+            left = tcl_parse_unary(p, ast);
+            return tcl_expr_new(ast, TCL_EXPR_UNARY, op_tok, left, 0, 0);
+        }
+        zero => {
+            return tcl_parse_postfix(p, ast);
+        }
+        neg => {
+            return tcl_parse_postfix(p, ast);
+        }
+    }
+}
+
+fn tcl_parse_postfix(p: t40, ast: t40) -> t40 {
+    var expr: t40 = tcl_parse_primary(p, ast);
+    var loop: t40 = 1;
+    var kind: t40 = 0;
+    var args_vec: t40 = 0;
+    var run: t40 = 0;
+    var arg: t40 = 0;
+    var field_tok: t40 = 0;
+    var op_tok: t40 = 0;
+    var idx: t40 = 0;
+    while loop > 0 {
+        kind = tcl_parser_peek_kind(p);
+        match (kind - TCL_TK_LPAREN) {
+            zero => {
+                tcl_parser_advance(p);
+                args_vec = vec_new();
+                match tcl_parser_check(p, TCL_TK_RPAREN) {
+                    zero => {
+                        run = 1;
+                        while run > 0 {
+                            arg = tcl_parse_expr(p, ast);
+                            vec_push(args_vec, arg);
+                            match tcl_parser_match(p, TCL_TK_COMMA) {
+                                zero => { run = 0; }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                    }
+                    pos => {}
+                    neg => {}
+                }
+                tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+                expr = tcl_expr_new(ast, TCL_EXPR_CALL, tcl_expr_token_idx(ast, expr), 0, 0, args_vec);
+            }
+            pos => {
+                match tcl_parser_match(p, TCL_TK_DOT) {
+                    pos => {
+                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
+                        expr = tcl_expr_new(ast, TCL_EXPR_FIELD, field_tok, expr, 0, 0);
+                    }
+                    zero => {
+                        match tcl_parser_match(p, TCL_TK_LBRACKET) {
+                            pos => {
+                                op_tok = tcl_parser_previous(p);
+                                idx = tcl_parse_expr(p, ast);
+                                tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
+                                expr = tcl_expr_new(ast, TCL_EXPR_INDEX, op_tok, expr, idx, 0);
+                            }
+                            zero => {
+                                loop = 0;
+                            }
+                            neg => {
+                                loop = 0;
+                            }
+                        }
+                    }
+                    neg => {}
+                }
+            }
+            neg => {
+                match tcl_parser_match(p, TCL_TK_DOT) {
+                    pos => {
+                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
+                        expr = tcl_expr_new(ast, TCL_EXPR_FIELD, field_tok, expr, 0, 0);
+                    }
+                    zero => {
+                        match tcl_parser_match(p, TCL_TK_LBRACKET) {
+                            pos => {
+                                op_tok = tcl_parser_previous(p);
+                                idx = tcl_parse_expr(p, ast);
+                                tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
+                                expr = tcl_expr_new(ast, TCL_EXPR_INDEX, op_tok, expr, idx, 0);
+                            }
+                            zero => {
+                                loop = 0;
+                            }
+                            neg => {
+                                loop = 0;
+                            }
+                        }
+                    }
+                    neg => {}
+                }
+            }
+        }
+    }
+    return expr;
+}
+
+fn tcl_parse_primary(p: t40, ast: t40) -> t40 {
+    var tok: t40 = 0;
+    var name_tok: t40 = 0;
+    var is_struct_lit: t40 = 0;
+    var src: t40 = 0;
+    var tokens: t40 = 0;
+    var start: t40 = 0;
+    var c: t40 = 0;
+    var args_vec: t40 = 0;
+    var run: t40 = 0;
+    var field_tok: t40 = 0;
+    var val_expr: t40 = 0;
+    var start_tok: t40 = 0;
+    var err_tok: t40 = 0;
+
+    // 1. Literal Number
+    match tcl_parser_match(p, TCL_TK_NUMBER) {
+        pos => {
+            tok = tcl_parser_previous(p);
+            return tcl_expr_new(ast, TCL_EXPR_NUMBER, tok, 0, 0, 0);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    // 2. Identifier or Struct Literal
+    match tcl_parser_match(p, TCL_TK_IDENT) {
+        pos => {
+            name_tok = tcl_parser_previous(p);
+            is_struct_lit = 0;
+            match tcl_parser_check(p, TCL_TK_LBRACE) {
+                pos => {
+                    src = tcl_parser_src(p);
+                    tokens = tcl_parser_tokens(p);
+                    start = tcl_token_start(tokens, name_tok);
+                    c = tcl_char_at(src, start);
+                    // Check if uppercase 'A'(65) <= c <= 'Z'(90)
+                    match c - 65 {
+                        neg => {}
+                        zero => { is_struct_lit = 1; }
+                        pos => {
+                            match 90 - c {
+                                neg => {}
+                                zero => { is_struct_lit = 1; }
+                                pos => { is_struct_lit = 1; }
+                            }
+                        }
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+
+            match is_struct_lit {
+                pos => {
+                    tcl_parser_advance(p); // consume '{'
+                    args_vec = vec_new();
+                    match tcl_parser_check(p, TCL_TK_RBRACE) {
+                        zero => {
+                            run = 1;
+                            while run > 0 {
+                                field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
+                                tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                                val_expr = tcl_parse_expr(p, ast);
+                                vec_push(args_vec, field_tok);
+                                vec_push(args_vec, val_expr);
+                                match tcl_parser_match(p, TCL_TK_COMMA) {
+                                    zero => { run = 0; }
+                                    pos => {}
+                                    neg => {}
+                                }
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                    tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
+                    return tcl_expr_new(ast, TCL_EXPR_STRUCT_LIT, name_tok, 0, 0, args_vec);
+                }
+                zero => {
+                    return tcl_expr_new(ast, TCL_EXPR_NAME, name_tok, 0, 0, 0);
+                }
+                neg => {
+                    return tcl_expr_new(ast, TCL_EXPR_NAME, name_tok, 0, 0, 0);
+                }
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+
+    // 3. Array Literal: [expr1, expr2, ...]
+    match tcl_parser_match(p, TCL_TK_LBRACKET) {
+        pos => {
+            start_tok = tcl_parser_previous(p);
+            args_vec = vec_new();
+            match tcl_parser_check(p, TCL_TK_RBRACKET) {
+                zero => {
+                    run = 1;
+                    while run > 0 {
+                        val_expr = tcl_parse_expr(p, ast);
+                        vec_push(args_vec, val_expr);
+                        match tcl_parser_match(p, TCL_TK_COMMA) {
+                            zero => { run = 0; }
+                            pos => {}
+                            neg => {}
+                        }
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+            tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
+            return tcl_expr_new(ast, TCL_EXPR_ARRAY_LIT, start_tok, 0, 0, args_vec);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    // 4. Parenthesized expression: (expr)
+    match tcl_parser_match(p, TCL_TK_LPAREN) {
+        pos => {
+            val_expr = tcl_parse_expr(p, ast);
+            tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+            return val_expr;
+        }
+        zero => {}
+        neg => {}
+    }
+
+    err_tok = tcl_parser_peek(p);
+    tcl_parser_error(p, err_tok, TCL_ERR_EXPECTED_EXPR);
+    return tcl_expr_new(ast, TCL_EXPR_NUMBER, err_tok, 0, 0, 0);
+}
+
+// =============================================================================
+// Parsing Statements
+// =============================================================================
+
+fn tcl_parse_block(p: t40, ast: t40) -> t40 {
+    var body_vec: t40 = 0;
+    var loop: t40 = 1;
+    var stmt: t40 = 0;
+    tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
+    body_vec = vec_new();
+    while loop > 0 {
+        match tcl_parser_check(p, TCL_TK_RBRACE) {
+            pos => { loop = 0; }
+            zero => {
+                match tcl_parser_is_at_end(p) {
+                    pos => { loop = 0; }
+                    zero => {
+                        stmt = tcl_parse_stmt(p, ast);
+                        vec_push(body_vec, stmt);
+                    }
+                    neg => { loop = 0; }
+                }
+            }
+            neg => { loop = 0; }
+        }
+    }
+    tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
+    return body_vec;
+}
+
+fn tcl_parse_stmt(p: t40, ast: t40) -> t40 {
+    var cur_idx: t40 = tcl_parser_current(p);
+    var s: t40 = tcl_parse_stmt_impl(p, ast);
+    match tcl_parser_current(p) - cur_idx {
+        zero => {
+            match tcl_parser_is_at_end(p) {
+                zero => { tcl_parser_advance(p); }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    return s;
+}
+
+fn tcl_parse_let(p: t40, ast: t40, is_mut: t40) -> t40 {
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var type_id: t40 = 0;
+    var rhs: t40 = 0;
+    var stmt_id: t40 = 0;
+    match tcl_parser_match(p, TCL_TK_COLON) {
+        pos => {
+            type_id = tcl_parse_type(p, ast);
+        }
+        zero => {}
+        neg => {}
+    }
+    tcl_parser_consume(p, TCL_TK_EQUAL, TCL_ERR_EXPECTED_EQUAL);
+    rhs = tcl_parse_expr(p, ast);
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+    stmt_id = tcl_stmt_new(ast, TCL_STMT_LET, name_tok, rhs, 0, type_id, 0, 0);
+    tcl_stmt_set_mutable(ast, stmt_id, is_mut);
+    return stmt_id;
+}
+
+fn tcl_parse_const_stmt(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_previous(p);
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var type_id: t40 = 0;
+    var rhs: t40 = 0;
+    tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+    type_id = tcl_parse_type(p, ast);
+    tcl_parser_consume(p, TCL_TK_EQUAL, TCL_ERR_EXPECTED_EQUAL);
+    rhs = tcl_parse_expr(p, ast);
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+    return tcl_stmt_new(ast, TCL_STMT_CONST, name_tok, rhs, 0, type_id, 0, 0);
+}
+
+fn tcl_parse_return(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_previous(p);
+    var rhs: t40 = 0;
+    match tcl_parser_check(p, TCL_TK_SEMICOLON) {
+        zero => {
+            rhs = tcl_parse_expr(p, ast);
+        }
+        pos => {}
+        neg => {}
+    }
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+    return tcl_stmt_new(ast, TCL_STMT_RETURN, start_tok, rhs, 0, 0, 0, 0);
+}
+
+fn tcl_parse_while(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_previous(p);
+    var cond: t40 = tcl_parse_expr(p, ast);
+    var body_vec: t40 = tcl_parse_block(p, ast);
+    return tcl_stmt_new(ast, TCL_STMT_WHILE, start_tok, cond, 0, 0, body_vec, 0);
+}
+
+fn tcl_parse_unsafe(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_previous(p);
+    var body_vec: t40 = tcl_parse_block(p, ast);
+    return tcl_stmt_new(ast, TCL_STMT_UNSAFE, start_tok, 0, 0, 0, body_vec, 0);
+}
+
+fn tcl_parse_match(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_previous(p);
+    var cond: t40 = tcl_parse_expr(p, ast);
+    var arms_vec: t40 = 0;
+    var loop: t40 = 1;
+    var arm_tok: t40 = 0;
+    var binding_tok: t40 = 0;
+    var ok: t40 = 0;
+    var arm_body: t40 = 0;
+    var arm_id: t40 = 0;
+
+    tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
+    arms_vec = vec_new();
+    while loop > 0 {
+        match tcl_parser_check(p, TCL_TK_RBRACE) {
+            pos => { loop = 0; }
+            zero => {
+                match tcl_parser_is_at_end(p) {
+                    pos => { loop = 0; }
+                    zero => {
+                        arm_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                        binding_tok = 0;
+                        match tcl_token_is_5(p, arm_tok, 118, 97, 108, 105, 100) { // "valid"
+                            pos => {
+                                match tcl_parser_match(p, TCL_TK_LPAREN) {
+                                    pos => {
+                                        binding_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                                        tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+                                    }
+                                    zero => {}
+                                    neg => {}
+                                }
+                            }
+                            zero => {
+                                ok = 0;
+                                match tcl_token_is_3(p, arm_tok, 110, 101, 103) { pos => { ok = 1; } zero => {} neg => {} } // "neg"
+                                match tcl_token_is_4(p, arm_tok, 122, 101, 114, 111) { pos => { ok = 1; } zero => {} neg => {} } // "zero"
+                                match tcl_token_is_3(p, arm_tok, 112, 111, 115) { pos => { ok = 1; } zero => {} neg => {} } // "pos"
+                                match tcl_token_is_4(p, arm_tok, 110, 117, 108, 108) { pos => { ok = 1; } zero => {} neg => {} } // "null"
+                                match tcl_token_is_7(p, arm_tok, 117, 110, 107, 110, 111, 119, 110) { pos => { ok = 1; } zero => {} neg => {} } // "unknown"
+                                match tcl_token_is_1(p, arm_tok, 95) { pos => { ok = 1; } zero => {} neg => {} } // "_"
+
+                                match ok {
+                                    zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
+                                    pos => {}
+                                    neg => {}
+                                }
+                            }
+                            neg => {
+                                ok = 0;
+                                match tcl_token_is_3(p, arm_tok, 110, 101, 103) { pos => { ok = 1; } zero => {} neg => {} }
+                                match tcl_token_is_4(p, arm_tok, 122, 101, 114, 111) { pos => { ok = 1; } zero => {} neg => {} }
+                                match tcl_token_is_3(p, arm_tok, 112, 111, 115) { pos => { ok = 1; } zero => {} neg => {} }
+                                match tcl_token_is_4(p, arm_tok, 110, 117, 108, 108) { pos => { ok = 1; } zero => {} neg => {} }
+                                match tcl_token_is_7(p, arm_tok, 117, 110, 107, 110, 111, 119, 110) { pos => { ok = 1; } zero => {} neg => {} }
+                                match tcl_token_is_1(p, arm_tok, 95) { pos => { ok = 1; } zero => {} neg => {} }
+
+                                match ok {
+                                    zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
+                                    pos => {}
+                                    neg => {}
+                                }
+                            }
+                        }
+                        tcl_parser_consume(p, TCL_TK_FAT_ARROW, TCL_ERR_EXPECTED_FAT_ARROW);
+                        arm_body = tcl_parse_block(p, ast);
+                        arm_id = tcl_match_arm_new(ast, arm_tok, binding_tok, arm_body, start_tok);
+                        vec_push(arms_vec, arm_id);
+                    }
+                    neg => { loop = 0; }
+                }
+            }
+            neg => { loop = 0; }
+        }
+    }
+    tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
+    return tcl_stmt_new(ast, TCL_STMT_MATCH, start_tok, cond, 0, 0, 0, arms_vec);
+}
+
+fn tcl_parse_tuple_swap(p: t40, ast: t40) -> t40 {
+    var start_tok: t40 = tcl_parser_peek(p);
+    var a_tok: t40 = 0;
+    var b_tok: t40 = 0;
+    var rb_tok: t40 = 0;
+    var ra_tok: t40 = 0;
+    var ok: t40 = 1;
+    var a_expr: t40 = 0;
+    var b_expr: t40 = 0;
+
+    tcl_parser_consume(p, TCL_TK_LPAREN, TCL_ERR_EXPECTED_LPAREN);
+    a_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    tcl_parser_consume(p, TCL_TK_COMMA, TCL_ERR_EXPECTED_COMMA);
+    b_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+
+    tcl_parser_consume(p, TCL_TK_EQUAL, TCL_ERR_EXPECTED_EQUAL);
+
+    tcl_parser_consume(p, TCL_TK_LPAREN, TCL_ERR_EXPECTED_LPAREN);
+    rb_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    tcl_parser_consume(p, TCL_TK_COMMA, TCL_ERR_EXPECTED_COMMA);
+    ra_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+
+    match tcl_tokens_eq(p, rb_tok, b_tok) - 1 {
+        zero => {}
+        pos => { ok = 0; }
+        neg => { ok = 0; }
+    }
+    match tcl_tokens_eq(p, ra_tok, a_tok) - 1 {
+        zero => {}
+        pos => { ok = 0; }
+        neg => { ok = 0; }
+    }
+    match ok {
+        zero => {
+            tcl_parser_error(p, start_tok, TCL_ERR_INVALID_TUPLE_SWAP);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    a_expr = tcl_expr_new(ast, TCL_EXPR_NAME, a_tok, 0, 0, 0);
+    b_expr = tcl_expr_new(ast, TCL_EXPR_NAME, b_tok, 0, 0, 0);
+    return tcl_stmt_new(ast, TCL_STMT_TUPLE_SWAP, start_tok, a_expr, b_expr, 0, 0, 0);
+}
+
+fn tcl_parse_stmt_impl(p: t40, ast: t40) -> t40 {
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var tok2: t40 = 0;
+    var expr: t40 = 0;
+    var op_tok: t40 = 0;
+    var rhs: t40 = 0;
+
+    match tcl_parser_match(p, TCL_TK_LET) {
+        pos => { return tcl_parse_let(p, ast, 0); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_VAR) {
+        pos => { return tcl_parse_let(p, ast, 1); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_CONST) {
+        pos => { return tcl_parse_const_stmt(p, ast); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_RETURN) {
+        pos => { return tcl_parse_return(p, ast); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_WHILE) {
+        pos => { return tcl_parse_while(p, ast); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_MATCH) {
+        pos => { return tcl_parse_match(p, ast); }
+        zero => {}
+        neg => {}
+    }
+    match tcl_parser_match(p, TCL_TK_UNSAFE) {
+        pos => { return tcl_parse_unsafe(p, ast); }
+        zero => {}
+        neg => {}
+    }
+
+    match tcl_parser_check(p, TCL_TK_LPAREN) {
+        pos => {
+            tokens = tcl_parser_tokens(p);
+            cur = tcl_parser_current(p);
+            tok2 = tcl_token_kind(tokens, cur + 2);
+            match (tok2 - TCL_TK_COMMA) {
+                zero => {
+                    return tcl_parse_tuple_swap(p, ast);
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+
+    expr = tcl_parse_expr(p, ast);
+    match tcl_parser_match(p, TCL_TK_EQUAL) {
+        pos => {
+            op_tok = tcl_parser_previous(p);
+            rhs = tcl_parse_expr(p, ast);
+            tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+            return tcl_stmt_new(ast, TCL_STMT_ASSIGN, op_tok, expr, rhs, 0, 0, 0);
+        }
+        zero => {
+            tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+            return tcl_stmt_new(ast, TCL_STMT_EXPR, tcl_expr_token_idx(ast, expr), expr, 0, 0, 0, 0);
+        }
+        neg => {
+            tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+            return tcl_stmt_new(ast, TCL_STMT_EXPR, tcl_expr_token_idx(ast, expr), expr, 0, 0, 0, 0);
+        }
+    }
+}
+
+// =============================================================================
+// Parsing Top-Level Declarations
+// =============================================================================
+
+fn tcl_parse_import(p: t40, ast: t40) -> t40 {
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+    return tcl_import_new(ast, name_tok);
+}
+
+fn tcl_parse_struct(p: t40, ast: t40, is_pub: t40) -> t40 {
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var fields_vec: t40 = 0;
+    var loop: t40 = 1;
+    var field_tok: t40 = 0;
+    var type_id: t40 = 0;
+
+    tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
+    fields_vec = vec_new();
+    while loop > 0 {
+        match tcl_parser_check(p, TCL_TK_RBRACE) {
+            pos => { loop = 0; }
+            zero => {
+                match tcl_parser_is_at_end(p) {
+                    pos => { loop = 0; }
+                    zero => {
+                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                        tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                        type_id = tcl_parse_type(p, ast);
+                        tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+                        vec_push(fields_vec, field_tok);
+                        vec_push(fields_vec, type_id);
+                    }
+                    neg => { loop = 0; }
+                }
+            }
+            neg => { loop = 0; }
+        }
+    }
+    tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
+    return tcl_struct_new(ast, name_tok, fields_vec, is_pub);
+}
+
+fn tcl_parse_function(p: t40, ast: t40, is_pub: t40) -> t40 {
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var width_params_vec: t40 = 0;
+    var run: t40 = 0;
+    var param: t40 = 0;
+    var wparams: t40 = 0;
+    var constr: t40 = 0;
+    var params_vec: t40 = 0;
+    var type_id: t40 = 0;
+    var ret_type: t40 = 0;
+    var body_vec: t40 = 0;
+
+    tcl_parser_clear_width_params(p);
+    width_params_vec = vec_new();
+    match tcl_parser_match(p, TCL_TK_LESS) {
+        pos => {
+            run = 1;
+            while run > 0 {
+                param = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                vec_push(width_params_vec, param);
+                wparams = tcl_parser_width_params(p);
+                vec_push(wparams, param);
+
+                tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                constr = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                match tcl_token_is_9(p, constr, 84, 114, 105, 116, 87, 105, 100, 116, 104) - 1 { // "TritWidth"
+                    zero => {}
+                    pos => { tcl_parser_error(p, constr, TCL_ERR_EXPECTED_CONSTRAINT); }
+                    neg => { tcl_parser_error(p, constr, TCL_ERR_EXPECTED_CONSTRAINT); }
+                }
+
+                match tcl_parser_match(p, TCL_TK_COMMA) {
+                    zero => { run = 0; }
+                    pos => {}
+                    neg => {}
+                }
+            }
+            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    tcl_parser_consume(p, TCL_TK_LPAREN, TCL_ERR_EXPECTED_LPAREN);
+    params_vec = vec_new();
+    match tcl_parser_check(p, TCL_TK_RPAREN) {
+        zero => {
+            run = 1;
+            while run > 0 {
+                param = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                type_id = tcl_parse_type(p, ast);
+                vec_push(params_vec, param);
+                vec_push(params_vec, type_id);
+
+                match tcl_parser_match(p, TCL_TK_COMMA) {
+                    zero => { run = 0; }
+                    pos => {}
+                    neg => {}
+                }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+
+    tcl_parser_consume(p, TCL_TK_ARROW, TCL_ERR_EXPECTED_ARROW);
+    ret_type = tcl_parse_type(p, ast);
+    body_vec = tcl_parse_block(p, ast);
+
+    tcl_parser_clear_width_params(p);
+
+    return tcl_function_new(ast, name_tok, params_vec, ret_type, body_vec, width_params_vec, is_pub);
+}
+
+fn tcl_parse_const_decl(p: t40, ast: t40, is_pub: t40) -> t40 {
+    var name_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var type_id: t40 = 0;
+    var rhs: t40 = 0;
+    tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+    type_id = tcl_parse_type(p, ast);
+    tcl_parser_consume(p, TCL_TK_EQUAL, TCL_ERR_EXPECTED_EQUAL);
+    rhs = tcl_parse_expr(p, ast);
+    tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
+    return tcl_const_new(ast, name_tok, type_id, rhs, is_pub);
+}
+
+// =============================================================================
+// Main Parsing Entry Point
+// =============================================================================
+
+fn tcl_parser_parse(p: t40, ast: t40) -> t40 {
+    var is_pub: t40 = 0;
+    var imp_id: t40 = 0;
+    var struct_id: t40 = 0;
+    var fn_id: t40 = 0;
+    var const_id: t40 = 0;
+
+    while tcl_parser_is_at_end(p) == 0 {
+        is_pub = 0;
+        match tcl_parser_match(p, TCL_TK_PUB) {
+            pos => { is_pub = 1; }
+            zero => {}
+            neg => {}
+        }
+
+        match tcl_parser_match(p, TCL_TK_IMPORT) {
+            pos => {
+                imp_id = tcl_parse_import(p, ast);
+                vec_push(tcl_ast_imports(ast), imp_id);
+            }
+            zero => {
+                match tcl_parser_match(p, TCL_TK_STRUCT) {
+                    pos => {
+                        struct_id = tcl_parse_struct(p, ast, is_pub);
+                        vec_push(tcl_ast_structs(ast), struct_id);
+                    }
+                    zero => {
+                        match tcl_parser_match(p, TCL_TK_FN) {
+                            pos => {
+                                fn_id = tcl_parse_function(p, ast, is_pub);
+                                vec_push(tcl_ast_functions(ast), fn_id);
+                            }
+                            zero => {
+                                match tcl_parser_match(p, TCL_TK_CONST) {
+                                    pos => {
+                                        const_id = tcl_parse_const_decl(p, ast, is_pub);
+                                        vec_push(tcl_ast_consts(ast), const_id);
+                                    }
+                                    zero => {
+                                        tcl_parser_error(p, tcl_parser_peek(p), TCL_ERR_EXPECTED_DECL);
+                                        tcl_parser_advance(p);
+                                    }
+                                    neg => {}
+                                }
+                            }
+                            neg => {}
+                        }
+                    }
+                    neg => {}
+                }
+            }
+            neg => {}
+        }
+    }
+    return 0;
+}

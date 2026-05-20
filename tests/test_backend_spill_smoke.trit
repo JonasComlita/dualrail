@@ -1,0 +1,43 @@
+// =============================================================================
+// test_backend_spill_smoke.trit - Phase C spill path smoke
+// =============================================================================
+
+fn main() -> t40 {
+    var ctx: t40 = tcl_backend_ctx_new();
+    var cfg: t40 = tcl_ir_cfg_new();
+    var block: t40 = tcl_ir_cfg_add_block(cfg, 0);
+    var i: t40 = 1;
+    while 26 - i > 0 {
+        tcl_ir_emit(block, TCL_IR_CONST, i, i, 0, 0);
+        i = i + 1;
+    }
+    var acc: t40 = 26;
+    tcl_ir_emit(block, TCL_IR_BINARY, acc, 1, 2, 0);
+    i = 3;
+    while 26 - i > 0 {
+        acc = acc + 1;
+        var prev: t40 = acc - 1;
+        tcl_ir_emit(block, TCL_IR_BINARY, acc, prev, i, 0);
+        i = i + 1;
+    }
+    tcl_ir_emit(block, TCL_IR_RETURN, 0, acc, 0, 0);
+
+    var alloc: t40 = tcl_backend_allocate_registers(ctx, cfg);
+    var spills: t40 = tcl_backend_alloc_spills(alloc);
+    var errors: t40 = tcl_backend_ctx_errors(ctx);
+    var ok: t40 = 1;
+    match spills { pos => {} zero => { ok = 0; } neg => { ok = 0; } }
+    match errors { zero => {} pos => { ok = 0; } neg => { ok = 0; } }
+    tcl_backend_alloc_free(alloc);
+
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 99);
+    var text_len: t40 = vec_len(text);
+    match text_len { pos => {} zero => { ok = 0; } neg => { ok = 0; } }
+
+    tcl_backend_text_free(text);
+    tcl_ir_cfg_free(cfg);
+    tcl_backend_ctx_free(ctx);
+    print_int(ok);
+    newline();
+    return ok;
+}

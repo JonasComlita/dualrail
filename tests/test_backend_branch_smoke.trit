@@ -1,0 +1,34 @@
+// =============================================================================
+// test_backend_branch_smoke.trit - Phase C branch3 emission smoke
+// =============================================================================
+
+fn main() -> t40 {
+    var ctx: t40 = tcl_backend_ctx_new();
+    var cfg: t40 = tcl_ir_cfg_new();
+    var entry: t40 = tcl_ir_cfg_add_block(cfg, 0);
+    var neg_block: t40 = tcl_ir_cfg_add_block(cfg, 0);
+    var zero_block: t40 = tcl_ir_cfg_add_block(cfg, 0);
+    var pos_block: t40 = tcl_ir_cfg_add_block(cfg, 0);
+    tcl_ir_add_successor(entry, neg_block);
+    tcl_ir_add_successor(entry, zero_block);
+    tcl_ir_add_successor(entry, pos_block);
+    tcl_ir_emit(entry, TCL_IR_CONST, 1, 1, 0, 0);
+    var neg_id: t40 = tcl_ir_block_id(neg_block);
+    var zero_id: t40 = tcl_ir_block_id(zero_block);
+    tcl_ir_emit(entry, TCL_IR_BRANCH3, 0, 1, neg_id, zero_id);
+    tcl_ir_emit(neg_block, TCL_IR_RETURN, 0, 1, 0, 0);
+    tcl_ir_emit(zero_block, TCL_IR_RETURN, 0, 1, 0, 0);
+    tcl_ir_emit(pos_block, TCL_IR_RETURN, 0, 1, 0, 0);
+
+    var text: t40 = tcl_backend_emit_cfg(ctx, cfg, 0, 100);
+    var text_len: t40 = vec_len(text);
+    var ok: t40 = 1;
+    match text_len { pos => {} zero => { ok = 0; } neg => { ok = 0; } }
+
+    tcl_backend_text_free(text);
+    tcl_ir_cfg_free(cfg);
+    tcl_backend_ctx_free(ctx);
+    print_int(ok);
+    newline();
+    return ok;
+}

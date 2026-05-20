@@ -1,0 +1,457 @@
+// =============================================================================
+// tcl_pointer_dataflow.trit - Phase B pointer-state flow analysis
+// =============================================================================
+
+const TCL_ERR_PTR_DEREF_NOT_VALID: t40 = 50;
+
+// Flow context layout:
+// [0] errors
+// [1] diagnostics vec: [token_idx, error_code] pairs
+// [2] tokens
+// [3] source
+fn tcl_ptr_flow_ctx_new(tokens: t40, src: t40) -> t40 {
+    var ctx: t40 = malloc_raw(4);
+    unsafe {
+        store(ctx, 0);
+        store(ctx + 1, vec_new());
+        store(ctx + 2, tokens);
+        store(ctx + 3, src);
+    }
+    return ctx;
+}
+
+fn tcl_ptr_flow_ctx_free(ctx: t40) -> t40 {
+    match ctx {
+        pos => {
+            var diags: t40 = 0;
+            unsafe { diags = load(ctx + 1); }
+            vec_free(diags);
+            free_raw(ctx);
+        }
+        zero => {}
+        neg => {}
+    }
+    return 0;
+}
+
+fn tcl_ptr_flow_errors(ctx: t40) -> t40 {
+    var e: t40 = 0;
+    unsafe { e = load(ctx); }
+    return e;
+}
+
+fn tcl_ptr_flow_diagnostics(ctx: t40) -> t40 {
+    var d: t40 = 0;
+    unsafe { d = load(ctx + 1); }
+    return d;
+}
+
+fn tcl_ptr_flow_record(ctx: t40, token_idx: t40, code: t40) -> t40 {
+    var e: t40 = tcl_ptr_flow_errors(ctx);
+    var d: t40 = tcl_ptr_flow_diagnostics(ctx);
+    unsafe { store(ctx, e + 1); }
+    vec_push(d, token_idx);
+    vec_push(d, code);
+    return 0;
+}
+
+// Environment frame layout: [parent, map_root]
+// Map values store state + 1, allowing valid(0) to be represented.
+fn tcl_ptr_env_push(parent: t40) -> t40 {
+    var frame: t40 = malloc_raw(2);
+    unsafe {
+        store(frame, parent);
+        store(frame + 1, 0);
+    }
+    return frame;
+}
+
+fn tcl_ptr_env_pop(frame: t40) -> t40 {
+    var parent: t40 = 0;
+    var root: t40 = 0;
+    match frame {
+        pos => {
+            unsafe {
+                parent = load(frame);
+                root = load(frame + 1);
+            }
+            tcl_map_free(root);
+            free_raw(frame);
+            return parent;
+        }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ptr_env_set(frame: t40, token_idx: t40, state: t40) -> t40 {
+    match frame {
+        pos => { return tcl_map_insert(frame + 1, token_idx, state + 1); }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ptr_env_lookup(frame: t40, token_idx: t40) -> t40 {
+    var curr: t40 = frame;
+    var root: t40 = 0;
+    var val: t40 = 0;
+    while curr - 0 > 0 {
+        unsafe { root = load(curr + 1); }
+        val = tcl_map_lookup(root, token_idx);
+        match val {
+            pos => { return val - 1; }
+            zero => {}
+            neg => {}
+        }
+        unsafe { curr = load(curr); }
+    }
+    return TCL_PTR_STATE_UNKNOWN;
+}
+
+fn tcl_ptr_type_state(ast: t40, type_id: t40) -> t40 {
+    var ptr: t40 = tcl_pointer_type_view(ast, type_id);
+    match ptr {
+        pos => {
+            var ex: t40 = tcl_type_extra(ast, ptr);
+            var region: t40 = tcl_int_div(ex, 3);
+            return ex - (region * 3);
+        }
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
+    }
+}
+
+fn tcl_ptr_state_meet(a: t40, b: t40) -> t40 {
+    match (a - b) {
+        zero => { return a; }
+        pos => { return TCL_PTR_STATE_UNKNOWN; }
+        neg => { return TCL_PTR_STATE_UNKNOWN; }
+    }
+}
+
+fn tcl_ptr_token_is_valid(ctx: t40, tok: t40) -> t40 {
+    var tokens: t40 = 0;
+    var src: t40 = 0;
+    var start: t40 = 0;
+    unsafe {
+        tokens = load(ctx + 2);
+        src = load(ctx + 3);
+    }
+    match (tcl_token_len(tokens, tok) - 5) {
+        zero => {
+            start = tcl_token_start(tokens, tok);
+            match (tcl_char_at(src, start) - 118) {
+                zero => {
+                    match (tcl_char_at(src, start + 1) - 97) {
+                        zero => {
+                            match (tcl_char_at(src, start + 2) - 108) {
+                                zero => {
+                                    match (tcl_char_at(src, start + 3) - 105) {
+                                        zero => {
+                                            match (tcl_char_at(src, start + 4) - 100) {
+                                                zero => { return 1; }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ptr_is_valid_arm(ctx: t40, ast: t40, arm_id: t40) -> t40 {
+    var tok: t40 = tcl_match_arm_name_token(ast, arm_id);
+    return tcl_ptr_token_is_valid(ctx, tok);
+}
+
+fn tcl_ptr_analyze_expr(ctx: t40, env: t40, ast: t40, expr_id: t40) -> t40 {
+    match expr_id {
+        zero => { return TCL_PTR_STATE_UNKNOWN; }
+        neg => { return TCL_PTR_STATE_UNKNOWN; }
+        pos => {}
+    }
+
+    var kind: t40 = tcl_expr_kind(ast, expr_id);
+    var tok: t40 = tcl_expr_token_idx(ast, expr_id);
+    var left: t40 = tcl_expr_left(ast, expr_id);
+    var right: t40 = tcl_expr_right(ast, expr_id);
+    var args: t40 = tcl_expr_args_vec(ast, expr_id);
+    var state: t40 = TCL_PTR_STATE_UNKNOWN;
+    var i: t40 = 0;
+    var len: t40 = 0;
+    var arg: t40 = 0;
+
+    match (kind - TCL_EXPR_NAME) {
+        zero => { return tcl_ptr_env_lookup(env, tok); }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_UNARY) {
+        zero => {
+            state = tcl_ptr_analyze_expr(ctx, env, ast, left);
+            var tokens: t40 = 0;
+            unsafe { tokens = load(ctx + 2); }
+            var tk: t40 = tcl_token_kind(tokens, tok);
+            match (tk - TCL_TK_STAR) {
+                zero => {
+                    match (state - TCL_PTR_STATE_VALID) {
+                        zero => {}
+                        pos => { tcl_ptr_flow_record(ctx, tok, TCL_ERR_PTR_DEREF_NOT_VALID); }
+                        neg => { tcl_ptr_flow_record(ctx, tok, TCL_ERR_PTR_DEREF_NOT_VALID); }
+                    }
+                    return TCL_PTR_STATE_UNKNOWN;
+                }
+                pos => {}
+                neg => {}
+            }
+            match (tk - TCL_TK_AMP) {
+                zero => { return TCL_PTR_STATE_VALID; }
+                pos => {}
+                neg => {}
+            }
+            return state;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_BINARY) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, left);
+            tcl_ptr_analyze_expr(ctx, env, ast, right);
+            return TCL_PTR_STATE_UNKNOWN;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_CALL) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, left);
+            len = vec_len(args);
+            i = 0;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ptr_analyze_expr(ctx, env, ast, arg);
+                i = i + 1;
+            }
+            return TCL_PTR_STATE_UNKNOWN;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_FIELD) {
+        zero => { return tcl_ptr_analyze_expr(ctx, env, ast, left); }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_INDEX) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, right);
+            return tcl_ptr_analyze_expr(ctx, env, ast, left);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_ARRAY_LIT) {
+        zero => {
+            len = vec_len(args);
+            i = 0;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ptr_analyze_expr(ctx, env, ast, arg);
+                i = i + 1;
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_EXPR_STRUCT_LIT) {
+        zero => {
+            len = vec_len(args);
+            i = 1;
+            while len - i > 0 {
+                arg = vec_get(args, i);
+                tcl_ptr_analyze_expr(ctx, env, ast, arg);
+                i = i + 2;
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+
+    return TCL_PTR_STATE_UNKNOWN;
+}
+
+fn tcl_ptr_analyze_stmt(ctx: t40, env: t40, ast: t40, stmt_id: t40) -> t40 {
+    match stmt_id {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {}
+    }
+
+    var kind: t40 = tcl_stmt_kind(ast, stmt_id);
+    var tok: t40 = tcl_stmt_token_idx(ast, stmt_id);
+    var expr1: t40 = tcl_stmt_expr1(ast, stmt_id);
+    var expr2: t40 = tcl_stmt_expr2(ast, stmt_id);
+    var type_id: t40 = tcl_stmt_type_id(ast, stmt_id);
+    var body: t40 = tcl_stmt_body_vec(ast, stmt_id);
+    var arms: t40 = tcl_stmt_arms_vec(ast, stmt_id);
+    var state: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+    var arm_id: t40 = 0;
+    var arm_env: t40 = 0;
+    var binding: t40 = 0;
+    var arm_body: t40 = 0;
+
+    match (kind - TCL_STMT_LET) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, expr1);
+            state = tcl_ptr_type_state(ast, type_id);
+            match state + 1 {
+                zero => {}
+                pos => { tcl_ptr_env_set(env, tok, state); }
+                neg => { tcl_ptr_env_set(env, tok, state); }
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_ASSIGN) {
+        zero => {
+            state = tcl_ptr_analyze_expr(ctx, env, ast, expr2);
+            tcl_ptr_analyze_expr(ctx, env, ast, expr1);
+            match (tcl_expr_kind(ast, expr1) - TCL_EXPR_NAME) {
+                zero => { tcl_ptr_env_set(env, tcl_expr_token_idx(ast, expr1), state); }
+                pos => {}
+                neg => {}
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_RETURN) {
+        zero => { tcl_ptr_analyze_expr(ctx, env, ast, expr1); return 0; }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_EXPR) {
+        zero => { tcl_ptr_analyze_expr(ctx, env, ast, expr1); return 0; }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_WHILE) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, expr1);
+            tcl_ptr_analyze_block(ctx, env, ast, body);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_UNSAFE) {
+        zero => { tcl_ptr_analyze_block(ctx, env, ast, body); return 0; }
+        pos => {}
+        neg => {}
+    }
+
+    match (kind - TCL_STMT_MATCH) {
+        zero => {
+            tcl_ptr_analyze_expr(ctx, env, ast, expr1);
+            len = vec_len(arms);
+            i = 0;
+            while len - i > 0 {
+                arm_id = vec_get(arms, i);
+                arm_env = tcl_ptr_env_push(env);
+                match tcl_ptr_is_valid_arm(ctx, ast, arm_id) {
+                    pos => {
+                        binding = tcl_match_arm_binding_token(ast, arm_id);
+                        match binding {
+                            pos => { tcl_ptr_env_set(arm_env, binding, TCL_PTR_STATE_VALID); }
+                            zero => {}
+                            neg => {}
+                        }
+                    }
+                    zero => {}
+                    neg => {}
+                }
+                arm_body = tcl_match_arm_body_vec(ast, arm_id);
+                tcl_ptr_analyze_block(ctx, arm_env, ast, arm_body);
+                tcl_ptr_env_pop(arm_env);
+                i = i + 1;
+            }
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    return 0;
+}
+
+fn tcl_ptr_analyze_block(ctx: t40, env: t40, ast: t40, block_vec: t40) -> t40 {
+    var len: t40 = vec_len(block_vec);
+    var i: t40 = 0;
+    var stmt_id: t40 = 0;
+    while len - i > 0 {
+        stmt_id = vec_get(block_vec, i);
+        tcl_ptr_analyze_stmt(ctx, env, ast, stmt_id);
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_analyze_pointer_flow(ctx: t40, ast: t40, fn_id: t40) -> t40 {
+    var env: t40 = tcl_ptr_env_push(0);
+    var params: t40 = tcl_function_params_vec(ast, fn_id);
+    var len: t40 = vec_len(params);
+    var i: t40 = 0;
+    var name_tok: t40 = 0;
+    var type_id: t40 = 0;
+    var state: t40 = 0;
+    while len - i > 0 {
+        name_tok = vec_get(params, i);
+        type_id = vec_get(params, i + 1);
+        state = tcl_ptr_type_state(ast, type_id);
+        match state + 1 {
+            zero => {}
+            pos => { tcl_ptr_env_set(env, name_tok, state); }
+            neg => { tcl_ptr_env_set(env, name_tok, state); }
+        }
+        i = i + 2;
+    }
+    var body: t40 = tcl_function_body_vec(ast, fn_id);
+    tcl_ptr_analyze_block(ctx, env, ast, body);
+    tcl_ptr_env_pop(env);
+    return tcl_ptr_flow_errors(ctx);
+}

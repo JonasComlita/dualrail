@@ -1,0 +1,136 @@
+// =============================================================================
+// test_parser_smoke.trit  -  Parser Smoke Test Driver
+// =============================================================================
+
+fn phaseb_check(actual: t40, expected: t40, ok: t40) -> t40 {
+    match actual - expected {
+        zero => { return ok; }
+        neg => { return 0; }
+        pos => { return 0; }
+    }
+}
+
+fn main() -> t40 {
+    var src: t40 = malloc_raw(130);
+    unsafe {
+        store(src + 0, 105); store(src + 1, 109); store(src + 2, 112); store(src + 3, 111); store(src + 4, 114); store(src + 5, 116); store(src + 6, 32); store(src + 7, 117); store(src + 8, 108); store(src + 9, 105); store(src + 10, 98); store(src + 11, 59); store(src + 12, 10); store(src + 13, 115); store(src + 14, 116); store(src + 15, 114); store(src + 16, 117); store(src + 17, 99); store(src + 18, 116); store(src + 19, 32); store(src + 20, 80); store(src + 21, 111); store(src + 22, 105); store(src + 23, 110); store(src + 24, 116); store(src + 25, 32); store(src + 26, 123); store(src + 27, 10); store(src + 28, 32); store(src + 29, 32); store(src + 30, 32); store(src + 31, 32); store(src + 32, 120); store(src + 33, 58); store(src + 34, 32); store(src + 35, 116); store(src + 36, 52); store(src + 37, 48); store(src + 38, 59); store(src + 39, 10); store(src + 40, 32); store(src + 41, 32); store(src + 42, 32); store(src + 43, 32); store(src + 44, 121); store(src + 45, 58); store(src + 46, 32); store(src + 47, 116); store(src + 48, 52); store(src + 49, 48); store(src + 50, 59); store(src + 51, 10); store(src + 52, 125); store(src + 53, 10); store(src + 54, 99); store(src + 55, 111); store(src + 56, 110); store(src + 57, 115); store(src + 58, 116); store(src + 59, 32); store(src + 60, 90); store(src + 61, 101); store(src + 62, 114); store(src + 63, 111); store(src + 64, 58); store(src + 65, 32); store(src + 66, 116); store(src + 67, 52); store(src + 68, 48); store(src + 69, 32); store(src + 70, 61); store(src + 71, 32); store(src + 72, 48); store(src + 73, 59); store(src + 74, 10); store(src + 75, 112); store(src + 76, 117); store(src + 77, 98); store(src + 78, 32); store(src + 79, 102); store(src + 80, 110); store(src + 81, 32); store(src + 82, 97); store(src + 83, 100); store(src + 84, 100); store(src + 85, 40); store(src + 86, 120); store(src + 87, 58); store(src + 88, 32); store(src + 89, 116); store(src + 90, 52); store(src + 91, 48); store(src + 92, 44); store(src + 93, 32); store(src + 94, 121); store(src + 95, 58); store(src + 96, 32); store(src + 97, 116); store(src + 98, 52); store(src + 99, 48); store(src + 100, 41); store(src + 101, 32); store(src + 102, 45); store(src + 103, 62); store(src + 104, 32); store(src + 105, 116); store(src + 106, 52); store(src + 107, 48); store(src + 108, 32); store(src + 109, 123); store(src + 110, 10); store(src + 111, 32); store(src + 112, 32); store(src + 113, 32); store(src + 114, 32); store(src + 115, 114); store(src + 116, 101); store(src + 117, 116); store(src + 118, 117); store(src + 119, 114); store(src + 120, 110); store(src + 121, 32); store(src + 122, 120); store(src + 123, 32); store(src + 124, 43); store(src + 125, 32); store(src + 126, 121); store(src + 127, 59); store(src + 128, 10); store(src + 129, 125); store(src + 130, 10);
+    }
+
+    var tokens: t40 = tcl_frontend_lex(src, 130);
+    var p: t40 = tcl_parser_new(tokens, src);
+    var ast: t40 = tcl_ast_new(0);
+
+    tcl_parser_parse(p, ast);
+
+    var ok: t40 = 1;
+    var errs: t40 = tcl_parser_errors(p);
+    print_int(errs); // Should print 0
+    newline();
+    ok = phaseb_check(errs, 0, ok);
+
+    var n_imports: t40 = vec_len(tcl_ast_imports(ast));
+    print_int(n_imports); // Should print 1
+    newline();
+    ok = phaseb_check(n_imports, 1, ok);
+
+    var n_structs: t40 = vec_len(tcl_ast_structs(ast));
+    print_int(n_structs); // Should print 1
+    newline();
+    ok = phaseb_check(n_structs, 1, ok);
+
+    var n_consts: t40 = vec_len(tcl_ast_consts(ast));
+    print_int(n_consts); // Should print 1
+    newline();
+    ok = phaseb_check(n_consts, 1, ok);
+
+    var n_funcs: t40 = vec_len(tcl_ast_functions(ast));
+    print_int(n_funcs); // Should print 1
+    newline();
+    ok = phaseb_check(n_funcs, 1, ok);
+
+    // Verify details of the parsed function 'add'
+    var fn_id: t40 = vec_get(tcl_ast_functions(ast), 0);
+    var is_pub_val: t40 = tcl_function_is_pub(ast, fn_id);
+    var is_pub_ok: t40 = 0;
+    match is_pub_val {
+        pos => { is_pub_ok = 1; }
+        zero => {}
+        neg => {}
+    }
+    print_int(is_pub_ok); // Should print 1
+    newline();
+    ok = phaseb_check(is_pub_ok, 1, ok);
+
+    var ret_type: t40 = tcl_function_return_type(ast, fn_id);
+    print_int(tcl_type_kind(ast, ret_type)); // Should print 2 (TCL_TYPE_NUMERIC)
+    newline();
+    ok = phaseb_check(tcl_type_kind(ast, ret_type), 2, ok);
+
+    var body_vec: t40 = tcl_function_body_vec(ast, fn_id);
+    var body_len: t40 = vec_len(body_vec);
+    print_int(body_len); // Should print 1
+    newline();
+    ok = phaseb_check(body_len, 1, ok);
+
+    var stmt_id: t40 = vec_get(body_vec, 0);
+    print_int(tcl_stmt_kind(ast, stmt_id)); // Should print 2 (TCL_STMT_RETURN)
+    newline();
+    ok = phaseb_check(tcl_stmt_kind(ast, stmt_id), 2, ok);
+
+    var ret_expr: t40 = tcl_stmt_expr1(ast, stmt_id);
+    print_int(tcl_expr_kind(ast, ret_expr)); // Should print 2 (TCL_EXPR_BINARY)
+    newline();
+    ok = phaseb_check(tcl_expr_kind(ast, ret_expr), 2, ok);
+
+    // Verify details of the parsed struct 'Point'
+    var struct_id: t40 = vec_get(tcl_ast_structs(ast), 0);
+    var struct_is_pub_val: t40 = tcl_struct_is_pub(ast, struct_id);
+    var struct_is_pub_ok: t40 = 0;
+    match struct_is_pub_val {
+        pos => { struct_is_pub_ok = 1; }
+        zero => {}
+        neg => {}
+    }
+    print_int(struct_is_pub_ok); // Should print 0
+    newline();
+    ok = phaseb_check(struct_is_pub_ok, 0, ok);
+
+    var fields_vec: t40 = tcl_struct_fields_vec(ast, struct_id);
+    var fields_len: t40 = vec_len(fields_vec);
+    print_int(fields_len); // Should print 4 (2 fields, each with token_idx and type_id)
+    newline();
+    ok = phaseb_check(fields_len, 4, ok);
+
+    var f1_type: t40 = vec_get(fields_vec, 1);
+    print_int(tcl_type_kind(ast, f1_type)); // Should print 2 (TCL_TYPE_NUMERIC)
+    newline();
+    ok = phaseb_check(tcl_type_kind(ast, f1_type), 2, ok);
+
+    // Verify details of the parsed constant 'Zero'
+    var const_id: t40 = vec_get(tcl_ast_consts(ast), 0);
+    var const_is_pub_val: t40 = tcl_const_is_pub(ast, const_id);
+    var const_is_pub_ok: t40 = 0;
+    match const_is_pub_val {
+        pos => { const_is_pub_ok = 1; }
+        zero => {}
+        neg => {}
+    }
+    print_int(const_is_pub_ok); // Should print 0
+    newline();
+    ok = phaseb_check(const_is_pub_ok, 0, ok);
+
+    var const_expr: t40 = tcl_const_expr(ast, const_id);
+    print_int(tcl_expr_kind(ast, const_expr)); // Should print 0 (TCL_EXPR_NUMBER)
+    newline();
+    ok = phaseb_check(tcl_expr_kind(ast, const_expr), 0, ok);
+
+    // Clean up
+    tcl_parser_free(p);
+    tcl_ast_free(ast);
+    tcl_frontend_free(tokens);
+    free_raw(src);
+
+    print_int(ok); // Should print 1 for success
+    newline();
+    return ok;
+}
