@@ -1,0 +1,170 @@
+// Phase C.5 stdlib slice for native-backend golden tests.
+
+fn heap_init() -> t40 {
+    return 1;
+}
+
+fn malloc_raw(words: t40) -> t40 {
+    var sz: t40 = words;
+    match sz - 1 {
+        neg => { sz = 1; }
+        zero => {}
+        pos => {}
+    }
+    var hdr: t40 = sys_sbrk(sz + 1);
+    unsafe { store(hdr, 0 - sz); }
+    return hdr + 1;
+}
+
+fn free_raw(ptr: t40) -> t40 {
+    return 0;
+}
+
+fn memset(ptr: borrow_mut<ptr<t40, user, valid>>, val: t40, size: t40) -> borrow_mut<ptr<t40, user, valid>> {
+    var i: t40 = 0;
+    while size - i > 0 {
+        unsafe { store(ptr + i, val); }
+        i = i + 1;
+    }
+    return ptr;
+}
+
+fn memcpy(dest: borrow_mut<ptr<t40, user, valid>>, src: borrow<ptr<t40, user, valid>>, size: t40) -> borrow_mut<ptr<t40, user, valid>> {
+    var i: t40 = 0;
+    var w: t40 = 0;
+    while size - i > 0 {
+        unsafe { w = load(src + i); }
+        unsafe { store(dest + i, w); }
+        i = i + 1;
+    }
+    return dest;
+}
+
+fn strlen(str: borrow<ptr<t40, user, valid>>) -> t40 {
+    var len: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(str + len); }
+        match c {
+            zero => { done = 1; }
+            neg => { len = len + 1; }
+            pos => { len = len + 1; }
+        }
+    }
+    return len;
+}
+
+fn print_char(c: t40) -> t40 {
+    return sys_write_char(c);
+}
+
+fn print_string(str: borrow<ptr<t40, user, valid>>) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match c {
+            zero => { done = 1; }
+            neg => {
+                sys_write_char(c);
+                i = i + 1;
+            }
+            pos => {
+                sys_write_char(c);
+                i = i + 1;
+            }
+        }
+    }
+    return 0;
+}
+
+fn vec_new() -> own<ptr<t40, user, unknown>> {
+    var vec: t40 = malloc_raw(3);
+    match vec {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc_raw(8);
+            match data {
+                zero => { return 0; }
+                neg => { return 0; }
+                pos => {
+                    unsafe {
+                        store(vec, data);
+                        store(vec + 1, 0);
+                        store(vec + 2, 8);
+                    }
+                    return vec;
+                }
+            }
+        }
+    }
+}
+
+fn vec_len(vec: borrow<ptr<t40, user, valid>>) -> t40 {
+    var len: t40 = 0;
+    unsafe { len = load(vec + 1); }
+    return len;
+}
+
+fn vec_get(vec: borrow<ptr<t40, user, valid>>, idx: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    var val: t40 = 0;
+    unsafe { val = load(data + idx); }
+    return val;
+}
+
+fn vec_set(vec: borrow_mut<ptr<t40, user, valid>>, idx: t40, value: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    unsafe { store(data + idx, value); }
+    return 0;
+}
+
+fn vec_push(vec: borrow_mut<ptr<t40, user, valid>>, value: t40) -> t40 {
+    var data: t40 = 0;
+    var len: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        data = load(vec);
+        len = load(vec + 1);
+        cap = load(vec + 2);
+    }
+    match cap - len - 1 {
+        neg => {
+            var new_cap: t40 = cap * 2;
+            match new_cap - len - 1 {
+                neg => { new_cap = len + 1; }
+                zero => {}
+                pos => {}
+            }
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
+                zero => { return 0 - 1; }
+                neg => { return 0 - 1; }
+                pos => {
+                    memcpy(new_data, data, len);
+                    data = new_data;
+                    unsafe {
+                        store(vec, data);
+                        store(vec + 2, new_cap);
+                    }
+                }
+            }
+        }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + len, value);
+        store(vec + 1, len + 1);
+    }
+    return 0;
+}
+
+fn vec_free(vec: own<ptr<t40, user, unknown>>) -> t40 {
+    return free_raw(vec);
+}

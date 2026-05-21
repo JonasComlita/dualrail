@@ -1972,6 +1972,9 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
             return false;
         }
     }
+    vm.standalone_heap_break =
+        std::max<long long>(vm.standalone_heap_break,
+                            static_cast<long long>(assembled.data.size()) + 16);
     return true;
 }
 

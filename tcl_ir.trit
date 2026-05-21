@@ -21,14 +21,22 @@ const TCL_IR_STORE_INDEX: t40 = 15;
 
 const TCL_IR_INSTR_WORDS: t40 = 5;
 
+const TCL_IR_MATCH_UNKNOWN: t40 = 0;
+const TCL_IR_MATCH_NEG: t40 = 1;
+const TCL_IR_MATCH_ZERO: t40 = 2;
+const TCL_IR_MATCH_POS: t40 = 3;
+const TCL_IR_MATCH_WILDCARD: t40 = 4;
+
 // CFG layout:
 // [0] blocks vec
 // [1] next block id
 // [2] next SSA value id
 // [3] errors
 // [4] diagnostics vec
-fn tcl_ir_cfg_new() -> t40 {
-    var cfg: t40 = malloc_raw(5);
+// [5] source token stream (optional)
+// [6] source pointer (optional)
+fn tcl_ir_cfg_new_with_source(tokens: t40, src: t40) -> t40 {
+    var cfg: t40 = malloc_raw(7);
     var blocks: t40 = vec_new();
     var diags: t40 = vec_new();
     unsafe {
@@ -37,8 +45,14 @@ fn tcl_ir_cfg_new() -> t40 {
         store(cfg + 2, 1);
         store(cfg + 3, 0);
         store(cfg + 4, diags);
+        store(cfg + 5, tokens);
+        store(cfg + 6, src);
     }
     return cfg;
+}
+
+fn tcl_ir_cfg_new() -> t40 {
+    return tcl_ir_cfg_new_with_source(0, 0);
 }
 
 fn tcl_ir_cfg_blocks(cfg: t40) -> t40 {
@@ -51,6 +65,18 @@ fn tcl_ir_cfg_diagnostics(cfg: t40) -> t40 {
     var diags: t40 = 0;
     unsafe { diags = load(cfg + 4); }
     return diags;
+}
+
+fn tcl_ir_cfg_tokens(cfg: t40) -> t40 {
+    var tokens: t40 = 0;
+    unsafe { tokens = load(cfg + 5); }
+    return tokens;
+}
+
+fn tcl_ir_cfg_src(cfg: t40) -> t40 {
+    var src: t40 = 0;
+    unsafe { src = load(cfg + 6); }
+    return src;
 }
 
 fn tcl_ir_block_new(id: t40, label_token: t40) -> t40 {
@@ -213,6 +239,237 @@ fn tcl_ir_type_is_owned(ast: t40, type_id: t40) -> t40 {
     }
 }
 
+fn tcl_ir_token_char(tokens: t40, src: t40, tok: t40, offset: t40) -> t40 {
+    var start: t40 = tcl_token_start(tokens, tok);
+    var c: t40 = 0;
+    unsafe { c = load(src + start + offset); }
+    return c;
+}
+
+fn tcl_ir_token_is_1(tokens: t40, src: t40, tok: t40, c0: t40) -> t40 {
+    match tcl_token_len(tokens, tok) - 1 {
+        zero => {
+            match tcl_ir_token_char(tokens, src, tok, 0) - c0 {
+                zero => { return 1; }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_token_is_3(tokens: t40, src: t40, tok: t40, c0: t40, c1: t40, c2: t40) -> t40 {
+    match tcl_token_len(tokens, tok) - 3 {
+        zero => {
+            match tcl_ir_token_char(tokens, src, tok, 0) - c0 {
+                zero => {
+                    match tcl_ir_token_char(tokens, src, tok, 1) - c1 {
+                        zero => {
+                            match tcl_ir_token_char(tokens, src, tok, 2) - c2 {
+                                zero => { return 1; }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_token_is_4(tokens: t40, src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    match tcl_token_len(tokens, tok) - 4 {
+        zero => {
+            match tcl_ir_token_char(tokens, src, tok, 0) - c0 {
+                zero => {
+                    match tcl_ir_token_char(tokens, src, tok, 1) - c1 {
+                        zero => {
+                            match tcl_ir_token_char(tokens, src, tok, 2) - c2 {
+                                zero => {
+                                    match tcl_ir_token_char(tokens, src, tok, 3) - c3 {
+                                        zero => { return 1; }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_token_is_5(tokens: t40, src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40) -> t40 {
+    match tcl_token_len(tokens, tok) - 5 {
+        zero => {
+            match tcl_ir_token_char(tokens, src, tok, 0) - c0 {
+                zero => {
+                    match tcl_ir_token_char(tokens, src, tok, 1) - c1 {
+                        zero => {
+                            match tcl_ir_token_char(tokens, src, tok, 2) - c2 {
+                                zero => {
+                                    match tcl_ir_token_char(tokens, src, tok, 3) - c3 {
+                                        zero => {
+                                            match tcl_ir_token_char(tokens, src, tok, 4) - c4 {
+                                                zero => { return 1; }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_token_is_7(tokens: t40, src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40) -> t40 {
+    match tcl_token_len(tokens, tok) - 7 {
+        zero => {
+            match tcl_ir_token_char(tokens, src, tok, 0) - c0 {
+                zero => {
+                    match tcl_ir_token_char(tokens, src, tok, 1) - c1 {
+                        zero => {
+                            match tcl_ir_token_char(tokens, src, tok, 2) - c2 {
+                                zero => {
+                                    match tcl_ir_token_char(tokens, src, tok, 3) - c3 {
+                                        zero => {
+                                            match tcl_ir_token_char(tokens, src, tok, 4) - c4 {
+                                                zero => {
+                                                    match tcl_ir_token_char(tokens, src, tok, 5) - c5 {
+                                                        zero => {
+                                                            match tcl_ir_token_char(tokens, src, tok, 6) - c6 {
+                                                                zero => { return 1; }
+                                                                pos => { return 0; }
+                                                                neg => { return 0; }
+                                                            }
+                                                        }
+                                                        pos => { return 0; }
+                                                        neg => { return 0; }
+                                                    }
+                                                }
+                                                pos => { return 0; }
+                                                neg => { return 0; }
+                                            }
+                                        }
+                                        pos => { return 0; }
+                                        neg => { return 0; }
+                                    }
+                                }
+                                pos => { return 0; }
+                                neg => { return 0; }
+                            }
+                        }
+                        pos => { return 0; }
+                        neg => { return 0; }
+                    }
+                }
+                pos => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_ir_match_kind_for_order(i: t40) -> t40 {
+    match i {
+        zero => { return TCL_IR_MATCH_NEG; }
+        pos => {
+            match i - 1 {
+                zero => { return TCL_IR_MATCH_ZERO; }
+                pos => { return TCL_IR_MATCH_POS; }
+                neg => { return TCL_IR_MATCH_POS; }
+            }
+        }
+        neg => { return TCL_IR_MATCH_UNKNOWN; }
+    }
+}
+
+fn tcl_ir_match_kind_for_token(tokens: t40, src: t40, tok: t40, fallback_order: t40) -> t40 {
+    match tokens {
+        pos => {}
+        zero => { return tcl_ir_match_kind_for_order(fallback_order); }
+        neg => { return tcl_ir_match_kind_for_order(fallback_order); }
+    }
+    match src {
+        pos => {}
+        zero => { return tcl_ir_match_kind_for_order(fallback_order); }
+        neg => { return tcl_ir_match_kind_for_order(fallback_order); }
+    }
+
+    match tcl_ir_token_is_3(tokens, src, tok, 110, 101, 103) {
+        pos => { return TCL_IR_MATCH_NEG; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_7(tokens, src, tok, 117, 110, 107, 110, 111, 119, 110) {
+        pos => { return TCL_IR_MATCH_NEG; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_4(tokens, src, tok, 122, 101, 114, 111) {
+        pos => { return TCL_IR_MATCH_ZERO; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_4(tokens, src, tok, 110, 117, 108, 108) {
+        pos => { return TCL_IR_MATCH_ZERO; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_3(tokens, src, tok, 112, 111, 115) {
+        pos => { return TCL_IR_MATCH_POS; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_5(tokens, src, tok, 118, 97, 108, 105, 100) {
+        pos => { return TCL_IR_MATCH_POS; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_ir_token_is_1(tokens, src, tok, 95) {
+        pos => { return TCL_IR_MATCH_WILDCARD; }
+        zero => {}
+        neg => {}
+    }
+    return tcl_ir_match_kind_for_order(fallback_order);
+}
+
 fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
     match expr_id {
         zero => { return 0; }
@@ -356,32 +613,9 @@ fn tcl_ir_lower_expr(cfg: t40, ast: t40, block: t40, expr_id: t40) -> t40 {
 }
 
 fn tcl_ir_emit_owned_drops(ast: t40, block: t40, body_vec: t40) -> t40 {
-    var len: t40 = vec_len(body_vec);
-    var i: t40 = 0;
-    var stmt_id: t40 = 0;
-    var kind: t40 = 0;
-    var type_id: t40 = 0;
-    var tok: t40 = 0;
-    while len - i > 0 {
-        stmt_id = vec_get(body_vec, i);
-        kind = tcl_stmt_kind(ast, stmt_id);
-        match (kind - TCL_STMT_LET) {
-            zero => {
-                type_id = tcl_stmt_type_id(ast, stmt_id);
-                match tcl_ir_type_is_owned(ast, type_id) {
-                    pos => {
-                        tok = tcl_stmt_token_idx(ast, stmt_id);
-                        tcl_ir_emit(block, TCL_IR_DROP, 0, tok, 0, type_id);
-                    }
-                    zero => {}
-                    neg => {}
-                }
-            }
-            pos => {}
-            neg => {}
-        }
-        i = i + 1;
-    }
+    // Ownership drops are parsed in C.5, but the native backend does not yet
+    // lower destructor calls safely. Keep drop emission inert until ownership
+    // runtime lowering is explicit.
     return 0;
 }
 
@@ -412,20 +646,45 @@ fn tcl_ir_lower_match(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
     var first_arm_id: t40 = 0;
     var second_arm_id: t40 = 0;
     var arm_body: t40 = 0;
+    var binding_tok: t40 = 0;
+    var branch_kind: t40 = 0;
+    var name_tok: t40 = 0;
+    var neg_block: t40 = 0;
+    var zero_block: t40 = 0;
+    var pos_block: t40 = 0;
+    var wildcard_block: t40 = 0;
+    var tokens: t40 = tcl_ir_cfg_tokens(cfg);
+    var src: t40 = tcl_ir_cfg_src(cfg);
 
     while len - i > 0 {
         arm_id = vec_get(arms, i);
         arm_block = tcl_ir_cfg_add_block(cfg, tcl_match_arm_start_token(ast, arm_id));
-        tcl_ir_add_successor(block, arm_block);
-        match i {
-            zero => { first_arm_id = tcl_ir_block_id(arm_block); }
-            pos => {
-                match second_arm_id {
-                    zero => { second_arm_id = tcl_ir_block_id(arm_block); }
-                    pos => {}
-                    neg => {}
-                }
-            }
+        name_tok = tcl_match_arm_name_token(ast, arm_id);
+        branch_kind = tcl_ir_match_kind_for_token(tokens, src, name_tok, i);
+        match (branch_kind - TCL_IR_MATCH_NEG) {
+            zero => { neg_block = arm_block; }
+            pos => {}
+            neg => {}
+        }
+        match (branch_kind - TCL_IR_MATCH_ZERO) {
+            zero => { zero_block = arm_block; }
+            pos => {}
+            neg => {}
+        }
+        match (branch_kind - TCL_IR_MATCH_POS) {
+            zero => { pos_block = arm_block; }
+            pos => {}
+            neg => {}
+        }
+        match (branch_kind - TCL_IR_MATCH_WILDCARD) {
+            zero => { wildcard_block = arm_block; }
+            pos => {}
+            neg => {}
+        }
+        binding_tok = tcl_match_arm_binding_token(ast, arm_id);
+        match binding_tok {
+            pos => { tcl_ir_emit(arm_block, TCL_IR_STORE_NAME, 0, binding_tok, cond_val, 0); }
+            zero => {}
             neg => {}
         }
         arm_body = tcl_match_arm_body_vec(ast, arm_id);
@@ -436,6 +695,43 @@ fn tcl_ir_lower_match(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
         i = i + 1;
     }
 
+    match neg_block {
+        pos => {}
+        zero => {
+            match wildcard_block {
+                pos => { neg_block = wildcard_block; }
+                zero => { neg_block = after_block; }
+                neg => { neg_block = after_block; }
+            }
+        }
+        neg => { neg_block = after_block; }
+    }
+    match zero_block {
+        pos => {}
+        zero => {
+            match wildcard_block {
+                pos => { zero_block = wildcard_block; }
+                zero => { zero_block = after_block; }
+                neg => { zero_block = after_block; }
+            }
+        }
+        neg => { zero_block = after_block; }
+    }
+    match pos_block {
+        pos => {}
+        zero => {
+            match wildcard_block {
+                pos => { pos_block = wildcard_block; }
+                zero => { pos_block = after_block; }
+                neg => { pos_block = after_block; }
+            }
+        }
+        neg => { pos_block = after_block; }
+    }
+
+    first_arm_id = tcl_ir_add_successor(block, neg_block);
+    second_arm_id = tcl_ir_add_successor(block, zero_block);
+    tcl_ir_add_successor(block, pos_block);
     tcl_ir_emit(block, TCL_IR_BRANCH3, 0, cond_val, first_arm_id, second_arm_id);
     tcl_ir_block_set_terminator(block, TCL_IR_BRANCH3);
     return after_block;
@@ -486,11 +782,6 @@ fn tcl_ir_lower_stmt(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
     match (kind - TCL_STMT_LET) {
         zero => {
             value = tcl_ir_lower_expr(cfg, ast, block, expr1);
-            match tcl_ir_type_is_owned(ast, type_id) {
-                pos => { tcl_ir_emit(block, TCL_IR_ALLOC, value, tok, 0, type_id); }
-                zero => {}
-                neg => {}
-            }
             tcl_ir_emit(block, TCL_IR_STORE_NAME, 0, tok, value, type_id);
             return block;
         }
@@ -599,8 +890,12 @@ fn tcl_ir_lower_stmt(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
 }
 
 fn tcl_lower_function(ast: t40, fn_id: t40) -> t40 {
+    return tcl_lower_function_with_source(ast, fn_id, 0, 0);
+}
+
+fn tcl_lower_function_with_source(ast: t40, fn_id: t40, tokens: t40, src: t40) -> t40 {
     var label: t40 = tcl_function_name_token(ast, fn_id);
-    var cfg: t40 = tcl_ir_cfg_new();
+    var cfg: t40 = tcl_ir_cfg_new_with_source(tokens, src);
     var entry: t40 = tcl_ir_cfg_add_block(cfg, label);
     var params: t40 = tcl_function_params_vec(ast, fn_id);
     var body: t40 = tcl_function_body_vec(ast, fn_id);

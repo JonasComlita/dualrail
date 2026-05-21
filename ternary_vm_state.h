@@ -1221,6 +1221,7 @@ struct VMState {
     int                      tvec = 0;
     int                      scratch = 0;
     long long                cycle_count = 0;
+    long long                branch_instructions_count = 0;
     long long                timer_reload = 0;
     long long                timer_counter = 0;
     bool                     timer_enable = false;
@@ -1253,6 +1254,7 @@ struct VMState {
     int                      page_fault_access = OS_PAGE_ACCESS_LOAD;
     bool                     atomic_reservation_valid = false;
     int                      atomic_reservation_addr = -1;
+    long long                standalone_heap_break = 2000;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -1299,6 +1301,7 @@ struct VMState {
         accumulator = TernaryValue::zero();
         syscall_buffer.clear();
         console_input.clear();
+        standalone_heap_break = 2000;
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
         resetControlState();
@@ -1359,6 +1362,7 @@ struct VMState {
         tvec = 0;
         scratch = 0;
         cycle_count = 0;
+        branch_instructions_count = 0;
         timer_reload = 0;
         timer_counter = 0;
         timer_enable = false;

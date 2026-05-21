@@ -325,58 +325,69 @@ fn malloc_raw(words: t40) -> t40 {
         var bsz: t40 = 0;
         unsafe { bsz = load(curr); }
 
-        match bsz - sz {
+        match bsz {
             neg => {
-                prev_slot = curr + 1;
-                unsafe { curr = load(curr + 1); }
+                unsafe { store(prev_slot, 0); }
+                curr = 0;
             }
             zero => {
-                unsafe {
-                    var nxt: t40 = load(curr + 1);
-                    store(prev_slot, nxt);
-                    store(curr, 0 - sz);
-                }
-                return curr + 1;
+                unsafe { store(prev_slot, 0); }
+                curr = 0;
             }
             pos => {
-                var leftover: t40 = bsz - sz - 1;
-                match leftover - 1 {
+                match bsz - sz {
                     neg => {
-                        unsafe {
-                            var nxt: t40 = load(curr + 1);
-                            store(prev_slot, nxt);
-                            store(curr, 0 - bsz);
-                        }
+                        prev_slot = curr + 1;
+                        unsafe { curr = load(curr + 1); }
                     }
                     zero => {
                         unsafe {
                             var nxt: t40 = load(curr + 1);
                             store(prev_slot, nxt);
-                            store(curr, 0 - bsz);
-                        }
-                    }
-                    pos => {
-                        var split_addr: t40 = curr + sz + 1;
-                        unsafe {
-                            var nxt: t40 = load(curr + 1);
-                            store(split_addr, leftover);
-                            store(split_addr + 1, nxt);
-                            store(prev_slot, split_addr);
                             store(curr, 0 - sz);
                         }
+                        return curr + 1;
+                    }
+                    pos => {
+                        var leftover: t40 = bsz - sz - 1;
+                        match leftover - 1 {
+                            neg => {
+                                unsafe {
+                                    var nxt: t40 = load(curr + 1);
+                                    store(prev_slot, nxt);
+                                    store(curr, 0 - bsz);
+                                }
+                            }
+                            zero => {
+                                unsafe {
+                                    var nxt: t40 = load(curr + 1);
+                                    store(prev_slot, nxt);
+                                    store(curr, 0 - bsz);
+                                }
+                            }
+                            pos => {
+                                var split_addr: t40 = curr + sz + 1;
+                                unsafe {
+                                    var nxt: t40 = load(curr + 1);
+                                    store(split_addr, leftover);
+                                    store(split_addr + 1, nxt);
+                                    store(prev_slot, split_addr);
+                                    store(curr, 0 - sz);
+                                }
+                            }
+                        }
+                        return curr + 1;
                     }
                 }
-                return curr + 1;
             }
         }
     }
 
-    // No suitable free block — extend the heap via sbrk.
-    // sys_sbrk(delta) returns new break = old_break + delta.
-    // We need sz + 1 words (1 header + sz data).
-    // Old start = new_brk - (sz + 1).
-    var new_brk: t40 = sys_sbrk(sz + 1);
-    var hdr: t40 = new_brk - sz - 1;
+    // No suitable free block: extend the heap via sbrk.
+    // sys_sbrk(delta) returns the start of the newly allocated region.
+    // We need sz + 1 words: one header followed by sz data words.
+    var old_brk: t40 = sys_sbrk(sz + 1);
+    var hdr: t40 = old_brk;
     unsafe { store(hdr, 0 - sz); }
     return hdr + 1;
 }
@@ -391,12 +402,13 @@ fn malloc(words: t40) -> own<ptr<t40, user, unknown>> {
 
 // Free a previously allocated block.
 // Marks it as free and prepends to the free list (LIFO).
+// Poison-writes data words so use-after-free bugs produce obviously-wrong
+// values (-999999) rather than silent corruption.
 fn free_raw(ptr: t40) -> t40 {
-    return 0;
     match ptr {
         zero => { return 0; }
-        neg => { return 0; }
-        pos => {
+        neg  => { return 0; }
+        pos  => {
             var hdr: t40 = ptr - 1;
             var hdr_val: t40 = 0;
             unsafe { hdr_val = load(hdr); }
@@ -405,14 +417,34 @@ fn free_raw(ptr: t40) -> t40 {
                     var fsz: t40 = 0 - hdr_val;
                     var head: t40 = 0;
                     unsafe { head = load(22); }
+                    var safe_head: t40 = 0;
+                    match head {
+                        pos => {
+                            var head_size: t40 = 0;
+                            unsafe { head_size = load(head); }
+                            match head_size {
+                                pos => { safe_head = head; }
+                                zero => {}
+                                neg => {}
+                            }
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                    // Poison data words so use-after-free is visible
+                    var pi: t40 = 0;
+                    while fsz - pi > 0 {
+                        unsafe { store(ptr + pi, 0 - 999999); }
+                        pi = pi + 1;
+                    }
                     unsafe {
                         store(hdr, fsz);
-                        store(ptr, head);
-                        store(22, hdr);
+                        store(ptr, safe_head);
+                        store(22,  hdr);
                     }
                     return 0;
                 }
-                pos => { return 0; }    // already free (double-free guard)
+                pos  => { return 0; }   // double-free guard
                 zero => { return 0; }   // invalid block
             }
         }

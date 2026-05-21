@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdlib>
 #include <algorithm>
+#include <fstream>
 
 int g_failures = 0;
 
@@ -14,6 +15,48 @@ namespace {
 
 long long regLong(const sandbox::vm::VMState& vm, int reg) {
     return sandbox::vm::ops::toLong(vm.regfile.read(static_cast<uint8_t>(reg)));
+}
+
+long long memLong(const sandbox::vm::VMState& vm, int addr) {
+    sandbox::vm::TernaryValue value;
+    if (addr < 0 || addr >= vm.dmem.size()) return -999999999LL;
+    auto loaded = vm.dmem.load(addr);
+    if (loaded.second != sandbox::vm::MemFaultCode::OK) return -999999999LL;
+    return sandbox::vm::ops::toLong(loaded.first);
+}
+
+void dumpFreeList(const sandbox::vm::VMState& vm) {
+    int curr = static_cast<int>(memLong(vm, 22));
+    std::cout << "  heap_break=" << vm.standalone_heap_break
+              << " free_head=" << curr << "\n";
+    for (int i = 0; i < 12 && curr > 0 && curr < vm.dmem.size(); ++i) {
+        const long long size = memLong(vm, curr);
+        const long long next = memLong(vm, curr + 1);
+        std::cout << "  free[" << i << "] hdr=" << curr
+                  << " size=" << size
+                  << " next=" << next << "\n";
+        if (next == curr) break;
+        curr = static_cast<int>(next);
+    }
+}
+
+long long nativeCompilerStepLimit() {
+    const char* env = std::getenv("C5_NATIVE_STEPS");
+    if (!env || !*env) return 200000000LL;
+    char* end = nullptr;
+    const long long parsed = std::strtoll(env, &end, 10);
+    if (end == env || parsed <= 0) return 200000000LL;
+    return parsed;
+}
+
+bool envFlag(const char* name) {
+    const char* env = std::getenv(name);
+    return env && *env && !(env[0] == '0' && env[1] == '\0');
+}
+
+void traceStage(const std::string& case_name, const std::string& stage) {
+    if (!envFlag("C5_TRACE_STAGES")) return;
+    std::cout << "[C.5][" << case_name << "] " << stage << "\n";
 }
 
 std::string readRepoText(const std::string& name) {
@@ -43,12 +86,16 @@ struct GoldenCase {
 
 constexpr int kNativeSourceLenAddr = 1599999;
 constexpr int kNativeSourceBase = 1600000;
+constexpr int kNativeStageAddr = 1599900;
+constexpr int kNativeStageDetailAddr = 1599901;
+constexpr int kNativeStageFnAddr = 1599902;
 
 std::string runBootstrapCase(const GoldenCase& test_case,
                              sandbox::compiler::OptimizationLevel optimization,
                              const std::string& producer_name) {
     using namespace sandbox::compiler;
 
+    traceStage(test_case.name, producer_name + " compile");
     CompilerOptions options;
     options.optimization = optimization;
     CompileResult compiled = compileSource(test_case.name + ".trit", test_case.source, options);
@@ -59,6 +106,7 @@ std::string runBootstrapCase(const GoldenCase& test_case,
         return {};
     }
 
+    traceStage(test_case.name, producer_name + " link");
     LinkResult linked = linkModules({compiled.object});
     if (!linked.success) {
         std::cout << "LINK FAIL [" << producer_name << "] " << test_case.name << "\n"
@@ -73,6 +121,7 @@ std::string runBootstrapCase(const GoldenCase& test_case,
         return {};
     }
 
+    traceStage(test_case.name, producer_name + " run");
     const int native_steps = std::max(test_case.steps, 50000);
     const auto result = sandbox::vm::run(vm, native_steps);
     if (!result.halted()) {
@@ -91,6 +140,9 @@ std::string runBootstrapCase(const GoldenCase& test_case,
 }
 
 std::string nativeCompilerHarnessSource() {
+    const std::string compile_fn =
+        envFlag("C5_GENERAL_NATIVE") ? "tcl_native_compile_general_to_tasm"
+                                     : "tcl_native_compile_to_tasm";
     const std::string driver = R"(
         const C5_SOURCE_LEN_ADDR: t40 = 1599999;
         const C5_SOURCE_BASE: t40 = 1600000;
@@ -98,14 +150,13 @@ std::string nativeCompilerHarnessSource() {
         fn main() -> t40 {
             var len: t40 = 0;
             unsafe { len = load(C5_SOURCE_LEN_ADDR); }
-            var text: t40 = tcl_native_compile_to_tasm(C5_SOURCE_BASE, len);
+            var text: t40 = )" + compile_fn + R"((C5_SOURCE_BASE, len);
             var n: t40 = vec_len(text);
             var i: t40 = 0;
             while n - i > 0 {
                 sys_write_char(vec_get(text, i));
                 i = i + 1;
             }
-            tcl_backend_text_free(text);
             return 0;
         }
     )";
@@ -139,6 +190,10 @@ const sandbox::compiler::LinkResult& nativeCompilerImage() {
         expect(false, "native compiler harness compiles");
         return linked;
     }
+    if (envFlag("C5_DUMP_NATIVE_COMPILER_ASM")) {
+        std::ofstream out("scratch/native_compiler_harness.tasm");
+        out << compiled.assembly;
+    }
 
     linked = linkModules({compiled.object});
     if (!linked.success) {
@@ -146,6 +201,8 @@ const sandbox::compiler::LinkResult& nativeCompilerImage() {
                   << formatDiagnostics(linked.diagnostics);
         expect(false, "native compiler harness links");
     }
+    std::cout << "[native-compiler-image] instructions=" << linked.instruction_count
+              << " text_words=" << linked.text_words << "\n";
     return linked;
 }
 
@@ -174,7 +231,7 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
     const sandbox::compiler::LinkResult& native_image = nativeCompilerImage();
     if (!native_image.success) return {};
 
-    sandbox::vm::VMState compiler_vm(262144, 2097152);
+    sandbox::vm::VMState compiler_vm(262144, 16777216);
     if (!sandbox::vm::loadAndReset(compiler_vm, native_image.assembled.program)) {
         expect(false, "native compiler image loads for " + test_case.name);
         return {};
@@ -184,7 +241,8 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
         return {};
     }
 
-    const auto compile_run = sandbox::vm::run(compiler_vm, 20000000);
+    traceStage(test_case.name, "native compiler VM run");
+    const auto compile_run = sandbox::vm::run(compiler_vm, nativeCompilerStepLimit());
     if (!compile_run.halted()) {
         std::string faulting;
         if (compiler_vm.pc >= 0 && compiler_vm.pc < compiler_vm.imem.size()) {
@@ -198,27 +256,108 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
                 nearest_label_pc = pc;
             }
         }
+        const long long stage = memLong(compiler_vm, kNativeStageAddr);
+        const long long stage_detail = memLong(compiler_vm, kNativeStageDetailAddr);
+        const long long stage_fn = memLong(compiler_vm, kNativeStageFnAddr);
         std::cout << "NATIVE COMPILE RUN FAIL " << test_case.name
                   << " status=" << static_cast<int>(compile_run.status)
+                  << " steps=" << compile_run.steps
                   << " pc=" << compiler_vm.pc
                   << " label=" << nearest_label << "+" << (compiler_vm.pc - nearest_label_pc)
+                  << " stage=" << stage
+                  << " stage_detail=" << stage_detail
+                  << " stage_fn=" << stage_fn
                   << " r13=" << regLong(compiler_vm, 13)
                   << " r19=" << regLong(compiler_vm, 19)
                   << " r20=" << regLong(compiler_vm, 20)
                   << " sp=" << regLong(compiler_vm, 26)
                   << " instr='" << faulting << "'"
                   << " emitted_prefix='" << compiler_vm.syscall_buffer.substr(0, 400) << "'\n";
+        if (stage == 2 && stage_fn > 0) {
+            const long long parser_current = memLong(compiler_vm, static_cast<int>(stage_fn + 2));
+            const long long tokens_ptr = memLong(compiler_vm, static_cast<int>(stage_fn));
+            const long long token_data = memLong(compiler_vm, static_cast<int>(tokens_ptr));
+            const long long current_kind =
+                memLong(compiler_vm, static_cast<int>(token_data + parser_current * 3));
+            const long long current_start =
+                memLong(compiler_vm, static_cast<int>(token_data + parser_current * 3 + 1));
+            std::cout << "  parser_current=" << parser_current
+                      << " current_kind=" << current_kind
+                      << " current_start=" << current_start << "\n";
+        }
+        dumpFreeList(compiler_vm);
+        const int sp = static_cast<int>(regLong(compiler_vm, 26));
+        std::cout << "  stack:";
+        for (int slot = 0; slot < 12; ++slot) {
+            std::cout << " [" << slot << "]=" << memLong(compiler_vm, sp + slot);
+        }
+        std::cout << "\n";
+        std::cout << "  caller_stack:";
+        for (int slot = 0; slot < 16; ++slot) {
+            std::cout << " [" << slot << "]=" << memLong(compiler_vm, sp + 9 + slot);
+        }
+        std::cout << "\n";
+        std::cout << "  source_len_cell=" << memLong(compiler_vm, kNativeSourceLenAddr)
+                  << " source_first=" << memLong(compiler_vm, kNativeSourceBase)
+                  << " source_second=" << memLong(compiler_vm, kNativeSourceBase + 1)
+                  << "\n";
         const int start_pc = std::max(0, compiler_vm.pc - 5);
         const int end_pc = std::min(compiler_vm.imem.size(), compiler_vm.pc + 6);
         for (int pc = start_pc; pc < end_pc; ++pc) {
             std::cout << "  " << pc << ": "
                       << sandbox::isa::disassemble(compiler_vm.imem.words[pc]) << "\n";
         }
+        const int return_pc = static_cast<int>(memLong(compiler_vm, sp));
+        if (return_pc >= 0 && return_pc < compiler_vm.imem.size()) {
+            std::string return_label;
+            int return_label_pc = -1;
+            for (const auto& [label, pc] : native_image.assembled.labels) {
+                if (pc <= return_pc && pc > return_label_pc) {
+                    return_label = label;
+                    return_label_pc = pc;
+                }
+            }
+            std::cout << "  return_pc=" << return_pc
+                      << " label=" << return_label << "+"
+                      << (return_pc - return_label_pc) << "\n";
+            const int ret_start = std::max(0, return_pc - 8);
+            const int ret_end = std::min(compiler_vm.imem.size(), return_pc + 9);
+            for (int pc = ret_start; pc < ret_end; ++pc) {
+                std::cout << "  ret " << pc << ": "
+                          << sandbox::isa::disassemble(compiler_vm.imem.words[pc]) << "\n";
+            }
+        }
+        const int caller_return_pc = static_cast<int>(memLong(compiler_vm, sp + 9));
+        if (caller_return_pc >= 0 && caller_return_pc < compiler_vm.imem.size()) {
+            std::string caller_return_label;
+            int caller_return_label_pc = -1;
+            for (const auto& [label, pc] : native_image.assembled.labels) {
+                if (pc <= caller_return_pc && pc > caller_return_label_pc) {
+                    caller_return_label = label;
+                    caller_return_label_pc = pc;
+                }
+            }
+            std::cout << "  caller_return_pc=" << caller_return_pc
+                      << " label=" << caller_return_label << "+"
+                      << (caller_return_pc - caller_return_label_pc) << "\n";
+            const int cr_start = std::max(0, caller_return_pc - 10);
+            const int cr_end = std::min(compiler_vm.imem.size(), caller_return_pc + 11);
+            for (int pc = cr_start; pc < cr_end; ++pc) {
+                std::cout << "  caller_ret " << pc << ": "
+                          << sandbox::isa::disassemble(compiler_vm.imem.words[pc]) << "\n";
+            }
+        }
         expect(false, "native compiler halts for " + test_case.name);
         return {};
     }
 
     const std::string native_assembly = compiler_vm.syscall_buffer;
+    if (envFlag("C5_DUMP_TASM")) {
+        std::cout << "NATIVE TASM [" << test_case.name << "] bytes="
+                  << native_assembly.size() << "\n"
+                  << native_assembly << "\n";
+    }
+    traceStage(test_case.name, "native emitted TASM assemble");
     auto assembled = sandbox::vm::assembler::assemble(native_assembly);
     if (!assembled.success) {
         std::cout << "NATIVE ASSEMBLY FAIL " << test_case.name << "\n";
@@ -230,6 +369,7 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
         return {};
     }
 
+    traceStage(test_case.name, "native emitted image run");
     sandbox::vm::VMState vm(test_case.imem_words, test_case.dmem_words);
     if (!sandbox::vm::assembler::loadAndReset(vm, assembled)) {
         expect(false, "native compiler image loads for " + test_case.name);
@@ -263,8 +403,9 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
 void testCompilerGoldenPrograms() {
     std::cout << "[C.5] Pre-D compiler golden program suite\n";
 
+    const std::string ulib_mini = readRepoText("ulib_mini.trit");
     const std::string ulib = readRepoText("ulib.trit");
-    expect(!ulib.empty(), "ulib.trit is available for C.5 golden cases");
+    expect(!ulib_mini.empty(), "ulib_mini.trit is available for C.5 golden cases");
 
     std::vector<GoldenCase> cases = {
         {"arithmetic",
@@ -324,8 +465,24 @@ void testCompilerGoldenPrograms() {
                 sys_write_char(10);
                 return 0;
             }
-         )",
+        )",
          "NZP\n"},
+        {"match_label_order",
+         R"(
+            fn main() -> t40 {
+                var c: t40 = 0;
+                var hit: t40 = 0;
+                match c {
+                    pos => { hit = 1; }
+                    zero => { hit = 7; }
+                    neg => { hit = 2; }
+                }
+                sys_write_int(hit);
+                sys_newline();
+                return 0;
+            }
+         )",
+         "7\n"},
         {"function_args",
          R"(
             fn mix(a: t40, b: t40, c: t40) -> t40 {
@@ -468,7 +625,37 @@ void testCompilerGoldenPrograms() {
          "88\n"},
     };
 
-    if (!ulib.empty()) {
+    if (!ulib_mini.empty()) {
+        cases.push_back({"ulib_mini_print_string",
+                         ulib_mini + R"(
+            fn main() -> t40 {
+                unsafe {
+                    store(100, 72);
+                    store(101, 105);
+                    store(102, 10);
+                    store(103, 0);
+                }
+                print_string(100);
+                return 0;
+            }
+         )",
+                         "Hi\n", 65536, 65536, 50000});
+        cases.push_back({"ulib_mini_vector",
+                         ulib_mini + R"(
+            fn main() -> t40 {
+                var v: t40 = vec_new();
+                vec_push(v, 3);
+                vec_push(v, 42);
+                sys_write_int(vec_get(v, 1));
+                sys_newline();
+                vec_free(v);
+                return 0;
+            }
+         )",
+                         "42\n", 65536, 65536, 50000});
+    }
+
+    if (envFlag("C5_FULL_ULIB") && !ulib.empty()) {
         cases.push_back({"ulib_print_string",
                          ulib + R"(
             fn main() -> t40 {

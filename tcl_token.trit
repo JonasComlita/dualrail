@@ -72,12 +72,76 @@ fn tcl_token_stream_new() -> t40 {
     return vec_new();
 }
 
+fn tcl_token_stream_new_cap(cap_words: t40) -> t40 {
+    match (cap_words - TCL_TOKEN_WORDS) {
+        neg => { cap_words = TCL_TOKEN_WORDS; }
+        zero => {}
+        pos => {}
+    }
+    var tokens: t40 = malloc_raw(3);
+    match tokens {
+        zero => { return vec_new(); }
+        neg => { return vec_new(); }
+        pos => {
+            var data: t40 = malloc_raw(cap_words);
+            match data {
+                zero => { free_raw(tokens); return vec_new(); }
+                neg => { free_raw(tokens); return vec_new(); }
+                pos => {
+                    unsafe {
+                        store(tokens, data);
+                        store(tokens + 1, 0);
+                        store(tokens + 2, cap_words);
+                    }
+                    return tokens;
+                }
+            }
+        }
+    }
+}
+
 fn tcl_token_emit(tokens: t40, kind: t40, start: t40, length_or_value: t40) -> t40 {
-    var status: t40 = 0;
-    status = status + vec_push(tokens, kind);
-    status = status + vec_push(tokens, start);
-    status = status + vec_push(tokens, length_or_value);
-    return status;
+    var len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe {
+        data = load(tokens);
+        len = load(tokens + 1);
+        cap = load(tokens + 2);
+    }
+    match (cap - len - TCL_TOKEN_WORDS) {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            match (new_cap - len - TCL_TOKEN_WORDS) {
+                neg => { new_cap = len + TCL_TOKEN_WORDS; }
+                zero => {}
+                pos => {}
+            }
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
+                zero => { return 0 - 1; }
+                neg => { return 0 - 1; }
+                pos => {
+                    memcpy(new_data, data, len);
+                    free_raw(data);
+                    data = new_data;
+                    unsafe {
+                        store(tokens, data);
+                        store(tokens + 2, new_cap);
+                    }
+                }
+            }
+        }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + len, kind);
+        store(data + len + 1, start);
+        store(data + len + 2, length_or_value);
+        store(tokens + 1, len + TCL_TOKEN_WORDS);
+    }
+    return 0;
 }
 
 fn tcl_token_count(tokens: t40) -> t40 {
@@ -89,18 +153,33 @@ fn tcl_token_base(index: t40) -> t40 {
 }
 
 fn tcl_token_kind(tokens: t40, index: t40) -> t40 {
-    var base: t40 = tcl_token_base(index);
-    return vec_get(tokens, base);
+    var data: t40 = 0;
+    var val: t40 = 0;
+    unsafe {
+        data = load(tokens);
+        val = load(data + index * TCL_TOKEN_WORDS);
+    }
+    return val;
 }
 
 fn tcl_token_start(tokens: t40, index: t40) -> t40 {
-    var base: t40 = tcl_token_base(index);
-    return vec_get(tokens, base + 1);
+    var data: t40 = 0;
+    var val: t40 = 0;
+    unsafe {
+        data = load(tokens);
+        val = load(data + index * TCL_TOKEN_WORDS + 1);
+    }
+    return val;
 }
 
 fn tcl_token_len(tokens: t40, index: t40) -> t40 {
-    var base: t40 = tcl_token_base(index);
-    return vec_get(tokens, base + 2);
+    var data: t40 = 0;
+    var val: t40 = 0;
+    unsafe {
+        data = load(tokens);
+        val = load(data + index * TCL_TOKEN_WORDS + 2);
+    }
+    return val;
 }
 
 fn tcl_token_free(tokens: t40) -> t40 {

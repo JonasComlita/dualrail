@@ -71,6 +71,14 @@ fn tcl_key_trit(key_in: t40, depth: t40) -> t40 {
         zero => {}
         pos => {}
     }
+    match depth {
+        zero => {
+            var q0: t40 = tcl_int_div(key, 3);
+            return key - (q0 * 3);
+        }
+        pos => {}
+        neg => {}
+    }
     var denom: t40 = tcl_pow3(depth);
     var q: t40 = tcl_int_div(key, denom);
     var q3: t40 = tcl_int_div(q, 3);

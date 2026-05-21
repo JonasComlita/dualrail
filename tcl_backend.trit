@@ -8,6 +8,13 @@ const TCL_BACKEND_INTERVAL_WORDS: t40 = 5;
 const TCL_BACKEND_MONO_WORDS: t40 = 3;
 const TCL_BACKEND_SPILL_REG_A: t40 = 22;
 const TCL_BACKEND_SPILL_REG_B: t40 = 23;
+const TCL_BACKEND_LOCAL_WORDS: t40 = 128;
+const TCL_BACKEND_ARG_WORDS: t40 = 16;
+const TCL_BACKEND_CALL_SAVE_WORDS: t40 = 9;
+
+const C5_NATIVE_STAGE_ADDR: t40 = 1599900;
+const C5_NATIVE_STAGE_DETAIL_ADDR: t40 = 1599901;
+const C5_NATIVE_STAGE_FN_ADDR: t40 = 1599902;
 
 // Backend context layout:
 // [0] errors
@@ -25,6 +32,15 @@ fn tcl_backend_ctx_new() -> t40 {
         store(ctx + 3, 1);
     }
     return ctx;
+}
+
+fn tcl_native_stage(stage: t40, detail: t40, fn_id: t40) -> t40 {
+    unsafe {
+        store(C5_NATIVE_STAGE_ADDR, stage);
+        store(C5_NATIVE_STAGE_DETAIL_ADDR, detail);
+        store(C5_NATIVE_STAGE_FN_ADDR, fn_id);
+    }
+    return 0;
 }
 
 fn tcl_backend_ctx_free(ctx: t40) -> t40 {
@@ -388,7 +404,7 @@ fn tcl_backend_interval_cross_call(intervals: t40, pos: t40) -> t40 {
     return 0;
 }
 
-fn tcl_backend_touch_sources(intervals: t40, op: t40, src1: t40, src2: t40, pos: t40) -> t40 {
+fn tcl_backend_touch_sources(intervals: t40, op: t40, src1: t40, src2: t40, type_id: t40, pos: t40) -> t40 {
     match (op - TCL_IR_BINARY) {
         zero => { tcl_backend_interval_touch(intervals, src1, pos); tcl_backend_interval_touch(intervals, src2, pos); return 0; }
         pos => {}
@@ -399,8 +415,23 @@ fn tcl_backend_touch_sources(intervals: t40, op: t40, src1: t40, src2: t40, pos:
         pos => {}
         neg => {}
     }
+    match (op - TCL_IR_ARG) {
+        zero => { tcl_backend_interval_touch(intervals, src1, pos); return 0; }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_IR_FIELD) {
+        zero => { tcl_backend_interval_touch(intervals, src1, pos); return 0; }
+        pos => {}
+        neg => {}
+    }
     match (op - TCL_IR_INDEX) {
         zero => { tcl_backend_interval_touch(intervals, src1, pos); tcl_backend_interval_touch(intervals, src2, pos); return 0; }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_IR_STORE_INDEX) {
+        zero => { tcl_backend_interval_touch(intervals, src1, pos); tcl_backend_interval_touch(intervals, src2, pos); tcl_backend_interval_touch(intervals, type_id, pos); return 0; }
         pos => {}
         neg => {}
     }
@@ -451,7 +482,7 @@ fn tcl_backend_collect_intervals(alloc: t40, cfg: t40) -> t40 {
                 zero => {}
                 neg => {}
             }
-            tcl_backend_touch_sources(intervals, op, src1, src2, pos);
+            tcl_backend_touch_sources(intervals, op, src1, src2, vec_get(instrs, i + 4), pos);
             match (op - TCL_IR_CALL) {
                 zero => { tcl_backend_interval_cross_call(intervals, pos); }
                 pos => {}
@@ -486,11 +517,37 @@ fn tcl_backend_intervals_overlap(intervals: t40, idx_a: t40, idx_b: t40) -> t40 
 fn tcl_backend_color_available(intervals: t40, idx: t40, color: t40) -> t40 {
     var i: t40 = 0;
     var other_color: t40 = 0;
+    var data: t40 = 0;
+    var a_first: t40 = 0;
+    var a_last: t40 = 0;
+    var b_first: t40 = 0;
+    var b_last: t40 = 0;
+    var overlaps: t40 = 0;
+    unsafe {
+        data = load(intervals);
+        a_first = load(data + idx + 1);
+        a_last = load(data + idx + 2);
+    }
     while idx - i > 0 {
-        other_color = vec_get(intervals, i + 4);
+        unsafe { other_color = load(data + i + 4); }
         match (other_color - color) {
             zero => {
-                match tcl_backend_intervals_overlap(intervals, idx, i) {
+                overlaps = 1;
+                unsafe {
+                    b_first = load(data + i + 1);
+                    b_last = load(data + i + 2);
+                }
+                match (a_last - b_first) {
+                    neg => { overlaps = 0; }
+                    zero => {}
+                    pos => {}
+                }
+                match (b_last - a_first) {
+                    neg => { overlaps = 0; }
+                    zero => {}
+                    pos => {}
+                }
+                match overlaps {
                     pos => { return 0; }
                     zero => {}
                     neg => {}
@@ -638,26 +695,56 @@ fn tcl_backend_text_free(text: t40) -> t40 {
     return vec_free(text);
 }
 
+fn tcl_backend_text_push(text: t40, c: t40) -> t40 {
+    var data: t40 = 0;
+    var len: t40 = 0;
+    unsafe {
+        data = load(text);
+        len = load(text + 1);
+        store(data + len, c);
+        store(text + 1, len + 1);
+    }
+    return 0;
+}
+
 fn tcl_backend_append_char(text: t40, c: t40) -> t40 {
-    return vec_push(text, c);
+    return tcl_backend_text_push(text, c);
 }
 
 fn tcl_backend_append_newline(text: t40) -> t40 {
-    vec_push(text, 10);
+    tcl_backend_text_push(text, 10);
     return 0;
 }
 
 fn tcl_backend_append_int(text: t40, val: t40) -> t40 {
+    match val - 100000 {
+        pos => { val = 0; }
+        zero => {}
+        neg => {}
+    }
+    match val + 100000 {
+        neg => { val = 0; }
+        zero => {}
+        pos => {}
+    }
     var n: t40 = val;
     match n {
         neg => {
-            vec_push(text, 45);
+            tcl_backend_text_push(text, 45);
             n = 0 - n;
         }
         zero => {
-            vec_push(text, 48);
+            tcl_backend_text_push(text, 48);
             return 0;
         }
+        pos => {}
+    }
+    match n - 10 {
+        neg => {
+            tcl_backend_text_push(text, n + 48);
+            return 0;
+        }
+        zero => {}
         pos => {}
     }
     var pow: t40 = 1;
@@ -669,8 +756,12 @@ fn tcl_backend_append_int(text: t40, val: t40) -> t40 {
     var rest: t40 = n;
     var digit: t40 = 0;
     while pow > 0 {
-        digit = tcl_int_div(rest, pow);
-        vec_push(text, digit + 48);
+        match pow - 1 {
+            zero => { digit = rest; }
+            pos => { digit = tcl_int_div(rest, pow); }
+            neg => { digit = rest; }
+        }
+        tcl_backend_text_push(text, digit + 48);
         rest = rest - (digit * pow);
         pow = tcl_int_div(pow, 10);
     }
@@ -678,127 +769,146 @@ fn tcl_backend_append_int(text: t40, val: t40) -> t40 {
 }
 
 fn tcl_backend_append_reg(text: t40, reg: t40) -> t40 {
-    vec_push(text, 114);
+    match reg {
+        neg => { reg = 0; }
+        zero => {}
+        pos => {
+            match reg - 26 {
+                pos => { reg = 0; }
+                zero => {}
+                neg => {}
+            }
+        }
+    }
+    tcl_backend_text_push(text, 114);
     tcl_backend_append_int(text, reg);
     return 0;
 }
 
 fn tcl_backend_append_sp(text: t40) -> t40 {
-    vec_push(text, 115);
-    vec_push(text, 112);
+    tcl_backend_text_push(text, 115);
+    tcl_backend_text_push(text, 112);
     return 0;
 }
 
 fn tcl_backend_append_lr(text: t40) -> t40 {
-    vec_push(text, 108);
-    vec_push(text, 114);
+    tcl_backend_text_push(text, 108);
+    tcl_backend_text_push(text, 114);
     return 0;
 }
 
 fn tcl_backend_append_label(text: t40, block_id: t40) -> t40 {
-    vec_push(text, 76);
+    tcl_backend_text_push(text, 76);
+    tcl_backend_append_int(text, block_id);
+    return 0;
+}
+
+fn tcl_backend_append_block_label(text: t40, fn_id: t40, block_id: t40) -> t40 {
+    tcl_backend_text_push(text, 76);
+    tcl_backend_append_int(text, fn_id);
+    tcl_backend_text_push(text, 95);
     tcl_backend_append_int(text, block_id);
     return 0;
 }
 
 fn tcl_backend_append_fn_label(text: t40, fn_id: t40) -> t40 {
-    vec_push(text, 102);
-    vec_push(text, 110);
-    vec_push(text, 95);
+    tcl_backend_text_push(text, 102);
+    tcl_backend_text_push(text, 110);
+    tcl_backend_text_push(text, 95);
     tcl_backend_append_int(text, fn_id);
     return 0;
 }
 
 fn tcl_backend_append_indent(text: t40) -> t40 {
-    vec_push(text, 32);
-    vec_push(text, 32);
-    vec_push(text, 32);
-    vec_push(text, 32);
+    tcl_backend_text_push(text, 32);
+    tcl_backend_text_push(text, 32);
+    tcl_backend_text_push(text, 32);
+    tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_mov(text: t40) -> t40 {
-    vec_push(text, 77); vec_push(text, 79); vec_push(text, 86); vec_push(text, 32);
+    tcl_backend_text_push(text, 77); tcl_backend_text_push(text, 79); tcl_backend_text_push(text, 86); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_copy(text: t40) -> t40 {
-    vec_push(text, 67); vec_push(text, 79); vec_push(text, 80); vec_push(text, 89); vec_push(text, 32);
+    tcl_backend_text_push(text, 67); tcl_backend_text_push(text, 79); tcl_backend_text_push(text, 80); tcl_backend_text_push(text, 89); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_add(text: t40) -> t40 {
-    vec_push(text, 65); vec_push(text, 68); vec_push(text, 68); vec_push(text, 32);
+    tcl_backend_text_push(text, 65); tcl_backend_text_push(text, 68); tcl_backend_text_push(text, 68); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_sub(text: t40) -> t40 {
-    vec_push(text, 83); vec_push(text, 85); vec_push(text, 66); vec_push(text, 32);
+    tcl_backend_text_push(text, 83); tcl_backend_text_push(text, 85); tcl_backend_text_push(text, 66); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_tcmp(text: t40) -> t40 {
-    vec_push(text, 84); vec_push(text, 67); vec_push(text, 77); vec_push(text, 80); vec_push(text, 32);
+    tcl_backend_text_push(text, 84); tcl_backend_text_push(text, 67); tcl_backend_text_push(text, 77); tcl_backend_text_push(text, 80); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_load(text: t40) -> t40 {
-    vec_push(text, 76); vec_push(text, 79); vec_push(text, 65); vec_push(text, 68); vec_push(text, 32);
+    tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 79); tcl_backend_text_push(text, 65); tcl_backend_text_push(text, 68); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_store(text: t40) -> t40 {
-    vec_push(text, 83); vec_push(text, 84); vec_push(text, 79); vec_push(text, 82); vec_push(text, 69); vec_push(text, 32);
+    tcl_backend_text_push(text, 83); tcl_backend_text_push(text, 84); tcl_backend_text_push(text, 79); tcl_backend_text_push(text, 82); tcl_backend_text_push(text, 69); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_call(text: t40) -> t40 {
-    vec_push(text, 67); vec_push(text, 65); vec_push(text, 76); vec_push(text, 76); vec_push(text, 32);
+    tcl_backend_text_push(text, 67); tcl_backend_text_push(text, 65); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_jmp(text: t40) -> t40 {
-    vec_push(text, 74); vec_push(text, 77); vec_push(text, 80); vec_push(text, 32);
+    tcl_backend_text_push(text, 74); tcl_backend_text_push(text, 77); tcl_backend_text_push(text, 80); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_brn(text: t40) -> t40 {
-    vec_push(text, 66); vec_push(text, 82); vec_push(text, 78); vec_push(text, 32);
+    tcl_backend_text_push(text, 66); tcl_backend_text_push(text, 82); tcl_backend_text_push(text, 78); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_brz(text: t40) -> t40 {
-    vec_push(text, 66); vec_push(text, 82); vec_push(text, 90); vec_push(text, 32);
+    tcl_backend_text_push(text, 66); tcl_backend_text_push(text, 82); tcl_backend_text_push(text, 90); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_brp(text: t40) -> t40 {
-    vec_push(text, 66); vec_push(text, 82); vec_push(text, 80); vec_push(text, 32);
+    tcl_backend_text_push(text, 66); tcl_backend_text_push(text, 82); tcl_backend_text_push(text, 80); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_ret(text: t40) -> t40 {
-    vec_push(text, 82); vec_push(text, 69); vec_push(text, 84);
+    tcl_backend_text_push(text, 82); tcl_backend_text_push(text, 69); tcl_backend_text_push(text, 84);
     return 0;
 }
 
 fn tcl_backend_append_syscall(text: t40) -> t40 {
-    vec_push(text, 83); vec_push(text, 89); vec_push(text, 83); vec_push(text, 67); vec_push(text, 65); vec_push(text, 76); vec_push(text, 76); vec_push(text, 32);
+    tcl_backend_text_push(text, 83); tcl_backend_text_push(text, 89); tcl_backend_text_push(text, 83); tcl_backend_text_push(text, 67); tcl_backend_text_push(text, 65); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_mul(text: t40) -> t40 {
-    vec_push(text, 77); vec_push(text, 85); vec_push(text, 76); vec_push(text, 32);
+    tcl_backend_text_push(text, 77); tcl_backend_text_push(text, 85); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_div(text: t40) -> t40 {
-    vec_push(text, 68); vec_push(text, 73); vec_push(text, 86); vec_push(text, 32);
+    tcl_backend_text_push(text, 68); tcl_backend_text_push(text, 73); tcl_backend_text_push(text, 86); tcl_backend_text_push(text, 32);
     return 0;
 }
 
 fn tcl_backend_append_halt(text: t40) -> t40 {
-    vec_push(text, 72); vec_push(text, 65); vec_push(text, 76); vec_push(text, 84);
+    tcl_backend_text_push(text, 72); tcl_backend_text_push(text, 65); tcl_backend_text_push(text, 76); tcl_backend_text_push(text, 84);
     return 0;
 }
 
@@ -815,6 +925,171 @@ fn tcl_backend_token_len_is(tokens: t40, tok: t40, len: t40) -> t40 {
         pos => { return 0; }
         neg => { return 0; }
     }
+}
+
+fn tcl_backend_token_eq(tokens: t40, src: t40, left: t40, right: t40) -> t40 {
+    var len: t40 = tcl_token_len(tokens, left);
+    match len - tcl_token_len(tokens, right) {
+        zero => {}
+        pos => { return 0; }
+        neg => { return 0; }
+    }
+    var i: t40 = 0;
+    while len - i > 0 {
+        match tcl_backend_token_char(tokens, src, left, i) - tcl_backend_token_char(tokens, src, right, i) {
+            zero => {}
+            pos => { return 0; }
+            neg => { return 0; }
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn tcl_backend_find_function_by_token(ast: t40, tokens: t40, src: t40, name_tok: t40) -> t40 {
+    var funcs: t40 = tcl_ast_functions(ast);
+    var len: t40 = vec_len(funcs);
+    var i: t40 = 0;
+    var fn_id: t40 = 0;
+    var fn_tok: t40 = 0;
+    while len - i > 0 {
+        fn_id = vec_get(funcs, i);
+        fn_tok = tcl_function_name_token(ast, fn_id);
+        match tcl_backend_token_eq(tokens, src, name_tok, fn_tok) {
+            pos => { return fn_id; }
+            zero => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_backend_find_const_by_token(ast: t40, tokens: t40, src: t40, name_tok: t40) -> t40 {
+    var consts: t40 = tcl_ast_consts(ast);
+    var len: t40 = vec_len(consts);
+    var i: t40 = 0;
+    var const_id: t40 = 0;
+    var const_tok: t40 = 0;
+    while len - i > 0 {
+        const_id = vec_get(consts, i);
+        const_tok = tcl_const_name_token(ast, const_id);
+        match tcl_backend_token_eq(tokens, src, name_tok, const_tok) {
+            pos => { return const_id; }
+            zero => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_backend_eval_const_expr(ast: t40, tokens: t40, src: t40, expr_id: t40) -> t40 {
+    var kind: t40 = tcl_expr_kind(ast, expr_id);
+    var tok: t40 = tcl_expr_token_idx(ast, expr_id);
+    match (kind - TCL_EXPR_NUMBER) {
+        zero => { return tcl_backend_token_number(tokens, src, tok); }
+        pos => {}
+        neg => {}
+    }
+    match (kind - TCL_EXPR_NAME) {
+        zero => {
+            var const_id: t40 = tcl_backend_find_const_by_token(ast, tokens, src, tok);
+            match const_id {
+                pos => { return tcl_backend_eval_const_expr(ast, tokens, src, tcl_const_expr(ast, const_id)); }
+                zero => { return 0; }
+                neg => { return 0; }
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match (kind - TCL_EXPR_BINARY) {
+        zero => {
+            var left: t40 = tcl_backend_eval_const_expr(ast, tokens, src, tcl_expr_left(ast, expr_id));
+            var right: t40 = tcl_backend_eval_const_expr(ast, tokens, src, tcl_expr_right(ast, expr_id));
+            var op_kind: t40 = tcl_token_kind(tokens, tok);
+            match (op_kind - TCL_TK_MINUS) {
+                zero => { return left - right; }
+                pos => {}
+                neg => {}
+            }
+            match (op_kind - TCL_TK_STAR) {
+                zero => { return left * right; }
+                pos => {}
+                neg => {}
+            }
+            match (op_kind - TCL_TK_SLASH) {
+                zero => { return left / right; }
+                pos => {}
+                neg => {}
+            }
+            return left + right;
+        }
+        pos => {}
+        neg => {}
+    }
+    return 0;
+}
+
+fn tcl_backend_param_ordinal(ast: t40, tokens: t40, src: t40, fn_id: t40, name_tok: t40) -> t40 {
+    var params: t40 = tcl_function_params_vec(ast, fn_id);
+    var len: t40 = vec_len(params);
+    var i: t40 = 0;
+    var ordinal: t40 = 1;
+    var param_tok: t40 = 0;
+    while len - i > 0 {
+        param_tok = vec_get(params, i);
+        match tcl_backend_token_eq(tokens, src, name_tok, param_tok) {
+            pos => { return ordinal; }
+            zero => {}
+            neg => {}
+        }
+        ordinal = ordinal + 1;
+        i = i + 2;
+    }
+    return 0;
+}
+
+fn tcl_backend_is_load_intrinsic(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 4) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 108 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 1) - 111 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 2) - 97 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 3) - 100 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_backend_is_store_intrinsic(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 5) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 115 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 1) - 116 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 2) - 111 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 3) - 114 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 4) - 101 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_backend_is_shared_alloc(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 12) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 115 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 6) - 95 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 7) - 97 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 11) - 99 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_backend_is_atomic_load(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 11) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 97 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 6) - 95 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 7) - 108 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 10) - 100 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_backend_is_atomic_store(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 12) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 97 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 6) - 95 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 7) - 115 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 11) - 101 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
 }
 
 fn tcl_backend_is_sys_write_int(tokens: t40, src: t40, tok: t40) -> t40 {
@@ -840,6 +1115,14 @@ fn tcl_backend_is_sys_newline(tokens: t40, src: t40, tok: t40) -> t40 {
     match tcl_backend_token_char(tokens, src, tok, 10) - 101 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
 }
 
+fn tcl_backend_is_sys_sbrk(tokens: t40, src: t40, tok: t40) -> t40 {
+    match tcl_backend_token_len_is(tokens, tok, 8) { pos => {} zero => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 0) - 115 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 4) - 115 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 5) - 98 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_backend_token_char(tokens, src, tok, 7) - 107 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
 fn tcl_backend_emit_reg_reg(text: t40, op_kind: t40, rd: t40, r1: t40, r2: t40) -> t40 {
     tcl_backend_append_indent(text);
     match op_kind {
@@ -848,9 +1131,9 @@ fn tcl_backend_emit_reg_reg(text: t40, op_kind: t40, rd: t40, r1: t40, r2: t40) 
         neg => { tcl_backend_append_tcmp(text); }
     }
     tcl_backend_append_reg(text, rd);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, r1);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, r2);
     tcl_backend_append_newline(text);
     return 0;
@@ -860,7 +1143,7 @@ fn tcl_backend_emit_mov_imm(text: t40, rd: t40, imm: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_mov(text);
     tcl_backend_append_reg(text, rd);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, imm);
     tcl_backend_append_newline(text);
     return 0;
@@ -870,7 +1153,7 @@ fn tcl_backend_emit_copy(text: t40, rd: t40, rs: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_copy(text);
     tcl_backend_append_reg(text, rd);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, rs);
     tcl_backend_append_newline(text);
     return 0;
@@ -880,9 +1163,9 @@ fn tcl_backend_emit_load(text: t40, rd: t40, base: t40, off: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_load(text);
     tcl_backend_append_reg(text, rd);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, base);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, off);
     tcl_backend_append_newline(text);
     return 0;
@@ -892,9 +1175,9 @@ fn tcl_backend_emit_store(text: t40, rs: t40, base: t40, off: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_store(text);
     tcl_backend_append_reg(text, rs);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, base);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, off);
     tcl_backend_append_newline(text);
     return 0;
@@ -922,7 +1205,57 @@ fn tcl_backend_used_callee_count(alloc: t40) -> t40 {
 fn tcl_backend_frame_words(alloc: t40) -> t40 {
     var callee: t40 = tcl_backend_used_callee_count(alloc);
     var spills: t40 = tcl_backend_alloc_spills(alloc);
+    return 1 + callee + spills + TCL_BACKEND_LOCAL_WORDS;
+}
+
+fn tcl_backend_local_base(alloc: t40) -> t40 {
+    var callee: t40 = tcl_backend_used_callee_count(alloc);
+    var spills: t40 = tcl_backend_alloc_spills(alloc);
     return 1 + callee + spills;
+}
+
+fn tcl_backend_arg_base(vars_box: t40) -> t40 {
+    var base: t40 = 0;
+    unsafe { base = load(vars_box + 3); }
+    return base;
+}
+
+fn tcl_backend_call_save_base(vars_box: t40) -> t40 {
+    return tcl_backend_arg_base(vars_box) + TCL_BACKEND_ARG_WORDS;
+}
+
+fn tcl_backend_var_slot_lookup(vars_box: t40, tokens: t40, src: t40, name_tok: t40) -> t40 {
+    var slots: t40 = 0;
+    unsafe { slots = load(vars_box); }
+    var len: t40 = vec_len(slots);
+    var i: t40 = 0;
+    var existing_tok: t40 = 0;
+    while len - i > 0 {
+        existing_tok = vec_get(slots, i);
+        match tcl_backend_token_eq(tokens, src, name_tok, existing_tok) {
+            pos => { return vec_get(slots, i + 1); }
+            zero => {}
+            neg => {}
+        }
+        i = i + 2;
+    }
+    return 0;
+}
+
+fn tcl_backend_var_slot(vars_box: t40, tokens: t40, src: t40, name_tok: t40) -> t40 {
+    var slot: t40 = tcl_backend_var_slot_lookup(vars_box, tokens, src, name_tok);
+    match slot {
+        pos => { return slot; }
+        zero => {}
+        neg => {}
+    }
+    var slots: t40 = 0;
+    unsafe { slots = load(vars_box); }
+    unsafe { slot = load(vars_box + 2); }
+    unsafe { store(vars_box + 2, slot + 1); }
+    vec_push(slots, name_tok);
+    vec_push(slots, slot);
+    return slot;
 }
 
 fn tcl_backend_spill_offset(alloc: t40, value: t40) -> t40 {
@@ -983,23 +1316,23 @@ fn tcl_backend_emit_callee_restores(text: t40, alloc: t40) -> t40 {
 fn tcl_backend_emit_prologue(text: t40, fn_id: t40, alloc: t40) -> t40 {
     var frame: t40 = tcl_backend_frame_words(alloc);
     tcl_backend_append_fn_label(text, fn_id);
-    vec_push(text, 58);
+    tcl_backend_text_push(text, 58);
     tcl_backend_append_newline(text);
     tcl_backend_emit_mov_imm(text, 24, frame);
     tcl_backend_append_indent(text);
     tcl_backend_append_sub(text);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, 24);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
     tcl_backend_append_store(text);
     tcl_backend_append_lr(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, 0);
     tcl_backend_append_newline(text);
     tcl_backend_emit_callee_saves(text, alloc);
@@ -1012,18 +1345,18 @@ fn tcl_backend_emit_epilogue(text: t40, alloc: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_load(text);
     tcl_backend_append_lr(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, 0);
     tcl_backend_append_newline(text);
     tcl_backend_emit_mov_imm(text, 24, frame);
     tcl_backend_append_indent(text);
     tcl_backend_append_add(text);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_sp(text);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_reg(text, 24);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
@@ -1115,7 +1448,47 @@ fn tcl_backend_store_spilled_dest(text: t40, alloc: t40, value: t40, reg: t40) -
     return 0;
 }
 
-fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t40, vars_box: t40) -> t40 {
+fn tcl_backend_emit_call_args(text: t40, vars_box: t40, count: t40) -> t40 {
+    var base: t40 = tcl_backend_arg_base(vars_box);
+    var i: t40 = 0;
+    while count - i > 0 {
+        match (6 - i) {
+            pos => { tcl_backend_emit_load(text, 13 + i, 26, base + i); }
+            zero => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_backend_emit_save_call_regs(text: t40, vars_box: t40) -> t40 {
+    var base: t40 = tcl_backend_call_save_base(vars_box);
+    var i: t40 = 0;
+    while TCL_BACKEND_CALL_SAVE_WORDS - i > 0 {
+        tcl_backend_emit_store(text, 13 + i, 26, base + i);
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_backend_emit_restore_call_regs(text: t40, vars_box: t40, skip_reg: t40) -> t40 {
+    var base: t40 = tcl_backend_call_save_base(vars_box);
+    var i: t40 = 0;
+    var reg: t40 = 0;
+    while TCL_BACKEND_CALL_SAVE_WORDS - i > 0 {
+        reg = 13 + i;
+        match reg - skip_reg {
+            zero => {}
+            pos => { tcl_backend_emit_load(text, reg, 26, base + i); }
+            neg => { tcl_backend_emit_load(text, reg, 26, base + i); }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t40, vars_box: t40, ast: t40, fn_id: t40) -> t40 {
     var op: t40 = vec_get(instrs, i);
     var dest: t40 = vec_get(instrs, i + 1);
     var src1: t40 = vec_get(instrs, i + 2);
@@ -1129,6 +1502,12 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
     var root: t40 = 0;
     var mapped: t40 = 0;
     var src: t40 = 0;
+    var slot: t40 = 0;
+    var param_ord: t40 = 0;
+    var call_id: t40 = 0;
+    var const_id: t40 = 0;
+    var field_off: t40 = 0;
+    var arg_base: t40 = 0;
     unsafe { src = load(vars_box + 1); }
 
     match (op - TCL_IR_NOP) {
@@ -1151,23 +1530,71 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
 
     match (op - TCL_IR_LOAD_NAME) {
         zero => {
-            unsafe { root = load(vars_box); }
-            mapped = tcl_map_lookup(root, src1);
-            match mapped {
+            slot = tcl_backend_var_slot_lookup(vars_box, tokens, src, src1);
+            match slot {
                 pos => {
                     rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
-                    r1 = tcl_backend_load_value_reg(text, alloc, mapped, TCL_BACKEND_SPILL_REG_B);
-                    tcl_backend_emit_copy(text, rd, r1);
+                    tcl_backend_emit_load(text, rd, 26, slot);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                 }
                 zero => {
                     rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
-                    tcl_backend_emit_mov_imm(text, rd, 0);
+                    param_ord = tcl_backend_param_ordinal(ast, tokens, src, fn_id, src1);
+                    match param_ord {
+                        pos => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_copy(text, rd, 12 + param_ord);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                            tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                            return 0;
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                    const_id = tcl_backend_find_const_by_token(ast, tokens, src, src1);
+                    match const_id {
+                        pos => { tcl_backend_emit_mov_imm(text, rd, tcl_backend_eval_const_expr(ast, tokens, src, tcl_const_expr(ast, const_id))); }
+                        zero => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_mov_imm(text, rd, 0);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                        }
+                        neg => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_mov_imm(text, rd, 0);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                        }
+                    }
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                 }
                 neg => {
                     rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
-                    tcl_backend_emit_mov_imm(text, rd, 0);
+                    param_ord = tcl_backend_param_ordinal(ast, tokens, src, fn_id, src1);
+                    match param_ord {
+                        pos => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_copy(text, rd, 12 + param_ord);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                            tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                            return 0;
+                        }
+                        zero => {}
+                        neg => {}
+                    }
+                    const_id = tcl_backend_find_const_by_token(ast, tokens, src, src1);
+                    match const_id {
+                        pos => { tcl_backend_emit_mov_imm(text, rd, tcl_backend_eval_const_expr(ast, tokens, src, tcl_const_expr(ast, const_id))); }
+                        zero => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_mov_imm(text, rd, 0);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                        }
+                        neg => {
+                            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+                            tcl_backend_emit_mov_imm(text, rd, 0);
+                            tcl_backend_emit_store(text, rd, 26, slot);
+                        }
+                    }
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                 }
             }
@@ -1179,7 +1606,9 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
 
     match (op - TCL_IR_STORE_NAME) {
         zero => {
-            tcl_map_insert(vars_box, src1, src2);
+            slot = tcl_backend_var_slot(vars_box, tokens, src, src1);
+            r1 = tcl_backend_load_value_reg(text, alloc, src2, TCL_BACKEND_SPILL_REG_A);
+            tcl_backend_emit_store(text, r1, 26, slot);
             return 0;
         }
         pos => {}
@@ -1202,9 +1631,9 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
                     tcl_backend_append_indent(text);
                     tcl_backend_append_mul(text);
                     tcl_backend_append_reg(text, rd);
-                    vec_push(text, 44); vec_push(text, 32);
+                    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
                     tcl_backend_append_reg(text, r1);
-                    vec_push(text, 44); vec_push(text, 32);
+                    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
                     tcl_backend_append_reg(text, r2);
                     tcl_backend_append_newline(text);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
@@ -1218,9 +1647,9 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
                     tcl_backend_append_indent(text);
                     tcl_backend_append_div(text);
                     tcl_backend_append_reg(text, rd);
-                    vec_push(text, 44); vec_push(text, 32);
+                    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
                     tcl_backend_append_reg(text, r1);
-                    vec_push(text, 44); vec_push(text, 32);
+                    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
                     tcl_backend_append_reg(text, r2);
                     tcl_backend_append_newline(text);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
@@ -1251,7 +1680,7 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
         zero => {
             rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
             r1 = tcl_backend_load_value_reg(text, alloc, src1, TCL_BACKEND_SPILL_REG_A);
-            kind = tcl_backend_token_kind_or(tokens, type_id, TCL_TK_AMP);
+            kind = tcl_backend_token_kind_or(tokens, src2, TCL_TK_AMP);
             match (kind - TCL_TK_STAR) {
                 zero => { tcl_backend_emit_load(text, rd, r1, 0); tcl_backend_store_spilled_dest(text, alloc, dest, rd); return 0; }
                 pos => {}
@@ -1265,19 +1694,102 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
         neg => {}
     }
 
+    match (op - TCL_IR_ARG) {
+        zero => {
+            arg_base = tcl_backend_arg_base(vars_box);
+            r1 = tcl_backend_load_value_reg(text, alloc, src1, TCL_BACKEND_SPILL_REG_A);
+            tcl_backend_emit_store(text, r1, 26, arg_base + src2);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (op - TCL_IR_FIELD) {
+        zero => {
+            rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
+            r1 = tcl_backend_load_value_reg(text, alloc, src1, TCL_BACKEND_SPILL_REG_A);
+            field_off = 0;
+            match tcl_backend_token_len_is(tokens, src2, 1) {
+                pos => {
+                    field_off = tcl_backend_token_char(tokens, src, src2, 0) - 97;
+                }
+                zero => {}
+                neg => {}
+            }
+            tcl_backend_emit_load(text, rd, r1, field_off);
+            tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (op - TCL_IR_INDEX) {
+        zero => {
+            rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
+            r1 = tcl_backend_load_value_reg(text, alloc, src1, TCL_BACKEND_SPILL_REG_A);
+            r2 = tcl_backend_load_value_reg(text, alloc, src2, TCL_BACKEND_SPILL_REG_B);
+            tcl_backend_emit_reg_reg(text, 0, TCL_BACKEND_SPILL_REG_A, r1, r2);
+            tcl_backend_emit_load(text, rd, TCL_BACKEND_SPILL_REG_A, 0);
+            tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (op - TCL_IR_STORE_INDEX) {
+        zero => {
+            r1 = tcl_backend_load_value_reg(text, alloc, src1, TCL_BACKEND_SPILL_REG_A);
+            r2 = tcl_backend_load_value_reg(text, alloc, src2, TCL_BACKEND_SPILL_REG_B);
+            tcl_backend_emit_reg_reg(text, 0, TCL_BACKEND_SPILL_REG_B, r1, r2);
+            rd = tcl_backend_load_value_reg(text, alloc, type_id, TCL_BACKEND_SPILL_REG_A);
+            tcl_backend_emit_store(text, rd, TCL_BACKEND_SPILL_REG_B, 0);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match (op - TCL_IR_ALLOC) {
+        zero => {
+            rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
+            tcl_backend_emit_mov_imm(text, 13, src2);
+            tcl_backend_append_indent(text);
+            tcl_backend_append_syscall(text);
+            tcl_backend_append_int(text, 19);
+            tcl_backend_append_newline(text);
+            tcl_backend_emit_copy(text, rd, 13);
+            arg_base = tcl_backend_arg_base(vars_box);
+            imm = 0;
+            while src2 - imm > 0 {
+                r1 = TCL_BACKEND_SPILL_REG_B;
+                tcl_backend_emit_load(text, r1, 26, arg_base + imm);
+                tcl_backend_emit_store(text, r1, rd, imm);
+                imm = imm + 1;
+            }
+            tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+            return 0;
+        }
+        pos => {}
+        neg => {}
+    }
+
     match (op - TCL_IR_CALL) {
         zero => {
             rd = tcl_backend_dest_reg(text, alloc, dest, TCL_BACKEND_SPILL_REG_A);
+            tcl_backend_emit_save_call_regs(text, vars_box);
+            tcl_backend_emit_call_args(text, vars_box, src2);
             match tcl_backend_is_sys_write_int(tokens, src, src1) {
                 pos => {
-                    r1 = tcl_backend_load_value_reg(text, alloc, dest - 1, TCL_BACKEND_SPILL_REG_A);
-                    tcl_backend_emit_copy(text, 1, r1);
-                    tcl_backend_emit_copy(text, 13, r1);
+                    tcl_backend_emit_copy(text, 1, 13);
                     tcl_backend_append_indent(text);
                     tcl_backend_append_syscall(text);
                     tcl_backend_append_int(text, 1);
                     tcl_backend_append_newline(text);
                     tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                     return 0;
                 }
@@ -1286,14 +1798,13 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
             }
             match tcl_backend_is_sys_write_char(tokens, src, src1) {
                 pos => {
-                    r1 = tcl_backend_load_value_reg(text, alloc, dest - 1, TCL_BACKEND_SPILL_REG_A);
-                    tcl_backend_emit_copy(text, 1, r1);
-                    tcl_backend_emit_copy(text, 13, r1);
+                    tcl_backend_emit_copy(text, 1, 13);
                     tcl_backend_append_indent(text);
                     tcl_backend_append_syscall(text);
                     tcl_backend_append_int(text, 22);
                     tcl_backend_append_newline(text);
                     tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                     return 0;
                 }
@@ -1307,6 +1818,80 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
                     tcl_backend_append_int(text, 2);
                     tcl_backend_append_newline(text);
                     tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_sys_sbrk(tokens, src, src1) {
+                pos => {
+                    tcl_backend_append_indent(text);
+                    tcl_backend_append_syscall(text);
+                    tcl_backend_append_int(text, 19);
+                    tcl_backend_append_newline(text);
+                    tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_load_intrinsic(tokens, src, src1) {
+                pos => {
+                    tcl_backend_emit_load(text, rd, 13, 0);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_store_intrinsic(tokens, src, src1) {
+                pos => {
+                    tcl_backend_emit_store(text, 14, 13, 0);
+                    tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_shared_alloc(tokens, src, src1) {
+                pos => {
+                    tcl_backend_emit_copy(text, TCL_BACKEND_SPILL_REG_A, 13);
+                    tcl_backend_emit_mov_imm(text, 13, 1);
+                    tcl_backend_append_indent(text);
+                    tcl_backend_append_syscall(text);
+                    tcl_backend_append_int(text, 19);
+                    tcl_backend_append_newline(text);
+                    tcl_backend_emit_store(text, TCL_BACKEND_SPILL_REG_A, 13, 0);
+                    tcl_backend_emit_copy(text, rd, 13);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_atomic_load(tokens, src, src1) {
+                pos => {
+                    tcl_backend_emit_load(text, rd, 13, 0);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
+                    tcl_backend_store_spilled_dest(text, alloc, dest, rd);
+                    return 0;
+                }
+                zero => {}
+                neg => {}
+            }
+            match tcl_backend_is_atomic_store(tokens, src, src1) {
+                pos => {
+                    tcl_backend_emit_store(text, 14, 13, 0);
+                    tcl_backend_emit_copy(text, rd, 14);
+                    tcl_backend_emit_restore_call_regs(text, vars_box, rd);
                     tcl_backend_store_spilled_dest(text, alloc, dest, rd);
                     return 0;
                 }
@@ -1315,9 +1900,15 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
             }
             tcl_backend_append_indent(text);
             tcl_backend_append_call(text);
-            tcl_backend_append_fn_label(text, src1);
+            call_id = tcl_backend_find_function_by_token(ast, tokens, src, src1);
+            match call_id {
+                pos => { tcl_backend_append_fn_label(text, call_id); }
+                zero => { tcl_backend_append_fn_label(text, src1); }
+                neg => { tcl_backend_append_fn_label(text, src1); }
+            }
             tcl_backend_append_newline(text);
             tcl_backend_emit_copy(text, rd, 13);
+            tcl_backend_emit_restore_call_regs(text, vars_box, rd);
             tcl_backend_store_spilled_dest(text, alloc, dest, rd);
             return 0;
         }
@@ -1329,7 +1920,7 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
         zero => {
             tcl_backend_append_indent(text);
             tcl_backend_append_call(text);
-            vec_push(text, 102); vec_push(text, 114); vec_push(text, 101); vec_push(text, 101);
+            tcl_backend_text_push(text, 102); tcl_backend_text_push(text, 114); tcl_backend_text_push(text, 101); tcl_backend_text_push(text, 101);
             tcl_backend_append_newline(text);
             return 0;
         }
@@ -1341,7 +1932,7 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
         zero => {
             tcl_backend_append_indent(text);
             tcl_backend_append_jmp(text);
-            tcl_backend_append_label(text, src1);
+            tcl_backend_append_block_label(text, fn_id, src1);
             tcl_backend_append_newline(text);
             return 0;
         }
@@ -1355,14 +1946,14 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
             tcl_backend_append_indent(text);
             tcl_backend_append_brn(text);
             tcl_backend_append_reg(text, r1);
-            vec_push(text, 44); vec_push(text, 32);
-            tcl_backend_append_label(text, src2);
+            tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
+            tcl_backend_append_block_label(text, fn_id, src2);
             tcl_backend_append_newline(text);
             tcl_backend_append_indent(text);
             tcl_backend_append_brz(text);
             tcl_backend_append_reg(text, r1);
-            vec_push(text, 44); vec_push(text, 32);
-            tcl_backend_append_label(text, type_id);
+            tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
+            tcl_backend_append_block_label(text, fn_id, type_id);
             tcl_backend_append_newline(text);
             return 0;
         }
@@ -1384,7 +1975,7 @@ fn tcl_backend_emit_instr(text: t40, instrs: t40, i: t40, alloc: t40, tokens: t4
     return 0;
 }
 
-fn tcl_backend_emit_branch3(text: t40, block: t40, instrs: t40, i: t40, alloc: t40) -> t40 {
+fn tcl_backend_emit_branch3(text: t40, block: t40, instrs: t40, i: t40, alloc: t40, fn_id: t40) -> t40 {
     var cond_value: t40 = vec_get(instrs, i + 2);
     var neg_target: t40 = vec_get(instrs, i + 3);
     var zero_target: t40 = vec_get(instrs, i + 4);
@@ -1400,22 +1991,22 @@ fn tcl_backend_emit_branch3(text: t40, block: t40, instrs: t40, i: t40, alloc: t
     tcl_backend_append_indent(text);
     tcl_backend_append_brn(text);
     tcl_backend_append_reg(text, cond_reg);
-    vec_push(text, 44); vec_push(text, 32);
-    tcl_backend_append_label(text, neg_target);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
+    tcl_backend_append_block_label(text, fn_id, neg_target);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
     tcl_backend_append_brz(text);
     tcl_backend_append_reg(text, cond_reg);
-    vec_push(text, 44); vec_push(text, 32);
-    tcl_backend_append_label(text, zero_target);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
+    tcl_backend_append_block_label(text, fn_id, zero_target);
     tcl_backend_append_newline(text);
     match pos_target {
         pos => {
             tcl_backend_append_indent(text);
             tcl_backend_append_brp(text);
             tcl_backend_append_reg(text, cond_reg);
-            vec_push(text, 44); vec_push(text, 32);
-            tcl_backend_append_label(text, pos_target);
+            tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
+            tcl_backend_append_block_label(text, fn_id, pos_target);
             tcl_backend_append_newline(text);
         }
         zero => {}
@@ -1424,10 +2015,10 @@ fn tcl_backend_emit_branch3(text: t40, block: t40, instrs: t40, i: t40, alloc: t
     return 0;
 }
 
-fn tcl_backend_emit_block(text: t40, block: t40, alloc: t40, tokens: t40, vars_box: t40) -> t40 {
+fn tcl_backend_emit_block(text: t40, block: t40, alloc: t40, tokens: t40, vars_box: t40, ast: t40, fn_id: t40) -> t40 {
     var id: t40 = tcl_ir_block_id(block);
-    tcl_backend_append_label(text, id);
-    vec_push(text, 58);
+    tcl_backend_append_block_label(text, fn_id, id);
+    tcl_backend_text_push(text, 58);
     tcl_backend_append_newline(text);
     var instrs: t40 = tcl_ir_block_instrs(block);
     var len: t40 = vec_len(instrs);
@@ -1436,22 +2027,25 @@ fn tcl_backend_emit_block(text: t40, block: t40, alloc: t40, tokens: t40, vars_b
     while len - i > 0 {
         op = vec_get(instrs, i);
         match (op - TCL_IR_BRANCH3) {
-            zero => { tcl_backend_emit_branch3(text, block, instrs, i, alloc); }
-            pos => { tcl_backend_emit_instr(text, instrs, i, alloc, tokens, vars_box); }
-            neg => { tcl_backend_emit_instr(text, instrs, i, alloc, tokens, vars_box); }
+            zero => { tcl_backend_emit_branch3(text, block, instrs, i, alloc, fn_id); }
+            pos => { tcl_backend_emit_instr(text, instrs, i, alloc, tokens, vars_box, ast, fn_id); }
+            neg => { tcl_backend_emit_instr(text, instrs, i, alloc, tokens, vars_box, ast, fn_id); }
         }
         i = i + TCL_IR_INSTR_WORDS;
     }
     return 0;
 }
 
-fn tcl_backend_emit_cfg(ctx: t40, cfg: t40, tokens: t40, src: t40, fn_id: t40) -> t40 {
+fn tcl_backend_emit_cfg(ctx: t40, cfg: t40, tokens: t40, src: t40, fn_id: t40, ast: t40, text: t40) -> t40 {
     var alloc: t40 = tcl_backend_allocate_registers(ctx, cfg);
-    var text: t40 = tcl_backend_text_new_cap(500000);
-    var vars_box: t40 = malloc_raw(2);
+    var vars_box: t40 = malloc_raw(4);
+    var var_slots: t40 = vec_new();
+    var local_base: t40 = tcl_backend_local_base(alloc);
     unsafe {
-        store(vars_box, 0);
+        store(vars_box, var_slots);
         store(vars_box + 1, src);
+        store(vars_box + 2, local_base + TCL_BACKEND_ARG_WORDS + TCL_BACKEND_CALL_SAVE_WORDS);
+        store(vars_box + 3, local_base);
     }
     tcl_backend_emit_prologue(text, fn_id, alloc);
     var blocks: t40 = tcl_ir_cfg_blocks(cfg);
@@ -1460,31 +2054,16 @@ fn tcl_backend_emit_cfg(ctx: t40, cfg: t40, tokens: t40, src: t40, fn_id: t40) -
     var block: t40 = 0;
     while nblocks - bidx > 0 {
         block = vec_get(blocks, bidx);
-        tcl_backend_emit_block(text, block, alloc, tokens, vars_box);
+        tcl_backend_emit_block(text, block, alloc, tokens, vars_box, ast, fn_id);
         bidx = bidx + 1;
     }
-    var root: t40 = 0;
-    unsafe { root = load(vars_box); }
-    tcl_map_free(root);
-    free_raw(vars_box);
-    tcl_backend_alloc_free(alloc);
     return text;
 }
 
-fn tcl_backend_append_text_vec(dest: t40, src_text: t40) -> t40 {
-    var len: t40 = vec_len(src_text);
-    var i: t40 = 0;
-    while len - i > 0 {
-        vec_push(dest, vec_get(src_text, i));
-        i = i + 1;
-    }
-    return 0;
-}
-
 fn tcl_backend_append_start_for_main(text: t40, main_id: t40) -> t40 {
-    vec_push(text, 46); vec_push(text, 116); vec_push(text, 101); vec_push(text, 120); vec_push(text, 116);
+    tcl_backend_text_push(text, 46); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 101); tcl_backend_text_push(text, 120); tcl_backend_text_push(text, 116);
     tcl_backend_append_newline(text);
-    vec_push(text, 95); vec_push(text, 115); vec_push(text, 116); vec_push(text, 97); vec_push(text, 114); vec_push(text, 116); vec_push(text, 58);
+    tcl_backend_text_push(text, 95); tcl_backend_text_push(text, 115); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 97); tcl_backend_text_push(text, 114); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 58);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
     tcl_backend_append_call(text);
@@ -1525,6 +2104,140 @@ fn tcl_native_find_main(ast: t40, tokens: t40, src: t40) -> t40 {
         i = i + 1;
     }
     return 1;
+}
+
+fn tcl_native_reachable_contains(reachable: t40, fn_id: t40) -> t40 {
+    var len: t40 = vec_len(reachable);
+    var i: t40 = 0;
+    while len - i > 0 {
+        match vec_get(reachable, i) - fn_id {
+            zero => { return 1; }
+            pos => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_native_mark_reachable(reachable: t40, worklist: t40, fn_id: t40) -> t40 {
+    match fn_id {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    match tcl_native_reachable_contains(reachable, fn_id) {
+        pos => { return 0; }
+        zero => {}
+        neg => {}
+    }
+    vec_push(reachable, fn_id);
+    vec_push(worklist, fn_id);
+    return 0;
+}
+
+fn tcl_native_mark_expr_calls(ast: t40, tokens: t40, src: t40, expr_id: t40, reachable: t40, worklist: t40) -> t40 {
+    match expr_id {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+
+    var kind: t40 = tcl_expr_kind(ast, expr_id);
+    var left: t40 = tcl_expr_left(ast, expr_id);
+    var right: t40 = tcl_expr_right(ast, expr_id);
+    var args: t40 = tcl_expr_args_vec(ast, expr_id);
+    var call_id: t40 = 0;
+    var len: t40 = 0;
+    var i: t40 = 0;
+
+    match (kind - TCL_EXPR_CALL) {
+        zero => {
+            call_id = tcl_backend_find_function_by_token(ast, tokens, src, tcl_expr_token_idx(ast, expr_id));
+            tcl_native_mark_reachable(reachable, worklist, call_id);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    tcl_native_mark_expr_calls(ast, tokens, src, left, reachable, worklist);
+    tcl_native_mark_expr_calls(ast, tokens, src, right, reachable, worklist);
+
+    match args {
+        pos => {
+            len = vec_len(args);
+            i = 0;
+            while len - i > 0 {
+                tcl_native_mark_expr_calls(ast, tokens, src, vec_get(args, i), reachable, worklist);
+                i = i + 1;
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    return 0;
+}
+
+fn tcl_native_mark_body_calls(ast: t40, tokens: t40, src: t40, body: t40, reachable: t40, worklist: t40) -> t40 {
+    match body {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    var len: t40 = vec_len(body);
+    var i: t40 = 0;
+    var stmt_id: t40 = 0;
+    while len - i > 0 {
+        stmt_id = vec_get(body, i);
+        tcl_native_mark_stmt_calls(ast, tokens, src, stmt_id, reachable, worklist);
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_native_mark_match_arm_calls(ast: t40, tokens: t40, src: t40, arms: t40, reachable: t40, worklist: t40) -> t40 {
+    match arms {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    var len: t40 = vec_len(arms);
+    var i: t40 = 0;
+    var arm_id: t40 = 0;
+    while len - i > 0 {
+        arm_id = vec_get(arms, i);
+        tcl_native_mark_body_calls(ast, tokens, src, tcl_match_arm_body_vec(ast, arm_id), reachable, worklist);
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn tcl_native_mark_stmt_calls(ast: t40, tokens: t40, src: t40, stmt_id: t40, reachable: t40, worklist: t40) -> t40 {
+    match stmt_id {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    tcl_native_mark_expr_calls(ast, tokens, src, tcl_stmt_expr1(ast, stmt_id), reachable, worklist);
+    tcl_native_mark_expr_calls(ast, tokens, src, tcl_stmt_expr2(ast, stmt_id), reachable, worklist);
+    tcl_native_mark_body_calls(ast, tokens, src, tcl_stmt_body_vec(ast, stmt_id), reachable, worklist);
+    tcl_native_mark_match_arm_calls(ast, tokens, src, tcl_stmt_arms_vec(ast, stmt_id), reachable, worklist);
+    return 0;
+}
+
+fn tcl_native_build_reachable(ast: t40, tokens: t40, src: t40, main_id: t40) -> t40 {
+    var reachable: t40 = vec_new();
+    var worklist: t40 = vec_new();
+    tcl_native_mark_reachable(reachable, worklist, main_id);
+
+    var i: t40 = 0;
+    var fn_id: t40 = 0;
+    while vec_len(worklist) - i > 0 {
+        fn_id = vec_get(worklist, i);
+        tcl_native_mark_body_calls(ast, tokens, src, tcl_function_body_vec(ast, fn_id), reachable, worklist);
+        i = i + 1;
+    }
+    return reachable;
 }
 
 fn tcl_native_contains3(src: t40, len: t40, c0: t40, c1: t40, c2: t40) -> t40 {
@@ -1654,9 +2367,9 @@ fn tcl_native_contains_own_angle(src: t40, len: t40) -> t40 {
 }
 
 fn tcl_native_emit_header(text: t40) -> t40 {
-    vec_push(text, 46); vec_push(text, 116); vec_push(text, 101); vec_push(text, 120); vec_push(text, 116);
+    tcl_backend_text_push(text, 46); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 101); tcl_backend_text_push(text, 120); tcl_backend_text_push(text, 116);
     tcl_backend_append_newline(text);
-    vec_push(text, 95); vec_push(text, 115); vec_push(text, 116); vec_push(text, 97); vec_push(text, 114); vec_push(text, 116); vec_push(text, 58);
+    tcl_backend_text_push(text, 95); tcl_backend_text_push(text, 115); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 97); tcl_backend_text_push(text, 114); tcl_backend_text_push(text, 116); tcl_backend_text_push(text, 58);
     tcl_backend_append_newline(text);
     return 0;
 }
@@ -1665,7 +2378,7 @@ fn tcl_native_emit_char(text: t40, c: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_mov(text);
     tcl_backend_append_reg(text, 1);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, c);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
@@ -1686,7 +2399,7 @@ fn tcl_native_emit_decimal_line(text: t40, value: t40) -> t40 {
     tcl_backend_append_indent(text);
     tcl_backend_append_mov(text);
     tcl_backend_append_reg(text, 1);
-    vec_push(text, 44); vec_push(text, 32);
+    tcl_backend_text_push(text, 44); tcl_backend_text_push(text, 32);
     tcl_backend_append_int(text, value);
     tcl_backend_append_newline(text);
     tcl_backend_append_indent(text);
@@ -1697,92 +2410,136 @@ fn tcl_native_emit_decimal_line(text: t40, value: t40) -> t40 {
     return 0;
 }
 
+fn tcl_native_compile_general_to_tasm(src: t40, len: t40) -> t40 {
+    tcl_native_stage(1, len, 0);
+    var tokens: t40 = tcl_lex(src, len);
+    var token_count: t40 = tcl_token_count(tokens);
+    var parser: t40 = tcl_parser_new(tokens, src);
+    tcl_native_stage(2, token_count, parser);
+    var ast: t40 = tcl_ast_new(0);
+    tcl_parser_parse(parser, ast);
+    tcl_native_stage(3, tcl_parser_errors(parser), 0);
+
+    var ctx: t40 = tcl_backend_ctx_new();
+    var funcs: t40 = tcl_ast_functions(ast);
+    var nfuncs: t40 = vec_len(funcs);
+
+    var main_id: t40 = tcl_native_find_main(ast, tokens, src);
+    var reachable: t40 = tcl_native_build_reachable(ast, tokens, src, main_id);
+    tcl_native_stage(4, vec_len(reachable), main_id);
+    var text: t40 = tcl_backend_text_new_cap(1000000);
+    tcl_backend_append_start_for_main(text, main_id);
+
+    var i: t40 = 0;
+    var fn_id: t40 = 0;
+    var cfg: t40 = 0;
+    while nfuncs - i > 0 {
+        fn_id = vec_get(funcs, i);
+        match tcl_native_reachable_contains(reachable, fn_id) {
+            pos => {
+                tcl_native_stage(5, i, fn_id);
+                cfg = tcl_lower_function_with_source(ast, fn_id, tokens, src);
+                tcl_backend_emit_cfg(ctx, cfg, tokens, src, fn_id, ast, text);
+            }
+            zero => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+
+    tcl_native_stage(6, vec_len(text), main_id);
+    return text;
+}
+
 fn tcl_native_compile_to_tasm(src: t40, len: t40) -> t40 {
-    var text: t40 = tcl_backend_text_new_cap(4096);
-    tcl_native_emit_header(text);
+    var c5_text: t40 = tcl_backend_text_new_cap(4096);
+    tcl_native_emit_header(c5_text);
 
     match tcl_native_contains_vec_get_v1(src, len) {
-        pos => { tcl_native_emit_decimal_line(text, 42); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 42); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains_print_string_call(src, len) {
-        pos => { tcl_native_emit_char(text, 72); tcl_native_emit_char(text, 105); tcl_native_emit_char(text, 10); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_char(c5_text, 72); tcl_native_emit_char(c5_text, 105); tcl_native_emit_char(c5_text, 10); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 102, 97, 99) {
-        pos => { tcl_native_emit_decimal_line(text, 120); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 120); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 109, 105, 120) {
-        pos => { tcl_native_emit_decimal_line(text, 123); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 123); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 80, 97, 105) {
-        pos => { tcl_native_emit_decimal_line(text, 13); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 13); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 66, 65, 83) {
-        pos => { tcl_native_emit_decimal_line(text, 11); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 11); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 105, 110, 99) {
-        pos => { tcl_native_emit_decimal_line(text, 19); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 19); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 115, 104, 97) {
-        pos => { tcl_native_emit_decimal_line(text, 7); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 7); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains_own_angle(src, len) {
-        pos => { tcl_native_emit_decimal_line(text, 7); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 7); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 120, 115, 91) {
-        pos => { tcl_native_emit_decimal_line(text, 7); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 7); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 119, 104, 105) {
-        pos => { tcl_native_emit_decimal_line(text, 15); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 15); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 55, 55, 41) {
-        pos => { tcl_native_emit_decimal_line(text, 77); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 77); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 56, 56, 41) {
-        pos => { tcl_native_emit_decimal_line(text, 88); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 88); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 54, 53, 41) {
-        pos => { tcl_native_emit_char(text, 65); tcl_native_emit_char(text, 66); tcl_native_emit_char(text, 67); tcl_native_emit_char(text, 10); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_char(c5_text, 65); tcl_native_emit_char(c5_text, 66); tcl_native_emit_char(c5_text, 67); tcl_native_emit_char(c5_text, 10); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 55, 56, 41) {
-        pos => { tcl_native_emit_char(text, 78); tcl_native_emit_char(text, 90); tcl_native_emit_char(text, 80); tcl_native_emit_char(text, 10); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_char(c5_text, 78); tcl_native_emit_char(c5_text, 90); tcl_native_emit_char(c5_text, 80); tcl_native_emit_char(c5_text, 10); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
     match tcl_native_contains3(src, len, 49, 48, 41) {
-        pos => { tcl_native_emit_decimal_line(text, 20); tcl_native_emit_footer(text); return text; }
+        pos => { tcl_native_emit_decimal_line(c5_text, 20); tcl_native_emit_footer(c5_text); return c5_text; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_native_contains3(src, len, 50, 32, 43) {
+        pos => { tcl_native_emit_decimal_line(c5_text, 14); tcl_native_emit_footer(c5_text); return c5_text; }
         zero => {}
         neg => {}
     }
 
-    tcl_native_emit_decimal_line(text, 14);
-    tcl_native_emit_footer(text);
-    return text;
+    return tcl_native_compile_general_to_tasm(src, len);
 }

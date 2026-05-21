@@ -8,7 +8,11 @@ fn tcl_char_at(src: t40, index: t40) -> t40 {
 
 fn tcl_peek(src: t40, len: t40, index: t40) -> t40 {
     match len - index {
-        pos => { return tcl_char_at(src, index); }
+        pos => {
+            var c: t40 = 0;
+            unsafe { c = load(src + index); }
+            return c;
+        }
         zero => { return 0; }
         neg => { return 0; }
     }
@@ -28,7 +32,8 @@ fn tcl_in_range(c: t40, lo: t40, hi: t40) -> t40 {
 }
 
 fn tcl_char_eq_at(src: t40, index: t40, want: t40) -> t40 {
-    var c: t40 = tcl_char_at(src, index);
+    var c: t40 = 0;
+    unsafe { c = load(src + index); }
     match c - want {
         zero => { return 1; }
         neg => { return 0; }
@@ -37,16 +42,41 @@ fn tcl_char_eq_at(src: t40, index: t40, want: t40) -> t40 {
 }
 
 fn tcl_is_digit(c: t40) -> t40 {
-    return tcl_in_range(c, 48, 57);
+    match c - 48 {
+        neg => { return 0; }
+        zero => {}
+        pos => {}
+    }
+    match 57 - c {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => { return 1; }
+    }
 }
 
 fn tcl_is_alpha(c: t40) -> t40 {
-    match tcl_in_range(c, 65, 90) {
-        pos => { return 1; }
-        zero => {}
+    match c - 65 {
         neg => {}
+        zero => { return 1; }
+        pos => {
+            match 90 - c {
+                neg => {}
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
     }
-    return tcl_in_range(c, 97, 122);
+    match c - 97 {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match 122 - c {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
 }
 
 fn tcl_is_ident_start(c: t40) -> t40 {
@@ -55,16 +85,69 @@ fn tcl_is_ident_start(c: t40) -> t40 {
         neg => {}
         pos => {}
     }
-    return tcl_is_alpha(c);
+    match c - 65 {
+        neg => {}
+        zero => { return 1; }
+        pos => {
+            match 90 - c {
+                neg => {}
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+    match c - 97 {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match 122 - c {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
 }
 
 fn tcl_is_ident_continue(c: t40) -> t40 {
-    match tcl_is_ident_start(c) {
-        pos => { return 1; }
-        zero => {}
+    match c - 95 {
+        zero => { return 1; }
         neg => {}
+        pos => {}
     }
-    return tcl_is_digit(c);
+    match c - 65 {
+        neg => {}
+        zero => { return 1; }
+        pos => {
+            match 90 - c {
+                neg => {}
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+    match c - 97 {
+        neg => {}
+        zero => { return 1; }
+        pos => {
+            match 122 - c {
+                neg => {}
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+    match c - 48 {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match 57 - c {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
 }
 
 fn tcl_is_space(c: t40) -> t40 {
@@ -493,7 +576,8 @@ fn tcl_scan_line_comment(src: t40, len: t40, index: t40) -> t40 {
     while scanning > 0 {
         match len - i {
             pos => {
-                var c: t40 = tcl_char_at(src, i);
+                var c: t40 = 0;
+                unsafe { c = load(src + i); }
                 match c - 10 {
                     zero => { scanning = 0; }
                     neg => { i = i + 1; }
@@ -513,7 +597,8 @@ fn tcl_lex_identifier(src: t40, len: t40, tokens: t40, start: t40) -> t40 {
     while scanning > 0 {
         match len - i {
             pos => {
-                var c: t40 = tcl_char_at(src, i);
+                var c: t40 = 0;
+                unsafe { c = load(src + i); }
                 match tcl_is_ident_continue(c) {
                     pos => { i = i + 1; }
                     zero => { scanning = 0; }
@@ -536,7 +621,8 @@ fn tcl_lex_number(src: t40, len: t40, tokens: t40, start: t40) -> t40 {
     while scanning > 0 {
         match len - i {
             pos => {
-                var c: t40 = tcl_char_at(src, i);
+                var c: t40 = 0;
+                unsafe { c = load(src + i); }
                 match tcl_is_ident_continue(c) {
                     pos => { i = i + 1; }
                     zero => { scanning = 0; }
@@ -552,10 +638,11 @@ fn tcl_lex_number(src: t40, len: t40, tokens: t40, start: t40) -> t40 {
 }
 
 fn tcl_lex(src: t40, len: t40) -> t40 {
-    var tokens: t40 = tcl_token_stream_new();
+    var tokens: t40 = tcl_token_stream_new_cap(len + TCL_TOKEN_WORDS);
     var i: t40 = 0;
     while len - i > 0 {
-        var c: t40 = tcl_char_at(src, i);
+        var c: t40 = 0;
+        unsafe { c = load(src + i); }
         var handled: t40 = 0;
 
         match tcl_is_space(c) {

@@ -10,6 +10,10 @@
 namespace sandbox {
 namespace compiler {
 
+constexpr int kRegisterArgCount = 6;
+constexpr int kCallArgScratchWords = 16;
+constexpr int kCallArgScratchAreas = 8;
+
 class TypeInferencer {
 public:
     TypeInferencer(const ModuleAst& ast, const LayoutTable& layouts, std::map<std::string, FunctionAst>* instantiated_functions_out = nullptr)
@@ -674,6 +678,8 @@ struct FunctionContext {
     std::set<std::string> moved_vars;
     std::vector<int> callee_saved_regs;
     int return_slot_offset = -1;
+    int call_arg_slot_base = -1;
+    int call_arg_depth = 0;
     int next_virtual_reg = 100;
 
     [[nodiscard]] std::string label(const std::string& stem) {
@@ -968,7 +974,10 @@ private:
 
         collectLocals(fn, dry_ctx);
         dry_ctx.return_slot_offset = dry_ctx.next_local_offset;
-        dry_ctx.frame_words = align9(std::max(1, dry_ctx.return_slot_offset + 1));
+        dry_ctx.call_arg_slot_base = dry_ctx.return_slot_offset + 1;
+        dry_ctx.frame_words = align9(std::max(
+            1,
+            dry_ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas));
         emitFunctionPrologue(fn, dry_ctx);
         dry_ctx.scope_vars.push_back({});
         for (const auto& stmt : fn.body) emitStmt(stmt, dry_ctx);
@@ -1003,7 +1012,9 @@ private:
         collectLocals(fn, ctx);
         ctx.callee_saved_regs = getCalleeSavedUsed(allocation, allocated_fn);
         ctx.return_slot_offset = ctx.next_local_offset + static_cast<int>(ctx.callee_saved_regs.size());
-        ctx.frame_words = align9(ctx.return_slot_offset + 1);
+        ctx.call_arg_slot_base = ctx.return_slot_offset + 1;
+        ctx.frame_words =
+            align9(ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas);
         emitFunctionPrologue(fn, ctx);
         ctx.scope_vars.push_back({});
         for (const auto& stmt : fn.body) emitStmt(stmt, ctx);
@@ -1110,11 +1121,22 @@ private:
             ctx.raw("    store r" + std::to_string(ctx.callee_saved_regs[i]) + ", sp, " +
                     std::to_string(ctx.next_local_offset + static_cast<int>(i)));
         }
-        for (std::size_t i = 0; i < fn.params.size() && i < 6; ++i) {
+        const std::size_t reg_params =
+            std::min<std::size_t>(fn.params.size(), kRegisterArgCount);
+        for (std::size_t i = 0; i < reg_params; ++i) {
             const auto it = ctx.locals.find(fn.params[i].first);
             if (it != ctx.locals.end()) {
                 ctx.raw("    store r" + std::to_string(13 + static_cast<int>(i)) +
                         ", sp, " + std::to_string(it->second.offset));
+            }
+        }
+        for (std::size_t i = kRegisterArgCount; i < fn.params.size(); ++i) {
+            const auto it = ctx.locals.find(fn.params[i].first);
+            if (it != ctx.locals.end()) {
+                const int stack_arg_offset =
+                    ctx.frame_words + static_cast<int>(i - kRegisterArgCount);
+                ctx.raw("    load r24, sp, " + std::to_string(stack_arg_offset));
+                ctx.raw("    store r24, sp, " + std::to_string(it->second.offset));
             }
         }
     }
@@ -2016,7 +2038,23 @@ private:
         }
         const auto paramIt = ctx.function_params.find(expr.text);
         std::vector<ValueId> arg_values;
-        for (std::size_t i = 0; i < expr.args.size() && i < 6; ++i) {
+        if (expr.args.size() > kCallArgScratchWords) {
+            diag("function calls support at most " + std::to_string(kCallArgScratchWords) +
+                     " arguments in the bootstrap backend",
+                 expr.span);
+        }
+        const std::size_t argc =
+            std::min<std::size_t>(expr.args.size(), kCallArgScratchWords);
+        const int saved_call_arg_depth = ctx.call_arg_depth;
+        if (saved_call_arg_depth >= kCallArgScratchAreas) {
+            diag("nested function calls exceed bootstrap call scratch depth", expr.span);
+        }
+        const int scratch_base =
+            ctx.call_arg_slot_base +
+            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
+        ctx.call_arg_depth =
+            std::min(saved_call_arg_depth + 1, kCallArgScratchAreas);
+        for (std::size_t i = 0; i < argc; ++i) {
             TypeRef expected = TypeRef::numeric(ir::Type::T40);
             if (paramIt != ctx.function_params.end() && i < paramIt->second.size()) {
                 expected = paramIt->second[i];
@@ -2025,12 +2063,34 @@ private:
             if (isAggregateType(expected) && !arg.address) {
                 diag("aggregate arguments are passed by pointer in v1", expr.args[i]->span);
             }
-            ctx.line("copy r" + std::to_string(13 + static_cast<int>(i)) +
-                     ", r" + std::to_string(arg.reg));
+            ctx.line("store r" + std::to_string(arg.reg) + ", sp, " +
+                     std::to_string(scratch_base + static_cast<int>(i)));
             arg_values.push_back(arg.value);
             ctx.release(arg.reg);
         }
+        ctx.call_arg_depth = saved_call_arg_depth;
+        const std::size_t reg_argc = std::min<std::size_t>(argc, kRegisterArgCount);
+        const int stack_argc =
+            argc > kRegisterArgCount ? static_cast<int>(argc - kRegisterArgCount) : 0;
+        if (stack_argc > 0) {
+            ctx.line("mov.t40 r24, " + std::to_string(stack_argc));
+            ctx.line("sub.t40 sp, sp, r24");
+        }
+        for (std::size_t i = 0; i < reg_argc; ++i) {
+            ctx.line("load r" + std::to_string(13 + static_cast<int>(i)) +
+                     ", sp, " +
+                     std::to_string(scratch_base + stack_argc + static_cast<int>(i)));
+        }
+        for (int i = 0; i < stack_argc; ++i) {
+            ctx.line("load r24, sp, " +
+                     std::to_string(scratch_base + stack_argc + kRegisterArgCount + i));
+            ctx.line("store r24, sp, " + std::to_string(i));
+        }
         ctx.line("call " + expr.text);
+        if (stack_argc > 0) {
+            ctx.line("mov.t40 r24, " + std::to_string(stack_argc));
+            ctx.line("add.t40 sp, sp, r24");
+        }
         TypeRef ret = retIt->second;
         int out = ctx.acquire();
         ctx.line("copy r" + std::to_string(out) + ", r13");
@@ -2047,15 +2107,31 @@ private:
         const int service = runtimeService(expr.text);
         if (expr.args.size() > 6) diag("syscall wrapper accepts at most six arguments", expr.span);
         std::vector<ValueId> arg_values;
-        for (std::size_t i = 0; i < expr.args.size() && i < 6; ++i) {
+        const std::size_t argc = std::min<std::size_t>(expr.args.size(), 6);
+        const int saved_call_arg_depth = ctx.call_arg_depth;
+        if (saved_call_arg_depth >= kCallArgScratchAreas) {
+            diag("nested syscall wrapper calls exceed bootstrap call scratch depth", expr.span);
+        }
+        const int scratch_base =
+            ctx.call_arg_slot_base +
+            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
+        ctx.call_arg_depth =
+            std::min(saved_call_arg_depth + 1, kCallArgScratchAreas);
+        for (std::size_t i = 0; i < argc; ++i) {
             ExprCode arg = emitExpr(expr.args[i], TypeRef::numeric(ir::Type::T40), ctx);
-            ctx.line("copy r" + std::to_string(13 + static_cast<int>(i)) +
-                     ", r" + std::to_string(arg.reg));
-            if ((service == runtime::sys_write_int || service == runtime::sys_write_char) && i == 0) {
-                ctx.line("copy r1, r" + std::to_string(arg.reg));
-            }
+            ctx.line("store r" + std::to_string(arg.reg) + ", sp, " +
+                     std::to_string(scratch_base + static_cast<int>(i)));
             arg_values.push_back(arg.value);
             ctx.release(arg.reg);
+        }
+        ctx.call_arg_depth = saved_call_arg_depth;
+        for (std::size_t i = 0; i < argc; ++i) {
+            ctx.line("load r" + std::to_string(13 + static_cast<int>(i)) +
+                     ", sp, " +
+                     std::to_string(scratch_base + static_cast<int>(i)));
+        }
+        if ((service == runtime::sys_write_int || service == runtime::sys_write_char) && argc > 0) {
+            ctx.line("copy r1, r13");
         }
         ctx.line("syscall " + std::to_string(service));
         int out = ctx.acquire();
@@ -2081,8 +2157,6 @@ private:
             ctx.line("copy r" + std::to_string(rAddr) + ", r13");
             TypeRef sharedType = TypeRef::shared(val.type, MemoryOrder::AcquireRelease);
             ValueId syscall_id = ctx.value(InstrOpcode::Syscall, sharedType, expr.span, rAddr);
-            
-            addImmediateToReg(rAddr, -1, ctx);
             
             ValueId final_id = -1;
             auto it = ctx.reg_to_value.find(rAddr);

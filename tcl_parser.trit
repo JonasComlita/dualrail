@@ -54,6 +54,71 @@ fn tcl_parser_set_errors(p: t40, val: t40) -> t40 { unsafe { store(p + 3, val); 
 fn tcl_parser_diagnostics(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 4); } return v; }
 fn tcl_parser_width_params(p: t40) -> t40 { var v: t40 = 0; unsafe { v = load(p + 5); } return v; }
 
+fn tcl_parser_vec_new_cap(cap: t40) -> t40 {
+    match cap - 1 {
+        neg => { cap = 1; }
+        zero => {}
+        pos => {}
+    }
+    var vec: t40 = malloc_raw(3);
+    match vec {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc_raw(cap);
+            match data {
+                zero => { free_raw(vec); return 0; }
+                neg => { free_raw(vec); return 0; }
+                pos => {
+                    unsafe {
+                        store(vec, data);
+                        store(vec + 1, 0);
+                        store(vec + 2, cap);
+                    }
+                    return vec;
+                }
+            }
+        }
+    }
+}
+
+fn tcl_parser_vec_new_small() -> t40 {
+    return tcl_parser_vec_new_cap(9);
+}
+
+fn tcl_parser_vec_new_medium() -> t40 {
+    return tcl_parser_vec_new_cap(27);
+}
+
+fn tcl_parser_vec_grow(vec: t40, len: t40, cap: t40, need: t40, data: t40) -> t40 {
+    match (cap - len - need) {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            match (new_cap - len - need) {
+                neg => { new_cap = len + need; }
+                zero => {}
+                pos => {}
+            }
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
+                zero => { return data; }
+                neg => { return data; }
+                pos => {
+                    memcpy(new_data, data, len);
+                    free_raw(data);
+                    unsafe {
+                        store(vec, new_data);
+                        store(vec + 2, new_cap);
+                    }
+                    return new_data;
+                }
+            }
+        }
+        zero => { return data; }
+        pos => { return data; }
+    }
+}
+
 fn tcl_parser_new(tokens: t40, src: t40) -> t40 {
     var p: t40 = malloc_raw(6);
     match p {
@@ -65,8 +130,8 @@ fn tcl_parser_new(tokens: t40, src: t40) -> t40 {
                 store(p + 1, src);
                 store(p + 2, 0); // current = 0
                 store(p + 3, 0); // errors = 0
-                store(p + 4, vec_new()); // diagnostics
-                store(p + 5, vec_new()); // width_params
+                store(p + 4, tcl_parser_vec_new_small()); // diagnostics
+                store(p + 5, tcl_parser_vec_new_small()); // width_params
             }
             return p;
         }
@@ -93,7 +158,7 @@ fn tcl_parser_free(p: t40) -> t40 {
 fn tcl_parser_clear_width_params(p: t40) -> t40 {
     var wp: t40 = tcl_parser_width_params(p);
     vec_free(wp);
-    unsafe { store(p + 5, vec_new()); }
+    unsafe { store(p + 5, tcl_parser_vec_new_small()); }
     return 0;
 }
 
@@ -532,9 +597,17 @@ fn tcl_parser_peek(p: t40) -> t40 {
 }
 
 fn tcl_parser_peek_kind(p: t40) -> t40 {
-    var tokens: t40 = tcl_parser_tokens(p);
-    var cur: t40 = tcl_parser_current(p);
-    return tcl_token_kind(tokens, cur);
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var data: t40 = 0;
+    var kind: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        data = load(tokens);
+        kind = load(data + cur * TCL_TOKEN_WORDS);
+    }
+    return kind;
 }
 
 fn tcl_parser_check(p: t40, kind: t40) -> t40 {
@@ -551,23 +624,31 @@ fn tcl_parser_is_at_end(p: t40) -> t40 {
 
 fn tcl_parser_advance(p: t40) -> t40 {
     var cur: t40 = 0;
-    match tcl_parser_is_at_end(p) {
-        zero => {
-            cur = tcl_parser_current(p);
-            tcl_parser_set_current(p, cur + 1);
+    var tokens: t40 = 0;
+    var data: t40 = 0;
+    var kind: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        data = load(tokens);
+        kind = load(data + cur * TCL_TOKEN_WORDS);
+    }
+    match (kind - TCL_TK_EOF) {
+        zero => { return cur; }
+        pos => {
+            unsafe { store(p + 2, cur + 1); }
             return cur;
         }
-        pos => {
-            return tcl_parser_current(p);
-        }
         neg => {
-            return tcl_parser_current(p);
+            unsafe { store(p + 2, cur + 1); }
+            return cur;
         }
     }
 }
 
 fn tcl_parser_previous(p: t40) -> t40 {
-    var cur: t40 = tcl_parser_current(p);
+    var cur: t40 = 0;
+    unsafe { cur = load(p + 2); }
     match cur {
         zero => { return 0; }
         pos => { return cur - 1; }
@@ -576,12 +657,26 @@ fn tcl_parser_previous(p: t40) -> t40 {
 }
 
 fn tcl_parser_match(p: t40, kind: t40) -> t40 {
-    match tcl_parser_check(p, kind) {
-        pos => {
-            tcl_parser_advance(p);
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var data: t40 = 0;
+    var found: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        data = load(tokens);
+        found = load(data + cur * TCL_TOKEN_WORDS);
+    }
+    match found - kind {
+        zero => {
+            match (found - TCL_TK_EOF) {
+                zero => {}
+                pos => { unsafe { store(p + 2, cur + 1); } }
+                neg => { unsafe { store(p + 2, cur + 1); } }
+            }
             return 1;
         }
-        zero => { return 0; }
+        pos => { return 0; }
         neg => { return 0; }
     }
 }
@@ -598,17 +693,26 @@ fn tcl_parser_error(p: t40, token_idx: t40, error_code: t40) -> t40 {
 
 fn tcl_parser_consume(p: t40, kind: t40, error_code: t40) -> t40 {
     var cur: t40 = 0;
-    match tcl_parser_check(p, kind) {
-        pos => {
-            return tcl_parser_advance(p);
-        }
+    var tokens: t40 = 0;
+    var data: t40 = 0;
+    var found: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        data = load(tokens);
+        found = load(data + cur * TCL_TOKEN_WORDS);
+    }
+    match found - kind {
         zero => {
-            cur = tcl_parser_current(p);
-            tcl_parser_error(p, cur, error_code);
+            match (found - TCL_TK_EOF) {
+                zero => {}
+                pos => { unsafe { store(p + 2, cur + 1); } }
+                neg => { unsafe { store(p + 2, cur + 1); } }
+            }
             return cur;
         }
+        pos => { tcl_parser_error(p, cur, error_code); return cur; }
         neg => {
-            cur = tcl_parser_current(p);
             tcl_parser_error(p, cur, error_code);
             return cur;
         }
@@ -617,23 +721,34 @@ fn tcl_parser_consume(p: t40, kind: t40, error_code: t40) -> t40 {
 
 fn tcl_parser_consume_identifier(p: t40, error_code: t40) -> t40 {
     var cur: t40 = 0;
-    var kind: t40 = tcl_parser_peek_kind(p);
+    var tokens: t40 = 0;
+    var data: t40 = 0;
+    var kind: t40 = 0;
     var ok: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        data = load(tokens);
+        kind = load(data + cur * TCL_TOKEN_WORDS);
+    }
     match (kind - TCL_TK_IDENT) { zero => { ok = 1; } pos => {} neg => {} }
     match (kind - TCL_TK_VALID) { zero => { ok = 1; } pos => {} neg => {} }
     match (kind - TCL_TK_UNKNOWN) { zero => { ok = 1; } pos => {} neg => {} }
     match (kind - TCL_TK_NULL) { zero => { ok = 1; } pos => {} neg => {} }
     match ok {
         pos => {
-            return tcl_parser_advance(p);
+            match (kind - TCL_TK_EOF) {
+                zero => {}
+                pos => { unsafe { store(p + 2, cur + 1); } }
+                neg => { unsafe { store(p + 2, cur + 1); } }
+            }
+            return cur;
         }
         zero => {
-            cur = tcl_parser_current(p);
             tcl_parser_error(p, cur, error_code);
             return cur;
         }
         neg => {
-            cur = tcl_parser_current(p);
             tcl_parser_error(p, cur, error_code);
             return cur;
         }
@@ -864,65 +979,172 @@ fn tcl_parse_base_type_helper(p: t40, ast: t40, name_tok: t40) -> t40 {
     var i: t40 = 0;
     var n_wparams: t40 = 0;
     var wp_tok: t40 = 0;
-
-    match tcl_token_is_3(p, name_tok, 118, 101, 99) { // "vec"
-        pos => {
-            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
-            elem = tcl_parse_type(p, ast);
-            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
-            return tcl_type_new(ast, TCL_TYPE_VECTOR, elem, 0, 0);
-        }
-        zero => {}
-        neg => {}
+    var tokens: t40 = 0;
+    var src: t40 = 0;
+    var data: t40 = 0;
+    var base: t40 = name_tok * TCL_TOKEN_WORDS;
+    var start: t40 = 0;
+    var len: t40 = 0;
+    var c0: t40 = 0;
+    var c1: t40 = 0;
+    var c2: t40 = 0;
+    var c3: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        src = load(p + 1);
+        data = load(tokens);
+        start = load(data + base + 1);
+        len = load(data + base + 2);
     }
 
-    match tcl_token_is_1(p, name_tok, 84) { // "T"
-        pos => {
-            tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
-            w_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
-            tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
-
-            wparams = tcl_parser_width_params(p);
-            found = 0;
-            i = 0;
-            n_wparams = vec_len(wparams);
-            while n_wparams - i > 0 {
-                wp_tok = vec_get(wparams, i);
-                match tcl_tokens_eq(p, wp_tok, w_tok) {
-                    pos => { found = 1; }
-                    zero => {}
-                    neg => {}
-                }
-                i = i + 1;
-            }
-            match found {
+    match len - 1 {
+        zero => {
+            unsafe { c0 = load(src + start); }
+            match c0 - 84 { // "T"
                 zero => {
-                    tcl_parser_error(p, w_tok, TCL_ERR_UNDEFINED_WIDTH_PARAM);
+                    tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+                    w_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                    tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+
+                    wparams = tcl_parser_width_params(p);
+                    found = 0;
+                    i = 0;
+                    n_wparams = vec_len(wparams);
+                    while n_wparams - i > 0 {
+                        wp_tok = vec_get(wparams, i);
+                        match tcl_tokens_eq(p, wp_tok, w_tok) {
+                            pos => { found = 1; }
+                            zero => {}
+                            neg => {}
+                        }
+                        i = i + 1;
+                    }
+                    match found {
+                        zero => { tcl_parser_error(p, w_tok, TCL_ERR_UNDEFINED_WIDTH_PARAM); }
+                        pos => {}
+                        neg => {}
+                    }
+
+                    return tcl_type_new(ast, TCL_TYPE_TYPEVAR, 0, 0, w_tok);
                 }
                 pos => {}
                 neg => {}
             }
-
-            return tcl_type_new(ast, TCL_TYPE_TYPEVAR, 0, 0, w_tok);
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
-    match tcl_token_is_2(p, name_tok, 116, 49) { pos => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); } zero => {} neg => {} } // "t1"
-    match tcl_token_is_4(p, name_tok, 116, 114, 105, 116) { pos => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); } zero => {} neg => {} } // "trit"
-    match tcl_token_is_2(p, name_tok, 116, 53) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 1, name_tok); } zero => {} neg => {} } // "t5"
-    match tcl_token_is_3(p, name_tok, 116, 49, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 2, name_tok); } zero => {} neg => {} } // "t10"
-    match tcl_token_is_3(p, name_tok, 116, 50, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 3, name_tok); } zero => {} neg => {} } // "t20"
-    match tcl_token_is_3(p, name_tok, 116, 52, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, name_tok); } zero => {} neg => {} } // "t40"
-    match tcl_token_is_3(p, name_tok, 116, 53, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 5, name_tok); } zero => {} neg => {} } // "t50"
+    match len - 2 {
+        zero => {
+            unsafe { c0 = load(src + start); c1 = load(src + start + 1); }
+            match c0 - 116 { // "t"
+                zero => {
+                    match c1 - 49 { zero => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); } pos => {} neg => {} }
+                    match c1 - 53 { zero => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 1, name_tok); } pos => {} neg => {} }
+                }
+                pos => {}
+                neg => {}
+            }
+            match c0 - 108 { // "l"
+                zero => {
+                    match c1 - 49 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 6, name_tok); } pos => {} neg => {} }
+                    match c1 - 53 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 7, name_tok); } pos => {} neg => {} }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
 
-    match tcl_token_is_2(p, name_tok, 108, 49) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 6, name_tok); } zero => {} neg => {} } // "l1"
-    match tcl_token_is_2(p, name_tok, 108, 53) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 7, name_tok); } zero => {} neg => {} } // "l5"
-    match tcl_token_is_3(p, name_tok, 108, 49, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 8, name_tok); } zero => {} neg => {} } // "l10"
-    match tcl_token_is_3(p, name_tok, 108, 50, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 9, name_tok); } zero => {} neg => {} } // "l20"
-    match tcl_token_is_3(p, name_tok, 108, 52, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 10, name_tok); } zero => {} neg => {} } // "l40"
-    match tcl_token_is_3(p, name_tok, 108, 53, 48) { pos => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 11, name_tok); } zero => {} neg => {} } // "l50"
+    match len - 3 {
+        zero => {
+            unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); }
+            match c0 - 118 { // "vec"
+                zero => {
+                    match c1 - 101 {
+                        zero => {
+                            match c2 - 99 {
+                                zero => {
+                                    tcl_parser_consume(p, TCL_TK_LESS, TCL_ERR_EXPECTED_LESS);
+                                    elem = tcl_parse_type(p, ast);
+                                    tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
+                                    return tcl_type_new(ast, TCL_TYPE_VECTOR, elem, 0, 0);
+                                }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+            match c2 - 48 {
+                zero => {
+                    match c0 - 116 {
+                        zero => {
+                            match c1 - 49 { zero => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 2, name_tok); } pos => {} neg => {} }
+                            match c1 - 50 { zero => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 3, name_tok); } pos => {} neg => {} }
+                            match c1 - 52 { zero => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 4, name_tok); } pos => {} neg => {} }
+                            match c1 - 53 { zero => { return tcl_type_new(ast, TCL_TYPE_NUMERIC, 0, 5, name_tok); } pos => {} neg => {} }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                    match c0 - 108 {
+                        zero => {
+                            match c1 - 49 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 8, name_tok); } pos => {} neg => {} }
+                            match c1 - 50 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 9, name_tok); } pos => {} neg => {} }
+                            match c1 - 52 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 10, name_tok); } pos => {} neg => {} }
+                            match c1 - 53 { zero => { return tcl_type_new(ast, TCL_TYPE_LANE, 0, 11, name_tok); } pos => {} neg => {} }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+
+    match len - 4 {
+        zero => {
+            unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); c3 = load(src + start + 3); }
+            match c0 - 116 {
+                zero => {
+                    match c1 - 114 {
+                        zero => {
+                            match c2 - 105 {
+                                zero => {
+                                    match c3 - 116 {
+                                        zero => { return tcl_type_new(ast, TCL_TYPE_TRIT, 0, 0, name_tok); }
+                                        pos => {}
+                                        neg => {}
+                                    }
+                                }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
 
     return tcl_type_new(ast, TCL_TYPE_STRUCT, 0, 0, name_tok);
 }
@@ -1041,14 +1263,34 @@ fn tcl_parse_comparison(p: t40, ast: t40) -> t40 {
     var op_tok: t40 = 0;
     var is_comp: t40 = 0;
     var rhs: t40 = 0;
+    var kind: t40 = 0;
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var token_data: t40 = 0;
     while loop > 0 {
         is_comp = 0;
-        match tcl_parser_check(p, TCL_TK_LESS) { pos => { is_comp = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_GREATER) { pos => { is_comp = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_EQUAL_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_BANG_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_LESS_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_GREATER_EQUAL) { pos => { is_comp = 1; } zero => {} neg => {} }
+        unsafe {
+            tokens = load(p);
+            cur = load(p + 2);
+            token_data = load(tokens);
+            kind = load(token_data + cur * TCL_TOKEN_WORDS);
+        }
+        match (kind - TCL_TK_LESS) {
+            zero => { is_comp = 1; }
+            neg => { loop = 0; }
+            pos => {
+                match (kind - TCL_TK_GREATER) {
+                    zero => { is_comp = 1; }
+                    neg => {}
+                    pos => {
+                        match (kind - TCL_TK_EQUAL_EQUAL) { zero => { is_comp = 1; } pos => {} neg => {} }
+                        match (kind - TCL_TK_BANG_EQUAL) { zero => { is_comp = 1; } pos => {} neg => {} }
+                        match (kind - TCL_TK_LESS_EQUAL) { zero => { is_comp = 1; } pos => {} neg => {} }
+                        match (kind - TCL_TK_GREATER_EQUAL) { zero => { is_comp = 1; } pos => {} neg => {} }
+                    }
+                }
+            }
+        }
 
         match is_comp {
             pos => {
@@ -1069,10 +1311,29 @@ fn tcl_parse_add_sub(p: t40, ast: t40) -> t40 {
     var op_tok: t40 = 0;
     var is_op: t40 = 0;
     var rhs: t40 = 0;
+    var kind: t40 = 0;
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var token_data: t40 = 0;
     while loop > 0 {
         is_op = 0;
-        match tcl_parser_check(p, TCL_TK_PLUS) { pos => { is_op = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_MINUS) { pos => { is_op = 1; } zero => {} neg => {} }
+        unsafe {
+            tokens = load(p);
+            cur = load(p + 2);
+            token_data = load(tokens);
+            kind = load(token_data + cur * TCL_TOKEN_WORDS);
+        }
+        match (kind - TCL_TK_PLUS) {
+            zero => { is_op = 1; }
+            neg => { loop = 0; }
+            pos => {
+                match (kind - TCL_TK_MINUS) {
+                    zero => { is_op = 1; }
+                    pos => {}
+                    neg => {}
+                }
+            }
+        }
 
         match is_op {
             pos => {
@@ -1093,10 +1354,29 @@ fn tcl_parse_mul_div(p: t40, ast: t40) -> t40 {
     var op_tok: t40 = 0;
     var is_op: t40 = 0;
     var rhs: t40 = 0;
+    var kind: t40 = 0;
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var token_data: t40 = 0;
     while loop > 0 {
         is_op = 0;
-        match tcl_parser_check(p, TCL_TK_STAR) { pos => { is_op = 1; } zero => {} neg => {} }
-        match tcl_parser_check(p, TCL_TK_SLASH) { pos => { is_op = 1; } zero => {} neg => {} }
+        unsafe {
+            tokens = load(p);
+            cur = load(p + 2);
+            token_data = load(tokens);
+            kind = load(token_data + cur * TCL_TOKEN_WORDS);
+        }
+        match (kind - TCL_TK_STAR) {
+            zero => { is_op = 1; }
+            neg => { loop = 0; }
+            pos => {
+                match (kind - TCL_TK_SLASH) {
+                    zero => { is_op = 1; }
+                    pos => {}
+                    neg => {}
+                }
+            }
+        }
 
         match is_op {
             pos => {
@@ -1115,9 +1395,19 @@ fn tcl_parse_unary(p: t40, ast: t40) -> t40 {
     var is_op: t40 = 0;
     var op_tok: t40 = 0;
     var left: t40 = 0;
-    match tcl_parser_check(p, TCL_TK_MINUS) { pos => { is_op = 1; } zero => {} neg => {} }
-    match tcl_parser_check(p, TCL_TK_AMP) { pos => { is_op = 1; } zero => {} neg => {} }
-    match tcl_parser_check(p, TCL_TK_STAR) { pos => { is_op = 1; } zero => {} neg => {} }
+    var tokens: t40 = 0;
+    var cur: t40 = 0;
+    var token_data: t40 = 0;
+    var kind: t40 = 0;
+    unsafe {
+        tokens = load(p);
+        cur = load(p + 2);
+        token_data = load(tokens);
+        kind = load(token_data + cur * TCL_TOKEN_WORDS);
+    }
+    match (kind - TCL_TK_MINUS) { zero => { is_op = 1; } pos => {} neg => {} }
+    match (kind - TCL_TK_AMP) { zero => { is_op = 1; } pos => {} neg => {} }
+    match (kind - TCL_TK_STAR) { zero => { is_op = 1; } pos => {} neg => {} }
 
     match is_op {
         pos => {
@@ -1144,81 +1434,88 @@ fn tcl_parse_postfix(p: t40, ast: t40) -> t40 {
     var field_tok: t40 = 0;
     var op_tok: t40 = 0;
     var idx: t40 = 0;
+    var handled: t40 = 0;
     while loop > 0 {
         kind = tcl_parser_peek_kind(p);
+        handled = 0;
         match (kind - TCL_TK_LPAREN) {
             zero => {
                 tcl_parser_advance(p);
-                args_vec = vec_new();
-                match tcl_parser_check(p, TCL_TK_RPAREN) {
-                    zero => {
+                args_vec = tcl_parser_vec_new_small();
+                kind = tcl_parser_peek_kind(p);
+                match (kind - TCL_TK_RPAREN) {
+                    zero => {}
+                    pos => {
                         run = 1;
                         while run > 0 {
                             arg = tcl_parse_expr(p, ast);
                             vec_push(args_vec, arg);
-                            match tcl_parser_match(p, TCL_TK_COMMA) {
-                                zero => { run = 0; }
-                                pos => {}
-                                neg => {}
+                            kind = tcl_parser_peek_kind(p);
+                            match (kind - TCL_TK_COMMA) {
+                                zero => { tcl_parser_advance(p); }
+                                pos => { run = 0; }
+                                neg => { run = 0; }
                             }
                         }
+                    }
+                    neg => {
+                        run = 1;
+                        while run > 0 {
+                            arg = tcl_parse_expr(p, ast);
+                            vec_push(args_vec, arg);
+                            kind = tcl_parser_peek_kind(p);
+                            match (kind - TCL_TK_COMMA) {
+                                zero => { tcl_parser_advance(p); }
+                                pos => { run = 0; }
+                                neg => { run = 0; }
+                            }
+                        }
+                    }
+                }
+                tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+                expr = tcl_expr_new(ast, TCL_EXPR_CALL, tcl_expr_token_idx(ast, expr), 0, 0, args_vec);
+                handled = 1;
+            }
+            pos => {}
+            neg => {}
+        }
+        match handled {
+            zero => {
+                match (kind - TCL_TK_DOT) {
+                    zero => {
+                        tcl_parser_advance(p);
+                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
+                        expr = tcl_expr_new(ast, TCL_EXPR_FIELD, field_tok, expr, 0, 0);
+                        handled = 1;
                     }
                     pos => {}
                     neg => {}
                 }
-                tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
-                expr = tcl_expr_new(ast, TCL_EXPR_CALL, tcl_expr_token_idx(ast, expr), 0, 0, args_vec);
             }
-            pos => {
-                match tcl_parser_match(p, TCL_TK_DOT) {
-                    pos => {
-                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
-                        expr = tcl_expr_new(ast, TCL_EXPR_FIELD, field_tok, expr, 0, 0);
-                    }
+            pos => {}
+            neg => {}
+        }
+        match handled {
+            zero => {
+                match (kind - TCL_TK_LBRACKET) {
                     zero => {
-                        match tcl_parser_match(p, TCL_TK_LBRACKET) {
-                            pos => {
-                                op_tok = tcl_parser_previous(p);
-                                idx = tcl_parse_expr(p, ast);
-                                tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
-                                expr = tcl_expr_new(ast, TCL_EXPR_INDEX, op_tok, expr, idx, 0);
-                            }
-                            zero => {
-                                loop = 0;
-                            }
-                            neg => {
-                                loop = 0;
-                            }
-                        }
+                        op_tok = tcl_parser_advance(p);
+                        idx = tcl_parse_expr(p, ast);
+                        tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
+                        expr = tcl_expr_new(ast, TCL_EXPR_INDEX, op_tok, expr, idx, 0);
+                        handled = 1;
                     }
+                    pos => {}
                     neg => {}
                 }
             }
-            neg => {
-                match tcl_parser_match(p, TCL_TK_DOT) {
-                    pos => {
-                        field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
-                        expr = tcl_expr_new(ast, TCL_EXPR_FIELD, field_tok, expr, 0, 0);
-                    }
-                    zero => {
-                        match tcl_parser_match(p, TCL_TK_LBRACKET) {
-                            pos => {
-                                op_tok = tcl_parser_previous(p);
-                                idx = tcl_parse_expr(p, ast);
-                                tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
-                                expr = tcl_expr_new(ast, TCL_EXPR_INDEX, op_tok, expr, idx, 0);
-                            }
-                            zero => {
-                                loop = 0;
-                            }
-                            neg => {
-                                loop = 0;
-                            }
-                        }
-                    }
-                    neg => {}
-                }
-            }
+            pos => {}
+            neg => {}
+        }
+        match handled {
+            zero => { loop = 0; }
+            pos => {}
+            neg => { loop = 0; }
         }
     }
     return expr;
@@ -1238,24 +1535,26 @@ fn tcl_parse_primary(p: t40, ast: t40) -> t40 {
     var val_expr: t40 = 0;
     var start_tok: t40 = 0;
     var err_tok: t40 = 0;
+    var kind: t40 = tcl_parser_peek_kind(p);
 
     // 1. Literal Number
-    match tcl_parser_match(p, TCL_TK_NUMBER) {
-        pos => {
-            tok = tcl_parser_previous(p);
+    match (kind - TCL_TK_NUMBER) {
+        zero => {
+            tok = tcl_parser_advance(p);
             return tcl_expr_new(ast, TCL_EXPR_NUMBER, tok, 0, 0, 0);
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
     // 2. Identifier or Struct Literal
-    match tcl_parser_match(p, TCL_TK_IDENT) {
-        pos => {
-            name_tok = tcl_parser_previous(p);
+    match (kind - TCL_TK_IDENT) {
+        zero => {
+            name_tok = tcl_parser_advance(p);
             is_struct_lit = 0;
-            match tcl_parser_check(p, TCL_TK_LBRACE) {
-                pos => {
+            kind = tcl_parser_peek_kind(p);
+            match (kind - TCL_TK_LBRACE) {
+                zero => {
                     src = tcl_parser_src(p);
                     tokens = tcl_parser_tokens(p);
                     start = tcl_token_start(tokens, name_tok);
@@ -1273,16 +1572,18 @@ fn tcl_parse_primary(p: t40, ast: t40) -> t40 {
                         }
                     }
                 }
-                zero => {}
+                pos => {}
                 neg => {}
             }
 
             match is_struct_lit {
                 pos => {
                     tcl_parser_advance(p); // consume '{'
-                    args_vec = vec_new();
-                    match tcl_parser_check(p, TCL_TK_RBRACE) {
-                        zero => {
+                    args_vec = tcl_parser_vec_new_medium();
+                    kind = tcl_parser_peek_kind(p);
+                    match (kind - TCL_TK_RBRACE) {
+                        zero => {}
+                        pos => {
                             run = 1;
                             while run > 0 {
                                 field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
@@ -1290,15 +1591,30 @@ fn tcl_parse_primary(p: t40, ast: t40) -> t40 {
                                 val_expr = tcl_parse_expr(p, ast);
                                 vec_push(args_vec, field_tok);
                                 vec_push(args_vec, val_expr);
-                                match tcl_parser_match(p, TCL_TK_COMMA) {
-                                    zero => { run = 0; }
-                                    pos => {}
-                                    neg => {}
+                                kind = tcl_parser_peek_kind(p);
+                                match (kind - TCL_TK_COMMA) {
+                                    zero => { tcl_parser_advance(p); }
+                                    pos => { run = 0; }
+                                    neg => { run = 0; }
                                 }
                             }
                         }
-                        pos => {}
-                        neg => {}
+                        neg => {
+                            run = 1;
+                            while run > 0 {
+                                field_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_FIELD_NAME);
+                                tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                                val_expr = tcl_parse_expr(p, ast);
+                                vec_push(args_vec, field_tok);
+                                vec_push(args_vec, val_expr);
+                                kind = tcl_parser_peek_kind(p);
+                                match (kind - TCL_TK_COMMA) {
+                                    zero => { tcl_parser_advance(p); }
+                                    pos => { run = 0; }
+                                    neg => { run = 0; }
+                                }
+                            }
+                        }
                     }
                     tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
                     return tcl_expr_new(ast, TCL_EXPR_STRUCT_LIT, name_tok, 0, 0, args_vec);
@@ -1311,46 +1627,61 @@ fn tcl_parse_primary(p: t40, ast: t40) -> t40 {
                 }
             }
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
     // 3. Array Literal: [expr1, expr2, ...]
-    match tcl_parser_match(p, TCL_TK_LBRACKET) {
-        pos => {
-            start_tok = tcl_parser_previous(p);
-            args_vec = vec_new();
-            match tcl_parser_check(p, TCL_TK_RBRACKET) {
-                zero => {
+    match (kind - TCL_TK_LBRACKET) {
+        zero => {
+            start_tok = tcl_parser_advance(p);
+            args_vec = tcl_parser_vec_new_small();
+            kind = tcl_parser_peek_kind(p);
+            match (kind - TCL_TK_RBRACKET) {
+                zero => {}
+                pos => {
                     run = 1;
                     while run > 0 {
                         val_expr = tcl_parse_expr(p, ast);
                         vec_push(args_vec, val_expr);
-                        match tcl_parser_match(p, TCL_TK_COMMA) {
-                            zero => { run = 0; }
-                            pos => {}
-                            neg => {}
+                        kind = tcl_parser_peek_kind(p);
+                        match (kind - TCL_TK_COMMA) {
+                            zero => { tcl_parser_advance(p); }
+                            pos => { run = 0; }
+                            neg => { run = 0; }
                         }
                     }
                 }
-                pos => {}
-                neg => {}
+                neg => {
+                    run = 1;
+                    while run > 0 {
+                        val_expr = tcl_parse_expr(p, ast);
+                        vec_push(args_vec, val_expr);
+                        kind = tcl_parser_peek_kind(p);
+                        match (kind - TCL_TK_COMMA) {
+                            zero => { tcl_parser_advance(p); }
+                            pos => { run = 0; }
+                            neg => { run = 0; }
+                        }
+                    }
+                }
             }
             tcl_parser_consume(p, TCL_TK_RBRACKET, TCL_ERR_EXPECTED_RBRACKET);
             return tcl_expr_new(ast, TCL_EXPR_ARRAY_LIT, start_tok, 0, 0, args_vec);
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
     // 4. Parenthesized expression: (expr)
-    match tcl_parser_match(p, TCL_TK_LPAREN) {
-        pos => {
+    match (kind - TCL_TK_LPAREN) {
+        zero => {
+            tcl_parser_advance(p);
             val_expr = tcl_parse_expr(p, ast);
             tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
             return val_expr;
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
@@ -1367,22 +1698,53 @@ fn tcl_parse_block(p: t40, ast: t40) -> t40 {
     var body_vec: t40 = 0;
     var loop: t40 = 1;
     var stmt: t40 = 0;
+    var kind: t40 = 0;
+    var append: t40 = 0;
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
     tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
-    body_vec = vec_new();
+    body_vec = tcl_parser_vec_new_medium();
     while loop > 0 {
-        match tcl_parser_check(p, TCL_TK_RBRACE) {
-            pos => { loop = 0; }
-            zero => {
-                match tcl_parser_is_at_end(p) {
-                    pos => { loop = 0; }
-                    zero => {
-                        stmt = tcl_parse_stmt(p, ast);
-                        vec_push(body_vec, stmt);
-                    }
-                    neg => { loop = 0; }
+        kind = tcl_parser_peek_kind(p);
+        append = 0;
+        match (kind - TCL_TK_RBRACE) {
+            zero => { loop = 0; }
+            pos => {
+                match (kind - TCL_TK_EOF) {
+                    zero => { loop = 0; }
+                    pos => { append = 1; }
+                    neg => { append = 1; }
                 }
             }
-            neg => { loop = 0; }
+            neg => {
+                match (kind - TCL_TK_EOF) {
+                    zero => { loop = 0; }
+                    pos => { append = 1; }
+                    neg => { append = 1; }
+                }
+            }
+        }
+        match append {
+            pos => {
+                stmt = tcl_parse_stmt(p, ast);
+                unsafe {
+                    data = load(body_vec);
+                    raw_len = load(body_vec + 1);
+                    cap = load(body_vec + 2);
+                }
+                match (cap - raw_len - 1) {
+                    neg => { data = tcl_parser_vec_grow(body_vec, raw_len, cap, 1, data); }
+                    zero => {}
+                    pos => {}
+                }
+                unsafe {
+                    store(data + raw_len, stmt);
+                    store(body_vec + 1, raw_len + 1);
+                }
+            }
+            zero => {}
+            neg => {}
         }
     }
     tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
@@ -1411,11 +1773,13 @@ fn tcl_parse_let(p: t40, ast: t40, is_mut: t40) -> t40 {
     var type_id: t40 = 0;
     var rhs: t40 = 0;
     var stmt_id: t40 = 0;
-    match tcl_parser_match(p, TCL_TK_COLON) {
-        pos => {
+    var kind: t40 = tcl_parser_peek_kind(p);
+    match (kind - TCL_TK_COLON) {
+        zero => {
+            tcl_parser_advance(p);
             type_id = tcl_parse_type(p, ast);
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
     tcl_parser_consume(p, TCL_TK_EQUAL, TCL_ERR_EXPECTED_EQUAL);
@@ -1466,6 +1830,126 @@ fn tcl_parse_unsafe(p: t40, ast: t40) -> t40 {
     return tcl_stmt_new(ast, TCL_STMT_UNSAFE, start_tok, 0, 0, 0, body_vec, 0);
 }
 
+fn tcl_parse_match_arm_fast(p: t40, ast: t40, arms_vec: t40, start_tok: t40) -> t40 {
+    var arm_tok: t40 = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+    var binding_tok: t40 = 0;
+    var ok: t40 = 0;
+    var kind: t40 = 0;
+    var arm_kind: t40 = 0;
+    var tokens: t40 = tcl_parser_tokens(p);
+    var src: t40 = tcl_parser_src(p);
+    var data: t40 = 0;
+    var base: t40 = arm_tok * TCL_TOKEN_WORDS;
+    var start: t40 = 0;
+    var len: t40 = 0;
+    var c0: t40 = 0;
+    var c1: t40 = 0;
+    var c2: t40 = 0;
+    var c3: t40 = 0;
+    unsafe {
+        data = load(tokens);
+        arm_kind = load(data + base);
+        start = load(data + base + 1);
+        len = load(data + base + 2);
+    }
+    match (arm_kind - TCL_TK_VALID) {
+        zero => {
+            ok = 1;
+            kind = tcl_parser_peek_kind(p);
+            match (kind - TCL_TK_LPAREN) {
+                zero => {
+                    tcl_parser_advance(p);
+                    binding_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                    tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match (arm_kind - TCL_TK_UNKNOWN) { zero => { ok = 1; } pos => {} neg => {} }
+    match (arm_kind - TCL_TK_NULL) { zero => { ok = 1; } pos => {} neg => {} }
+    match ok {
+        zero => {
+            match len - 1 {
+                zero => {
+                    unsafe { c0 = load(src + start); }
+                    match c0 - 95 { zero => { ok = 1; } pos => {} neg => {} }
+                }
+                pos => {}
+                neg => {}
+            }
+            match len - 3 {
+                zero => {
+                    unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); }
+                    match c0 - 110 {
+                        zero => {
+                            match c1 - 101 {
+                                zero => { match c2 - 103 { zero => { ok = 1; } pos => {} neg => {} } }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                    match c0 - 112 {
+                        zero => {
+                            match c1 - 111 {
+                                zero => { match c2 - 115 { zero => { ok = 1; } pos => {} neg => {} } }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+            match len - 4 {
+                zero => {
+                    unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); c3 = load(src + start + 3); }
+                    match c0 - 122 {
+                        zero => {
+                            match c1 - 101 {
+                                zero => {
+                                    match c2 - 114 {
+                                        zero => { match c3 - 111 { zero => { ok = 1; } pos => {} neg => {} } }
+                                        pos => {}
+                                        neg => {}
+                                    }
+                                }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match ok {
+        zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
+        pos => {}
+        neg => {}
+    }
+    tcl_parser_consume(p, TCL_TK_FAT_ARROW, TCL_ERR_EXPECTED_FAT_ARROW);
+    var arm_body: t40 = tcl_parse_block(p, ast);
+    var arm_id: t40 = tcl_match_arm_new(ast, arm_tok, binding_tok, arm_body, start_tok);
+    vec_push(arms_vec, arm_id);
+    return 0;
+}
+
 fn tcl_parse_match(p: t40, ast: t40) -> t40 {
     var start_tok: t40 = tcl_parser_previous(p);
     var cond: t40 = tcl_parse_expr(p, ast);
@@ -1476,59 +1960,137 @@ fn tcl_parse_match(p: t40, ast: t40) -> t40 {
     var ok: t40 = 0;
     var arm_body: t40 = 0;
     var arm_id: t40 = 0;
+    var kind: t40 = 0;
+    var arm_kind: t40 = 0;
+    var tokens: t40 = 0;
+    var src: t40 = 0;
+    var data: t40 = 0;
+    var base: t40 = 0;
+    var start: t40 = 0;
+    var len: t40 = 0;
+    var c0: t40 = 0;
+    var c1: t40 = 0;
+    var c2: t40 = 0;
+    var c3: t40 = 0;
 
     tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
-    arms_vec = vec_new();
+    arms_vec = tcl_parser_vec_new_small();
     while loop > 0 {
-        match tcl_parser_check(p, TCL_TK_RBRACE) {
-            pos => { loop = 0; }
-            zero => {
-                match tcl_parser_is_at_end(p) {
-                    pos => { loop = 0; }
-                    zero => {
+        kind = tcl_parser_peek_kind(p);
+        match (kind - TCL_TK_RBRACE) {
+            zero => { loop = 0; }
+            pos => {
+                match (kind - TCL_TK_EOF) {
+                    zero => { loop = 0; }
+                    pos => {
                         arm_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
                         binding_tok = 0;
-                        match tcl_token_is_5(p, arm_tok, 118, 97, 108, 105, 100) { // "valid"
-                            pos => {
-                                match tcl_parser_match(p, TCL_TK_LPAREN) {
-                                    pos => {
+                        ok = 0;
+                        tokens = tcl_parser_tokens(p);
+                        src = tcl_parser_src(p);
+                        base = arm_tok * TCL_TOKEN_WORDS;
+                        unsafe {
+                            data = load(tokens);
+                            arm_kind = load(data + base);
+                            start = load(data + base + 1);
+                            len = load(data + base + 2);
+                        }
+                        match (arm_kind - TCL_TK_VALID) {
+                            zero => {
+                                ok = 1;
+                                kind = tcl_parser_peek_kind(p);
+                                match (kind - TCL_TK_LPAREN) {
+                                    zero => {
+                                        tcl_parser_advance(p);
                                         binding_tok = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
                                         tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
                                     }
-                                    zero => {}
+                                    pos => {}
                                     neg => {}
                                 }
                             }
+                            pos => {}
+                            neg => {}
+                        }
+                        match (arm_kind - TCL_TK_UNKNOWN) { zero => { ok = 1; } pos => {} neg => {} }
+                        match (arm_kind - TCL_TK_NULL) { zero => { ok = 1; } pos => {} neg => {} }
+                        match ok {
                             zero => {
-                                ok = 0;
-                                match tcl_token_is_3(p, arm_tok, 110, 101, 103) { pos => { ok = 1; } zero => {} neg => {} } // "neg"
-                                match tcl_token_is_4(p, arm_tok, 122, 101, 114, 111) { pos => { ok = 1; } zero => {} neg => {} } // "zero"
-                                match tcl_token_is_3(p, arm_tok, 112, 111, 115) { pos => { ok = 1; } zero => {} neg => {} } // "pos"
-                                match tcl_token_is_4(p, arm_tok, 110, 117, 108, 108) { pos => { ok = 1; } zero => {} neg => {} } // "null"
-                                match tcl_token_is_7(p, arm_tok, 117, 110, 107, 110, 111, 119, 110) { pos => { ok = 1; } zero => {} neg => {} } // "unknown"
-                                match tcl_token_is_1(p, arm_tok, 95) { pos => { ok = 1; } zero => {} neg => {} } // "_"
-
-                                match ok {
-                                    zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
+                                match len - 1 {
+                                    zero => {
+                                        unsafe { c0 = load(src + start); }
+                                        match c0 - 95 { zero => { ok = 1; } pos => {} neg => {} }
+                                    }
+                                    pos => {}
+                                    neg => {}
+                                }
+                                match len - 3 {
+                                    zero => {
+                                        unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); }
+                                        match c0 - 110 {
+                                            zero => {
+                                                match c1 - 101 {
+                                                    zero => {
+                                                        match c2 - 103 { zero => { ok = 1; } pos => {} neg => {} }
+                                                    }
+                                                    pos => {}
+                                                    neg => {}
+                                                }
+                                            }
+                                            pos => {}
+                                            neg => {}
+                                        }
+                                        match c0 - 112 {
+                                            zero => {
+                                                match c1 - 111 {
+                                                    zero => {
+                                                        match c2 - 115 { zero => { ok = 1; } pos => {} neg => {} }
+                                                    }
+                                                    pos => {}
+                                                    neg => {}
+                                                }
+                                            }
+                                            pos => {}
+                                            neg => {}
+                                        }
+                                    }
+                                    pos => {}
+                                    neg => {}
+                                }
+                                match len - 4 {
+                                    zero => {
+                                        unsafe { c0 = load(src + start); c1 = load(src + start + 1); c2 = load(src + start + 2); c3 = load(src + start + 3); }
+                                        match c0 - 122 {
+                                            zero => {
+                                                match c1 - 101 {
+                                                    zero => {
+                                                        match c2 - 114 {
+                                                            zero => {
+                                                                match c3 - 111 { zero => { ok = 1; } pos => {} neg => {} }
+                                                            }
+                                                            pos => {}
+                                                            neg => {}
+                                                        }
+                                                    }
+                                                    pos => {}
+                                                    neg => {}
+                                                }
+                                            }
+                                            pos => {}
+                                            neg => {}
+                                        }
+                                    }
                                     pos => {}
                                     neg => {}
                                 }
                             }
-                            neg => {
-                                ok = 0;
-                                match tcl_token_is_3(p, arm_tok, 110, 101, 103) { pos => { ok = 1; } zero => {} neg => {} }
-                                match tcl_token_is_4(p, arm_tok, 122, 101, 114, 111) { pos => { ok = 1; } zero => {} neg => {} }
-                                match tcl_token_is_3(p, arm_tok, 112, 111, 115) { pos => { ok = 1; } zero => {} neg => {} }
-                                match tcl_token_is_4(p, arm_tok, 110, 117, 108, 108) { pos => { ok = 1; } zero => {} neg => {} }
-                                match tcl_token_is_7(p, arm_tok, 117, 110, 107, 110, 111, 119, 110) { pos => { ok = 1; } zero => {} neg => {} }
-                                match tcl_token_is_1(p, arm_tok, 95) { pos => { ok = 1; } zero => {} neg => {} }
-
-                                match ok {
-                                    zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
-                                    pos => {}
-                                    neg => {}
-                                }
-                            }
+                            pos => {}
+                            neg => {}
+                        }
+                        match ok {
+                            zero => { tcl_parser_error(p, arm_tok, TCL_ERR_INVALID_MATCH_ARM); }
+                            pos => {}
+                            neg => {}
                         }
                         tcl_parser_consume(p, TCL_TK_FAT_ARROW, TCL_ERR_EXPECTED_FAT_ARROW);
                         arm_body = tcl_parse_block(p, ast);
@@ -1538,7 +2100,13 @@ fn tcl_parse_match(p: t40, ast: t40) -> t40 {
                     neg => { loop = 0; }
                 }
             }
-            neg => { loop = 0; }
+            neg => {
+                match (kind - TCL_TK_EOF) {
+                    zero => { loop = 0; }
+                    pos => { tcl_parse_match_arm_fast(p, ast, arms_vec, start_tok); }
+                    neg => { tcl_parse_match_arm_fast(p, ast, arms_vec, start_tok); }
+                }
+            }
         }
     }
     tcl_parser_consume(p, TCL_TK_RBRACE, TCL_ERR_EXPECTED_RBRACE);
@@ -1573,14 +2141,14 @@ fn tcl_parse_guard_stmt(p: t40, ast: t40) -> t40 {
 
     var body_vec: t40 = tcl_parse_block(p, ast);
 
-    var arms_vec: t40 = vec_new();
+    var arms_vec: t40 = tcl_parser_vec_new_small();
 
     // Arm 0: neg
     var arm0_body: t40 = 0;
     match is_neg {
         pos => { arm0_body = body_vec; }
-        zero => { arm0_body = vec_new(); }
-        neg => { arm0_body = vec_new(); }
+        zero => { arm0_body = tcl_parser_vec_new_small(); }
+        neg => { arm0_body = tcl_parser_vec_new_small(); }
     }
     var arm0: t40 = tcl_match_arm_new(ast, guard_tok, 0, arm0_body, start_tok);
     vec_push(arms_vec, arm0);
@@ -1589,8 +2157,8 @@ fn tcl_parse_guard_stmt(p: t40, ast: t40) -> t40 {
     var arm1_body: t40 = 0;
     match is_zero {
         pos => { arm1_body = body_vec; }
-        zero => { arm1_body = vec_new(); }
-        neg => { arm1_body = vec_new(); }
+        zero => { arm1_body = tcl_parser_vec_new_small(); }
+        neg => { arm1_body = tcl_parser_vec_new_small(); }
     }
     var arm1: t40 = tcl_match_arm_new(ast, guard_tok, 0, arm1_body, start_tok);
     vec_push(arms_vec, arm1);
@@ -1599,8 +2167,8 @@ fn tcl_parse_guard_stmt(p: t40, ast: t40) -> t40 {
     var arm2_body: t40 = 0;
     match is_pos {
         pos => { arm2_body = body_vec; }
-        zero => { arm2_body = vec_new(); }
-        neg => { arm2_body = vec_new(); }
+        zero => { arm2_body = tcl_parser_vec_new_small(); }
+        neg => { arm2_body = tcl_parser_vec_new_small(); }
     }
     var arm2: t40 = tcl_match_arm_new(ast, guard_tok, 0, arm2_body, start_tok);
     vec_push(arms_vec, arm2);
@@ -1665,50 +2233,51 @@ fn tcl_parse_stmt_impl(p: t40, ast: t40) -> t40 {
     var expr: t40 = 0;
     var op_tok: t40 = 0;
     var rhs: t40 = 0;
+    var kind: t40 = tcl_parser_peek_kind(p);
 
-    match tcl_parser_match(p, TCL_TK_LET) {
-        pos => { return tcl_parse_let(p, ast, 0); }
-        zero => {}
+    match (kind - TCL_TK_LET) {
+        zero => { tcl_parser_advance(p); return tcl_parse_let(p, ast, 0); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_VAR) {
-        pos => { return tcl_parse_let(p, ast, 1); }
-        zero => {}
+    match (kind - TCL_TK_VAR) {
+        zero => { tcl_parser_advance(p); return tcl_parse_let(p, ast, 1); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_CONST) {
-        pos => { return tcl_parse_const_stmt(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_CONST) {
+        zero => { tcl_parser_advance(p); return tcl_parse_const_stmt(p, ast); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_RETURN) {
-        pos => { return tcl_parse_return(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_RETURN) {
+        zero => { tcl_parser_advance(p); return tcl_parse_return(p, ast); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_WHILE) {
-        pos => { return tcl_parse_while(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_WHILE) {
+        zero => { tcl_parser_advance(p); return tcl_parse_while(p, ast); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_MATCH) {
-        pos => { return tcl_parse_match(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_MATCH) {
+        zero => { tcl_parser_advance(p); return tcl_parse_match(p, ast); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_UNSAFE) {
-        pos => { return tcl_parse_unsafe(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_UNSAFE) {
+        zero => { tcl_parser_advance(p); return tcl_parse_unsafe(p, ast); }
+        pos => {}
         neg => {}
     }
-    match tcl_parser_match(p, TCL_TK_IF) {
-        pos => { return tcl_parse_guard_stmt(p, ast); }
-        zero => {}
+    match (kind - TCL_TK_IF) {
+        zero => { tcl_parser_advance(p); return tcl_parse_guard_stmt(p, ast); }
+        pos => {}
         neg => {}
     }
 
-    match tcl_parser_check(p, TCL_TK_LPAREN) {
-        pos => {
+    match (kind - TCL_TK_LPAREN) {
+        zero => {
             tokens = tcl_parser_tokens(p);
             cur = tcl_parser_current(p);
             tok2 = tcl_token_kind(tokens, cur + 2);
@@ -1720,19 +2289,20 @@ fn tcl_parse_stmt_impl(p: t40, ast: t40) -> t40 {
                 neg => {}
             }
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
     expr = tcl_parse_expr(p, ast);
-    match tcl_parser_match(p, TCL_TK_EQUAL) {
-        pos => {
-            op_tok = tcl_parser_previous(p);
+    kind = tcl_parser_peek_kind(p);
+    match (kind - TCL_TK_EQUAL) {
+        zero => {
+            op_tok = tcl_parser_advance(p);
             rhs = tcl_parse_expr(p, ast);
             tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
             return tcl_stmt_new(ast, TCL_STMT_ASSIGN, op_tok, expr, rhs, 0, 0, 0);
         }
-        zero => {
+        pos => {
             tcl_parser_consume(p, TCL_TK_SEMICOLON, TCL_ERR_EXPECTED_SEMICOLON);
             return tcl_stmt_new(ast, TCL_STMT_EXPR, tcl_expr_token_idx(ast, expr), expr, 0, 0, 0, 0);
         }
@@ -1761,7 +2331,7 @@ fn tcl_parse_struct(p: t40, ast: t40, is_pub: t40) -> t40 {
     var type_id: t40 = 0;
 
     tcl_parser_consume(p, TCL_TK_LBRACE, TCL_ERR_EXPECTED_LBRACE);
-    fields_vec = vec_new();
+    fields_vec = tcl_parser_vec_new_medium();
     while loop > 0 {
         match tcl_parser_check(p, TCL_TK_RBRACE) {
             pos => { loop = 0; }
@@ -1797,11 +2367,14 @@ fn tcl_parse_function(p: t40, ast: t40, is_pub: t40) -> t40 {
     var type_id: t40 = 0;
     var ret_type: t40 = 0;
     var body_vec: t40 = 0;
+    var kind: t40 = 0;
 
     tcl_parser_clear_width_params(p);
-    width_params_vec = vec_new();
-    match tcl_parser_match(p, TCL_TK_LESS) {
-        pos => {
+    width_params_vec = tcl_parser_vec_new_small();
+    kind = tcl_parser_peek_kind(p);
+    match (kind - TCL_TK_LESS) {
+        zero => {
+            tcl_parser_advance(p);
             run = 1;
             while run > 0 {
                 param = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
@@ -1817,22 +2390,25 @@ fn tcl_parse_function(p: t40, ast: t40, is_pub: t40) -> t40 {
                     neg => { tcl_parser_error(p, constr, TCL_ERR_EXPECTED_CONSTRAINT); }
                 }
 
-                match tcl_parser_match(p, TCL_TK_COMMA) {
-                    zero => { run = 0; }
-                    pos => {}
-                    neg => {}
+                kind = tcl_parser_peek_kind(p);
+                match (kind - TCL_TK_COMMA) {
+                    zero => { tcl_parser_advance(p); }
+                    pos => { run = 0; }
+                    neg => { run = 0; }
                 }
             }
             tcl_parser_consume(p, TCL_TK_GREATER, TCL_ERR_EXPECTED_GREATER);
         }
-        zero => {}
+        pos => {}
         neg => {}
     }
 
     tcl_parser_consume(p, TCL_TK_LPAREN, TCL_ERR_EXPECTED_LPAREN);
-    params_vec = vec_new();
-    match tcl_parser_check(p, TCL_TK_RPAREN) {
-        zero => {
+    params_vec = tcl_parser_vec_new_medium();
+    kind = tcl_parser_peek_kind(p);
+    match (kind - TCL_TK_RPAREN) {
+        zero => {}
+        pos => {
             run = 1;
             while run > 0 {
                 param = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
@@ -1841,15 +2417,31 @@ fn tcl_parse_function(p: t40, ast: t40, is_pub: t40) -> t40 {
                 vec_push(params_vec, param);
                 vec_push(params_vec, type_id);
 
-                match tcl_parser_match(p, TCL_TK_COMMA) {
-                    zero => { run = 0; }
-                    pos => {}
-                    neg => {}
+                kind = tcl_parser_peek_kind(p);
+                match (kind - TCL_TK_COMMA) {
+                    zero => { tcl_parser_advance(p); }
+                    pos => { run = 0; }
+                    neg => { run = 0; }
                 }
             }
         }
-        pos => {}
-        neg => {}
+        neg => {
+            run = 1;
+            while run > 0 {
+                param = tcl_parser_consume_identifier(p, TCL_ERR_EXPECTED_IDENT);
+                tcl_parser_consume(p, TCL_TK_COLON, TCL_ERR_EXPECTED_COLON);
+                type_id = tcl_parse_type(p, ast);
+                vec_push(params_vec, param);
+                vec_push(params_vec, type_id);
+
+                kind = tcl_parser_peek_kind(p);
+                match (kind - TCL_TK_COMMA) {
+                    zero => { tcl_parser_advance(p); }
+                    pos => { run = 0; }
+                    neg => { run = 0; }
+                }
+            }
+        }
     }
     tcl_parser_consume(p, TCL_TK_RPAREN, TCL_ERR_EXPECTED_RPAREN);
 

@@ -1485,6 +1485,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::BRN: {
+            vm.branch_instructions_count++;
             // B-type: if Rs.trit[0] == T_NEG → PC ← PC + offset19
             // Otherwise fall through to PC + 1.
             // This is the primary ternary comparison branch.
@@ -1497,6 +1498,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::BRZ: {
+            vm.branch_instructions_count++;
             int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
             if (trit0 == T_ZER) {
                 pc_next = vm.pc + iw.offset;
@@ -1505,6 +1507,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::BRP: {
+            vm.branch_instructions_count++;
             int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
             if (trit0 == T_POS) {
                 pc_next = vm.pc + iw.offset;
@@ -1763,11 +1766,12 @@ inline VMStatus step(VMState& vm) {
             } else if (iw.imm == 3) {
                 vm.syscall_buffer.clear();
             } else if (iw.imm == 19) {
-                // Standalone sys_sbrk (syscall 19) helper
-                static long long host_heap_break = 2000;
+                // Standalone sys_sbrk helper: return the start of the fresh
+                // region, then advance this VM's private heap break.
                 long long delta = sandbox::vm::ops::toLong(vm.regfile.read(13));
-                host_heap_break += delta;
-                vm.regfile.write(13, sandbox::vm::ops::fromLong(host_heap_break));
+                long long old_break = vm.standalone_heap_break;
+                vm.standalone_heap_break += delta;
+                vm.regfile.write(13, sandbox::vm::ops::fromLong(old_break));
             } else if (iw.imm == 22) {
                 // sys_write_char: interpret r1 as an ASCII character code
                 long long charVal = sandbox::vm::ops::toLong(vm.regfile.read(1));

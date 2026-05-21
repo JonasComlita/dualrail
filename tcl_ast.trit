@@ -75,24 +75,52 @@ const TCL_STMT_CONST: t40 = 8;
 // [10] struct_arena (flat vector of Struct slots)
 // [11] const_arena (flat vector of ConstDecl slots)
 // [12] import_arena (flat vector of ImportDecl slots)
+fn tcl_ast_vec_new_cap(cap: t40) -> t40 {
+    match cap - 1 {
+        neg => { cap = 1; }
+        zero => {}
+        pos => {}
+    }
+    var vec: t40 = malloc_raw(3);
+    match vec {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc_raw(cap);
+            match data {
+                zero => { free_raw(vec); return 0; }
+                neg => { free_raw(vec); return 0; }
+                pos => {
+                    unsafe {
+                        store(vec, data);
+                        store(vec + 1, 0);
+                        store(vec + 2, cap);
+                    }
+                    return vec;
+                }
+            }
+        }
+    }
+}
+
 fn tcl_ast_new(name_token: t40) -> t40 {
     var ast: t40 = malloc_raw(13);
     match ast {
         zero => { return 0; }
         neg => { return 0; }
         pos => {
-            var imports_vec: t40 = vec_new();
-            var structs_vec: t40 = vec_new();
-            var functions_vec: t40 = vec_new();
-            var consts_vec: t40 = vec_new();
-            var type_arena: t40 = vec_new();
-            var expr_arena: t40 = vec_new();
-            var stmt_arena: t40 = vec_new();
-            var match_arm_arena: t40 = vec_new();
-            var function_arena: t40 = vec_new();
-            var struct_arena: t40 = vec_new();
-            var const_arena: t40 = vec_new();
-            var import_arena: t40 = vec_new();
+            var imports_vec: t40 = tcl_ast_vec_new_cap(243);
+            var structs_vec: t40 = tcl_ast_vec_new_cap(243);
+            var functions_vec: t40 = tcl_ast_vec_new_cap(243);
+            var consts_vec: t40 = tcl_ast_vec_new_cap(243);
+            var type_arena: t40 = tcl_ast_vec_new_cap(19683);
+            var expr_arena: t40 = tcl_ast_vec_new_cap(59049);
+            var stmt_arena: t40 = tcl_ast_vec_new_cap(59049);
+            var match_arm_arena: t40 = tcl_ast_vec_new_cap(6561);
+            var function_arena: t40 = tcl_ast_vec_new_cap(2187);
+            var struct_arena: t40 = tcl_ast_vec_new_cap(729);
+            var const_arena: t40 = tcl_ast_vec_new_cap(729);
+            var import_arena: t40 = tcl_ast_vec_new_cap(243);
             unsafe {
                 store(ast,      name_token);
                 store(ast + 1,  imports_vec);
@@ -215,16 +243,57 @@ fn tcl_ast_struct_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast
 fn tcl_ast_const_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 11); } return v; }
 fn tcl_ast_import_arena(ast: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ast + 12); } return v; }
 
+fn tcl_ast_vec_grow(vec: t40, len: t40, cap: t40, need: t40, data: t40) -> t40 {
+    match (cap - len - need) {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            match (new_cap - len - need) {
+                neg => { new_cap = len + need; }
+                zero => {}
+                pos => {}
+            }
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
+                zero => { return 0; }
+                neg => { return 0; }
+                pos => {
+                    memcpy(new_data, data, len);
+                    free_raw(data);
+                    unsafe {
+                        store(vec, new_data);
+                        store(vec + 2, new_cap);
+                    }
+                    return new_data;
+                }
+            }
+        }
+        zero => { return data; }
+        pos => { return data; }
+    }
+}
+
 // =============================================================================
 // Type Node APIs (Slot Size: 4 words)
 // =============================================================================
 fn tcl_type_new(ast: t40, kind: t40, element: t40, extra: t40, name_token: t40) -> t40 {
     var arena: t40 = tcl_ast_type_arena(ast);
-    var id: t40 = vec_len(arena) / 4 + 1;
-    vec_push(arena, kind);
-    vec_push(arena, element);
-    vec_push(arena, extra);
-    vec_push(arena, name_token);
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 4 + 1;
+    match (cap - raw_len - 4) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 4, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, kind);
+        store(data + raw_len + 1, element);
+        store(data + raw_len + 2, extra);
+        store(data + raw_len + 3, name_token);
+        store(arena + 1, raw_len + 4);
+    }
     return id;
 }
 fn tcl_type_base(id: t40) -> t40 { return (id - 1) * 4; }
@@ -262,12 +331,24 @@ fn tcl_type_name_token(ast: t40, id: t40) -> t40 {
 // =============================================================================
 fn tcl_expr_new(ast: t40, kind: t40, token_idx: t40, left: t40, right: t40, args_vec: t40) -> t40 {
     var arena: t40 = tcl_ast_expr_arena(ast);
-    var id: t40 = vec_len(arena) / 5 + 1;
-    vec_push(arena, kind);
-    vec_push(arena, token_idx);
-    vec_push(arena, left);
-    vec_push(arena, right);
-    vec_push(arena, args_vec);
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 5 + 1;
+    match (cap - raw_len - 5) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 5, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, kind);
+        store(data + raw_len + 1, token_idx);
+        store(data + raw_len + 2, left);
+        store(data + raw_len + 3, right);
+        store(data + raw_len + 4, args_vec);
+        store(arena + 1, raw_len + 5);
+    }
     return id;
 }
 fn tcl_expr_base(id: t40) -> t40 { return (id - 1) * 5; }
@@ -292,15 +373,27 @@ fn tcl_expr_args_vec(ast: t40, id: t40) -> t40 {
 // =============================================================================
 fn tcl_stmt_new(ast: t40, kind: t40, token_idx: t40, expr1: t40, expr2: t40, type_id: t40, body_vec: t40, arms_vec: t40) -> t40 {
     var arena: t40 = tcl_ast_stmt_arena(ast);
-    var id: t40 = vec_len(arena) / 8 + 1;
-    vec_push(arena, kind);
-    vec_push(arena, token_idx);
-    vec_push(arena, expr1);
-    vec_push(arena, expr2);
-    vec_push(arena, type_id);
-    vec_push(arena, body_vec);
-    vec_push(arena, arms_vec);
-    vec_push(arena, 0); // Padding
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 8 + 1;
+    match (cap - raw_len - 8) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 8, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, kind);
+        store(data + raw_len + 1, token_idx);
+        store(data + raw_len + 2, expr1);
+        store(data + raw_len + 3, expr2);
+        store(data + raw_len + 4, type_id);
+        store(data + raw_len + 5, body_vec);
+        store(data + raw_len + 6, arms_vec);
+        store(data + raw_len + 7, 0);
+        store(arena + 1, raw_len + 8);
+    }
     return id;
 }
 fn tcl_stmt_base(id: t40) -> t40 { return (id - 1) * 8; }
@@ -319,11 +412,23 @@ fn tcl_stmt_set_mutable(ast: t40, id: t40, val: t40) -> t40 { var arena: t40 = t
 // =============================================================================
 fn tcl_match_arm_new(ast: t40, name_token: t40, binding_token: t40, body_vec: t40, start_token: t40) -> t40 {
     var arena: t40 = tcl_ast_match_arm_arena(ast);
-    var id: t40 = vec_len(arena) / 4 + 1;
-    vec_push(arena, name_token);
-    vec_push(arena, binding_token);
-    vec_push(arena, body_vec);
-    vec_push(arena, start_token);
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 4 + 1;
+    match (cap - raw_len - 4) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 4, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, name_token);
+        store(data + raw_len + 1, binding_token);
+        store(data + raw_len + 2, body_vec);
+        store(data + raw_len + 3, start_token);
+        store(arena + 1, raw_len + 4);
+    }
     return id;
 }
 fn tcl_match_arm_base(id: t40) -> t40 { return (id - 1) * 4; }
@@ -337,14 +442,26 @@ fn tcl_match_arm_start_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_as
 // =============================================================================
 fn tcl_function_new(ast: t40, name_token: t40, params_vec: t40, return_type_id: t40, body_vec: t40, width_params_vec: t40, is_pub: t40) -> t40 {
     var arena: t40 = tcl_ast_function_arena(ast);
-    var id: t40 = vec_len(arena) / 7 + 1;
-    vec_push(arena, name_token);
-    vec_push(arena, params_vec);
-    vec_push(arena, return_type_id);
-    vec_push(arena, body_vec);
-    vec_push(arena, width_params_vec);
-    vec_push(arena, is_pub);
-    vec_push(arena, 0); // Padding
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 7 + 1;
+    match (cap - raw_len - 7) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 7, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, name_token);
+        store(data + raw_len + 1, params_vec);
+        store(data + raw_len + 2, return_type_id);
+        store(data + raw_len + 3, body_vec);
+        store(data + raw_len + 4, width_params_vec);
+        store(data + raw_len + 5, is_pub);
+        store(data + raw_len + 6, 0);
+        store(arena + 1, raw_len + 7);
+    }
     return id;
 }
 fn tcl_function_base(id: t40) -> t40 { return (id - 1) * 7; }
@@ -360,11 +477,23 @@ fn tcl_function_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_func
 // =============================================================================
 fn tcl_struct_new(ast: t40, name_token: t40, fields_vec: t40, is_pub: t40) -> t40 {
     var arena: t40 = tcl_ast_struct_arena(ast);
-    var id: t40 = vec_len(arena) / 4 + 1;
-    vec_push(arena, name_token);
-    vec_push(arena, fields_vec);
-    vec_push(arena, is_pub);
-    vec_push(arena, 0); // Padding
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 4 + 1;
+    match (cap - raw_len - 4) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 4, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, name_token);
+        store(data + raw_len + 1, fields_vec);
+        store(data + raw_len + 2, is_pub);
+        store(data + raw_len + 3, 0);
+        store(arena + 1, raw_len + 4);
+    }
     return id;
 }
 fn tcl_struct_base(id: t40) -> t40 { return (id - 1) * 4; }
@@ -377,11 +506,23 @@ fn tcl_struct_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_struct
 // =============================================================================
 fn tcl_const_new(ast: t40, name_token: t40, type_id: t40, expr_id: t40, is_pub: t40) -> t40 {
     var arena: t40 = tcl_ast_const_arena(ast);
-    var id: t40 = vec_len(arena) / 4 + 1;
-    vec_push(arena, name_token);
-    vec_push(arena, type_id);
-    vec_push(arena, expr_id);
-    vec_push(arena, is_pub);
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 4 + 1;
+    match (cap - raw_len - 4) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 4, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, name_token);
+        store(data + raw_len + 1, type_id);
+        store(data + raw_len + 2, expr_id);
+        store(data + raw_len + 3, is_pub);
+        store(arena + 1, raw_len + 4);
+    }
     return id;
 }
 fn tcl_const_base(id: t40) -> t40 { return (id - 1) * 4; }
@@ -395,9 +536,21 @@ fn tcl_const_is_pub(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_const_a
 // =============================================================================
 fn tcl_import_new(ast: t40, name_token: t40) -> t40 {
     var arena: t40 = tcl_ast_import_arena(ast);
-    var id: t40 = vec_len(arena) / 2 + 1;
-    vec_push(arena, name_token);
-    vec_push(arena, 0); // Padding
+    var raw_len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe { data = load(arena); raw_len = load(arena + 1); cap = load(arena + 2); }
+    var id: t40 = raw_len / 2 + 1;
+    match (cap - raw_len - 2) {
+        neg => { data = tcl_ast_vec_grow(arena, raw_len, cap, 2, data); }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + raw_len, name_token);
+        store(data + raw_len + 1, 0);
+        store(arena + 1, raw_len + 2);
+    }
     return id;
 }
 fn tcl_import_name_token(ast: t40, id: t40) -> t40 { var arena: t40 = tcl_ast_import_arena(ast); var base: t40 = (id - 1) * 2; return vec_get(arena, base); }

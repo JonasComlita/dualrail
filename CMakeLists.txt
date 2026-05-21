@@ -122,6 +122,10 @@ add_executable(test_benchmark tests/test_benchmark.cpp)
 target_compile_features(test_benchmark PUBLIC cxx_std_17)
 target_compile_definitions(test_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_malloc_micro tests/test_malloc_micro.cpp)
+target_compile_features(test_malloc_micro PUBLIC cxx_std_17)
+target_compile_definitions(test_malloc_micro PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 
 # ------------------------------------------------------------------------------
 # CUDA Validation

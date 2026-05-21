@@ -516,6 +516,69 @@ void testOsSubstrate() {
     }
 
     {
+        VMState vm(96, 96);
+        auto assembled = assemble(R"(
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, 48
+            csrw scratch, r1
+            mov sp, 19
+            mov r1, -8
+            csrw status, r1
+            mov r13, 65
+        trap_from_user:
+            syscall 22
+        after_syscall:
+            halt
+        handler:
+            csrrw sp, scratch, sp
+            csrr r4, cause
+            csrr r5, epc
+            csrr r6, status
+            csrr r7, syscall_id
+            csrr r8, scratch
+            mov r1, 4242
+            store r1, sp, 0
+            mov r1, 2
+            csrw console_ctrl, r1
+            csrw console_out, r13
+            mov r1, 3
+            csrw console_ctrl, r1
+            mov r13, 0
+            mov r1, after_syscall
+            csrw epc, r1
+            csrrw sp, scratch, sp
+            eret
+        )");
+        expect(assembled.success, "D1-style user trap entry program assembles");
+        if (assembled.success) {
+            expect(loadAndReset(vm, assembled), "D1-style user trap entry program loads");
+            auto result = sandbox::vm::run(vm, 128);
+            expect(result.halted(), "D1-style trap handler returns to user halt");
+            expect(vm.syscall_buffer == "A", "D1-style handler writes syscall character");
+            expect(asLong(vm, R4) == OS_CAUSE_SYSCALL, "D1-style handler observes syscall cause");
+            expect(asLong(vm, R5) == assembled.labels.at("trap_from_user"),
+                   "D1-style handler captures user EPC");
+            expect(asLong(vm, R7) == SYSCALL_WRITE_CHAR,
+                   "D1-style handler captures syscall id");
+            expect(asLong(vm, R8) == 19,
+                   "D1-style CSRRW exposes user stack pointer in scratch");
+            expect(loadPhysLong(vm, 48) == 4242,
+                   "D1-style handler stores through kernel stack pointer");
+            expect(asLong(vm, R26_SP) == 19,
+                   "D1-style handler restores user stack pointer before ERET");
+            expect(vm.scratch == 48,
+                   "D1-style handler restores kernel stack pointer to scratch");
+            expect(VMState::tritAt(asLong(vm, R6), 0) == T_NEG,
+                   "D1-style handler runs in kernel privilege");
+            expect(VMState::tritAt(asLong(vm, R6), 2) == T_POS,
+                   "D1-style handler records previous user privilege");
+            expect(vm.privilege == PrivilegeMode::User,
+                   "D1-style ERET restores user privilege");
+        }
+    }
+
+    {
         VMState vm(32, 64);
         auto program = assembleOrThrow(R"(
             mov r1, -1
