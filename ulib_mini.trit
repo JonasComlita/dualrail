@@ -165,6 +165,24 @@ fn vec_push(vec: borrow_mut<ptr<t40, user, valid>>, value: t40) -> t40 {
     return 0;
 }
 
-fn vec_free(vec: own<ptr<t40, user, unknown>>) -> t40 {
-    return free_raw(vec);
+fn vec_free(vec: borrow<ptr<t40, user, unknown>>) -> t40 {
+    match vec {
+        null => { return 0; }
+        unknown => { return 0; }
+        valid(v) => {
+            var data: t40 = 0;
+            unsafe { data = load(v); }
+            match data {
+                zero => {}
+                neg => {}
+                pos => { free_raw(data); }
+            }
+            unsafe {
+                store(v, 0);
+                store(v + 1, 0);
+                store(v + 2, 0);
+            }
+            return 0;
+        }
+    }
 }

@@ -18,6 +18,13 @@ class TypeInferencer {
 public:
     TypeInferencer(const ModuleAst& ast, const LayoutTable& layouts, std::map<std::string, FunctionAst>* instantiated_functions_out = nullptr)
         : ast_(ast), layouts_(layouts), instantiated_functions_out_(instantiated_functions_out) {
+        // Register module-level consts in the environment
+        for (const auto& const_decl : ast_.consts) {
+            // For now, just register consts with their annotated types
+            // The actual evaluation happens during code generation
+            env_.values[const_decl.name] = Scheme{{}, const_decl.type, true};
+        }
+        
         for (const auto& fn : ast_.functions) {
             if (fn.width_params.empty()) {
                 std::vector<TypeRef> params;
@@ -217,8 +224,16 @@ private:
             }
             case StmtKind::TupleSwap:
                 return InferResult{TypeRef::voidType(), Effect::WriteMem, false, true};
-            case StmtKind::Const:
+            case StmtKind::Const: {
+                // Infer the type of the const expression and register it in the environment
+                InferResult expr_result = inferExpr(stmt.expr);
+                TypeRef const_type = stmt.annotation.kind != TypeKind::Unknown 
+                    ? stmt.annotation 
+                    : subst_.apply(expr_result.type);
+                // Register the const in the environment with its inferred type
+                env_.values[stmt.name] = Scheme{{}, const_type, true};
                 return InferResult{TypeRef::voidType(), Effect::Pure, false, false};
+            }
         }
         return {};
     }
@@ -658,6 +673,7 @@ struct FunctionContext {
     Function ir;
     BasicBlock* block = nullptr;
     std::map<std::string, LocalInfo> locals;
+    ConstantTable constants;  // module and local const values
     std::map<std::string, TypeRef> function_returns;
     std::map<std::string, std::vector<TypeRef>> function_params;
     const LayoutTable* layouts = nullptr;
@@ -680,6 +696,7 @@ struct FunctionContext {
     int return_slot_offset = -1;
     int call_arg_slot_base = -1;
     int call_arg_depth = 0;
+    int max_call_arg_depth = 0;
     int next_virtual_reg = 100;
 
     [[nodiscard]] std::string label(const std::string& stem) {
@@ -827,6 +844,20 @@ public:
     CompilerImpl(ModuleAst ast, CompilerOptions options)
         : ast_(std::move(ast)), options_(options) {
         layout_table_ = buildLayoutTable(ast_, diagnostics_);
+        
+        // Build module-level constants
+        for (const auto& const_decl : ast_.consts) {
+            long long val = 0;
+            TypeRef type;
+            std::vector<Diagnostic> const_diags;
+            if (evalConstantExpr(const_decl.expr, module_constants_, val, type, false, const_diags)) {
+                module_constants_[const_decl.name] = ConstantInfo{val, type};
+            } else {
+                // If evaluation failed, report it
+                diagnostics_.insert(diagnostics_.end(), const_diags.begin(), const_diags.end());
+            }
+        }
+        
         for (const auto& fn : ast_.functions) {
             function_returns_[fn.name] = fn.return_type;
             for (const auto& param : fn.params) function_params_[fn.name].push_back(param.second);
@@ -894,23 +925,6 @@ public:
         diagnostics_.insert(diagnostics_.end(),
                             allocation.diagnostics.begin(),
                             allocation.diagnostics.end());
-        if (allocation.spills > 0) {
-            diagnostics_.push_back({DiagnosticSeverity::Error,
-                "register allocation produced " + std::to_string(allocation.spills) +
-                    " spill(s), but Phase A codegen does not lower spill slots yet",
-                SourceSpan{ast_.name, 1, 1, 1}});
-            result.ssa_module = dry_module;
-            result.allocation = allocation;
-            result.success = false;
-            result.diagnostics = diagnostics_;
-            result.ssa_module.diagnostics = diagnostics_;
-            result.object.name = ast_.name;
-            result.object.ssa = result.ssa_module;
-            result.object.assembly = result.assembly;
-            result.object.metadata["phase"] = "7";
-            result.object.metadata["packing.9trit"] = "reserved";
-            return result;
-        }
 
         for (std::size_t i = 0; i < compile_order.size(); ++i) {
             const FunctionAst& fn = *compile_order[i];
@@ -939,6 +953,8 @@ private:
     std::map<std::string, std::vector<TypeRef>> function_params_;
     std::map<std::string, FunctionAst> instantiated_functions_;
     std::set<std::string> compiled_functions_;
+    ConstantTable module_constants_;  // module-level const values
+    std::map<std::string, int> function_call_scratch_areas_;
 
     std::vector<int> getCalleeSavedUsed(const AllocationResult& allocation, const Function& fn) {
         std::set<int> used;
@@ -969,6 +985,7 @@ private:
         dry_ctx.layouts = &layout_table_;
         dry_ctx.options = &options_;
         dry_ctx.diagnostics = &diagnostics_;
+        dry_ctx.constants = module_constants_;  // Populate with module-level constants
         dry_ctx.dry_run = true;
         dry_ctx.next_value = start_value;
 
@@ -984,6 +1001,7 @@ private:
         emitDefaultReturn(dry_ctx);
         dry_ctx.scope_vars.pop_back();
 
+        function_call_scratch_areas_[fn.name] = dry_ctx.max_call_arg_depth;
         dry_ctx.ir.ir_value_ceiling = dry_ctx.next_value;
         return dry_ctx.ir;
     }
@@ -1005,6 +1023,7 @@ private:
         ctx.layouts = &layout_table_;
         ctx.options = &options_;
         ctx.diagnostics = &diagnostics_;
+        ctx.constants = module_constants_;  // Populate with module-level constants
         ctx.dry_run = false;
         ctx.allocation = &allocation;
         ctx.next_value = start_value;
@@ -1013,8 +1032,12 @@ private:
         ctx.callee_saved_regs = getCalleeSavedUsed(allocation, allocated_fn);
         ctx.return_slot_offset = ctx.next_local_offset + static_cast<int>(ctx.callee_saved_regs.size());
         ctx.call_arg_slot_base = ctx.return_slot_offset + 1;
+        const auto scratch_it = function_call_scratch_areas_.find(fn.name);
+        const int scratch_areas = scratch_it == function_call_scratch_areas_.end()
+            ? 0
+            : std::min(kCallArgScratchAreas, std::max(0, scratch_it->second));
         ctx.frame_words =
-            align9(ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas);
+            align9(std::max(1, ctx.call_arg_slot_base + kCallArgScratchWords * scratch_areas));
         emitFunctionPrologue(fn, ctx);
         ctx.scope_vars.push_back({});
         for (const auto& stmt : fn.body) emitStmt(stmt, ctx);
@@ -1212,7 +1235,17 @@ private:
                 break;
             }
             case StmtKind::TupleSwap: emitTupleSwap(stmt, ctx); break;
-            case StmtKind::Const: break;
+            case StmtKind::Const: {
+                // Evaluate const expression at compile time
+                long long value = 0;
+                TypeRef type;
+                std::vector<Diagnostic> dummy_diags;
+                // Try to evaluate the constant expression
+                if (evalConstantExpr(stmt.expr, ctx.constants, value, type, false, dummy_diags)) {
+                    ctx.constants[stmt.name] = ConstantInfo{value, type};
+                }
+                break;
+            }
         }
     }
 
@@ -1566,6 +1599,12 @@ private:
     }
 
     [[nodiscard]] ExprCode emitName(const Expr& expr, FunctionContext& ctx) {
+        // Check if it's a constant first
+        auto const_it = ctx.constants.find(expr.text);
+        if (const_it != ctx.constants.end()) {
+            return emitImmediate(const_it->second.value, const_it->second.type, expr.span, ctx);
+        }
+        
         auto it = ctx.locals.find(expr.text);
         if (it == ctx.locals.end()) {
             diag("unknown name '" + expr.text + "'", expr.span);
@@ -2049,6 +2088,9 @@ private:
         if (saved_call_arg_depth >= kCallArgScratchAreas) {
             diag("nested function calls exceed bootstrap call scratch depth", expr.span);
         }
+        ctx.max_call_arg_depth =
+            std::max(ctx.max_call_arg_depth,
+                     std::min(saved_call_arg_depth + 1, kCallArgScratchAreas));
         const int scratch_base =
             ctx.call_arg_slot_base +
             std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
@@ -2112,6 +2154,9 @@ private:
         if (saved_call_arg_depth >= kCallArgScratchAreas) {
             diag("nested syscall wrapper calls exceed bootstrap call scratch depth", expr.span);
         }
+        ctx.max_call_arg_depth =
+            std::max(ctx.max_call_arg_depth,
+                     std::min(saved_call_arg_depth + 1, kCallArgScratchAreas));
         const int scratch_base =
             ctx.call_arg_slot_base +
             std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
@@ -2126,9 +2171,14 @@ private:
         }
         ctx.call_arg_depth = saved_call_arg_depth;
         for (std::size_t i = 0; i < argc; ++i) {
-            ctx.line("load r" + std::to_string(13 + static_cast<int>(i)) +
-                     ", sp, " +
-                     std::to_string(scratch_base + static_cast<int>(i)));
+            if (i == 0) {
+                ctx.line("load r24, sp, " + std::to_string(scratch_base));
+                ctx.line("copy r13, r24");
+            } else {
+                ctx.line("load r" + std::to_string(13 + static_cast<int>(i)) +
+                         ", sp, " +
+                         std::to_string(scratch_base + static_cast<int>(i)));
+            }
         }
         if ((service == runtime::sys_write_int || service == runtime::sys_write_char) && argc > 0) {
             ctx.line("copy r1, r13");
@@ -2651,7 +2701,9 @@ inline void addInterferenceEdge(
                            move.second == value ? move.first : -1;
             if (peer < 0 || graph[value].count(peer)) continue;
             auto it = colors.find(peer);
-            if (it != colors.end() && colorAvailable(value, it->second, colors)) {
+            if (it != colors.end() &&
+                std::find(palette.begin(), palette.end(), it->second) != palette.end() &&
+                colorAvailable(value, it->second, colors)) {
                 colors[value] = it->second;
                 ++result.coalesced_moves;
                 assigned = true;
@@ -2837,8 +2889,8 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
                                                        block.terminator.target_pos;
                 ++stats.branch_simplifications;
             }
-        }
-    }
+        }  // for (auto& block : fn.blocks)
+    }  // for (auto& fn : module.functions)
     if (options.enable_mem2reg) stats.mem2reg_promotions = 0;
     return stats;
 }

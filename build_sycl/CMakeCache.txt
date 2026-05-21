@@ -21,30 +21,6 @@ CMAKE_AR:FILEPATH=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools
 // MinSizeRel ...
 CMAKE_BUILD_TYPE:STRING=Debug
 
-//CUDA architectures
-CMAKE_CUDA_ARCHITECTURES:STRING=75
-
-//CUDA compiler
-CMAKE_CUDA_COMPILER:FILEPATH=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/nvcc.exe
-
-//Flags used by the CUDA compiler during all build types.
-CMAKE_CUDA_FLAGS:STRING=-D_WINDOWS -Xcompiler=" /EHsc"
-
-//Flags used by the CUDA compiler during DEBUG builds.
-CMAKE_CUDA_FLAGS_DEBUG:STRING=-Xcompiler=" -Zi -Ob0 -Od /RTC1"
-
-//Flags used by the CUDA compiler during MINSIZEREL builds.
-CMAKE_CUDA_FLAGS_MINSIZEREL:STRING=-Xcompiler="-O1 -Ob1" -DNDEBUG
-
-//Flags used by the CUDA compiler during RELEASE builds.
-CMAKE_CUDA_FLAGS_RELEASE:STRING=-Xcompiler="-O2 -Ob2" -DNDEBUG
-
-//Flags used by the CUDA compiler during RELWITHDEBINFO builds.
-CMAKE_CUDA_FLAGS_RELWITHDEBINFO:STRING=-Xcompiler=" -Zi -O2 -Ob1" -DNDEBUG
-
-//Libraries linked by default with all CUDA applications.
-CMAKE_CUDA_STANDARD_LIBRARIES:STRING=kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
-
 //CXX compiler
 CMAKE_CXX_COMPILER:STRING=C:/Program Files (x86)/Intel/oneAPI/compiler/latest/bin/icx.exe
 
@@ -220,6 +196,9 @@ ENABLE_CUDA:BOOL=OFF
 //Enable SYCL validation test
 ENABLE_SYCL:BOOL=ON
 
+//Path to a program.
+GLSLC_EXECUTABLE:FILEPATH=C:/VulkanSDK/1.4.350.0/Bin/glslc.exe
+
 //The directory containing a CMake configuration file for IntelSYCL.
 IntelSYCL_DIR:PATH=C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL
 
@@ -261,6 +240,18 @@ TernaryGPUBackendValidation_IS_TOP_LEVEL:STATIC=ON
 //Value Computed by CMake
 TernaryGPUBackendValidation_SOURCE_DIR:STATIC=C:/Users/jonas/Documents/trit
 
+//Path to a program.
+Vulkan_GLSLANG_VALIDATOR_EXECUTABLE:FILEPATH=C:/VulkanSDK/1.4.350.0/Bin/glslangValidator.exe
+
+//Path to a program.
+Vulkan_GLSLC_EXECUTABLE:FILEPATH=C:/VulkanSDK/1.4.350.0/Bin/glslc.exe
+
+//Path to a file.
+Vulkan_INCLUDE_DIR:PATH=C:/VulkanSDK/1.4.350.0/include
+
+//Path to a library.
+Vulkan_LIBRARY:FILEPATH=C:/VulkanSDK/1.4.350.0/Lib/vulkan-1.lib
+
 
 ########################
 # INTERNAL cache entries
@@ -282,20 +273,6 @@ CMAKE_COMMAND:INTERNAL=C:/msys64/ucrt64/bin/cmake.exe
 CMAKE_CPACK_COMMAND:INTERNAL=C:/msys64/ucrt64/bin/cpack.exe
 //Path to ctest program executable.
 CMAKE_CTEST_COMMAND:INTERNAL=C:/msys64/ucrt64/bin/ctest.exe
-//ADVANCED property for variable: CMAKE_CUDA_COMPILER
-CMAKE_CUDA_COMPILER-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_FLAGS
-CMAKE_CUDA_FLAGS-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_FLAGS_DEBUG
-CMAKE_CUDA_FLAGS_DEBUG-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_FLAGS_MINSIZEREL
-CMAKE_CUDA_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_FLAGS_RELEASE
-CMAKE_CUDA_FLAGS_RELEASE-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_FLAGS_RELWITHDEBINFO
-CMAKE_CUDA_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
-//ADVANCED property for variable: CMAKE_CUDA_STANDARD_LIBRARIES
-CMAKE_CUDA_STANDARD_LIBRARIES-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_COMPILER
 CMAKE_CXX_COMPILER-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_COMPILER_AR
@@ -408,8 +385,18 @@ CMAKE_STATIC_LINKER_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Details about finding Vulkan
+FIND_PACKAGE_MESSAGE_DETAILS_Vulkan:INTERNAL=[C:/VulkanSDK/1.4.350.0/Lib/vulkan-1.lib][C:/VulkanSDK/1.4.350.0/include][found components: glslc glslangValidator ][v1.4.350()]
 //ADVANCED property for variable: PKG_CONFIG_ARGN
 PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
 PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Vulkan_GLSLANG_VALIDATOR_EXECUTABLE
+Vulkan_GLSLANG_VALIDATOR_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Vulkan_GLSLC_EXECUTABLE
+Vulkan_GLSLC_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Vulkan_INCLUDE_DIR
+Vulkan_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Vulkan_LIBRARY
+Vulkan_LIBRARY-ADVANCED:INTERNAL=1
 

@@ -433,7 +433,13 @@ fn free_raw(ptr: t40) -> t40 {
                     }
                     // Poison data words so use-after-free is visible
                     var pi: t40 = 0;
-                    while fsz - pi > 0 {
+                    var poison_words: t40 = fsz;
+                    match poison_words - 27 {
+                        neg => {}
+                        zero => {}
+                        pos => { poison_words = 27; }
+                    }
+                    while poison_words - pi > 0 {
                         unsafe { store(ptr + pi, 0 - 999999); }
                         pi = pi + 1;
                     }
@@ -1298,7 +1304,7 @@ fn fflush(stream: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     }
 }
 
-fn fclose(stream: own<ptr<t40, user, unknown>>) -> t40 {
+fn fclose(stream: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     match stream {
         null => { return 0 - 1; }
         unknown => { return 0 - 1; }
@@ -1316,7 +1322,6 @@ fn fclose(stream: own<ptr<t40, user, unknown>>) -> t40 {
                 neg => {}
             }
             sys_close(fd);
-            free_raw(s);
             return 0;
         }
     }
@@ -1978,7 +1983,7 @@ fn vec_sort(vec: borrow_mut<ptr<t40, user, valid>>) -> t40 {
 }
 
 
-fn vec_free(vec: own<ptr<t40, user, unknown>>) -> t40 {
+fn vec_free(vec: borrow<ptr<t40, user, unknown>>) -> t40 {
     match vec {
         null => { return 0; }
         unknown => { return 0; }
@@ -1990,7 +1995,11 @@ fn vec_free(vec: own<ptr<t40, user, unknown>>) -> t40 {
                 zero => {}
                 neg => {}
             }
-            free_raw(v);
+            unsafe {
+                store(v, 0);
+                store(v + 1, 0);
+                store(v + 2, 0);
+            }
             return 0;
         }
     }
@@ -2214,7 +2223,7 @@ fn heap_pop(h: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
     }
 }
 
-fn heap_free_struct(h: own<ptr<t40, user, unknown>>) -> t40 {
+fn heap_free_struct(h: borrow<ptr<t40, user, unknown>>) -> t40 {
     match h {
         null => { return 0; }
         unknown => { return 0; }
@@ -2226,7 +2235,6 @@ fn heap_free_struct(h: own<ptr<t40, user, unknown>>) -> t40 {
                 zero => {}
                 neg => {}
             }
-            free_raw(hh);
             return 0;
         }
     }
@@ -2376,7 +2384,7 @@ fn ring_len(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
     }
 }
 
-fn ring_free(rb: own<ptr<t40, user, unknown>>) -> t40 {
+fn ring_free(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
     match rb {
         null => { return 0; }
         unknown => { return 0; }
@@ -2388,7 +2396,6 @@ fn ring_free(rb: own<ptr<t40, user, unknown>>) -> t40 {
                 zero => {}
                 neg => {}
             }
-            free_raw(r);
             return 0;
         }
     }
@@ -2630,7 +2637,7 @@ fn split_empty_pos(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
     }
 }
 
-fn split_buf_free(buf: own<ptr<t40, user, unknown>>) -> void {
+fn split_buf_free(buf: borrow<ptr<t40, user, unknown>>) -> void {
     match buf {
         null => { return; }
         unknown => { return; }
@@ -2642,7 +2649,6 @@ fn split_buf_free(buf: own<ptr<t40, user, unknown>>) -> void {
                 neg => {}
                 pos => { free_raw(data); }
             }
-            free_raw(b);
         }
     }
 }

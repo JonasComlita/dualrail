@@ -669,6 +669,28 @@ struct TernaryMemory {
         reset();
     }
 
+    bool growTo(int min_size) {
+        if (min_size <= capacity) return true;
+        if (min_size < 0) return false;
+
+        TernaryValue* grown = nullptr;
+        try {
+            grown = allocator->allocateDataWords(min_size);
+        } catch (...) {
+            return false;
+        }
+        if (min_size > 0 && grown == nullptr) return false;
+
+        std::fill(grown, grown + min_size, TernaryValue::zero());
+        if (capacity > 0 && words != nullptr) {
+            std::copy(words, words + capacity, grown);
+            allocator->deallocateDataWords(words);
+        }
+        words = grown;
+        capacity = min_size;
+        return true;
+    }
+
     // Load one LongTriple word from address [addr].
     // Returns {value, MemFaultCode::OK} on success.
     // Returns {LongTriple{0}, MemFaultCode::OUT_OF_RANGE} on fault.
@@ -1349,6 +1371,29 @@ struct VMState {
     void coldReset() {
         reset();
         clearMemory();
+    }
+
+    bool growDataMemoryPreservingStack(int min_size) {
+        const int old_size = dmem.size();
+        if (min_size <= old_size) return true;
+
+        const long long sp_long = ops::toLong(regfile.readSP());
+        if (!dmem.growTo(min_size)) return false;
+
+        if (sp_long >= 0 && sp_long < old_size) {
+            const int old_sp = static_cast<int>(sp_long);
+            const int delta = min_size - old_size;
+            for (int addr = old_size - 1; addr >= old_sp; --addr) {
+                auto [value, fault] = dmem.load(addr);
+                if (fault != MemFaultCode::OK ||
+                    dmem.store(addr + delta, value) != MemFaultCode::OK ||
+                    dmem.store(addr, TernaryValue::zero()) != MemFaultCode::OK) {
+                    return false;
+                }
+            }
+            regfile.write(R26_SP, ops::fromLong(old_sp + delta));
+        }
+        return true;
     }
 
     void resetControlState() {

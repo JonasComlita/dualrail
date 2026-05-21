@@ -149,6 +149,12 @@ void testFunctionCallAndWhileLoop() {
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "call/loop image loads");
         const auto result = sandbox::vm::run(vm, 512);
+        if (!result.halted()) {
+            std::cout << "DEBUG: call/loop failed. status=" << static_cast<int>(result.status)
+                      << ", cause=" << vm.cause << ", pc=" << vm.pc
+                      << ", trap_reg=" << sandbox::vm::ops::toLong(vm.trap_reg) << "\n";
+            std::cout << "Assembly:\n" << compiled.assembly << "\n";
+        }
         expect(result.halted(), "call/loop image halts");
         expect(regLong(vm, 13) == 3, "while loop and direct call produce expected result");
     }

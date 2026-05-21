@@ -47,6 +47,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <string>
 #include <sstream>
 
@@ -1770,7 +1771,20 @@ inline VMStatus step(VMState& vm) {
                 // region, then advance this VM's private heap break.
                 long long delta = sandbox::vm::ops::toLong(vm.regfile.read(13));
                 long long old_break = vm.standalone_heap_break;
-                vm.standalone_heap_break += delta;
+                long long new_break = old_break + delta;
+                if (new_break < 0 || new_break > static_cast<long long>(std::numeric_limits<int>::max())) {
+                    vm.trap(TrapCode::TRAP_MEM_FAULT);
+                    return vm.status;
+                }
+                if (new_break > vm.dmem.size()) {
+                    const long long doubled = std::max<long long>(1, vm.dmem.size()) * 2;
+                    const int grown_size = static_cast<int>(std::max(new_break, doubled));
+                    if (!vm.growDataMemoryPreservingStack(grown_size)) {
+                        vm.trap(TrapCode::TRAP_MEM_FAULT);
+                        return vm.status;
+                    }
+                }
+                vm.standalone_heap_break = new_break;
                 vm.regfile.write(13, sandbox::vm::ops::fromLong(old_break));
             } else if (iw.imm == 22) {
                 // sys_write_char: interpret r1 as an ASCII character code

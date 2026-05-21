@@ -1,0 +1,439 @@
+// json_parser.trit
+// A partial JSON parser that parses objects, strings, numbers, booleans, and null.
+// Note: Arrays are explicitly NOT supported.
+
+fn print_str(addr: ptr<t40, user, valid>) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(addr + i); }
+        match c {
+            zero => { done = 1; }
+            _ => {
+                sys_write_char(c);
+                i = i + 1;
+            }
+        }
+    }
+    return 0;
+}
+
+fn print_substr(start: t40, end: t40) -> t40 {
+    var i: t40 = start;
+    while end - i > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(i); }
+        sys_write_char(c);
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn get_cursor() -> t40 {
+    var c: t40 = 0;
+    unsafe { c = load(0); }
+    return c;
+}
+
+fn set_cursor(c: t40) -> t40 {
+    unsafe { store(0, c); }
+    return 0;
+}
+
+fn skip_whitespace() -> t40 {
+    var cur: t40 = get_cursor();
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(cur); }
+        match c {
+            zero => { done = 1; }
+            _ => {
+                var is_ws: t40 = 0;
+                match c - 32 {
+                    zero => { is_ws = 1; }
+                    _ => {
+                        match c - 9 {
+                            zero => { is_ws = 1; }
+                            _ => {
+                                match c - 10 {
+                                    zero => { is_ws = 1; }
+                                    _ => {
+                                        match c - 13 {
+                                            zero => { is_ws = 1; }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                match is_ws {
+                    zero => { done = 1; }
+                    _ => { cur = cur + 1; }
+                }
+            }
+        }
+    }
+    set_cursor(cur);
+    return 0;
+}
+
+fn parse_string() -> t40 {
+    var cur: t40 = get_cursor();
+    cur = cur + 1; // skip leading '"'
+    var start: t40 = cur;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(cur); }
+        match c {
+            zero => { done = 1; }
+            _ => {
+                match c - 34 { // '"'
+                    zero => { done = 1; }
+                    _ => { cur = cur + 1; }
+                }
+            }
+        }
+    }
+    print_substr(start, cur);
+    set_cursor(cur + 1); // skip trailing '"'
+    return 0;
+}
+
+fn parse_number() -> t40 {
+    var cur: t40 = get_cursor();
+    var val: t40 = 0;
+    var is_neg: t40 = 0;
+    
+    var c: t40 = 0;
+    unsafe { c = load(cur); }
+    match c - 45 { // '-'
+        zero => {
+            is_neg = 1;
+            cur = cur + 1;
+        }
+        _ => {}
+    }
+    
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        unsafe { c = load(cur); }
+        match c - 48 {
+            neg => { done = 1; }
+            zero => {
+                val = val * 10;
+                cur = cur + 1;
+            }
+            pos => {
+                match 57 - c {
+                    neg => { done = 1; }
+                    _ => {
+                        val = val * 10 + (c - 48);
+                        cur = cur + 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    match is_neg {
+        zero => {}
+        _ => { val = 0 - val; }
+    }
+    
+    sys_write_int(val);
+    set_cursor(cur);
+    return 0;
+}
+
+fn parse_object() -> t40 {
+    var cur: t40 = get_cursor();
+    cur = cur + 1; // skip '{'
+    set_cursor(cur);
+    
+    sys_write_char(79); sys_write_char(98); sys_write_char(106); sys_write_char(101); sys_write_char(99); sys_write_char(116); sys_write_char(58); sys_newline();
+    
+    var first: t40 = 1;
+    var done: t40 = 0;
+    var err: t40 = 0;
+    
+    while 1 - done > 0 {
+        skip_whitespace();
+        cur = get_cursor();
+        var c: t40 = 0;
+        unsafe { c = load(cur); }
+        
+        match c - 125 { // '}'
+            zero => {
+                set_cursor(cur + 1);
+                done = 1;
+            }
+            _ => {
+                match first {
+                    zero => {
+                        match c - 44 { // ','
+                            zero => {
+                                cur = cur + 1;
+                                set_cursor(cur);
+                                skip_whitespace();
+                                cur = get_cursor();
+                                unsafe { c = load(cur); }
+                            }
+                            _ => {
+                                done = 1;
+                                err = 1;
+                            }
+                        }
+                    }
+                    _ => {
+                        first = 0;
+                    }
+                }
+                
+                match done {
+                    zero => {
+                        match c - 34 { // '"'
+                            zero => {
+                                sys_write_char(32); sys_write_char(32); sys_write_char(75); sys_write_char(101); sys_write_char(121); sys_write_char(58); sys_write_char(32);
+                                
+                                parse_string();
+                                
+                                skip_whitespace();
+                                cur = get_cursor();
+                                unsafe { c = load(cur); }
+                                
+                                match c - 58 { // ':'
+                                    zero => {
+                                        set_cursor(cur + 1);
+                                        skip_whitespace();
+                                        
+                                        sys_write_char(44); sys_write_char(32); sys_write_char(86); sys_write_char(97); sys_write_char(108); sys_write_char(117); sys_write_char(101); sys_write_char(58); sys_write_char(32);
+                                        
+                                        var res: t40 = parse_value();
+                                        match res {
+                                            neg => {
+                                                done = 1;
+                                                err = 1;
+                                            }
+                                            _ => {
+                                                sys_newline();
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        done = 1;
+                                        err = 1;
+                                    }
+                                }
+                            }
+                            _ => {
+                                done = 1;
+                                err = 1;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    
+    match err {
+        zero => { return 0; }
+        _ => { return 0 - 1; }
+    }
+}
+
+fn parse_value() -> t40 {
+    skip_whitespace();
+    var cur: t40 = get_cursor();
+    var c: t40 = 0;
+    unsafe { c = load(cur); }
+    match c {
+        zero => { return 0; }
+        _ => {
+            match c - 91 { // '['
+                zero => {
+                    // "Error: arrays not supported"
+                    unsafe {
+                        store(1000, 69); store(1001, 114); store(1002, 114); store(1003, 111); store(1004, 114);
+                        store(1005, 58); store(1006, 32); store(1007, 97); store(1008, 114); store(1009, 114);
+                        store(1010, 97); store(1011, 121); store(1012, 115); store(1013, 32); store(1014, 110);
+                        store(1015, 111); store(1016, 116); store(1017, 32); store(1018, 115); store(1019, 117);
+                        store(1020, 112); store(1021, 112); store(1022, 111); store(1023, 114); store(1024, 116);
+                        store(1025, 101); store(1026, 100); store(1027, 0);
+                    }
+                    print_str(1000);
+                    sys_newline();
+                    return 0 - 1;
+                }
+                _ => {}
+            }
+            
+            match c - 123 { // '{'
+                zero => {
+                    return parse_object();
+                }
+                _ => {}
+            }
+            
+            match c - 34 { // '"'
+                zero => {
+                    return parse_string();
+                }
+                _ => {}
+            }
+            
+            match c - 116 { // 't'
+                zero => {
+                    sys_write_char(116); sys_write_char(114); sys_write_char(117); sys_write_char(101);
+                    set_cursor(cur + 4);
+                    return 0;
+                }
+                _ => {}
+            }
+            match c - 102 { // 'f'
+                zero => {
+                    sys_write_char(102); sys_write_char(97); sys_write_char(108); sys_write_char(115); sys_write_char(101);
+                    set_cursor(cur + 5);
+                    return 0;
+                }
+                _ => {}
+            }
+            
+            match c - 110 { // 'n'
+                zero => {
+                    sys_write_char(110); sys_write_char(117); sys_write_char(108); sys_write_char(108);
+                    set_cursor(cur + 4);
+                    return 0;
+                }
+                _ => {}
+            }
+            
+            return parse_number();
+        }
+    }
+}
+
+fn main() -> t40 {
+    // Test Case 1: Valid JSON object without arrays
+    // { "name": "Trit", "version": 1, "valid": true }
+    var str1: t40 = 2000;
+    unsafe {
+        store(str1 + 0, 123); // {
+        store(str1 + 1, 32);  //  
+        store(str1 + 2, 34);  // "
+        store(str1 + 3, 110); // n
+        store(str1 + 4, 97);  // a
+        store(str1 + 5, 109); // m
+        store(str1 + 6, 101); // e
+        store(str1 + 7, 34);  // "
+        store(str1 + 8, 58);  // :
+        store(str1 + 9, 32);  //  
+        store(str1 + 10, 34); // "
+        store(str1 + 11, 84); // T
+        store(str1 + 12, 114);// r
+        store(str1 + 13, 105);// i
+        store(str1 + 14, 116);// t
+        store(str1 + 15, 34); // "
+        store(str1 + 16, 44); // ,
+        store(str1 + 17, 32); //  
+        store(str1 + 18, 34); // "
+        store(str1 + 19, 118);// v
+        store(str1 + 20, 101);// e
+        store(str1 + 21, 114);// r
+        store(str1 + 22, 115);// s
+        store(str1 + 23, 105);// i
+        store(str1 + 24, 111);// o
+        store(str1 + 25, 110);// n
+        store(str1 + 26, 34); // "
+        store(str1 + 27, 58); // :
+        store(str1 + 28, 32); //  
+        store(str1 + 29, 49); // 1
+        store(str1 + 30, 44); // ,
+        store(str1 + 31, 32); //  
+        store(str1 + 32, 34); // "
+        store(str1 + 33, 118);// v
+        store(str1 + 34, 97); // a
+        store(str1 + 35, 108);// l
+        store(str1 + 36, 105);// i
+        store(str1 + 37, 100);// d
+        store(str1 + 38, 34); // "
+        store(str1 + 39, 58); // :
+        store(str1 + 40, 32); //  
+        store(str1 + 41, 116);// t
+        store(str1 + 42, 114);// r
+        store(str1 + 43, 117);// u
+        store(str1 + 44, 101);// e
+        store(str1 + 45, 32); //  
+        store(str1 + 46, 125);// }
+        store(str1 + 47, 0);   // \0
+    }
+    
+    // Print Input 1
+    sys_write_char(73); sys_write_char(110); sys_write_char(112); sys_write_char(117); sys_write_char(116); sys_write_char(32); sys_write_char(49); sys_write_char(58); sys_write_char(32);
+    print_str(str1);
+    sys_newline();
+    
+    // Parse Input 1
+    set_cursor(str1);
+    parse_value();
+    sys_newline();
+    
+    // Test Case 2: JSON object containing an array (fails)
+    // { "name": "Trit", "array": [1, 2] }
+    var str2: t40 = 3000;
+    unsafe {
+        store(str2 + 0, 123); // {
+        store(str2 + 1, 32);  //  
+        store(str2 + 2, 34);  // "
+        store(str2 + 3, 110); // n
+        store(str2 + 4, 97);  // a
+        store(str2 + 5, 109); // m
+        store(str2 + 6, 101); // e
+        store(str2 + 7, 34);  // "
+        store(str2 + 8, 58);  // :
+        store(str2 + 9, 32);  //  
+        store(str2 + 10, 34); // "
+        store(str2 + 11, 84); // T
+        store(str2 + 12, 114);// r
+        store(str2 + 13, 105);// i
+        store(str2 + 14, 116);// t
+        store(str2 + 15, 34); // "
+        store(str2 + 16, 44); // ,
+        store(str2 + 17, 32); //  
+        store(str2 + 18, 34); // "
+        store(str2 + 19, 97);  // a
+        store(str2 + 20, 114); // r
+        store(str2 + 21, 114); // r
+        store(str2 + 22, 97);  // a
+        store(str2 + 23, 121); // y
+        store(str2 + 24, 34);  // "
+        store(str2 + 25, 58);  // :
+        store(str2 + 26, 32);  //  
+        store(str2 + 27, 91);  // [
+        store(str2 + 28, 49);  // 1
+        store(str2 + 29, 44);  // ,
+        store(str2 + 30, 32);  //  
+        store(str2 + 31, 50);  // 2
+        store(str2 + 32, 93);  // ]
+        store(str2 + 33, 32);  //  
+        store(str2 + 34, 125); // }
+        store(str2 + 35, 0);   // \0
+    }
+    
+    // Print Input 2
+    sys_write_char(73); sys_write_char(110); sys_write_char(112); sys_write_char(117); sys_write_char(116); sys_write_char(32); sys_write_char(50); sys_write_char(58); sys_write_char(32);
+    print_str(str2);
+    sys_newline();
+    
+    // Parse Input 2
+    set_cursor(str2);
+    parse_value();
+    
+    return 0;
+}

@@ -1,0 +1,213 @@
+// brainfuck_interpreter.trit
+// A Brainfuck interpreter written in Trit (compiles and runs).
+
+fn find_matching_forward(pc: t40) -> t40 {
+    var depth: t40 = 1;
+    var cur: t40 = pc + 1;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(cur); }
+        match c {
+            zero => { done = 1; }
+            _ => {
+                match c - 91 { // '['
+                    zero => { depth = depth + 1; }
+                    _ => {
+                        match c - 93 { // ']'
+                            zero => {
+                                depth = depth - 1;
+                                match depth {
+                                    zero => { done = 1; }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                match done {
+                    zero => { cur = cur + 1; }
+                    _ => {}
+                }
+            }
+        }
+    }
+    return cur;
+}
+
+fn find_matching_backward(pc: t40) -> t40 {
+    var depth: t40 = 1;
+    var cur: t40 = pc - 1;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(cur); }
+        match c {
+            zero => { done = 1; }
+            _ => {
+                match c - 93 { // ']'
+                    zero => { depth = depth + 1; }
+                    _ => {
+                        match c - 91 { // '['
+                            zero => {
+                                depth = depth - 1;
+                                match depth {
+                                    zero => { done = 1; }
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                match done {
+                    zero => { cur = cur - 1; }
+                    _ => {}
+                }
+            }
+        }
+    }
+    return cur;
+}
+
+fn run_bf(prog_start: t40, data_start: t40) -> t40 {
+    var pc: t40 = prog_start;
+    var dp: t40 = data_start;
+    
+    // Clear data memory first (e.g. 500 cells)
+    var clear_idx: t40 = 0;
+    while 500 - clear_idx > 0 {
+        unsafe { store(data_start + clear_idx, 0); }
+        clear_idx = clear_idx + 1;
+    }
+    
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var cmd: t40 = 0;
+        unsafe { cmd = load(pc); }
+        match cmd {
+            zero => { done = 1; }
+            _ => {
+                // '+' is 43
+                match cmd - 43 {
+                    zero => {
+                        var val: t40 = 0;
+                        unsafe {
+                            val = load(dp);
+                            store(dp, val + 1);
+                        }
+                        pc = pc + 1;
+                    }
+                    _ => {
+                        // '-' is 45
+                        match cmd - 45 {
+                            zero => {
+                                var val: t40 = 0;
+                                unsafe {
+                                    val = load(dp);
+                                    store(dp, val - 1);
+                                }
+                                pc = pc + 1;
+                            }
+                            _ => {
+                                // '>' is 62
+                                match cmd - 62 {
+                                    zero => {
+                                        dp = dp + 1;
+                                        pc = pc + 1;
+                                    }
+                                    _ => {
+                                        // '<' is 60
+                                        match cmd - 60 {
+                                            zero => {
+                                                dp = dp - 1;
+                                                pc = pc + 1;
+                                            }
+                                            _ => {
+                                                // '.' is 46
+                                                match cmd - 46 {
+                                                    zero => {
+                                                        var val: t40 = 0;
+                                                        unsafe { val = load(dp); }
+                                                        sys_write_char(val);
+                                                        pc = pc + 1;
+                                                    }
+                                                    _ => {
+                                                        // '[' is 91
+                                                        match cmd - 91 {
+                                                            zero => {
+                                                                var val: t40 = 0;
+                                                                unsafe { val = load(dp); }
+                                                                match val {
+                                                                    zero => {
+                                                                        pc = find_matching_forward(pc) + 1;
+                                                                    }
+                                                                    _ => {
+                                                                        pc = pc + 1;
+                                                                    }
+                                                                }
+                                                            }
+                                                            _ => {
+                                                                // ']' is 93
+                                                                match cmd - 93 {
+                                                                    zero => {
+                                                                        var val: t40 = 0;
+                                                                        unsafe { val = load(dp); }
+                                                                        match val {
+                                                                            zero => {
+                                                                                pc = pc + 1;
+                                                                            }
+                                                                            _ => {
+                                                                                pc = find_matching_backward(pc) + 1;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    _ => {
+                                                                        // Ignore other characters
+                                                                        pc = pc + 1;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+fn main() -> t40 {
+    // We will write the Hello World BF program into address 1000
+    // "++++++++[>++++[>++>+++>+++>+<<<<-]>->+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+    var p: t40 = 1000;
+    unsafe {
+        store(p + 0, 43); store(p + 1, 43); store(p + 2, 43); store(p + 3, 43); store(p + 4, 43); store(p + 5, 43); store(p + 6, 43); store(p + 7, 43);
+        store(p + 8, 91); store(p + 9, 62); store(p + 10, 43); store(p + 11, 43); store(p + 12, 43); store(p + 13, 43); store(p + 14, 91); store(p + 15, 62);
+        store(p + 16, 43); store(p + 17, 43); store(p + 18, 62); store(p + 19, 43); store(p + 20, 43); store(p + 21, 43); store(p + 22, 62); store(p + 23, 43);
+        store(p + 24, 43); store(p + 25, 43); store(p + 26, 62); store(p + 27, 43); store(p + 28, 60); store(p + 29, 60); store(p + 30, 60); store(p + 31, 60);
+        store(p + 32, 45); store(p + 33, 93); store(p + 34, 62); store(p + 35, 43); store(p + 36, 62); store(p + 37, 43); store(p + 38, 62); store(p + 39, 45);
+        store(p + 40, 62); store(p + 41, 62); store(p + 42, 43); store(p + 43, 91); store(p + 44, 60); store(p + 45, 93); store(p + 46, 60); store(p + 47, 45);
+        store(p + 48, 93); store(p + 49, 62); store(p + 50, 62); store(p + 51, 46); store(p + 52, 62); store(p + 53, 45); store(p + 54, 45); store(p + 55, 45);
+        store(p + 56, 46); store(p + 57, 43); store(p + 58, 43); store(p + 59, 43); store(p + 60, 43); store(p + 61, 43); store(p + 62, 43); store(p + 63, 43);
+        store(p + 64, 46); store(p + 65, 46); store(p + 66, 43); store(p + 67, 43); store(p + 68, 43); store(p + 69, 46); store(p + 70, 62); store(p + 71, 62);
+        store(p + 72, 46); store(p + 73, 60); store(p + 74, 45); store(p + 75, 46); store(p + 76, 60); store(p + 77, 46); store(p + 78, 43); store(p + 79, 43);
+        store(p + 80, 43); store(p + 81, 46); store(p + 82, 45); store(p + 83, 45); store(p + 84, 45); store(p + 85, 45); store(p + 86, 45); store(p + 87, 45);
+        store(p + 88, 46); store(p + 89, 45); store(p + 90, 45); store(p + 91, 45); store(p + 92, 45); store(p + 93, 45); store(p + 94, 45); store(p + 95, 45);
+        store(p + 96, 45); store(p + 97, 46); store(p + 98, 62); store(p + 99, 62); store(p + 100, 43); store(p + 101, 46); store(p + 102, 62); store(p + 103, 43);
+        store(p + 104, 43); store(p + 105, 46); store(p + 106, 0);
+    }
+    
+    run_bf(1000, 20000);
+    sys_newline();
+    return 0;
+}
