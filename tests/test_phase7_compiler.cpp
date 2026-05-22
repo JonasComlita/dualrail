@@ -1230,32 +1230,58 @@ void testTclTernaryErgonomicsExtensions() {
         }
     }
 
-    // 4. Test SplitBuf push/pop/gap/claim API using ulib.trit
+    // 4. Test SplitBuf push/pop/gap/steal API using ulib.trit
     {
         std::string ulib_src = readUlibTrit();
         std::string split_test_src = ulib_src + R"(
+            fn split_check(actual: t40, expected: t40, ok: t40) -> t40 {
+                match ok {
+                    pos => {}
+                    zero => { return 0; }
+                    neg => { return 0; }
+                }
+                match actual - expected {
+                    zero => { return ok; }
+                    neg => { return 0; }
+                    pos => { return 0; }
+                }
+            }
+
             fn main() -> t40 {
-                var sb: t40 = split_buf_new(10);
+                var sb: t40 = split_buf_new(6);
                 match sb {
                     neg => { return 0; }
                     zero => { return 0; }
-                    pos => {
-                        sys_write_int(sb); sys_newline();
-                        
-                        var push_neg1: t40 = split_push_neg(sb, 0 - 10);
-                        var push_neg2: t40 = split_push_neg(sb, 0 - 20);
-                        sys_write_int(push_neg1); sys_write_int(push_neg2); sys_newline();
-
-                        var n: t40 = split_pop_neg(sb);
-                        sys_write_int(n); sys_newline();
-                        match n - (0 - 20) {
-                            neg => { return 0; }
-                            zero => { return 1; }
-                            pos => { return 0; }
-                        }
-                    }
+                    pos => {}
                 }
-                return 0;
+
+                var ok: t40 = 1;
+                ok = split_check(split_gap_len(sb), 6, ok);
+                ok = split_check(split_push_neg(sb, 0 - 10), 1, ok);
+                ok = split_check(split_push_pos(sb, 10), 1, ok);
+                ok = split_check(split_push_neg(sb, 5), 0 - 1, ok);
+                ok = split_check(split_push_pos(sb, 0 - 5), 0 - 1, ok);
+                ok = split_check(split_gap_start(sb), 1, ok);
+                ok = split_check(split_gap_end(sb), 4, ok);
+                ok = split_check(split_gap_len(sb), 4, ok);
+
+                var neg_ticket: t40 = split_steal_neg(sb);
+                var pos_ticket: t40 = split_steal_pos(sb);
+                ok = split_check(neg_ticket, 2, ok);
+                ok = split_check(pos_ticket, 5, ok);
+                ok = split_check(split_slot_value(sb, neg_ticket), 0 - 1, ok);
+                ok = split_check(split_slot_value(sb, pos_ticket), 1, ok);
+                ok = split_check(split_gap_start(sb), 2, ok);
+                ok = split_check(split_gap_end(sb), 3, ok);
+                ok = split_check(split_gap_len(sb), 2, ok);
+
+                ok = split_check(split_pop_neg(sb), 0 - 1, ok);
+                ok = split_check(split_pop_pos(sb), 1, ok);
+                ok = split_check(split_pop_neg(sb), 0 - 10, ok);
+                ok = split_check(split_pop_pos(sb), 10, ok);
+                ok = split_check(split_empty_neg(sb), 1, ok);
+                ok = split_check(split_empty_pos(sb), 1, ok);
+                return ok;
             }
         )";
 
@@ -1267,17 +1293,14 @@ void testTclTernaryErgonomicsExtensions() {
             }
         }
         expect(compiled.success, "ulib + split buffer test compiles successfully");
-        std::cout << "=== SPLIT BUFFER TEST ASSEMBLY ===\n" << compiled.object.assembly << "\n==================================\n";
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success, "split buffer test links");
         sandbox::vm::VMState vm(65536, 65536);
         if (linked.success) {
             expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "split buffer test VM image loads");
-            const auto result = sandbox::vm::run(vm, 10000);
-            std::cout << "VM SYSCALL BUFFER FOR SPLIT BUFFER:\n" << vm.syscall_buffer << "\n";
+            const auto result = sandbox::vm::run(vm, 500000);
             expect(result.halted(), "split buffer test halts");
-            std::cout << "DEBUG: split test reg 13 = " << regLong(vm, 13) << "\n";
-            expect(regLong(vm, 13) == 1, "SplitBuf operations work correctly");
+            expect(regLong(vm, 13) == 1, "SplitBuf push/pop and zero-zone steal operations work correctly");
         }
     }
 }

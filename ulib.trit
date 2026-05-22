@@ -2406,8 +2406,18 @@ fn ring_free(rb: borrow<ptr<t40, user, unknown>>) -> t40 {
 // Struct (4 words, malloc'd): 
 //   [0]=data_ptr
 //   [1]=capacity
-//   [2]=neg_top (grows up, starts at 0)
-//   [3]=pos_top (grows down, starts at capacity)
+//   [2]=neg_meta (versioned neg_top token; index decodes to 0 initially)
+//   [3]=pos_meta (versioned pos_top token; index decodes to capacity initially)
+//
+// Layout:
+//   [0, neg_top)        negative-processing track
+//   [neg_top, pos_top)  zero handoff zone
+//   [pos_top, capacity) positive-processing track
+//
+// The handoff zone is intentionally zero-filled. Either track may claim a
+// zero slot with TLDR/TSTR: neg claims mark the slot -1, pos claims mark it +1.
+// Boundary words are updated with versioned CAS tokens, so concurrent owners
+// cannot lose an ABA cycle where a boundary index leaves and later returns.
 // =============================================================================
 
 fn split_buf_new(capacity: t40) -> own<ptr<t40, user, unknown>> {
@@ -2439,110 +2449,257 @@ fn split_buf_new(capacity: t40) -> own<ptr<t40, user, unknown>> {
     }
 }
 
-fn split_push_neg(buf: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
-    match split_full(buf) {
-        pos => { return 0 - 1; }
-        zero => {}
-        neg => {}
+fn split_atomic_load_word(addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = tldr(addr, 0); }
+    return val;
+}
+
+fn split_cas_word(addr: t40, expected: t40, desired: t40) -> t40 {
+    var current: t40 = 0;
+    unsafe { current = tldr(addr, 0); }
+    match current - expected {
+        zero => {
+            unsafe { return tstr(addr, desired, expected, 0); }
+        }
+        neg => { return 0; }
+        pos => { return 0; }
     }
+}
+
+fn split_boundary_base(meta: t40, capacity: t40) -> t40 {
+    var stride: t40 = capacity + 1;
     var base: t40 = 0;
-    var neg_top: t40 = 0;
-    unsafe {
-        base = load(buf);
-        neg_top = load(buf + 2);
+    var done: t40 = 0;
+    // Packed boundary tokens need floor decoding; keep it explicit.
+    while 1 - done > 0 {
+        match meta - base - stride {
+            neg => { done = 1; }
+            zero => { base = base + stride; }
+            pos => { base = base + stride; }
+        }
     }
-    unsafe {
-        store(base + neg_top, val);
-        store(buf + 2, neg_top + 1);
+    return base;
+}
+
+fn split_boundary_index(meta: t40, capacity: t40) -> t40 {
+    var base: t40 = split_boundary_base(meta, capacity);
+    return meta - base;
+}
+
+fn split_boundary_next_meta(meta: t40, capacity: t40, next_idx: t40) -> t40 {
+    var stride: t40 = capacity + 1;
+    var base: t40 = split_boundary_base(meta, capacity);
+    return base + stride + next_idx;
+}
+
+fn split_load_neg_top(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var capacity: t40 = 0;
+    unsafe { capacity = load(buf + 1); }
+    var meta: t40 = split_atomic_load_word(buf + 2);
+    return split_boundary_index(meta, capacity);
+}
+
+fn split_load_pos_top(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
+    var capacity: t40 = 0;
+    unsafe { capacity = load(buf + 1); }
+    var meta: t40 = split_atomic_load_word(buf + 3);
+    return split_boundary_index(meta, capacity);
+}
+
+fn split_push_neg(buf: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
+    match val {
+        neg => {}
+        zero => { return 0 - 1; }
+        pos => { return 0 - 1; }
     }
-    return 1;
+
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var neg_meta: t40 = split_atomic_load_word(buf + 2);
+        var pos_meta: t40 = split_atomic_load_word(buf + 3);
+        var neg_top: t40 = split_boundary_index(neg_meta, capacity);
+        var pos_top: t40 = split_boundary_index(pos_meta, capacity);
+        match pos_top - neg_top {
+            neg => { return 0 - 1; }
+            zero => { return 0 - 1; }
+            pos => {}
+        }
+
+        var addr: t40 = base + neg_top;
+        var slot_status: t40 = split_cas_word(addr, 0, val);
+        match slot_status {
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(neg_meta, capacity, neg_top + 1);
+                var top_status: t40 = split_cas_word(buf + 2, neg_meta, next_meta);
+                match top_status {
+                    pos => { return 1; }
+                    zero => { split_cas_word(addr, val, 0); }
+                    neg => { split_cas_word(addr, val, 0); }
+                }
+            }
+            zero => {}
+            neg => {}
+        }
+    }
+    return 0 - 1;
 }
 
 fn split_push_pos(buf: borrow_mut<ptr<t40, user, valid>>, val: t40) -> t40 {
-    match split_full(buf) {
-        pos => { return 0 - 1; }
-        zero => {}
-        neg => {}
+    match val {
+        pos => {}
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
     }
-    var base: t40 = 0;
-    var pos_top: t40 = 0;
-    unsafe {
-        base = load(buf);
-        pos_top = load(buf + 3);
+
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var neg_meta: t40 = split_atomic_load_word(buf + 2);
+        var pos_meta: t40 = split_atomic_load_word(buf + 3);
+        var neg_top: t40 = split_boundary_index(neg_meta, capacity);
+        var pos_top: t40 = split_boundary_index(pos_meta, capacity);
+        match pos_top - neg_top {
+            neg => { return 0 - 1; }
+            zero => { return 0 - 1; }
+            pos => {}
+        }
+
+        var next_pos: t40 = pos_top - 1;
+        var addr: t40 = base + next_pos;
+        var slot_status: t40 = split_cas_word(addr, 0, val);
+        match slot_status {
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(pos_meta, capacity, next_pos);
+                var top_status: t40 = split_cas_word(buf + 3, pos_meta, next_meta);
+                match top_status {
+                    pos => { return 1; }
+                    zero => { split_cas_word(addr, val, 0); }
+                    neg => { split_cas_word(addr, val, 0); }
+                }
+            }
+            zero => {}
+            neg => {}
+        }
     }
-    var next_pos: t40 = pos_top - 1;
-    unsafe {
-        store(base + next_pos, val);
-        store(buf + 3, next_pos);
-    }
-    return 1;
+    return 0 - 1;
 }
 
 fn split_pop_neg(buf: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
-    match split_empty_neg(buf) {
-        pos => { return 0; }
-        zero => {}
-        neg => {}
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var neg_meta: t40 = split_atomic_load_word(buf + 2);
+        var neg_top: t40 = split_boundary_index(neg_meta, capacity);
+        match neg_top {
+            zero => { return 0; }
+            neg => { return 0; }
+            pos => {}
+        }
+
+        var prev_neg: t40 = neg_top - 1;
+        var addr: t40 = base + prev_neg;
+        var val: t40 = split_atomic_load_word(addr);
+        match val {
+            zero => {}
+            neg => {
+                var next_meta: t40 = split_boundary_next_meta(neg_meta, capacity, prev_neg);
+                var top_status: t40 = split_cas_word(buf + 2, neg_meta, next_meta);
+                match top_status {
+                    pos => { split_cas_word(addr, val, 0); return val; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(neg_meta, capacity, prev_neg);
+                var top_status: t40 = split_cas_word(buf + 2, neg_meta, next_meta);
+                match top_status {
+                    pos => { split_cas_word(addr, val, 0); return val; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+        }
     }
-    var base: t40 = 0;
-    var neg_top: t40 = 0;
-    unsafe {
-        base = load(buf);
-        neg_top = load(buf + 2);
-    }
-    var prev_neg: t40 = neg_top - 1;
-    var val: t40 = 0;
-    unsafe {
-        val = load(base + prev_neg);
-        store(base + prev_neg, 0);
-        store(buf + 2, prev_neg);
-    }
-    return val;
+    return 0;
 }
 
 fn split_pop_pos(buf: borrow_mut<ptr<t40, user, unknown>>) -> t40 {
-    match split_empty_pos(buf) {
-        pos => { return 0; }
-        zero => {}
-        neg => {}
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var pos_meta: t40 = split_atomic_load_word(buf + 3);
+        var pos_top: t40 = split_boundary_index(pos_meta, capacity);
+        match capacity - pos_top {
+            zero => { return 0; }
+            neg => { return 0; }
+            pos => {}
+        }
+
+        var addr: t40 = base + pos_top;
+        var val: t40 = split_atomic_load_word(addr);
+        match val {
+            zero => {}
+            neg => {
+                var next_meta: t40 = split_boundary_next_meta(pos_meta, capacity, pos_top + 1);
+                var top_status: t40 = split_cas_word(buf + 3, pos_meta, next_meta);
+                match top_status {
+                    pos => { split_cas_word(addr, val, 0); return val; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(pos_meta, capacity, pos_top + 1);
+                var top_status: t40 = split_cas_word(buf + 3, pos_meta, next_meta);
+                match top_status {
+                    pos => { split_cas_word(addr, val, 0); return val; }
+                    zero => {}
+                    neg => {}
+                }
+            }
+        }
     }
-    var base: t40 = 0;
-    var pos_top: t40 = 0;
-    unsafe {
-        base = load(buf);
-        pos_top = load(buf + 3);
-    }
-    var val: t40 = 0;
-    unsafe {
-        val = load(base + pos_top);
-        store(base + pos_top, 0);
-        store(buf + 3, pos_top + 1);
-    }
-    return val;
+    return 0;
 }
 
 fn split_gap_start(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var neg_top: t40 = 0;
-    unsafe { neg_top = load(buf + 2); }
-    return neg_top;
+    return split_load_neg_top(buf);
 }
 
 fn split_gap_end(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var pos_top: t40 = 0;
-    unsafe { pos_top = load(buf + 3); }
-    return pos_top - 1;
+    return split_load_pos_top(buf) - 1;
 }
 
 fn split_gap_len(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var neg_top: t40 = 0;
-    var pos_top: t40 = 0;
-    unsafe {
-        neg_top = load(buf + 2);
-        pos_top = load(buf + 3);
-    }
+    var neg_top: t40 = split_load_neg_top(buf);
+    var pos_top: t40 = split_load_pos_top(buf);
     return pos_top - neg_top;
 }
 
+// Low-level slot reservation helper. Deque ownership should use split_steal_neg.
 fn split_claim_neg(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
     var start: t40 = split_gap_start(buf);
     var end: t40 = split_gap_end(buf);
@@ -2559,18 +2716,15 @@ fn split_claim_neg(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
     var base: t40 = 0;
     unsafe { base = load(buf); }
     var addr: t40 = base + slot;
-    unsafe {
-        var reserved: t40 = tldr(addr, 0);
-        match reserved {
-            zero => {
-                return tstr(addr, 0 - 1, 0, 0);
-            }
-            neg => { return 0 - 1; }
-            pos => { return 0 - 1; }
-        }
+    var status: t40 = split_cas_word(addr, 0, 0 - 1);
+    match status {
+        pos => { return status; }
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
     }
 }
 
+// Low-level slot reservation helper. Deque ownership should use split_steal_pos.
 fn split_claim_pos(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
     var start: t40 = split_gap_start(buf);
     var end: t40 = split_gap_end(buf);
@@ -2587,25 +2741,135 @@ fn split_claim_pos(buf: borrow_mut<ptr<t40, user, valid>>, slot: t40) -> t40 {
     var base: t40 = 0;
     unsafe { base = load(buf); }
     var addr: t40 = base + slot;
-    unsafe {
-        var reserved: t40 = tldr(addr, 0);
-        match reserved {
-            zero => {
-                return tstr(addr, 1, 0, 0);
+    var status: t40 = split_cas_word(addr, 0, 1);
+    match status {
+        pos => { return status; }
+        zero => { return 0 - 1; }
+        neg => { return 0 - 1; }
+    }
+}
+
+// Claim the first handoff slot for the negative track.
+// Returns a 1-based slot ticket on success, 0 when no handoff slot exists,
+// and -1 on reservation collision.
+fn split_steal_neg(buf: borrow_mut<ptr<t40, user, valid>>) -> t40 {
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var neg_meta: t40 = split_atomic_load_word(buf + 2);
+        var pos_meta: t40 = split_atomic_load_word(buf + 3);
+        var neg_top: t40 = split_boundary_index(neg_meta, capacity);
+        var pos_top: t40 = split_boundary_index(pos_meta, capacity);
+        match pos_top - neg_top {
+            neg => { return 0; }
+            zero => { return 0; }
+            pos => {}
+        }
+
+        var slot: t40 = neg_top;
+        var addr: t40 = base + slot;
+        var slot_status: t40 = split_cas_word(addr, 0, 0 - 1);
+        match slot_status {
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(neg_meta, capacity, slot + 1);
+                var top_status: t40 = split_cas_word(buf + 2, neg_meta, next_meta);
+                match top_status {
+                    pos => { return slot + 1; }
+                    zero => { split_cas_word(addr, 0 - 1, 0); }
+                    neg => { split_cas_word(addr, 0 - 1, 0); }
+                }
             }
-            neg => { return 0 - 1; }
-            pos => { return 0 - 1; }
+            zero => {}
+            neg => {}
+        }
+    }
+    return 0 - 1;
+}
+
+// Claim the last handoff slot for the positive track.
+// Returns a 1-based slot ticket on success, 0 when no handoff slot exists,
+// and -1 on reservation collision.
+fn split_steal_pos(buf: borrow_mut<ptr<t40, user, valid>>) -> t40 {
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var base: t40 = 0;
+        var capacity: t40 = 0;
+        unsafe {
+            base = load(buf);
+            capacity = load(buf + 1);
+        }
+        var neg_meta: t40 = split_atomic_load_word(buf + 2);
+        var pos_meta: t40 = split_atomic_load_word(buf + 3);
+        var neg_top: t40 = split_boundary_index(neg_meta, capacity);
+        var pos_top: t40 = split_boundary_index(pos_meta, capacity);
+        match pos_top - neg_top {
+            neg => { return 0; }
+            zero => { return 0; }
+            pos => {}
+        }
+
+        var slot: t40 = pos_top - 1;
+        var addr: t40 = base + slot;
+        var slot_status: t40 = split_cas_word(addr, 0, 1);
+        match slot_status {
+            pos => {
+                var next_meta: t40 = split_boundary_next_meta(pos_meta, capacity, slot);
+                var top_status: t40 = split_cas_word(buf + 3, pos_meta, next_meta);
+                match top_status {
+                    pos => { return slot + 1; }
+                    zero => { split_cas_word(addr, 1, 0); }
+                    neg => { split_cas_word(addr, 1, 0); }
+                }
+            }
+            zero => {}
+            neg => {}
+        }
+    }
+    return 0 - 1;
+}
+
+fn split_slot_addr(buf: borrow<ptr<t40, user, unknown>>, ticket: t40) -> t40 {
+    match ticket {
+        neg => { return 0; }
+        zero => { return 0; }
+        pos => {}
+    }
+
+    var base: t40 = 0;
+    var capacity: t40 = 0;
+    unsafe {
+        base = load(buf);
+        capacity = load(buf + 1);
+    }
+    match capacity - ticket {
+        neg => { return 0; }
+        zero => {}
+        pos => {}
+    }
+    return base + ticket - 1;
+}
+
+fn split_slot_value(buf: borrow<ptr<t40, user, unknown>>, ticket: t40) -> t40 {
+    var addr: t40 = split_slot_addr(buf, ticket);
+    match addr {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var val: t40 = 0;
+            unsafe { val = load(addr); }
+            return val;
         }
     }
 }
 
 fn split_full(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var neg_top: t40 = 0;
-    var pos_top: t40 = 0;
-    unsafe {
-        neg_top = load(buf + 2);
-        pos_top = load(buf + 3);
-    }
+    var neg_top: t40 = split_load_neg_top(buf);
+    var pos_top: t40 = split_load_pos_top(buf);
     match pos_top - neg_top {
         zero => { return 1; }
         pos => { return 0; }
@@ -2614,8 +2878,7 @@ fn split_full(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
 }
 
 fn split_empty_neg(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var neg_top: t40 = 0;
-    unsafe { neg_top = load(buf + 2); }
+    var neg_top: t40 = split_load_neg_top(buf);
     match neg_top {
         zero => { return 1; }
         pos => { return 0; }
@@ -2624,12 +2887,9 @@ fn split_empty_neg(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
 }
 
 fn split_empty_pos(buf: borrow<ptr<t40, user, unknown>>) -> t40 {
-    var pos_top: t40 = 0;
     var capacity: t40 = 0;
-    unsafe {
-        capacity = load(buf + 1);
-        pos_top = load(buf + 3);
-    }
+    unsafe { capacity = load(buf + 1); }
+    var pos_top: t40 = split_load_pos_top(buf);
     match capacity - pos_top {
         zero => { return 1; }
         pos => { return 0; }

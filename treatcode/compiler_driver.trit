@@ -1,0 +1,27 @@
+const C5_SOURCE_LEN_ADDR: t40 = 1599999;
+const C5_SOURCE_BASE: t40 = 1600000;
+
+fn main() -> t40 {
+    var len: t40 = 0;
+    unsafe {
+        len = load(C5_SOURCE_LEN_ADDR);
+    }
+    var text: t40 = tcl_native_compile_general_to_tasm(C5_SOURCE_BASE, len);
+    var data: t40 = 0;
+    var n: t40 = 0;
+    unsafe {
+        data = load(text);
+        n = load(text + 1);
+    }
+    var i: t40 = 0;
+    while n - i > 0 {
+        var c: t40 = 0;
+        unsafe {
+            c = load(data + i);
+        }
+        sys_write_char(c);
+        i = i + 1;
+    }
+    tcl_backend_text_free(text);
+    return 0;
+}

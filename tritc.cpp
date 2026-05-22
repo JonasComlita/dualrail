@@ -28,6 +28,9 @@ void showUsage() {
     std::cout << "  \033[1;32m--steps <count>\033[0m         Set VM execution step limit (default: 1000000)\n";
     std::cout << "  \033[1;32m--input <string>\033[0m        Feed ASCII console input string to the VM in run mode\n";
     std::cout << "  \033[1;32m--input-file <file>\033[0m     Feed console input from a file to the VM in run mode\n";
+    std::cout << "  \033[1;32m--imem <size>\033[0m           Set VM instruction memory size (default: 32768)\n";
+    std::cout << "  \033[1;32m--dmem <size>\033[0m           Set VM data memory size (default: 65536)\n";
+    std::cout << "  \033[1;32m--seed-file <p> <addr>\033[0m  Seed VM data memory with file contents starting at addr\n";
     std::cout << "  \033[1;32m--no-ansi\033[0m               Disable ANSI coloring in terminal outputs\n";
     std::cout << "  \033[1;32m--help / -h\033[0m             Display this help documentation\n\n";
     std::cout << "\033[1mExamples:\033[0m\n";
@@ -85,11 +88,58 @@ bool writeBinaryFile(const std::string& path, const sandbox::compiler::LinkResul
     
     if (!linked.assembled.data.empty()) {
         out.write(reinterpret_cast<const char*>(linked.assembled.data.data()),
-                  linked.assembled.data.size() * sizeof(sandbox::isa::TritWord27));
+                  linked.assembled.data.size() * sizeof(sandbox::vm::TernaryValue));
     }
     
     return out.good();
 }
+
+bool readBinaryFile(const std::string& path, std::vector<sandbox::isa::TritWord27>& program, std::vector<sandbox::vm::TernaryValue>& data, TritFileHeader& header) {
+    std::ifstream in(path, std::ios::in | std::ios::binary);
+    if (!in.good()) return false;
+    
+    in.read(reinterpret_cast<char*>(&header), sizeof(header));
+    if (!in.good()) return false;
+    
+    if (header.magic[0] != 'T' || header.magic[1] != 'X' || header.magic[2] != 'E' || header.magic[3] != '3') {
+        std::cerr << "Error: Invalid executable magic in " << path << "\n";
+        return false;
+    }
+    
+    program.resize(header.instruction_count);
+    if (header.instruction_count > 0) {
+        in.read(reinterpret_cast<char*>(program.data()), header.instruction_count * sizeof(sandbox::isa::TritWord27));
+    }
+    
+    data.resize(header.data_count);
+    if (header.data_count > 0) {
+        in.read(reinterpret_cast<char*>(data.data()), header.data_count * sizeof(sandbox::vm::TernaryValue));
+    }
+    
+    return in.good() || in.eof();
+}
+
+bool loadAndResetBinary(sandbox::vm::VMState& vm, const std::vector<sandbox::isa::TritWord27>& program, const std::vector<sandbox::vm::TernaryValue>& data, const TritFileHeader& header) {
+    if (static_cast<int>(program.size()) > vm.imem.size()) return false;
+    if (static_cast<int>(data.size()) > vm.dmem.size()) return false;
+
+    vm.coldReset();
+    if (!vm.imem.loadProgram(program, 0)) return false;
+    for (int i = 0; i < static_cast<int>(data.size()); ++i) {
+        if (vm.dmem.store(i, data[static_cast<std::size_t>(i)]) != sandbox::vm::MemFaultCode::OK) {
+            return false;
+        }
+    }
+    
+    int sp = vm.dmem.size() - 1;
+    vm.regfile.write(26, sandbox::vm::ops::fromLong(sp));
+    
+    vm.standalone_heap_break =
+        std::max<long long>(vm.standalone_heap_break,
+                            static_cast<long long>(data.size()) + 16);
+    return true;
+}
+
 
 void printDiagnostics(const std::vector<sandbox::compiler::Diagnostic>& diagnostics, bool use_ansi) {
     for (const auto& diag : diagnostics) {
@@ -174,9 +224,18 @@ int main(int argc, char** argv) {
     bool run_mode = false;
     bool dump_ir = false;
     bool dump_passes = false;
+    bool dump_registers = false;
     bool use_ansi = true;
     int step_limit = 1000000;
     std::string console_input_str;
+
+    int imem_size = 32768;
+    int dmem_size = 65536;
+    struct SeedFile {
+        std::string path;
+        int address;
+    };
+    std::vector<SeedFile> seed_files;
     
     CompilerOptions comp_options;
     LinkOptions link_options;
@@ -248,6 +307,31 @@ int main(int argc, char** argv) {
             dump_ir = true;
         } else if (arg == "--dump-passes") {
             dump_passes = true;
+        } else if (arg == "--dump-registers") {
+            dump_registers = true;
+        } else if (arg == "--imem") {
+            if (i + 1 < argc) {
+                imem_size = std::stoi(argv[++i]);
+            } else {
+                std::cerr << "Error: Missing size after --imem\n";
+                return 1;
+            }
+        } else if (arg == "--dmem") {
+            if (i + 1 < argc) {
+                dmem_size = std::stoi(argv[++i]);
+            } else {
+                std::cerr << "Error: Missing size after --dmem\n";
+                return 1;
+            }
+        } else if (arg == "--seed-file") {
+            if (i + 2 < argc) {
+                std::string path = argv[++i];
+                int address = std::stoi(argv[++i]);
+                seed_files.push_back({path, address});
+            } else {
+                std::cerr << "Error: Missing path or address after --seed-file\n";
+                return 1;
+            }
         } else if (arg == "--no-ansi") {
             use_ansi = false;
             comp_options.diagnostics_mode = DiagnosticsMode::Machine;
@@ -270,6 +354,118 @@ int main(int argc, char** argv) {
 
 
 
+    bool is_tasm = false;
+    bool is_txe = false;
+    for (const auto& path : source_paths) {
+        if (path.size() >= 5 && path.substr(path.size() - 5) == ".tasm") {
+            is_tasm = true;
+            break;
+        } else if (path.size() >= 4 && path.substr(path.size() - 4) == ".txe") {
+            is_txe = true;
+            break;
+        }
+    }
+
+    if (is_txe) {
+        if (source_paths.size() > 1) {
+            std::cerr << "Error: Cannot run multiple .txe files together.\n";
+            return 1;
+        }
+
+        std::vector<isa::TritWord27> program;
+        std::vector<vm::TernaryValue> data;
+        TritFileHeader header;
+        if (!readBinaryFile(source_paths[0], program, data, header)) {
+            std::cerr << "Error: Failed to read binary executable file: " << source_paths[0] << "\n";
+            return 1;
+        }
+
+        if (!run_mode) {
+            std::cout << "File is already a compiled binary executable: " << source_paths[0] << "\n";
+            std::cout << "  Instruction Words:        " << header.instruction_count << "\n";
+            std::cout << "  Static Data Memory Words: " << header.data_count << "\n";
+            std::cout << "  ABI Version:              " << header.abi_version << "\n";
+            return 0;
+        }
+
+        // Run immediately on the VM (run mode)
+        std::cout << (use_ansi ? "\033[1;32mBooting binary executable in Ternary VM...\033[0m\n\n" : "Booting binary executable in Ternary VM...\n\n");
+        
+        vm::VMState vm(imem_size, dmem_size);
+        if (!loadAndResetBinary(vm, program, data, header)) {
+            std::cerr << "Error: Failed to load binary executable into VM memory.\n";
+            return 1;
+        }
+
+        for (const auto& sf : seed_files) {
+            std::string seed_data = readFile(sf.path);
+            int len = static_cast<int>(seed_data.size());
+            if (sf.address - 1 < 0 || sf.address + len > dmem_size) {
+                std::cerr << "Error: Seed file " << sf.path << " (len " << len 
+                          << ") at address " << sf.address 
+                          << " exceeds dmem boundaries (0.." << dmem_size - 1 << ")\n";
+                return 1;
+            }
+            vm.dmem.store(sf.address - 1, sandbox::vm::ops::fromLong(len));
+            for (int j = 0; j < len; ++j) {
+                vm.dmem.store(sf.address + j, sandbox::vm::ops::fromLong(static_cast<unsigned char>(seed_data[j])));
+            }
+        }
+
+        if (!console_input_str.empty()) {
+            vm.enqueueConsoleAscii(console_input_str);
+        }
+
+        const auto run_result = vm::run(vm, step_limit);
+        
+        if (use_ansi) {
+            std::cout << "\n\033[1;36m========================================================\033[0m\n";
+            std::cout << "\033[1;35m            Ternary VM Execution Terminated            \033[0m\n";
+            std::cout << "\033[1;36m========================================================\033[0m\n";
+            std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+            if (vm.status == vm::VMStatus::TRAPPED || dump_registers) {
+                if (vm.status == vm::VMStatus::TRAPPED) {
+                    std::cout << "  Trap Cause:         \033[1;31m" << vm.cause << "\033[0m (PC: " << vm.pc << ")\n";
+                }
+                std::cout << "  Register File State:\n";
+                for (int r = 0; r <= 26; ++r) {
+                    std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                              << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+                }
+            }
+            std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
+            if (!vm.syscall_buffer.empty()) {
+                std::cout << "  Console Output:\n\033[1;32m" << vm.syscall_buffer << "\033[0m\n";
+            }
+            long long return_val = vm::ops::toLong(vm.regfile.read(13)); // ABI return register r13
+            std::cout << "  Return Register \033[1mr13\033[0m: \033[1;33m" << return_val << "\033[0m\n";
+            std::cout << "\033[1;36m========================================================\033[0m\n";
+        } else {
+            std::cout << "\n========================================================\n";
+            std::cout << "            Ternary VM Execution Terminated            \n";
+            std::cout << "========================================================\n";
+            std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+            if (vm.status == vm::VMStatus::TRAPPED || dump_registers) {
+                if (vm.status == vm::VMStatus::TRAPPED) {
+                    std::cout << "  Trap Cause:         " << vm.cause << " (PC: " << vm.pc << ")\n";
+                }
+                std::cout << "  Register File State:\n";
+                for (int r = 0; r <= 26; ++r) {
+                    std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                              << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+                }
+            }
+            std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
+            if (!vm.syscall_buffer.empty()) {
+                std::cout << "  Console Output:\n" << vm.syscall_buffer << "\n";
+            }
+            long long return_val = vm::ops::toLong(vm.regfile.read(13));
+            std::cout << "  Return Register r13: " << return_val << "\n";
+            std::cout << "========================================================\n";
+        }
+        return 0;
+    }
+
     // Read and concatenate all source files into a single translation unit
     std::string combined_src;
     std::string combined_filename;
@@ -287,6 +483,131 @@ int main(int argc, char** argv) {
         }
         combined_src += src;
         combined_filename += source_paths[i];
+    }
+
+    if (is_tasm) {
+        LinkResult linked;
+        linked.assembly = combined_src;
+        linked.assembled = vm::assembler::assemble(linked.assembly);
+        linked.success = linked.assembled.success;
+        linked.text_words = static_cast<int>(linked.assembled.program.size());
+        linked.data_words = static_cast<int>(linked.assembled.data.size());
+        linked.instruction_count = linked.text_words;
+        
+        if (!linked.assembled.executable_headers.empty()) {
+            linked.executable_header = linked.assembled.executable_headers.begin()->second;
+        }
+
+        if (!linked.success) {
+            std::cerr << "\033[1;31mAssembly failed for translation unit: " << combined_filename << "\033[0m\n";
+            for (const auto& error : linked.assembled.errors) {
+                std::cerr << "  " << error.format() << "\n";
+            }
+            return 1;
+        }
+
+        if (assembly_only) {
+            if (output_path.empty()) {
+                std::cout << combined_src;
+            } else {
+                if (!writeFile(output_path, combined_src)) {
+                    std::cerr << "Error: Failed to write assembly file to: " << output_path << "\n";
+                    return 1;
+                }
+                std::cout << "Assembly successfully written to: " << output_path << "\n";
+            }
+            return 0;
+        }
+
+        // Save final executable image
+        if (!run_mode) {
+            if (output_path.empty()) {
+                output_path = "app.exe";
+            }
+            if (!writeBinaryFile(output_path, linked)) {
+                std::cerr << "Error: Failed to write executable image to: " << output_path << "\n";
+                return 1;
+            }
+            std::cout << (use_ansi ? "\033[1;32mAssembly Succeeded!\033[0m\n" : "Assembly Succeeded!\n");
+            std::cout << "  Output Executable Image:  " << output_path << "\n";
+            std::cout << "  Total Instruction Words:  " << linked.text_words << "\n";
+            std::cout << "  Static Data Memory Words: " << linked.data_words << "\n";
+            std::cout << "  Emitted ABI Version:      " << linked.executable_header.abi_version << "\n";
+            return 0;
+        }
+
+        // Run immediately on the VM (run mode)
+        std::cout << (use_ansi ? "\033[1;32mBooting compiled executable in Ternary VM...\033[0m\n\n" : "Booting compiled executable in Ternary VM...\n\n");
+        
+        vm::VMState vm(imem_size, dmem_size);
+        if (!vm::assembler::loadAndReset(vm, linked.assembled)) {
+            std::cerr << "Error: Failed to load executable image into VM memory.\n";
+            return 1;
+        }
+
+        for (const auto& sf : seed_files) {
+            std::string seed_data = readFile(sf.path);
+            int len = static_cast<int>(seed_data.size());
+            if (sf.address - 1 < 0 || sf.address + len > dmem_size) {
+                std::cerr << "Error: Seed file " << sf.path << " (len " << len 
+                          << ") at address " << sf.address 
+                          << " exceeds dmem boundaries (0.." << dmem_size - 1 << ")\n";
+                return 1;
+            }
+            vm.dmem.store(sf.address - 1, sandbox::vm::ops::fromLong(len));
+            for (int j = 0; j < len; ++j) {
+                vm.dmem.store(sf.address + j, sandbox::vm::ops::fromLong(static_cast<unsigned char>(seed_data[j])));
+            }
+        }
+
+        if (!console_input_str.empty()) {
+            vm.enqueueConsoleAscii(console_input_str);
+        }
+
+        const auto run_result = vm::run(vm, step_limit);
+        
+        if (use_ansi) {
+            std::cout << "\n\033[1;36m========================================================\033[0m\n";
+            std::cout << "\033[1;35m            Ternary VM Execution Terminated            \033[0m\n";
+            std::cout << "\033[1;36m========================================================\033[0m\n";
+            std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+            if (vm.status == vm::VMStatus::TRAPPED) {
+                std::cout << "  Trap Cause:         \033[1;31m" << vm.cause << "\033[0m (PC: " << vm.pc << ")\n";
+                std::cout << "  Register File State:\n";
+                for (int r = 0; r <= 26; ++r) {
+                    std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                              << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+                }
+            }
+            std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
+            if (!vm.syscall_buffer.empty()) {
+                std::cout << "  Console Output:\n\033[1;32m" << vm.syscall_buffer << "\033[0m\n";
+            }
+            long long return_val = vm::ops::toLong(vm.regfile.read(13)); // ABI return register r13
+            std::cout << "  Return Register \033[1mr13\033[0m: \033[1;33m" << return_val << "\033[0m\n";
+            std::cout << "\033[1;36m========================================================\033[0m\n";
+        } else {
+            std::cout << "\n========================================================\n";
+            std::cout << "            Ternary VM Execution Terminated            \n";
+            std::cout << "========================================================\n";
+            std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
+            if (vm.status == vm::VMStatus::TRAPPED) {
+                std::cout << "  Trap Cause:         " << vm.cause << " (PC: " << vm.pc << ")\n";
+                std::cout << "  Register File State:\n";
+                for (int r = 0; r <= 26; ++r) {
+                    std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
+                              << sandbox::vm::ops::toLong(vm.regfile.read(r)) << "\n";
+                }
+            }
+            std::cout << "  Total CPU Cycles:   " << vm.cycle_count << "\n";
+            if (!vm.syscall_buffer.empty()) {
+                std::cout << "  Console Output:\n" << vm.syscall_buffer << "\n";
+            }
+            long long return_val = vm::ops::toLong(vm.regfile.read(13));
+            std::cout << "  Return Register r13: " << return_val << "\n";
+            std::cout << "========================================================\n";
+        }
+        return 0;
     }
 
     CompileResult compiled = compileSource(combined_filename, combined_src, comp_options);
@@ -380,10 +701,25 @@ int main(int argc, char** argv) {
     // Run immediately on the VM (run mode)
     std::cout << (use_ansi ? "\033[1;32mBooting compiled executable in Ternary VM...\033[0m\n\n" : "Booting compiled executable in Ternary VM...\n\n");
     
-    vm::VMState vm(32768, 65536);
+    vm::VMState vm(imem_size, dmem_size);
     if (!vm::assembler::loadAndReset(vm, linked.assembled)) {
         std::cerr << "Error: Failed to load executable image into VM memory.\n";
         return 1;
+    }
+
+    for (const auto& sf : seed_files) {
+        std::string seed_data = readFile(sf.path);
+        int len = static_cast<int>(seed_data.size());
+        if (sf.address - 1 < 0 || sf.address + len > dmem_size) {
+            std::cerr << "Error: Seed file " << sf.path << " (len " << len 
+                      << ") at address " << sf.address 
+                      << " exceeds dmem boundaries (0.." << dmem_size - 1 << ")\n";
+            return 1;
+        }
+        vm.dmem.store(sf.address - 1, sandbox::vm::ops::fromLong(len));
+        for (int j = 0; j < len; ++j) {
+            vm.dmem.store(sf.address + j, sandbox::vm::ops::fromLong(static_cast<unsigned char>(seed_data[j])));
+        }
     }
 
     if (!console_input_str.empty()) {
@@ -397,8 +733,10 @@ int main(int argc, char** argv) {
         std::cout << "\033[1;35m            Ternary VM Execution Terminated            \033[0m\n";
         std::cout << "\033[1;36m========================================================\033[0m\n";
         std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
-        if (vm.status == vm::VMStatus::TRAPPED) {
-            std::cout << "  Trap Cause:         \033[1;31m" << vm.cause << "\033[0m (PC: " << vm.pc << ")\n";
+        if (vm.status == vm::VMStatus::TRAPPED || dump_registers) {
+            if (vm.status == vm::VMStatus::TRAPPED) {
+                std::cout << "  Trap Cause:         \033[1;31m" << vm.cause << "\033[0m (PC: " << vm.pc << ")\n";
+            }
             std::cout << "  Register File State:\n";
             for (int r = 0; r <= 26; ++r) {
                 std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 
@@ -417,8 +755,10 @@ int main(int argc, char** argv) {
         std::cout << "            Ternary VM Execution Terminated            \n";
         std::cout << "========================================================\n";
         std::cout << "  Final CPU Status:   " << vm::vmStatusToString(vm.status) << "\n";
-        if (vm.status == vm::VMStatus::TRAPPED) {
-            std::cout << "  Trap Cause:         " << vm.cause << " (PC: " << vm.pc << ")\n";
+        if (vm.status == vm::VMStatus::TRAPPED || dump_registers) {
+            if (vm.status == vm::VMStatus::TRAPPED) {
+                std::cout << "  Trap Cause:         " << vm.cause << " (PC: " << vm.pc << ")\n";
+            }
             std::cout << "  Register File State:\n";
             for (int r = 0; r <= 26; ++r) {
                 std::cout << "    r" << r << (r == 26 ? " (sp)" : "") << ": " 

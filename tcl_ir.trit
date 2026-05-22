@@ -752,9 +752,10 @@ fn tcl_ir_lower_while(cfg: t40, ast: t40, block: t40, stmt_id: t40) -> t40 {
     tcl_ir_block_set_terminator(block, TCL_IR_JUMP);
 
     cond_val = tcl_ir_lower_expr(cfg, ast, cond_block, cond_expr);
-    tcl_ir_add_successor(cond_block, body_block);
     tcl_ir_add_successor(cond_block, after_block);
-    tcl_ir_emit(cond_block, TCL_IR_BRANCH3, 0, cond_val, tcl_ir_block_id(body_block), tcl_ir_block_id(after_block));
+    tcl_ir_add_successor(cond_block, after_block);
+    tcl_ir_add_successor(cond_block, body_block);
+    tcl_ir_emit(cond_block, TCL_IR_BRANCH3, 0, cond_val, tcl_ir_block_id(after_block), tcl_ir_block_id(after_block));
     tcl_ir_block_set_terminator(cond_block, TCL_IR_BRANCH3);
 
     body_tail = tcl_ir_lower_block(cfg, ast, body_block, body_vec);
