@@ -1,55 +1,325 @@
-// apps/shell.trit - Layer 6 command shell entry point.
+// apps/shell.trit - TRIT OS command shell.
+//
+// Provides a readline loop, command dispatcher, and a set of built-in
+// commands: calc, paint, tasks, ls, ps, exit, help.
 
-fn shell_store(addr: t40, value: t40) -> t40 {
+// ── Scratch layout ─────────────────────────────────────────────────
+// 2000 : banner string
+// 2100 : input line buffer (up to 80 chars + null)
+// 2200 : path scratch for exec
+// 2300 : readdir / ps output buffer
+// ───────────────────────────────────────────────────────────────────
+
+const SH_BUF:     t40 = 2100;
+const SH_BUF_MAX: t40 = 80;
+const SH_PATH:    t40 = 2200;
+const SH_OUT:     t40 = 2300;
+
+// ── helpers ────────────────────────────────────────────────────────
+
+fn sh_store(addr: t40, value: t40) -> t40 {
     unsafe { store(addr, value); }
     return value;
 }
 
-fn shell_seed_banner(addr: t40) -> t40 {
-    shell_store(addr + 0, 84);
-    shell_store(addr + 1, 82);
-    shell_store(addr + 2, 73);
-    shell_store(addr + 3, 84);
-    shell_store(addr + 4, 32);
-    shell_store(addr + 5, 83);
-    shell_store(addr + 6, 72);
-    shell_store(addr + 7, 69);
-    shell_store(addr + 8, 76);
-    shell_store(addr + 9, 76);
-    shell_store(addr + 10, 0);
+fn sh_load(addr: t40) -> t40 {
+    var v: t40 = 0;
+    unsafe { v = load(addr); }
+    return v;
+}
+
+fn sh_seed(addr: t40) -> t40 {
+    // "TRIT SHELL\0"
+    sh_store(addr,      84); sh_store(addr + 1,  82); sh_store(addr + 2,  73);
+    sh_store(addr + 3,  84); sh_store(addr + 4,  32); sh_store(addr + 5,  83);
+    sh_store(addr + 6,  72); sh_store(addr + 7,  69); sh_store(addr + 8,  76);
+    sh_store(addr + 9,  76); sh_store(addr + 10, 0);
     return addr;
 }
 
-fn shell_seed_calc_path(addr: t40) -> t40 {
-    shell_store(addr + 0, 47);
-    shell_store(addr + 1, 98);
-    shell_store(addr + 2, 105);
-    shell_store(addr + 3, 110);
-    shell_store(addr + 4, 47);
-    shell_store(addr + 5, 99);
-    shell_store(addr + 6, 97);
-    shell_store(addr + 7, 108);
-    shell_store(addr + 8, 99);
-    shell_store(addr + 9, 117);
-    shell_store(addr + 10, 108);
-    shell_store(addr + 11, 97);
-    shell_store(addr + 12, 116);
-    shell_store(addr + 13, 111);
-    shell_store(addr + 14, 114);
-    shell_store(addr + 15, 0);
-    return addr;
+fn sh_puts(addr: t40) -> t40 {
+    return os_puts(addr);
 }
 
-fn shell_exec_builtin(command: t40, scratch_addr: t40) -> t40 {
-    if command - 99 == 0 {
-        shell_seed_calc_path(scratch_addr);
-        return sys_exec(scratch_addr);
+fn sh_putc(c: t40) -> t40 {
+    return os_putc(c);
+}
+
+fn sh_newline() -> t40 {
+    return os_newline();
+}
+
+fn sh_print_prompt() -> t40 {
+    sh_putc(62); sh_putc(32); // "> "
+    return 1;
+}
+
+// Read one line into SH_BUF (echo chars, handle backspace).
+// Returns number of chars read (excluding null terminator).
+fn sh_readline() -> t40 {
+    var pos: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var k: t40 = -1;
+        while k < 0 {
+            k = os_read_key();
+        }
+        if k - 13 == 0 {        // Enter
+            done = 1;
+        } else {
+            if k - 8 == 0 {     // Backspace
+                if pos > 0 {
+                    pos = pos - 1;
+                    sh_putc(8);  // BS
+                    sh_putc(32); // space (erase)
+                    sh_putc(8);  // BS again
+                }
+            } else {
+                if pos - SH_BUF_MAX < 0 {
+                    sh_store(SH_BUF + pos, k);
+                    sh_putc(k);
+                    pos = pos + 1;
+                }
+            }
+        }
     }
-    return 0;
+    sh_store(SH_BUF + pos, 0);
+    sh_newline();
+    return pos;
 }
+
+// Compare first `len` bytes of SH_BUF with a compile-time word sequence.
+// Convenience: compare SH_BUF against a 4-byte packed constant.
+fn sh_cmd_eq4(c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    if sh_load(SH_BUF + 0) - c0 != 0 { return 0; }
+    if sh_load(SH_BUF + 1) - c1 != 0 { return 0; }
+    if sh_load(SH_BUF + 2) - c2 != 0 { return 0; }
+    if sh_load(SH_BUF + 3) - c3 != 0 { return 0; }
+    return 1;
+}
+
+fn sh_cmd_eq2(c0: t40, c1: t40) -> t40 {
+    if sh_load(SH_BUF + 0) - c0 != 0 { return 0; }
+    if sh_load(SH_BUF + 1) - c1 != 0 { return 0; }
+    return 1;
+}
+
+// ── path seeders ───────────────────────────────────────────────────
+
+fn sh_seed_calc(addr: t40) -> t40 {
+    // "/bin/calculator\0"
+    sh_store(addr,  47); sh_store(addr+1,  98); sh_store(addr+2, 105);
+    sh_store(addr+3,110); sh_store(addr+4,  47); sh_store(addr+5,  99);
+    sh_store(addr+6, 97); sh_store(addr+7, 108); sh_store(addr+8,  99);
+    sh_store(addr+9,117); sh_store(addr+10,108); sh_store(addr+11, 97);
+    sh_store(addr+12,116); sh_store(addr+13,111); sh_store(addr+14,114); sh_store(addr+15,0);
+    return addr;
+}
+
+fn sh_seed_paint(addr: t40) -> t40 {
+    // "/bin/paint\0"
+    sh_store(addr,  47); sh_store(addr+1,  98); sh_store(addr+2, 105);
+    sh_store(addr+3,110); sh_store(addr+4,  47); sh_store(addr+5, 112);
+    sh_store(addr+6, 97); sh_store(addr+7, 105); sh_store(addr+8, 110);
+    sh_store(addr+9,116); sh_store(addr+10,  0);
+    return addr;
+}
+
+fn sh_seed_tasks(addr: t40) -> t40 {
+    // "/bin/task_manager\0"
+    sh_store(addr,   47); sh_store(addr+1,  98); sh_store(addr+2, 105);
+    sh_store(addr+3,110); sh_store(addr+4,  47); sh_store(addr+5, 116);
+    sh_store(addr+6, 97); sh_store(addr+7, 115); sh_store(addr+8, 107);
+    sh_store(addr+9, 95); sh_store(addr+10,109); sh_store(addr+11, 97);
+    sh_store(addr+12,110); sh_store(addr+13, 97); sh_store(addr+14,103);
+    sh_store(addr+15,101); sh_store(addr+16,114); sh_store(addr+17,  0);
+    return addr;
+}
+
+fn sh_seed_root(addr: t40) -> t40 {
+    // "/\0"
+    sh_store(addr, 47); sh_store(addr+1, 0);
+    return addr;
+}
+
+// ── built-in: ls ───────────────────────────────────────────────────
+
+fn sh_builtin_ls() -> t40 {
+    var path: t40 = sh_seed_root(SH_PATH);
+    // readdir fills SH_OUT with [child_inode, kind, name_len, name...] records
+    var written: t40 = os_readdir(path, SH_OUT, 200);
+    if written <= 0 {
+        sh_putc(63); sh_newline(); // '?'
+        return 0;
+    }
+    var pos: t40 = 0;
+    while written - pos > 0 {
+        var inode: t40 = sh_load(SH_OUT + pos);
+        var kind:  t40 = sh_load(SH_OUT + pos + 1);
+        var nlen:  t40 = sh_load(SH_OUT + pos + 2);
+        if nlen <= 0 {
+            pos = written; // stop
+        } else {
+            if kind - 2 == 0 {
+                sh_putc(100); sh_putc(32); // "d "
+            } else {
+                if kind - 3 == 0 {
+                    sh_putc(42); sh_putc(32); // "* "
+                } else {
+                    sh_putc(45); sh_putc(32); // "- "
+                }
+            }
+            var ni: t40 = 0;
+            while nlen - ni > 0 {
+                sh_putc(sh_load(SH_OUT + pos + 3 + ni));
+                ni = ni + 1;
+            }
+            sh_newline();
+            pos = pos + 3 + nlen;
+        }
+    }
+    return 1;
+}
+
+// ── built-in: ps ───────────────────────────────────────────────────
+
+fn sh_draw_state_label(state: t40) -> t40 {
+    if state - 1 == 0 { sh_putc(82); sh_putc(68); sh_putc(89); return 3; } // RDY
+    if state - 2 == 0 { sh_putc(82); sh_putc(85); sh_putc(78); return 3; } // RUN
+    if state - 3 == 0 { sh_putc(66); sh_putc(76); sh_putc(75); return 3; } // BLK
+    if state - 4 == 0 { sh_putc(90); sh_putc(90); sh_putc(90); return 3; } // ZZZ
+    if state - 5 == 0 { sh_putc(88); sh_putc(73); sh_putc(84); return 3; } // XIT
+    sh_putc(63); return 1; // ?
+}
+
+fn sh_print_int(val: t40) -> t40 {
+    return os_print_int(val);
+}
+
+fn sh_builtin_ps() -> t40 {
+    var count: t40 = os_ps(SH_OUT, 8);
+    if count <= 0 {
+        sh_putc(48); sh_newline();
+        return 0;
+    }
+    // Header: "PID STATE PRI QUO"
+    sh_putc(80); sh_putc(73); sh_putc(68); sh_putc(32); // PID
+    sh_putc(83); sh_putc(84); sh_putc(65); sh_putc(84); sh_putc(69); sh_putc(32); // STATE
+    sh_putc(80); sh_putc(82); sh_putc(73); sh_newline(); // PRI
+    var i: t40 = 0;
+    while count - i > 0 {
+        var base: t40 = SH_OUT + i * 5;
+        sh_print_int(sh_load(base));     sh_putc(32); // pid
+        sh_draw_state_label(sh_load(base + 1)); sh_putc(32); // state
+        sh_print_int(sh_load(base + 2)); sh_newline(); // priority
+        i = i + 1;
+    }
+    return count;
+}
+
+// ── built-in: help ─────────────────────────────────────────────────
+
+fn sh_builtin_help() -> t40 {
+    // "calc paint tasks ls ps exit help"
+    sh_putc(99);  sh_putc(97);  sh_putc(108); sh_putc(99);  sh_newline(); // calc
+    sh_putc(112); sh_putc(97);  sh_putc(105); sh_putc(110); sh_putc(116); sh_newline(); // paint
+    sh_putc(116); sh_putc(97);  sh_putc(115); sh_putc(107); sh_putc(115); sh_newline(); // tasks
+    sh_putc(108); sh_putc(115); sh_newline(); // ls
+    sh_putc(112); sh_putc(115); sh_newline(); // ps
+    sh_putc(101); sh_putc(120); sh_putc(105); sh_putc(116); sh_newline(); // exit
+    sh_putc(104); sh_putc(101); sh_putc(108); sh_putc(112); sh_newline(); // help
+    return 1;
+}
+
+// ── main ───────────────────────────────────────────────────────────
 
 fn main() -> t40 {
-    var banner: t40 = shell_seed_banner(2000);
-    libc_puts(banner);
+    var banner: t40 = sh_seed(2000);
+    sh_puts(banner);
+    sh_newline();
+
+    var running: t40 = 1;
+    while running > 0 {
+        sh_print_prompt();
+        var len: t40 = sh_readline();
+
+        if len == 0 {
+            // empty line — do nothing
+        } else {
+            var c0: t40 = sh_load(SH_BUF);
+
+            // "exit" (4 chars) — return to desktop
+            if len - 4 == 0 {
+                if sh_cmd_eq4(101, 120, 105, 116) > 0 {  // e x i t
+                    running = 0;
+                }
+            }
+
+            // "help" (4 chars)
+            if running > 0 {
+                if len - 4 == 0 {
+                    if sh_cmd_eq4(104, 101, 108, 112) > 0 { // h e l p
+                        sh_builtin_help();
+                    }
+                }
+            }
+
+            // "calc" (4 chars)
+            if running > 0 {
+                if len - 4 == 0 {
+                    if sh_cmd_eq4(99, 97, 108, 99) > 0 { // c a l c
+                        sh_seed_calc(SH_PATH);
+                        sys_exec(SH_PATH);
+                        running = 0; // exec replaces us
+                    }
+                }
+            }
+
+            // "paint" (5 chars)
+            if running > 0 {
+                if len - 5 == 0 {
+                    if sh_cmd_eq4(112, 97, 105, 110) > 0 { // p a i n
+                        if sh_load(SH_BUF + 4) - 116 == 0 { // t
+                            sh_seed_paint(SH_PATH);
+                            sys_exec(SH_PATH);
+                            running = 0;
+                        }
+                    }
+                }
+            }
+
+            // "tasks" (5 chars)
+            if running > 0 {
+                if len - 5 == 0 {
+                    if sh_cmd_eq4(116, 97, 115, 107) > 0 { // t a s k
+                        if sh_load(SH_BUF + 4) - 115 == 0 { // s
+                            sh_seed_tasks(SH_PATH);
+                            sys_exec(SH_PATH);
+                            running = 0;
+                        }
+                    }
+                }
+            }
+
+            // "ls" (2 chars)
+            if running > 0 {
+                if len - 2 == 0 {
+                    if sh_cmd_eq2(108, 115) > 0 { // l s
+                        sh_builtin_ls();
+                    }
+                }
+            }
+
+            // "ps" (2 chars)
+            if running > 0 {
+                if len - 2 == 0 {
+                    if sh_cmd_eq2(112, 115) > 0 { // p s
+                        sh_builtin_ps();
+                    }
+                }
+            }
+        }
+    }
+
     return 0;
 }

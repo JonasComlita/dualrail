@@ -1,3 +1,5 @@
+// apps/task_manager.trit - System task manager with live process data.
+
 fn task_seed_desktop_path(addr: t40) -> t40 {
     unsafe {
         store(addr + 0, 47);   // /
@@ -44,39 +46,73 @@ fn task_draw_string(x: t40, y: t40, text_addr: t40, len: t40, color: t40) -> t40
     return len;
 }
 
-fn seed_task_name1(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 107); store(addr + 1, 101); store(addr + 2, 114); store(addr + 3, 110); store(addr + 4, 101); store(addr + 5, 108); store(addr + 6, 0); // "kernel"
+// Draw a decimal integer at (x,y) — positive values only.
+fn task_draw_int(x: t40, y: t40, val: t40, color: t40) -> t40 {
+    if val == 0 {
+        os_text_cell(x, y, 48, color);
+        return 1;
     }
-    return addr;
+    var divisor: t40 = 1;
+    var temp: t40 = val;
+    while val / divisor >= 10 {
+        divisor = divisor * 10;
+    }
+    var cx: t40 = x;
+    while divisor > 0 {
+        var digit: t40 = temp / divisor;
+        os_text_cell(cx, y, 48 + digit, color);
+        temp = temp - digit * divisor;
+        divisor = divisor / 10;
+        cx = cx + 1;
+    }
+    return cx - x;
 }
 
-fn seed_task_name2(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 100); store(addr + 1, 101); store(addr + 2, 115); store(addr + 3, 107); store(addr + 4, 116); store(addr + 5, 111); store(addr + 6, 112); store(addr + 7, 0); // "desktop"
+// Decode PROC_STATE into a short label and write it at (x, y).
+// States: 1=RUNNABLE, 2=RUNNING, 3=BLOCKED, 4=SLEEP, 5=EXITED
+fn task_draw_state(x: t40, y: t40, state: t40) -> t40 {
+    var color: t40 = 2;  // dim default
+    if state - 2 == 0 { color = 5; } // RUNNING -> cyan
+    if state - 3 == 0 { color = 9; } // BLOCKED -> red
+    if state - 5 == 0 { color = 8; } // EXITED  -> dark
+    // RUNNABLE
+    if state - 1 == 0 {
+        os_text_cell(x,     y, 82, color); // R
+        os_text_cell(x + 1, y, 68, color); // D
+        os_text_cell(x + 2, y, 89, color); // Y
+        return 3;
     }
-    return addr;
-}
-
-fn seed_task_name3(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 116); store(addr + 1, 97); store(addr + 2, 115); store(addr + 3, 107); store(addr + 4, 95); store(addr + 5, 109); store(addr + 6, 103); store(addr + 7, 114); store(addr + 8, 0); // "task_mgr"
+    // RUNNING
+    if state - 2 == 0 {
+        os_text_cell(x,     y, 82, color); // R
+        os_text_cell(x + 1, y, 85, color); // U
+        os_text_cell(x + 2, y, 78, color); // N
+        return 3;
     }
-    return addr;
-}
-
-fn seed_status_running(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 82); store(addr + 1, 85); store(addr + 2, 78); store(addr + 3, 78); store(addr + 4, 73); store(addr + 5, 78); store(addr + 6, 71); store(addr + 7, 0); // "RUNNING"
+    // BLOCKED
+    if state - 3 == 0 {
+        os_text_cell(x,     y, 66, color); // B
+        os_text_cell(x + 1, y, 76, color); // L
+        os_text_cell(x + 2, y, 75, color); // K
+        return 3;
     }
-    return addr;
-}
-
-fn seed_status_ready(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 82); store(addr + 1, 69); store(addr + 2, 65); store(addr + 3, 68); store(addr + 4, 89); store(addr + 5, 0); // "READY"
+    // SLEEPING
+    if state - 4 == 0 {
+        os_text_cell(x,     y, 90, color); // Z
+        os_text_cell(x + 1, y, 90, color); // Z
+        os_text_cell(x + 2, y, 90, color); // Z
+        return 3;
     }
-    return addr;
+    // EXITED
+    if state - 5 == 0 {
+        os_text_cell(x,     y, 88, color); // X
+        os_text_cell(x + 1, y, 73, color); // I
+        os_text_cell(x + 2, y, 84, color); // T
+        return 3;
+    }
+    // Unknown
+    os_text_cell(x,     y, 63, 8); // ?
+    return 1;
 }
 
 fn task_draw_exit_button(is_hovered: t40) -> t40 {
@@ -93,14 +129,11 @@ fn task_draw_exit_button(is_hovered: t40) -> t40 {
     return 1;
 }
 
-fn task_title_row() -> t40 {
-    os_text_cell(0, 0, 84, 10);
-    os_text_cell(1, 0, 65, 10);
-    os_text_cell(2, 0, 83, 10);
-    os_text_cell(3, 0, 75, 10);
-    os_text_cell(4, 0, 83, 10);
-    return 1;
-}
+// Scratch memory layout:
+//   11000 .. 11000 + PROCESS_MAX * 5 - 1  : ps snapshot buffer (5 words per entry)
+const TM_PS_BUF: t40 = 11000;
+const TM_PS_MAX: t40 = 8;
+const TM_PS_WORDS: t40 = 5;
 
 fn task_draw_ui(hovered_btn: t40) -> t40 {
     var bExit: t40 = 0;
@@ -108,77 +141,74 @@ fn task_draw_ui(hovered_btn: t40) -> t40 {
 
     os_clear_text(0);
 
-    // Title
-    os_text_cell(30, 2, 83, 3); // 'S'
-    os_text_cell(31, 2, 89, 3); // 'Y'
-    os_text_cell(32, 2, 83, 3); // 'S'
-    os_text_cell(33, 2, 84, 3); // 'T'
-    os_text_cell(34, 2, 69, 3); // 'E'
-    os_text_cell(35, 2, 77, 3); // 'M'
+    // Title: "SYSTEM TASKS"
+    os_text_cell(30, 2, 83, 3); // S
+    os_text_cell(31, 2, 89, 3); // Y
+    os_text_cell(32, 2, 83, 3); // S
+    os_text_cell(33, 2, 84, 3); // T
+    os_text_cell(34, 2, 69, 3); // E
+    os_text_cell(35, 2, 77, 3); // M
     os_text_cell(36, 2, 32, 3);
-    os_text_cell(37, 2, 84, 3); // 'T'
-    os_text_cell(38, 2, 65, 3); // 'A'
-    os_text_cell(39, 2, 83, 3); // 'S'
-    os_text_cell(40, 2, 75, 3); // 'K'
-    os_text_cell(41, 2, 83, 3); // 'S'
+    os_text_cell(37, 2, 84, 3); // T
+    os_text_cell(38, 2, 65, 3); // A
+    os_text_cell(39, 2, 83, 3); // S
+    os_text_cell(40, 2, 75, 3); // K
+    os_text_cell(41, 2, 83, 3); // S
 
-    // Dashboard Frame
-    task_draw_box(15, 4, 65, 19, 10); // Green dashboard chassis
+    // Dashboard frame
+    task_draw_box(15, 4, 65, 20, 10);
 
-    // Columns headers
-    os_text_cell(20, 6, 80, 14); // 'P'
-    os_text_cell(21, 6, 73, 14); // 'I'
-    os_text_cell(22, 6, 68, 14); // 'D'
+    // Column headers
+    os_text_cell(20, 6, 80, 14); os_text_cell(21, 6, 73, 14); os_text_cell(22, 6, 68, 14); // PID
+    os_text_cell(28, 6, 83, 14); os_text_cell(29, 6, 84, 14); os_text_cell(30, 6, 65, 14);
+    os_text_cell(31, 6, 84, 14); os_text_cell(32, 6, 69, 14); // STATE
+    os_text_cell(40, 6, 80, 14); os_text_cell(41, 6, 82, 14); os_text_cell(42, 6, 73, 14); // PRI
+    os_text_cell(50, 6, 81, 14); os_text_cell(51, 6, 85, 14); os_text_cell(52, 6, 79, 14); // QUO
 
-    os_text_cell(28, 6, 78, 14); // 'N'
-    os_text_cell(29, 6, 65, 14); // 'A'
-    os_text_cell(30, 6, 77, 14); // 'M'
-    os_text_cell(31, 6, 69, 14); // 'E'
-
-    os_text_cell(42, 6, 83, 14); // 'S'
-    os_text_cell(43, 6, 84, 14); // 'T'
-    os_text_cell(44, 6, 65, 14); // 'A'
-    os_text_cell(45, 6, 84, 14); // 'T'
-    os_text_cell(46, 6, 85, 14); // 'U'
-    os_text_cell(47, 6, 83, 14); // 'S'
-
-    os_text_cell(54, 6, 80, 14); // 'P'
-    os_text_cell(55, 6, 82, 14); // 'R'
-    os_text_cell(56, 6, 73, 14); // 'I'
-
-    // Separator line
+    // Separator
     var x: t40 = 16;
     while 64 - x > 0 {
-        os_text_cell(x, 7, 45, 8); // '-'
+        os_text_cell(x, 7, 45, 8);
         x = x + 1;
     }
 
-    // Row 1: PID 0 (kernel)
-    os_text_cell(21, 9, 48, 10); // '0'
-    var name_addr1: t40 = seed_task_name1(11000);
-    task_draw_string(28, 9, name_addr1, 6, 10);
-    var stat_ready: t40 = seed_status_ready(11100);
-    task_draw_string(42, 9, stat_ready, 5, 2); // READY
-    os_text_cell(55, 9, 49, 10); // '1'
+    // Query live process table
+    var count: t40 = os_ps(TM_PS_BUF, TM_PS_MAX);
+    if count < 0 { count = 0; }
 
-    // Row 2: PID 1 (desktop)
-    os_text_cell(21, 12, 49, 10); // '1'
-    var name_addr2: t40 = seed_task_name2(11020);
-    task_draw_string(28, 12, name_addr2, 7, 10);
-    task_draw_string(42, 12, stat_ready, 5, 2); // READY
-    os_text_cell(55, 12, 50, 10); // '2'
+    var row_y: t40 = 9;
+    var i: t40 = 0;
+    while count - i > 0 {
+        if row_y - 19 < 0 {
+            var base: t40 = TM_PS_BUF + i * TM_PS_WORDS;
+            var entry_pid: t40 = 0;
+            var entry_state: t40 = 0;
+            var entry_pri: t40 = 0;
+            var entry_quo: t40 = 0;
+            unsafe {
+                entry_pid   = load(base);
+                entry_state = load(base + 1);
+                entry_pri   = load(base + 2);
+                entry_quo   = load(base + 3);
+            }
+            task_draw_int(21, row_y, entry_pid, 10);
+            task_draw_state(28, row_y, entry_state);
+            task_draw_int(40, row_y, entry_pri, 10);
+            task_draw_int(50, row_y, entry_quo, 10);
+            row_y = row_y + 3;
+        }
+        i = i + 1;
+    }
 
-    // Row 3: PID 2 (task_manager)
-    os_text_cell(21, 15, 50, 10); // '2'
-    var name_addr3: t40 = seed_task_name3(11040);
-    task_draw_string(28, 15, name_addr3, 8, 10);
-    var stat_running: t40 = seed_status_running(11120);
-    task_draw_string(42, 15, stat_running, 7, 5); // RUNNING
-    os_text_cell(55, 15, 51, 10); // '3'
+    // "-- processes --" footer
+    os_text_cell(27, 19, 45, 8); os_text_cell(28, 19, 45, 8);
+    os_text_cell(30, 19, count + 48, 8);
+    os_text_cell(32, 19, 112, 8); os_text_cell(33, 19, 114, 8);
+    os_text_cell(34, 19, 111, 8); os_text_cell(35, 19, 99,  8);
+    os_text_cell(36, 19, 115, 8);
+    os_text_cell(37, 19, 45, 8); os_text_cell(38, 19, 45, 8);
 
-    // Exit Button
     task_draw_exit_button(bExit);
-
     return 1;
 }
 
@@ -186,9 +216,10 @@ fn main() -> t40 {
     var in_kernel: t40 = 0;
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
-        // Standalone test mode expectations
+        // Standalone test mode
         os_clear_text(0);
-        task_title_row();
+        os_text_cell(0, 0, 84, 10); os_text_cell(1, 0, 65, 10); os_text_cell(2, 0, 83, 10);
+        os_text_cell(3, 0, 75, 10); os_text_cell(4, 0, 83, 10);
         os_putc(84); os_putc(65); os_putc(83); os_putc(75); os_putc(83); os_newline();
         return 1;
     }
@@ -200,20 +231,20 @@ fn main() -> t40 {
 
     var done: t40 = 0;
     var last_hovered: t40 = 0;
+    var refresh_counter: t40 = 0;
 
     while 1 - done > 0 {
         var mx: t40 = os_mouse_x();
         var my: t40 = os_mouse_y();
         var btn: t40 = os_mouse_btn();
 
-        // Publish sprite tracking cursor
-        os_sprite(mx, my, 43, 14); // '+' in yellow
+        os_sprite(mx, my, 43, 14); // '+' cursor
 
         var current_hover: t40 = 0;
         if mx - 37 >= 0 {
             if 42 - mx >= 0 {
                 if my - 21 == 0 {
-                    current_hover = 99; // EXIT
+                    current_hover = 99; // EXIT button
                 }
             }
         }
@@ -223,6 +254,13 @@ fn main() -> t40 {
             last_hovered = current_hover;
         }
 
+        // Auto-refresh every ~2000 loops so live data stays current
+        refresh_counter = refresh_counter + 1;
+        if refresh_counter - 2000 >= 0 {
+            refresh_counter = 0;
+            task_draw_ui(last_hovered);
+        }
+
         var click: t40 = 0;
         if btn - 1 == 0 {
             if current_hover > 0 {
@@ -230,11 +268,13 @@ fn main() -> t40 {
             }
         }
 
-        // Support keyboard hotkeys concurrently
         if os_key_available() > 0 {
             var k: t40 = os_read_key();
             if k - 120 == 0 { click = 99; } // 'x'
             if k - 88 == 0 { click = 99; }  // 'X'
+            if k - 114 == 0 {               // 'r' -> manual refresh
+                task_draw_ui(last_hovered);
+            }
         }
 
         if click - 99 == 0 {

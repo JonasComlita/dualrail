@@ -64,6 +64,7 @@ const WINDOW_NEXT_ID_ADDR: t40 = 3028;
 const COMPOSITOR_FRAME_COUNT_ADDR: t40 = 3029;
 const WINDOW_FOCUS_ID_ADDR: t40 = 3030;
 const INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3031;
+const BUFFER_CLOCK_HAND_ADDR: t40 = 3032;
 
 const BOOTSTRAP_BITMAP_BASE: t40 = 3200;
 
@@ -76,9 +77,11 @@ const PH_VERSION: t40 = 3;
 const PH_LRU_CLOCK: t40 = 4;
 const PH_NAMESPACE: t40 = 5;
 
-const BUFFER_MAX_FRAMES: t40 = 16;
-const BUFFER_FRAME_WORDS: t40 = 9;
-const BUFFER_POOL_BASE: t40 = 23500;
+// Buffer pool — moved to 29000 (clear of HW page table region 19300–27491).
+// 64 frames × 10 words = 640 words → 29000–29639.
+const BUFFER_MAX_FRAMES: t40 = 64;
+const BUFFER_FRAME_WORDS: t40 = 10;
+const BUFFER_POOL_BASE: t40 = 29000;
 const BF_VALID: t40 = 0;
 const BF_NAMESPACE: t40 = 1;
 const BF_INODE: t40 = 2;
@@ -88,6 +91,11 @@ const BF_PIN_COUNT: t40 = 5;
 const BF_DIRTY: t40 = 6;
 const BF_VERSION: t40 = 7;
 const BF_LAST_USED: t40 = 8;
+const BF_REF_BIT: t40 = 9;
+// Namespace CDC version counters: incremented on every dirty mark.
+// A subscriber polling ns_dirty_version detects any write in O(1).
+const NS_DIRTY_VERSION_BASE: t40 = 28900;
+const NS_DIRTY_VERSION_WORDS: t40 = 8;
 
 const FB_STATE_BASE: t40 = 23650;
 const FB_VALID: t40 = 0;
@@ -143,8 +151,9 @@ const EVENT_KIND_KEY: t40 = 1;
 const EVENT_KIND_MOUSE: t40 = 2;
 const EVENT_KIND_CLOSE: t40 = 3;
 
+// WAL — expanded to 80 slots using 4000–4399 (400 words / 5 words each).
 const WAL_RECORD_WORDS: t40 = 5;
-const WAL_CAPACITY: t40 = 64;
+const WAL_CAPACITY: t40 = 80;
 const WAL_BASE: t40 = 4000;
 const WAL_TXID: t40 = 0;
 const WAL_BLOCK: t40 = 1;
@@ -155,12 +164,41 @@ const WAL_FREE: t40 = 0;
 const WAL_PENDING: t40 = 1;
 const WAL_COMMITTED: t40 = 2;
 const WAL_ABORTED: t40 = -1;
-
-const REL_ALLOC_WORDS: t40 = 3;
+// MVCC snapshot table: 8 reader slots × 3 words = 24 words at 28800.
+const WAL_SNAPSHOT_BASE: t40 = 28800;
+const WAL_SNAPSHOT_MAX: t40 = 8;
+const WAL_SNAPSHOT_WORDS: t40 = 3;
+const SNAP_READER_PID: t40 = 0;
+const SNAP_READ_TXID: t40 = 1;
+const SNAP_ACTIVE: t40 = 2;
+// REL_ALLOC — compacted to 2 words (PPN is implicit in slot index).
+const REL_ALLOC_WORDS: t40 = 2;
 const REL_ALLOC_BASE: t40 = 4400;
-const REL_ALLOC_PPN: t40 = 0;
-const REL_ALLOC_STATE: t40 = 1;
-const REL_ALLOC_VERSION: t40 = 2;
+const REL_ALLOC_STATE: t40 = 0;
+const REL_ALLOC_VERSION: t40 = 1;
+// Attribute store — second genuine kernel relation.
+// Schema: (object_id, object_type, attr_key, attr_value, txid, version)
+// 64 rows × 6 words = 384 words at 16000–16383.
+const ATTR_STORE_BASE: t40 = 16000;
+const ATTR_STORE_MAX: t40 = 64;
+const ATTR_STORE_WORDS: t40 = 6;
+const ATTR_OBJECT_ID: t40 = 0;
+const ATTR_OBJECT_TYPE: t40 = 1;
+const ATTR_KEY: t40 = 2;
+const ATTR_VALUE: t40 = 3;
+const ATTR_TXID: t40 = 4;
+const ATTR_VERSION: t40 = 5;
+const ATTR_TYPE_PROCESS: t40 = 1;
+const ATTR_TYPE_FILE: t40 = 2;
+const ATTR_TYPE_NAMESPACE: t40 = 3;
+const ATTR_TYPE_SOCKET: t40 = 4;
+const ATTR_KEY_LABEL: t40 = 1;
+const ATTR_KEY_OWNER: t40 = 2;
+const ATTR_KEY_CREATED_TXID: t40 = 3;
+const ATTR_KEY_POLICY: t40 = 4;
+const ATTR_KEY_REPLICA_TXID: t40 = 5;
+const ATTR_KEY_DESIRED_STATE: t40 = 6;
+const ATTR_KEY_ACTUAL_STATE: t40 = 7;
 
 const TIER1_CAPACITY: t40 = 32;
 const TIER1_QUEUE_BASE: t40 = 4800;
@@ -235,6 +273,24 @@ const IPC_READ: t40 = 4;
 const IPC_WRITE: t40 = 5;
 const IPC_COUNT: t40 = 6;
 const IPC_VERSION: t40 = 7;
+
+const NET_MAX_SOCKETS: t40 = 8;
+const NET_SOCKET_WORDS: t40 = 8;
+const NET_BASE: t40 = 9000;
+const NET_RX_BASE: t40 = 9100;
+const NET_RX_CAPACITY: t40 = 8;
+const NET_SOCK_STATE: t40 = 0;
+const NET_SOCK_OWNER: t40 = 1;
+const NET_SOCK_KIND: t40 = 2;
+const NET_SOCK_LOCAL_PORT: t40 = 3;
+const NET_SOCK_REMOTE_PORT: t40 = 4;
+const NET_SOCK_RX_READ: t40 = 5;
+const NET_SOCK_RX_WRITE: t40 = 6;
+const NET_SOCK_RX_BASE: t40 = 7;
+const NET_STATE_FREE: t40 = 0;
+const NET_STATE_OPEN: t40 = 1;
+const NET_STATE_BOUND: t40 = 2;
+const NET_STATE_CONNECTED: t40 = 3;
 
 const PROCESS_MAX: t40 = 8;
 const PROCESS_ROW_WORDS: t40 = 8;
@@ -622,6 +678,10 @@ fn buffer_flush_all() -> t40 {
     return flushed;
 }
 
+// Clock-hand eviction: two-pass sweep.
+// Pass 1: give referenced frames a second chance (clear ref bit, continue).
+// Pass 2: evict first unpinned+unreferenced frame.
+// This O(n) sweep is correct and cache-friendly for n=64.
 fn buffer_pick_victim() -> t40 {
     var slot: t40 = 0;
     while BUFFER_MAX_FRAMES - slot > 0 {
@@ -630,26 +690,22 @@ fn buffer_pick_victim() -> t40 {
         }
         slot = slot + 1;
     }
-    slot = 0;
-    var best_slot: t40 = ERR_NO_SPACE;
-    var best_clock: t40 = 0;
-    while BUFFER_MAX_FRAMES - slot > 0 {
-        var row: t40 = buffer_frame_addr(slot);
+    var hand: t40 = kload(BUFFER_CLOCK_HAND_ADDR);
+    var scanned: t40 = 0;
+    while scanned - BUFFER_MAX_FRAMES * 2 < 0 {
+        var row: t40 = buffer_frame_addr(hand);
         if kload(row + BF_PIN_COUNT) <= 0 {
-            var clock: t40 = kload(row + BF_LAST_USED);
-            if best_slot < 0 {
-                best_slot = slot;
-                best_clock = clock;
+            if kload(row + BF_REF_BIT) > 0 {
+                kstore(row + BF_REF_BIT, 0);
             } else {
-                if best_clock - clock > 0 {
-                    best_slot = slot;
-                    best_clock = clock;
-                }
+                kstore(BUFFER_CLOCK_HAND_ADDR, kwrap_inc(hand, BUFFER_MAX_FRAMES));
+                return hand;
             }
         }
-        slot = slot + 1;
+        hand = kwrap_inc(hand, BUFFER_MAX_FRAMES);
+        scanned = scanned + 1;
     }
-    return best_slot;
+    return ERR_NO_SPACE;
 }
 
 fn buffer_alloc_frame(namespace_id: t40, inode: t40, logical_page: t40, data_addr: t40) -> t40 {
@@ -671,6 +727,7 @@ fn buffer_alloc_frame(namespace_id: t40, inode: t40, logical_page: t40, data_add
     kstore(row + BF_DIRTY, 0);
     kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
     kstore(row + BF_LAST_USED, kload(BUFFER_CLOCK_ADDR));
+    kstore(row + BF_REF_BIT, 1);
     return slot;
 }
 
@@ -707,6 +764,21 @@ fn buffer_unpin(slot: t40) -> t40 {
     return pins - 1;
 }
 
+fn buffer_ns_dirty_version(ns: t40) -> t40 {
+    if ns < 0 { return 0; }
+    if ns - NS_DIRTY_VERSION_WORDS >= 0 { return 0; }
+    return kload(NS_DIRTY_VERSION_BASE + ns);
+}
+
+fn buffer_ns_touch(ns: t40) -> t40 {
+    if ns < 0 { return 0; }
+    if ns - NS_DIRTY_VERSION_WORDS >= 0 { return 0; }
+    var addr: t40 = NS_DIRTY_VERSION_BASE + ns;
+    var v: t40 = kacq(addr);
+    kcas(addr, v, v + 1);
+    return v + 1;
+}
+
 fn buffer_mark_dirty(slot: t40) -> t40 {
     if slot < 0 {
         return ERR_INVALID;
@@ -721,8 +793,12 @@ fn buffer_mark_dirty(slot: t40) -> t40 {
     if kload(row + BF_DIRTY) <= 0 {
         kstore(row + BF_DIRTY, 1);
         kstore(BUFFER_DIRTY_COUNT_ADDR, kload(BUFFER_DIRTY_COUNT_ADDR) + 1);
+        // Notify namespace CDC: any subscriber watching this namespace's
+        // version counter will see a change on next poll.
+        buffer_ns_touch(kload(row + BF_NAMESPACE));
     }
     kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
+    kstore(row + BF_REF_BIT, 1);
     return 1;
 }
 
@@ -1525,7 +1601,6 @@ fn alloc_row_upsert(ppn: t40, state: t40) -> t40 {
     var old_state: t40 = kload(row + REL_ALLOC_STATE);
     var txid: t40 = log_begin();
     log_write(txid, row + REL_ALLOC_STATE, old_state, state);
-    kstore(row + REL_ALLOC_PPN, ppn);
     log_commit(txid);
     var version: t40 = kload(row + REL_ALLOC_VERSION);
     kstore(row + REL_ALLOC_VERSION, version + 1);
@@ -1573,6 +1648,289 @@ fn migrate_bootstrap_allocations() -> t40 {
 
 fn rel_allocation_state(ppn: t40) -> t40 {
     return kload(rel_alloc_addr(ppn) + REL_ALLOC_STATE);
+}
+
+// ── WAL extended API ──────────────────────────────────────────────────────────
+
+// Count PENDING records currently in the WAL ring.
+fn log_pending_count() -> t40 {
+    var slot: t40 = 0;
+    var count: t40 = 0;
+    while WAL_CAPACITY - slot > 0 {
+        if kload(wal_record_addr(slot) + WAL_STATE) - WAL_PENDING == 0 {
+            count = count + 1;
+        }
+        slot = slot + 1;
+    }
+    return count;
+}
+
+// Return 1 if the WAL can absorb `needed` more PENDING records without overflow.
+fn log_capacity_for(needed: t40) -> t40 {
+    var used: t40 = log_pending_count();
+    if used + needed - WAL_CAPACITY > 0 { return 0; }
+    return 1;
+}
+
+// Write `count_words` WAL records for sequential addresses base_addr..base_addr+count_words-1.
+// All records share the same txid. Aborts (writes nothing) if insufficient capacity.
+fn log_write_range(txid: t40, base_addr: t40, count_words: t40) -> t40 {
+    if log_capacity_for(count_words) <= 0 { return ERR_NO_SPACE; }
+    var i: t40 = 0;
+    while count_words - i > 0 {
+        var addr: t40 = base_addr + i;
+        log_write(txid, addr, kload(addr), kload(addr));
+        i = i + 1;
+    }
+    return count_words;
+}
+
+// ── MVCC Snapshot table ───────────────────────────────────────────────────────
+// A reader acquires a snapshot at the current committed TXID. Subsequent reads
+// using `log_visible_to_snapshot` see only records committed before snapshot
+// acquisition — giving snapshot-isolation semantics.
+
+fn log_snapshot_row(slot: t40) -> t40 {
+    return WAL_SNAPSHOT_BASE + slot * WAL_SNAPSHOT_WORDS;
+}
+
+// Acquire a snapshot for `reader_pid`. Returns snapshot slot or ERR_NO_SPACE.
+fn log_snapshot_acquire(reader_pid: t40) -> t40 {
+    var slot: t40 = 0;
+    while WAL_SNAPSHOT_MAX - slot > 0 {
+        var row: t40 = log_snapshot_row(slot);
+        if kload(row + SNAP_ACTIVE) <= 0 {
+            var committed_txid: t40 = kload(WAL_NEXT_TXID_ADDR) - 1;
+            if committed_txid < 0 { committed_txid = 0; }
+            kstore(row + SNAP_READER_PID, reader_pid);
+            kstore(row + SNAP_READ_TXID, committed_txid);
+            kstore(row + SNAP_ACTIVE, 1);
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+// Release a snapshot slot.
+fn log_snapshot_release(slot: t40) -> t40 {
+    if slot < 0 { return ERR_INVALID; }
+    if slot - WAL_SNAPSHOT_MAX >= 0 { return ERR_INVALID; }
+    kclear(log_snapshot_row(slot), WAL_SNAPSHOT_WORDS);
+    return 1;
+}
+
+// Return 1 if a WAL record committed at `commit_txid` is visible to the
+// reader holding `snap_slot`. Visibility: commit_txid <= snap_read_txid.
+fn log_visible_to_snapshot(commit_txid: t40, snap_slot: t40) -> t40 {
+    if snap_slot < 0 { return 1; } // no snapshot = read latest
+    if snap_slot - WAL_SNAPSHOT_MAX >= 0 { return 1; }
+    var row: t40 = log_snapshot_row(snap_slot);
+    if kload(row + SNAP_ACTIVE) <= 0 { return 1; }
+    var read_txid: t40 = kload(row + SNAP_READ_TXID);
+    if commit_txid - read_txid > 0 { return 0; } // committed after snapshot
+    return 1;
+}
+
+// Return the oldest read TXID across all active snapshots.
+// Checkpoint must not reclaim WAL records with TXID > this value.
+fn log_oldest_snapshot_txid() -> t40 {
+    var oldest: t40 = kload(WAL_NEXT_TXID_ADDR);
+    var slot: t40 = 0;
+    while WAL_SNAPSHOT_MAX - slot > 0 {
+        var row: t40 = log_snapshot_row(slot);
+        if kload(row + SNAP_ACTIVE) > 0 {
+            var rtxid: t40 = kload(row + SNAP_READ_TXID);
+            if rtxid - oldest < 0 { oldest = rtxid; }
+        }
+        slot = slot + 1;
+    }
+    return oldest;
+}
+
+// ── Attribute store (second kernel relation) ──────────────────────────────────
+// Schema: (object_id, object_type, attr_key, attr_value, txid, version)
+// Provides a general-purpose tag/attribute layer over kernel objects,
+// making the kernel state model genuinely relational:
+//   Relation 1 — alloc_store(ppn → state, version)
+//   Relation 2 — attr_store(object_id, type, key → value, txid, version)
+// Joins between the process table and attr_store give subscription-ready
+// desired-vs-actual reconciliation without a userspace daemon.
+
+fn attr_row_addr(slot: t40) -> t40 {
+    return ATTR_STORE_BASE + slot * ATTR_STORE_WORDS;
+}
+
+fn attr_store_init() -> t40 {
+    kclear(ATTR_STORE_BASE, ATTR_STORE_MAX * ATTR_STORE_WORDS);
+    return 1;
+}
+
+// Find a row matching (object_id, type, key). Returns slot or ERR_NOT_FOUND.
+fn attr_find(object_id: t40, object_type: t40, key: t40) -> t40 {
+    var slot: t40 = 0;
+    while ATTR_STORE_MAX - slot > 0 {
+        var row: t40 = attr_row_addr(slot);
+        if kload(row + ATTR_VERSION) > 0 {
+            if kload(row + ATTR_OBJECT_ID) - object_id == 0 {
+                if kload(row + ATTR_OBJECT_TYPE) - object_type == 0 {
+                    if kload(row + ATTR_KEY) - key == 0 {
+                        return slot;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+// Insert or overwrite an attribute. WAL-backed.
+fn attr_insert(object_id: t40, object_type: t40, key: t40, value: t40) -> t40 {
+    // Upsert: if the (object_id, type, key) tuple already exists, update it.
+    var slot: t40 = attr_find(object_id, object_type, key);
+    if slot < 0 {
+        // Allocate first free row (version == 0 means unoccupied).
+        var s: t40 = 0;
+        var found: t40 = -1;
+        while ATTR_STORE_MAX - s > 0 {
+            if found < 0 {
+                if kload(attr_row_addr(s) + ATTR_VERSION) <= 0 {
+                    found = s;
+                }
+            }
+            s = s + 1;
+        }
+        if found < 0 { return ERR_NO_SPACE; }
+        slot = found;
+    }
+    var row: t40 = attr_row_addr(slot);
+    var txid: t40 = log_begin();
+    log_write(txid, row + ATTR_VALUE, kload(row + ATTR_VALUE), value);
+    kstore(row + ATTR_OBJECT_ID, object_id);
+    kstore(row + ATTR_OBJECT_TYPE, object_type);
+    kstore(row + ATTR_KEY, key);
+    kstore(row + ATTR_TXID, txid);
+    var ver: t40 = kload(row + ATTR_VERSION) + 1;
+    if ver <= 0 { ver = 1; }
+    kstore(row + ATTR_VERSION, ver);
+    log_commit(txid);
+    return slot;
+}
+
+
+// Delete an attribute row. WAL-backed.
+fn attr_delete(object_id: t40, object_type: t40, key: t40) -> t40 {
+    var slot: t40 = attr_find(object_id, object_type, key);
+    if slot < 0 { return slot; }
+    var row: t40 = attr_row_addr(slot);
+    var txid: t40 = log_begin();
+    log_write(txid, row + ATTR_VERSION, kload(row + ATTR_VERSION), 0);
+    log_commit(txid);
+    kclear(row, ATTR_STORE_WORDS);
+    return 1;
+}
+
+// Look up an attribute value. Returns value or ERR_NOT_FOUND.
+fn attr_lookup(object_id: t40, object_type: t40, key: t40) -> t40 {
+    var slot: t40 = attr_find(object_id, object_type, key);
+    if slot < 0 { return slot; }
+    return kload(attr_row_addr(slot) + ATTR_VALUE);
+}
+
+// Snapshot-isolated attribute lookup.
+fn attr_lookup_snap(object_id: t40, object_type: t40, key: t40, snap_slot: t40) -> t40 {
+    var s: t40 = 0;
+    while ATTR_STORE_MAX - s > 0 {
+        var row: t40 = attr_row_addr(s);
+        if kload(row + ATTR_VERSION) > 0 {
+            if kload(row + ATTR_OBJECT_ID) - object_id == 0 {
+                if kload(row + ATTR_OBJECT_TYPE) - object_type == 0 {
+                    if kload(row + ATTR_KEY) - key == 0 {
+                        if log_visible_to_snapshot(kload(row + ATTR_TXID), snap_slot) > 0 {
+                            return kload(row + ATTR_VALUE);
+                        }
+                    }
+                }
+            }
+        }
+        s = s + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+// Scan all attributes for a given object. Writes [key, value] pairs to out_addr.
+// Returns count of pairs written.
+fn attr_scan_by_object(object_id: t40, out_addr: t40, max_rows: t40) -> t40 {
+    var written: t40 = 0;
+    var slot: t40 = 0;
+    while ATTR_STORE_MAX - slot > 0 {
+        var row: t40 = attr_row_addr(slot);
+        if kload(row + ATTR_VERSION) > 0 {
+            if kload(row + ATTR_OBJECT_ID) - object_id == 0 {
+                if written - max_rows < 0 {
+                    kstore(out_addr + written * 2, kload(row + ATTR_KEY));
+                    kstore(out_addr + written * 2 + 1, kload(row + ATTR_VALUE));
+                    written = written + 1;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return written;
+}
+
+// Scan all objects sharing a (type, key). Writes [object_id, value] pairs.
+fn attr_scan_by_type(object_type: t40, key: t40, out_addr: t40, max_rows: t40) -> t40 {
+    var written: t40 = 0;
+    var slot: t40 = 0;
+    while ATTR_STORE_MAX - slot > 0 {
+        var row: t40 = attr_row_addr(slot);
+        if kload(row + ATTR_VERSION) > 0 {
+            if kload(row + ATTR_OBJECT_TYPE) - object_type == 0 {
+                if kload(row + ATTR_KEY) - key == 0 {
+                    if written - max_rows < 0 {
+                        kstore(out_addr + written * 2, kload(row + ATTR_OBJECT_ID));
+                        kstore(out_addr + written * 2 + 1, kload(row + ATTR_VALUE));
+                        written = written + 1;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return written;
+}
+
+// Cross-table join: process table (pid→state) ⋈ attr_store (pid, PROCESS, key).
+// Returns the attribute value for a live process, or ERR_NOT_FOUND.
+fn rel_join_proc_attr(pid: t40, key: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 { return slot; }
+    return attr_lookup(pid, ATTR_TYPE_PROCESS, key);
+}
+
+// Relational reconciliation query:
+// Returns count of processes where DESIRED_STATE attribute != current PROC_STATE.
+// This is the Kubernetes control-loop primitive expressed as a relational scan.
+fn rel_reconcile_count() -> t40 {
+    var count: t40 = 0;
+    var slot: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        var row: t40 = process_addr(slot);
+        var state: t40 = kload(row + PROC_STATE);
+        if state > 0 {
+            var pid: t40 = kload(row + PROC_PID);
+            var desired: t40 = attr_lookup(pid, ATTR_TYPE_PROCESS, ATTR_KEY_DESIRED_STATE);
+            if desired >= 0 {
+                if desired - state != 0 {
+                    count = count + 1;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return count;
 }
 
 fn scheduler_init() -> t40 {
@@ -4008,6 +4366,114 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         }
         return kernel_set_return(1, close_requested, 0);
     }
+    // Net syscalls
+    if service - 36 == 0 {
+        var sock_id: t40 = net_socket_create(pid, arg0);
+        if sock_id < 0 {
+            return kernel_set_return(-1, 0, sock_id);
+        }
+        return kernel_set_return(1, sock_id, 0);
+    }
+    if service - 37 == 0 {
+        var bound: t40 = net_bind(arg0, pid, arg1);
+        if bound < 0 {
+            return kernel_set_return(-1, 0, bound);
+        }
+        return kernel_set_return(1, bound, 0);
+    }
+    if service - 38 == 0 {
+        var connected: t40 = net_connect(arg0, pid, arg1);
+        if connected < 0 {
+            return kernel_set_return(-1, 0, connected);
+        }
+        return kernel_set_return(1, connected, 0);
+    }
+    if service - 39 == 0 {
+        var sent: t40 = net_send(arg0, pid, arg1);
+        if sent < 0 {
+            return kernel_set_return(-1, 0, sent);
+        }
+        return kernel_set_return(1, sent, 0);
+    }
+    if service - 40 == 0 {
+        var recvd: t40 = net_recv_user(arg0, pid, arg1);
+        if recvd < 0 {
+            return kernel_set_return(-1, 0, recvd);
+        }
+        if recvd == 0 {
+            return kernel_set_return(0, 0, ERR_EOF);
+        }
+        return kernel_set_return(1, recvd, 0);
+    }
+    // VFS mkdir / unlink
+    if service - 41 == 0 {
+        var mkdir_ns: t40 = process_namespace_for_pid(pid);
+        var mkdir_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if mkdir_path_words < 0 {
+            return kernel_set_return(-1, 0, mkdir_path_words);
+        }
+        var new_inode: t40 = vfs_create(mkdir_ns, SYSCALL_PATH_COPY_BASE, KIND_DIR);
+        if new_inode < 0 {
+            return kernel_set_return(-1, 0, new_inode);
+        }
+        return kernel_set_return(1, new_inode, 0);
+    }
+    if service - 42 == 0 {
+        var unlink_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if unlink_path_words < 0 {
+            return kernel_set_return(-1, 0, unlink_path_words);
+        }
+        var unlinked: t40 = vfs_unlink(pid, SYSCALL_PATH_COPY_BASE);
+        if unlinked < 0 {
+            return kernel_set_return(-1, 0, unlinked);
+        }
+        return kernel_set_return(1, unlinked, 0);
+    }
+    // Process lifecycle: waitpid, exit, sleep
+    if service - 43 == 0 {
+        var target_pid: t40 = arg0;
+        var caller_slot: t40 = process_find_pid(pid);
+        if caller_slot < 0 {
+            return kernel_set_return(-1, 0, caller_slot);
+        }
+        var target_slot: t40 = process_find_pid(target_pid);
+        if target_slot < 0 {
+            return kernel_set_return(1, 0, 0);
+        }
+        var target_state: t40 = kload(process_addr(target_slot) + PROC_STATE);
+        if target_state - PROC_EXITED == 0 {
+            return kernel_set_return(1, kload(process_addr(target_slot) + PROC_WAIT_CHANNEL), 0);
+        }
+        process_wait(caller_slot, target_pid);
+        return kernel_set_return(1, 0, 0);
+    }
+    if service - 44 == 0 {
+        var exit_slot: t40 = process_find_pid(pid);
+        if exit_slot < 0 {
+            return kernel_set_return(-1, 0, exit_slot);
+        }
+        var exit_row: t40 = process_addr(exit_slot);
+        kstore(exit_row + PROC_WAIT_CHANNEL, arg0);
+        process_set_state(exit_slot, PROC_EXITED);
+        process_wake_channel(pid);
+        return kernel_set_return(1, arg0, 0);
+    }
+    if service - 45 == 0 {
+        var sleep_slot: t40 = process_find_pid(pid);
+        if sleep_slot < 0 {
+            return kernel_set_return(-1, 0, sleep_slot);
+        }
+        process_set_state(sleep_slot, PROC_SLEEPING);
+        return kernel_set_return(1, 0, 0);
+    }
+    // Process snapshot
+    if service - 46 == 0 {
+        var ps_count: t40 = kernel_ps_user(pid, arg0, arg1);
+        if ps_count < 0 {
+            return kernel_set_return(-1, 0, ps_count);
+        }
+        return kernel_set_return(1, ps_count, 0);
+    }
     return kernel_set_return(-1, 0, ERR_INVALID);
 }
 
@@ -4182,19 +4648,166 @@ fn ipc_recv_user(pid: t40, channel_id: t40, namespace_id: t40, out_addr: t40) ->
     return 1;
 }
 
+fn net_socket_row(socket_id: t40) -> t40 {
+    return NET_BASE + socket_id * NET_SOCKET_WORDS;
+}
+
+fn net_rx_base(socket_id: t40) -> t40 {
+    return NET_RX_BASE + socket_id * NET_RX_CAPACITY;
+}
+
+fn net_init() -> t40 {
+    kclear(NET_BASE, NET_MAX_SOCKETS * NET_SOCKET_WORDS);
+    kclear(NET_RX_BASE, NET_MAX_SOCKETS * NET_RX_CAPACITY);
+    return NET_MAX_SOCKETS;
+}
+
+fn net_socket_create(owner_pid: t40, kind: t40) -> t40 {
+    var slot: t40 = 0;
+    while NET_MAX_SOCKETS - slot > 0 {
+        var row: t40 = net_socket_row(slot);
+        if kload(row + NET_SOCK_STATE) - NET_STATE_FREE == 0 {
+            kstore(row + NET_SOCK_STATE, NET_STATE_OPEN);
+            kstore(row + NET_SOCK_OWNER, owner_pid);
+            kstore(row + NET_SOCK_KIND, kind);
+            kstore(row + NET_SOCK_LOCAL_PORT, 0);
+            kstore(row + NET_SOCK_REMOTE_PORT, 0);
+            kstore(row + NET_SOCK_RX_READ, 0);
+            kstore(row + NET_SOCK_RX_WRITE, 0);
+            kstore(row + NET_SOCK_RX_BASE, net_rx_base(slot));
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn net_authorized(socket_id: t40, pid: t40) -> t40 {
+    if socket_id < 0 { return 0; }
+    if socket_id - NET_MAX_SOCKETS >= 0 { return 0; }
+    var row: t40 = net_socket_row(socket_id);
+    if kload(row + NET_SOCK_STATE) <= 0 { return 0; }
+    if kload(row + NET_SOCK_OWNER) - pid != 0 { return 0; }
+    return 1;
+}
+
+fn net_bind(socket_id: t40, pid: t40, port: t40) -> t40 {
+    if net_authorized(socket_id, pid) <= 0 { return ERR_INVALID; }
+    var row: t40 = net_socket_row(socket_id);
+    kstore(row + NET_SOCK_LOCAL_PORT, port);
+    kstore(row + NET_SOCK_STATE, NET_STATE_BOUND);
+    return 1;
+}
+
+fn net_connect(socket_id: t40, pid: t40, remote_port: t40) -> t40 {
+    if net_authorized(socket_id, pid) <= 0 { return ERR_INVALID; }
+    var row: t40 = net_socket_row(socket_id);
+    kstore(row + NET_SOCK_REMOTE_PORT, remote_port);
+    kstore(row + NET_SOCK_STATE, NET_STATE_CONNECTED);
+    return 1;
+}
+
+fn net_ring_next(pos: t40, capacity: t40) -> t40 {
+    var next: t40 = pos + 1;
+    if next - capacity >= 0 { return 0; }
+    return next;
+}
+
+fn net_send(socket_id: t40, pid: t40, word: t40) -> t40 {
+    if net_authorized(socket_id, pid) <= 0 { return ERR_INVALID; }
+    var row: t40 = net_socket_row(socket_id);
+    var rp: t40 = kload(row + NET_SOCK_RX_READ);
+    var wp: t40 = kload(row + NET_SOCK_RX_WRITE);
+    var next_wp: t40 = net_ring_next(wp, NET_RX_CAPACITY);
+    if next_wp - rp == 0 { return ERR_NO_SPACE; }
+    kstore(kload(row + NET_SOCK_RX_BASE) + wp, word);
+    kstore(row + NET_SOCK_RX_WRITE, next_wp);
+    return 1;
+}
+
+fn net_recv_user(socket_id: t40, pid: t40, out_addr: t40) -> t40 {
+    if net_authorized(socket_id, pid) <= 0 { return ERR_INVALID; }
+    if user_validate_span(pid, out_addr, 1, 1) <= 0 { return ERR_BAD_PTR; }
+    var row: t40 = net_socket_row(socket_id);
+    var rp: t40 = kload(row + NET_SOCK_RX_READ);
+    var wp: t40 = kload(row + NET_SOCK_RX_WRITE);
+    if rp - wp == 0 { return 0; }
+    var word: t40 = kload(kload(row + NET_SOCK_RX_BASE) + rp);
+    user_store_word(pid, out_addr, word);
+    kstore(row + NET_SOCK_RX_READ, net_ring_next(rp, NET_RX_CAPACITY));
+    return 1;
+}
+
+fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
+    var namespace_id: t40 = process_namespace_for_pid(pid);
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 { return inode; }
+    var row: t40 = inode_addr(inode);
+    if kload(row + INODE_KIND) - KIND_DIR == 0 { return ERR_IS_DIR; }
+    var links: t40 = kload(row + INODE_LINKS) - 1;
+    kstore(row + INODE_LINKS, links);
+    if links <= 0 {
+        vfs_truncate_inode(inode);
+        kstore(row + INODE_VERSION, 0);
+    }
+    var slot: t40 = 0;
+    while VFS_MAX_DIRENTS - slot > 0 {
+        var dr: t40 = dirent_addr(slot);
+        if kload(dr + DIRENT_CHILD) - inode == 0 {
+            if kload(dr + DIRENT_NAMESPACE) - namespace_id == 0 {
+                kstore(dr + DIRENT_CHILD, 0);
+                kstore(dr + DIRENT_VERSION, 0);
+            }
+        }
+        slot = slot + 1;
+    }
+    return 1;
+}
+
+fn kernel_ps_user(pid: t40, out_addr: t40, max_entries: t40) -> t40 {
+    var written: t40 = 0;
+    var slot: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        var row: t40 = process_addr(slot);
+        var state: t40 = kload(row + PROC_STATE);
+        if state > 0 {
+            if written - max_entries < 0 {
+                var base: t40 = out_addr + written * 5;
+                if user_store_word(pid, base, kload(row + PROC_PID)) < 0 { return written; }
+                if user_store_word(pid, base + 1, state) < 0 { return written; }
+                if user_store_word(pid, base + 2, kload(row + PROC_PRIORITY)) < 0 { return written; }
+                var qid: t40 = kload(row + PROC_QUOTA);
+                if user_store_word(pid, base + 3, quota_remaining(qid)) < 0 { return written; }
+                if user_store_word(pid, base + 4, kload(row + PROC_NAMESPACE)) < 0 { return written; }
+                written = written + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return written;
+}
+
 fn kernel_init() -> t40 {
     kstore(KERNEL_BOOTED_ADDR, 0);
+    kstore(BUFFER_CLOCK_HAND_ADDR, 0);
+    kclear(NS_DIRTY_VERSION_BASE, NS_DIRTY_VERSION_WORDS);
+    kclear(WAL_SNAPSHOT_BASE, WAL_SNAPSHOT_MAX * WAL_SNAPSHOT_WORDS);
     bootstrap_allocator_init();
     buffer_pool_init();
     wal_init();
     rel_store_init();
+    attr_store_init();
     scheduler_init();
     process_table_init();
     namespace_table_init();
     pte_table_init();
     process_create(0, 1, 0, 1, 0, 0);
+    // Tag the kernel process in attr_store so rel_join_proc_attr works from boot.
+    attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_CREATED_TXID, 0);
+    attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_DESIRED_STATE, PROC_RUNNABLE);
     app_registry_init();
     ipc_init();
+    net_init();
     kclear(FB_STATE_BASE, FB_STATE_WORDS);
     kstore(FB_STATE_BASE + FB_FRONT_INDEX, 0);
     window_table_init();
@@ -4202,5 +4815,8 @@ fn kernel_init() -> t40 {
     kstore(CURRENT_CONTEXT_ADDR, 0);
     kstore(CURRENT_PID_ADDR, 1);
     kstore(KERNEL_BOOTED_ADDR, 1);
+    unsafe { csr_write(timer_reload, 1000); }
+    unsafe { csr_write(timer_counter, 1000); }
+    unsafe { csr_write(timer_enable, 1); }
     return 1;
 }

@@ -1,64 +1,187 @@
-// apps/tcc.trit - Layer 6 native compiler shell.
+// apps/tcc.trit - TRIT Compiler Client
+//
+// Reads a TCL source file from the VFS, lexes it with the tcl_frontend
+// pipeline, and reports results. This is the Phase A entry point;
+// full code generation (parse -> IR -> backend) wires in Phase B.
+//
+// Requires: os_sdk.trit, tcl_frontend.trit (which pulls tcl_lexer.trit)
 
-fn tcc_store(addr: t40, value: t40) -> t40 {
-    unsafe { store(addr, value); }
-    return value;
+// ── Scratch layout ─────────────────────────────────────────────────
+// 4000 : filename input buffer  (64 words)
+// 4100 : source file buffer     (8192 words ~= 32 KB)
+// 4200 : token output buffer    (returned by tcl_lex, opaque handle)
+// ───────────────────────────────────────────────────────────────────
+
+const TCC_NAME_BUF:  t40 = 4000;
+const TCC_NAME_MAX:  t40 = 64;
+const TCC_SRC_BUF:   t40 = 4100;
+const TCC_SRC_WORDS: t40 = 8192;
+
+// ── helpers ────────────────────────────────────────────────────────
+
+fn tcc_store(addr: t40, val: t40) -> t40 {
+    unsafe { store(addr, val); }
+    return val;
 }
 
-fn tcc_seed_banner(addr: t40) -> t40 {
-    tcc_store(addr + 0, 84);
-    tcc_store(addr + 1, 67);
-    tcc_store(addr + 2, 67);
-    tcc_store(addr + 3, 32);
-    tcc_store(addr + 4, 82);
-    tcc_store(addr + 5, 69);
-    tcc_store(addr + 6, 65);
-    tcc_store(addr + 7, 68);
-    tcc_store(addr + 8, 89);
-    tcc_store(addr + 9, 0);
-    return addr;
+fn tcc_load(addr: t40) -> t40 {
+    var v: t40 = 0;
+    unsafe { v = load(addr); }
+    return v;
 }
 
-fn tcc_is_alpha(c: t40) -> t40 {
+// ── token class helpers (retained from original tcc.trit) ──────────
+
+fn is_alpha(c: t40) -> t40 {
     if c - 65 >= 0 {
-        if 90 - c >= 0 {
-            return 1;
-        }
+        if 90 - c >= 0 { return 1; }
     }
     if c - 97 >= 0 {
-        if 122 - c >= 0 {
-            return 1;
-        }
-    }
-    if c - 95 == 0 {
-        return 1;
+        if 122 - c >= 0 { return 1; }
     }
     return 0;
 }
 
-fn tcc_is_digit(c: t40) -> t40 {
+fn is_digit(c: t40) -> t40 {
     if c - 48 >= 0 {
-        if 57 - c >= 0 {
-            return 1;
-        }
+        if 57 - c >= 0 { return 1; }
     }
     return 0;
 }
 
-fn tcc_token_class(c: t40) -> t40 {
-    if tcc_is_alpha(c) > 0 {
-        return 1;
-    }
-    if tcc_is_digit(c) > 0 {
-        return 2;
-    }
-    if c - 0 == 0 {
-        return 0;
-    }
-    return -1;
+fn token_class(c: t40) -> t40 {
+    if is_alpha(c) > 0 { return 1; } // identifier
+    if is_digit(c) > 0 { return 2; } // number
+    if c - 32  == 0 { return 0; }    // whitespace
+    if c - 9   == 0 { return 0; }    // tab
+    if c - 10  == 0 { return 0; }    // newline
+    if c - 13  == 0 { return 0; }    // CR
+    return 3;                         // symbol/operator
 }
+
+// ── readline ───────────────────────────────────────────────────────
+
+fn tcc_putc(c: t40) -> t40 {
+    return os_putc(c);
+}
+
+fn tcc_newline() -> t40 {
+    return os_newline();
+}
+
+// Read a filename from console into TCC_NAME_BUF, return length.
+fn tcc_readline() -> t40 {
+    var pos: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var k: t40 = -1;
+        while k < 0 {
+            k = os_read_key();
+        }
+        if k - 13 == 0 {     // Enter
+            done = 1;
+        } else {
+            if k - 8 == 0 {  // Backspace
+                if pos > 0 {
+                    pos = pos - 1;
+                    tcc_putc(8); tcc_putc(32); tcc_putc(8);
+                }
+            } else {
+                if pos - TCC_NAME_MAX < 0 {
+                    tcc_store(TCC_NAME_BUF + pos, k);
+                    tcc_putc(k);
+                    pos = pos + 1;
+                }
+            }
+        }
+    }
+    tcc_store(TCC_NAME_BUF + pos, 0);
+    tcc_newline();
+    return pos;
+}
+
+// ── number printer ─────────────────────────────────────────────────
+
+fn tcc_print_int(v: t40) -> t40 {
+    return os_print_int(v);
+}
+
+// ── print token kind ───────────────────────────────────────────────
+
+fn tcc_print_token_kind(k: t40) -> t40 {
+    // Common TCL token kinds: reflect tcl_lexer constants
+    // 0=EOF 1=IDENT 2=NUMBER 3=STRING 4=COMMENT 5=OP 6=LBRACE 7=RBRACE 8=LPAREN 9=RPAREN
+    if k - 1 == 0 { tcc_putc(73); tcc_putc(68); return 2; } // ID
+    if k - 2 == 0 { tcc_putc(78); tcc_putc(85); tcc_putc(77); return 3; } // NUM
+    if k - 3 == 0 { tcc_putc(83); tcc_putc(84); tcc_putc(82); return 3; } // STR
+    if k - 5 == 0 { tcc_putc(79); tcc_putc(80); return 2; } // OP
+    tcc_putc(63); // '?'
+    return 1;
+}
+
+// ── main ───────────────────────────────────────────────────────────
 
 fn main() -> t40 {
-    libc_puts(tcc_seed_banner(2032));
-    return tcc_token_class(116);
+    // Banner
+    tcc_putc(84); tcc_putc(67); tcc_putc(67); tcc_putc(32); // "TCC "
+    tcc_putc(118); tcc_putc(48); tcc_putc(46); tcc_putc(49); // "v0.1"
+    tcc_newline();
+
+    // Prompt for source filename
+    tcc_putc(102); tcc_putc(105); tcc_putc(108); tcc_putc(101); tcc_putc(58); tcc_putc(32); // "file: "
+    var nlen: t40 = tcc_readline();
+    if nlen <= 0 {
+        return 0;
+    }
+
+    // Open file
+    var fd: t40 = os_open(TCC_NAME_BUF, 0);
+    if fd < 0 {
+        // "ERR open\n"
+        tcc_putc(69); tcc_putc(82); tcc_putc(82); tcc_newline();
+        return fd;
+    }
+
+    // Read source into buffer
+    var words_read: t40 = os_read(fd, TCC_SRC_BUF, TCC_SRC_WORDS);
+    os_close(fd);
+    if words_read < 0 {
+        tcc_putc(69); tcc_putc(82); tcc_putc(82); tcc_print_int(words_read); tcc_newline();
+        return words_read;
+    }
+    // Null-terminate the source buffer
+    tcc_store(TCC_SRC_BUF + words_read, 0);
+
+    // Lex the source using the frontend facade
+    var tokens: t40 = tcl_frontend_lex(TCC_SRC_BUF, words_read);
+    if tokens < 0 {
+        tcc_putc(76); tcc_putc(69); tcc_putc(88); tcc_putc(32);
+        tcc_print_int(tokens); tcc_newline();
+        return tokens;
+    }
+
+    var count: t40 = tcl_frontend_token_count(tokens);
+
+    // Print summary: "OK <n> tokens\n"
+    tcc_putc(79); tcc_putc(75); tcc_putc(32);
+    tcc_print_int(count);
+    tcc_putc(32); tcc_putc(116); tcc_putc(111); tcc_putc(107); tcc_newline(); // " tok"
+
+    // Print first 8 tokens for diagnostics
+    var show: t40 = count;
+    if show - 8 > 0 { show = 8; }
+    var i: t40 = 0;
+    while show - i > 0 {
+        var kind:  t40 = tcl_frontend_token_kind(tokens, i);
+        var start: t40 = tcl_frontend_token_start(tokens, i);
+        var tlen:  t40 = tcl_frontend_token_len(tokens, i);
+        tcc_print_int(i); tcc_putc(32);
+        tcc_print_token_kind(kind); tcc_putc(32);
+        tcc_print_int(start); tcc_putc(43);
+        tcc_print_int(tlen);  tcc_newline();
+        i = i + 1;
+    }
+
+    tcl_frontend_free(tokens);
+    return count;
 }

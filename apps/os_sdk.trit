@@ -389,3 +389,57 @@ fn os_mouse_btn() -> t40 {
     unsafe { val = csr_read(mouse_btn); }
     return val;
 }
+
+// --- Net syscalls (services 36–40) ---
+
+fn os_socket(kind: t40) -> t40 {
+    return sys_socket(kind);
+}
+
+fn os_bind(socket_id: t40, port: t40) -> t40 {
+    return sys_bind(socket_id, port);
+}
+
+fn os_connect(socket_id: t40, remote_port: t40) -> t40 {
+    return sys_connect(socket_id, remote_port);
+}
+
+fn os_send(socket_id: t40, word: t40) -> t40 {
+    return sys_send(socket_id, word);
+}
+
+fn os_recv(socket_id: t40, out_addr: t40) -> t40 {
+    return sys_recv(socket_id, out_addr);
+}
+
+// --- VFS mkdir / unlink (services 41–42) ---
+
+fn os_mkdir(path_addr: t40) -> t40 {
+    return sys_mkdir(path_addr);
+}
+
+fn os_unlink(path_addr: t40) -> t40 {
+    return sys_unlink(path_addr);
+}
+
+// --- Process lifecycle (services 43–45) ---
+
+fn os_waitpid(child_pid: t40) -> t40 {
+    return sys_waitpid(child_pid);
+}
+
+fn os_exit(code: t40) -> t40 {
+    return sys_exit(code);
+}
+
+fn os_sleep() -> t40 {
+    return sys_sleep();
+}
+
+// --- Process snapshot (service 46) ---
+// Fills out_addr with up to max_entries records of 5 words each:
+//   [pid, state, priority, quota_remaining, namespace_id]
+// Returns count of entries written.
+fn os_ps(out_addr: t40, max_entries: t40) -> t40 {
+    return sys_ps(out_addr, max_entries);
+}
