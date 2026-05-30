@@ -130,7 +130,13 @@ struct PageHeader {
 
 These are not future concerns. They are constraints on the design of D9's COW handler and fork logic, and they must be stated here so that D9 is not designed in ignorance of them.
 
-Page versions map directly to language-level `ptr<T, S>` states.
+Page versions map directly to language-level `ptr<T, S>` states by sign. Negative versions represent `ptr<T, null>`, zero represents `ptr<T, unknown>`, and positive versions represent `ptr<T, valid>`. The magnitude is the MVCC generation; the sign is the pointer-state proof. Kernel helpers such as `page_version_state(version)` must be the single mapping authority.
+
+| PageHeader `version` sign | Language state | Meaning |
+|---------------------------|----------------|---------|
+| `< 0` | `ptr<T, null>` | Known not to reference a live page version |
+| `0` | `ptr<T, unknown>` | Unproven or transitional page state |
+| `> 0` | `ptr<T, valid>` | Proven live MVCC generation |
 
 4. **D4. Write-Ahead Log (WAL) Engine:** ACID Bedrock.
 Implement the kernel-managed transaction log as a structural ring buffer tied directly to the underlying block storage device. Every transactional modification must serialize a log entry containing `(block_address, old_data, new_data, transaction_id)` before flushing dirty data frames to storage. Expose four structural system primitives: `log_write`, `log_commit`, `log_abort`, and `log_checkpoint`.
@@ -138,59 +144,216 @@ Implement the kernel-managed transaction log as a structural ring buffer tied di
 5. **D5. Relational State Store Initialization:** State Migration.
 Construct fixed-size relational tables (Process Table, File Descriptor Table, Quotas Table) inside B-trees backed by the Buffer Pool and the WAL. **Critical Migration Trigger:** Once the relational store is online, loop through the initial Phase D2a bootstrap bitmap state, insert corresponding allocation rows into the new formal transactional memory map relation, and permanently deprecate the raw bootstrap allocator.
 
-**Transaction Quiescence Protocol:** Before Phase D5 migration begins, the kernel must enter a quiescent state:
-- Freeze all user-space processes (suspend scheduling, hold all thread contexts in kernel-managed state blocks).
-- Complete all in-flight transactions: commit all currently outstanding transactional writes to the bootstrap WAL, then checkpoint.
-- Perform the one-pass migration scan: read bootstrap bitmap → insert relational `allocations` rows → flush WAL checkpoint.
-- Resume user-space processes. Any transaction that was held in flight during migration must be replayed through the new relational WAL to ensure consistency.
+**Incremental Migration Protocol:** D5 must not depend on an unrecoverable stop-the-world migration. Once the WAL is online, migration advances through the bootstrap bitmap with a persistent cursor. For each allocated bootstrap page, the kernel logs an `allocations` row upsert before publishing the row. If power fails mid-scan, `log_recover()` replays committed rows, aborts pending rows, and resumes from the last durable cursor. The raw bootstrap allocator is disabled only after `REL_MIGRATION_DONE` is durably published.
 
-This ensures no in-flight transaction state is lost or corrupted during the architectural transition from bootstrap mode to relational mode.
+The migration may temporarily throttle user-space allocation, but it must not leave the kernel in a state where interruption means corruption. All D5 state transitions must be either replayable through `log_commit` or discardable through `log_abort`.
 
 6. **D6. Two-Tiered Scheduler: O(1) Micro-Engine:** Tier-1 Scheduling Micro-Mechanics.
 To prevent relational lookup overhead from destroying context-switch times, split scheduling into two isolated tiers. Tier-1 is the micro-scheduler: implemented as a highly optimized, flat, non-relational O(1) run-queue array. The core timer-interrupt handler (D1) only interacts with this flat Tier-1 layer, popping the next runnable task thread in microsecond time horizons without touching any relational B-trees.
 
+Tier-1 run-queue slots, head/tail counters, and queue counts are shared kernel state. Producers and consumers must use `TLDR` followed by `TSTR` with acquire-release ordering for slot claims and publications. A `TSTR` without a preceding reservation-setting `TLDR` on the same address is invalid.
+
 7. **D7. Two-Tiered Scheduler: Macro-Reconciliation Loop:** Tier-2 Scheduling Policy.
 Implement Tier-2 of the scheduler as a background macro-horizon reconciliation loop executing strictly every 10–50 ms. This loop queries the formal `desired_processes` and `quotas` relations, evaluates priority shifts and resource usage balances, and flushes the resulting top-tier runnable threads into the flat Tier-1 O(1) run-queue array.
 
-8. **D8. VFS Isolation: Relational Control vs. Linear Vector Data Plane.**
+The Tier-2 to Tier-1 handoff is an explicit synchronization boundary: the macro loop stages runnable thread IDs in a shadow queue, publishes them into Tier-1 with acquire-release `TLDR`/`TSTR`, then increments a scheduler epoch with release ordering. The timer path acquires the epoch before consuming newly published work.
 
-To prevent transactional locking and metadata update overhead from throttling raw throughput, the Virtual File System is bisected into two isolated operational planes that share the underlying Buffer Pool and Write-Ahead Log (WAL) substrate.
+8. **D8. VFS Isolation: Relational Control vs. Opaque Linear Data Plane.**
 
-### D8a. The Relational Control Plane (Metadata & Structural Trees)
+D8 delivers the native filesystem and file-descriptor syscall surface. After D8, a user process can open, close, read, write, stat, and enumerate files through syscall ids `12` through `17`; `exec()` in D9 can then consume ordinary executable files instead of static kernel images. D8 depends on the D3 Buffer Pool, D4 WAL, D5 relational state store, and D6/D7 scheduler. D8 must not depend on D9 COW/fork semantics.
 
-* **Mechanics:** All file system metadata—including directories, inodes, permissions, namespace identifiers, and block allocation extent maps—are stored as strict, B-tree-indexed relational tables within the kernel's private buffer pool.
-* **Transaction Guarding:** Every modification to the file hierarchy (such as creating a file, updating directory records, or extending file blocks) acts as a formal database transaction. These mutations are validated against the active process namespace column and written to the block-layer WAL before any changes are committed to disk.
+To prevent transactional locking and metadata update overhead from throttling raw throughput, the Virtual File System is split into two isolated operational planes that share the underlying Buffer Pool and Write-Ahead Log (WAL) substrate. D8 defines only the filesystem contract. The VFS must not transform, pack, tile, reinterpret, compress, encrypt, or vector-align arbitrary payload bytes or words.
 
-### D8b. The Linear Vector Data Plane (The Stream Engine)
+### D8a. Required Kernel Data Model
 
-* **Mechanics:** Raw file payload storage completely bypasses the B-tree relational indexing engine during active, ongoing read and write operations. High-throughput data flows sequentially through raw physical page frame extents managed directly by the Buffer Pool.
-* **The Extent Resolution Boundary:** Before data streaming can begin, the initial file offset must be translated to a physical page number. This mapping step explicitly queries the extent maps residing within the Relational Control Plane. Once this initial extent resolution is complete, the hot path for sequential I/O completely avoids per-block relational updates.
-* **The Commit Boundary:** Relational file system attributes (such as total file length, modified timestamps, and terminal block allocations) are only updated in the Relational Control Plane upon explicit file closure or transaction commit, keeping the sequential execution path free of relational lock contention.
+The VFS is backed by fixed-size relational rows stored in D5 B-trees. Persistent `vfs_*` row mutations are D4 WAL transactions. The volatile `process_fds` relation is synchronized but not replayed after reboot. All persistent VFS tables include `namespace_id`; D8 may run with only namespace `0`, but the column exists from the start so D9 namespace isolation is not retrofitted.
 
-### D8c. Recommended 3-Element Sub-Word Layout Optimization
+| Relation | Key | Required fields |
+|----------|-----|-----------------|
+| `vfs_mounts` | `(namespace_id, device_id)` | `root_inode`, `fs_version`, `block_words`, `flags` |
+| `vfs_inodes` | `(namespace_id, inode_id)` | `kind`, `mode`, `size_words`, `link_count`, `version`, `ctime`, `mtime`, `exec_header_ptr`, `flags` |
+| `vfs_dirents` | `(namespace_id, parent_inode, name_hash, name_words)` | `child_inode`, `entry_version` |
+| `vfs_extents` | `(namespace_id, inode_id, logical_start_word)` | `length_words`, `ppn_start`, `extent_flags`, `extent_version` |
+| `process_fds` | `(pid, fd)` | `namespace_id`, `inode_id`, `offset_words`, `open_flags`, `ref_count`, `fd_version` |
 
-* **The Data Layout:** To maximize performance on data structures that naturally decompose into multi-dimensional components (such as spatial coordinates, color channels, or tensor slices), the platform establishes a recommended 3-element vector layout within each 27-trit machine word:
+`kind` must at minimum encode `free`, `file`, `directory`, and `executable`. Directory names are metadata, not payload: path components are stored as T40 character words in `vfs_dirents`, are compared exactly, and are never locale-folded or normalized beyond the explicit path rules below. File payload extents are opaque data.
+
+The block/page granularity for D8 is `MMU_PAGE_WORDS` words. Current VM systems use 27-word pages; the VFS must refer to the architecture constant rather than hardcoding `27` in algorithms.
+
+### D8b. Mount, Format, and Root Rules
+
+At boot, D8 mounts `block0` from the device tree into namespace `0`. If the device is empty and the boot policy permits formatting, the kernel creates a deterministic root filesystem with a root directory inode, a free-space relation, and a WAL checkpoint before user-space starts. If the device contains an incompatible magic, version, or page-word size, mount fails cleanly before `shell_main()` is entered.
+
+The root directory is inode `0` within each namespace. Paths exposed to user-space are absolute, T40 null-terminated character-word strings. D8 must support `/`, ordinary component lookup, `.`, and `..`; `..` at namespace root resolves back to root and must not escape the namespace. D8 does not require symbolic links, hard links beyond `.` and `..`, rename, unlink, chmod, or mount stacking.
+
+The kernel-internal VFS API must include:
 
 ```
-[ Word Layout: 27-trits ] -> [ 9-trit Short A | 9-trit Short B | 9-trit Short C ]
-
+vfs_format(device_id: T40) -> T1
+vfs_mount(namespace_id: T40, device_id: T40) -> T1
+vfs_create(namespace_id: T40, path: ptr<T40, user, valid>, kind: T40) -> T40
+vfs_lookup(namespace_id: T40, path: ptr<T40, user, valid>) -> T40
+vfs_open(pid: T40, path: ptr<T40, user, valid>, mode: T40) -> T40
+vfs_close(pid: T40, fd: T40) -> T1
+vfs_read(pid: T40, fd: T40, dst: ptr<T40, user, valid>, count_words: T40) -> T40
+vfs_write(pid: T40, fd: T40, src: ptr<T40, user, valid>, count_words: T40) -> T40
+vfs_stat(namespace_id: T40, path: ptr<T40, user, valid>, out: ptr<T40, user, valid>) -> T1
+vfs_readdir(namespace_id: T40, path: ptr<T40, user, valid>, out: ptr<T40, user, valid>, max_words: T40) -> T40
+vfs_fsync(pid: T40, fd: T40) -> T1
 ```
 
-* **VFS Neutrality:** This layout is a *recommendation* for specialized workloads, **not a mandatory VFS invariant**. The VFS functions strictly as a neutral data router; it does not perform data transformations, packing, or chunking on arbitrary streams. Applications requiring raw, un-transformed byte streams (e.g., text files, source code, executables) receive raw data without VFS overhead or forced alignment.
-* **Spatial Cache Tiling:** For files matching this layout, data is arranged sequentially in blocks aligned to the CPU's L1 cache boundaries. Multi-word lookups populate the cache with zero bit-shifting or unpacking overhead, minimizing DRAM bus starvation during intense streaming pipelines.
+`vfs_create`, `vfs_format`, `vfs_mount`, and `vfs_fsync` are kernel-internal in D8 unless a later syscall ABI explicitly exposes them. They exist so tests, init image construction, and D9 `exec()` do not bypass the real VFS path.
 
-### D8d. Hardware Vector Pipeline Unification & Execution Boundaries
+### D8c. Syscall ABI Contract
 
-* **Lining up the Lanes:** The Triton-27 CPU core defines a native hardware vector length of **27 lanes**. When an application utilizes the recommended layout, a sequential data block read of exactly 9 words pulls precisely 27 distinct data elements into the hardware register track (9 words × 3 sub-words = 27 data elements).
-* **Instruction Efficiency:** A parallel compute pass (such as a media transformation, a cryptographic hash computation, or an array reduction) can process all 27 data elements simultaneously across the hardware lanes using a **single vector instruction**. *Note: Actual clock cycle retirement per instruction depends on execution unit latencies (e.g., multiplies vs. additions) and cache pipeline state.*
-* **Separation of Concerns:** The VFS responsibility terminates at delivering cache-line-aligned data blocks to the buffer pool. The mechanisms for exploiting sub-word layouts and managing how data lands in vector registers are exclusively owned by the compiler (via width-parametric functions and the `#[parallel]` path) and the runtime, keeping file system layout completely decoupled from future shifts in the hardware execution model.
+D8 owns syscall ids `12` through `17`:
 
----
+| ID | Name | Arguments in `r13-r18` | Success payload |
+|----|------|-------------------------|-----------------|
+| `12` | `sys_open` | `r13=path_ptr`, `r14=mode` | `fd` |
+| `13` | `sys_close` | `r13=fd` | `0` |
+| `14` | `sys_read` | `r13=fd`, `r14=buf_ptr`, `r15=count_words` | words read |
+| `15` | `sys_write` | `r13=fd`, `r14=buf_ptr`, `r15=count_words` | words written |
+| `16` | `sys_stat` | `r13=path_ptr`, `r14=out_ptr_or_zero` | file size in words |
+| `17` | `sys_readdir` | `r13=path_ptr`, `r14=out_ptr`, `r15=max_words` | words written |
+
+All D8 syscalls use the kernel `T1` status convention: `r13 = -1/0/+1`, `r14 = payload`, and `r15 = errno/detail`. `+1` means success, `0` means a non-fatal boundary condition such as EOF or would-block, and `-1` means failure. Existing one-register compatibility wrappers may collapse this triple into a single return value, but the routed kernel ABI must preserve all three registers.
+
+`sys_open` mode is a small integer flag word:
+
+| Mode | Meaning |
+|------|---------|
+| `0` | read-only, path must exist |
+| `1` | read-write, path must exist |
+| `2` | read-write, create file if missing |
+| `3` | read-write, create if missing and truncate to zero words |
+
+`sys_stat(path, 0)` returns the file size in `r14`. If `out_ptr_or_zero` is nonzero, it must validate as a writable user pointer and the kernel also writes a fixed stat record: `[inode_id, kind, size_words, extent_count, flags, version]`. The D8 `ulib.trit` compatibility wrapper for `stat(path)` must explicitly pass `0` as the second syscall argument; no D8 handler may read an omitted optional argument from stale register state. `sys_readdir` writes repeated directory records into `out_ptr`: `[child_inode, kind, name_len, name_word_0, ...]` until `max_words` would be exceeded.
+
+### D8d. Pointer, Permission, and Error Rules
+
+Every user pointer crossing the VFS syscall boundary must be validated as a `ptr<T40, user, valid>` span before any metadata or extent mutation occurs. Validation includes non-null state, user privilege, page presence, read/write permission appropriate to the syscall, namespace compatibility, and `count_words` bounds. A failed validation returns `ERR_BAD_PTR` and leaves all VFS state unchanged.
+
+The minimum D8 errno/detail values are:
+
+| Name | Meaning |
+|------|---------|
+| `ERR_NOT_FOUND` | path, inode, or extent missing |
+| `ERR_EXISTS` | kernel-internal exclusive create requested an already existing path |
+| `ERR_NO_SPACE` | extent allocation or relation row allocation failed |
+| `ERR_BAD_FD` | fd is not open in the calling process |
+| `ERR_BAD_PTR` | user pointer validation failed |
+| `ERR_NOT_DIR` | directory operation encountered a non-directory |
+| `ERR_IS_DIR` | file read/write attempted on a directory |
+| `ERR_INVALID` | malformed path, mode, count, or filesystem state |
+| `ERR_EOF` | read reached end of file |
+
+Errors must be fail-stop. `sys_write` must not publish a shorter partial write unless it returns success with the exact shorter count for a documented boundary such as device EOF. For ordinary block files, D8 writes are all-or-error.
+
+### D8e. Read Path Algorithm
+
+`sys_read` must follow this order:
+
+1. Validate `fd`, `buf_ptr`, and `count_words`.
+2. Acquire the fd row with `TLDR/TSTR` acquire-release semantics and read `offset_words`.
+3. Resolve a contiguous extent window from `vfs_extents` using `(namespace_id, inode_id, offset_words)`.
+4. Pin every Buffer Pool page in the window; pages with `pin_count > 0` remain non-evictable under the D3 rule.
+5. Copy payload words directly from physical extents into the validated user buffer without interpreting the payload.
+6. Release pins.
+7. Advance the fd offset with a `TSTR` compare-and-swap on `fd_version`.
+
+The hot copy loop must not perform B-tree lookups per page once the extent window is known. If the requested range crosses an extent boundary, the kernel resolves the next extent window and repeats. EOF returns status `0`, payload `0`, detail `ERR_EOF`.
+
+### D8f. Write Path Algorithm
+
+`sys_write` must follow this order:
+
+1. Validate `fd`, `buf_ptr`, `count_words`, write permission, quotas, and maximum file size before allocating pages.
+2. Acquire the fd row with `TLDR/TSTR` acquire-release semantics and snapshot `offset_words`.
+3. Resolve existing extents for overwrite ranges and reserve new extents for growth. New extent rows begin with an in-flight `extent_version` state and are not visible to readers.
+4. Start a WAL transaction and log old/new images for every touched inode, extent, and free-space row before dirty frames can be flushed.
+5. Copy payload words from the validated user buffer into Buffer Pool pages. The VFS must preserve word order exactly.
+6. Publish extent rows and inode `size_words` at the commit boundary, then `log_commit`.
+7. Advance fd offset and `fd_version` only after the write transaction commits.
+
+For append mode, the offset snapshot is the committed inode size read inside the transaction. For truncate mode, the old extents are removed only after replacement metadata has been WAL-logged. Readers must see either the old committed version or the new committed version; they must never observe in-flight extent rows.
+
+### D8g. Metadata Transactions and Recovery
+
+All metadata operations are WAL-backed transactions. The WAL record set for a filesystem mutation must include enough old and new row images to make `log_abort` and replay deterministic. D8 recovery is complete only when these cases are handled:
+
+* Crash before `log_commit`: discard in-flight rows and restore old metadata.
+* Crash after `log_commit` but before checkpoint: replay committed inode, dirent, extent, and free-space row updates.
+* Crash during root filesystem format: detect incomplete format by mount epoch and restart format or fail before user-space starts.
+* Crash during truncate or overwrite: expose either the pre-transaction file or the committed replacement, never a mixed extent list.
+
+The Buffer Pool dirty bit is not a commit signal. The authoritative visibility signal is the relation row version published by the WAL transaction.
+
+### D8h. Concurrency and Scheduler Interaction
+
+VFS metadata relation rows are shared kernel state and must be accessed as `shared<T, ACQ_REL>` or under locks implemented with `TLDR/TSTR` and `FENCE.0`. The minimum synchronization rules are:
+
+* Directory and inode metadata mutations serialize per `(namespace_id, inode_id)`.
+* Independent reads of committed file extents may proceed concurrently.
+* Writes to the same inode serialize through the inode row version.
+* Multiple tasks sharing an fd serialize offset changes through `fd_version`.
+* Blocking disk I/O must park the task on a scheduler wait channel; it must never spin inside the D1 trap path or the Tier-1 scheduler hot path.
+* Completion of a disk or WAL operation wakes blocked tasks by publishing the wait-channel state with release ordering; resumed tasks acquire it before continuing.
+
+Single-core interrupt-disable sections may protect very short critical regions in the first implementation, but every D8 shared-state contract must already be expressible with `TLDR/TSTR` so the design remains valid for later multicore work.
+
+### D8i. VFS Neutrality Contract
+
+The VFS is a neutral router between file descriptors, namespace-filtered metadata, physical extents, and user buffers. This neutrality is a hard invariant:
+
+* Reads return the same logical stream that prior writes committed.
+* Writes commit the caller-provided stream without reinterpretation.
+* File type, extension, metadata flags, executable status, or compiler annotations may not cause the VFS to change payload layout.
+* Specialized runtimes may request aligned extents or larger sequential windows for performance, but the returned data remains opaque to the VFS.
+* Any format-aware transformation belongs above the syscall boundary in user-space libraries, compiler-generated code, or explicit runtime services.
+
+### D8j. Execution Boundary
+
+The VFS responsibility terminates at delivering validated, namespace-authorized, cache-line-friendly physical extents to or from the Buffer Pool. The compiler and runtime own all decisions about sub-word layouts, vector-register loading, width-parametric functions, and `#[parallel]` execution paths. Kernel VFS code must remain correct when the payload is text, executable code, serialized relations, media data, model weights, or an unknown application-defined format.
+
+### D8k. Required Acceptance Tests
+
+D8 is not complete until the native kernel test suite proves all of the following:
+
+* `format` + `mount` creates and remounts a deterministic root filesystem on `block0`.
+* `vfs_create`, path lookup, `.`, `..`, and namespace-root clamping behave deterministically.
+* `sys_open`, `sys_close`, `sys_read`, `sys_write`, `sys_stat`, and `sys_readdir` use ids `12-17` and the `r13/r14/r15` status triple.
+* `read` after `write` returns exactly the committed word stream, including zeros, negative words, and 3-element packed data treated as opaque payload.
+* Large files crossing at least three extent windows read back exactly and do not perform per-page B-tree metadata updates in the hot copy loop.
+* Bad fd, invalid path, null pointer, unknown pointer, out-of-range span, directory-as-file, and EOF cases return the required status/detail without mutating metadata.
+* A simulated crash before and after WAL commit proves recovery exposes only old or new committed metadata.
+* Concurrent readers and serialized writers preserve fd offsets and inode versions under `TLDR/TSTR` acquire-release ordering.
+* D9 `exec()` can load an executable file through the public VFS read/stat path without using any filesystem test bypass.
+
+### D8l. IPC Primitive
+
+Phase D includes a minimal IPC mechanism because native processes, drivers, and the judge/server split cannot be useful as isolated islands. The required primitive is a namespace-authorized shared ring buffer. Channel metadata stores the two allowed namespaces, buffer address, read cursor, write cursor, count, capacity, and version. `ipc_send` and `ipc_recv` publish cursor/count changes with acquire-release `TLDR`/`TSTR`, and failed namespace checks must leave the channel unchanged.
+
+This IPC layer is deliberately small: it is sufficient for subprocess result delivery, driver messages, and future user-space protocols without entangling the scheduler, VFS, or compiler runtime with payload formats.
 
 ### Technical Guardrail for the Implementing Agent
 
 > **Implementation Rule:** In `kernel.trit`, do not allow raw sequential read/write system calls (`sys_read`/`sys_write`) to invoke individual B-tree inserts or metadata updates per block.
-> The user-space buffer pointer must be validated as a `ptr<T40, valid>` reference and mapped to raw physical memory extents via the Buffer Pool. The VFS must deliver data as a transparent stream without enforcing arbitrary layout transformations on the payload. All relational index changes must be deferred and batched into a single WAL-backed atomic transaction at the end of the operation.
+> The user-space buffer pointer must be validated as a `ptr<T40, valid>` span and mapped to raw physical memory extents via the Buffer Pool. The VFS must deliver data as a transparent stream without enforcing arbitrary layout transformations on the payload. All relational index changes must be deferred and batched into a single WAL-backed atomic transaction at the operation boundary.
+
+---
+
+### Non-Normative Optimization Annex: 3-Element Sub-Word Layout
+
+This annex is not part of the VFS contract. It is guidance for compiler, runtime, and application authors building specialized vector workloads on top of ordinary opaque file streams.
+
+For data structures that naturally decompose into three coordinated components, such as spatial coordinates, color channels, or tensor slices, a runtime may choose to store three 9-trit short values inside each 27-trit machine word:
+
+```
+[ Word Layout: 27 trits ] -> [ 9-trit Short A | 9-trit Short B | 9-trit Short C ]
+```
+
+The Triton-27 CPU core defines a native hardware vector length of 27 lanes. A compiler/runtime pipeline using this layout can read 9 sequential words and present 27 logical sub-word elements to a vectorized compute path. This can improve cache behavior for specialized workloads, but it remains an application/runtime layout choice. The VFS must neither require nor infer this representation.
 
 ---
 
@@ -214,7 +377,7 @@ The original PTE design allocated all 27 trits without a spare for MMIO region m
 
 **Rationale for narrowing Namespace ID:** 243 hardware-isolated address domains is sufficient for any foreseeable single-node deployment. The practical ceiling for concurrent isolated namespaces on a single Triton-27 core is constrained well below 243 by process table size and scheduler capacity long before the namespace field saturates. The 486-domain reduction in theoretical capacity (729 → 243) has no practical cost and frees the trit needed for MMIO without requiring a second PTE word.
 
-**Valid field zero state:** The `zero` state is explicitly reserved as transitional/undefined. On cold boot, DMEM initialises to zero, meaning all PTEs start in the `zero` (reserved) state, not in the `neg` (fault) state. The MMU fault handler must treat `zero` the same as `neg` — as an unmapped page that triggers a fault. This must be implemented in the MMU RTL and in the software page-walk code. Do not assume a zeroed PTE is safe to dereference.
+**Valid field zero state:** The `zero` state is a hard FAULT encoding in the hardware model, not a software guideline. On cold boot, DMEM initialises to zero, meaning all PTEs start as faulting entries. RTL page walking and software page walking must both reject `zero` exactly as they reject `neg`; only `pos` is present. No path may treat a zeroed PTE as a valid structure.
 
 **MMIO trit behaviour:** Pages with the MMIO trit set to `pos` must be excluded from COW duplication, fork propagation, and snapshot inclusion. The COW fault handler, the fork path, and any snapshotting mechanism must check this trit before operating on a page. The `pin_count` constraint from D3 also applies to MMIO-mapped pages — an MMIO page is implicitly pinned for the lifetime of the MMIO mapping and must not be evicted.
 

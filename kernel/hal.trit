@@ -1,0 +1,238 @@
+// kernel/hal.trit - Hardware Abstraction Layer for Ternary OS
+//
+// Abstracts system-level CSR and DTB access logic.
+
+const DTB_BASE: t40 = 2900;
+const DTB_MAGIC: t40 = 272727;
+const DTB_MEMORY_SIZE: t40 = 1;
+const DTB_CONSOLE_OUT: t40 = 2;
+const DTB_CONSOLE_IN: t40 = 3;
+const DTB_CONSOLE_IN_CTRL: t40 = 4;
+const DTB_TIMER_COUNTER: t40 = 5;
+const DTB_TIMER_RELOAD: t40 = 6;
+const DTB_MMU_ENABLE: t40 = 7;
+const DTB_USER_DMEM_PTBR: t40 = 8;
+const DTB_GPU_DRAW_BASE: t40 = 9;
+const DTB_FRAMEBUFFER_BASE: t40 = 10;
+const DTB_FRAMEBUFFER_CTRL: t40 = 11;
+const DTB_FRAMEBUFFER_MAX_W: t40 = 12;
+const DTB_FRAMEBUFFER_MAX_H: t40 = 13;
+const DTB_FRAMEBUFFER_FORMAT: t40 = 14;
+
+const FB_DESC_BASE: t40 = 3060;
+const FB_DESC_PHYS_BASE: t40 = 0;
+const FB_DESC_WIDTH: t40 = 1;
+const FB_DESC_HEIGHT: t40 = 2;
+const FB_DESC_STRIDE: t40 = 3;
+const FB_DESC_FORMAT: t40 = 4;
+const FB_DESC_PAGES: t40 = 5;
+const FB_DESC_EPOCH: t40 = 6;
+const FB_FORMAT_T5_RGB: t40 = 5;
+
+fn hal_load(addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = load(addr); }
+    return val;
+}
+
+fn hal_store(addr: t40, val: t40) -> t40 {
+    unsafe { store(addr, val); }
+    return val;
+}
+
+fn hal_verify_dtb() -> t40 {
+    if hal_load(DTB_BASE) - DTB_MAGIC == 0 {
+        return 1;
+    }
+    return -1;
+}
+
+fn hal_dtb_slot(offset: t40, fallback: t40) -> t40 {
+    if hal_verify_dtb() > 0 {
+        return hal_load(DTB_BASE + offset);
+    }
+    return fallback;
+}
+
+fn hal_get_memory_size() -> t40 {
+    return hal_dtb_slot(DTB_MEMORY_SIZE, 65536);
+}
+
+fn hal_get_console_out_id() -> t40 {
+    return hal_dtb_slot(DTB_CONSOLE_OUT, 22);
+}
+
+fn hal_get_console_in_id() -> t40 {
+    return hal_dtb_slot(DTB_CONSOLE_IN, 24);
+}
+
+fn hal_get_console_in_ctrl_id() -> t40 {
+    return hal_dtb_slot(DTB_CONSOLE_IN_CTRL, 25);
+}
+
+fn hal_get_framebuffer_base() -> t40 {
+    return hal_dtb_slot(DTB_FRAMEBUFFER_BASE, 50000);
+}
+
+fn hal_get_framebuffer_ctrl_id() -> t40 {
+    return hal_dtb_slot(DTB_FRAMEBUFFER_CTRL, 37);
+}
+
+fn hal_get_framebuffer_format() -> t40 {
+    return hal_dtb_slot(DTB_FRAMEBUFFER_FORMAT, FB_FORMAT_T5_RGB);
+}
+
+fn hal_get_framebuffer_max_width() -> t40 {
+    return hal_dtb_slot(DTB_FRAMEBUFFER_MAX_W, 640);
+}
+
+fn hal_get_framebuffer_max_height() -> t40 {
+    return hal_dtb_slot(DTB_FRAMEBUFFER_MAX_H, 360);
+}
+
+fn hal_write_console_char(c: t40) -> void {
+    unsafe {
+        csr_write(console_ctrl, 2);    // Enable character mode
+        csr_write(console_out, c);     // Output character
+        csr_write(console_ctrl, 3);    // Return to buffered console mode
+    }
+}
+
+fn hal_write_console_int(val: t40) -> void {
+    unsafe {
+        csr_write(console_out, val);
+    }
+}
+
+fn hal_read_console_char() -> t40 {
+    var available: t40 = 0;
+    var key: t40 = -1;
+    unsafe {
+        available = csr_read(console_in_ctrl);
+    }
+    if available > 0 {
+        unsafe {
+            key = csr_read(console_in);
+            csr_write(console_in_ctrl, 1); // Clear character-ready status
+        }
+    }
+    return key;
+}
+
+fn hal_get_cycle_count() -> t40 {
+    var cyc: t40 = 0;
+    unsafe {
+        cyc = csr_read(cycle);
+    }
+    return cyc;
+}
+
+fn hal_enable_timer(reload_val: t40) -> void {
+    unsafe {
+        csr_write(timer_reload, reload_val);
+        csr_write(timer_counter, reload_val);
+        csr_write(timer_enable, 1);
+    }
+}
+
+fn hal_disable_timer() -> void {
+    unsafe {
+        csr_write(timer_enable, 0);
+    }
+}
+
+fn hal_clear_timer_pending() -> void {
+    unsafe {
+        csr_write(timer_pending, 0);
+    }
+}
+
+fn hal_enable_mmu() -> void {
+    unsafe {
+        csr_write(mmu_enable, 1);
+    }
+}
+
+fn hal_disable_mmu() -> void {
+    unsafe {
+        csr_write(mmu_enable, 0);
+    }
+}
+
+fn hal_fb_mode_index(width: t40, height: t40) -> t40 {
+    if width - 80 <= 0 {
+        if height - 60 <= 0 {
+            return 1;
+        }
+    }
+    if width - 320 <= 0 {
+        if height - 180 <= 0 {
+            return 2;
+        }
+    }
+    if width - 640 <= 0 {
+        if height - 360 <= 0 {
+            return 3;
+        }
+    }
+    return 4;
+}
+
+fn hal_fb_mode_width(mode: t40) -> t40 {
+    if mode - 1 == 0 {
+        return 80;
+    }
+    if mode - 2 == 0 {
+        return 320;
+    }
+    if mode - 3 == 0 {
+        return 640;
+    }
+    return hal_get_framebuffer_max_width();
+}
+
+fn hal_fb_mode_height(mode: t40) -> t40 {
+    if mode - 1 == 0 {
+        return 60;
+    }
+    if mode - 2 == 0 {
+        return 180;
+    }
+    if mode - 3 == 0 {
+        return 360;
+    }
+    return hal_get_framebuffer_max_height();
+}
+
+fn hal_fb_pages(width: t40, height: t40) -> t40 {
+    return (width * height * 3 + 26) / 27;
+}
+
+fn hal_fb_init(width: t40, height: t40, desc_addr: t40) -> t40 {
+    var addr: t40 = desc_addr;
+    if addr <= 0 {
+        addr = FB_DESC_BASE;
+    }
+    var mode: t40 = hal_fb_mode_index(width, height);
+    var chosen_w: t40 = hal_fb_mode_width(mode);
+    var chosen_h: t40 = hal_fb_mode_height(mode);
+    var pages: t40 = hal_fb_pages(chosen_w, chosen_h);
+    hal_store(addr + FB_DESC_PHYS_BASE, hal_get_framebuffer_base());
+    hal_store(addr + FB_DESC_WIDTH, chosen_w);
+    hal_store(addr + FB_DESC_HEIGHT, chosen_h);
+    hal_store(addr + FB_DESC_STRIDE, chosen_w * 3);
+    hal_store(addr + FB_DESC_FORMAT, hal_get_framebuffer_format());
+    hal_store(addr + FB_DESC_PAGES, pages);
+    hal_store(addr + FB_DESC_EPOCH, 1);
+    return addr;
+}
+
+fn hal_fb_flip(desc_addr: t40) -> t40 {
+    var addr: t40 = desc_addr;
+    if addr <= 0 {
+        addr = FB_DESC_BASE;
+    }
+    var next_epoch: t40 = hal_load(addr + FB_DESC_EPOCH) + 1;
+    hal_store(addr + FB_DESC_EPOCH, next_epoch);
+    return next_epoch;
+}

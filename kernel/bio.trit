@@ -1,0 +1,113 @@
+// kernel/bio.trit - Layer 3 buffer cache and write-ahead log helpers.
+
+const BIO_ROW_WORDS: t40 = 5;
+const BIO_BLOCK_NO: t40 = 0;
+const BIO_DATA_PTR: t40 = 1;
+const BIO_DIRTY: t40 = 2;
+const BIO_PINNED: t40 = 3;
+const BIO_VERSION: t40 = 4;
+
+const BIO_WAL_ROW_WORDS: t40 = 5;
+const BIO_WAL_TXID: t40 = 0;
+const BIO_WAL_BLOCK: t40 = 1;
+const BIO_WAL_OLD_PTR: t40 = 2;
+const BIO_WAL_NEW_PTR: t40 = 3;
+const BIO_WAL_STATE: t40 = 4;
+
+fn bio_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn bio_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn bio_clear(base: t40, words: t40) -> t40 {
+    var i: t40 = 0;
+    while words - i > 0 {
+        bio_store(base + i, 0);
+        i = i + 1;
+    }
+    return i;
+}
+
+fn bio_slot_for(block_no: t40, capacity: t40) -> t40 {
+    if capacity <= 0 {
+        return -1;
+    }
+    var slot: t40 = block_no;
+    while slot - capacity >= 0 {
+        slot = slot - capacity;
+    }
+    return slot;
+}
+
+fn bio_row(base: t40, slot: t40) -> t40 {
+    return base + slot * BIO_ROW_WORDS;
+}
+
+fn bio_init(base: t40, capacity: t40) -> t40 {
+    return bio_clear(base, capacity * BIO_ROW_WORDS);
+}
+
+fn bio_get(base: t40, capacity: t40, block_no: t40, data_ptr: t40) -> t40 {
+    var slot: t40 = bio_slot_for(block_no, capacity);
+    if slot < 0 {
+        return -1;
+    }
+    var row: t40 = bio_row(base, slot);
+    bio_store(row + BIO_BLOCK_NO, block_no);
+    bio_store(row + BIO_DATA_PTR, data_ptr);
+    bio_store(row + BIO_DIRTY, 0);
+    bio_store(row + BIO_PINNED, bio_load(row + BIO_PINNED) + 1);
+    bio_store(row + BIO_VERSION, bio_load(row + BIO_VERSION) + 1);
+    return row;
+}
+
+fn bio_mark_dirty(row: t40) -> t40 {
+    bio_store(row + BIO_DIRTY, 1);
+    bio_store(row + BIO_VERSION, bio_load(row + BIO_VERSION) + 1);
+    return 1;
+}
+
+fn bio_release(row: t40) -> t40 {
+    var pins: t40 = bio_load(row + BIO_PINNED);
+    if pins > 0 {
+        pins = pins - 1;
+    }
+    bio_store(row + BIO_PINNED, pins);
+    return pins;
+}
+
+fn bio_wal_row(base: t40, slot: t40) -> t40 {
+    return base + slot * BIO_WAL_ROW_WORDS;
+}
+
+fn bio_wal_append(base: t40, capacity: t40, txid: t40, block_no: t40, old_ptr: t40, new_ptr: t40) -> t40 {
+    var slot: t40 = bio_slot_for(txid, capacity);
+    if slot < 0 {
+        return -1;
+    }
+    var row: t40 = bio_wal_row(base, slot);
+    bio_store(row + BIO_WAL_TXID, txid);
+    bio_store(row + BIO_WAL_BLOCK, block_no);
+    bio_store(row + BIO_WAL_OLD_PTR, old_ptr);
+    bio_store(row + BIO_WAL_NEW_PTR, new_ptr);
+    bio_store(row + BIO_WAL_STATE, 1);
+    return row;
+}
+
+fn bio_wal_commit(row: t40) -> t40 {
+    bio_store(row + BIO_WAL_STATE, 2);
+    return 2;
+}
+
+fn bio_wal_replay_needed(row: t40) -> t40 {
+    if bio_load(row + BIO_WAL_STATE) - 1 == 0 {
+        return 1;
+    }
+    return 0;
+}

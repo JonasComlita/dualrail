@@ -1,0 +1,189 @@
+fn seed_probe_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 112);
+        store(addr + 2, 114);
+        store(addr + 3, 111);
+        store(addr + 4, 98);
+        store(addr + 5, 101);
+        store(addr + 6, 0);
+    }
+    return addr;
+}
+
+fn verify_probe_file() -> t40 {
+    var path: t40 = seed_probe_path(10000);
+    if os_stat(path, 10007) - 4 != 0 {
+        return -10;
+    }
+    var stat_size: t40 = 0;
+    unsafe { stat_size = load(10009); }
+    if stat_size - 4 != 0 {
+        return -11;
+    }
+    var fd: t40 = os_open(path, 0);
+    if fd < 0 {
+        return -12;
+    }
+    if os_read(fd, 10013, 4) - 4 != 0 {
+        os_close(fd);
+        return -13;
+    }
+    os_close(fd);
+    var first: t40 = 0;
+    var last: t40 = 0;
+    unsafe {
+        first = load(10013);
+        last = load(10016);
+    }
+    if first - 80 != 0 {
+        return -14;
+    }
+    if last - 66 != 0 {
+        return -15;
+    }
+    os_putc(70); os_putc(83); os_newline();
+    return 1;
+}
+
+fn seed_root_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 0);
+    }
+    return addr;
+}
+
+fn verify_probe_readdir() -> t40 {
+    var path: t40 = seed_root_path(10000);
+    if os_readdir(path, 10002, 6) - 6 != 0 {
+        return -21;
+    }
+    var name_len: t40 = 0;
+    var first_char: t40 = 0;
+    unsafe {
+        name_len = load(10004);
+        first_char = load(10005);
+    }
+    if name_len - 3 != 0 {
+        return -22;
+    }
+    if first_char - 98 != 0 {
+        return -23;
+    }
+    os_putc(68); os_putc(73); os_putc(82); os_newline();
+    return 1;
+}
+
+fn verify_probe_ipc() -> t40 {
+    if os_ipc_send(0, 123) <= 0 {
+        return -24;
+    }
+    if os_ipc_recv(0, 10000) <= 0 {
+        return -25;
+    }
+    var word: t40 = 0;
+    unsafe { word = load(10000); }
+    if word - 123 != 0 {
+        return -26;
+    }
+    os_putc(73); os_putc(80); os_putc(67); os_newline();
+    return 1;
+}
+
+fn seed_out_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 111);
+        store(addr + 2, 117);
+        store(addr + 3, 116);
+        store(addr + 4, 0);
+    }
+    return addr;
+}
+
+fn verify_probe_write() -> t40 {
+    var path: t40 = seed_out_path(10000);
+    unsafe {
+        store(10005, 68);
+        store(10006, 79);
+        store(10007, 78);
+        store(10008, 69);
+    }
+    var fd: t40 = os_open(path, 2);
+    if fd < 0 {
+        return -16;
+    }
+    if os_write(fd, 10005, 4) - 4 != 0 {
+        os_close(fd);
+        return -17;
+    }
+    os_close(fd);
+    fd = os_open(path, 0);
+    if fd < 0 {
+        return -18;
+    }
+    if os_read(fd, 10009, 4) - 4 != 0 {
+        os_close(fd);
+        return -19;
+    }
+    os_close(fd);
+    var last: t40 = 0;
+    unsafe { last = load(10012); }
+    if last - 69 != 0 {
+        return -20;
+    }
+    os_putc(87); os_putc(82); os_newline();
+    return 1;
+}
+
+fn main() -> t40 {
+    os_putc(87); os_putc(73); os_putc(78); os_putc(68); os_putc(79); os_putc(87); os_newline();
+
+    var fs_ok: t40 = verify_probe_file();
+    if fs_ok <= 0 {
+        return fs_ok;
+    }
+    var dir_ok: t40 = verify_probe_readdir();
+    if dir_ok <= 0 {
+        return dir_ok;
+    }
+    var ipc_ok: t40 = verify_probe_ipc();
+    if ipc_ok <= 0 {
+        return ipc_ok;
+    }
+    var wr_ok: t40 = verify_probe_write();
+    if wr_ok <= 0 {
+        return wr_ok;
+    }
+
+    var fb: t40 = os_fb_init(8, 6);
+    if fb <= 0 {
+        return -1;
+    }
+    var win: t40 = os_window_create(1, 1, 3, 2);
+    if win < 0 {
+        return -2;
+    }
+    var buf: t40 = os_window_get_buffer(win);
+    if buf <= 0 {
+        return -3;
+    }
+
+    if os_window_resize(win, 4, 3) <= 0 {
+        return -4;
+    }
+    os_window_fill_rgb(buf, 4, 3, 70, 71, 72);
+    os_window_present(win);
+    if os_window_request_close(win) <= 0 {
+        return -5;
+    }
+    if os_window_read_event(win, 10000) <= 0 {
+        return -6;
+    }
+    if os_event_kind(10000) - OS_EVENT_KIND_CLOSE != 0 {
+        return -7;
+    }
+    os_putc(67); os_putc(76); os_putc(79); os_putc(83); os_putc(69); os_newline();
+    return 73;
+}

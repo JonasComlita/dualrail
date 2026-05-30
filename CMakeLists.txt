@@ -4,6 +4,8 @@ project(TernaryGPUBackendValidation LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_compile_definitions(NOMINMAX)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/bitnet_weights)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights)
@@ -72,6 +74,7 @@ add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
 add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
 add_executable(run_kernel run_kernel.cpp)
+add_executable(run_native_kernel run_native_kernel.cpp)
 add_executable(run_gui_console run_gui_console.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -87,6 +90,9 @@ add_dependencies(run_qwen compile_shaders)
 target_compile_features(run_kernel PUBLIC cxx_std_17)
 target_compile_definitions(run_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+target_compile_features(run_native_kernel PUBLIC cxx_std_17)
+target_compile_definitions(run_native_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 target_compile_features(run_gui_console PUBLIC cxx_std_17)
 target_compile_definitions(run_gui_console PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
@@ -101,6 +107,26 @@ target_compile_definitions(test_phase7_compiler PRIVATE TERNARY_IGNORE_LONG_DOUB
 add_executable(test_phase_c5_pred tests/test_phase_c5_pred.cpp)
 target_compile_features(test_phase_c5_pred PUBLIC cxx_std_17)
 target_compile_definitions(test_phase_c5_pred PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_phase_d_kernel tests/test_phase_d_kernel.cpp)
+target_compile_features(test_phase_d_kernel PUBLIC cxx_std_17)
+target_compile_definitions(test_phase_d_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_layer1_hal tests/test_layer1_hal.cpp)
+target_compile_features(test_layer1_hal PUBLIC cxx_std_17)
+target_compile_definitions(test_layer1_hal PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_production_layers tests/test_production_layers.cpp)
+target_compile_features(test_production_layers PUBLIC cxx_std_17)
+target_compile_definitions(test_production_layers PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_native_apps tests/test_native_apps.cpp)
+target_compile_features(test_native_apps PUBLIC cxx_std_17)
+target_compile_definitions(test_native_apps PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_process_handoff tests/test_process_handoff.cpp)
+target_compile_features(test_process_handoff PUBLIC cxx_std_17)
+target_compile_definitions(test_process_handoff PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_os_platform tests/test_os_platform.cpp)
 target_compile_features(test_os_platform PUBLIC cxx_std_17)
@@ -125,6 +151,10 @@ target_compile_definitions(test_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASS
 add_executable(test_malloc_micro tests/test_malloc_micro.cpp)
 target_compile_features(test_malloc_micro PUBLIC cxx_std_17)
 target_compile_definitions(test_malloc_micro PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_all_apps scratch/test_all_apps.cpp)
+target_compile_features(test_all_apps PUBLIC cxx_std_17)
+target_compile_definitions(test_all_apps PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 
 # ------------------------------------------------------------------------------

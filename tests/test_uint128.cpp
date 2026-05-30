@@ -1,6 +1,6 @@
 #include "test_multiwidth_vm_common.h"
 
-#if defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
 void testUInt128Core() {
     std::cout << "[1] UInt128 portable storage arithmetic\n";
     using sandbox::UInt128;

@@ -1,0 +1,112 @@
+import math_utils;
+
+// Run-Length Encoding compression/decompression library for ternary sparse data.
+
+fn rle_compress(src: borrow<ptr<t40, user, valid>>, src_len: t40, dest: borrow_mut<ptr<t40, user, valid>>, dest_max: t40) -> t40 {
+    if src_len <= 0 { return 0; }
+    if dest_max <= 0 { return 0 - 1; }
+
+    var i: t40 = 0;
+    var dest_idx: t40 = 0;
+    var run_length: t40 = 0;
+    
+    while src_len - i > 0 {
+        var val: t40 = 0;
+        unsafe { val = load(src + i); }
+        
+        match val {
+            zero => {
+                run_length = run_length + 1;
+            }
+            _ => {
+                // Reject values outside {-1, 1}
+                match val - 1 {
+                    zero => {}
+                    _ => {
+                        match val + 1 {
+                            zero => {}
+                            _ => {
+                                return 0 - 1; // Error: value outside {-1, 0, 1}
+                            }
+                        }
+                    }
+                }
+
+                if dest_idx - dest_max >= 0 { return 0 - 1; }
+                // Emit run of zeros followed by val
+                var encoded: t40 = run_length * 3 + val;
+                unsafe { store(dest + dest_idx, encoded); }
+                dest_idx = dest_idx + 1;
+                run_length = 0;
+            }
+        }
+        i = i + 1;
+    }
+    
+    // Check if there is a trailing run of zeros
+    match run_length {
+        zero => {}
+        _ => {
+            if dest_idx - dest_max >= 0 { return 0 - 1; }
+            // Emit run of zeros with next_value = 0
+            var encoded: t40 = run_length * 3;
+            unsafe { store(dest + dest_idx, encoded); }
+            dest_idx = dest_idx + 1;
+        }
+    }
+    
+    return dest_idx;
+}
+
+fn rle_decompress(src: borrow<ptr<t40, user, valid>>, src_len: t40, dest: borrow_mut<ptr<t40, user, valid>>, dest_max: t40) -> t40 {
+    if src_len <= 0 { return 0; }
+    if dest_max <= 0 { return 0 - 1; }
+
+    var i: t40 = 0;
+    var dest_idx: t40 = 0;
+    
+    while src_len - i > 0 {
+        var encoded: t40 = 0;
+        unsafe { encoded = load(src + i); }
+        
+        var val_plus_one: t40 = encoded + 1;
+        var run_length: t40 = div_int(val_plus_one, 3);
+        var next_value: t40 = val_plus_one - run_length * 3 - 1;
+        
+        // Write run_length zeros
+        var j: t40 = 0;
+        while run_length - j > 0 {
+            if dest_idx - dest_max >= 0 { return 0 - 1; }
+            unsafe { store(dest + dest_idx, 0); }
+            dest_idx = dest_idx + 1;
+            j = j + 1;
+        }
+        
+        // Write next_value if it's not 0
+        match next_value {
+            zero => {}
+            _ => {
+                // Reject values outside {-1, 1}
+                match next_value - 1 {
+                    zero => {}
+                    _ => {
+                        match next_value + 1 {
+                            zero => {}
+                            _ => {
+                                return 0 - 1; // Error: malformed token
+                            }
+                        }
+                    }
+                }
+
+                if dest_idx - dest_max >= 0 { return 0 - 1; }
+                unsafe { store(dest + dest_idx, next_value); }
+                dest_idx = dest_idx + 1;
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return dest_idx;
+}

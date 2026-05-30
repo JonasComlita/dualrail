@@ -78,7 +78,7 @@ inline int8_t vectorPredicateTrit(const sandbox::vm::VMState& vm, int vreg, int 
     return vm.vregfile.reg[static_cast<std::size_t>(vreg)].read(lane).asL1().tritAt(0);
 }
 
-#if defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
 using Native128 = unsigned __int128;
 
 inline std::string native128ToString(Native128 value) {

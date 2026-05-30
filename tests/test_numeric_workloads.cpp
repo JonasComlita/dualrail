@@ -1,4 +1,5 @@
 #include "ternary_vm.h"
+#include "int128_compat.h"
 
 #include <array>
 #include <cmath>
@@ -21,7 +22,7 @@ void expect(bool condition, const std::string& message) {
     std::cout << "FAIL: " << message << "\n";
 }
 
-std::string toStringUnsigned(unsigned __int128 value) {
+std::string toStringUnsigned(uint128_t value) {
     if (value == 0) return "0";
     std::string out;
     while (value != 0) {
@@ -32,25 +33,25 @@ std::string toStringUnsigned(unsigned __int128 value) {
     return out;
 }
 
-std::string toStringSigned(__int128 value) {
-    if (value < 0) return "-" + toStringUnsigned(static_cast<unsigned __int128>(-value));
-    return toStringUnsigned(static_cast<unsigned __int128>(value));
+std::string toStringSigned(int128_t value) {
+    if (value < 0) return "-" + toStringUnsigned(static_cast<uint128_t>(-value));
+    return toStringUnsigned(static_cast<uint128_t>(value));
 }
 
-unsigned __int128 pow3(int n) {
-    unsigned __int128 value = 1;
+uint128_t pow3(int n) {
+    uint128_t value = 1;
     for (int i = 0; i < n; ++i) value *= 3;
     return value;
 }
 
-int8_t balancedRem(__int128 n) {
-    __int128 r = n % 3;
+int8_t balancedRem(int128_t n) {
+    int128_t r = n % 3;
     if (r > 1) r -= 3;
     if (r < -1) r += 3;
     return static_cast<int8_t>(r);
 }
 
-std::array<int8_t, 41> encodeBalanced41(__int128 n) {
+std::array<int8_t, 41> encodeBalanced41(int128_t n) {
     std::array<int8_t, 41> trits{};
     for (int i = 0; i < 41; ++i) {
         const int8_t trit = balancedRem(n);
@@ -75,7 +76,7 @@ LongTriple packMantissaExp(const std::array<int8_t, 41>& mantissa, int exponent)
     return LongTriple::pack(trits);
 }
 
-LongTriple fromInt(__int128 n) {
+LongTriple fromInt(int128_t n) {
     if (n == 0) return LongTriple{0};
     return packMantissaExp(encodeBalanced41(n), 40);
 }
@@ -90,9 +91,9 @@ long double toLongDouble(LongTriple t) {
     return m * std::pow(3.0L, static_cast<long double>(e));
 }
 
-__int128 mantissaToInt(const std::array<int8_t, 50>& trits) {
-    __int128 value = 0;
-    __int128 place = 1;
+int128_t mantissaToInt(const std::array<int8_t, 50>& trits) {
+    int128_t value = 0;
+    int128_t place = 1;
     for (int i = 0; i < 41; ++i) {
         value += static_cast<int>(trits[i]) * place;
         place *= 3;
@@ -110,7 +111,7 @@ int exponentOf(const std::array<int8_t, 50>& trits) {
     return exponent;
 }
 
-bool exactIntegerValue(LongTriple t, __int128& out) {
+bool exactIntegerValue(LongTriple t, int128_t& out) {
     if (t.isZero()) {
         out = 0;
         return true;
@@ -118,15 +119,15 @@ bool exactIntegerValue(LongTriple t, __int128& out) {
     if (t.isSpecial()) return false;
 
     const auto trits = t.unpack();
-    const __int128 mantissa = mantissaToInt(trits);
+    const int128_t mantissa = mantissaToInt(trits);
     const int exponent = exponentOf(trits);
 
     if (exponent >= 40) {
-        out = mantissa * static_cast<__int128>(pow3(exponent - 40));
+        out = mantissa * static_cast<int128_t>(pow3(exponent - 40));
         return true;
     }
 
-    const __int128 divisor = static_cast<__int128>(pow3(40 - exponent));
+    const int128_t divisor = static_cast<int128_t>(pow3(40 - exponent));
     if (mantissa % divisor != 0) return false;
     out = mantissa / divisor;
     return true;
@@ -166,11 +167,11 @@ std::pair<LongTriple, LongTriple> fibonacciFastDoubling(int n) {
     return {d, add(c, d)};
 }
 
-__int128 fibonacciReference(int n) {
-    __int128 a = 0;
-    __int128 b = 1;
+int128_t fibonacciReference(int n) {
+    int128_t a = 0;
+    int128_t b = 1;
     for (int i = 0; i < n; ++i) {
-        const __int128 next = a + b;
+        const int128_t next = a + b;
         a = b;
         b = next;
     }
@@ -182,8 +183,8 @@ LongTriple factorialRecursive(int n) {
     return mul(fromInt(n), factorialRecursive(n - 1));
 }
 
-__int128 factorialReference(int n) {
-    __int128 out = 1;
+int128_t factorialReference(int n) {
+    int128_t out = 1;
     for (int i = 2; i <= n; ++i) out *= i;
     return out;
 }
@@ -306,7 +307,7 @@ void testFibonacciAndRecursion() {
     std::cout << "[2] recursive factorial\n";
     for (int n = 0; n <= 20; ++n) {
         LongTriple got = factorialRecursive(n);
-        __int128 actual = 0;
+        int128_t actual = 0;
         expect(exactIntegerValue(got, actual),
                std::to_string(n) + "! should decode as an exact integer");
         expect(actual == factorialReference(n),

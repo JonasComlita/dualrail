@@ -1533,8 +1533,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-tyqfu0"
-      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-tyqfu0"
+      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-hnkcqe"
+      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-hnkcqe"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -1544,11 +1544,11 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-tyqfu0'
+        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-hnkcqe'
         
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_9afdb
-        [1/2] C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_9afdb.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_9afdb.dir\\ /FS -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_9afdb.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_9afdb.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_9afdb.exe /implib:cmTC_9afdb.lib /pdb:cmTC_9afdb.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
+        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_1488c
+        [1/2] C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd /showIncludes /FoCMakeFiles\\cmTC_1488c.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_1488c.dir\\ /FS -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_1488c.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_1488c.dir\\CMakeCXXCompilerABI.cpp.obj  /out:cmTC_1488c.exe /implib:cmTC_1488c.lib /pdb:cmTC_1488c.pdb /version:0.0 /machine:x64  /debug /INCREMENTAL /subsystem:console  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
         
       exitCode: 0
   -
@@ -1583,7 +1583,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:392 (find_path)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "path"
     variable: "Vulkan_INCLUDE_DIR"
     description: "Path to a file."
@@ -1728,7 +1728,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:399 (find_library)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "library"
     variable: "Vulkan_LIBRARY"
     description: "Path to a library."
@@ -1872,7 +1872,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:407 (find_program)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "program"
     variable: "Vulkan_GLSLC_EXECUTABLE"
     description: "Path to a program."
@@ -2008,7 +2008,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:415 (find_program)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "program"
     variable: "Vulkan_GLSLANG_VALIDATOR_EXECUTABLE"
     description: "Path to a program."
@@ -2143,7 +2143,7 @@ events:
   -
     kind: "find-v1"
     backtrace:
-      - "CMakeLists.txt:16 (find_program)"
+      - "CMakeLists.txt:18 (find_program)"
     mode: "program"
     variable: "GLSLC_EXECUTABLE"
     description: "Path to a program."
@@ -2279,7 +2279,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompiler.cmake:54 (find_program)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:39 (_cmake_find_compiler)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     mode: "program"
     variable: "CMAKE_CUDA_COMPILER"
     description: "CUDA compiler"
@@ -2359,7 +2359,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:1290 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:99 (CMAKE_DETERMINE_COMPILER_ID_VENDOR)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Checking whether the CUDA compiler is NVIDIA using "" matched "nvcc: [^
       ]+ Cuda compiler driver":
@@ -2376,7 +2376,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:53 (__determine_compiler_id_test)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:163 (CMAKE_DETERMINE_COMPILER_ID)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     mode: "file"
     variable: "src_in"
     description: "Path to a file."
@@ -2462,7 +2462,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:53 (__determine_compiler_id_test)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:163 (CMAKE_DETERMINE_COMPILER_ID)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Compiling the CUDA compiler identification source file "CMakeCUDACompilerId.cu" succeeded.
       Compiler: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/bin/nvcc.exe 
@@ -2528,7 +2528,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:1341 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:250 (CMAKE_DETERMINE_MSVC_SHOWINCLUDES_PREFIX)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:163 (CMAKE_DETERMINE_COMPILER_ID)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Detecting CUDA compiler /showIncludes prefix:
         nvcc fatal   : Don't know what to do with 'C:/c'
@@ -2539,7 +2539,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:1341 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerId.cmake:250 (CMAKE_DETERMINE_MSVC_SHOWINCLUDES_PREFIX)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:163 (CMAKE_DETERMINE_COMPILER_ID)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Detecting CUDA compiler /showIncludes prefix:
         nvcc fatal   : Don't know what to do with 'C:/c'
@@ -2551,7 +2551,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeFindBinUtils.cmake:65 (__resolve_tool_path)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeFindBinUtils.cmake:104 (__resolve_linker_path)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:186 (include)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     mode: "program"
     variable: "_CMAKE_TOOL_WITH_PATH"
     description: "Path to a program."
@@ -2860,7 +2860,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeNVCCParseImplicitInfo.cmake:136 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:295 (cmake_nvcc_parse_implicit_info)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Parsed CUDA nvcc implicit link information:
         found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:/Users/jonas/.gemini/antigravity/bin;C:\\Users\\jonas\\AppData\\Roaming\\Antigravity\\bin;C:\\VulkanSDK\\1.4.350.0\\Bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_8wekyb3d8bbwe\\ripgrep-15.1.0-x86_64-pc-windows-msvc;;C:\\Users\\jonas\\.grok\\bin;C:\\msys64\\home\\jonas\\.grok\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
@@ -2922,7 +2922,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeNVCCParseImplicitInfo.cmake:165 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCUDACompiler.cmake:295 (cmake_nvcc_parse_implicit_info)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Parsed CUDA nvcc include information:
         found 'PATH=' string: [C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\VCPackages;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\TestWindow;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\bin\\Roslyn;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Team Tools\\DiagnosticsHub\\Collector;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\Extensions\\Microsoft\\CodeCoverage.Console;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\bin\\\\x64;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\\\MSBuild\\Current\\Bin\\amd64;C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\;C:/Users/jonas/.gemini/antigravity/bin;C:\\Users\\jonas\\AppData\\Roaming\\Antigravity\\bin;C:\\VulkanSDK\\1.4.350.0\\Bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files\\nodejs\\;C:\\msys64\\ucrt64\\bin\\;C:\\Program Files\\NVIDIA Corporation\\Nsight Compute 2026.1.1\\;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\cmdline-tools\\latest\\bin;C:\\Users\\jonas\\scoop\\apps\\android-clt\\current\\platform-tools;C:\\Users\\jonas\\scoop\\apps\\temurin17-jdk\\current\\bin;C:\\Users\\jonas\\.cargo\\bin;C:\\Users\\jonas\\scoop\\shims;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\jonas\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\jonas\\AppData\\Local\\Programs\\Antigravity\\bin;C:\\Users\\jonas\\AppData\\Roaming\\npm;C:\\Users\\jonas\\AppData\\Local\\Programs\\Git\\cmd;C:\\Users\\jonas\\.bun\\bin;C:\\Users\\jonas\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_8wekyb3d8bbwe\\ripgrep-15.1.0-x86_64-pc-windows-msvc;;C:\\Users\\jonas\\.grok\\bin;C:\\msys64\\home\\jonas\\.grok\\bin;C:\\Users\\jonas\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\VC\\Linux\\bin\\ConnectionManagerExe;C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\vcpkg]
@@ -2984,12 +2984,12 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCUDACompiler.cmake:19 (CMAKE_DETERMINE_COMPILER_ABI)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     checks:
       - "Detecting CUDA compiler ABI info"
     directories:
-      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-fpoqao"
-      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-fpoqao"
+      source: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-7sqlio"
+      binary: "C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-7sqlio"
     cmakeVariables:
       CMAKE_CUDA_ARCHITECTURES: "75"
       CMAKE_CUDA_FLAGS: "-D_WINDOWS -Xcompiler=\" /EHsc\""
@@ -3000,19 +3000,19 @@ events:
       variable: "CMAKE_CUDA_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-fpoqao'
+        Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-7sqlio'
         
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_50c20
-        [1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75,code=[compute_75,sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_50c20.dir\\,-FS
+        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_0dbf9
+        [1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75,code=[compute_75,sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_0dbf9.dir\\,-FS
         cl : Command line warning D9002 : ignoring unknown option '-v'
         CMakeCUDACompilerABI.cu
         cl : Command line warning D9002 : ignoring unknown option '-v'
         CMakeCUDACompilerABI.cu
         CMakeCUDACompilerABI.cu
         cl : Command line warning D9002 : ignoring unknown option '-v'
-        tmpxft_00001318_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp
+        tmpxft_0000466c_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp
         C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCompilerCUDAArch.h(10): warning C4305: 'return': truncation from 'int' to 'bool'
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_50c20.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_50c20.exe /implib:cmTC_50c20.lib /pdb:cmTC_50c20.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_0dbf9.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_0dbf9.exe /implib:cmTC_0dbf9.lib /pdb:cmTC_0dbf9.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."
         
       exitCode: 0
   -
@@ -3020,7 +3020,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:217 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCUDACompiler.cmake:19 (CMAKE_DETERMINE_COMPILER_ABI)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Parsed CUDA implicit include dir info: rv=start
         warn: unable to parse implicit include dirs!
@@ -3031,24 +3031,24 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:253 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCUDACompiler.cmake:19 (CMAKE_DETERMINE_COMPILER_ABI)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Parsed CUDA implicit link information:
         link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
         linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
-        ignore line: [Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-fpoqao']
+        ignore line: [Change Dir: 'C:/Users/jonas/Documents/trit/build_cuda/CMakeFiles/CMakeScratch/TryCompile-7sqlio']
         ignore line: []
-        ignore line: [Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_50c20]
-        ignore line: [[1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75 code=[compute_75 sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_50c20.dir\\ -FS]
+        ignore line: [Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_0dbf9]
+        ignore line: [[1/2] C:\\PROGRA~1\\NVIDIA~2\\CUDA\\v13.2\\bin\\nvcc.exe -forward-unknown-to-host-compiler -D_MBCS  -D_WINDOWS -Xcompiler=" /EHsc"  -Xcompiler=" -Zi -Ob0 -Od /RTC1" "--generate-code=arch=compute_75 code=[compute_75 sm_75]" -Xcompiler=-MDd   -Xcompiler=-v -MD -MT CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj -MF CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj.d -x cu -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCUDACompilerABI.cu -o CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj -Xcompiler=-FdCMakeFiles\\cmTC_0dbf9.dir\\ -FS]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [CMakeCUDACompilerABI.cu]
         ignore line: [cl : Command line warning D9002 : ignoring unknown option '-v']
-        ignore line: [tmpxft_00001318_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp]
+        ignore line: [tmpxft_0000466c_00000000-7_CMakeCUDACompilerABI.cudafe1.cpp]
         ignore line: [C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCompilerCUDAArch.h(10): warning C4305: 'return': truncation from 'int' to 'bool']
-        ignore line: [[2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_50c20.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_50c20.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_50c20.exe /implib:cmTC_50c20.lib /pdb:cmTC_50c20.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."]
+        ignore line: [[2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --intdir=CMakeFiles\\cmTC_0dbf9.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\link.exe /nologo CMakeFiles\\cmTC_0dbf9.dir\\CMakeCUDACompilerABI.cu.obj  /out:cmTC_0dbf9.exe /implib:cmTC_0dbf9.lib /pdb:cmTC_0dbf9.pdb /version:0.0 /machine:x64 -v /debug /INCREMENTAL  cudadevrt.lib  cudart_static.lib -LIBPATH:"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2/lib/x64" && cd ."]
         ignore line: []
         ignore line: []
         linker tool for 'CUDA': C:/PROGRA~2/MICROS~2/2022/BUILDT~1/VC/Tools/MSVC/1444~1.352/bin/Hostx64/x64/link.exe
@@ -3064,7 +3064,7 @@ events:
       - "C:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:38 (message)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:299 (cmake_determine_linker_id)"
       - "C:/msys64/ucrt64/share/cmake/Modules/CMakeTestCUDACompiler.cmake:19 (CMAKE_DETERMINE_COMPILER_ABI)"
-      - "CMakeLists.txt:135 (enable_language)"
+      - "CMakeLists.txt:157 (enable_language)"
     message: |
       Running the CUDA compiler's linker: "C:/PROGRA~2/MICROS~2/2022/BUILDT~1/VC/Tools/MSVC/1444~1.352/bin/Hostx64/x64/link.exe" "-v"
       Microsoft (R) Incremental Linker Version 14.44.35225.0

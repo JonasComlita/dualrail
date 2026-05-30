@@ -111,8 +111,8 @@ int main(int argc, char** argv) {
             }
             return 1;
         }
-        
-        VMState vm(8192, 65536); 
+
+        VMState vm(8192, 1000000);
         if (!assembler::loadAndReset(vm, assembled)) {
             std::cerr << (plain_mode ? "Error: Failed to load program/data into VM.\n" : "\033[1;31mError: Failed to load program/data into VM.\033[0m\n");
             return 1;

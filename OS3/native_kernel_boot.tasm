@@ -1,0 +1,41 @@
+; Phase D native-kernel boot prelude.
+;
+; This file is assembled before OS3/native_kernel_trap_stub.tasm and the
+; compiler output for kernel.trit. It proves the Phase D kernel can boot,
+; initialize the native TCL subsystems, enter user mode, take a syscall trap,
+; run kernel_dispatch, and return to the next user instruction.
+
+.text
+boot:
+    mov sp, 16383
+    call kernel_init
+
+    mov r1, native_trap_entry
+    csrw tvec, r1
+
+    ; Seed a user-space path pointer for sys_stat("/").
+    mov r1, 47
+    mov r2, 10000
+    store r1, r2, 0
+    mov r1, 0
+    store r1, r2, 1
+
+    mov r1, ctx_user
+    csrw scratch, r1
+    mov sp, 12000
+    mov r13, 10000
+    mov r14, 0
+
+    ; Ternary status -8 sets current privilege to user in the VM contract.
+    mov r1, -8
+    csrw status, r1
+user_stat_root:
+    syscall 16
+after_user_stat:
+    halt
+
+.data
+.org 64
+ctx_user: .word 0, 35, 0, 0, 0, 0
+.org 95
+.word 12000

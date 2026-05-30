@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { MODULES, parseMarkdown, Block } from "./guideContent";
 
 interface Problem {
   id: string;
@@ -539,6 +540,7 @@ function Nav({ view, setView }: { view: string; setView: (v: string) => void }) 
           ["problems", "Problems"],
           ["leaderboard", "Leaderboard"],
           ["contribute", "Contribute"],
+          ["guide", "Guide"],
         ].map(([v, label]) => (
           <button
             key={v}
@@ -599,6 +601,7 @@ function Nav({ view, setView }: { view: string; setView: (v: string) => void }) 
 
 export default function App() {
   const [view, setView] = useState("home");
+  const [activeTopicId, setActiveTopicId] = useState("t1");
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null);
   const [catFilter, setCatFilter] = useState("all");
   const [diffFilter, setDiffFilter] = useState("all");
@@ -2125,6 +2128,234 @@ export default function App() {
     );
   }
 
+  // ── GUIDE ───────────────────────────────────────────────────────────────────
+  if (view === "guide") {
+    const flatTopics = MODULES.flatMap((m) =>
+      m.topics.map((t) => ({
+        ...t,
+        moduleId: m.id,
+        moduleTitle: m.title,
+      }))
+    );
+
+    const activeIndex = flatTopics.findIndex((t) => t.id === activeTopicId);
+    const activeTopic = flatTopics[activeIndex] || flatTopics[0];
+
+    const prevTopic = activeIndex > 0 ? flatTopics[activeIndex - 1] : null;
+    const nextTopic = activeIndex < flatTopics.length - 1 ? flatTopics[activeIndex + 1] : null;
+
+    return (
+      <div
+        style={{
+          fontFamily: "var(--font-sans)",
+          maxWidth: 1060,
+          margin: "0 auto",
+          padding: "0 24px",
+        }}
+      >
+        <Nav view={view} setView={setView} />
+        <div
+          style={{
+            display: "flex",
+            gap: 32,
+            padding: "28px 0",
+            alignItems: "stretch",
+          }}
+        >
+          {/* Sidebar */}
+          <div
+            style={{
+              width: 280,
+              flexShrink: 0,
+              borderRight: "1px solid var(--color-border-tertiary)",
+              paddingRight: 24,
+            }}
+          >
+            {MODULES.map((mod) => (
+              <div key={mod.id} style={{ marginBottom: 20 }}>
+                <h3
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    color: "var(--color-text-primary)",
+                    marginBottom: 8,
+                    padding: "2px 0",
+                  }}
+                >
+                  {mod.title}
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {mod.topics.map((top) => {
+                    const isActive = activeTopicId === top.id;
+                    return (
+                      <button
+                        key={top.id}
+                        onClick={() => setActiveTopicId(top.id)}
+                        style={{
+                          textAlign: "left",
+                          fontSize: 13,
+                          padding: "6px 12px",
+                          borderRadius: 4,
+                          border: "none",
+                          background: isActive
+                            ? "var(--color-background-tertiary)"
+                            : "transparent",
+                          color: isActive
+                            ? "var(--color-text-primary)"
+                            : "var(--color-text-secondary)",
+                          fontWeight: isActive ? 500 : 400,
+                          cursor: "pointer",
+                          borderLeft: isActive
+                            ? "3px solid var(--color-border-primary)"
+                            : "3px solid transparent",
+                          paddingLeft: isActive ? 9 : 12,
+                        }}
+                      >
+                        {top.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Main Content */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              paddingLeft: 8,
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                marginBottom: 24,
+                borderBottom: "1px solid var(--color-border-tertiary)",
+                paddingBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: "var(--color-text-muted)",
+                  marginBottom: 6,
+                }}
+              >
+                {activeTopic.moduleTitle}
+              </div>
+              <h1
+                style={{
+                  fontSize: 24,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  margin: 0,
+                }}
+              >
+                {activeTopic.title}
+              </h1>
+            </div>
+
+            {/* Content */}
+            <div style={{ marginBottom: 40 }}>
+              {renderMarkdown(activeTopic.content)}
+            </div>
+
+            {/* Footer Navigation */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderTop: "1px solid var(--color-border-tertiary)",
+                paddingTop: 24,
+                marginTop: 24,
+              }}
+            >
+              {prevTopic ? (
+                <button
+                  onClick={() => setActiveTopicId(prevTopic.id)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "1px solid var(--color-border-secondary)",
+                    background: "var(--color-background-primary)",
+                    color: "var(--color-text-primary)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>←</span>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--color-text-muted)",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Previous
+                    </div>
+                    <div>{prevTopic.title}</div>
+                  </div>
+                </button>
+              ) : (
+                <div />
+              )}
+
+              {nextTopic ? (
+                <button
+                  onClick={() => setActiveTopicId(nextTopic.id)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "1px solid var(--color-border-secondary)",
+                    background: "var(--color-background-primary)",
+                    color: "var(--color-text-primary)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    textAlign: "right",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--color-text-muted)",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Next
+                    </div>
+                    <div>{nextTopic.title}</div>
+                  </div>
+                  <span style={{ fontSize: 16 }}>→</span>
+                </button>
+              ) : (
+                <div />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── HOME ────────────────────────────────────────────────────────────────────
   return (
     <div
@@ -2516,6 +2747,332 @@ export default function App() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── CUSTOM MARKDOWN RENDERERS FOR THE GUIDE ──────────────────────────────────
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let keyIdx = 0;
+
+  while (remaining.length > 0) {
+    // Check if next is inline code: `code`
+    const codeMatch = remaining.match(/^`([^`]+)`/);
+    if (codeMatch) {
+      parts.push(
+        <code
+          key={keyIdx++}
+          style={{
+            fontFamily: "var(--font-mono)",
+            background: "var(--color-background-tertiary)",
+            padding: "1px 4px",
+            borderRadius: 3,
+            fontSize: "0.9em",
+            border: "0.5px solid var(--color-border-secondary)",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {codeMatch[1]}
+        </code>
+      );
+      remaining = remaining.substring(codeMatch[0].length);
+      continue;
+    }
+
+    // Check if next is bold: **bold**
+    const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+    if (boldMatch) {
+      parts.push(
+        <strong key={keyIdx++} style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+          {boldMatch[1]}
+        </strong>
+      );
+      remaining = remaining.substring(boldMatch[0].length);
+      continue;
+    }
+
+    // Check if next is math: $math$
+    const mathMatch = remaining.match(/^\$([^$]+)\$/);
+    if (mathMatch) {
+      parts.push(
+        <span
+          key={keyIdx++}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontStyle: "italic",
+            color: "var(--color-accent-purple)",
+            background: "var(--color-background-secondary)",
+            padding: "0 4px",
+            borderRadius: 2,
+          }}
+        >
+          {mathMatch[1]}
+        </span>
+      );
+      remaining = remaining.substring(mathMatch[0].length);
+      continue;
+    }
+
+    // Standard text: parse until next token identifier
+    const nextTokenIdx = remaining.search(/[`$]|\*\*/);
+    if (nextTokenIdx === -1) {
+      parts.push(remaining);
+      break;
+    } else if (nextTokenIdx === 0) {
+      parts.push(remaining[0]);
+      remaining = remaining.substring(1);
+    } else {
+      parts.push(remaining.substring(0, nextTokenIdx));
+      remaining = remaining.substring(nextTokenIdx);
+    }
+  }
+
+  return parts;
+}
+
+function renderMarkdown(content: string): React.ReactNode {
+  const blocks = parseMarkdown(content);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {blocks.map((block, blockIdx) => {
+        switch (block.type) {
+          case "p":
+            return (
+              <p
+                key={blockIdx}
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "var(--color-text-secondary)",
+                  margin: 0,
+                }}
+              >
+                {renderInline(block.content)}
+              </p>
+            );
+          case "h3":
+            return (
+              <h3
+                key={blockIdx}
+                style={{
+                  fontSize: 18,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  marginTop: 24,
+                  marginBottom: 8,
+                  borderBottom: "1px solid var(--color-border-tertiary)",
+                  paddingBottom: 6,
+                }}
+              >
+                {renderInline(block.content)}
+              </h3>
+            );
+          case "h4":
+            return (
+              <h4
+                key={blockIdx}
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  marginTop: 16,
+                  marginBottom: 6,
+                }}
+              >
+                {renderInline(block.content)}
+              </h4>
+            );
+          case "ul":
+            return (
+              <ul
+                key={blockIdx}
+                style={{
+                  paddingLeft: 20,
+                  margin: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                {block.items?.map((item, idx) => (
+                  <li
+                    key={idx}
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    {renderInline(item)}
+                  </li>
+                ))}
+              </ul>
+            );
+          case "ol":
+            return (
+              <ol
+                key={blockIdx}
+                style={{
+                  paddingLeft: 20,
+                  margin: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                {block.items?.map((item, idx) => (
+                  <li
+                    key={idx}
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    {renderInline(item)}
+                  </li>
+                ))}
+              </ol>
+            );
+          case "table":
+            return (
+              <div
+                key={blockIdx}
+                style={{
+                  overflowX: "auto",
+                  margin: "8px 0 16px",
+                  border: "0.5px solid var(--color-border-secondary)",
+                  borderRadius: 6,
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 13,
+                    textAlign: "left",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background: "var(--color-background-tertiary)",
+                        borderBottom: "0.5px solid var(--color-border-secondary)",
+                      }}
+                    >
+                      {block.headers?.map((h, idx) => (
+                        <th
+                          key={idx}
+                          style={{
+                            padding: "8px 12px",
+                            fontWeight: 600,
+                            color: "var(--color-text-primary)",
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows?.map((row, rowIdx) => (
+                      <tr
+                        key={rowIdx}
+                        style={{
+                          borderBottom:
+                            rowIdx === (block.rows?.length || 0) - 1
+                              ? "none"
+                              : "0.5px solid var(--color-border-tertiary)",
+                          background:
+                            rowIdx % 2 === 0
+                              ? "transparent"
+                              : "var(--color-background-secondary)",
+                        }}
+                      >
+                        {row.map((cell, cellIdx) => (
+                          <td
+                            key={cellIdx}
+                            style={{
+                              padding: "8px 12px",
+                              color: "var(--color-text-secondary)",
+                            }}
+                          >
+                            {renderInline(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          case "code":
+            return (
+              <div
+                key={blockIdx}
+                style={{
+                  position: "relative",
+                  margin: "12px 0 16px",
+                  border: "1px solid var(--color-border-secondary)",
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  background: "var(--color-background-secondary)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "6px 12px",
+                    background: "var(--color-background-tertiary)",
+                    borderBottom: "1px solid var(--color-border-secondary)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--color-text-secondary)",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  <span>{block.lang || "code"}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(block.content);
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      color: "var(--color-accent-blue)",
+                      fontWeight: 500,
+                      padding: "2px 6px",
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 12,
+                    overflowX: "auto",
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--color-text-primary)",
+                    background: "var(--color-background-secondary)",
+                  }}
+                >
+                  <code>{block.content}</code>
+                </pre>
+              </div>
+            );
+          default:
+            return null;
+        }
+      })}
     </div>
   );
 }

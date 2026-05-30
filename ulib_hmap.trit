@@ -1,0 +1,1200 @@
+// =============================================================================
+// ulib_hmap.trit  -  Hash Map for ulib.trit
+// =============================================================================
+// Requires: ulib.trit (malloc_raw, free_raw, calloc_raw, strdup, strcmp)
+//
+// Two implementations sharing identical struct layout:
+//
+//   hmap   — integer key  (t40) → integer value (t40)
+//   shmap  — string  key  (null-terminated word buffer) → integer value (t40)
+//
+// Both use open addressing with linear probing. The status array uses the
+// ternary three-state model natively:
+//
+//   status[i] = neg (-1)  tombstone: deleted slot, probe continues past it
+//   status[i] = zero (0)  empty:     unoccupied,  probe stops here
+//   status[i] = pos (+1)  occupied:  live entry,  compare key
+//
+// This is the natural ternary encoding of the three open-addressing states.
+// Binary open-addressing systems must encode this in two separate bit flags
+// or use two sentinel key values. Here it costs nothing — the status array
+// is already the only metadata needed and its values are structurally typed.
+//
+// Struct layout (5 words, malloc'd):
+//   [0] = keys_ptr    (array of capacity words; integers for hmap,
+//                      strdup'd string pointers for shmap)
+//   [1] = vals_ptr    (array of capacity word-sized integer values)
+//   [2] = status_ptr  (array of capacity ternary status words)
+//   [3] = capacity    (bucket count; always a power of 3)
+//   [4] = count       (number of live entries)
+//
+// Load factor: resize at count * 3 >= capacity * 2  (two-thirds full).
+// Initial capacity: 27 (3^3). Growth factor: 3 (ternary-aligned).
+//
+// Key ownership:
+//   hmap:  integer keys have no ownership (copied by value).
+//   shmap: string keys are strdup'd on insertion and freed on deletion or
+//          map destruction. The map owns its key strings.
+//
+// Return value convention for get:
+//   hmap_get / shmap_get return 0 for both "key not present" and
+//   "key present with value 0". Use hmap_has / shmap_has to distinguish.
+//
+//   Pattern for 0-valued entries:
+//     match hmap_has(map, key) {
+//         pos => { var v: t40 = hmap_get(map, key); /* use v */ }
+//         zero => { /* absent */ }
+//         neg  => { /* absent */ }
+//     }
+//
+// Iteration:
+//   var slot: t40 = hmap_next_slot(map, 0);
+//   var done: t40 = 0;
+//   while 1 - done > 0 {
+//       match slot {
+//           neg  => { done = 1; }
+//           zero => {
+//               var k: t40 = hmap_key_at(map, 0);
+//               var v: t40 = hmap_val_at(map, 0);
+//               slot = hmap_next_slot(map, 1);
+//           }
+//           pos  => {
+//               var k: t40 = hmap_key_at(map, slot);
+//               var v: t40 = hmap_val_at(map, slot);
+//               slot = hmap_next_slot(map, slot + 1);
+//           }
+//       }
+//   }
+//
+// Thread safety: none. External synchronisation required for concurrent use.
+// DMEM usage:    none (fully heap-resident).
+// =============================================================================
+
+
+// =============================================================================
+// SECTION 1 — Hash Helpers
+// =============================================================================
+
+// Safe non-negative modulo. Takes abs(val) before dividing.
+// Precondition: m > 0.
+fn hmap_mod(val: t40, m: t40) -> t40 {
+    var v: t40 = val;
+    match v {
+        neg  => { v = 0 - v; }
+        zero => { return 0; }
+        pos  => {}
+    }
+    return v - (v / m) * m;
+}
+
+// Integer key hash.
+// Uses a multiply-add mix with two primes sized to stay within t40 range
+// for typical key magnitudes (< 10^9). For very large keys the product
+// may wrap in balanced ternary arithmetic; distribution degrades gracefully.
+fn hmap_int_hash(key: t40, capacity: t40) -> t40 {
+    var k: t40 = key;
+    match k {
+        neg  => { k = 0 - k; }
+        zero => { return 0; }
+        pos  => {}
+    }
+    var h: t40 = k * 1000003 + 999983;
+    return hmap_mod(h, capacity);
+}
+
+// String key hash (polynomial rolling, base 31).
+// Reads null-terminated word buffer at address `key`.
+// Negative character codes are included (non-ASCII extension).
+fn shmap_str_hash(key: t40, capacity: t40) -> t40 {
+    var h: t40 = 5381;
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(key + i); }
+        match c {
+            zero => { done = 1; }
+            neg  => { h = h * 31 + c; i = i + 1; }
+            pos  => { h = h * 31 + c; i = i + 1; }
+        }
+    }
+    return hmap_mod(h, capacity);
+}
+
+
+// =============================================================================
+// SECTION 2 — Probe Functions
+// =============================================================================
+//
+// Both probe functions return a slot index with the following semantics:
+//
+//   If key found:    status[slot] == 1  (caller verifies to confirm hit)
+//   If key absent:   status[slot] == 0  (empty) or  status[slot] == -1 (tomb)
+//   If table full:   returns -1  (should never occur with correct load factor)
+//
+// On absence, the returned slot is the best insertion point:
+//   - First tombstone seen during probe (allows reuse of deleted slots), OR
+//   - First empty slot (if no tombstone was encountered first).
+//
+// The `first_tomb` sentinel uses -1 to mean "no tombstone seen yet".
+// This maps cleanly onto the match arms:
+//   neg  arm → first_tomb == -1  → unset
+//   zero arm → first_tomb == 0   → tombstone at bucket 0
+//   pos  arm → first_tomb > 0    → tombstone at bucket first_tomb
+// =============================================================================
+
+fn hmap_probe_raw(keys_ptr: t40, status_ptr: t40,
+                  capacity: t40, key: t40) -> t40 {
+    var h: t40 = hmap_int_hash(key, capacity);
+    var first_tomb: t40 = 0 - 1;
+    var i: t40 = 0;
+
+    while capacity - i > 0 {
+        var raw_slot: t40 = h + i;
+        var slot: t40 = hmap_mod(raw_slot, capacity);
+        var s: t40 = 0;
+        unsafe { s = load(status_ptr + slot); }
+
+        match s {
+            zero => {
+                // Empty: key is absent. Return tombstone if we passed one,
+                // otherwise return this empty slot for insertion.
+                match first_tomb {
+                    neg  => { return slot; }
+                    zero => { return first_tomb; }
+                    pos  => { return first_tomb; }
+                }
+            }
+            neg => {
+                // Tombstone: record first occurrence and keep probing.
+                match first_tomb {
+                    neg  => { first_tomb = slot; }
+                    zero => {}
+                    pos  => {}
+                }
+            }
+            pos => {
+                // Occupied: check if this slot holds our key.
+                var k: t40 = 0;
+                unsafe { k = load(keys_ptr + slot); }
+                match k - key {
+                    zero => { return slot; }
+                    neg  => {}
+                    pos  => {}
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    // Probed every slot without finding empty or key.
+    match first_tomb {
+        neg  => { return 0 - 1; }
+        zero => { return first_tomb; }
+        pos  => { return first_tomb; }
+    }
+}
+
+// String probe: identical structure to hmap_probe_raw but uses shmap_str_hash
+// and strcmp for key comparison. keys_ptr stores string pointers.
+fn shmap_probe_raw(keys_ptr: t40, status_ptr: t40,
+                   capacity: t40, key: t40) -> t40 {
+    var h: t40 = shmap_str_hash(key, capacity);
+    var first_tomb: t40 = 0 - 1;
+    var i: t40 = 0;
+
+    while capacity - i > 0 {
+        var raw_slot: t40 = h + i;
+        var slot: t40 = hmap_mod(raw_slot, capacity);
+        var s: t40 = 0;
+        unsafe { s = load(status_ptr + slot); }
+
+        match s {
+            zero => {
+                match first_tomb {
+                    neg  => { return slot; }
+                    zero => { return first_tomb; }
+                    pos  => { return first_tomb; }
+                }
+            }
+            neg => {
+                match first_tomb {
+                    neg  => { first_tomb = slot; }
+                    zero => {}
+                    pos  => {}
+                }
+            }
+            pos => {
+                var stored_key: t40 = 0;
+                unsafe { stored_key = load(keys_ptr + slot); }
+                var cmp: t40 = strcmp(stored_key, key);
+                match cmp {
+                    zero => { return slot; }
+                    neg  => {}
+                    pos  => {}
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    match first_tomb {
+        neg  => { return 0 - 1; }
+        zero => { return first_tomb; }
+        pos  => { return first_tomb; }
+    }
+}
+
+
+// =============================================================================
+// SECTION 3 — Insert-at Helpers
+// =============================================================================
+//
+// These helpers perform the actual slot write after a probe returns a slot.
+// They return:
+//   1  new insertion   (slot was empty or tombstone; count must increase)
+//   0  update          (slot was occupied with matching key; count unchanged)
+//  -1  allocation fail (shmap only: strdup returned null)
+// =============================================================================
+
+// Integer map: write key+val at slot. No allocation needed.
+fn hmap_insert_at(kp: t40, vp: t40, sp: t40,
+                  slot: t40, key: t40, val: t40) -> t40 {
+    var s: t40 = 0;
+    unsafe { s = load(sp + slot); }
+    match s {
+        pos => {
+            // Occupied with matching key (confirmed by probe): update value.
+            unsafe { store(vp + slot, val); }
+            return 0;
+        }
+        zero => {
+            // Empty slot: new entry.
+            unsafe {
+                store(kp + slot, key);
+                store(vp + slot, val);
+                store(sp + slot, 1);
+            }
+            return 1;
+        }
+        neg => {
+            // Tombstone: reuse slot for new entry.
+            unsafe {
+                store(kp + slot, key);
+                store(vp + slot, val);
+                store(sp + slot, 1);
+            }
+            return 1;
+        }
+    }
+}
+
+// String map: strdup key on new insertion; update value only on existing key.
+// NOT used during resize (resize moves pointers directly without re-strdup).
+fn shmap_insert_at(kp: t40, vp: t40, sp: t40,
+                   slot: t40, key: t40, val: t40) -> t40 {
+    var s: t40 = 0;
+    unsafe { s = load(sp + slot); }
+    match s {
+        pos => {
+            // Matching key already present: update value, key ownership unchanged.
+            unsafe { store(vp + slot, val); }
+            return 0;
+        }
+        zero => {
+            var key_copy: t40 = strdup(key);
+            match key_copy {
+                zero => { return 0 - 1; }
+                neg  => { return 0 - 1; }
+                pos  => {
+                    unsafe {
+                        store(kp + slot, key_copy);
+                        store(vp + slot, val);
+                        store(sp + slot, 1);
+                    }
+                    return 1;
+                }
+            }
+        }
+        neg => {
+            var key_copy: t40 = strdup(key);
+            match key_copy {
+                zero => { return 0 - 1; }
+                neg  => { return 0 - 1; }
+                pos  => {
+                    unsafe {
+                        store(kp + slot, key_copy);
+                        store(vp + slot, val);
+                        store(sp + slot, 1);
+                    }
+                    return 1;
+                }
+            }
+        }
+    }
+}
+
+
+// =============================================================================
+// SECTION 4 — Integer HashMap: Core Operations
+// =============================================================================
+
+fn hmap_new_raw() -> t40 {
+    var cap: t40 = 27;
+    var map: t40 = malloc_raw(5);
+    match map {
+        zero => { return 0; }
+        neg  => { return 0; }
+        pos  => {
+            var kp: t40 = malloc_raw(cap);
+            match kp {
+                zero => { free_raw(map); return 0; }
+                neg  => { free_raw(map); return 0; }
+                pos  => {
+                    var vp: t40 = malloc_raw(cap);
+                    match vp {
+                        zero => { free_raw(kp); free_raw(map); return 0; }
+                        neg  => { free_raw(kp); free_raw(map); return 0; }
+                        pos  => {
+                            // calloc_raw zero-fills: all slots start as empty (0).
+                            var sp: t40 = calloc_raw(cap, 1);
+                            match sp {
+                                zero => {
+                                    free_raw(vp);
+                                    free_raw(kp);
+                                    free_raw(map);
+                                    return 0;
+                                }
+                                neg => {
+                                    free_raw(vp);
+                                    free_raw(kp);
+                                    free_raw(map);
+                                    return 0;
+                                }
+                                pos => {
+                                    unsafe {
+                                        store(map,     kp);
+                                        store(map + 1, vp);
+                                        store(map + 2, sp);
+                                        store(map + 3, cap);
+                                        store(map + 4, 0);
+                                    }
+                                    return map;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn hmap_new() -> own<ptr<t40, user, unknown>> {
+    return hmap_new_raw();
+}
+
+fn hmap_len_raw(map: t40) -> t40 {
+    var n: t40 = 0;
+    unsafe { n = load(map + 4); }
+    return n;
+}
+
+fn hmap_len(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return hmap_len_raw(map);
+}
+
+fn hmap_cap_raw(map: t40) -> t40 {
+    var c: t40 = 0;
+    unsafe { c = load(map + 3); }
+    return c;
+}
+
+fn hmap_cap(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return hmap_cap_raw(map);
+}
+
+// Internal resize: triple capacity, rehash all live entries.
+// Tombstones are discarded (compacted away), reducing probe chain length.
+// If any allocation fails the map is left unmodified and -1 is returned.
+fn hmap_resize_raw(map: t40) -> t40 {
+    var old_kp: t40 = 0;
+    var old_vp: t40 = 0;
+    var old_sp: t40 = 0;
+    var old_cap: t40 = 0;
+    unsafe {
+        old_kp  = load(map);
+        old_vp  = load(map + 1);
+        old_sp  = load(map + 2);
+        old_cap = load(map + 3);
+    }
+    var new_cap: t40 = old_cap * 3;
+
+    var new_kp: t40 = malloc_raw(new_cap);
+    match new_kp {
+        zero => { return 0 - 1; }
+        neg  => { return 0 - 1; }
+        pos  => {}
+    }
+    var new_vp: t40 = malloc_raw(new_cap);
+    match new_vp {
+        zero => { free_raw(new_kp); return 0 - 1; }
+        neg  => { free_raw(new_kp); return 0 - 1; }
+        pos  => {}
+    }
+    var new_sp: t40 = calloc_raw(new_cap, 1);
+    match new_sp {
+        zero => { free_raw(new_vp); free_raw(new_kp); return 0 - 1; }
+        neg  => { free_raw(new_vp); free_raw(new_kp); return 0 - 1; }
+        pos  => {}
+    }
+
+    // Rehash all live entries into the new (empty) table.
+    var i: t40 = 0;
+    while old_cap - i > 0 {
+        var s: t40 = 0;
+        unsafe { s = load(old_sp + i); }
+        match s {
+            pos => {
+                var k: t40 = 0;
+                var v: t40 = 0;
+                unsafe { k = load(old_kp + i); v = load(old_vp + i); }
+                var new_slot: t40 = hmap_probe_raw(new_kp, new_sp, new_cap, k);
+                match new_slot {
+                    neg  => {}
+                    zero => {
+                        unsafe {
+                            store(new_kp,     k);
+                            store(new_vp,     v);
+                            store(new_sp,     1);
+                        }
+                    }
+                    pos  => {
+                        unsafe {
+                            store(new_kp + new_slot, k);
+                            store(new_vp + new_slot, v);
+                            store(new_sp + new_slot, 1);
+                        }
+                    }
+                }
+            }
+            zero => {}
+            neg  => {}      // tombstones not copied: compacted away on resize
+        }
+        i = i + 1;
+    }
+
+    free_raw(old_kp);
+    free_raw(old_vp);
+    free_raw(old_sp);
+
+    unsafe {
+        store(map,     new_kp);
+        store(map + 1, new_vp);
+        store(map + 2, new_sp);
+        store(map + 3, new_cap);
+    }
+    return 0;
+}
+
+
+// =============================================================================
+// SECTION 5 — Integer HashMap: Public API
+// =============================================================================
+
+// Insert or update key→val.
+// Returns 0 on success, -1 on allocation failure.
+fn hmap_put_raw(map: t40, key: t40, val: t40) -> t40 {
+    var kp: t40 = 0;
+    var vp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    var count: t40 = 0;
+    unsafe {
+        kp    = load(map);
+        vp    = load(map + 1);
+        sp    = load(map + 2);
+        cap   = load(map + 3);
+        count = load(map + 4);
+    }
+
+    var slot: t40 = hmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0 - 1; }
+        zero => {
+            var is_new: t40 = hmap_insert_at(kp, vp, sp, 0, key, val);
+            match is_new {
+                pos  => { unsafe { store(map + 4, count + 1); } }
+                zero => {}
+                neg  => {}
+            }
+        }
+        pos  => {
+            var is_new: t40 = hmap_insert_at(kp, vp, sp, slot, key, val);
+            match is_new {
+                pos  => { unsafe { store(map + 4, count + 1); } }
+                zero => {}
+                neg  => {}
+            }
+        }
+    }
+
+    // Resize when load factor reaches 2/3.
+    var new_count: t40 = 0;
+    var new_cap: t40 = 0;
+    unsafe { new_count = load(map + 4); new_cap = load(map + 3); }
+    match new_count * 3 - new_cap * 2 {
+        neg  => {}
+        zero => { hmap_resize_raw(map); }
+        pos  => { hmap_resize_raw(map); }
+    }
+    return 0;
+}
+
+fn hmap_put(map: borrow_mut<ptr<t40, user, valid>>, key: t40, val: t40) -> t40 {
+    return hmap_put_raw(map, key, val);
+}
+
+// Retrieve the value for key.
+// Returns 0 for both "not found" and "stored value is 0".
+// Use hmap_has to distinguish these cases.
+fn hmap_get_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var vp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        kp  = load(map);
+        vp  = load(map + 1);
+        sp  = load(map + 2);
+        cap = load(map + 3);
+    }
+    var slot: t40 = hmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s {
+                pos  => { var v: t40 = 0; unsafe { v = load(vp); }       return v; }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s {
+                pos  => { var v: t40 = 0; unsafe { v = load(vp + slot); } return v; }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+    }
+}
+
+fn hmap_get(map: borrow<ptr<t40, user, valid>>, key: t40) -> t40 {
+    return hmap_get_raw(map, key);
+}
+
+// Returns 1 if key is present, 0 if absent.
+fn hmap_has_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        kp  = load(map);
+        sp  = load(map + 2);
+        cap = load(map + 3);
+    }
+    var slot: t40 = hmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s { pos => { return 1; } zero => { return 0; } neg => { return 0; } }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s { pos => { return 1; } zero => { return 0; } neg => { return 0; } }
+        }
+    }
+}
+
+fn hmap_has(map: borrow<ptr<t40, user, valid>>, key: t40) -> t40 {
+    return hmap_has_raw(map, key);
+}
+
+// Delete key. Returns 1 if found and deleted, 0 if not present.
+// Leaves a tombstone so probe chains through this slot remain intact.
+fn hmap_del_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    var count: t40 = 0;
+    unsafe {
+        kp    = load(map);
+        sp    = load(map + 2);
+        cap   = load(map + 3);
+        count = load(map + 4);
+    }
+    var slot: t40 = hmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s {
+                pos  => {
+                    unsafe {
+                        store(sp,         0 - 1);    // tombstone
+                        store(map + 4,    count - 1);
+                    }
+                    return 1;
+                }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s {
+                pos  => {
+                    unsafe {
+                        store(sp + slot,  0 - 1);
+                        store(map + 4,    count - 1);
+                    }
+                    return 1;
+                }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+    }
+}
+
+fn hmap_del(map: borrow_mut<ptr<t40, user, valid>>, key: t40) -> t40 {
+    return hmap_del_raw(map, key);
+}
+
+// Free the map struct and all three backing arrays.
+fn hmap_free_raw(map: t40) -> t40 {
+    match map {
+        zero => { return 0; }
+        neg  => { return 0; }
+        pos  => {
+            var kp: t40 = 0;
+            var vp: t40 = 0;
+            var sp: t40 = 0;
+            unsafe { kp = load(map); vp = load(map + 1); sp = load(map + 2); }
+            match kp { pos => { free_raw(kp); } zero => {} neg => {} }
+            match vp { pos => { free_raw(vp); } zero => {} neg => {} }
+            match sp { pos => { free_raw(sp); } zero => {} neg => {} }
+            free_raw(map);
+            return 0;
+        }
+    }
+}
+
+fn hmap_free(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return hmap_free_raw(map);
+}
+
+
+// =============================================================================
+// SECTION 6 — Integer HashMap: Iteration
+// =============================================================================
+//
+// Iteration scans the status array linearly from `from` onward.
+// hmap_next_slot returns the next occupied slot index, or -1 when exhausted.
+// hmap_key_at and hmap_val_at read key/value at a confirmed occupied slot.
+// Do not call key_at / val_at on a slot returned as -1.
+// =============================================================================
+
+fn hmap_next_slot(map: t40, from: t40) -> t40 {
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe { sp = load(map + 2); cap = load(map + 3); }
+    var i: t40 = from;
+    while cap - i > 0 {
+        var s: t40 = 0;
+        unsafe { s = load(sp + i); }
+        match s {
+            pos  => { return i; }
+            zero => {}
+            neg  => {}
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+fn hmap_key_at(map: t40, slot: t40) -> t40 {
+    var kp: t40 = 0;
+    unsafe { kp = load(map); }
+    var k: t40 = 0;
+    unsafe { k = load(kp + slot); }
+    return k;
+}
+
+fn hmap_val_at(map: t40, slot: t40) -> t40 {
+    var vp: t40 = 0;
+    unsafe { vp = load(map + 1); }
+    var v: t40 = 0;
+    unsafe { v = load(vp + slot); }
+    return v;
+}
+
+
+// =============================================================================
+// SECTION 7 — String HashMap: Core Operations
+// =============================================================================
+
+fn shmap_new_raw() -> t40 {
+    var cap: t40 = 27;
+    var map: t40 = malloc_raw(5);
+    match map {
+        zero => { return 0; }
+        neg  => { return 0; }
+        pos  => {
+            var kp: t40 = malloc_raw(cap);
+            match kp {
+                zero => { free_raw(map); return 0; }
+                neg  => { free_raw(map); return 0; }
+                pos  => {
+                    var vp: t40 = malloc_raw(cap);
+                    match vp {
+                        zero => { free_raw(kp); free_raw(map); return 0; }
+                        neg  => { free_raw(kp); free_raw(map); return 0; }
+                        pos  => {
+                            var sp: t40 = calloc_raw(cap, 1);
+                            match sp {
+                                zero => {
+                                    free_raw(vp); free_raw(kp); free_raw(map);
+                                    return 0;
+                                }
+                                neg => {
+                                    free_raw(vp); free_raw(kp); free_raw(map);
+                                    return 0;
+                                }
+                                pos => {
+                                    unsafe {
+                                        store(map,     kp);
+                                        store(map + 1, vp);
+                                        store(map + 2, sp);
+                                        store(map + 3, cap);
+                                        store(map + 4, 0);
+                                    }
+                                    return map;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn shmap_new() -> own<ptr<t40, user, unknown>> {
+    return shmap_new_raw();
+}
+
+fn shmap_len_raw(map: t40) -> t40 {
+    var n: t40 = 0;
+    unsafe { n = load(map + 4); }
+    return n;
+}
+
+fn shmap_len(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return shmap_len_raw(map);
+}
+
+fn shmap_cap_raw(map: t40) -> t40 {
+    var c: t40 = 0;
+    unsafe { c = load(map + 3); }
+    return c;
+}
+
+fn shmap_cap(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return shmap_cap_raw(map);
+}
+
+// Resize for shmap: moves string POINTERS into the new table.
+// Key strings are NOT re-strdup'd. The map continues to own them.
+fn shmap_resize_raw(map: t40) -> t40 {
+    var old_kp: t40 = 0;
+    var old_vp: t40 = 0;
+    var old_sp: t40 = 0;
+    var old_cap: t40 = 0;
+    unsafe {
+        old_kp  = load(map);
+        old_vp  = load(map + 1);
+        old_sp  = load(map + 2);
+        old_cap = load(map + 3);
+    }
+    var new_cap: t40 = old_cap * 3;
+
+    var new_kp: t40 = malloc_raw(new_cap);
+    match new_kp {
+        zero => { return 0 - 1; }
+        neg  => { return 0 - 1; }
+        pos  => {}
+    }
+    var new_vp: t40 = malloc_raw(new_cap);
+    match new_vp {
+        zero => { free_raw(new_kp); return 0 - 1; }
+        neg  => { free_raw(new_kp); return 0 - 1; }
+        pos  => {}
+    }
+    var new_sp: t40 = calloc_raw(new_cap, 1);
+    match new_sp {
+        zero => { free_raw(new_vp); free_raw(new_kp); return 0 - 1; }
+        neg  => { free_raw(new_vp); free_raw(new_kp); return 0 - 1; }
+        pos  => {}
+    }
+
+    var i: t40 = 0;
+    while old_cap - i > 0 {
+        var s: t40 = 0;
+        unsafe { s = load(old_sp + i); }
+        match s {
+            pos => {
+                // k is a string pointer; rehash by reading the string it points to.
+                var k: t40 = 0;
+                var v: t40 = 0;
+                unsafe { k = load(old_kp + i); v = load(old_vp + i); }
+                var new_slot: t40 = shmap_probe_raw(new_kp, new_sp, new_cap, k);
+                // Direct store: do NOT strdup — pointer ownership transfers.
+                match new_slot {
+                    neg  => {}
+                    zero => {
+                        unsafe {
+                            store(new_kp,     k);
+                            store(new_vp,     v);
+                            store(new_sp,     1);
+                        }
+                    }
+                    pos  => {
+                        unsafe {
+                            store(new_kp + new_slot, k);
+                            store(new_vp + new_slot, v);
+                            store(new_sp + new_slot, 1);
+                        }
+                    }
+                }
+            }
+            zero => {}
+            neg  => {}
+        }
+        i = i + 1;
+    }
+
+    free_raw(old_kp);
+    free_raw(old_vp);
+    free_raw(old_sp);
+    // Do NOT free key strings — they are now owned by the new arrays.
+
+    unsafe {
+        store(map,     new_kp);
+        store(map + 1, new_vp);
+        store(map + 2, new_sp);
+        store(map + 3, new_cap);
+    }
+    return 0;
+}
+
+
+// =============================================================================
+// SECTION 8 — String HashMap: Public API
+// =============================================================================
+
+fn shmap_put_raw(map: t40, key: t40, val: t40) -> t40 {
+    var kp: t40 = 0;
+    var vp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    var count: t40 = 0;
+    unsafe {
+        kp    = load(map);
+        vp    = load(map + 1);
+        sp    = load(map + 2);
+        cap   = load(map + 3);
+        count = load(map + 4);
+    }
+
+    var slot: t40 = shmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0 - 1; }
+        zero => {
+            var result: t40 = shmap_insert_at(kp, vp, sp, 0, key, val);
+            match result {
+                pos  => { unsafe { store(map + 4, count + 1); } }
+                zero => {}
+                neg  => { return 0 - 1; }      // strdup failed
+            }
+        }
+        pos  => {
+            var result: t40 = shmap_insert_at(kp, vp, sp, slot, key, val);
+            match result {
+                pos  => { unsafe { store(map + 4, count + 1); } }
+                zero => {}
+                neg  => { return 0 - 1; }
+            }
+        }
+    }
+
+    var new_count: t40 = 0;
+    var new_cap: t40 = 0;
+    unsafe { new_count = load(map + 4); new_cap = load(map + 3); }
+    match new_count * 3 - new_cap * 2 {
+        neg  => {}
+        zero => { shmap_resize_raw(map); }
+        pos  => { shmap_resize_raw(map); }
+    }
+    return 0;
+}
+
+fn shmap_put(map: borrow_mut<ptr<t40, user, valid>>,
+             key: borrow<ptr<t40, user, valid>>, val: t40) -> t40 {
+    return shmap_put_raw(map, key, val);
+}
+
+fn shmap_get_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var vp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        kp  = load(map);
+        vp  = load(map + 1);
+        sp  = load(map + 2);
+        cap = load(map + 3);
+    }
+    var slot: t40 = shmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s {
+                pos  => { var v: t40 = 0; unsafe { v = load(vp); }       return v; }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s {
+                pos  => { var v: t40 = 0; unsafe { v = load(vp + slot); } return v; }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+    }
+}
+
+fn shmap_get(map: borrow<ptr<t40, user, valid>>,
+             key: borrow<ptr<t40, user, valid>>) -> t40 {
+    return shmap_get_raw(map, key);
+}
+
+fn shmap_has_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        kp  = load(map);
+        sp  = load(map + 2);
+        cap = load(map + 3);
+    }
+    var slot: t40 = shmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s { pos => { return 1; } zero => { return 0; } neg => { return 0; } }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s { pos => { return 1; } zero => { return 0; } neg => { return 0; } }
+        }
+    }
+}
+
+fn shmap_has(map: borrow<ptr<t40, user, valid>>,
+             key: borrow<ptr<t40, user, valid>>) -> t40 {
+    return shmap_has_raw(map, key);
+}
+
+// Delete key. Frees the owned key string. Leaves a tombstone.
+// Returns 1 if found and deleted, 0 if not present.
+fn shmap_del_raw(map: t40, key: t40) -> t40 {
+    var kp: t40 = 0;
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    var count: t40 = 0;
+    unsafe {
+        kp    = load(map);
+        sp    = load(map + 2);
+        cap   = load(map + 3);
+        count = load(map + 4);
+    }
+    var slot: t40 = shmap_probe_raw(kp, sp, cap, key);
+    match slot {
+        neg  => { return 0; }
+        zero => {
+            var s: t40 = 0;
+            unsafe { s = load(sp); }
+            match s {
+                pos => {
+                    var stored_key: t40 = 0;
+                    unsafe { stored_key = load(kp); }
+                    match stored_key {
+                        pos => { free_raw(stored_key); }
+                        zero => {}
+                        neg  => {}
+                    }
+                    unsafe {
+                        store(kp,         0);
+                        store(sp,         0 - 1);
+                        store(map + 4,    count - 1);
+                    }
+                    return 1;
+                }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+        pos  => {
+            var s: t40 = 0;
+            unsafe { s = load(sp + slot); }
+            match s {
+                pos => {
+                    var stored_key: t40 = 0;
+                    unsafe { stored_key = load(kp + slot); }
+                    match stored_key {
+                        pos => { free_raw(stored_key); }
+                        zero => {}
+                        neg  => {}
+                    }
+                    unsafe {
+                        store(kp + slot,  0);
+                        store(sp + slot,  0 - 1);
+                        store(map + 4,    count - 1);
+                    }
+                    return 1;
+                }
+                zero => { return 0; }
+                neg  => { return 0; }
+            }
+        }
+    }
+}
+
+fn shmap_del(map: borrow_mut<ptr<t40, user, valid>>,
+             key: borrow<ptr<t40, user, valid>>) -> t40 {
+    return shmap_del_raw(map, key);
+}
+
+// Free the map: frees all owned key strings, then the three arrays, then the struct.
+fn shmap_free_raw(map: t40) -> t40 {
+    match map {
+        zero => { return 0; }
+        neg  => { return 0; }
+        pos  => {
+            var kp: t40 = 0;
+            var vp: t40 = 0;
+            var sp: t40 = 0;
+            var cap: t40 = 0;
+            unsafe {
+                kp  = load(map);
+                vp  = load(map + 1);
+                sp  = load(map + 2);
+                cap = load(map + 3);
+            }
+
+            // Free each live key string.
+            var i: t40 = 0;
+            while cap - i > 0 {
+                var s: t40 = 0;
+                unsafe { s = load(sp + i); }
+                match s {
+                    pos => {
+                        var key_ptr: t40 = 0;
+                        unsafe { key_ptr = load(kp + i); }
+                        match key_ptr {
+                            pos => { free_raw(key_ptr); }
+                            zero => {}
+                            neg  => {}
+                        }
+                    }
+                    zero => {}
+                    neg  => {}
+                }
+                i = i + 1;
+            }
+
+            match kp { pos => { free_raw(kp); } zero => {} neg => {} }
+            match vp { pos => { free_raw(vp); } zero => {} neg => {} }
+            match sp { pos => { free_raw(sp); } zero => {} neg => {} }
+            free_raw(map);
+            return 0;
+        }
+    }
+}
+
+fn shmap_free(map: borrow<ptr<t40, user, unknown>>) -> t40 {
+    return shmap_free_raw(map);
+}
+
+
+// =============================================================================
+// SECTION 9 — String HashMap: Iteration
+// =============================================================================
+//
+// Same pattern as integer map iteration. shmap_key_at returns the string
+// pointer (not a copy). Do not free or modify the returned pointer —
+// the map owns the string.
+// =============================================================================
+
+fn shmap_next_slot(map: t40, from: t40) -> t40 {
+    var sp: t40 = 0;
+    var cap: t40 = 0;
+    unsafe { sp = load(map + 2); cap = load(map + 3); }
+    var i: t40 = from;
+    while cap - i > 0 {
+        var s: t40 = 0;
+        unsafe { s = load(sp + i); }
+        match s {
+            pos  => { return i; }
+            zero => {}
+            neg  => {}
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+// Returns the string pointer stored at slot. Caller must not free it.
+fn shmap_key_at(map: t40, slot: t40) -> t40 {
+    var kp: t40 = 0;
+    unsafe { kp = load(map); }
+    var k: t40 = 0;
+    unsafe { k = load(kp + slot); }
+    return k;
+}
+
+fn shmap_val_at(map: t40, slot: t40) -> t40 {
+    var vp: t40 = 0;
+    unsafe { vp = load(map + 1); }
+    var v: t40 = 0;
+    unsafe { v = load(vp + slot); }
+    return v;
+}

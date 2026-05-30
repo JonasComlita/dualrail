@@ -213,6 +213,7 @@ private:
         if (matchKeyword("var")) return parseLet(true);
         if (matchKeyword("const")) return parseConstStmt();
         if (matchKeyword("return")) return parseReturn();
+        if (matchKeyword("if")) return parseIf(previous().span);
         if (matchKeyword("while")) return parseWhile();
         if (matchKeyword("match")) return parseMatch();
         if (matchKeyword("unsafe")) {
@@ -310,6 +311,22 @@ private:
         stmt.span = previous().span;
         if (!check(TokenKind::Semicolon)) stmt.expr = parseExpr();
         consume(TokenKind::Semicolon, "expected ';' after return");
+        return stmt;
+    }
+
+    [[nodiscard]] Stmt parseIf(const SourceSpan& span) {
+        Stmt stmt;
+        stmt.kind = StmtKind::If;
+        stmt.span = span;
+        stmt.expr = parseExpr();
+        stmt.body = parseBlock();
+        if (matchKeyword("else")) {
+            if (matchKeyword("if")) {
+                stmt.else_body.push_back(parseIf(previous().span));
+            } else {
+                stmt.else_body = parseBlock();
+            }
+        }
         return stmt;
     }
 

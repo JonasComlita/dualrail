@@ -1,0 +1,93 @@
+; C++ / TCL Ternary OS Bootloader
+;
+; Initializes stack, registers, and establishes the Device Tree Blob (DTB)
+; at physical address 2900 to guide the kernel's device drivers.
+
+.text
+boot:
+    ; Initialize physical stack pointer for booting
+    mov sp, 16383
+
+    ; Setup trap handler vector
+    mov r1, native_trap_entry
+    csrw tvec, r1
+
+    ; Construct the Device Tree Blob (DTB) at address 2900
+    mov r2, 2900
+
+    mov r1, 272727          ; DTB_MAGIC
+    store r1, r2, 0
+
+    mov r1, 1000000         ; DTB_MEMORY_SIZE (1 million words)
+    store r1, r2, 1
+
+    mov r1, 22              ; DTB_CONSOLE_OUT (CSR_CONSOLE_OUT = 22)
+    store r1, r2, 2
+
+    mov r1, 24              ; DTB_CONSOLE_IN (CSR_CONSOLE_IN = 24)
+    store r1, r2, 3
+
+    mov r1, 25              ; DTB_CONSOLE_IN_CTRL (CSR_CONSOLE_IN_CTRL = 25)
+    store r1, r2, 4
+
+    mov r1, 7               ; DTB_TIMER_COUNTER (CSR_TIMER_COUNTER = 7)
+    store r1, r2, 5
+
+    mov r1, 6               ; DTB_TIMER_RELOAD (CSR_TIMER_RELOAD = 6)
+    store r1, r2, 6
+
+    mov r1, 15              ; DTB_MMU_ENABLE (CSR_MMU_ENABLE = 15)
+    store r1, r2, 7
+
+    mov r1, 18              ; DTB_USER_DMEM_PTBR (CSR_USER_DMEM_PTBR = 18)
+    store r1, r2, 8
+
+    mov r1, 36              ; DTB_GPU_DRAW_BASE (CSR_GPU_DRAW_BASE = 36)
+    store r1, r2, 9
+
+    mov r1, 50000           ; DTB_FRAMEBUFFER_BASE (graphics back buffer)
+    store r1, r2, 10
+
+    mov r1, 37              ; DTB_FRAMEBUFFER_CTRL (CSR_GPU_MODE = 37)
+    store r1, r2, 11
+
+    mov r1, 640             ; DTB_FRAMEBUFFER_MAX_W
+    store r1, r2, 12
+
+    mov r1, 360             ; DTB_FRAMEBUFFER_MAX_H
+    store r1, r2, 13
+
+    mov r1, 5               ; DTB_FRAMEBUFFER_FORMAT (T5 RGB)
+    store r1, r2, 14
+
+    ; Call standard kernel initialization
+    call kernel_init
+
+    ; Seed initial user context for validation at DMEM[64..95].
+    mov r2, 64
+    mov r1, 0
+    store r1, r2, 0
+    mov r1, 35
+    store r1, r2, 1
+    mov r1, 0
+    store r1, r2, 2
+    store r1, r2, 3
+    store r1, r2, 4
+    store r1, r2, 5
+    mov r1, 12000
+    store r1, r2, 31
+
+    mov r1, 64
+    csrw scratch, r1
+    mov sp, 12000
+    mov r13, 10000
+    mov r14, 0
+
+    ; Set privilege to user-resume status used by the native task context.
+    mov r1, 35
+    csrw status, r1
+
+user_stat_root:
+    syscall 16              ; sys_stat
+after_user_stat:
+    halt

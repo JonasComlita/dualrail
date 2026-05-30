@@ -1,0 +1,55 @@
+// apps/shell.trit - Layer 6 command shell entry point.
+
+fn shell_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn shell_seed_banner(addr: t40) -> t40 {
+    shell_store(addr + 0, 84);
+    shell_store(addr + 1, 82);
+    shell_store(addr + 2, 73);
+    shell_store(addr + 3, 84);
+    shell_store(addr + 4, 32);
+    shell_store(addr + 5, 83);
+    shell_store(addr + 6, 72);
+    shell_store(addr + 7, 69);
+    shell_store(addr + 8, 76);
+    shell_store(addr + 9, 76);
+    shell_store(addr + 10, 0);
+    return addr;
+}
+
+fn shell_seed_calc_path(addr: t40) -> t40 {
+    shell_store(addr + 0, 47);
+    shell_store(addr + 1, 98);
+    shell_store(addr + 2, 105);
+    shell_store(addr + 3, 110);
+    shell_store(addr + 4, 47);
+    shell_store(addr + 5, 99);
+    shell_store(addr + 6, 97);
+    shell_store(addr + 7, 108);
+    shell_store(addr + 8, 99);
+    shell_store(addr + 9, 117);
+    shell_store(addr + 10, 108);
+    shell_store(addr + 11, 97);
+    shell_store(addr + 12, 116);
+    shell_store(addr + 13, 111);
+    shell_store(addr + 14, 114);
+    shell_store(addr + 15, 0);
+    return addr;
+}
+
+fn shell_exec_builtin(command: t40, scratch_addr: t40) -> t40 {
+    if command - 99 == 0 {
+        shell_seed_calc_path(scratch_addr);
+        return sys_exec(scratch_addr);
+    }
+    return 0;
+}
+
+fn main() -> t40 {
+    var banner: t40 = shell_seed_banner(2000);
+    libc_puts(banner);
+    return 0;
+}

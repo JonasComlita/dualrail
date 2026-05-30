@@ -1,0 +1,100 @@
+; Phase D D1 trap entry shim.
+;
+; This file intentionally remains raw TASM. It saves the interrupted task
+; context before using a kernel stack or entering compiled TCL code.
+; Link/assemble this prelude with the assembly emitted from kernel.trit so the
+; call to kernel_dispatch resolves to the compiled high-level dispatcher.
+
+.text
+native_trap_entry:
+    csrrw sp, scratch, sp
+    store r1, sp, 6
+    store r2, sp, 7
+    store r3, sp, 8
+    store r4, sp, 9
+    store r5, sp, 10
+    store r6, sp, 11
+    store r7, sp, 12
+    store r8, sp, 13
+    store r9, sp, 14
+    store r10, sp, 15
+    store r11, sp, 16
+    store r12, sp, 17
+    store r13, sp, 18
+    store r14, sp, 19
+    store r15, sp, 20
+    store r16, sp, 21
+    store r17, sp, 22
+    store r18, sp, 23
+    store r19, sp, 24
+    store r20, sp, 25
+    store r21, sp, 26
+    store r22, sp, 27
+    store r23, sp, 28
+    store r24, sp, 29
+    store r25, sp, 30
+    csrr r1, scratch
+    store r1, sp, 31
+    csrr r1, epc
+    store r1, sp, 0
+    csrr r1, status
+    store r1, sp, 1
+    csrr r1, user_imem_ptbr
+    store r1, sp, 2
+    csrr r1, user_imem_pages
+    store r1, sp, 3
+    csrr r1, user_dmem_ptbr
+    store r1, sp, 4
+    csrr r1, user_dmem_pages
+    store r1, sp, 5
+
+    ; kernel.trit constant CURRENT_CONTEXT_ADDR = 3019.
+    mov r1, 3019
+    store sp, r1, 0
+    mov sp, 16383
+    csrr r13, cause
+    call kernel_dispatch
+
+    mov r1, 3019
+    load sp, r1, 0
+    load r1, sp, 0
+    csrw epc, r1
+    load r1, sp, 1
+    csrw status, r1
+    load r1, sp, 2
+    csrw user_imem_ptbr, r1
+    load r1, sp, 3
+    csrw user_imem_pages, r1
+    load r1, sp, 4
+    csrw user_dmem_ptbr, r1
+    load r1, sp, 5
+    csrw user_dmem_pages, r1
+    load r1, sp, 31
+    csrw scratch, r1
+    load r1, sp, 6
+    load r2, sp, 7
+    load r3, sp, 8
+    load r4, sp, 9
+    load r5, sp, 10
+    load r6, sp, 11
+    load r7, sp, 12
+    load r8, sp, 13
+    load r9, sp, 14
+    load r10, sp, 15
+    load r11, sp, 16
+    load r12, sp, 17
+    load r13, sp, 18
+    load r14, sp, 19
+    load r15, sp, 20
+    load r16, sp, 21
+    load r17, sp, 22
+    load r18, sp, 23
+    load r19, sp, 24
+    load r20, sp, 25
+    load r21, sp, 26
+    load r22, sp, 27
+    load r23, sp, 28
+    load r24, sp, 29
+    load r25, sp, 30
+    csrrw sp, scratch, sp
+    eret

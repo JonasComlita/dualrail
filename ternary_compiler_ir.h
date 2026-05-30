@@ -143,6 +143,9 @@ struct ObjectModule {
     std::string assembly;
     Module ssa;
     std::map<std::string, int> symbols;
+    std::vector<std::string> function_order;
+    std::map<std::string, std::string> function_sections;
+    std::map<std::string, std::set<std::string>> function_refs;
     std::map<std::string, std::string> metadata;
 };
 
@@ -164,6 +167,8 @@ struct LinkOptions {
     int flags = 0;
     int syscall_abi_version = vm::EXEC_SYSCALL_ABI_VERSION_V1;
     bool standalone_halt_on_exit = true;
+    bool dead_strip_functions = false;
+    std::vector<std::string> dead_strip_roots = {"main"};
 };
 
 struct LinkResult {
@@ -201,6 +206,19 @@ static constexpr int sys_sbrk = 19;
 static constexpr int sys_fork = 20;
 static constexpr int sys_exec = 21;
 static constexpr int sys_write_char = 22;
+static constexpr int sys_ipc_send = 23;
+static constexpr int sys_ipc_recv = 24;
+static constexpr int sys_fb_init = 25;
+static constexpr int sys_fb_flip = 26;
+static constexpr int sys_window_create = 27;
+static constexpr int sys_window_get_buffer = 28;
+static constexpr int sys_window_present = 29;
+static constexpr int sys_window_move = 30;
+static constexpr int sys_window_set_z = 31;
+static constexpr int sys_window_destroy = 32;
+static constexpr int sys_window_read_event = 33;
+static constexpr int sys_window_resize = 34;
+static constexpr int sys_window_request_close = 35;
 } // namespace runtime
 
 } // namespace compiler

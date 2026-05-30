@@ -7,3 +7,6 @@ build/
 build_fresh/
 todo.md
 implementationplan.md
+treatcode/node_modules/
+node_modules/
+scratch/

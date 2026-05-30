@@ -1,0 +1,179 @@
+// user_wav_dump.trit
+// Processes sample.wav data and dumps all 1000 frames for each DSP stage to console.
+// Optimized to reduce divisions by 50%.
+
+fn print_dump_orig_header() -> void {
+    sys_write_char(68); // 'D'
+    sys_write_char(85); // 'U'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(95); // '_'
+    sys_write_char(79); // 'O'
+    sys_write_char(82); // 'R'
+    sys_write_char(73); // 'I'
+    sys_write_char(71); // 'G'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_dump_fir_header() -> void {
+    sys_write_char(68); // 'D'
+    sys_write_char(85); // 'U'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(95); // '_'
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(82); // 'R'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_dump_anc_header() -> void {
+    sys_write_char(68); // 'D'
+    sys_write_char(85); // 'U'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(95); // '_'
+    sys_write_char(65); // 'A'
+    sys_write_char(78); // 'N'
+    sys_write_char(67); // 'C'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_dump_swap_header() -> void {
+    sys_write_char(68); // 'D'
+    sys_write_char(85); // 'U'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(95); // '_'
+    sys_write_char(83); // 'S'
+    sys_write_char(87); // 'W'
+    sys_write_char(65); // 'A'
+    sys_write_char(80); // 'P'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+// Prints a single frame's Mono and Spatial components using only 1 division
+fn print_frame(frame: t40) -> void {
+    var val_shifted: t40 = frame + 9841;
+    var S_plus_13: t40 = div_int(val_shifted, 729);
+    var M_plus_364: t40 = val_shifted - S_plus_13 * 729;
+    var mono: t40 = M_plus_364 - 364;
+    var spatial: t40 = S_plus_13 - 13;
+    
+    sys_write_int(mono);
+    sys_write_char(32);
+    sys_write_int(spatial);
+    sys_newline();
+}
+
+fn main() -> t40 {
+    var seeded_len: t40 = 0;
+    unsafe { seeded_len = load(499999); }
+    
+    var total_frames: t40 = div_int(seeded_len, 4);
+    match total_frames - 1000 {
+        pos => { total_frames = 1000; }
+        _ => {}
+    }
+    
+    var orig_buf: t40 = malloc(total_frames);
+    
+    var i: t40 = 0;
+    while total_frames - i > 0 {
+        var base_addr: t40 = 500000 + i * 4;
+        var b0: t40 = 0;
+        var b1: t40 = 0;
+        var b2: t40 = 0;
+        var b3: t40 = 0;
+        unsafe {
+            b0 = load(base_addr);
+            b1 = load(base_addr + 1);
+            b2 = load(base_addr + 2);
+            b3 = load(base_addr + 3);
+        }
+        
+        var L: t40 = b1 * 256 + b0;
+        match L - 32768 {
+            pos => { L = L - 65536; }
+            zero => { L = L - 65536; }
+            neg => {}
+        }
+        
+        var R: t40 = b3 * 256 + b2;
+        match R - 32768 {
+            pos => { R = R - 65536; }
+            zero => { R = R - 65536; }
+            neg => {}
+        }
+        
+        // Optimized: Combine differential calculation and scaling to save 2 divisions per frame
+        var M: t40 = div_int_signed((L + R) * 182, 32768);
+        var S: t40 = div_int_signed((L - R) * 13, 65536);
+        
+        var frame: t40 = pack_audio(M, S);
+        unsafe { store(orig_buf + i, frame); }
+        i = i + 1;
+    }
+    
+    // 1. Dump Original
+    print_dump_orig_header();
+    i = 0;
+    while total_frames - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(orig_buf + i); }
+        print_frame(f);
+        i = i + 1;
+    }
+    
+    // 2. Dump FIR Filtered
+    print_dump_fir_header();
+    var filtered_buf: t40 = malloc(total_frames);
+    var coeffs: t40 = malloc(3);
+    unsafe {
+        store(coeffs + 0, 9);
+        store(coeffs + 1, 9);
+        store(coeffs + 2, 9);
+    }
+    
+    audio_fir_filter(orig_buf, total_frames, filtered_buf, coeffs, 3, 27);
+    
+    i = 0;
+    while total_frames - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(filtered_buf + i); }
+        print_frame(f);
+        i = i + 1;
+    }
+    
+    // 3. Dump ANC
+    print_dump_anc_header();
+    i = 0;
+    while total_frames - i > 0 {
+        var orig_f: t40 = 0;
+        unsafe { orig_f = load(orig_buf + i); }
+        var anc_f: t40 = audio_generate_anc(orig_f);
+        print_frame(anc_f);
+        i = i + 1;
+    }
+    
+    // 4. Dump Swapped
+    print_dump_swap_header();
+    audio_channel_swap(orig_buf, total_frames);
+    i = 0;
+    while total_frames - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(orig_buf + i); }
+        print_frame(f);
+        i = i + 1;
+    }
+    
+    free(orig_buf);
+    free(filtered_buf);
+    free(coeffs);
+    
+    return 0;
+}

@@ -1,0 +1,147 @@
+const WIDGET_EVENT_NONE: t40 = 0;
+const WIDGET_EVENT_HIT: t40 = 1;
+
+fn widget_draw_panel(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, active: t40) -> t40 {
+    var r: t40 = 20;
+    var g: t40 = 24;
+    var b: t40 = 34;
+    var br: t40 = 66;
+    var bg: t40 = 74;
+    var bb: t40 = 88;
+    if active > 0 {
+        r = 34;
+        g = 58;
+        b = 46;
+        br = 96;
+        bg = 106;
+        bb = 70;
+    }
+    os_window_fill_rect_rgb(buf, width, height, x, y, w, h, r, g, b);
+    os_window_draw_rect_rgb(buf, width, height, x, y, w, h, br, bg, bb);
+    return 1;
+}
+
+fn widget_segment(buf: t40, width: t40, height: t40, x: t40, y: t40, segment: t40, r: t40, g: t40, b: t40) -> t40 {
+    if segment == 0 { return os_window_fill_rect_rgb(buf, width, height, x, y, 3, 1, r, g, b); }
+    if segment == 1 { return os_window_fill_rect_rgb(buf, width, height, x, y + 1, 1, 1, r, g, b); }
+    if segment == 2 { return os_window_fill_rect_rgb(buf, width, height, x + 2, y + 1, 1, 1, r, g, b); }
+    if segment == 3 { return os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b); }
+    if segment == 4 { return os_window_fill_rect_rgb(buf, width, height, x, y + 3, 1, 1, r, g, b); }
+    if segment == 5 { return os_window_fill_rect_rgb(buf, width, height, x + 2, y + 3, 1, 1, r, g, b); }
+    if segment == 6 { return os_window_fill_rect_rgb(buf, width, height, x, y + 4, 3, 1, r, g, b); }
+    return 0;
+}
+
+fn widget_draw_digit(buf: t40, width: t40, height: t40, x: t40, y: t40, digit: t40, r: t40, g: t40, b: t40) -> t40 {
+    var s0: t40 = 0; var s1: t40 = 0; var s2: t40 = 0; var s3: t40 = 0;
+    var s4: t40 = 0; var s5: t40 = 0; var s6: t40 = 0;
+    if digit == 0 { s0 = 1; s1 = 1; s2 = 1; s4 = 1; s5 = 1; s6 = 1; }
+    if digit == 1 { s2 = 1; s5 = 1; }
+    if digit == 2 { s0 = 1; s2 = 1; s3 = 1; s4 = 1; s6 = 1; }
+    if digit == 3 { s0 = 1; s2 = 1; s3 = 1; s5 = 1; s6 = 1; }
+    if digit == 4 { s1 = 1; s2 = 1; s3 = 1; s5 = 1; }
+    if digit == 5 { s0 = 1; s1 = 1; s3 = 1; s5 = 1; s6 = 1; }
+    if digit == 6 { s0 = 1; s1 = 1; s3 = 1; s4 = 1; s5 = 1; s6 = 1; }
+    if digit == 7 { s0 = 1; s2 = 1; s5 = 1; }
+    if digit == 8 { s0 = 1; s1 = 1; s2 = 1; s3 = 1; s4 = 1; s5 = 1; s6 = 1; }
+    if digit == 9 { s0 = 1; s1 = 1; s2 = 1; s3 = 1; s5 = 1; s6 = 1; }
+    var drawn: t40 = 0;
+    if s0 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 0, r, g, b); }
+    if s1 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 1, r, g, b); }
+    if s2 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 2, r, g, b); }
+    if s3 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 3, r, g, b); }
+    if s4 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 4, r, g, b); }
+    if s5 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 5, r, g, b); }
+    if s6 > 0 { drawn = drawn + widget_segment(buf, width, height, x, y, 6, r, g, b); }
+    return drawn;
+}
+
+fn widget_draw_char(buf: t40, width: t40, height: t40, x: t40, y: t40, label: t40, r: t40, g: t40, b: t40) -> t40 {
+    if label - 48 >= 0 {
+        if 57 - label >= 0 {
+            return widget_draw_digit(buf, width, height, x, y, label - 48, r, g, b);
+        }
+    }
+    if label == 43 {
+        os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b);
+        os_window_fill_rect_rgb(buf, width, height, x + 1, y + 1, 1, 3, r, g, b);
+        return 6;
+    }
+    if label == 45 {
+        return os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b);
+    }
+    if label == 61 {
+        os_window_fill_rect_rgb(buf, width, height, x, y + 1, 3, 1, r, g, b);
+        os_window_fill_rect_rgb(buf, width, height, x, y + 3, 3, 1, r, g, b);
+        return 6;
+    }
+    if label == 47 {
+        os_window_plot_rgb(buf, width, height, x + 2, y, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 1, y + 2, r, g, b);
+        os_window_plot_rgb(buf, width, height, x, y + 4, r, g, b);
+        return 3;
+    }
+    if label == 42 {
+        os_window_plot_rgb(buf, width, height, x, y + 1, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 2, y + 1, r, g, b);
+        os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b);
+        os_window_plot_rgb(buf, width, height, x, y + 3, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 2, y + 3, r, g, b);
+        return 7;
+    }
+    if label == 60 {
+        os_window_plot_rgb(buf, width, height, x + 2, y, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 1, y + 1, r, g, b);
+        os_window_plot_rgb(buf, width, height, x, y + 2, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 1, y + 3, r, g, b);
+        os_window_plot_rgb(buf, width, height, x + 2, y + 4, r, g, b);
+        return 5;
+    }
+    if label == 67 {
+        os_window_fill_rect_rgb(buf, width, height, x, y, 3, 1, r, g, b);
+        os_window_fill_rect_rgb(buf, width, height, x, y + 1, 1, 3, r, g, b);
+        os_window_fill_rect_rgb(buf, width, height, x, y + 4, 3, 1, r, g, b);
+        return 9;
+    }
+    return os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b);
+}
+
+fn widget_draw_button(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, label: t40, active: t40) -> t40 {
+    var r: t40 = 42;
+    var g: t40 = 48;
+    var b: t40 = 68;
+    var br: t40 = 86;
+    var bg: t40 = 94;
+    var bb: t40 = 112;
+    if active > 0 {
+        r = 68;
+        g = 76;
+        b = 96;
+        br = 116;
+        bg = 110;
+        bb = 74;
+    }
+    os_window_fill_rect_rgb(buf, width, height, x, y, w, h, r, g, b);
+    os_window_draw_rect_rgb(buf, width, height, x, y, w, h, br, bg, bb);
+    if w - 3 >= 0 {
+        if h - 5 >= 0 {
+            var tx: t40 = x + (w - 3) / 2;
+            var ty: t40 = y + (h - 5) / 2;
+            widget_draw_char(buf, width, height, tx, ty, label, 112, 112, 104);
+        }
+    }
+    return 1;
+}
+
+fn widget_hit_window_rect(event_addr: t40, window_x: t40, window_y: t40, x: t40, y: t40, w: t40, h: t40) -> t40 {
+    if os_event_kind(event_addr) - OS_EVENT_KIND_MOUSE != 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    var local_x: t40 = os_event_x_or_key(event_addr) - window_x;
+    var local_y: t40 = os_event_y(event_addr) - window_y;
+    if local_x - x < 0 { return WIDGET_EVENT_NONE; }
+    if local_y - y < 0 { return WIDGET_EVENT_NONE; }
+    if x + w - local_x <= 0 { return WIDGET_EVENT_NONE; }
+    if y + h - local_y <= 0 { return WIDGET_EVENT_NONE; }
+    return WIDGET_EVENT_HIT;
+}

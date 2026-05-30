@@ -1,0 +1,87 @@
+// ulib_c.trit - Layer 5 libc-style user ABI bridge.
+
+fn libc_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn libc_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn libc_strlen(str: t40) -> t40 {
+    if str <= 0 {
+        return -1;
+    }
+    var len: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        if libc_load(str + len) == 0 {
+            done = 1;
+        } else {
+            len = len + 1;
+        }
+    }
+    return len;
+}
+
+fn libc_strcmp(a: t40, b: t40) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var ca: t40 = libc_load(a + i);
+        var cb: t40 = libc_load(b + i);
+        if ca - cb != 0 {
+            return ca - cb;
+        }
+        if ca == 0 {
+            done = 1;
+        } else {
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+fn libc_memcpy(dst: t40, src: t40, count: t40) -> t40 {
+    var i: t40 = 0;
+    while count - i > 0 {
+        libc_store(dst + i, libc_load(src + i));
+        i = i + 1;
+    }
+    return dst;
+}
+
+fn libc_memset(dst: t40, value: t40, count: t40) -> t40 {
+    var i: t40 = 0;
+    while count - i > 0 {
+        libc_store(dst + i, value);
+        i = i + 1;
+    }
+    return dst;
+}
+
+fn libc_malloc_words(words: t40) -> t40 {
+    if words <= 0 {
+        return 0;
+    }
+    return sys_sbrk(words);
+}
+
+fn libc_puts(str: t40) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = libc_load(str + i);
+        if c == 0 {
+            done = 1;
+        } else {
+            sys_write_char(c);
+            i = i + 1;
+        }
+    }
+    sys_newline();
+    return i;
+}

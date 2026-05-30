@@ -4028,8 +4028,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-ccsg0p"
-      binary: "C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-ccsg0p"
+      source: "C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-qvcczs"
+      binary: "C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-qvcczs"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -4039,11 +4039,11 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-ccsg0p'
+        Change Dir: 'C:/Users/jonas/Documents/trit/build_sycl/CMakeFiles/CMakeScratch/TryCompile-qvcczs'
         
-        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_c04c2
-        [1/2] C:\\PROGRA~2\\Intel\\oneAPI\\compiler\\latest\\bin\\icx.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd -QMD -QMT CMakeFiles\\cmTC_c04c2.dir\\CMakeCXXCompilerABI.cpp.obj -QMF CMakeFiles\\cmTC_c04c2.dir\\CMakeCXXCompilerABI.cpp.obj.d /FoCMakeFiles\\cmTC_c04c2.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_c04c2.dir\\ -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
-        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_c04c2.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\Intel\\oneAPI\\compiler\\latest\\bin\\icx.exe /nologo CMakeFiles\\cmTC_c04c2.dir\\CMakeCXXCompilerABI.cpp.obj  /Qoption,link,/machine:x64  /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console   /link /out:cmTC_c04c2.exe /implib:cmTC_c04c2.lib /pdb:cmTC_c04c2.pdb /version:0.0 && cd ."
+        Run Build Command(s): C:/msys64/ucrt64/bin/ninja.exe -v cmTC_c791f
+        [1/2] C:\\PROGRA~2\\Intel\\oneAPI\\compiler\\latest\\bin\\icx.exe  /nologo /TP -D_MBCS  /DWIN32 /D_WINDOWS /EHsc  /Zi /Ob0 /Od /RTC1 -MDd -QMD -QMT CMakeFiles\\cmTC_c791f.dir\\CMakeCXXCompilerABI.cpp.obj -QMF CMakeFiles\\cmTC_c791f.dir\\CMakeCXXCompilerABI.cpp.obj.d /FoCMakeFiles\\cmTC_c791f.dir\\CMakeCXXCompilerABI.cpp.obj /FdCMakeFiles\\cmTC_c791f.dir\\ -c C:\\msys64\\ucrt64\\share\\cmake\\Modules\\CMakeCXXCompilerABI.cpp
+        [2/2] C:\\WINDOWS\\system32\\cmd.exe /C "cd . && C:\\msys64\\ucrt64\\bin\\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=CMakeFiles\\cmTC_c791f.dir --rc=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\rc.exe --mt=C:\\PROGRA~2\\WI3CF2~1\\10\\bin\\100261~1.0\\x64\\mt.exe --manifests  -- C:\\PROGRA~2\\Intel\\oneAPI\\compiler\\latest\\bin\\icx.exe /nologo CMakeFiles\\cmTC_c791f.dir\\CMakeCXXCompilerABI.cpp.obj  /Qoption,link,/machine:x64  /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console   /link /out:cmTC_c791f.exe /implib:cmTC_c791f.lib /pdb:cmTC_c791f.pdb /version:0.0 && cd ."
         
       exitCode: 0
   -
@@ -4066,7 +4066,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:392 (find_path)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "path"
     variable: "Vulkan_INCLUDE_DIR"
     description: "Path to a file."
@@ -4311,7 +4311,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:399 (find_library)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "library"
     variable: "Vulkan_LIBRARY"
     description: "Path to a library."
@@ -4555,7 +4555,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:407 (find_program)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "program"
     variable: "Vulkan_GLSLC_EXECUTABLE"
     description: "Path to a program."
@@ -4830,7 +4830,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindVulkan.cmake:415 (find_program)"
-      - "CMakeLists.txt:14 (find_package)"
+      - "CMakeLists.txt:16 (find_package)"
     mode: "program"
     variable: "Vulkan_GLSLANG_VALIDATOR_EXECUTABLE"
     description: "Path to a program."
@@ -5104,7 +5104,7 @@ events:
   -
     kind: "find-v1"
     backtrace:
-      - "CMakeLists.txt:16 (find_program)"
+      - "CMakeLists.txt:18 (find_program)"
     mode: "program"
     variable: "GLSLC_EXECUTABLE"
     description: "Path to a program."
@@ -5379,7 +5379,7 @@ events:
     backtrace:
       - "C:/msys64/ucrt64/share/cmake/Modules/FindPkgConfig.cmake:517 (find_program)"
       - "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL/IntelSYCLConfig.cmake:94 (find_package)"
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     mode: "program"
     variable: "PKG_CONFIG_EXECUTABLE"
     description: "pkg-config executable"
@@ -6144,7 +6144,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL/IntelSYCLConfig.cmake:303 (find_file)"
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     mode: "file"
     variable: "SYCL_INCLUDE_DIR"
     description: "Path to a file."
@@ -6266,7 +6266,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL/IntelSYCLConfig.cmake:312 (find_file)"
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     mode: "file"
     variable: "SYCL_INCLUDE_SYCL_DIR"
     description: "Path to a file."
@@ -6389,7 +6389,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL/IntelSYCLConfig.cmake:323 (find_file)"
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     mode: "file"
     variable: "SYCL_LIBRARY_DIR"
     description: "Path to a file."
@@ -6512,7 +6512,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib/cmake/IntelSYCL/IntelSYCLConfig.cmake:339 (find_library)"
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     mode: "library"
     variable: "SYCL_LIBRARY"
     description: "Path to a library."
@@ -6633,7 +6633,7 @@ events:
   -
     kind: "find_package-v1"
     backtrace:
-      - "CMakeLists.txt:148 (find_package)"
+      - "CMakeLists.txt:170 (find_package)"
     name: "IntelSYCL"
     configs:
       -

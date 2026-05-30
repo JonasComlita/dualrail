@@ -1,0 +1,119 @@
+// kernel/net.trit - Layer 4 socket and packet ring substrate.
+
+const NET_SOCKET_WORDS: t40 = 8;
+const NET_SOCK_STATE: t40 = 0;
+const NET_SOCK_OWNER: t40 = 1;
+const NET_SOCK_KIND: t40 = 2;
+const NET_SOCK_LOCAL_PORT: t40 = 3;
+const NET_SOCK_REMOTE_PORT: t40 = 4;
+const NET_SOCK_RX_READ: t40 = 5;
+const NET_SOCK_RX_WRITE: t40 = 6;
+const NET_SOCK_RX_BASE: t40 = 7;
+
+const NET_STATE_FREE: t40 = 0;
+const NET_STATE_OPEN: t40 = 1;
+const NET_STATE_BOUND: t40 = 2;
+const NET_STATE_CONNECTED: t40 = 3;
+
+fn net_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn net_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn net_socket_row(base: t40, socket_id: t40) -> t40 {
+    return base + socket_id * NET_SOCKET_WORDS;
+}
+
+fn net_init(base: t40, max_sockets: t40) -> t40 {
+    var i: t40 = 0;
+    while max_sockets * NET_SOCKET_WORDS - i > 0 {
+        net_store(base + i, 0);
+        i = i + 1;
+    }
+    return max_sockets;
+}
+
+fn net_socket_create(base: t40, max_sockets: t40, owner_pid: t40, kind: t40, rx_base: t40) -> t40 {
+    var slot: t40 = 0;
+    while max_sockets - slot > 0 {
+        var row: t40 = net_socket_row(base, slot);
+        if net_load(row + NET_SOCK_STATE) - NET_STATE_FREE == 0 {
+            net_store(row + NET_SOCK_STATE, NET_STATE_OPEN);
+            net_store(row + NET_SOCK_OWNER, owner_pid);
+            net_store(row + NET_SOCK_KIND, kind);
+            net_store(row + NET_SOCK_RX_READ, 0);
+            net_store(row + NET_SOCK_RX_WRITE, 0);
+            net_store(row + NET_SOCK_RX_BASE, rx_base);
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    return -1;
+}
+
+fn net_bind(base: t40, socket_id: t40, port: t40) -> t40 {
+    var row: t40 = net_socket_row(base, socket_id);
+    if net_load(row + NET_SOCK_STATE) <= 0 {
+        return -1;
+    }
+    net_store(row + NET_SOCK_LOCAL_PORT, port);
+    net_store(row + NET_SOCK_STATE, NET_STATE_BOUND);
+    return 1;
+}
+
+fn net_connect(base: t40, socket_id: t40, remote_port: t40) -> t40 {
+    var row: t40 = net_socket_row(base, socket_id);
+    if net_load(row + NET_SOCK_STATE) <= 0 {
+        return -1;
+    }
+    net_store(row + NET_SOCK_REMOTE_PORT, remote_port);
+    net_store(row + NET_SOCK_STATE, NET_STATE_CONNECTED);
+    return 1;
+}
+
+fn net_ring_next(pos: t40, capacity: t40) -> t40 {
+    var next: t40 = pos + 1;
+    if next - capacity >= 0 {
+        return 0;
+    }
+    return next;
+}
+
+fn net_send_word(base: t40, socket_id: t40, capacity: t40, word: t40) -> t40 {
+    var row: t40 = net_socket_row(base, socket_id);
+    if net_load(row + NET_SOCK_STATE) <= 0 {
+        return -1;
+    }
+    var read_pos: t40 = net_load(row + NET_SOCK_RX_READ);
+    var write_pos: t40 = net_load(row + NET_SOCK_RX_WRITE);
+    var next_write: t40 = net_ring_next(write_pos, capacity);
+    if next_write - read_pos == 0 {
+        return 0;
+    }
+    var rx_base: t40 = net_load(row + NET_SOCK_RX_BASE);
+    net_store(rx_base + write_pos, word);
+    net_store(row + NET_SOCK_RX_WRITE, next_write);
+    return 1;
+}
+
+fn net_recv_word(base: t40, socket_id: t40, capacity: t40, out_addr: t40) -> t40 {
+    var row: t40 = net_socket_row(base, socket_id);
+    if net_load(row + NET_SOCK_STATE) <= 0 {
+        return -1;
+    }
+    var read_pos: t40 = net_load(row + NET_SOCK_RX_READ);
+    var write_pos: t40 = net_load(row + NET_SOCK_RX_WRITE);
+    if read_pos - write_pos == 0 {
+        return 0;
+    }
+    var rx_base: t40 = net_load(row + NET_SOCK_RX_BASE);
+    net_store(out_addr, net_load(rx_base + read_pos));
+    net_store(row + NET_SOCK_RX_READ, net_ring_next(read_pos, capacity));
+    return 1;
+}

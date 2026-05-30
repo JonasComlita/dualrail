@@ -1,0 +1,208 @@
+fn paint_seed_desktop_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);   // /
+        store(addr + 1, 98);   // b
+        store(addr + 2, 105);  // i
+        store(addr + 3, 110);  // n
+        store(addr + 4, 47);   // /
+        store(addr + 5, 100);  // d
+        store(addr + 6, 101);  // e
+        store(addr + 7, 115);  // s
+        store(addr + 8, 107);  // k
+        store(addr + 9, 116);  // t
+        store(addr + 10, 111); // o
+        store(addr + 11, 112); // p
+        store(addr + 12, 0);   // \0
+    }
+    return addr;
+}
+
+fn paint_draw_header(active_color: t40) -> t40 {
+    // Clear top row of text cells (row 0)
+    var x: t40 = 0;
+    while 80 - x > 0 {
+        os_text_cell(x, 0, 32, 0);
+        x = x + 1;
+    }
+
+    // Title: "PAINT" in amber (3)
+    os_text_cell(1, 0, 80, 3);
+    os_text_cell(2, 0, 65, 3);
+    os_text_cell(3, 0, 73, 3);
+    os_text_cell(4, 0, 78, 3);
+    os_text_cell(5, 0, 84, 3);
+    os_text_cell(6, 0, 58, 3); // ':'
+
+    // Colors: [1] (red: 4), [2] (green: 10), [3] (cyan: 5), [4] (yellow: 14), [5] (magenta: 6)
+    os_text_cell(9, 0, 91, 2);
+    os_text_cell(10, 0, 49, 4); // '1'
+    os_text_cell(11, 0, 93, 2);
+
+    os_text_cell(13, 0, 91, 2);
+    os_text_cell(14, 0, 50, 10); // '2'
+    os_text_cell(15, 0, 93, 2);
+
+    os_text_cell(17, 0, 91, 2);
+    os_text_cell(18, 0, 51, 5); // '3'
+    os_text_cell(19, 0, 93, 2);
+
+    os_text_cell(21, 0, 91, 2);
+    os_text_cell(22, 0, 52, 14); // '4'
+    os_text_cell(23, 0, 93, 2);
+
+    os_text_cell(25, 0, 91, 2);
+    os_text_cell(26, 0, 53, 6); // '5'
+    os_text_cell(27, 0, 93, 2);
+
+    // Active color indicator
+    os_text_cell(30, 0, 65, 2); // 'A'
+    os_text_cell(31, 0, 67, 2); // 'C'
+    os_text_cell(32, 0, 58, 2); // ':'
+    os_text_cell(34, 0, 42, active_color); // '*' in active color
+
+    // Clear Button: [C] Clear
+    os_text_cell(45, 0, 91, 2);
+    os_text_cell(46, 0, 67, 10); // 'C'
+    os_text_cell(47, 0, 93, 2);
+    os_text_cell(49, 0, 76, 2); // 'L'
+    os_text_cell(50, 0, 82, 2); // 'R'
+
+    // Exit Button: [X] Exit
+    os_text_cell(65, 0, 91, 2);
+    os_text_cell(66, 0, 88, 6); // 'X'
+    os_text_cell(67, 0, 93, 2);
+    os_text_cell(69, 0, 69, 2); // 'E'
+    os_text_cell(70, 0, 88, 2); // 'X'
+    os_text_cell(71, 0, 73, 2); // 'I'
+    os_text_cell(72, 0, 84, 2); // 'T'
+
+    // Separator line under header
+    x = 0;
+    while 80 - x > 0 {
+        os_text_cell(x, 1, 45, 8); // '-' in dim gray-green
+        x = x + 1;
+    }
+
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    var active_color: t40 = 14; // Start with yellow
+    var done: t40 = 0;
+    var draw_cnt: t40 = 0;
+    var cur_page: t40 = 0;
+    var k: t40 = 0;
+
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(80); os_putc(65); os_putc(73); os_putc(78); os_putc(84); os_newline();
+        os_gpu_mode(1);
+        os_sprite(10, 10, 43, 14);
+        os_gpu_rect(6, 6, 7, 7, 4);
+        os_text_cell(0, 0, 80, 14);
+        return 1;
+    }
+
+    os_gpu_mode(1);
+    os_gpu_clear(0, 0);
+    os_gpu_clear(1, 0);
+
+    paint_draw_header(active_color);
+
+    while 1 - done > 0 {
+        // Query mouse state
+        var mx: t40 = os_mouse_x();
+        var my: t40 = os_mouse_y();
+        var btn: t40 = os_mouse_btn();
+
+        // Convert graphics my (0-59) to text cell coordinate (0-24) for cursor sprite
+        // text_y = my * 25 / 60
+        var sprite_y: t40 = my * 5;
+        sprite_y = sprite_y / 12;
+
+        // Draw cursor pointer sprite
+        os_sprite(mx, sprite_y, 43, active_color); // '+' in active color
+
+        if btn - 1 == 0 {
+            // Check if clicking the header (my < 5 corresponding to text rows 0 and 1)
+            if sprite_y - 2 < 0 {
+                // Color button selection
+                if mx - 9 >= 0 {
+                    if 11 - mx >= 0 {
+                        active_color = 4; // Red
+                        paint_draw_header(active_color);
+                    }
+                }
+                if mx - 13 >= 0 {
+                    if 15 - mx >= 0 {
+                        active_color = 10; // Green
+                        paint_draw_header(active_color);
+                    }
+                }
+                if mx - 17 >= 0 {
+                    if 19 - mx >= 0 {
+                        active_color = 5; // Cyan
+                        paint_draw_header(active_color);
+                    }
+                }
+                if mx - 21 >= 0 {
+                    if 23 - mx >= 0 {
+                        active_color = 14; // Yellow
+                        paint_draw_header(active_color);
+                    }
+                }
+                if mx - 25 >= 0 {
+                    if 27 - mx >= 0 {
+                        active_color = 6; // Magenta
+                        paint_draw_header(active_color);
+                    }
+                }
+
+                // Clear button
+                if mx - 45 >= 0 {
+                    if 52 - mx >= 0 {
+                        os_gpu_clear(0, 0);
+                        os_gpu_clear(1, 0);
+                        paint_draw_header(active_color);
+                    }
+                }
+
+                // Exit button
+                if mx - 65 >= 0 {
+                    if 73 - mx >= 0 {
+                        done = 1;
+                    }
+                }
+            } else {
+                // Drawing region: Draw a 2x2 rect on canvas
+                // Avoid drawing over the header at the top
+                if my - 5 >= 0 {
+                    unsafe { cur_page = csr_read(gpu_page); }
+                    os_gpu_rect(mx, my, mx + 1, my + 1, active_color);
+                    os_gpu_page(1 - cur_page);
+                    os_gpu_rect(mx, my, mx + 1, my + 1, active_color);
+                }
+            }
+        }
+
+        // Support keyboard hotkeys concurrently
+        if os_key_available() > 0 {
+            k = os_read_key();
+            if k - 49 == 0 { active_color = 4; paint_draw_header(active_color); }  // '1'
+            if k - 50 == 0 { active_color = 10; paint_draw_header(active_color); } // '2'
+            if k - 51 == 0 { active_color = 5; paint_draw_header(active_color); }  // '3'
+            if k - 52 == 0 { active_color = 14; paint_draw_header(active_color); } // '4'
+            if k - 53 == 0 { active_color = 6; paint_draw_header(active_color); }  // '5'
+            if k - 99 == 0 { os_gpu_clear(0, 0); os_gpu_clear(1, 0); paint_draw_header(active_color); } // 'c'
+            if k - 67 == 0 { os_gpu_clear(0, 0); os_gpu_clear(1, 0); paint_draw_header(active_color); } // 'C'
+            if k - 120 == 0 { done = 1; } // 'x'
+            if k - 88 == 0 { done = 1; }  // 'X'
+        }
+    }
+
+    // Exit back to the desktop
+    var path_addr: t40 = paint_seed_desktop_path(15000);
+    sys_exec(path_addr);
+    return 1;
+}

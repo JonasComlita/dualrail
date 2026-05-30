@@ -20,12 +20,15 @@
 
 namespace sandbox {
 
-#if defined(__SIZEOF_INT128__) && !defined(__CUDA_ARCH__) && !defined(__SYCL_DEVICE_ONLY__)
-#define SANDBOX_TERNARY_HAS_NATIVE_UINT128 1
+#if defined(__SIZEOF_INT128__)
 #if defined(__GNUC__) || defined(__clang__)
 __extension__ typedef unsigned __int128 NativeUInt128;
 #else
 using NativeUInt128 = unsigned __int128;
+#endif
+
+#if !defined(__CUDA_ARCH__) && !defined(__SYCL_DEVICE_ONLY__) && !defined(_WIN32)
+#define SANDBOX_TERNARY_HAS_NATIVE_UINT128 1
 #endif
 #endif
 
@@ -120,7 +123,7 @@ struct UInt128 {
         return out;
     }
 
-#if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
+#if defined(__SIZEOF_INT128__)
     [[nodiscard]] static constexpr UInt128 fromNative(NativeUInt128 value) {
         return UInt128{
             static_cast<uint64_t>(value >> 64),

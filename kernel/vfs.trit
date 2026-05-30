@@ -1,0 +1,67 @@
+// kernel/vfs.trit - Layer 3 neutral VFS helper contracts.
+
+const VFS2_KIND_FILE: t40 = 1;
+const VFS2_KIND_DIR: t40 = 2;
+const VFS2_KIND_DEVICE: t40 = 3;
+
+fn vfs2_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn vfs2_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn vfs2_copy_words(src: t40, dst: t40, count: t40) -> t40 {
+    var i: t40 = 0;
+    while count - i > 0 {
+        vfs2_store(dst + i, vfs2_load(src + i));
+        i = i + 1;
+    }
+    return count;
+}
+
+fn vfs2_strlen(path_addr: t40, max_words: t40) -> t40 {
+    if path_addr <= 0 {
+        return -1;
+    }
+    var i: t40 = 0;
+    while max_words - i > 0 {
+        if vfs2_load(path_addr + i) == 0 {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn vfs2_path_hash(path_addr: t40, max_words: t40) -> t40 {
+    var len: t40 = vfs2_strlen(path_addr, max_words);
+    if len < 0 {
+        return -1;
+    }
+    var h: t40 = 17;
+    var i: t40 = 0;
+    while len - i > 0 {
+        h = h * 3 + vfs2_load(path_addr + i);
+        i = i + 1;
+    }
+    if h < 0 {
+        h = 0 - h;
+    }
+    return h;
+}
+
+fn vfs2_stat_pack(out_addr: t40, kind: t40, size_words: t40, version: t40) -> t40 {
+    vfs2_store(out_addr + 0, kind);
+    vfs2_store(out_addr + 1, size_words);
+    vfs2_store(out_addr + 2, version);
+    return 3;
+}
+
+fn vfs2_neutral_router(src: t40, dst: t40, count: t40) -> t40 {
+    return vfs2_copy_words(src, dst, count);
+}

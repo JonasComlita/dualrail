@@ -1219,11 +1219,23 @@ fn write(fd: t40, buf: borrow<ptr<t40, user, valid>>, count: t40) -> t40 {
 }
 
 fn stat(path: borrow<ptr<t40, user, valid>>) -> t40 {
-    return sys_stat(path);
+    return sys_stat(path, 0);
+}
+
+fn readdir(path: borrow<ptr<t40, user, valid>>, out: borrow_mut<ptr<t40, user, valid>>, max_words: t40) -> t40 {
+    return sys_readdir(path, out, max_words);
 }
 
 fn exec(path: borrow<ptr<t40, user, valid>>) -> t40 {
     return sys_exec(path);
+}
+
+fn ipc_send(channel: t40, word: t40) -> t40 {
+    return sys_ipc_send(channel, word);
+}
+
+fn ipc_recv(channel: t40, out: borrow_mut<ptr<t40, user, valid>>) -> t40 {
+    return sys_ipc_recv(channel, out);
 }
 
 // =============================================================================
@@ -2912,3 +2924,4 @@ fn split_buf_free(buf: borrow<ptr<t40, user, unknown>>) -> void {
         }
     }
 }
+

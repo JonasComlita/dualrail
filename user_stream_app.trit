@@ -1,0 +1,299 @@
+// =============================================================================
+// user_stream_app.trit  -  Ternary Stream Engine Showcase Application
+// =============================================================================
+
+fn main() -> t40 {
+    print_int(12345); // Start marker
+    newline();
+    
+    test_stream();
+    
+    return 0;
+}
+
+// Global dataflow execute callback function (Bug 2 fix: nested matches for Trit compliance)
+fn df_node_execute(node: t40) -> void {
+    var kind: t40 = 0;
+    unsafe { kind = load(node + 1); }
+    
+    match kind - 1 {
+        zero => { df_stream_source_execute(node); }
+        _ => {
+            match kind - 2 {
+                zero => { df_stream_anomaly_execute(node); }
+                _ => {
+                    match kind - 3 {
+                        zero => { df_stream_window_execute(node); }
+                        _ => {
+                            match kind - 4 {
+                                zero => { df_stream_filter_execute(node); }
+                                _ => {
+                                    match kind - 5 {
+                                        zero => { df_stream_sink_execute(node); }
+                                        _ => {
+                                            sys_write_char(85); sys_write_char(78); sys_write_char(75); sys_newline(); // "UNK\n"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn test_stream() -> t40 {
+    print_int(77777); // Stream Showcase Marker
+    newline();
+    
+    // Allocate global optimized logging strings (DMEM[31], [32], [34], [35])
+    var anomaly_alert: t40 = malloc(8);
+    var uncertain_alert: t40 = malloc(10);
+    var metric_str: t40 = malloc(8);
+    var colon_str: t40 = malloc(3);
+    
+    unsafe {
+        store(anomaly_alert, 65); store(anomaly_alert + 1, 78); store(anomaly_alert + 2, 79); store(anomaly_alert + 3, 77); store(anomaly_alert + 4, 65); store(anomaly_alert + 5, 76); store(anomaly_alert + 6, 89); store(anomaly_alert + 7, 0); // "ANOMALY"
+        store(uncertain_alert, 85); store(uncertain_alert + 1, 78); store(uncertain_alert + 2, 67); store(uncertain_alert + 3, 69); store(uncertain_alert + 4, 82); store(uncertain_alert + 5, 84); store(uncertain_alert + 6, 65); store(uncertain_alert + 7, 73); store(uncertain_alert + 8, 78); store(uncertain_alert + 9, 0); // "UNCERTAIN"
+        store(metric_str, 77); store(metric_str + 1, 69); store(metric_str + 2, 84); store(metric_str + 3, 82); store(metric_str + 4, 73); store(metric_str + 5, 67); store(metric_str + 6, 32); store(metric_str + 7, 0); // "METRIC "
+        store(colon_str, 58); store(colon_str + 1, 32); store(colon_str + 2, 0); // ": "
+        
+        store(31, anomaly_alert);
+        store(32, uncertain_alert);
+        store(34, metric_str);
+        store(35, colon_str);
+    }
+    
+    // Create scheduler with capacity 10
+    var sched: t40 = df_sched_new(10);
+    
+    // Create channels for the pipeline: Source -> Anomaly -> Window -> Filter -> Sink
+    var chan1: t40 = df_channel_new(10);
+    var chan2: t40 = df_channel_new(10);
+    var chan3: t40 = df_channel_new(10);
+    var chan4: t40 = df_channel_new(10);
+    
+    // Create node names
+    var name1: t40 = malloc(7);
+    var name2: t40 = malloc(8);
+    var name3: t40 = malloc(7);
+    var name4: t40 = malloc(7);
+    var name5: t40 = malloc(5);
+    unsafe {
+        store(name1, 83); store(name1 + 1, 111); store(name1 + 2, 117); store(name1 + 3, 114); store(name1 + 4, 99); store(name1 + 5, 101); store(name1 + 6, 0); // "Source"
+        store(name2, 65); store(name2 + 1, 110); store(name2 + 2, 111); store(name2 + 3, 109); store(name2 + 4, 97); store(name2 + 5, 108); store(name2 + 6, 121); store(name2 + 7, 0); // "Anomaly"
+        store(name3, 87); store(name3 + 1, 105); store(name3 + 2, 110); store(name3 + 3, 100); store(name3 + 4, 111); store(name3 + 5, 119); store(name3 + 6, 0); // "Window"
+        store(name4, 70); store(name4 + 1, 105); store(name4 + 2, 108); store(name4 + 3, 116); store(name4 + 4, 101); store(name4 + 5, 114); store(name4 + 6, 0); // "Filter"
+        store(name5, 83); store(name5 + 1, 105); store(name5 + 2, 110); store(name5 + 3, 107); store(name5 + 4, 0); // "Sink"
+    }
+    
+    // Context structures for nodes
+    var source_ctx: t40 = malloc(2);
+    unsafe {
+        store(source_ctx, 0);     // mode = 0 (normal)
+        store(source_ctx + 1, 0); // step = 0
+    }
+    
+    // Design 5: Parameterized threshold in anomaly context (size 5)
+    var anomaly_ctx: t40 = malloc(5);
+    unsafe {
+        store(anomaly_ctx, 0);
+        store(anomaly_ctx + 1, 0);
+        store(anomaly_ctx + 2, 0);
+        store(anomaly_ctx + 3, 0); // count = 0
+        store(anomaly_ctx + 4, 15); // deviation threshold = 15
+    }
+    
+    var window_ctx: t40 = malloc(4);
+    unsafe {
+        store(window_ctx, 0);     // sum = 0
+        store(window_ctx + 1, 0); // count = 0
+        store(window_ctx + 2, 3); // limit = 3
+        store(window_ctx + 3, 0); // uncertainty count = 0
+    }
+    
+    var filter_ctx: t40 = 15; // filter out values <= 15
+    
+    // Create nodes
+    var node_source: t40 = df_node_new(name1, 1, source_ctx);
+    var node_anomaly: t40 = df_node_new(name2, 2, anomaly_ctx);
+    var node_window: t40 = df_node_new(name3, 3, window_ctx);
+    var node_filter: t40 = df_node_new(name4, 4, filter_ctx);
+    var node_sink: t40 = df_node_new(name5, 5, 0);
+    
+    // Link nodes and channels
+    df_node_add_output(node_source, chan1);
+    
+    df_node_add_input(node_anomaly, chan1);
+    df_node_add_output(node_anomaly, chan2);
+    
+    df_node_add_input(node_window, chan2);
+    df_node_add_output(node_window, chan3);
+    
+    df_node_add_input(node_filter, chan3);
+    df_node_add_output(node_filter, chan4);
+    
+    df_node_add_input(node_sink, chan4);
+    
+    // Configure dependencies
+    df_node_add_dependent(node_source, node_anomaly);
+    df_node_add_dependent(node_anomaly, node_window);
+    df_node_add_dependent(node_window, node_filter);
+    df_node_add_dependent(node_filter, node_sink);
+    
+    // Validate Graph
+    var nodes_list: t40 = vec_new();
+    vec_push(nodes_list, node_source);
+    vec_push(nodes_list, node_anomaly);
+    vec_push(nodes_list, node_window);
+    vec_push(nodes_list, node_filter);
+    vec_push(nodes_list, node_sink);
+    
+    var val_res: t40 = df_graph_validate(nodes_list);
+    match val_res {
+        neg => {
+            sys_write_char(86); sys_write_char(65); sys_write_char(76); sys_write_char(95); sys_write_char(69); sys_write_char(82); sys_write_char(82); sys_newline();
+            vec_free(nodes_list);
+            return 0 - 1;
+        }
+        _ => {}
+    }
+    
+    // =========================================================================
+    // RUN 1: Normal Time-Series Stream (Tumbling Window verification)
+    // =========================================================================
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(49); sys_newline(); // "RUN 1\n"
+    
+    unsafe {
+        store(source_ctx, 0);     // normal mode
+        store(source_ctx + 1, 0); // step 0
+    }
+    
+    var tick: t40 = 0;
+    while 6 - tick > 0 {
+        df_sched_submit(sched, node_source);
+        df_sched_run_loop(sched);
+        tick = tick + 1;
+    }
+    
+    // =========================================================================
+    // RUN 2: Faulty / Uncertain Stream (First-class uncertainty propagation)
+    // =========================================================================
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(50); sys_newline(); // "RUN 2\n"
+    
+    unsafe {
+        store(source_ctx, 1);     // faulty mode
+        store(source_ctx + 1, 0); // step 0
+        
+        // Bug 8 fix: Fully reset anomaly detector history words
+        store(anomaly_ctx, 0);
+        store(anomaly_ctx + 1, 0);
+        store(anomaly_ctx + 2, 0);
+        store(anomaly_ctx + 3, 0); // count = 0
+        
+        // Reset window aggregator context
+        store(window_ctx, 0);
+        store(window_ctx + 1, 0);
+        store(window_ctx + 3, 0);
+    }
+    
+    tick = 0;
+    while 5 - tick > 0 {
+        df_sched_submit(sched, node_source);
+        df_sched_run_loop(sched);
+        tick = tick + 1;
+    }
+    
+    // =========================================================================
+    // RUN 3: Static Compilation and Execution (Topological sort verification)
+    // =========================================================================
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(51); sys_newline(); // "RUN 3\n"
+    
+    unsafe {
+        store(source_ctx, 0);     // normal mode
+        store(source_ctx + 1, 0); // step 0
+        
+        // Reset anomaly detector history words
+        store(anomaly_ctx, 0);
+        store(anomaly_ctx + 1, 0);
+        store(anomaly_ctx + 2, 0);
+        store(anomaly_ctx + 3, 0);
+        
+        // Reset window aggregator context
+        store(window_ctx, 0);
+        store(window_ctx + 1, 0);
+        store(window_ctx + 3, 0);
+    }
+    
+    var topo_order: t40 = df_graph_topo_sort(nodes_list);
+    
+    tick = 0;
+    while 6 - tick > 0 {
+        df_sched_run_static(sched, topo_order);
+        tick = tick + 1;
+    }
+    
+    // Clean up
+    vec_free(topo_order);
+    vec_free(nodes_list);
+    
+    df_node_free(node_source);
+    df_node_free(node_anomaly);
+    df_node_free(node_window);
+    df_node_free(node_filter);
+    df_node_free(node_sink);
+    
+    df_channel_free(chan1);
+    df_channel_free(chan2);
+    df_channel_free(chan3);
+    df_channel_free(chan4);
+    
+    df_sched_free(sched);
+    
+    free(name1);
+    free(name2);
+    free(name3);
+    free(name4);
+    free(name5);
+    
+    free(source_ctx);
+    free(anomaly_ctx);
+    free(window_ctx);
+    
+    free(anomaly_alert);
+    free(uncertain_alert);
+    free(metric_str);
+    free(colon_str);
+    
+    return 0;
+}
+
+// Helper function utilizing the VM's hardware control registers to render raw ASCII characters
+fn print_real_string(str: t40) -> t40 {
+    unsafe {
+        csr_write(console_ctrl, 2); // Switch VM to character mode
+    }
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(str + i); }
+        match c {
+            zero => { done = 1; }
+            neg => {
+                unsafe { csr_write(console_out, c); }
+                i = i + 1;
+            }
+            pos => {
+                unsafe { csr_write(console_out, c); }
+                i = i + 1;
+            }
+        }
+    }
+    unsafe {
+        csr_write(console_ctrl, 3); // Restore standard integer/decimal mode
+    }
+    return 0;
+}

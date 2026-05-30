@@ -1,0 +1,664 @@
+// =============================================================================
+// ternary_dataflow.trit  -  An Optimized Ternary Reactive Dataflow Runtime
+// =============================================================================
+
+// =============================================================================
+// SECTION 1 — Node Pool Bump Allocator (OPT 1)
+// Lay out node slots with inline vectors to avoid heap allocations.
+// Slot size = 27 words:
+//   node[0..8]: standard fields (9 words)
+//   node[9..14]: inputs vector struct & inline storage (6 words)
+//   node[15..20]: outputs vector struct & inline storage (6 words)
+//   node[21..26]: dependents vector struct & inline storage (6 words)
+// =============================================================================
+
+// DMEM[24] = node_pool_ptr, DMEM[25] = node_pool_used
+fn node_pool_init(capacity: t40) -> t40 {
+    var pool: t40 = malloc_raw(capacity * 27);
+    unsafe {
+        store(24, pool);
+        store(25, 0);
+    }
+    return pool;
+}
+
+fn node_pool_alloc() -> t40 {
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    unsafe {
+        pool = load(24);
+        used = load(25);
+    }
+    match pool {
+        zero => {
+            // Lazy initialization
+            pool = node_pool_init(64);
+            used = 0;
+        }
+        _ => {}
+    }
+    var node: t40 = pool + used * 27;
+    unsafe { store(25, used + 1); }
+    return node;
+}
+
+fn node_pool_free() -> void {
+    var pool: t40 = 0;
+    unsafe { pool = load(24); }
+    match pool {
+        pos => { free_raw(pool); }
+        _ => {}
+    }
+    unsafe {
+        store(24, 0);
+        store(25, 0);
+    }
+}
+
+// Sized vector creator (kept for compatibility)
+fn df_vec_new_sized(initial_cap: t40) -> t40 {
+    var vec: t40 = malloc_raw(3);
+    match vec {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var data: t40 = malloc_raw(initial_cap);
+            match data {
+                zero => { free_raw(vec); return 0; }
+                neg => { free_raw(vec); return 0; }
+                pos => {
+                    unsafe {
+                        store(vec,     data);
+                        store(vec + 1, 0);
+                        store(vec + 2, initial_cap);
+                    }
+                    return vec;
+                }
+            }
+        }
+    }
+}
+
+// Safe vector push helper supporting inline array growth
+fn df_vec_push_safe(vec: t40, val: t40) -> void {
+    var len: t40 = 0;
+    var cap: t40 = 0;
+    var data: t40 = 0;
+    unsafe {
+        data = load(vec);
+        len = load(vec + 1);
+        cap = load(vec + 2);
+    }
+    match cap - len - 1 {
+        neg => {
+            var new_cap: t40 = cap * 3;
+            var new_data: t40 = malloc_raw(new_cap);
+            memcpy(new_data, data, len);
+            // Only free if old data was not inline (inline starts at vec + 3)
+            match data - (vec + 3) {
+                zero => {}
+                _ => { free_raw(data); }
+            }
+            unsafe {
+                store(vec, new_data);
+                store(vec + 2, new_cap);
+            }
+            data = new_data;
+        }
+        _ => {}
+    }
+    unsafe {
+        store(data + len, val);
+        store(vec + 1, len + 1);
+    }
+}
+
+// Safe vector free helper (only frees heap data arrays, avoids inline vector structs)
+fn df_vec_free_safe(vec: t40) -> void {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    match data {
+        zero => {}
+        neg => {}
+        pos => {
+            match data - (vec + 3) {
+                zero => {}
+                _ => { free_raw(data); }
+            }
+        }
+    }
+}
+
+
+// =============================================================================
+// SECTION 2 — Dataflow Channel (DFChannel - OPT 2)
+// Direct split buffers. No wrapper structs.
+// =============================================================================
+
+fn df_channel_new(capacity: t40) -> t40 {
+    return split_buf_new(capacity);
+}
+
+fn df_channel_free(chan: t40) -> void {
+    split_buf_free(chan);
+}
+
+// Write a value/signal directly to the split buffer.
+// Returns 1 on success, 0 if full.
+fn df_channel_write(chan: t40, val: t40) -> t40 {
+    match val {
+        zero => { return 0; }
+        neg => {
+            var res: t40 = split_push_neg(chan, val);
+            match res {
+                pos => { return 1; }
+                _ => { return 0; }
+            }
+        }
+        pos => {
+            var res: t40 = split_push_pos(chan, val);
+            match res {
+                pos => { return 1; }
+                _ => { return 0; }
+            }
+        }
+    }
+}
+
+// Read a value/signal from the split buffer (Bug B fast path check).
+fn df_channel_read(chan: t40) -> t40 {
+    var neg_empty: t40 = split_empty_neg(chan);
+    match neg_empty {
+        pos => {
+            return split_pop_pos(chan);
+        }
+        zero => {
+            var neg_sig: t40 = split_pop_neg(chan);
+            match neg_sig {
+                neg => { return neg_sig; }
+                pos => { return neg_sig; }
+                zero => {
+                    return split_pop_pos(chan);
+                }
+            }
+        }
+        neg => {
+            return split_pop_pos(chan);
+        }
+    }
+}
+
+
+// =============================================================================
+// SECTION 3 — Dataflow Node (DFNode)
+// Struct (9 words + inline vectors):
+//   [0] = state (-1 = NOT_READY/CANCELLED, 0 = READY, 1 = DONE)
+//   [1] = kind (node kind / dispatcher selector)
+//   [2] = inputs_vec pointer
+//   [3] = outputs_vec pointer
+//   [4] = dependents_vec pointer
+//   [5] = inputs_satisfied_count
+//   [6] = name_str (for debugging)
+//   [7] = custom_data (context pointer)
+//   [8] = required_inputs_threshold (AND-join default: input_len)
+// =============================================================================
+
+fn df_node_new(name: t40, kind: t40, data: t40) -> t40 {
+    var node: t40 = node_pool_alloc();
+    match node {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var inputs: t40 = node + 9;
+            var outputs: t40 = node + 15;
+            var deps: t40 = node + 21;
+            
+            unsafe {
+                store(node, 0 - 1); // state = NOT_READY (-1)
+                store(node + 1, kind);
+                store(node + 2, inputs);
+                store(node + 3, outputs);
+                store(node + 4, deps);
+                store(node + 5, 0); // satisfied count
+                store(node + 6, name);
+                store(node + 7, data);
+                store(node + 8, 0); // threshold = 0 (unset, uses default)
+                
+                // Initialize inputs inline vector
+                store(inputs, node + 12);
+                store(inputs + 1, 0);
+                store(inputs + 2, 3);
+                store(node + 12, 0);
+                store(node + 13, 0);
+                store(node + 14, 0);
+                
+                // Initialize outputs inline vector
+                store(outputs, node + 18);
+                store(outputs + 1, 0);
+                store(outputs + 2, 3);
+                store(node + 18, 0);
+                store(node + 19, 0);
+                store(node + 20, 0);
+                
+                // Initialize dependents inline vector
+                store(deps, node + 24);
+                store(deps + 1, 0);
+                store(deps + 2, 3);
+                store(node + 24, 0);
+                store(node + 25, 0);
+                store(node + 26, 0);
+            }
+            return node;
+        }
+    }
+}
+
+fn df_node_free(node: t40) -> void {
+    match node {
+        zero => {}
+        neg => {}
+        pos => {
+            var inputs: t40 = 0;
+            var outputs: t40 = 0;
+            var deps: t40 = 0;
+            unsafe {
+                inputs = load(node + 2);
+                outputs = load(node + 3);
+                deps = load(node + 4);
+            }
+            df_vec_free_safe(inputs);
+            df_vec_free_safe(outputs);
+            df_vec_free_safe(deps);
+            // Node itself is in the pool, do not free_raw(node)
+        }
+    }
+}
+
+fn df_node_add_input(node: t40, chan: t40) -> void {
+    var inputs: t40 = 0;
+    unsafe { inputs = load(node + 2); }
+    df_vec_push_safe(inputs, chan);
+}
+
+fn df_node_add_output(node: t40, chan: t40) -> void {
+    var outputs: t40 = 0;
+    unsafe { outputs = load(node + 3); }
+    df_vec_push_safe(outputs, chan);
+}
+
+fn df_node_add_dependent(parent: t40, child: t40) -> void {
+    var deps: t40 = 0;
+    unsafe { deps = load(parent + 4); }
+    df_vec_push_safe(deps, child);
+}
+
+// Configures OR-join/Threshold trigger (OPT 7)
+fn df_node_set_required_threshold(node: t40, threshold: t40) -> void {
+    unsafe { store(node + 8, threshold); }
+}
+
+
+// =============================================================================
+// SECTION 4 — Dataflow Scheduler (DFScheduler - OPT 3 & OPT 4)
+// Ready queue uses two Ring Buffers for O(1) scheduling without CAS.
+// Normal queue at [0], Urgent queue at [3].
+// =============================================================================
+
+fn df_sched_new(capacity: t40) -> t40 {
+    var sched: t40 = malloc_raw(4);
+    match sched {
+        zero => { return 0; }
+        neg => { return 0; }
+        pos => {
+            var rq: t40 = ring_new(capacity);
+            var uq: t40 = ring_new(capacity);
+            node_pool_init(capacity);
+            unsafe {
+                store(sched, rq);
+                store(sched + 1, 0); // active count
+                store(sched + 2, capacity);
+                store(sched + 3, uq);
+            }
+            return sched;
+        }
+    }
+}
+
+fn df_sched_free(sched: t40) -> void {
+    match sched {
+        zero => {}
+        neg => {}
+        pos => {
+            var rq: t40 = 0;
+            var uq: t40 = 0;
+            unsafe {
+                rq = load(sched);
+                uq = load(sched + 3);
+            }
+            ring_free(rq);
+            ring_free(uq);
+            
+            // Free the node pool
+            node_pool_free();
+            
+            free_raw(sched);
+        }
+    }
+}
+
+// Submits a normal priority node
+fn df_sched_submit(sched: t40, node: t40) -> void {
+    var rq: t40 = 0;
+    var active: t40 = 0;
+    unsafe {
+        rq = load(sched);
+        active = load(sched + 1);
+        store(node, 0); // state = READY (0)
+        store(node + 5, 0); // reset inputs_satisfied_count
+    }
+    
+    var ok: t40 = ring_write(rq, node);
+    match ok {
+        pos => {
+            unsafe { store(sched + 1, active + 1); }
+        }
+        _ => {}
+    }
+}
+
+// Submits a high priority cancellation node (goes to urgent queue)
+fn df_sched_submit_priority(sched: t40, node: t40) -> void {
+    var uq: t40 = 0;
+    var active: t40 = 0;
+    unsafe {
+        uq = load(sched + 3);
+        active = load(sched + 1);
+        store(node, 0 - 1); // state = CANCELLED (-1)
+        store(node + 5, 0); // reset inputs_satisfied_count
+    }
+    
+    var ok: t40 = ring_write(uq, node);
+    match ok {
+        pos => {
+            unsafe { store(sched + 1, active + 1); }
+        }
+        _ => {}
+    }
+}
+
+// Executes all submitted nodes in the scheduler to completion.
+fn df_sched_run_loop(sched: t40) -> t40 {
+    var rq: t40 = 0;
+    var uq: t40 = 0;
+    unsafe {
+        rq = load(sched);
+        uq = load(sched + 3);
+    }
+
+    var loop_active: t40 = 1;
+    while loop_active > 0 {
+        var active_count: t40 = 0;
+        unsafe { active_count = load(sched + 1); }
+        
+        match active_count {
+            zero => { loop_active = 0; }
+            neg => { loop_active = 0; }
+            pos => {
+                var node: t40 = 0;
+                var is_uq_empty: t40 = ring_empty(uq);
+                match is_uq_empty {
+                    pos => {
+                        // Urgent empty: read from normal queue
+                        var is_rq_empty: t40 = ring_empty(rq);
+                        match is_rq_empty {
+                            pos => {
+                                // Deadlock! active_count > 0 but both queues empty
+                                return 0 - 1;
+                            }
+                            _ => {
+                                node = ring_read(rq);
+                            }
+                        }
+                    }
+                    _ => {
+                        node = ring_read(uq);
+                    }
+                }
+
+                match node {
+                    zero => {
+                        return 0 - 1;
+                    }
+                    neg => { loop_active = 0; }
+                    pos => {
+                        // Execute node callback
+                        df_node_execute(node);
+                        
+                        // Reset satisfied count to support streaming tick loops
+                        unsafe { store(node + 5, 0); }
+                        
+                        // Set state to DONE (1) or preserve CANCELLED state (if state is -1)
+                        var current_state: t40 = 0;
+                        unsafe { current_state = load(node); }
+                        match current_state {
+                            neg => {} // keep cancelled state (-1)
+                            _ => {
+                                unsafe { store(node, 1); } // set state to DONE (1)
+                            }
+                        }
+                        
+                        // Decrement active count
+                        var new_active: t40 = 0;
+                        unsafe {
+                            new_active = load(sched + 1) - 1;
+                            store(sched + 1, new_active);
+                        }
+                        
+                        // Wake up downstream dependents
+                        var deps: t40 = 0;
+                        unsafe { deps = load(node + 4); }
+                        var dep_len: t40 = vec_len(deps);
+                        var i: t40 = 0;
+                        while dep_len - i > 0 {
+                            var dep_node: t40 = vec_get(deps, i);
+                            
+                            // Increment input satisfied count
+                            var satisfied: t40 = 0;
+                            unsafe {
+                                satisfied = load(dep_node + 5) + 1;
+                                store(dep_node + 5, satisfied);
+                            }
+                            
+                            // Check threshold required inputs (OPT 7)
+                            var dep_inputs: t40 = 0;
+                            unsafe { dep_inputs = load(dep_node + 2); }
+                            var input_len: t40 = vec_len(dep_inputs);
+                            
+                            var required: t40 = 0;
+                            unsafe { required = load(dep_node + 8); }
+                            match required {
+                                zero => { required = input_len; } // Default: AND-join
+                                _ => {}
+                            }
+                            
+                            match required - satisfied {
+                                zero => {
+                                    // Wake up child. If parent node was cancelled/error, submit with priority
+                                    var parent_state: t40 = 0;
+                                    unsafe { parent_state = load(node); }
+                                    match parent_state {
+                                        neg => {
+                                            df_sched_submit_priority(sched, dep_node);
+                                        }
+                                        _ => {
+                                            df_sched_submit(sched, dep_node);
+                                        }
+                                    }
+                                }
+                                _ => {} // Already triggered or not yet ready
+                            }
+                            i = i + 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+
+// =============================================================================
+// SECTION 5 — Graph Validation Pass (OPT 6)
+// Performs cycle checks using ternary coloring.
+// =============================================================================
+
+fn df_graph_validate(nodes: t40) -> t40 {
+    var count: t40 = vec_len(nodes);
+    
+    // Phase 1: Initialize all node states to 0 (white)
+    var i: t40 = 0;
+    while count - i > 0 {
+        var node: t40 = vec_get(nodes, i);
+        unsafe { store(node, 0); }
+        i = i + 1;
+    }
+    
+    // Phase 2: Run DFS checks for cycle detection
+    i = 0;
+    while count - i > 0 {
+        var node: t40 = vec_get(nodes, i);
+        var state: t40 = 0;
+        unsafe { state = load(node); }
+        match state {
+            zero => {
+                var res: t40 = df_dfs_check(node);
+                match res {
+                    neg => { return 0 - 1; } // Cycle detected!
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        i = i + 1;
+    }
+    
+    return 0; // Graph is valid!
+}
+
+// Internal recursive helper for cycle validation
+fn df_dfs_check(node: t40) -> t40 {
+    // Color node as gray (1)
+    unsafe { store(node, 1); }
+    
+    var deps: t40 = 0;
+    unsafe { deps = load(node + 4); }
+    var dep_len: t40 = vec_len(deps);
+    
+    var i: t40 = 0;
+    while dep_len - i > 0 {
+        var dep_node: t40 = vec_get(deps, i);
+        var state: t40 = 0;
+        unsafe { state = load(dep_node); }
+        
+        match state {
+            pos => {
+                // Gray node hit: cycle detected!
+                return 0 - 1;
+            }
+            zero => {
+                // White node hit: recurse
+                var res: t40 = df_dfs_check(dep_node);
+                match res {
+                    neg => { return 0 - 1; }
+                    _ => {}
+                }
+            }
+            _ => {} // Black node: skip
+        }
+        i = i + 1;
+    }
+    
+    // Color node as black (-1)
+    unsafe { store(node, 0 - 1); }
+    return 0;
+}
+
+
+// =============================================================================
+// SECTION 6 — Static Graph Compilation (OPT 10)
+// Performs compile-time topological sort and executes static pipelines.
+// =============================================================================
+
+fn df_graph_topo_sort(nodes: t40) -> t40 {
+    var count: t40 = vec_len(nodes);
+    var topo_order: t40 = vec_new();
+    
+    // Phase 1: Initialize all node states to 0 (white)
+    var i: t40 = 0;
+    while count - i > 0 {
+        var node: t40 = vec_get(nodes, i);
+        unsafe { store(node, 0); }
+        i = i + 1;
+    }
+    
+    // Phase 2: Run DFS to obtain post-order listing
+    i = 0;
+    while count - i > 0 {
+        var node: t40 = vec_get(nodes, i);
+        var state: t40 = 0;
+        unsafe { state = load(node); }
+        match state {
+            zero => {
+                df_topo_dfs(node, topo_order);
+            }
+            _ => {}
+        }
+        i = i + 1;
+    }
+    
+    return topo_order;
+}
+
+// Internal recursive DFS helper for topological sorting
+fn df_topo_dfs(node: t40, topo_order: t40) -> void {
+    unsafe { store(node, 1); } // Color gray (1)
+    
+    var deps: t40 = 0;
+    unsafe { deps = load(node + 4); }
+    var dep_len: t40 = vec_len(deps);
+    
+    var i: t40 = 0;
+    while dep_len - i > 0 {
+        var dep_node: t40 = vec_get(deps, i);
+        var state: t40 = 0;
+        unsafe { state = load(dep_node); }
+        match state {
+            zero => {
+                df_topo_dfs(dep_node, topo_order);
+            }
+            _ => {}
+        }
+        i = i + 1;
+    }
+    
+    unsafe { store(node, 0 - 1); } // Color black (-1)
+    vec_push(topo_order, node);
+}
+
+// Runs a topologically sorted pipeline with zero scheduling overhead.
+fn df_sched_run_static(sched: t40, topo_order: t40) -> void {
+    var len: t40 = vec_len(topo_order);
+    var i: t40 = len - 1;
+    while i >= 0 {
+        var node: t40 = vec_get(topo_order, i);
+        df_node_execute(node);
+        
+        // Mark node as DONE (1) and reset satisfied count
+        unsafe {
+            store(node, 1);
+            store(node + 5, 0);
+        }
+        i = i - 1;
+    }
+}

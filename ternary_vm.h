@@ -44,6 +44,7 @@
 #define TERNARY_VM_H
 
 #include "ternary_vm_state.h"
+#include "ternary_simd.h"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -354,6 +355,127 @@ inline void writeVectorFaultZero(VMState& vm, uint8_t vreg, int lane, TrapCode c
     vm.vregfile.reg[vreg].write(lane, TernaryValue::zero(mode));
 }
 
+template<typename Lane, typename TWidth>
+[[nodiscard]] inline bool tryBatchVectorBinary(
+    VMState& vm, uint8_t vd, uint8_t va, uint8_t vb, TernaryMode mode, Opcode opcode) {
+
+    const int count = vm.vector_length;
+    if (count > 512) return false;
+    
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> la[512];
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> lb[512];
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> lout[512];
+
+    for (int lane = 0; lane < count; ++lane) {
+        TernaryValue a, b;
+        if (!convertVectorNumericLane(vm.vregfile.reg[va].read(lane), mode, a) ||
+            !convertVectorNumericLane(vm.vregfile.reg[vb].read(lane), mode, b)) {
+            return false;
+        }
+        if constexpr (Lane::trits == 1) {
+            la[lane] = sandbox::toLane(a.asT1());
+            lb[lane] = sandbox::toLane(b.asT1());
+        } else if constexpr (Lane::trits == 5) {
+            la[lane] = sandbox::toLane(a.asT5());
+            lb[lane] = sandbox::toLane(b.asT5());
+        }
+    }
+
+    if (opcode == Opcode::VADD) {
+        sandbox::simd::batchTritwiseAdd(la, lb, lout, count);
+    } else {
+        sandbox::simd::batchTritwiseSub(la, lb, lout, count);
+    }
+
+    for (int lane = 0; lane < count; ++lane) {
+        if (!lout[lane].isValid()) {
+            return false;
+        }
+        TWidth res = sandbox::fromLane(lout[lane]);
+        if constexpr (Lane::trits == 1) {
+            vm.vregfile.reg[vd].write(lane, TernaryValue::fromT1(res));
+        } else if constexpr (Lane::trits == 5) {
+            vm.vregfile.reg[vd].write(lane, TernaryValue::fromT5(res));
+        }
+    }
+    return true;
+}
+
+template<typename Lane, typename TWidth>
+[[nodiscard]] inline bool tryBatchVectorNeg(
+    VMState& vm, uint8_t vd, uint8_t vs, TernaryMode mode) {
+
+    const int count = vm.vector_length;
+    if (count > 512) return false;
+    
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> lin[512];
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> lout[512];
+
+    for (int lane = 0; lane < count; ++lane) {
+        TernaryValue src;
+        if (!convertVectorNumericLane(vm.vregfile.reg[vs].read(lane), mode, src)) {
+            return false;
+        }
+        if constexpr (Lane::trits == 1) {
+            lin[lane] = sandbox::toLane(src.asT1());
+        } else if constexpr (Lane::trits == 5) {
+            lin[lane] = sandbox::toLane(src.asT5());
+        }
+    }
+
+    sandbox::simd::batchTritwiseNeg(lin, lout, count);
+
+    for (int lane = 0; lane < count; ++lane) {
+        if (!lout[lane].isValid()) {
+            return false;
+        }
+        TWidth res = sandbox::fromLane(lout[lane]);
+        if constexpr (Lane::trits == 1) {
+            vm.vregfile.reg[vd].write(lane, TernaryValue::fromT1(res));
+        } else if constexpr (Lane::trits == 5) {
+            vm.vregfile.reg[vd].write(lane, TernaryValue::fromT5(res));
+        }
+    }
+    return true;
+}
+
+template<typename Lane>
+[[nodiscard]] inline bool tryBatchVectorCompare(
+    VMState& vm, uint8_t vd, uint8_t va, uint8_t vb, TernaryMode mode) {
+
+    const int count = vm.vector_length;
+    if (count > 512) return false;
+    
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> la[512];
+    alignas(32) TritLane<Lane::trits, typename Lane::storage_type> lb[512];
+    alignas(32) TritLane1 lout[512];
+
+    for (int lane = 0; lane < count; ++lane) {
+        TernaryValue a, b;
+        if (!convertVectorNumericLane(vm.vregfile.reg[va].read(lane), mode, a) ||
+            !convertVectorNumericLane(vm.vregfile.reg[vb].read(lane), mode, b)) {
+            return false;
+        }
+        if constexpr (Lane::trits == 1) {
+            la[lane] = sandbox::toLane(a.asT1());
+            lb[lane] = sandbox::toLane(b.asT1());
+        } else if constexpr (Lane::trits == 5) {
+            la[lane] = sandbox::toLane(a.asT5());
+            lb[lane] = sandbox::toLane(b.asT5());
+        }
+    }
+
+    sandbox::simd::batchTritwiseCompare(la, lb, lout, count);
+
+    for (int lane = 0; lane < count; ++lane) {
+        if (!lout[lane].isValid()) {
+            return false;
+        }
+        vm.vregfile.reg[vd].write(lane, TernaryValue::fromL1(lout[lane]));
+    }
+    return true;
+}
+
 inline void writeVectorBinaryNumeric(
     VMState& vm,
     uint8_t vd,
@@ -361,6 +483,16 @@ inline void writeVectorBinaryNumeric(
     uint8_t vb,
     TernaryMode mode,
     Opcode opcode) {
+
+    if (opcode == Opcode::VADD || opcode == Opcode::VSUB) {
+        bool ok = false;
+        switch (mode) {
+            case TernaryMode::T1:  ok = tryBatchVectorBinary<TritLane1, T1>(vm, vd, va, vb, mode, opcode); break;
+            case TernaryMode::T5:  ok = tryBatchVectorBinary<TritLane5, T5>(vm, vd, va, vb, mode, opcode); break;
+            default: break;
+        }
+        if (ok) return;
+    }
 
     for (int lane = 0; lane < vm.vector_length; ++lane) {
         TernaryValue a;
@@ -396,6 +528,14 @@ inline void writeVectorNeg(
     uint8_t vs,
     TernaryMode mode) {
 
+    bool ok = false;
+    switch (mode) {
+        case TernaryMode::T1:  ok = tryBatchVectorNeg<TritLane1, T1>(vm, vd, vs, mode); break;
+        case TernaryMode::T5:  ok = tryBatchVectorNeg<TritLane5, T5>(vm, vd, vs, mode); break;
+        default: break;
+    }
+    if (ok) return;
+
     for (int lane = 0; lane < vm.vector_length; ++lane) {
         TernaryValue src;
         if (!convertVectorNumericLane(vm.vregfile.reg[vs].read(lane), mode, src)) {
@@ -418,6 +558,14 @@ inline void writeVectorCompare(
     uint8_t va,
     uint8_t vb,
     TernaryMode mode) {
+
+    bool ok = false;
+    switch (mode) {
+        case TernaryMode::T1:  ok = tryBatchVectorCompare<TritLane1>(vm, vd, va, vb, mode); break;
+        case TernaryMode::T5:  ok = tryBatchVectorCompare<TritLane5>(vm, vd, va, vb, mode); break;
+        default: break;
+    }
+    if (ok) return;
 
     for (int lane = 0; lane < vm.vector_length; ++lane) {
         TernaryValue a;
@@ -773,7 +921,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::CSRW: {
-            if (vm.privilege != PrivilegeMode::Kernel) {
+            if (vm.privilege != PrivilegeMode::Kernel && iw.imm < 22) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
                                  OS_CAUSE_PROTECTION_FAULT,
                                  vm.pc);
@@ -789,7 +937,7 @@ inline VMStatus step(VMState& vm) {
         }
 
         case Opcode::CSRRW: {
-            if (vm.privilege != PrivilegeMode::Kernel) {
+            if (vm.privilege != PrivilegeMode::Kernel && iw.rs2 < 22) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
                                  OS_CAUSE_PROTECTION_FAULT,
                                  vm.pc);
@@ -1777,8 +1925,8 @@ inline VMStatus step(VMState& vm) {
                     return vm.status;
                 }
                 if (new_break > vm.dmem.size()) {
-                    const long long doubled = std::max<long long>(1, vm.dmem.size()) * 2;
-                    const int grown_size = static_cast<int>(std::max(new_break, doubled));
+                    const long long growth_candidate = std::max<long long>(1, vm.dmem.size()) * 2;
+                    const int grown_size = static_cast<int>(std::max(new_break, growth_candidate));
                     if (!vm.growDataMemoryPreservingStack(grown_size)) {
                         vm.trap(TrapCode::TRAP_MEM_FAULT);
                         return vm.status;

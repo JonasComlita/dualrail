@@ -1,0 +1,248 @@
+fn task_seed_desktop_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);   // /
+        store(addr + 1, 98);   // b
+        store(addr + 2, 105);  // i
+        store(addr + 3, 110);  // n
+        store(addr + 4, 47);   // /
+        store(addr + 5, 100);  // d
+        store(addr + 6, 101);  // e
+        store(addr + 7, 115);  // s
+        store(addr + 8, 107);  // k
+        store(addr + 9, 116);  // t
+        store(addr + 10, 111); // o
+        store(addr + 11, 112); // p
+        store(addr + 12, 0);   // \0
+    }
+    return addr;
+}
+
+fn task_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var x: t40 = x1;
+    while x2 - x >= 0 {
+        os_text_cell(x, y1, 45, color); // '-'
+        os_text_cell(x, y2, 45, color); // '-'
+        x = x + 1;
+    }
+    var y: t40 = y1 + 1;
+    while y2 - y > 0 {
+        os_text_cell(x1, y, 124, color); // '|'
+        os_text_cell(x2, y, 124, color); // '|'
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn task_draw_string(x: t40, y: t40, text_addr: t40, len: t40, color: t40) -> t40 {
+    var i: t40 = 0;
+    while len - i > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(text_addr + i); }
+        os_text_cell(x + i, y, c, color);
+        i = i + 1;
+    }
+    return len;
+}
+
+fn seed_task_name1(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 107); store(addr + 1, 101); store(addr + 2, 114); store(addr + 3, 110); store(addr + 4, 101); store(addr + 5, 108); store(addr + 6, 0); // "kernel"
+    }
+    return addr;
+}
+
+fn seed_task_name2(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 100); store(addr + 1, 101); store(addr + 2, 115); store(addr + 3, 107); store(addr + 4, 116); store(addr + 5, 111); store(addr + 6, 112); store(addr + 7, 0); // "desktop"
+    }
+    return addr;
+}
+
+fn seed_task_name3(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 116); store(addr + 1, 97); store(addr + 2, 115); store(addr + 3, 107); store(addr + 4, 95); store(addr + 5, 109); store(addr + 6, 103); store(addr + 7, 114); store(addr + 8, 0); // "task_mgr"
+    }
+    return addr;
+}
+
+fn seed_status_running(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 82); store(addr + 1, 85); store(addr + 2, 78); store(addr + 3, 78); store(addr + 4, 73); store(addr + 5, 78); store(addr + 6, 71); store(addr + 7, 0); // "RUNNING"
+    }
+    return addr;
+}
+
+fn seed_status_ready(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 82); store(addr + 1, 69); store(addr + 2, 65); store(addr + 3, 68); store(addr + 4, 89); store(addr + 5, 0); // "READY"
+    }
+    return addr;
+}
+
+fn task_draw_exit_button(is_hovered: t40) -> t40 {
+    var color: t40 = 6; // Pink default
+    if is_hovered > 0 {
+        color = 5; // Cyan highlight
+    }
+    os_text_cell(37, 21, 91, color); // '['
+    os_text_cell(38, 21, 69, color); // 'E'
+    os_text_cell(39, 21, 88, color); // 'X'
+    os_text_cell(40, 21, 73, color); // 'I'
+    os_text_cell(41, 21, 84, color); // 'T'
+    os_text_cell(42, 21, 93, color); // ']'
+    return 1;
+}
+
+fn task_title_row() -> t40 {
+    os_text_cell(0, 0, 84, 10);
+    os_text_cell(1, 0, 65, 10);
+    os_text_cell(2, 0, 83, 10);
+    os_text_cell(3, 0, 75, 10);
+    os_text_cell(4, 0, 83, 10);
+    return 1;
+}
+
+fn task_draw_ui(hovered_btn: t40) -> t40 {
+    var bExit: t40 = 0;
+    if hovered_btn - 99 == 0 { bExit = 1; }
+
+    os_clear_text(0);
+
+    // Title
+    os_text_cell(30, 2, 83, 3); // 'S'
+    os_text_cell(31, 2, 89, 3); // 'Y'
+    os_text_cell(32, 2, 83, 3); // 'S'
+    os_text_cell(33, 2, 84, 3); // 'T'
+    os_text_cell(34, 2, 69, 3); // 'E'
+    os_text_cell(35, 2, 77, 3); // 'M'
+    os_text_cell(36, 2, 32, 3);
+    os_text_cell(37, 2, 84, 3); // 'T'
+    os_text_cell(38, 2, 65, 3); // 'A'
+    os_text_cell(39, 2, 83, 3); // 'S'
+    os_text_cell(40, 2, 75, 3); // 'K'
+    os_text_cell(41, 2, 83, 3); // 'S'
+
+    // Dashboard Frame
+    task_draw_box(15, 4, 65, 19, 10); // Green dashboard chassis
+
+    // Columns headers
+    os_text_cell(20, 6, 80, 14); // 'P'
+    os_text_cell(21, 6, 73, 14); // 'I'
+    os_text_cell(22, 6, 68, 14); // 'D'
+
+    os_text_cell(28, 6, 78, 14); // 'N'
+    os_text_cell(29, 6, 65, 14); // 'A'
+    os_text_cell(30, 6, 77, 14); // 'M'
+    os_text_cell(31, 6, 69, 14); // 'E'
+
+    os_text_cell(42, 6, 83, 14); // 'S'
+    os_text_cell(43, 6, 84, 14); // 'T'
+    os_text_cell(44, 6, 65, 14); // 'A'
+    os_text_cell(45, 6, 84, 14); // 'T'
+    os_text_cell(46, 6, 85, 14); // 'U'
+    os_text_cell(47, 6, 83, 14); // 'S'
+
+    os_text_cell(54, 6, 80, 14); // 'P'
+    os_text_cell(55, 6, 82, 14); // 'R'
+    os_text_cell(56, 6, 73, 14); // 'I'
+
+    // Separator line
+    var x: t40 = 16;
+    while 64 - x > 0 {
+        os_text_cell(x, 7, 45, 8); // '-'
+        x = x + 1;
+    }
+
+    // Row 1: PID 0 (kernel)
+    os_text_cell(21, 9, 48, 10); // '0'
+    var name_addr1: t40 = seed_task_name1(11000);
+    task_draw_string(28, 9, name_addr1, 6, 10);
+    var stat_ready: t40 = seed_status_ready(11100);
+    task_draw_string(42, 9, stat_ready, 5, 2); // READY
+    os_text_cell(55, 9, 49, 10); // '1'
+
+    // Row 2: PID 1 (desktop)
+    os_text_cell(21, 12, 49, 10); // '1'
+    var name_addr2: t40 = seed_task_name2(11020);
+    task_draw_string(28, 12, name_addr2, 7, 10);
+    task_draw_string(42, 12, stat_ready, 5, 2); // READY
+    os_text_cell(55, 12, 50, 10); // '2'
+
+    // Row 3: PID 2 (task_manager)
+    os_text_cell(21, 15, 50, 10); // '2'
+    var name_addr3: t40 = seed_task_name3(11040);
+    task_draw_string(28, 15, name_addr3, 8, 10);
+    var stat_running: t40 = seed_status_running(11120);
+    task_draw_string(42, 15, stat_running, 7, 5); // RUNNING
+    os_text_cell(55, 15, 51, 10); // '3'
+
+    // Exit Button
+    task_draw_exit_button(bExit);
+
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        // Standalone test mode expectations
+        os_clear_text(0);
+        task_title_row();
+        os_putc(84); os_putc(65); os_putc(83); os_putc(75); os_putc(83); os_newline();
+        return 1;
+    }
+
+    os_gpu_mode(0);
+
+    var hovered_btn: t40 = 0;
+    task_draw_ui(hovered_btn);
+
+    var done: t40 = 0;
+    var last_hovered: t40 = 0;
+
+    while 1 - done > 0 {
+        var mx: t40 = os_mouse_x();
+        var my: t40 = os_mouse_y();
+        var btn: t40 = os_mouse_btn();
+
+        // Publish sprite tracking cursor
+        os_sprite(mx, my, 43, 14); // '+' in yellow
+
+        var current_hover: t40 = 0;
+        if mx - 37 >= 0 {
+            if 42 - mx >= 0 {
+                if my - 21 == 0 {
+                    current_hover = 99; // EXIT
+                }
+            }
+        }
+
+        if current_hover - last_hovered != 0 {
+            task_draw_ui(current_hover);
+            last_hovered = current_hover;
+        }
+
+        var click: t40 = 0;
+        if btn - 1 == 0 {
+            if current_hover > 0 {
+                click = current_hover;
+            }
+        }
+
+        // Support keyboard hotkeys concurrently
+        if os_key_available() > 0 {
+            var k: t40 = os_read_key();
+            if k - 120 == 0 { click = 99; } // 'x'
+            if k - 88 == 0 { click = 99; }  // 'X'
+        }
+
+        if click - 99 == 0 {
+            done = 1;
+        }
+    }
+
+    var path_addr: t40 = task_seed_desktop_path(15000);
+    sys_exec(path_addr);
+    return 2;
+}

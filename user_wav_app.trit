@@ -1,0 +1,396 @@
+// user_wav_app.trit
+// Real audio verification app that loads sample.wav (normalized in scratch/sample_pcm.bin)
+// and processes it through the Ternary Audio DSP pipeline.
+
+fn print_input_header() -> void {
+    sys_write_char(73); // 'I'
+    sys_write_char(78); // 'N'
+    sys_write_char(80); // 'P'
+    sys_write_char(85); // 'U'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(65); // 'A'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(32); // ' '
+    sys_write_char(40); // '('
+    sys_write_char(77); // 'M'
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(79); // 'O'
+    sys_write_char(47); // '/'
+    sys_write_char(83); // 'S'
+    sys_write_char(80); // 'P'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(73); // 'I'
+    sys_write_char(65); // 'A'
+    sys_write_char(76); // 'L'
+    sys_write_char(41); // ')'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_fir_header() -> void {
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(82); // 'R'
+    sys_write_char(32); // ' '
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(76); // 'L'
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(82); // 'R'
+    sys_write_char(69); // 'E'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(65); // 'A'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_anc_header() -> void {
+    sys_write_char(65); // 'A'
+    sys_write_char(78); // 'N'
+    sys_write_char(67); // 'C'
+    sys_write_char(32); // ' '
+    sys_write_char(78); // 'N'
+    sys_write_char(69); // 'E'
+    sys_write_char(71); // 'G'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(65); // 'A'
+    sys_write_char(78); // 'N'
+    sys_write_char(67); // 'C'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(65); // 'A'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 's'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_swap_header() -> void {
+    sys_write_char(67); // 'C'
+    sys_write_char(72); // 'H'
+    sys_write_char(65); // 'A'
+    sys_write_char(78); // 'N'
+    sys_write_char(78); // 'N'
+    sys_write_char(69); // 'E'
+    sys_write_char(76); // 'L'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(87); // 'W'
+    sys_write_char(65); // 'A'
+    sys_write_char(80); // 'P'
+    sys_write_char(80); // 'P'
+    sys_write_char(69); // 'E'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(65); // 'A'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_class_d_header() -> void {
+    sys_write_char(67); // 'C'
+    sys_write_char(76); // 'L'
+    sys_write_char(65); // 'A'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(32); // ' '
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(69); // 'E'
+    sys_write_char(77); // 'M'
+    sys_write_char(85); // 'U'
+    sys_write_char(76); // 'L'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(73); // 'I'
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(32); // ' '
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(65); // 'A'
+    sys_write_char(77); // 'M'
+    sys_write_char(80); // 'P'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(32); // ' '
+    sys_write_char(48); // '0'
+    sys_write_char(58); // ':'
+    sys_newline();
+}
+
+fn print_class_d_transitions() -> void {
+    sys_write_char(32); // ' '
+    sys_write_char(32); // ' '
+    sys_write_char(84); // 'T'
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(111); // 'o'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+}
+
+fn print_class_d_cycles() -> void {
+    sys_write_char(32); // ' '
+    sys_write_char(32); // ' '
+    sys_write_char(65); // 'A'
+    sys_write_char(99); // 'c'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(118); // 'v'
+    sys_write_char(101); // 'e'
+    sys_write_char(32); // ' '
+    sys_write_char(67); // 'C'
+    sys_write_char(121); // 'y'
+    sys_write_char(99); // 'c'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+}
+
+fn print_mono_spatial(mono: t40, spatial: t40) -> void {
+    sys_write_char(32); // ' '
+    sys_write_char(32); // ' '
+    sys_write_char(77); // 'M'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_int(mono);
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_int(spatial);
+    sys_newline();
+}
+
+fn print_real_file_verif_successful() -> void {
+    sys_write_char(82); // 'R'
+    sys_write_char(69); // 'E'
+    sys_write_char(65); // 'A'
+    sys_write_char(76); // 'L'
+    sys_write_char(32); // ' '
+    sys_write_char(87); // 'W'
+    sys_write_char(65); // 'A'
+    sys_write_char(86); // 'V'
+    sys_write_char(32); // ' '
+    sys_write_char(80); // 'P'
+    sys_write_char(82); // 'R'
+    sys_write_char(79); // 'O'
+    sys_write_char(67); // 'C'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(73); // 'I'
+    sys_write_char(78); // 'N'
+    sys_write_char(71); // 'G'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(85); // 'U'
+    sys_write_char(67); // 'C'
+    sys_write_char(67); // 'C'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(70); // 'F'
+    sys_write_char(85); // 'L'
+    sys_write_char(76); // 'L'
+    sys_write_char(33); // '!'
+    sys_newline();
+}
+
+fn main() -> t40 {
+    // Reading seeded PCM bytes
+    var seeded_len: t40 = 0;
+    unsafe { seeded_len = load(499999); }
+    
+    // Each frame requires 4 bytes (L: 2 bytes, R: 2 bytes)
+    // Calculate total frames: seeded_len / 4
+    var total_frames: t40 = div_int(seeded_len, 4);
+    
+    // Clamp to maximum 1000 frames for verification speed
+    match total_frames - 1000 {
+        pos => { total_frames = 1000; }
+        _ => {}
+    }
+    
+    var orig_buf: t40 = malloc(total_frames);
+    
+    // Parse raw 16-bit PCM bytes and convert to Ternary Opponent Audio format
+    var i: t40 = 0;
+    while total_frames - i > 0 {
+        var base_addr: t40 = 500000 + i * 4;
+        var b0: t40 = 0;
+        var b1: t40 = 0;
+        var b2: t40 = 0;
+        var b3: t40 = 0;
+        unsafe {
+            b0 = load(base_addr);
+            b1 = load(base_addr + 1);
+            b2 = load(base_addr + 2);
+            b3 = load(base_addr + 3);
+        }
+        
+        // Reconstruct signed 16-bit Left channel
+        var L: t40 = b1 * 256 + b0;
+        match L - 32768 {
+            pos => { L = L - 65536; }
+            zero => { L = L - 65536; }
+            neg => {}
+        }
+        
+        // Reconstruct signed 16-bit Right channel
+        var R: t40 = b3 * 256 + b2;
+        match R - 32768 {
+            pos => { R = R - 65536; }
+            zero => { R = R - 65536; }
+            neg => {}
+        }
+        
+        // Convert to Mono & Spatial differentials
+        var M_raw: t40 = div_int_signed(L + R, 2);
+        var S_raw: t40 = div_int_signed(L - R, 2);
+        
+        // Scale to opponent-trit bounds: M in [-364, 364], S in [-13, 13]
+        var M: t40 = div_int_signed(M_raw * 364, 32768);
+        var S: t40 = div_int_signed(S_raw * 13, 32768);
+        
+        // Pack into 9-trit opponent frame
+        var frame: t40 = pack_audio(M, S);
+        unsafe { store(orig_buf + i, frame); }
+        
+        i = i + 1;
+    }
+    
+    // Print first 5 converted frames
+    print_input_header();
+    i = 0;
+    while 5 - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(orig_buf + i); }
+        print_mono_spatial(unpack_mono(f), unpack_spatial(f));
+        i = i + 1;
+    }
+    sys_newline();
+    
+    // 2. Apply FIR Filter
+    print_fir_header();
+    var filtered_buf: t40 = malloc(total_frames);
+    var coeffs: t40 = malloc(3);
+    unsafe {
+        store(coeffs + 0, 9);
+        store(coeffs + 1, 9);
+        store(coeffs + 2, 9);
+    }
+    
+    audio_fir_filter(orig_buf, total_frames, filtered_buf, coeffs, 3, 27);
+    
+    i = 0;
+    while 5 - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(filtered_buf + i); }
+        print_mono_spatial(unpack_mono(f), unpack_spatial(f));
+        i = i + 1;
+    }
+    sys_newline();
+    
+    // 3. Active Noise Cancellation
+    print_anc_header();
+    i = 0;
+    while 5 - i > 0 {
+        var orig_f: t40 = 0;
+        unsafe { orig_f = load(orig_buf + i); }
+        var anc_f: t40 = audio_generate_anc(orig_f);
+        
+        print_mono_spatial(unpack_mono(anc_f), unpack_spatial(anc_f));
+        i = i + 1;
+    }
+    sys_newline();
+    
+    // 4. Class-D Emulation on first frame
+    print_class_d_header();
+    var f0: t40 = 0;
+    unsafe { f0 = load(orig_buf); }
+    var m0: t40 = unpack_mono(f0);
+    
+    var trans_ptr: t40 = malloc(1);
+    var active_ptr: t40 = malloc(1);
+    emulate_class_d(m0, 32, trans_ptr, active_ptr);
+    
+    var trans: t40 = 0;
+    var active_cycles: t40 = 0;
+    unsafe {
+        trans = load(trans_ptr);
+        active_cycles = load(active_ptr);
+    }
+    
+    print_class_d_transitions();
+    sys_write_int(trans);
+    sys_newline();
+    
+    print_class_d_cycles();
+    sys_write_int(active_cycles);
+    sys_newline();
+    sys_newline();
+    
+    // 5. Channel Swap
+    print_swap_header();
+    audio_channel_swap(orig_buf, 5);
+    i = 0;
+    while 5 - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(orig_buf + i); }
+        print_mono_spatial(unpack_mono(f), unpack_spatial(f));
+        i = i + 1;
+    }
+    sys_newline();
+    
+    // Clean up
+    free(orig_buf);
+    free(filtered_buf);
+    free(coeffs);
+    free(trans_ptr);
+    free(active_ptr);
+    
+    print_real_file_verif_successful();
+    return 0;
+}

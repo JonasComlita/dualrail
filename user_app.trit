@@ -101,11 +101,9 @@ fn main() -> t40 {
     var retrieved: t40 = getenv(name_str);
     match retrieved {
         pos => {
-            // A. Decimal representation (default ulib behavior)
-            print_string(retrieved); // Should output decimal codes for 'X', 'Y', 'Z' (88, 89, 90)
+            print_string(retrieved); // Should output decimal codes for 'X', 'Y', 'Z'
             newline();
 
-            // B. ASCII text representation using the VM's premium hardware CSR character mode
             print_real_string(name_str);     // Outputs "ABC"
             print_real_string(retrieved);    // Outputs "XYZ"
             newline();
@@ -127,6 +125,260 @@ fn main() -> t40 {
     free(name_str);
     free(value_str);
 
+    // 5. Ternary Reactive Dataflow Runtime Showcase
+    test_dataflow();
+
+    return 0;
+}
+
+// Dataflow execute callback function (invoked by the scheduler loop)
+fn df_node_execute(node: t40) -> void {
+    var kind: t40 = 0;
+    var name: t40 = 0;
+    var inputs: t40 = 0;
+    var outputs: t40 = 0;
+    var chan: t40 = 0;
+    var in_chan: t40 = 0;
+    var out_chan: t40 = 0;
+    var active: t40 = 0;
+    var val: t40 = 0;
+    var doubled: t40 = 0;
+    var custom: t40 = 0;
+    var colon_str: t40 = 0;
+    var prod_str: t40 = 0;
+    var err_str: t40 = 0;
+    var trf_str: t40 = 0;
+    var cancel_str: t40 = 0;
+    var cons_str: t40 = 0;
+
+    unsafe {
+        kind = load(node + 1);
+        name = load(node + 6);
+        custom = load(node + 7);
+    }
+    
+    unsafe { colon_str = load(35); }
+    print_real_string(name);
+    print_real_string(colon_str);
+    
+    if kind - 1 == 0 {
+        // Producer Node
+        unsafe { outputs = load(node + 3); }
+        chan = vec_get(outputs, 0);
+        
+        match custom {
+            zero => {
+                // Run 1 & 3: Send positive data payloads in FIFO order
+                df_channel_write(chan, 10);
+                df_channel_write(chan, 20);
+                df_channel_write(chan, 30);
+            }
+            _ => {
+                // Run 2: Send a negative cancellation signal
+                df_channel_write(chan, 0 - 1);
+            }
+        }
+        
+        unsafe { prod_str = load(30); }
+        print_real_string(prod_str);
+        sys_newline();
+    } else if kind - 2 == 0 {
+        // Transformer Node
+        unsafe {
+            inputs = load(node + 2);
+            outputs = load(node + 3);
+        }
+        in_chan = vec_get(inputs, 0);
+        out_chan = vec_get(outputs, 0);
+        
+        active = 1;
+        while active > 0 {
+            val = df_channel_read(in_chan);
+            match val {
+                zero => { active = 0; }
+                neg => {
+                    // Propagate cancellation
+                    df_channel_write(out_chan, val);
+                    unsafe { err_str = load(31); }
+                    print_real_string(err_str);
+                    sys_newline();
+                    active = 0;
+                }
+                pos => {
+                    // Transform: double the value
+                    doubled = val + val;
+                    df_channel_write(out_chan, doubled);
+                    
+                    unsafe { trf_str = load(33); }
+                    print_real_string(trf_str);
+                    print_int(doubled);
+                    sys_newline();
+                }
+            }
+        }
+    } else if kind - 3 == 0 {
+        // Consumer Node
+        unsafe { inputs = load(node + 2); }
+        in_chan = vec_get(inputs, 0);
+        
+        active = 1;
+        while active > 0 {
+            val = df_channel_read(in_chan);
+            match val {
+                zero => { active = 0; }
+                neg => {
+                    // Cancellation/error signal received -> log cancellation and terminate cleanly
+                    unsafe { cancel_str = load(32); }
+                    print_real_string(cancel_str);
+                    sys_newline();
+                    active = 0;
+                }
+                pos => {
+                    unsafe { cons_str = load(34); }
+                    print_real_string(cons_str);
+                    print_int(val);
+                    sys_newline();
+                }
+            }
+        }
+    } else {
+        sys_write_char(85); sys_write_char(78); sys_write_char(75); sys_newline(); // "UNK\n"
+    }
+}
+
+fn test_dataflow() -> t40 {
+    print_int(66666); // Dataflow Showcase Marker
+    newline();
+    
+    // Allocate global optimized logging strings (OPT 9)
+    var prod_str: t40 = malloc(5);
+    var err_str: t40 = malloc(6);
+    var cancel_str: t40 = malloc(7);
+    var trf_str: t40 = malloc(5);
+    var cons_str: t40 = malloc(6);
+    var colon_str: t40 = malloc(3);
+    
+    unsafe {
+        store(prod_str, 80); store(prod_str + 1, 82); store(prod_str + 2, 79); store(prod_str + 3, 68); store(prod_str + 4, 0); // "PROD"
+        store(err_str, 69); store(err_str + 1, 82); store(err_str + 2, 82); store(err_str + 3, 79); store(err_str + 4, 82); store(err_str + 5, 0); // "ERROR"
+        store(cancel_str, 67); store(cancel_str + 1, 65); store(cancel_str + 2, 78); store(cancel_str + 3, 67); store(cancel_str + 4, 69); store(cancel_str + 5, 76); store(cancel_str + 6, 0); // "CANCEL"
+        store(trf_str, 84); store(trf_str + 1, 82); store(trf_str + 2, 70); store(trf_str + 3, 32); store(trf_str + 4, 0); // "TRF "
+        store(cons_str, 67); store(cons_str + 1, 79); store(cons_str + 2, 78); store(cons_str + 3, 83); store(cons_str + 4, 32); store(cons_str + 5, 0); // "CONS "
+        store(colon_str, 58); store(colon_str + 1, 32); store(colon_str + 2, 0); // ": "
+        
+        store(30, prod_str);
+        store(31, err_str);
+        store(32, cancel_str);
+        store(33, trf_str);
+        store(34, cons_str);
+        store(35, colon_str);
+    }
+
+    // Create scheduler with capacity 10
+    var sched: t40 = df_sched_new(10);
+    
+    // Create channels (now direct split buffers under OPT 2)
+    var chan1: t40 = df_channel_new(9);
+    var chan2: t40 = df_channel_new(9);
+    
+    // Create names
+    var name1: t40 = malloc(5);
+    var name2: t40 = malloc(6);
+    var name3: t40 = malloc(5);
+    unsafe {
+        store(name1, 80); store(name1 + 1, 114); store(name1 + 2, 111); store(name1 + 3, 100); store(name1 + 4, 0); // "Prod"
+        store(name2, 84); store(name2 + 1, 114); store(name2 + 2, 97); store(name2 + 3, 110); store(name2 + 4, 115); store(name2 + 5, 0); // "Trans"
+        store(name3, 67); store(name3 + 1, 111); store(name3 + 2, 110); store(name3 + 3, 115); store(name3 + 4, 0); // "Cons"
+    }
+    
+    // Create nodes (allocated from Pool under OPT 1)
+    var node_p: t40 = df_node_new(name1, 1, 0);
+    var node_t: t40 = df_node_new(name2, 2, 0);
+    var node_c: t40 = df_node_new(name3, 3, 0);
+    
+    // Link nodes and channels
+    df_node_add_output(node_p, chan1);
+    
+    df_node_add_input(node_t, chan1);
+    df_node_add_output(node_t, chan2);
+    
+    df_node_add_input(node_c, chan2);
+    
+    // Setup dependency graph
+    df_node_add_dependent(node_p, node_t);
+    df_node_add_dependent(node_t, node_c);
+    
+    // Collect nodes for validation pass (OPT 6)
+    var nodes_list: t40 = vec_new();
+    vec_push(nodes_list, node_p);
+    vec_push(nodes_list, node_t);
+    vec_push(nodes_list, node_c);
+    
+    var val_res: t40 = df_graph_validate(nodes_list);
+    match val_res {
+        neg => {
+            sys_write_char(86); sys_write_char(65); sys_write_char(76); sys_write_char(95); sys_write_char(69); sys_write_char(82); sys_write_char(82); sys_newline();
+            vec_free(nodes_list);
+            return 0 - 1;
+        }
+        _ => {}
+    }
+    vec_free(nodes_list);
+    
+    // =========================================================================
+    // RUN 1: Normal Data Stream (FIFO order verification via Double Ring Buffer Queue)
+    // =========================================================================
+    unsafe { store(node_p + 7, 0); } // Set custom data = 0 for normal run
+    
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(49); sys_newline(); // "RUN 1\n"
+    df_sched_submit(sched, node_p);
+    df_sched_run_loop(sched);
+    
+    // =========================================================================
+    // RUN 2: Cancellation Signal Propagation (Priority propagation verification)
+    // =========================================================================
+    unsafe { store(node_p + 7, 1); } // Set custom data = 1 for cancellation run
+    
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(50); sys_newline(); // "RUN 2\n"
+    df_sched_submit(sched, node_p);
+    df_sched_run_loop(sched);
+    
+    // =========================================================================
+    // RUN 3: Static Graph Execution (Topological sort verification - OPT 10)
+    // =========================================================================
+    unsafe { store(node_p + 7, 0); } // Set custom data = 0 for normal run
+    
+    var nodes_list_static: t40 = vec_new();
+    vec_push(nodes_list_static, node_p);
+    vec_push(nodes_list_static, node_t);
+    vec_push(nodes_list_static, node_c);
+    
+    var topo_order: t40 = df_graph_topo_sort(nodes_list_static);
+    
+    sys_write_char(82); sys_write_char(85); sys_write_char(78); sys_write_char(32); sys_write_char(51); sys_newline(); // "RUN 3\n"
+    df_sched_run_static(sched, topo_order);
+    
+    vec_free(topo_order);
+    vec_free(nodes_list_static);
+    
+    // Clean up
+    df_node_free(node_p);
+    df_node_free(node_t);
+    df_node_free(node_c);
+    df_channel_free(chan1);
+    df_channel_free(chan2);
+    df_sched_free(sched);
+    free(name1);
+    free(name2);
+    free(name3);
+    
+    free(prod_str);
+    free(err_str);
+    free(cancel_str);
+    free(trf_str);
+    free(cons_str);
+    free(colon_str);
+    
     return 0;
 }
 
@@ -157,4 +409,3 @@ fn print_real_string(str: t40) -> t40 {
     }
     return 0;
 }
-

@@ -156,9 +156,15 @@ using TritLane50 = TritLane<50, UInt128>;
 template<int Trits, typename Storage>
 [[nodiscard]] inline TritLane<Trits, Storage> tritwiseNeg(TritLane<Trits, Storage> lane) {
     if (!lane.isValid()) return TritLane<Trits, Storage>::invalid();
-    TritLane<Trits, Storage> out;
-    for (int i = 0; i < Trits; ++i) out.setTrit(i, static_cast<int8_t>(-lane.tritAt(i)));
-    return out;
+    if constexpr (sizeof(Storage) <= 8) {
+        uint64_t raw = static_cast<uint64_t>(lane.rawForKernel());
+        uint64_t res = backend::negLane64(raw, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(static_cast<Storage>(res));
+    } else {
+        backend::RawUInt128 raw{lane.rawForKernel().lo, lane.rawForKernel().hi};
+        backend::RawUInt128 res = backend::negLane128(raw, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(UInt128{res.hi, res.lo});
+    }
 }
 
 template<int Trits, typename Storage>
@@ -168,24 +174,17 @@ template<int Trits, typename Storage>
 
     if (!a.isValid() || !b.isValid()) return TritLane<Trits, Storage>::invalid();
 
-    TritLane<Trits, Storage> out;
-    int carry = 0;
-    for (int i = 0; i < Trits; ++i) {
-        int sum = a.tritAt(i) + b.tritAt(i) + carry;
-        carry = 0;
-        while (sum > 1) {
-            sum -= 3;
-            ++carry;
-        }
-        while (sum < -1) {
-            sum += 3;
-            --carry;
-        }
-        out.setTrit(i, static_cast<int8_t>(sum));
+    if constexpr (sizeof(Storage) <= 8) {
+        uint64_t ra = static_cast<uint64_t>(a.rawForKernel());
+        uint64_t rb = static_cast<uint64_t>(b.rawForKernel());
+        uint64_t res = backend::addLane64(ra, rb, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(static_cast<Storage>(res));
+    } else {
+        backend::RawUInt128 ra{a.rawForKernel().lo, a.rawForKernel().hi};
+        backend::RawUInt128 rb{b.rawForKernel().lo, b.rawForKernel().hi};
+        backend::RawUInt128 res = backend::addLane128(ra, rb, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(UInt128{res.hi, res.lo});
     }
-
-    if (carry != 0) return TritLane<Trits, Storage>::invalid();
-    return out;
 }
 
 template<int Trits, typename Storage>
@@ -193,7 +192,19 @@ template<int Trits, typename Storage>
     TritLane<Trits, Storage> a,
     TritLane<Trits, Storage> b) {
 
-    return tritwiseAdd(a, tritwiseNeg(b));
+    if (!a.isValid() || !b.isValid()) return TritLane<Trits, Storage>::invalid();
+
+    if constexpr (sizeof(Storage) <= 8) {
+        uint64_t ra = static_cast<uint64_t>(a.rawForKernel());
+        uint64_t rb = static_cast<uint64_t>(b.rawForKernel());
+        uint64_t res = backend::subLane64(ra, rb, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(static_cast<Storage>(res));
+    } else {
+        backend::RawUInt128 ra{a.rawForKernel().lo, a.rawForKernel().hi};
+        backend::RawUInt128 rb{b.rawForKernel().lo, b.rawForKernel().hi};
+        backend::RawUInt128 res = backend::subLane128(ra, rb, Trits);
+        return TritLane<Trits, Storage>::fromRawForKernel(UInt128{res.hi, res.lo});
+    }
 }
 
 template<int Trits, typename Storage>
@@ -260,13 +271,16 @@ template<int Trits, typename Storage>
     TritLane<Trits, Storage> b) {
 
     if (!a.isValid() || !b.isValid()) return 0;
-    for (int i = Trits - 1; i >= 0; --i) {
-        const int8_t av = a.tritAt(i);
-        const int8_t bv = b.tritAt(i);
-        if (av < bv) return -1;
-        if (av > bv) return 1;
+
+    if constexpr (sizeof(Storage) <= 8) {
+        uint64_t ra = static_cast<uint64_t>(a.rawForKernel());
+        uint64_t rb = static_cast<uint64_t>(b.rawForKernel());
+        return backend::compareLane64(ra, rb, Trits);
+    } else {
+        backend::RawUInt128 ra{a.rawForKernel().lo, a.rawForKernel().hi};
+        backend::RawUInt128 rb{b.rawForKernel().lo, b.rawForKernel().hi};
+        return backend::compareLane128(ra, rb, Trits);
     }
-    return 0;
 }
 
 template<int Trits, typename Storage>

@@ -1,0 +1,47 @@
+// math_utils.trit
+// Shared math utilities for ternary libraries.
+
+fn div_int_by_2_const(val: t40) -> t40 {
+    match val - 32768 { zero => { return 16384; } _ => {} }
+    match val - 16384 { zero => { return 8192; } _ => {} }
+    match val - 8192 { zero => { return 4096; } _ => {} }
+    match val - 4096 { zero => { return 2048; } _ => {} }
+    match val - 2048 { zero => { return 1024; } _ => {} }
+    match val - 1024 { zero => { return 512; } _ => {} }
+    match val - 512 { zero => { return 256; } _ => {} }
+    match val - 256 { zero => { return 128; } _ => {} }
+    match val - 128 { zero => { return 64; } _ => {} }
+    match val - 64 { zero => { return 32; } _ => {} }
+    match val - 32 { zero => { return 16; } _ => {} }
+    match val - 16 { zero => { return 8; } _ => {} }
+    match val - 8 { zero => { return 4; } _ => {} }
+    match val - 4 { zero => { return 2; } _ => {} }
+    match val - 2 { zero => { return 1; } _ => {} }
+    return 0;
+}
+
+fn div_int(a: t40, b: t40) -> t40 {
+    match b {
+        zero => { return 0; } // Guard division by zero
+        _ => {}
+    }
+    
+    var q: t40 = 0;
+    var temp: t40 = a;
+    
+    // Find the highest power of 2 multiplier dynamically
+    var mult: t40 = 1;
+    while temp - b * mult >= 0 {
+        mult = mult * 2;
+    }
+    
+    while mult - 1 >= 0 {
+        var b_mult: t40 = b * mult;
+        while temp - b_mult >= 0 {
+            temp = temp - b_mult;
+            q = q + mult;
+        }
+        mult = div_int_by_2_const(mult);
+    }
+    return q;
+}

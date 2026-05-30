@@ -191,6 +191,25 @@ rule CXX_EXECUTABLE_LINKER__run_kernel_Debug
 #############################################
 # Rule for compiling CXX files.
 
+rule CXX_COMPILER__run_native_kernel_unscanned_Debug
+  depfile = $DEP_FILE
+  deps = gcc
+  command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS -QMD -QMT $out -QMF $DEP_FILE /Fo$out /Fd$TARGET_COMPILE_PDB -c $in
+  description = Building CXX object $out
+
+
+#############################################
+# Rule for linking CXX executable.
+
+rule CXX_EXECUTABLE_LINKER__run_native_kernel_Debug
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
+  description = Linking CXX executable $TARGET_FILE
+  restat = $RESTAT
+
+
+#############################################
+# Rule for compiling CXX files.
+
 rule CXX_COMPILER__run_gui_console_unscanned_Debug
   depfile = $DEP_FILE
   deps = gcc
@@ -259,6 +278,63 @@ rule CXX_COMPILER__test_phase_c5_pred_unscanned_Debug
 # Rule for linking CXX executable.
 
 rule CXX_EXECUTABLE_LINKER__test_phase_c5_pred_Debug
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
+  description = Linking CXX executable $TARGET_FILE
+  restat = $RESTAT
+
+
+#############################################
+# Rule for compiling CXX files.
+
+rule CXX_COMPILER__test_phase_d_kernel_unscanned_Debug
+  depfile = $DEP_FILE
+  deps = gcc
+  command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS -QMD -QMT $out -QMF $DEP_FILE /Fo$out /Fd$TARGET_COMPILE_PDB -c $in
+  description = Building CXX object $out
+
+
+#############################################
+# Rule for linking CXX executable.
+
+rule CXX_EXECUTABLE_LINKER__test_phase_d_kernel_Debug
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
+  description = Linking CXX executable $TARGET_FILE
+  restat = $RESTAT
+
+
+#############################################
+# Rule for compiling CXX files.
+
+rule CXX_COMPILER__test_native_apps_unscanned_Debug
+  depfile = $DEP_FILE
+  deps = gcc
+  command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS -QMD -QMT $out -QMF $DEP_FILE /Fo$out /Fd$TARGET_COMPILE_PDB -c $in
+  description = Building CXX object $out
+
+
+#############################################
+# Rule for linking CXX executable.
+
+rule CXX_EXECUTABLE_LINKER__test_native_apps_Debug
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
+  description = Linking CXX executable $TARGET_FILE
+  restat = $RESTAT
+
+
+#############################################
+# Rule for compiling CXX files.
+
+rule CXX_COMPILER__test_process_handoff_unscanned_Debug
+  depfile = $DEP_FILE
+  deps = gcc
+  command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS -QMD -QMT $out -QMF $DEP_FILE /Fo$out /Fd$TARGET_COMPILE_PDB -c $in
+  description = Building CXX object $out
+
+
+#############################################
+# Rule for linking CXX executable.
+
+rule CXX_EXECUTABLE_LINKER__test_process_handoff_Debug
   command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
   description = Linking CXX executable $TARGET_FILE
   restat = $RESTAT
@@ -373,6 +449,25 @@ rule CXX_COMPILER__test_malloc_micro_unscanned_Debug
 # Rule for linking CXX executable.
 
 rule CXX_EXECUTABLE_LINKER__test_malloc_micro_Debug
+  command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
+  description = Linking CXX executable $TARGET_FILE
+  restat = $RESTAT
+
+
+#############################################
+# Rule for compiling CXX files.
+
+rule CXX_COMPILER__test_all_apps_unscanned_Debug
+  depfile = $DEP_FILE
+  deps = gcc
+  command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS -QMD -QMT $out -QMF $DEP_FILE /Fo$out /Fd$TARGET_COMPILE_PDB -c $in
+  description = Building CXX object $out
+
+
+#############################################
+# Rule for linking CXX executable.
+
+rule CXX_EXECUTABLE_LINKER__test_all_apps_Debug
   command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && C:\msys64\ucrt64\bin\cmake.exe -E vs_link_exe --msvc-ver=1944 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~2\Intel\oneAPI\compiler\latest\bin\icx.exe /nologo $in  $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES /link /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 && $POST_BUILD"
   description = Linking CXX executable $TARGET_FILE
   restat = $RESTAT

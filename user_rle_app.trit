@@ -1,0 +1,734 @@
+// user_rle_app.trit
+// Auto-generated verification app for Ternary RLE on real model weights.
+// Prints strings character by character via sys_write_char to bypass compiler limits.
+
+fn print_seeded_len_msg() -> t40 {
+    sys_write_char(83); // 'S'
+    sys_write_char(101); // 'e'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(101); // 'e'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(104); // 'h'
+    sys_write_char(116); // 't'
+    sys_write_char(115); // 's'
+    sys_write_char(32); // ' '
+    sys_write_char(98); // 'b'
+    sys_write_char(121); // 'y'
+    sys_write_char(116); // 't'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(32); // ' '
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(117); // 'u'
+    sys_write_char(110); // 'n'
+    sys_write_char(116); // 't'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_processing_len_msg() -> t40 {
+    sys_write_char(80); // 'P'
+    sys_write_char(114); // 'r'
+    sys_write_char(111); // 'o'
+    sys_write_char(99); // 'c'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(103); // 'g'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(101); // 'e'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(104); // 'h'
+    sys_write_char(116); // 't'
+    sys_write_char(32); // ' '
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(117); // 'u'
+    sys_write_char(110); // 'n'
+    sys_write_char(116); // 't'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_sparsity_msg() -> t40 {
+    sys_write_char(83); // 'S'
+    sys_write_char(112); // 'p'
+    sys_write_char(97); // 'a'
+    sys_write_char(114); // 'r'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(116); // 't'
+    sys_write_char(121); // 'y'
+    sys_write_char(32); // ' '
+    sys_write_char(40); // '('
+    sys_write_char(112); // 'p'
+    sys_write_char(101); // 'e'
+    sys_write_char(114); // 'r'
+    sys_write_char(99); // 'c'
+    sys_write_char(101); // 'e'
+    sys_write_char(110); // 'n'
+    sys_write_char(116); // 't'
+    sys_write_char(97); // 'a'
+    sys_write_char(103); // 'g'
+    sys_write_char(101); // 'e'
+    sys_write_char(32); // ' '
+    sys_write_char(111); // 'o'
+    sys_write_char(102); // 'f'
+    sys_write_char(32); // ' '
+    sys_write_char(122); // 'z'
+    sys_write_char(101); // 'e'
+    sys_write_char(114); // 'r'
+    sys_write_char(111); // 'o'
+    sys_write_char(115); // 's'
+    sys_write_char(41); // ')'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_pct_newline() -> t40 {
+    sys_write_char(37); // '%'
+    sys_newline();
+    return 0;
+}
+
+fn print_compressing_msg() -> t40 {
+    sys_write_char(67); // 'C'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(103); // 'g'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(101); // 'e'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(104); // 'h'
+    sys_write_char(116); // 't'
+    sys_write_char(115); // 's'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_newline();
+    return 0;
+}
+
+fn print_original_msg() -> t40 {
+    sys_write_char(79); // 'O'
+    sys_write_char(114); // 'r'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(100); // 'd'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_compressed_msg() -> t40 {
+    sys_write_char(67); // 'C'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(100); // 'd'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_ratio_msg() -> t40 {
+    sys_write_char(67); // 'C'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(111); // 'o'
+    sys_write_char(110); // 'n'
+    sys_write_char(32); // ' '
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(111); // 'o'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_dot_msg() -> t40 {
+    sys_write_char(46); // '.'
+    return 0;
+}
+
+fn print_ratio_x_newline() -> t40 {
+    sys_write_char(120); // 'x'
+    sys_newline();
+    return 0;
+}
+
+fn print_decompressing_msg() -> t40 {
+    sys_write_char(68); // 'D'
+    sys_write_char(101); // 'e'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(103); // 'g'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(101); // 'e'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(104); // 'h'
+    sys_write_char(116); // 't'
+    sys_write_char(115); // 's'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_newline();
+    return 0;
+}
+
+fn print_decompressed_msg() -> t40 {
+    sys_write_char(68); // 'D'
+    sys_write_char(101); // 'e'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(100); // 'd'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_verifying_msg() -> t40 {
+    sys_write_char(86); // 'V'
+    sys_write_char(101); // 'e'
+    sys_write_char(114); // 'r'
+    sys_write_char(105); // 'i'
+    sys_write_char(102); // 'f'
+    sys_write_char(121); // 'y'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(103); // 'g'
+    sys_write_char(32); // ' '
+    sys_write_char(100); // 'd'
+    sys_write_char(101); // 'e'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(32); // ' '
+    sys_write_char(111); // 'o'
+    sys_write_char(117); // 'u'
+    sys_write_char(116); // 't'
+    sys_write_char(112); // 'p'
+    sys_write_char(117); // 'u'
+    sys_write_char(116); // 't'
+    sys_write_char(32); // ' '
+    sys_write_char(97); // 'a'
+    sys_write_char(103); // 'g'
+    sys_write_char(97); // 'a'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(116); // 't'
+    sys_write_char(32); // ' '
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(32); // ' '
+    sys_write_char(119); // 'w'
+    sys_write_char(101); // 'e'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(104); // 'h'
+    sys_write_char(116); // 't'
+    sys_write_char(115); // 's'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_write_char(46); // '.'
+    sys_newline();
+    return 0;
+}
+
+fn print_mismatch_msg() -> t40 {
+    sys_write_char(77); // 'M'
+    sys_write_char(105); // 'i'
+    sys_write_char(115); // 's'
+    sys_write_char(109); // 'm'
+    sys_write_char(97); // 'a'
+    sys_write_char(116); // 't'
+    sys_write_char(99); // 'c'
+    sys_write_char(104); // 'h'
+    sys_write_char(32); // ' '
+    sys_write_char(97); // 'a'
+    sys_write_char(116); // 't'
+    sys_write_char(32); // ' '
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(100); // 'd'
+    sys_write_char(101); // 'e'
+    sys_write_char(120); // 'x'
+    sys_write_char(32); // ' '
+    return 0;
+}
+
+fn print_mismatch_orig() -> t40 {
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(105); // 'i'
+    sys_write_char(103); // 'g'
+    sys_write_char(105); // 'i'
+    sys_write_char(110); // 'n'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(61); // '='
+    return 0;
+}
+
+fn print_mismatch_dec() -> t40 {
+    sys_write_char(44); // ','
+    sys_write_char(32); // ' '
+    sys_write_char(100); // 'd'
+    sys_write_char(101); // 'e'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(114); // 'r'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_write_char(61); // '='
+    return 0;
+}
+
+fn print_length_mismatch() -> t40 {
+    sys_write_char(76); // 'L'
+    sys_write_char(101); // 'e'
+    sys_write_char(110); // 'n'
+    sys_write_char(103); // 'g'
+    sys_write_char(116); // 't'
+    sys_write_char(104); // 'h'
+    sys_write_char(32); // ' '
+    sys_write_char(109); // 'm'
+    sys_write_char(105); // 'i'
+    sys_write_char(115); // 's'
+    sys_write_char(109); // 'm'
+    sys_write_char(97); // 'a'
+    sys_write_char(116); // 't'
+    sys_write_char(99); // 'c'
+    sys_write_char(104); // 'h'
+    sys_write_char(33); // '!'
+    sys_newline();
+    return 0;
+}
+
+fn print_success_msg() -> t40 {
+    sys_write_char(86); // 'V'
+    sys_write_char(69); // 'E'
+    sys_write_char(82); // 'R'
+    sys_write_char(73); // 'I'
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(67); // 'C'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(73); // 'I'
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(85); // 'U'
+    sys_write_char(67); // 'C'
+    sys_write_char(67); // 'C'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(70); // 'F'
+    sys_write_char(85); // 'U'
+    sys_write_char(76); // 'L'
+    sys_write_char(33); // '!'
+    sys_write_char(32); // ' '
+    sys_write_char(49); // '1'
+    sys_write_char(48); // '0'
+    sys_write_char(48); // '0'
+    sys_write_char(37); // '%'
+    sys_write_char(32); // ' '
+    sys_write_char(77); // 'M'
+    sys_write_char(97); // 'a'
+    sys_write_char(116); // 't'
+    sys_write_char(99); // 'c'
+    sys_write_char(104); // 'h'
+    sys_write_char(46); // '.'
+    sys_newline();
+    return 0;
+}
+
+fn print_failed_msg() -> t40 {
+    sys_write_char(86); // 'V'
+    sys_write_char(69); // 'E'
+    sys_write_char(82); // 'R'
+    sys_write_char(73); // 'I'
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(67); // 'C'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(73); // 'I'
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(32); // ' '
+    sys_write_char(70); // 'F'
+    sys_write_char(65); // 'A'
+    sys_write_char(73); // 'I'
+    sys_write_char(76); // 'L'
+    sys_write_char(69); // 'E'
+    sys_write_char(68); // 'D'
+    sys_write_char(33); // '!'
+    sys_newline();
+    return 0;
+}
+
+fn print_err_src() -> t40 {
+    sys_write_char(69); // 'E'
+    sys_write_char(114); // 'r'
+    sys_write_char(114); // 'r'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_char(109); // 'm'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(108); // 'l'
+    sys_write_char(111); // 'o'
+    sys_write_char(99); // 'c'
+    sys_write_char(32); // ' '
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(119); // 'w'
+    sys_write_char(95); // '_'
+    sys_write_char(115); // 's'
+    sys_write_char(114); // 'r'
+    sys_write_char(99); // 'c'
+    sys_write_char(32); // ' '
+    sys_write_char(102); // 'f'
+    sys_write_char(97); // 'a'
+    sys_write_char(105); // 'i'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_newline();
+    return 0;
+}
+
+fn print_err_comp() -> t40 {
+    sys_write_char(69); // 'E'
+    sys_write_char(114); // 'r'
+    sys_write_char(114); // 'r'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_char(109); // 'm'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(108); // 'l'
+    sys_write_char(111); // 'o'
+    sys_write_char(99); // 'c'
+    sys_write_char(32); // ' '
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(119); // 'w'
+    sys_write_char(95); // '_'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(32); // ' '
+    sys_write_char(102); // 'f'
+    sys_write_char(97); // 'a'
+    sys_write_char(105); // 'i'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_newline();
+    return 0;
+}
+
+fn print_err_decomp() -> t40 {
+    sys_write_char(69); // 'E'
+    sys_write_char(114); // 'r'
+    sys_write_char(114); // 'r'
+    sys_write_char(111); // 'o'
+    sys_write_char(114); // 'r'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+    sys_write_char(109); // 'm'
+    sys_write_char(97); // 'a'
+    sys_write_char(108); // 'l'
+    sys_write_char(108); // 'l'
+    sys_write_char(111); // 'o'
+    sys_write_char(99); // 'c'
+    sys_write_char(32); // ' '
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(119); // 'w'
+    sys_write_char(95); // '_'
+    sys_write_char(100); // 'd'
+    sys_write_char(101); // 'e'
+    sys_write_char(99); // 'c'
+    sys_write_char(111); // 'o'
+    sys_write_char(109); // 'm'
+    sys_write_char(112); // 'p'
+    sys_write_char(32); // ' '
+    sys_write_char(102); // 'f'
+    sys_write_char(97); // 'a'
+    sys_write_char(105); // 'i'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(100); // 'd'
+    sys_newline();
+    return 0;
+}
+
+fn main() -> t40 {
+    // 1. Determine size of seeded weights
+    var seeded_len: t40 = 0;
+    unsafe { seeded_len = load(499999); }
+    
+    print_seeded_len_msg();
+    print_int(seeded_len);
+    sys_newline();
+    
+    // We will process a subset of 10,000 weights to save memory and execution time
+    var process_len: t40 = 1000; // Let's try 10,000
+    process_len = 10000;
+    if seeded_len - process_len < 0 {
+        process_len = seeded_len;
+    }
+    
+    print_processing_len_msg();
+    print_int(process_len);
+    sys_newline();
+    
+    // 2. Allocate memory for: original weights, compressed weights, decompressed weights
+    var raw_src: own<ptr<t40, user, unknown>> = malloc(process_len);
+    var raw_comp: own<ptr<t40, user, unknown>> = malloc(process_len);
+    var raw_decomp: own<ptr<t40, user, unknown>> = malloc(process_len);
+    
+    match raw_src {
+        null => { print_err_src(); return 0 - 1; }
+        unknown => { print_err_src(); return 0 - 1; }
+        valid(src) => {
+            match raw_comp {
+                null => { print_err_comp(); return 0 - 1; }
+                unknown => { print_err_comp(); return 0 - 1; }
+                valid(comp) => {
+                    match raw_decomp {
+                        null => { print_err_decomp(); return 0 - 1; }
+                        unknown => { print_err_decomp(); return 0 - 1; }
+                        valid(decomp) => {
+                            // 3. Load weights from seeded memory address (500000)
+                            // Map seeded bytes (255 -> -1, 0 -> 0, 1 -> 1)
+                            var i: t40 = 0;
+                            var zero_count: t40 = 0;
+                            
+                            while process_len - i > 0 {
+                                var b: t40 = 0;
+                                unsafe { b = load(500000 + i); }
+                                
+                                var val: t40 = 0;
+                                match b - 255 {
+                                    zero => { val = 0 - 1; }
+                                    _ => {
+                                        val = b;
+                                    }
+                                }
+                                
+                                unsafe { store(src + i, val); }
+                                
+                                match val {
+                                    zero => { zero_count = zero_count + 1; }
+                                    _ => {}
+                                }
+                                
+                                i = i + 1;
+                            }
+                            
+                            // Print sparsity
+                            print_sparsity_msg();
+                            var zero_pct: t40 = div_int(zero_count * 100, process_len);
+                            print_int(zero_pct);
+                            print_pct_newline();
+                            
+                            // 4. Run RLE compression
+                            print_compressing_msg();
+                            var comp_len: t40 = rle_compress(src, process_len, comp, process_len);
+                            
+                            print_original_msg();
+                            print_int(process_len);
+                            sys_newline();
+                            
+                            print_compressed_msg();
+                            print_int(comp_len);
+                            sys_newline();
+                            
+                            // Compression ratio: process_len / comp_len
+                            var ratio_int: t40 = div_int(process_len, comp_len);
+                            var remainder: t40 = process_len - ratio_int * comp_len;
+                            var ratio_frac: t40 = div_int(remainder * 100, comp_len);
+                            
+                            print_ratio_msg();
+                            print_int(ratio_int);
+                            print_dot_msg();
+                            match ratio_frac - 10 {
+                                neg => { sys_write_char(48); } // '0'
+                                _ => {}
+                            }
+                            print_int(ratio_frac);
+                            print_ratio_x_newline();
+                            
+                            // 5. Run RLE decompression
+                            print_decompressing_msg();
+                            var decomp_len: t40 = rle_decompress(comp, comp_len, decomp, process_len);
+                            
+                            print_decompressed_msg();
+                            print_int(decomp_len);
+                            sys_newline();
+                            
+                            // 6. Verify 100% correctness
+                            print_verifying_msg();
+                            var match_ok: t40 = 1;
+                            
+                            match decomp_len - process_len {
+                                zero => {
+                                    var k: t40 = 0;
+                                    while process_len - k > 0 {
+                                        var v_orig: t40 = 0;
+                                        var v_dec: t40 = 0;
+                                        unsafe {
+                                            v_orig = load(src + k);
+                                            v_dec = load(decomp + k);
+                                        }
+                                        match v_orig - v_dec {
+                                            zero => {}
+                                            _ => {
+                                                match_ok = 0;
+                                                print_mismatch_msg();
+                                                print_int(k);
+                                                print_mismatch_orig();
+                                                print_int(v_orig);
+                                                print_mismatch_dec();
+                                                print_int(v_dec);
+                                                sys_newline();
+                                            }
+                                        }
+                                        k = k + 1;
+                                    }
+                                }
+                                _ => {
+                                    match_ok = 0;
+                                    print_length_mismatch();
+                                }
+                            }
+                            
+                            match match_ok {
+                                zero => {
+                                    print_failed_msg();
+                                }
+                                _ => {
+                                    print_success_msg();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Free the allocated memory blocks
+    free(raw_src);
+    free(raw_comp);
+    free(raw_decomp);
+    
+    return 0;
+}

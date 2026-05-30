@@ -1,0 +1,377 @@
+// =============================================================================
+// ternary_stream.trit  -  Refined Ternary Stream Processing Library
+// =============================================================================
+
+// Helper to update anomaly detector history
+fn df_stream_hist_add(hist: t40, v: t40) -> void {
+    var count: t40 = 0;
+    unsafe { count = load(hist + 3); }
+    match count - 3 {
+        neg => {
+            unsafe {
+                store(hist + count, v);
+                store(hist + 3, count + 1);
+            }
+        }
+        _ => {
+            // Shift elements left: hist[0] = hist[1], hist[1] = hist[2], hist[2] = v
+            var v1: t40 = 0;
+            var v2: t40 = 0;
+            unsafe {
+                v1 = load(hist + 1);
+                v2 = load(hist + 2);
+                store(hist, v1);
+                store(hist + 1, v2);
+                store(hist + 2, v);
+            }
+        }
+    }
+}
+
+// 1. Sensor Source Node Callback
+fn df_stream_source_execute(node: t40) -> void {
+    var outputs: t40 = 0;
+    var chan: t40 = 0;
+    var custom: t40 = 0;
+    var step: t40 = 0;
+    var mode: t40 = 0;
+    unsafe {
+        outputs = load(node + 3);
+        custom = load(node + 7);
+        step = load(custom + 1);
+        mode = load(custom);
+    }
+    chan = vec_get(outputs, 0);
+
+    match mode {
+        zero => {
+            // Normal Stream Run: emit steady readings
+            match step {
+                zero => { df_channel_write(chan, 10); }
+                pos => {
+                    match step - 1 {
+                        zero => { df_channel_write(chan, 15); }
+                        pos => {
+                            match step - 2 {
+                                zero => { df_channel_write(chan, 20); }
+                                pos => {
+                                    match step - 3 {
+                                        zero => { df_channel_write(chan, 25); }
+                                        pos => {
+                                            match step - 4 {
+                                                zero => { df_channel_write(chan, 30); }
+                                                pos => {
+                                                    match step - 5 {
+                                                        zero => { df_channel_write(chan, 35); }
+                                                        _ => {}
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        _ => {
+            // Faulty/Uncertain Stream Run
+            match step {
+                zero => { df_channel_write(chan, 12); }
+                pos => {
+                    match step - 1 {
+                        zero => { df_channel_write(chan, 0 - 2); } // uncertainty marker (-2)
+                        pos => {
+                            match step - 2 {
+                                zero => { df_channel_write(chan, 15); }
+                                pos => {
+                                    match step - 3 {
+                                        zero => { df_channel_write(chan, 0 - 1); } // cancellation/anomaly signal
+                                        pos => {
+                                            match step - 4 {
+                                                zero => { df_channel_write(chan, 22); }
+                                                _ => {}
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    unsafe { store(custom + 1, step + 1); } // Increment step
+}
+
+// 2. Anomaly Detector Node Callback (Design 5: Parameterized threshold)
+fn df_stream_anomaly_execute(node: t40) -> void {
+    var inputs: t40 = 0;
+    var outputs: t40 = 0;
+    var in_chan: t40 = 0;
+    var out_chan: t40 = 0;
+    var hist: t40 = 0;
+    
+    unsafe {
+        inputs = load(node + 2);
+        outputs = load(node + 3);
+        hist = load(node + 7); // [0..2]=history, [3]=count, [4]=threshold
+    }
+    in_chan = vec_get(inputs, 0);
+    out_chan = vec_get(outputs, 0);
+
+    var active: t40 = 1;
+    while active > 0 {
+        var val: t40 = df_channel_read(in_chan);
+        match val {
+            zero => { active = 0; }
+            neg => {
+                // Propagate cancellation or uncertainty out-of-band and stop draining
+                df_channel_write(out_chan, val);
+                active = 0;
+            }
+            pos => {
+                // Calculate history average
+                var sum: t40 = 0;
+                var count: t40 = 0;
+                var threshold: t40 = 0;
+                unsafe {
+                    count = load(hist + 3);
+                    threshold = load(hist + 4);
+                }
+                
+                match count {
+                    zero => {
+                        // No history: accept and add to history
+                        df_channel_write(out_chan, val);
+                        df_stream_hist_add(hist, val);
+                    }
+                    _ => {
+                        var i: t40 = 0;
+                        while count - i > 0 {
+                            var hval: t40 = 0;
+                            unsafe { hval = load(hist + i); }
+                            sum = sum + hval;
+                            i = i + 1;
+                        }
+                        var avg: t40 = sum / count;
+                        
+                        // Check if reading deviates by > threshold
+                        var diff: t40 = val - avg;
+                        var is_anomaly: t40 = 0;
+                        match diff - threshold {
+                            pos => { is_anomaly = 1; }
+                            zero => { is_anomaly = 1; }
+                            neg => {
+                                match (0 - diff) - threshold {
+                                    pos => { is_anomaly = 1; }
+                                    zero => { is_anomaly = 1; }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        
+                        match is_anomaly {
+                            zero => {
+                                // Normal: write to channel and add to history
+                                df_channel_write(out_chan, val);
+                                df_stream_hist_add(hist, val);
+                            }
+                            _ => {
+                                // Anomaly: write cancellation signal (-1)
+                                df_channel_write(out_chan, 0 - 1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 3. Tumbling Window Aggregator Node Callback
+fn df_stream_window_execute(node: t40) -> void {
+    var inputs: t40 = 0;
+    var outputs: t40 = 0;
+    var in_chan: t40 = 0;
+    var out_chan: t40 = 0;
+    var ctx: t40 = 0;
+    
+    unsafe {
+        inputs = load(node + 2);
+        outputs = load(node + 3);
+        ctx = load(node + 7); // Context: [0]=sum, [1]=count, [2]=limit, [3]=uncertainty_count
+    }
+    in_chan = vec_get(inputs, 0);
+    out_chan = vec_get(outputs, 0);
+
+    var sum: t40 = 0;
+    var count: t40 = 0;
+    var limit: t40 = 0;
+    var uncertainty: t40 = 0;
+    unsafe {
+        sum = load(ctx);
+        count = load(ctx + 1);
+        limit = load(ctx + 2);
+        uncertainty = load(ctx + 3);
+    }
+
+    var active: t40 = 1;
+    while active > 0 {
+        var val: t40 = df_channel_read(in_chan);
+        match val {
+            zero => { active = 0; }
+            neg => {
+                match val - (0 - 1) {
+                    zero => {
+                        // Cancellation/fault signal: propagate and abort tick immediately
+                        df_channel_write(out_chan, val);
+                        active = 0;
+                    }
+                    _ => {
+                        // Uncertainty signal (-2)
+                        uncertainty = uncertainty + 1;
+                        count = count + 1;
+                        
+                        match count - limit {
+                            zero => {
+                                match limit - uncertainty {
+                                    zero => { df_channel_write(out_chan, 0 - 2); }
+                                    _ => {
+                                        var avg: t40 = sum / (limit - uncertainty);
+                                        df_channel_write(out_chan, avg);
+                                    }
+                                }
+                                sum = 0;
+                                count = 0;
+                                uncertainty = 0;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            pos => {
+                sum = sum + val;
+                count = count + 1;
+                match count - limit {
+                    zero => {
+                        match limit - uncertainty {
+                            zero => { df_channel_write(out_chan, 0 - 2); }
+                            _ => {
+                                var avg: t40 = sum / (limit - uncertainty);
+                                df_channel_write(out_chan, avg);
+                            }
+                        }
+                        sum = 0;
+                        count = 0;
+                        uncertainty = 0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    
+    unsafe {
+        store(ctx, sum);
+        store(ctx + 1, count);
+        store(ctx + 3, uncertainty);
+    }
+}
+
+// 4. Threshold/Filter Node Callback
+fn df_stream_filter_execute(node: t40) -> void {
+    var inputs: t40 = 0;
+    var outputs: t40 = 0;
+    var in_chan: t40 = 0;
+    var out_chan: t40 = 0;
+    var threshold: t40 = 0;
+    
+    unsafe {
+        inputs = load(node + 2);
+        outputs = load(node + 3);
+        threshold = load(node + 7);
+    }
+    in_chan = vec_get(inputs, 0);
+    out_chan = vec_get(outputs, 0);
+
+    var active: t40 = 1;
+    while active > 0 {
+        var val: t40 = df_channel_read(in_chan);
+        match val {
+            zero => { active = 0; }
+            neg => {
+                df_channel_write(out_chan, val);
+                active = 0; // stop draining on out-of-band signals (Bug 5 fix)
+            }
+            pos => {
+                match val - threshold {
+                    pos => { df_channel_write(out_chan, val); }
+                    zero => { df_channel_write(out_chan, val); }
+                    neg => {} // filtered out
+                }
+            }
+        }
+    }
+}
+
+// 5. Alert Sink Node Callback
+fn df_stream_sink_execute(node: t40) -> void {
+    var inputs: t40 = 0;
+    var in_chan: t40 = 0;
+    
+    unsafe {
+        inputs = load(node + 2);
+    }
+    in_chan = vec_get(inputs, 0);
+
+    var active: t40 = 1;
+    while active > 0 {
+        var val: t40 = df_channel_read(in_chan);
+        match val {
+            zero => { active = 0; }
+            neg => {
+                match val - (0 - 1) {
+                    zero => {
+                        // Anomaly alert (DMEM[31] = "ANOMALY")
+                        var err_str: t40 = 0;
+                        unsafe { err_str = load(31); }
+                        print_real_string(err_str);
+                        sys_write_char(33); sys_write_char(33); // "!!"
+                        sys_newline();
+                    }
+                    _ => {
+                        // Uncertain alert (DMEM[32] = "UNCERTAIN")
+                        var uncertain_str: t40 = 0;
+                        unsafe { uncertain_str = load(32); }
+                        print_real_string(uncertain_str);
+                        sys_write_char(63); sys_write_char(63); // "??" (character code 63, Bug 7 fix)
+                        sys_newline();
+                    }
+                }
+                active = 0; // stop draining on out-of-band signals (Bug 6 fix)
+            }
+            pos => {
+                // Normal data print (DMEM[34] = "METRIC ")
+                var cons_str: t40 = 0;
+                unsafe { cons_str = load(34); }
+                print_real_string(cons_str);
+                print_int(val);
+                sys_newline();
+            }
+        }
+    }
+}

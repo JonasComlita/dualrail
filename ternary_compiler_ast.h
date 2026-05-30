@@ -72,6 +72,7 @@ enum class StmtKind : uint8_t {
     Assign,
     Return,
     Expr,
+    If,
     WhilePos,
     MatchSign,
     UnsafeBlock,
@@ -97,6 +98,7 @@ struct Stmt {
     ExprPtr rhs;
     ExprPtr target;
     std::vector<Stmt> body;
+    std::vector<Stmt> else_body;
     std::vector<MatchArm> arms;
 };
 
@@ -487,6 +489,11 @@ inline void foldStmt(Stmt& stmt,
             break;
         case StmtKind::Expr:
             foldExpr(stmt.expr, fileConsts, scopes, diagnostics);
+            break;
+        case StmtKind::If:
+            foldExpr(stmt.expr, fileConsts, scopes, diagnostics);
+            foldBlock(stmt.body, fileConsts, scopes, diagnostics);
+            foldBlock(stmt.else_body, fileConsts, scopes, diagnostics);
             break;
         case StmtKind::WhilePos:
             foldExpr(stmt.expr, fileConsts, scopes, diagnostics);

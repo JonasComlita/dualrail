@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
     std::string console_input_str;
 
     int imem_size = 32768;
-    int dmem_size = 65536;
+    int dmem_size = 1000000;
     struct SeedFile {
         std::string path;
         int address;

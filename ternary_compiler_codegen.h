@@ -144,6 +144,16 @@ private:
             }
             case StmtKind::Expr:
                 return inferExpr(stmt.expr);
+            case StmtKind::If: {
+                InferResult cond = inferExpr(stmt.expr);
+                unify(cond.type, TypeRef::trit(), subst_, diagnostics_,
+                      stmt.span, "if condition must evaluate to T1");
+                InferResult then_body = inferBlock(stmt.body);
+                InferResult else_body = inferBlock(stmt.else_body);
+                Effect effect = combineEffects(cond.effect,
+                                               combineEffects(then_body.effect, else_body.effect));
+                return InferResult{TypeRef::voidType(), effect, false, true};
+            }
             case StmtKind::WhilePos: {
                 InferResult cond = inferExpr(stmt.expr);
                 unify(cond.type, TypeRef::trit(), subst_, diagnostics_,
@@ -636,7 +646,14 @@ private:
                name == "sys_write" || name == "sys_stat" ||
                name == "sys_readdir" || name == "sys_brk" ||
                name == "sys_sbrk" || name == "sys_fork" ||
-               name == "sys_exec" || name == "sys_write_char";
+               name == "sys_exec" || name == "sys_write_char" ||
+               name == "sys_ipc_send" || name == "sys_ipc_recv" ||
+               name == "sys_fb_init" || name == "sys_fb_flip" ||
+               name == "sys_window_create" || name == "sys_window_get_buffer" ||
+               name == "sys_window_present" || name == "sys_window_move" ||
+               name == "sys_window_set_z" || name == "sys_window_destroy" ||
+               name == "sys_window_read_event" || name == "sys_window_resize" ||
+               name == "sys_window_request_close";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -1046,8 +1063,19 @@ private:
 
         result.assembly += ctx.asm_out.str();
         ctx.ir.ir_value_ceiling = ctx.next_value;
+        std::set<std::string> refs;
+        for (const auto& block : ctx.ir.blocks) {
+            for (const auto& instr : block.instructions) {
+                if (instr.opcode == InstrOpcode::Call && !instr.symbol.empty()) {
+                    refs.insert(instr.symbol);
+                }
+            }
+        }
         result.ssa_module.functions.push_back(ctx.ir);
         result.object.symbols[fn.name] = 0;
+        result.object.function_order.push_back(fn.name);
+        result.object.function_sections[fn.name] = ctx.asm_out.str();
+        result.object.function_refs[fn.name] = std::move(refs);
     }
 
     [[nodiscard]] static int align9(int value) {
@@ -1223,6 +1251,7 @@ private:
                 break;
             }
             case StmtKind::WhilePos: emitWhile(stmt, ctx); break;
+            case StmtKind::If: emitIf(stmt, ctx); break;
             case StmtKind::MatchSign: emitMatch(stmt, ctx); break;
             case StmtKind::UnsafeBlock: {
                 const bool old = ctx.unsafe_allowed;
@@ -1385,6 +1414,31 @@ private:
         }
         ctx.line("jmp " + ctx.ast->name + "_return");
         ctx.value(InstrOpcode::Ret, ctx.ast->return_type, stmt.span);
+    }
+
+    void emitIf(const Stmt& stmt, FunctionContext& ctx) {
+        std::string then_label = ctx.label("if_then");
+        std::string else_label = ctx.label("if_else");
+        std::string end_label = ctx.label("if_end");
+        ExprCode cond = emitExpr(stmt.expr, TypeRef::trit(), ctx);
+        ctx.line("brp r" + std::to_string(cond.reg) + ", " + then_label);
+        ctx.line("jmp " + else_label);
+        ctx.release(cond.reg);
+
+        ctx.raw(then_label + ":");
+        ctx.scope_vars.push_back({});
+        for (const auto& child : stmt.body) emitStmt(child, ctx);
+        emitDrops(ctx.scope_vars.back(), ctx);
+        ctx.scope_vars.pop_back();
+        ctx.line("jmp " + end_label);
+
+        ctx.raw(else_label + ":");
+        ctx.scope_vars.push_back({});
+        for (const auto& child : stmt.else_body) emitStmt(child, ctx);
+        emitDrops(ctx.scope_vars.back(), ctx);
+        ctx.scope_vars.pop_back();
+
+        ctx.raw(end_label + ":");
     }
 
     void emitWhile(const Stmt& stmt, FunctionContext& ctx) {
@@ -2185,7 +2239,8 @@ private:
         }
         ctx.line("syscall " + std::to_string(service));
         int out = ctx.acquire();
-        ctx.line("copy r" + std::to_string(out) + ", r13");
+        ctx.line("copy r" + std::to_string(out) + ", r" +
+                 std::to_string(runtimeReturnsPayload(service) ? 14 : 13));
         ValueId id = ctx.value(InstrOpcode::Syscall, TypeRef::numeric(ir::Type::T40), expr.span, out);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().aux = service;
@@ -2509,7 +2564,42 @@ private:
         if (name == "sys_fork") return runtime::sys_fork;
         if (name == "sys_exec") return runtime::sys_exec;
         if (name == "sys_write_char") return runtime::sys_write_char;
+        if (name == "sys_ipc_send") return runtime::sys_ipc_send;
+        if (name == "sys_ipc_recv") return runtime::sys_ipc_recv;
+        if (name == "sys_fb_init") return runtime::sys_fb_init;
+        if (name == "sys_fb_flip") return runtime::sys_fb_flip;
+        if (name == "sys_window_create") return runtime::sys_window_create;
+        if (name == "sys_window_get_buffer") return runtime::sys_window_get_buffer;
+        if (name == "sys_window_present") return runtime::sys_window_present;
+        if (name == "sys_window_move") return runtime::sys_window_move;
+        if (name == "sys_window_set_z") return runtime::sys_window_set_z;
+        if (name == "sys_window_destroy") return runtime::sys_window_destroy;
+        if (name == "sys_window_read_event") return runtime::sys_window_read_event;
+        if (name == "sys_window_resize") return runtime::sys_window_resize;
+        if (name == "sys_window_request_close") return runtime::sys_window_request_close;
         return 0;
+    }
+
+    [[nodiscard]] static bool runtimeReturnsPayload(int service) {
+        return service == runtime::sys_getpid ||
+               service == runtime::sys_uptime ||
+               service == runtime::sys_read_console_word ||
+               service == runtime::sys_open ||
+               service == runtime::sys_read ||
+               service == runtime::sys_write ||
+               service == runtime::sys_stat ||
+               service == runtime::sys_readdir ||
+               service == runtime::sys_fork ||
+               service == runtime::sys_exec ||
+               service == runtime::sys_ipc_send ||
+               service == runtime::sys_ipc_recv ||
+               service == runtime::sys_fb_init ||
+               service == runtime::sys_fb_flip ||
+               service == runtime::sys_window_create ||
+               service == runtime::sys_window_get_buffer ||
+               service == runtime::sys_window_present ||
+               service == runtime::sys_window_read_event ||
+               service == runtime::sys_window_request_close;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {
@@ -2899,4 +2989,3 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
 } // namespace sandbox
 
 #endif // TERNARY_COMPILER_CODEGEN_H
-

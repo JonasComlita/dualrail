@@ -1,0 +1,4206 @@
+// Phase D native TCL kernel substrate.
+//
+// D1 remains a raw TASM trap stub. This file is the high-level kernel body
+// that the stub enters after saving every live register into a task context.
+
+const KERNEL_MAGIC: t40 = 40404;
+const MMU_PAGE_WORDS: t40 = 27;
+
+const PTR_STATE_NULL: t40 = -1;
+const PTR_STATE_UNKNOWN: t40 = 0;
+const PTR_STATE_VALID: t40 = 1;
+
+const ERR_NOT_FOUND: t40 = -1;
+const ERR_EXISTS: t40 = -2;
+const ERR_NO_SPACE: t40 = -3;
+const ERR_BAD_FD: t40 = -4;
+const ERR_BAD_PTR: t40 = -5;
+const ERR_NOT_DIR: t40 = -6;
+const ERR_IS_DIR: t40 = -7;
+const ERR_INVALID: t40 = -8;
+const ERR_EOF: t40 = -9;
+
+const KIND_FREE: t40 = 0;
+const KIND_FILE: t40 = 1;
+const KIND_DIR: t40 = 2;
+const KIND_EXEC: t40 = 3;
+
+const BOOTSTRAP_MAX_PAGES: t40 = 96;
+const BOOTSTRAP_RESERVED_PAGES: t40 = 16;
+const BOOTSTRAP_KERNEL_IMAGE_PAGES: t40 = 12;
+const BOOTSTRAP_BUFFER_POOL_HEADER_PAGES: t40 = 2;
+const BOOTSTRAP_WAL_RING_PAGES: t40 = 2;
+
+const KERNEL_STATE_BASE: t40 = 3000;
+const KERNEL_BOOTED_ADDR: t40 = 3000;
+const BOOT_ALLOC_COUNT_ADDR: t40 = 3001;
+const REL_ONLINE_ADDR: t40 = 3002;
+const REL_MIGRATION_CURSOR_ADDR: t40 = 3003;
+const REL_MIGRATION_DONE_ADDR: t40 = 3004;
+const WAL_HEAD_ADDR: t40 = 3005;
+const WAL_TAIL_ADDR: t40 = 3006;
+const WAL_NEXT_TXID_ADDR: t40 = 3007;
+const WAL_CHECKPOINT_ADDR: t40 = 3008;
+const TIER1_HEAD_ADDR: t40 = 3009;
+const TIER1_TAIL_ADDR: t40 = 3010;
+const TIER1_COUNT_ADDR: t40 = 3011;
+const MACRO_COUNT_ADDR: t40 = 3012;
+const SCHED_EPOCH_ADDR: t40 = 3013;
+const VFS_MAGIC_ADDR: t40 = 3014;
+const VFS_NEXT_INODE_ADDR: t40 = 3015;
+const VFS_NEXT_DIRENT_ADDR: t40 = 3016;
+const VFS_NEXT_EXTENT_ADDR: t40 = 3017;
+const VFS_NEXT_DATA_ADDR: t40 = 3018;
+const CURRENT_CONTEXT_ADDR: t40 = 3019;
+const CURRENT_PID_ADDR: t40 = 3020;
+const SYS_STATUS_ADDR: t40 = 3021;
+const SYS_PAYLOAD_ADDR: t40 = 3022;
+const SYS_DETAIL_ADDR: t40 = 3023;
+const BUFFER_CLOCK_ADDR: t40 = 3024;
+const BUFFER_DIRTY_COUNT_ADDR: t40 = 3025;
+const BUFFER_FLUSH_COUNT_ADDR: t40 = 3026;
+const BUFFER_EVICTION_COUNT_ADDR: t40 = 3027;
+const WINDOW_NEXT_ID_ADDR: t40 = 3028;
+const COMPOSITOR_FRAME_COUNT_ADDR: t40 = 3029;
+const WINDOW_FOCUS_ID_ADDR: t40 = 3030;
+const INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3031;
+
+const BOOTSTRAP_BITMAP_BASE: t40 = 3200;
+
+const PAGE_HEADER_WORDS: t40 = 6;
+const PAGE_HEADERS_BASE: t40 = 3400;
+const PH_PPN: t40 = 0;
+const PH_PIN_COUNT: t40 = 1;
+const PH_DIRTY: t40 = 2;
+const PH_VERSION: t40 = 3;
+const PH_LRU_CLOCK: t40 = 4;
+const PH_NAMESPACE: t40 = 5;
+
+const BUFFER_MAX_FRAMES: t40 = 16;
+const BUFFER_FRAME_WORDS: t40 = 9;
+const BUFFER_POOL_BASE: t40 = 23500;
+const BF_VALID: t40 = 0;
+const BF_NAMESPACE: t40 = 1;
+const BF_INODE: t40 = 2;
+const BF_LOGICAL_PAGE: t40 = 3;
+const BF_DATA_ADDR: t40 = 4;
+const BF_PIN_COUNT: t40 = 5;
+const BF_DIRTY: t40 = 6;
+const BF_VERSION: t40 = 7;
+const BF_LAST_USED: t40 = 8;
+
+const FB_STATE_BASE: t40 = 23650;
+const FB_VALID: t40 = 0;
+const FB_WIDTH: t40 = 1;
+const FB_HEIGHT: t40 = 2;
+const FB_STRIDE: t40 = 3;
+const FB_FORMAT: t40 = 4;
+const FB_FRONT_INDEX: t40 = 5;
+const FB_WORDS: t40 = 6;
+const FB_PAGES: t40 = 7;
+const FB_FLIP_COUNT: t40 = 8;
+const FB_PINNED_PAGES: t40 = 9;
+const FB_STATE_WORDS: t40 = 10;
+const FB_FRONT_BUFFER_BASE: t40 = 40000;
+const FB_BACK_BUFFER_BASE: t40 = 43000;
+const FB_MAX_WORDS: t40 = 1728;
+const FB_PPN_BASE: t40 = 32;
+const FB_MAX_PINNED_PAGES: t40 = 64;
+const FB_FORMAT_T5_RGB: t40 = 1;
+
+const WINDOW_MAX: t40 = 8;
+const WINDOW_ROW_WORDS: t40 = 16;
+const WINDOW_BASE: t40 = 23700;
+const WINDOW_EVENT_BASE: t40 = 23850;
+const WINDOW_EVENT_CAPACITY: t40 = 8;
+const WINDOW_EVENT_WORDS: t40 = 4;
+const WINDOW_BUFFER_BASE: t40 = 45630;
+const WINDOW_BUFFER_WORDS: t40 = 486;
+const WINDOW_BUFFER_PAGES: t40 = 18;
+const WINDOW_USER_VPN_BASE: t40 = 64;
+const WINDOW_USER_PAGES: t40 = 18;
+const WIN_ACTIVE: t40 = 0;
+const WIN_ID: t40 = 1;
+const WIN_OWNER_PID: t40 = 2;
+const WIN_X: t40 = 3;
+const WIN_Y: t40 = 4;
+const WIN_WIDTH: t40 = 5;
+const WIN_HEIGHT: t40 = 6;
+const WIN_Z: t40 = 7;
+const WIN_VISIBLE: t40 = 8;
+const WIN_DIRTY: t40 = 9;
+const WIN_BUFFER_ADDR: t40 = 10;
+const WIN_NAMESPACE: t40 = 11;
+const WIN_VERSION: t40 = 12;
+const WIN_EVENT_READ: t40 = 13;
+const WIN_EVENT_WRITE: t40 = 14;
+const WIN_EVENT_COUNT: t40 = 15;
+const EVENT_KIND: t40 = 0;
+const EVENT_X_OR_KEY: t40 = 1;
+const EVENT_Y: t40 = 2;
+const EVENT_MODIFIERS: t40 = 3;
+const EVENT_KIND_KEY: t40 = 1;
+const EVENT_KIND_MOUSE: t40 = 2;
+const EVENT_KIND_CLOSE: t40 = 3;
+
+const WAL_RECORD_WORDS: t40 = 5;
+const WAL_CAPACITY: t40 = 64;
+const WAL_BASE: t40 = 4000;
+const WAL_TXID: t40 = 0;
+const WAL_BLOCK: t40 = 1;
+const WAL_OLD: t40 = 2;
+const WAL_NEW: t40 = 3;
+const WAL_STATE: t40 = 4;
+const WAL_FREE: t40 = 0;
+const WAL_PENDING: t40 = 1;
+const WAL_COMMITTED: t40 = 2;
+const WAL_ABORTED: t40 = -1;
+
+const REL_ALLOC_WORDS: t40 = 3;
+const REL_ALLOC_BASE: t40 = 4400;
+const REL_ALLOC_PPN: t40 = 0;
+const REL_ALLOC_STATE: t40 = 1;
+const REL_ALLOC_VERSION: t40 = 2;
+
+const TIER1_CAPACITY: t40 = 32;
+const TIER1_QUEUE_BASE: t40 = 4800;
+const MACRO_CAPACITY: t40 = 32;
+const MACRO_QUEUE_BASE: t40 = 4860;
+
+const VFS_MAX_INODES: t40 = 24;
+const VFS_MAX_DIRENTS: t40 = 48;
+const VFS_MAX_EXTENTS: t40 = 64;
+const VFS_MAX_FDS: t40 = 32;
+const VFS_MAX_NAME_WORDS: t40 = 16;
+const VFS_MAX_PATH_WORDS: t40 = 64;
+const VFS_PAYLOAD_WORDS: t40 = 2048;
+
+const VFS_INODE_WORDS: t40 = 8;
+const VFS_INODE_BASE: t40 = 5000;
+const INODE_KIND: t40 = 0;
+const INODE_MODE: t40 = 1;
+const INODE_SIZE: t40 = 2;
+const INODE_LINKS: t40 = 3;
+const INODE_VERSION: t40 = 4;
+const INODE_CTIME: t40 = 5;
+const INODE_MTIME: t40 = 6;
+const INODE_FLAGS: t40 = 7;
+
+const VFS_DIRENT_WORDS: t40 = 6;
+const VFS_DIRENT_BASE: t40 = 5300;
+const DIRENT_NAMESPACE: t40 = 0;
+const DIRENT_PARENT: t40 = 1;
+const DIRENT_HASH: t40 = 2;
+const DIRENT_NAME_LEN: t40 = 3;
+const DIRENT_CHILD: t40 = 4;
+const DIRENT_VERSION: t40 = 5;
+const VFS_DIRENT_NAME_BASE: t40 = 5600;
+
+const VFS_EXTENT_WORDS: t40 = 6;
+const VFS_EXTENT_BASE: t40 = 6400;
+const EXTENT_NAMESPACE: t40 = 0;
+const EXTENT_INODE: t40 = 1;
+const EXTENT_LOGICAL_START: t40 = 2;
+const EXTENT_LENGTH: t40 = 3;
+const EXTENT_DATA_ADDR: t40 = 4;
+const EXTENT_VERSION: t40 = 5;
+
+const VFS_FD_WORDS: t40 = 7;
+const VFS_FD_BASE: t40 = 6900;
+const FD_PID: t40 = 0;
+const FD_NAMESPACE: t40 = 1;
+const FD_INODE: t40 = 2;
+const FD_OFFSET: t40 = 3;
+const FD_FLAGS: t40 = 4;
+const FD_REFCOUNT: t40 = 5;
+const FD_VERSION: t40 = 6;
+
+const VFS_DATA_BASE: t40 = 7400;
+const USER_MEM_BASE: t40 = 10000;
+const USER_MEM_LIMIT: t40 = 16000;
+const USER_SCRATCH_VPN_BASE: t40 = 370;
+const USER_SCRATCH_PAGES: t40 = 1;
+const SYSCALL_PATH_COPY_BASE: t40 = 15800;
+
+const IPC_MAX_CHANNELS: t40 = 8;
+const IPC_CHANNEL_WORDS: t40 = 8;
+const IPC_BASE: t40 = 9600;
+const IPC_BUFFER_BASE: t40 = 9800;
+const IPC_CAPACITY: t40 = 8;
+const IPC_NS_A: t40 = 0;
+const IPC_NS_B: t40 = 1;
+const IPC_BUF: t40 = 2;
+const IPC_CAP: t40 = 3;
+const IPC_READ: t40 = 4;
+const IPC_WRITE: t40 = 5;
+const IPC_COUNT: t40 = 6;
+const IPC_VERSION: t40 = 7;
+
+const PROCESS_MAX: t40 = 8;
+const PROCESS_ROW_WORDS: t40 = 8;
+const PROCESS_BASE: t40 = 9864;
+const PROC_PID: t40 = 0;
+const PROC_NAMESPACE: t40 = 1;
+const PROC_STATE: t40 = 2;
+const PROC_PRIORITY: t40 = 3;
+const PROC_QUOTA: t40 = 4;
+const PROC_CONTEXT: t40 = 5;
+const PROC_WAIT_CHANNEL: t40 = 6;
+const PROC_VERSION: t40 = 7;
+
+const PROC_FREE: t40 = 0;
+const PROC_RUNNABLE: t40 = 1;
+const PROC_RUNNING: t40 = 2;
+const PROC_BLOCKED: t40 = 3;
+const PROC_SLEEPING: t40 = 4;
+const PROC_EXITED: t40 = 5;
+
+const QUOTA_MAX: t40 = 8;
+const QUOTA_ROW_WORDS: t40 = 4;
+const QUOTA_BASE: t40 = 9928;
+const QUOTA_ID: t40 = 0;
+const QUOTA_LIMIT: t40 = 1;
+const QUOTA_USED: t40 = 2;
+const QUOTA_VERSION: t40 = 3;
+
+const DESIRED_PROCESS_BASE: t40 = 9960;
+const WAIT_CHANNEL_BASE: t40 = 9970;
+
+const NAMESPACE_MAX: t40 = 8;
+const NAMESPACE_ROW_WORDS: t40 = 4;
+const NAMESPACE_BASE: t40 = 17000;
+const NS_ID: t40 = 0;
+const NS_ROOT_INODE: t40 = 1;
+const NS_VERSION: t40 = 2;
+const NS_ACTIVE: t40 = 3;
+
+const PTE_MAX_VPN: t40 = 16;
+const PTE_ROW_WORDS: t40 = 5;
+const PTE_BASE: t40 = 17100;
+const PTE_WORD: t40 = 0;
+const PTE_PPN: t40 = 1;
+const PTE_FLAGS: t40 = 2;
+const PTE_VERSION: t40 = 3;
+const PTE_NAMESPACE: t40 = 4;
+const PTE_FLAG_COW: t40 = 1;
+const PTE_FLAG_MMIO: t40 = 2;
+
+const PROCESS_CACHE_WORDS: t40 = 4;
+const PROCESS_CACHE_BASE: t40 = 17800;
+const CACHE_KEY: t40 = 0;
+const CACHE_VALUE: t40 = 1;
+const CACHE_VERSION: t40 = 2;
+const CACHE_VALID: t40 = 3;
+
+const EXEC_IMAGE_WORDS: t40 = 128;
+const EXEC_IMAGE_BASE: t40 = 18000;
+const EXEC_HEADER_WORDS: t40 = 9;
+const EXEC_MAGIC: t40 = 40404;
+const EXEC_VERSION_V1: t40 = 1;
+const EXEC_ABI_VERSION_V1: t40 = 1;
+const EXEC_SYSCALL_ABI_VERSION_V1: t40 = 1;
+const EXEC_HEADER_MAGIC: t40 = 0;
+const EXEC_HEADER_VERSION: t40 = 1;
+const EXEC_HEADER_ABI_VERSION: t40 = 2;
+const EXEC_HEADER_ENTRY_PC: t40 = 3;
+const EXEC_HEADER_TEXT_PAGES: t40 = 4;
+const EXEC_HEADER_DATA_PAGES: t40 = 5;
+const EXEC_HEADER_STACK_WORDS: t40 = 6;
+const EXEC_HEADER_SYSCALL_ABI_VERSION: t40 = 7;
+const EXEC_HEADER_FLAGS: t40 = 8;
+const EXEC_DESC_TEXT_PPN: t40 = 9;
+const EXEC_DESC_WORDS: t40 = 10;
+const TASK_CONTEXT_WORDS: t40 = 32;
+const TASK_CONTEXT_EPC: t40 = 0;
+const TASK_CONTEXT_STATUS: t40 = 1;
+const TASK_CONTEXT_IMEM_PTBR: t40 = 2;
+const TASK_CONTEXT_IMEM_PAGES: t40 = 3;
+const TASK_CONTEXT_DMEM_PTBR: t40 = 4;
+const TASK_CONTEXT_DMEM_PAGES: t40 = 5;
+const TASK_CONTEXT_REG_BASE: t40 = 6;
+const TASK_CONTEXT_SP: t40 = 31;
+const TASK_STATUS_USER_RESUME: t40 = 35;
+const HW_PT_MAX_PAGES: t40 = 512;
+const HW_PT_WORDS: t40 = 1024;
+const HW_PT_BASE: t40 = 19300;
+const PROCESS_HEAP_WORDS: t40 = 4;
+const PROCESS_HEAP_BASE: t40 = 23450;
+const PROC_HEAP_START: t40 = 0;
+const PROC_HEAP_BREAK: t40 = 1;
+const PROC_HEAP_LIMIT: t40 = 2;
+const PROC_HEAP_MAPPED_PAGES: t40 = 3;
+const PROCESS_DMEM_PAGES_MAX: t40 = 16;
+const PROCESS_DMEM_PPN_BASE: t40 = 900;
+const PROCESS_CONTEXT_BASE: t40 = 28000;
+
+const APP_MAX: t40 = 16;
+const APP_ROW_WORDS: t40 = 10;
+const APP_REGISTRY_BASE: t40 = 19100;
+const APP_NAMESPACE: t40 = 0;
+const APP_PATH_HASH: t40 = 1;
+const APP_INODE: t40 = 2;
+const APP_CAPS: t40 = 3;
+const APP_QUOTA: t40 = 4;
+const APP_TRUSTED: t40 = 5;
+const APP_VERSION: t40 = 6;
+const APP_LAUNCH_COUNT: t40 = 7;
+const APP_MAX_IMAGE: t40 = 8;
+const APP_FLAGS: t40 = 9;
+
+const APP_CAP_CONSOLE: t40 = 1;
+const APP_CAP_FS_READ: t40 = 2;
+const APP_CAP_FS_WRITE: t40 = 4;
+const APP_CAP_GRAPHICS: t40 = 8;
+const APP_CAP_PROCESS: t40 = 16;
+const APP_CAP_IPC: t40 = 32;
+
+struct PageHeader {
+    ppn: t40;
+    pin_count: t40;
+    dirty: t1;
+    version: t40;
+    lru_clock: t40;
+    namespace: t40;
+}
+
+fn kload(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn kstore(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn kacq(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = tldr(addr, 1); }
+    return value;
+}
+
+fn kcas(addr: t40, expected: t40, desired: t40) -> t40 {
+    var status: t40 = 0;
+    var current: t40 = 0;
+    unsafe { current = tldr(addr, 1); }
+    if current - expected != 0 {
+        return 0;
+    }
+    unsafe { status = tstr(addr, desired, expected, 1); }
+    return status;
+}
+
+fn kwrap_inc(value: t40, limit: t40) -> t40 {
+    var next: t40 = value + 1;
+    if next - limit >= 0 {
+        return 0;
+    }
+    return next;
+}
+
+fn kclear(base: t40, words: t40) -> t40 {
+    var i: t40 = 0;
+    while words - i > 0 {
+        kstore(base + i, 0);
+        i = i + 1;
+    }
+    return i;
+}
+
+fn bootstrap_required_pages() -> t40 {
+    return BOOTSTRAP_KERNEL_IMAGE_PAGES + BOOTSTRAP_BUFFER_POOL_HEADER_PAGES + BOOTSTRAP_WAL_RING_PAGES;
+}
+
+fn bootstrap_bitmap_capacity_pages() -> t40 {
+    return BOOTSTRAP_MAX_PAGES;
+}
+
+fn bootstrap_bitmap_is_sized() -> t40 {
+    var required: t40 = bootstrap_required_pages();
+    if BOOTSTRAP_MAX_PAGES - required > 0 {
+        return 1;
+    }
+    if BOOTSTRAP_MAX_PAGES - required == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn bootstrap_bitmap_addr(ppn: t40) -> t40 {
+    return BOOTSTRAP_BITMAP_BASE + ppn;
+}
+
+fn bootstrap_is_allocated(ppn: t40) -> t40 {
+    if ppn < 0 {
+        return 0;
+    }
+    if ppn - BOOTSTRAP_MAX_PAGES >= 0 {
+        return 0;
+    }
+    return kload(bootstrap_bitmap_addr(ppn));
+}
+
+fn bootstrap_allocated_count() -> t40 {
+    return kload(BOOT_ALLOC_COUNT_ADDR);
+}
+
+fn bootstrap_allocator_init() -> t40 {
+    var i: t40 = 0;
+    while BOOTSTRAP_MAX_PAGES - i > 0 {
+        kstore(bootstrap_bitmap_addr(i), 0);
+        i = i + 1;
+    }
+    i = 0;
+    while BOOTSTRAP_RESERVED_PAGES - i > 0 {
+        kstore(bootstrap_bitmap_addr(i), 1);
+        i = i + 1;
+    }
+    kstore(BOOT_ALLOC_COUNT_ADDR, BOOTSTRAP_RESERVED_PAGES);
+    return bootstrap_bitmap_is_sized();
+}
+
+fn alloc_bootstrap_page() -> t40 {
+    if kload(REL_MIGRATION_DONE_ADDR) > 0 {
+        return ERR_INVALID;
+    }
+    var ppn: t40 = BOOTSTRAP_RESERVED_PAGES;
+    while BOOTSTRAP_MAX_PAGES - ppn > 0 {
+        if kload(bootstrap_bitmap_addr(ppn)) == 0 {
+            kstore(bootstrap_bitmap_addr(ppn), 1);
+            var count: t40 = kload(BOOT_ALLOC_COUNT_ADDR);
+            kstore(BOOT_ALLOC_COUNT_ADDR, count + 1);
+            return ppn;
+        }
+        ppn = ppn + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn page_header_addr(ppn: t40) -> t40 {
+    return PAGE_HEADERS_BASE + ppn * PAGE_HEADER_WORDS;
+}
+
+fn page_header_field(ppn: t40, field: t40) -> t40 {
+    return page_header_addr(ppn) + field;
+}
+
+fn page_version_state(version: t40) -> t40 {
+    if version < 0 {
+        return PTR_STATE_NULL;
+    }
+    if version > 0 {
+        return PTR_STATE_VALID;
+    }
+    return PTR_STATE_UNKNOWN;
+}
+
+fn page_version_from_ptr_state(state: t40, generation: t40) -> t40 {
+    if state < 0 {
+        return 0 - generation;
+    }
+    if state > 0 {
+        return generation;
+    }
+    return 0;
+}
+
+fn buffer_frame_addr(slot: t40) -> t40 {
+    return BUFFER_POOL_BASE + slot * BUFFER_FRAME_WORDS;
+}
+
+fn buffer_logical_page(logical_word: t40) -> t40 {
+    var remaining: t40 = logical_word;
+    var page: t40 = 0;
+    while remaining - MMU_PAGE_WORDS >= 0 {
+        remaining = remaining - MMU_PAGE_WORDS;
+        page = page + 1;
+    }
+    return page;
+}
+
+fn buffer_pool_init() -> t40 {
+    var ppn: t40 = 0;
+    while BOOTSTRAP_MAX_PAGES - ppn > 0 {
+        var addr: t40 = page_header_addr(ppn);
+        kstore(addr + PH_PPN, ppn);
+        kstore(addr + PH_PIN_COUNT, 0);
+        kstore(addr + PH_DIRTY, -1);
+        kstore(addr + PH_VERSION, 0);
+        kstore(addr + PH_LRU_CLOCK, ppn);
+        kstore(addr + PH_NAMESPACE, 0);
+        ppn = ppn + 1;
+    }
+    kclear(BUFFER_POOL_BASE, BUFFER_MAX_FRAMES * BUFFER_FRAME_WORDS);
+    kstore(BUFFER_CLOCK_ADDR, 0);
+    kstore(BUFFER_DIRTY_COUNT_ADDR, 0);
+    kstore(BUFFER_FLUSH_COUNT_ADDR, 0);
+    kstore(BUFFER_EVICTION_COUNT_ADDR, 0);
+    return BOOTSTRAP_MAX_PAGES;
+}
+
+fn buffer_find(namespace_id: t40, inode: t40, logical_page: t40) -> t40 {
+    var slot: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if kload(row + BF_NAMESPACE) - namespace_id == 0 {
+                if kload(row + BF_INODE) - inode == 0 {
+                    if kload(row + BF_LOGICAL_PAGE) - logical_page == 0 {
+                        return slot;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn buffer_dirty_count() -> t40 {
+    return kload(BUFFER_DIRTY_COUNT_ADDR);
+}
+
+fn buffer_flush_count() -> t40 {
+    return kload(BUFFER_FLUSH_COUNT_ADDR);
+}
+
+fn buffer_evict_count() -> t40 {
+    return kload(BUFFER_EVICTION_COUNT_ADDR);
+}
+
+fn buffer_pinned_count() -> t40 {
+    var slot: t40 = 0;
+    var count: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if kload(row + BF_PIN_COUNT) > 0 {
+                count = count + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return count;
+}
+
+fn buffer_flush_frame(slot: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - BUFFER_MAX_FRAMES >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = buffer_frame_addr(slot);
+    if kload(row + BF_VALID) <= 0 {
+        return ERR_INVALID;
+    }
+    if kload(row + BF_DIRTY) > 0 {
+        kstore(row + BF_DIRTY, 0);
+        var dirty: t40 = kload(BUFFER_DIRTY_COUNT_ADDR);
+        if dirty > 0 {
+            kstore(BUFFER_DIRTY_COUNT_ADDR, dirty - 1);
+        }
+        kstore(BUFFER_FLUSH_COUNT_ADDR, kload(BUFFER_FLUSH_COUNT_ADDR) + 1);
+    }
+    return 1;
+}
+
+fn buffer_flush_all() -> t40 {
+    var slot: t40 = 0;
+    var flushed: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if kload(row + BF_DIRTY) > 0 {
+                buffer_flush_frame(slot);
+                flushed = flushed + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return flushed;
+}
+
+fn buffer_pick_victim() -> t40 {
+    var slot: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        if kload(buffer_frame_addr(slot) + BF_VALID) <= 0 {
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    slot = 0;
+    var best_slot: t40 = ERR_NO_SPACE;
+    var best_clock: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_PIN_COUNT) <= 0 {
+            var clock: t40 = kload(row + BF_LAST_USED);
+            if best_slot < 0 {
+                best_slot = slot;
+                best_clock = clock;
+            } else {
+                if best_clock - clock > 0 {
+                    best_slot = slot;
+                    best_clock = clock;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return best_slot;
+}
+
+fn buffer_alloc_frame(namespace_id: t40, inode: t40, logical_page: t40, data_addr: t40) -> t40 {
+    var slot: t40 = buffer_pick_victim();
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = buffer_frame_addr(slot);
+    if kload(row + BF_VALID) > 0 {
+        buffer_flush_frame(slot);
+        kstore(BUFFER_EVICTION_COUNT_ADDR, kload(BUFFER_EVICTION_COUNT_ADDR) + 1);
+    }
+    kstore(row + BF_VALID, 1);
+    kstore(row + BF_NAMESPACE, namespace_id);
+    kstore(row + BF_INODE, inode);
+    kstore(row + BF_LOGICAL_PAGE, logical_page);
+    kstore(row + BF_DATA_ADDR, data_addr);
+    kstore(row + BF_PIN_COUNT, 0);
+    kstore(row + BF_DIRTY, 0);
+    kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
+    kstore(row + BF_LAST_USED, kload(BUFFER_CLOCK_ADDR));
+    return slot;
+}
+
+fn buffer_pin(namespace_id: t40, inode: t40, logical_word: t40, data_addr: t40) -> t40 {
+    var logical_page: t40 = buffer_logical_page(logical_word);
+    var slot: t40 = buffer_find(namespace_id, inode, logical_page);
+    if slot < 0 {
+        slot = buffer_alloc_frame(namespace_id, inode, logical_page, data_addr);
+        if slot < 0 {
+            return slot;
+        }
+    }
+    var row: t40 = buffer_frame_addr(slot);
+    kstore(row + BF_PIN_COUNT, kload(row + BF_PIN_COUNT) + 1);
+    var clock: t40 = kload(BUFFER_CLOCK_ADDR) + 1;
+    kstore(BUFFER_CLOCK_ADDR, clock);
+    kstore(row + BF_LAST_USED, clock);
+    return slot;
+}
+
+fn buffer_unpin(slot: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - BUFFER_MAX_FRAMES >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = buffer_frame_addr(slot);
+    var pins: t40 = kload(row + BF_PIN_COUNT);
+    if pins <= 0 {
+        return ERR_INVALID;
+    }
+    kstore(row + BF_PIN_COUNT, pins - 1);
+    return pins - 1;
+}
+
+fn buffer_mark_dirty(slot: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - BUFFER_MAX_FRAMES >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = buffer_frame_addr(slot);
+    if kload(row + BF_VALID) <= 0 {
+        return ERR_INVALID;
+    }
+    if kload(row + BF_DIRTY) <= 0 {
+        kstore(row + BF_DIRTY, 1);
+        kstore(BUFFER_DIRTY_COUNT_ADDR, kload(BUFFER_DIRTY_COUNT_ADDR) + 1);
+    }
+    kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
+    return 1;
+}
+
+fn framebuffer_words(width: t40, height: t40) -> t40 {
+    return width * height * 3;
+}
+
+fn framebuffer_pages(words: t40) -> t40 {
+    var pages: t40 = 0;
+    var remaining: t40 = words;
+    while remaining > 0 {
+        pages = pages + 1;
+        remaining = remaining - MMU_PAGE_WORDS;
+    }
+    return pages;
+}
+
+fn framebuffer_buffer_base(index: t40) -> t40 {
+    if index == 0 {
+        return FB_FRONT_BUFFER_BASE;
+    }
+    return FB_BACK_BUFFER_BASE;
+}
+
+fn framebuffer_visible_base() -> t40 {
+    return framebuffer_buffer_base(kload(FB_STATE_BASE + FB_FRONT_INDEX));
+}
+
+fn framebuffer_draw_base() -> t40 {
+    if kload(FB_STATE_BASE + FB_FRONT_INDEX) == 0 {
+        return FB_BACK_BUFFER_BASE;
+    }
+    return FB_FRONT_BUFFER_BASE;
+}
+
+fn framebuffer_release_pins() -> t40 {
+    var pinned: t40 = kload(FB_STATE_BASE + FB_PINNED_PAGES);
+    var i: t40 = 0;
+    while pinned - i > 0 {
+        page_unpin(FB_PPN_BASE + i);
+        i = i + 1;
+    }
+    kstore(FB_STATE_BASE + FB_PINNED_PAGES, 0);
+    return i;
+}
+
+fn framebuffer_init(width: t40, height: t40) -> t40 {
+    if width <= 0 {
+        return ERR_INVALID;
+    }
+    if height <= 0 {
+        return ERR_INVALID;
+    }
+    var words: t40 = framebuffer_words(width, height);
+    if words - FB_MAX_WORDS > 0 {
+        return ERR_NO_SPACE;
+    }
+    var pages: t40 = framebuffer_pages(words);
+    if pages - FB_MAX_PINNED_PAGES > 0 {
+        return ERR_NO_SPACE;
+    }
+    if kload(FB_STATE_BASE + FB_VALID) > 0 {
+        framebuffer_release_pins();
+    }
+    kclear(FB_STATE_BASE, FB_STATE_WORDS);
+    kclear(FB_FRONT_BUFFER_BASE, FB_MAX_WORDS);
+    kclear(FB_BACK_BUFFER_BASE, FB_MAX_WORDS);
+    var i: t40 = 0;
+    while pages - i > 0 {
+        page_pin(FB_PPN_BASE + i);
+        i = i + 1;
+    }
+    kstore(FB_STATE_BASE + FB_VALID, 1);
+    kstore(FB_STATE_BASE + FB_WIDTH, width);
+    kstore(FB_STATE_BASE + FB_HEIGHT, height);
+    kstore(FB_STATE_BASE + FB_STRIDE, width * 3);
+    kstore(FB_STATE_BASE + FB_FORMAT, FB_FORMAT_T5_RGB);
+    kstore(FB_STATE_BASE + FB_FRONT_INDEX, 0);
+    kstore(FB_STATE_BASE + FB_WORDS, words);
+    kstore(FB_STATE_BASE + FB_PAGES, pages);
+    kstore(FB_STATE_BASE + FB_FLIP_COUNT, 0);
+    kstore(FB_STATE_BASE + FB_PINNED_PAGES, pages);
+    return FB_FRONT_BUFFER_BASE;
+}
+
+fn framebuffer_flip() -> t40 {
+    if kload(FB_STATE_BASE + FB_VALID) <= 0 {
+        return ERR_INVALID;
+    }
+    if kload(FB_STATE_BASE + FB_FRONT_INDEX) == 0 {
+        kstore(FB_STATE_BASE + FB_FRONT_INDEX, 1);
+    } else {
+        kstore(FB_STATE_BASE + FB_FRONT_INDEX, 0);
+    }
+    var flips: t40 = kload(FB_STATE_BASE + FB_FLIP_COUNT) + 1;
+    kstore(FB_STATE_BASE + FB_FLIP_COUNT, flips);
+    return flips;
+}
+
+fn window_addr(slot: t40) -> t40 {
+    return WINDOW_BASE + slot * WINDOW_ROW_WORDS;
+}
+
+fn window_buffer_addr(slot: t40) -> t40 {
+    return WINDOW_BUFFER_BASE + slot * WINDOW_BUFFER_WORDS;
+}
+
+fn window_user_addr(slot: t40) -> t40 {
+    return (WINDOW_USER_VPN_BASE + slot * WINDOW_USER_PAGES) * MMU_PAGE_WORDS;
+}
+
+fn window_event_addr(slot: t40, index: t40) -> t40 {
+    return WINDOW_EVENT_BASE + (slot * WINDOW_EVENT_CAPACITY + index) * WINDOW_EVENT_WORDS;
+}
+
+fn window_table_init() -> t40 {
+    kclear(WINDOW_BASE, WINDOW_MAX * WINDOW_ROW_WORDS);
+    kclear(WINDOW_EVENT_BASE, WINDOW_MAX * WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
+    kclear(WINDOW_BUFFER_BASE, WINDOW_MAX * WINDOW_BUFFER_WORDS);
+    kstore(WINDOW_NEXT_ID_ADDR, 0);
+    kstore(COMPOSITOR_FRAME_COUNT_ADDR, 0);
+    kstore(WINDOW_FOCUS_ID_ADDR, ERR_NOT_FOUND);
+    kstore(INPUT_LAST_MOUSE_BTN_ADDR, 0);
+    return 1;
+}
+
+fn window_find(window_id: t40) -> t40 {
+    if window_id < 0 {
+        return ERR_INVALID;
+    }
+    var slot: t40 = 0;
+    while WINDOW_MAX - slot > 0 {
+        var row: t40 = window_addr(slot);
+        if kload(row + WIN_ACTIVE) > 0 {
+            if kload(row + WIN_ID) - window_id == 0 {
+                return slot;
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn window_create(pid: t40, x: t40, y: t40, width: t40, height: t40) -> t40 {
+    if width <= 0 {
+        return ERR_INVALID;
+    }
+    if height <= 0 {
+        return ERR_INVALID;
+    }
+    var words: t40 = framebuffer_words(width, height);
+    if words - WINDOW_BUFFER_WORDS > 0 {
+        return ERR_NO_SPACE;
+    }
+    var slot: t40 = 0;
+    while WINDOW_MAX - slot > 0 {
+        var row: t40 = window_addr(slot);
+        if kload(row + WIN_ACTIVE) <= 0 {
+            var id: t40 = kload(WINDOW_NEXT_ID_ADDR);
+            kstore(WINDOW_NEXT_ID_ADDR, id + 1);
+            kstore(row + WIN_ACTIVE, 1);
+            kstore(row + WIN_ID, id);
+            kstore(row + WIN_OWNER_PID, pid);
+            kstore(row + WIN_X, x);
+            kstore(row + WIN_Y, y);
+            kstore(row + WIN_WIDTH, width);
+            kstore(row + WIN_HEIGHT, height);
+            kstore(row + WIN_Z, slot);
+            kstore(row + WIN_VISIBLE, 1);
+            kstore(row + WIN_DIRTY, 1);
+            kstore(row + WIN_BUFFER_ADDR, window_buffer_addr(slot));
+            kstore(row + WIN_NAMESPACE, process_namespace_for_pid(pid));
+            kstore(row + WIN_VERSION, 1);
+            kstore(row + WIN_EVENT_READ, 0);
+            kstore(row + WIN_EVENT_WRITE, 0);
+            kstore(row + WIN_EVENT_COUNT, 0);
+            kclear(window_event_addr(slot, 0), WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
+            kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
+            return id;
+        }
+        slot = slot + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn window_authorized_slot(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_find(window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = window_addr(slot);
+    if kload(row + WIN_OWNER_PID) - pid != 0 {
+        return ERR_INVALID;
+    }
+    return slot;
+}
+
+fn window_control_slot(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_find(window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = window_addr(slot);
+    if kload(row + WIN_OWNER_PID) - pid == 0 {
+        return slot;
+    }
+    var process_slot: t40 = process_find_pid(pid);
+    if process_slot < 0 {
+        return process_slot;
+    }
+    var caller_ns: t40 = kload(process_addr(process_slot) + PROC_NAMESPACE);
+    if caller_ns - kload(row + WIN_NAMESPACE) == 0 {
+        return slot;
+    }
+    return ERR_INVALID;
+}
+
+fn window_get_buffer(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var process_slot: t40 = process_find_pid(pid);
+    if process_slot < 0 {
+        return process_slot;
+    }
+    var base_vpn: t40 = WINDOW_USER_VPN_BASE + slot * WINDOW_USER_PAGES;
+    var phys_ppn: t40 = kload(window_addr(slot) + WIN_BUFFER_ADDR) / MMU_PAGE_WORDS;
+    var i: t40 = 0;
+    while WINDOW_BUFFER_PAGES - i > 0 {
+        kstore(exec_hw_dmem_ptbr(process_slot) + base_vpn + i, exec_encode_pte(phys_ppn + i, 1, 1, 1, 0));
+        i = i + 1;
+    }
+    var required_pages: t40 = base_vpn + WINDOW_BUFFER_PAGES;
+    var ctx: t40 = kload(process_addr(process_slot) + PROC_CONTEXT);
+    if ctx > 0 {
+        if required_pages - kload(ctx + TASK_CONTEXT_DMEM_PAGES) > 0 {
+            kstore(ctx + TASK_CONTEXT_DMEM_PAGES, required_pages);
+        }
+    }
+    return window_user_addr(slot);
+}
+
+fn window_queue_event(slot: t40, kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - WINDOW_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = window_addr(slot);
+    if kload(row + WIN_ACTIVE) <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    var count: t40 = kload(row + WIN_EVENT_COUNT);
+    if count - WINDOW_EVENT_CAPACITY >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var write_pos: t40 = kload(row + WIN_EVENT_WRITE);
+    var ev: t40 = window_event_addr(slot, write_pos);
+    kstore(ev + EVENT_KIND, kind);
+    kstore(ev + EVENT_X_OR_KEY, x_or_key);
+    kstore(ev + EVENT_Y, y);
+    kstore(ev + EVENT_MODIFIERS, modifiers);
+    kstore(row + WIN_EVENT_WRITE, kwrap_inc(write_pos, WINDOW_EVENT_CAPACITY));
+    kstore(row + WIN_EVENT_COUNT, count + 1);
+    kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    return count + 1;
+}
+
+fn window_read_event(pid: t40, window_id: t40, out_addr: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    if user_validate_span(pid, out_addr, WINDOW_EVENT_WORDS, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var row: t40 = window_addr(slot);
+    var count: t40 = kload(row + WIN_EVENT_COUNT);
+    if count <= 0 {
+        window_poll_input_driver();
+        count = kload(row + WIN_EVENT_COUNT);
+    }
+    if count <= 0 {
+        return 0;
+    }
+    var read_pos: t40 = kload(row + WIN_EVENT_READ);
+    var ev: t40 = window_event_addr(slot, read_pos);
+    if user_store_word(pid, out_addr + EVENT_KIND, kload(ev + EVENT_KIND)) < 0 {
+        return ERR_BAD_PTR;
+    }
+    if user_store_word(pid, out_addr + EVENT_X_OR_KEY, kload(ev + EVENT_X_OR_KEY)) < 0 {
+        return ERR_BAD_PTR;
+    }
+    if user_store_word(pid, out_addr + EVENT_Y, kload(ev + EVENT_Y)) < 0 {
+        return ERR_BAD_PTR;
+    }
+    if user_store_word(pid, out_addr + EVENT_MODIFIERS, kload(ev + EVENT_MODIFIERS)) < 0 {
+        return ERR_BAD_PTR;
+    }
+    kstore(row + WIN_EVENT_READ, kwrap_inc(read_pos, WINDOW_EVENT_CAPACITY));
+    kstore(row + WIN_EVENT_COUNT, count - 1);
+    return 1;
+}
+
+fn window_close_hit(slot: t40, x: t40, y: t40) -> t40 {
+    if slot < 0 {
+        return 0;
+    }
+    var row: t40 = window_addr(slot);
+    var wx: t40 = kload(row + WIN_X);
+    var wy: t40 = kload(row + WIN_Y);
+    var ww: t40 = kload(row + WIN_WIDTH);
+    if y - wy != 0 {
+        return 0;
+    }
+    if x - (wx + ww - 1) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn window_hit_test(x: t40, y: t40) -> t40 {
+    var slot: t40 = 0;
+    var best_slot: t40 = ERR_NOT_FOUND;
+    var best_z: t40 = 0;
+    while WINDOW_MAX - slot > 0 {
+        var row: t40 = window_addr(slot);
+        if kload(row + WIN_ACTIVE) > 0 {
+            if kload(row + WIN_VISIBLE) > 0 {
+                var wx: t40 = kload(row + WIN_X);
+                var wy: t40 = kload(row + WIN_Y);
+                var ww: t40 = kload(row + WIN_WIDTH);
+                var wh: t40 = kload(row + WIN_HEIGHT);
+                if x - wx >= 0 {
+                    if y - wy >= 0 {
+                        if wx + ww - x > 0 {
+                            if wy + wh - y > 0 {
+                                var z: t40 = kload(row + WIN_Z);
+                                if best_slot < 0 {
+                                    best_slot = slot;
+                                    best_z = z;
+                                } else {
+                                    if z - best_z > 0 {
+                                        best_slot = slot;
+                                        best_z = z;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return best_slot;
+}
+
+fn window_top_visible_slot() -> t40 {
+    var slot: t40 = 0;
+    var best_slot: t40 = ERR_NOT_FOUND;
+    var best_z: t40 = 0;
+    while WINDOW_MAX - slot > 0 {
+        var row: t40 = window_addr(slot);
+        if kload(row + WIN_ACTIVE) > 0 {
+            if kload(row + WIN_VISIBLE) > 0 {
+                var z: t40 = kload(row + WIN_Z);
+                if best_slot < 0 {
+                    best_slot = slot;
+                    best_z = z;
+                } else {
+                    if z - best_z > 0 {
+                        best_slot = slot;
+                        best_z = z;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return best_slot;
+}
+
+fn window_focus_slot() -> t40 {
+    var focus_id: t40 = kload(WINDOW_FOCUS_ID_ADDR);
+    if focus_id < 0 {
+        return ERR_NOT_FOUND;
+    }
+    return window_find(focus_id);
+}
+
+fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
+    var slot: t40 = window_hit_test(x_or_key, y);
+    if kind - EVENT_KIND_KEY == 0 {
+        slot = window_focus_slot();
+        if slot < 0 {
+            slot = window_top_visible_slot();
+        }
+    }
+    if slot < 0 {
+        return 0;
+    }
+    if kind - EVENT_KIND_MOUSE == 0 {
+        if modifiers > 0 {
+            if window_close_hit(slot, x_or_key, y) > 0 {
+                var close_id: t40 = kload(window_addr(slot) + WIN_ID);
+                var close_queued: t40 = window_queue_event(slot, EVENT_KIND_CLOSE, close_id, 0, 0);
+                if close_queued < 0 {
+                    return close_queued;
+                }
+                kstore(WINDOW_FOCUS_ID_ADDR, close_id);
+                return close_id;
+            }
+        }
+    }
+    var queued: t40 = window_queue_event(slot, kind, x_or_key, y, modifiers);
+    if queued < 0 {
+        return queued;
+    }
+    var id: t40 = kload(window_addr(slot) + WIN_ID);
+    kstore(WINDOW_FOCUS_ID_ADDR, id);
+    return id;
+}
+
+fn window_poll_input_driver() -> t40 {
+    var routed: t40 = 0;
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
+    unsafe { mx = csr_read(mouse_x); }
+    unsafe { my = csr_read(mouse_y); }
+    unsafe { btn = csr_read(mouse_btn); }
+    var last_btn: t40 = kload(INPUT_LAST_MOUSE_BTN_ADDR);
+    if btn > 0 {
+        if last_btn <= 0 {
+            var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
+            if mouse_target > 0 {
+                routed = routed + 1;
+            }
+        }
+    }
+    kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+    var key_available: t40 = 0;
+    unsafe { key_available = csr_read(console_in_ctrl); }
+    if key_available > 0 {
+        var key: t40 = 0;
+        unsafe { key = csr_read(console_in); }
+        unsafe { csr_write(console_in_ctrl, 1); }
+        var key_target: t40 = window_route_input(EVENT_KIND_KEY, key, 0, 0);
+        if key_target > 0 {
+            routed = routed + 1;
+        }
+    }
+    return routed;
+}
+
+fn compositor_blit_window(slot: t40, draw_base: t40) -> t40 {
+    var row: t40 = window_addr(slot);
+    var fb_width: t40 = kload(FB_STATE_BASE + FB_WIDTH);
+    var fb_height: t40 = kload(FB_STATE_BASE + FB_HEIGHT);
+    var wx0: t40 = kload(row + WIN_X);
+    var wy0: t40 = kload(row + WIN_Y);
+    var ww: t40 = kload(row + WIN_WIDTH);
+    var wh: t40 = kload(row + WIN_HEIGHT);
+    var src: t40 = kload(row + WIN_BUFFER_ADDR);
+    var y: t40 = 0;
+    while wh - y > 0 {
+        var screen_y: t40 = wy0 + y;
+        if screen_y >= 0 {
+            if fb_height - screen_y > 0 {
+                var x: t40 = 0;
+                while ww - x > 0 {
+                    var screen_x: t40 = wx0 + x;
+                    if screen_x >= 0 {
+                        if fb_width - screen_x > 0 {
+                            var src_pos: t40 = (y * ww + x) * 3;
+                            var dst_pos: t40 = (screen_y * fb_width + screen_x) * 3;
+                            kstore(draw_base + dst_pos, kload(src + src_pos));
+                            kstore(draw_base + dst_pos + 1, kload(src + src_pos + 1));
+                            kstore(draw_base + dst_pos + 2, kload(src + src_pos + 2));
+                        }
+                    }
+                    x = x + 1;
+                }
+            }
+        }
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn compositor_tick() -> t40 {
+    if kload(FB_STATE_BASE + FB_VALID) <= 0 {
+        return ERR_INVALID;
+    }
+    var draw_base: t40 = framebuffer_draw_base();
+    kclear(draw_base, kload(FB_STATE_BASE + FB_WORDS));
+    var z: t40 = 0;
+    var composed: t40 = 0;
+    while WINDOW_MAX - z > 0 {
+        var slot: t40 = 0;
+        while WINDOW_MAX - slot > 0 {
+            var row: t40 = window_addr(slot);
+            if kload(row + WIN_ACTIVE) > 0 {
+                if kload(row + WIN_VISIBLE) > 0 {
+                    if kload(row + WIN_Z) - z == 0 {
+                        compositor_blit_window(slot, draw_base);
+                        if kload(row + WIN_DIRTY) > 0 {
+                            kstore(row + WIN_DIRTY, 0);
+                        }
+                        composed = composed + 1;
+                    }
+                }
+            }
+            slot = slot + 1;
+        }
+        z = z + 1;
+    }
+    framebuffer_flip();
+    kstore(COMPOSITOR_FRAME_COUNT_ADDR, kload(COMPOSITOR_FRAME_COUNT_ADDR) + 1);
+    return composed;
+}
+
+fn window_present(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = window_addr(slot);
+    kstore(row + WIN_DIRTY, 1);
+    kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    return compositor_tick();
+}
+
+fn window_move(pid: t40, window_id: t40, x: t40, y: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = window_addr(slot);
+    kstore(row + WIN_X, x);
+    kstore(row + WIN_Y, y);
+    kstore(row + WIN_DIRTY, 1);
+    kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    return 1;
+}
+
+fn window_set_z(pid: t40, window_id: t40, z: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    if z < 0 {
+        return ERR_INVALID;
+    }
+    if z - WINDOW_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = window_addr(slot);
+    kstore(row + WIN_Z, z);
+    kstore(row + WIN_DIRTY, 1);
+    kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    return 1;
+}
+
+fn window_resize(pid: t40, window_id: t40, width: t40, height: t40) -> t40 {
+    if width <= 0 {
+        return ERR_INVALID;
+    }
+    if height <= 0 {
+        return ERR_INVALID;
+    }
+    var words: t40 = framebuffer_words(width, height);
+    if words - WINDOW_BUFFER_WORDS > 0 {
+        return ERR_NO_SPACE;
+    }
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = window_addr(slot);
+    kstore(row + WIN_WIDTH, width);
+    kstore(row + WIN_HEIGHT, height);
+    kstore(row + WIN_DIRTY, 1);
+    kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
+    return 1;
+}
+
+fn window_request_close(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_control_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    return window_queue_event(slot, EVENT_KIND_CLOSE, window_id, 0, 0);
+}
+
+fn window_destroy(pid: t40, window_id: t40) -> t40 {
+    var slot: t40 = window_authorized_slot(pid, window_id);
+    if slot < 0 {
+        return slot;
+    }
+    kclear(window_addr(slot), WINDOW_ROW_WORDS);
+    kclear(window_event_addr(slot, 0), WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
+    kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
+    return 1;
+}
+
+fn page_pin(ppn: t40) -> t40 {
+    if ppn < 0 {
+        return ERR_INVALID;
+    }
+    if ppn - BOOTSTRAP_MAX_PAGES >= 0 {
+        return ERR_INVALID;
+    }
+    var addr: t40 = page_header_field(ppn, PH_PIN_COUNT);
+    var count: t40 = kload(addr);
+    kstore(addr, count + 1);
+    return count + 1;
+}
+
+fn page_unpin(ppn: t40) -> t40 {
+    var addr: t40 = page_header_field(ppn, PH_PIN_COUNT);
+    var count: t40 = kload(addr);
+    if count <= 0 {
+        return ERR_INVALID;
+    }
+    kstore(addr, count - 1);
+    return count - 1;
+}
+
+fn page_is_evictable(ppn: t40) -> t40 {
+    var pins: t40 = kload(page_header_field(ppn, PH_PIN_COUNT));
+    if pins > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn page_set_version_state(ppn: t40, state: t40, generation: t40) -> t40 {
+    var version: t40 = page_version_from_ptr_state(state, generation);
+    kstore(page_header_field(ppn, PH_VERSION), version);
+    return version;
+}
+
+fn mvcc_publish_page_version(ppn: t40, expected_state: t40, desired_state: t40, generation: t40) -> t40 {
+    var addr: t40 = page_header_field(ppn, PH_VERSION);
+    var current: t40 = kacq(addr);
+    var current_state: t40 = page_version_state(current);
+    if current_state - expected_state == 0 {
+        var desired: t40 = page_version_from_ptr_state(desired_state, generation);
+        return kcas(addr, current, desired);
+    }
+    return 0;
+}
+
+fn cow_can_remap(ppn: t40) -> t40 {
+    return page_is_evictable(ppn);
+}
+
+fn fork_can_copy_page(ppn: t40) -> t40 {
+    return page_is_evictable(ppn);
+}
+
+fn wal_record_addr(slot: t40) -> t40 {
+    return WAL_BASE + slot * WAL_RECORD_WORDS;
+}
+
+fn wal_init() -> t40 {
+    kclear(WAL_BASE, WAL_CAPACITY * WAL_RECORD_WORDS);
+    kstore(WAL_HEAD_ADDR, 0);
+    kstore(WAL_TAIL_ADDR, 0);
+    kstore(WAL_NEXT_TXID_ADDR, 1);
+    kstore(WAL_CHECKPOINT_ADDR, 0);
+    return 1;
+}
+
+fn log_begin() -> t40 {
+    var txid: t40 = kload(WAL_NEXT_TXID_ADDR);
+    kstore(WAL_NEXT_TXID_ADDR, txid + 1);
+    return txid;
+}
+
+fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
+    var head: t40 = kload(WAL_HEAD_ADDR);
+    var rec: t40 = wal_record_addr(head);
+    kstore(rec + WAL_TXID, txid);
+    kstore(rec + WAL_BLOCK, block_addr);
+    kstore(rec + WAL_OLD, old_data);
+    kstore(rec + WAL_NEW, new_data);
+    kstore(rec + WAL_STATE, WAL_PENDING);
+    kstore(WAL_HEAD_ADDR, kwrap_inc(head, WAL_CAPACITY));
+    return head;
+}
+
+fn log_commit(txid: t40) -> t40 {
+    var slot: t40 = 0;
+    var changed: t40 = 0;
+    while WAL_CAPACITY - slot > 0 {
+        var rec: t40 = wal_record_addr(slot);
+        var rec_txid: t40 = kload(rec + WAL_TXID);
+        var state: t40 = kload(rec + WAL_STATE);
+        if rec_txid - txid == 0 {
+            if state - WAL_PENDING == 0 {
+                var block_addr: t40 = kload(rec + WAL_BLOCK);
+                var new_data: t40 = kload(rec + WAL_NEW);
+                kstore(block_addr, new_data);
+                kstore(rec + WAL_STATE, WAL_COMMITTED);
+                changed = changed + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return changed;
+}
+
+fn log_abort(txid: t40) -> t40 {
+    var slot: t40 = 0;
+    var changed: t40 = 0;
+    while WAL_CAPACITY - slot > 0 {
+        var rec: t40 = wal_record_addr(slot);
+        var rec_txid: t40 = kload(rec + WAL_TXID);
+        var state: t40 = kload(rec + WAL_STATE);
+        if rec_txid - txid == 0 {
+            if state - WAL_PENDING == 0 {
+                var block_addr: t40 = kload(rec + WAL_BLOCK);
+                var old_data: t40 = kload(rec + WAL_OLD);
+                kstore(block_addr, old_data);
+                kstore(rec + WAL_STATE, WAL_ABORTED);
+                changed = changed + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return changed;
+}
+
+fn log_recover() -> t40 {
+    var slot: t40 = 0;
+    var changed: t40 = 0;
+    while WAL_CAPACITY - slot > 0 {
+        var rec: t40 = wal_record_addr(slot);
+        var state: t40 = kload(rec + WAL_STATE);
+        if state - WAL_COMMITTED == 0 {
+            var block_addr: t40 = kload(rec + WAL_BLOCK);
+            var new_data: t40 = kload(rec + WAL_NEW);
+            kstore(block_addr, new_data);
+            changed = changed + 1;
+        }
+        if state - WAL_PENDING == 0 {
+            var pending_block: t40 = kload(rec + WAL_BLOCK);
+            var old_data: t40 = kload(rec + WAL_OLD);
+            kstore(pending_block, old_data);
+            kstore(rec + WAL_STATE, WAL_ABORTED);
+            changed = changed + 1;
+        }
+        slot = slot + 1;
+    }
+    return changed;
+}
+
+fn log_checkpoint() -> t40 {
+    var slot: t40 = 0;
+    var cleaned: t40 = 0;
+    while WAL_CAPACITY - slot > 0 {
+        var rec: t40 = wal_record_addr(slot);
+        var state: t40 = kload(rec + WAL_STATE);
+        if state - WAL_COMMITTED == 0 {
+            kstore(rec + WAL_STATE, WAL_FREE);
+            cleaned = cleaned + 1;
+        }
+        if state - WAL_ABORTED == 0 {
+            kstore(rec + WAL_STATE, WAL_FREE);
+            cleaned = cleaned + 1;
+        }
+        slot = slot + 1;
+    }
+    kstore(WAL_TAIL_ADDR, kload(WAL_HEAD_ADDR));
+    var epoch: t40 = kload(WAL_CHECKPOINT_ADDR);
+    kstore(WAL_CHECKPOINT_ADDR, epoch + 1);
+    return cleaned;
+}
+
+fn rel_alloc_addr(ppn: t40) -> t40 {
+    return REL_ALLOC_BASE + ppn * REL_ALLOC_WORDS;
+}
+
+fn rel_store_init() -> t40 {
+    kclear(REL_ALLOC_BASE, BOOTSTRAP_MAX_PAGES * REL_ALLOC_WORDS);
+    kstore(REL_ONLINE_ADDR, 1);
+    kstore(REL_MIGRATION_CURSOR_ADDR, 0);
+    kstore(REL_MIGRATION_DONE_ADDR, 0);
+    return 1;
+}
+
+fn alloc_row_upsert(ppn: t40, state: t40) -> t40 {
+    var row: t40 = rel_alloc_addr(ppn);
+    var old_state: t40 = kload(row + REL_ALLOC_STATE);
+    var txid: t40 = log_begin();
+    log_write(txid, row + REL_ALLOC_STATE, old_state, state);
+    kstore(row + REL_ALLOC_PPN, ppn);
+    log_commit(txid);
+    var version: t40 = kload(row + REL_ALLOC_VERSION);
+    kstore(row + REL_ALLOC_VERSION, version + 1);
+    return 1;
+}
+
+fn migrate_bootstrap_allocations_step(max_rows: t40) -> t40 {
+    if kload(REL_ONLINE_ADDR) <= 0 {
+        return ERR_INVALID;
+    }
+    if kload(REL_MIGRATION_DONE_ADDR) > 0 {
+        return 0;
+    }
+    var cursor: t40 = kload(REL_MIGRATION_CURSOR_ADDR);
+    var processed: t40 = 0;
+    while max_rows - processed > 0 {
+        if BOOTSTRAP_MAX_PAGES - cursor <= 0 {
+            kstore(REL_MIGRATION_DONE_ADDR, 1);
+            return processed;
+        }
+        if bootstrap_is_allocated(cursor) > 0 {
+            alloc_row_upsert(cursor, 1);
+        }
+        cursor = cursor + 1;
+        processed = processed + 1;
+        kstore(REL_MIGRATION_CURSOR_ADDR, cursor);
+    }
+    if BOOTSTRAP_MAX_PAGES - cursor <= 0 {
+        kstore(REL_MIGRATION_DONE_ADDR, 1);
+    }
+    return processed;
+}
+
+fn migrate_bootstrap_allocations() -> t40 {
+    var total: t40 = 0;
+    while kload(REL_MIGRATION_DONE_ADDR) == 0 {
+        var step: t40 = migrate_bootstrap_allocations_step(8);
+        if step < 0 {
+            return step;
+        }
+        total = total + step;
+    }
+    return total;
+}
+
+fn rel_allocation_state(ppn: t40) -> t40 {
+    return kload(rel_alloc_addr(ppn) + REL_ALLOC_STATE);
+}
+
+fn scheduler_init() -> t40 {
+    var i: t40 = 0;
+    while TIER1_CAPACITY - i > 0 {
+        kstore(TIER1_QUEUE_BASE + i, -1);
+        i = i + 1;
+    }
+    i = 0;
+    while MACRO_CAPACITY - i > 0 {
+        kstore(MACRO_QUEUE_BASE + i, -1);
+        i = i + 1;
+    }
+    kstore(TIER1_HEAD_ADDR, 0);
+    kstore(TIER1_TAIL_ADDR, 0);
+    kstore(TIER1_COUNT_ADDR, 0);
+    kstore(MACRO_COUNT_ADDR, 0);
+    kstore(SCHED_EPOCH_ADDR, 0);
+    return 1;
+}
+
+fn tier1_enqueue(thread_id: t40) -> t40 {
+    var count: t40 = kacq(TIER1_COUNT_ADDR);
+    if count - TIER1_CAPACITY >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var tail: t40 = kacq(TIER1_TAIL_ADDR);
+    var slot_addr: t40 = TIER1_QUEUE_BASE + tail;
+    var status: t40 = kcas(slot_addr, -1, thread_id);
+    if status <= 0 {
+        return ERR_INVALID;
+    }
+    kstore(TIER1_TAIL_ADDR, kwrap_inc(tail, TIER1_CAPACITY));
+    kstore(TIER1_COUNT_ADDR, count + 1);
+    return 1;
+}
+
+fn tier1_dequeue() -> t40 {
+    var count: t40 = kacq(TIER1_COUNT_ADDR);
+    if count <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    var head: t40 = kacq(TIER1_HEAD_ADDR);
+    var slot_addr: t40 = TIER1_QUEUE_BASE + head;
+    var thread_id: t40 = kacq(slot_addr);
+    if thread_id < 0 {
+        return ERR_NOT_FOUND;
+    }
+    kcas(slot_addr, thread_id, -1);
+    kstore(TIER1_HEAD_ADDR, kwrap_inc(head, TIER1_CAPACITY));
+    kstore(TIER1_COUNT_ADDR, count - 1);
+    return thread_id;
+}
+
+fn macro_stage_thread(thread_id: t40) -> t40 {
+    var count: t40 = kload(MACRO_COUNT_ADDR);
+    if count - MACRO_CAPACITY >= 0 {
+        return ERR_NO_SPACE;
+    }
+    kstore(MACRO_QUEUE_BASE + count, thread_id);
+    kstore(MACRO_COUNT_ADDR, count + 1);
+    return 1;
+}
+
+fn macro_publish() -> t40 {
+    var count: t40 = kacq(MACRO_COUNT_ADDR);
+    var i: t40 = 0;
+    var published: t40 = 0;
+    while count - i > 0 {
+        var thread_id: t40 = kload(MACRO_QUEUE_BASE + i);
+        if thread_id >= 0 {
+            var ok: t40 = tier1_enqueue(thread_id);
+            if ok > 0 {
+                published = published + 1;
+            }
+            kstore(MACRO_QUEUE_BASE + i, -1);
+        }
+        i = i + 1;
+    }
+    kstore(MACRO_COUNT_ADDR, 0);
+    var epoch: t40 = kacq(SCHED_EPOCH_ADDR);
+    kcas(SCHED_EPOCH_ADDR, epoch, epoch + 1);
+    return published;
+}
+
+fn scheduler_epoch() -> t40 {
+    return kacq(SCHED_EPOCH_ADDR);
+}
+
+fn process_addr(slot: t40) -> t40 {
+    return PROCESS_BASE + slot * PROCESS_ROW_WORDS;
+}
+
+fn process_heap_addr(slot: t40) -> t40 {
+    return PROCESS_HEAP_BASE + slot * PROCESS_HEAP_WORDS;
+}
+
+fn quota_addr(slot: t40) -> t40 {
+    return QUOTA_BASE + slot * QUOTA_ROW_WORDS;
+}
+
+fn process_default_context_addr(slot: t40) -> t40 {
+    return PROCESS_CONTEXT_BASE + slot * TASK_CONTEXT_WORDS;
+}
+
+fn process_table_init() -> t40 {
+    kclear(PROCESS_BASE, PROCESS_MAX * PROCESS_ROW_WORDS);
+    kclear(QUOTA_BASE, QUOTA_MAX * QUOTA_ROW_WORDS);
+    kclear(PROCESS_CONTEXT_BASE, PROCESS_MAX * TASK_CONTEXT_WORDS);
+    kclear(PROCESS_HEAP_BASE, PROCESS_MAX * PROCESS_HEAP_WORDS);
+    kclear(DESIRED_PROCESS_BASE, PROCESS_MAX);
+    kclear(WAIT_CHANNEL_BASE, PROCESS_MAX);
+    var i: t40 = 0;
+    while QUOTA_MAX - i > 0 {
+        var q: t40 = quota_addr(i);
+        kstore(q + QUOTA_ID, i);
+        kstore(q + QUOTA_LIMIT, 100);
+        kstore(q + QUOTA_USED, 0);
+        kstore(q + QUOTA_VERSION, 1);
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_id: t40, context_addr: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(slot);
+    var ctx: t40 = context_addr;
+    if ctx <= 0 {
+        ctx = process_default_context_addr(slot);
+    }
+    var txid: t40 = log_begin();
+    log_write(txid, row + PROC_PID, kload(row + PROC_PID), pid);
+    log_write(txid, row + PROC_STATE, kload(row + PROC_STATE), PROC_RUNNABLE);
+    kstore(row + PROC_NAMESPACE, namespace_id);
+    kstore(row + PROC_PRIORITY, priority);
+    kstore(row + PROC_QUOTA, quota_id);
+    kstore(row + PROC_CONTEXT, ctx);
+    kstore(row + PROC_WAIT_CHANNEL, 0);
+    var heap: t40 = process_heap_addr(slot);
+    kstore(heap + PROC_HEAP_START, MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_BREAK, MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DMEM_PAGES_MAX * MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_MAPPED_PAGES, 1);
+    log_commit(txid);
+    kstore(row + PROC_VERSION, kload(row + PROC_VERSION) + 1);
+    kstore(DESIRED_PROCESS_BASE + slot, 1);
+    return pid;
+}
+
+fn process_state(slot: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    return kload(process_addr(slot) + PROC_STATE);
+}
+
+fn process_find_pid(pid: t40) -> t40 {
+    var slot: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        var row: t40 = process_addr(slot);
+        if kload(row + PROC_PID) - pid == 0 {
+            if kload(row + PROC_STATE) > 0 {
+                return slot;
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn process_namespace_for_pid(pid: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return 0;
+    }
+    return kload(process_addr(slot) + PROC_NAMESPACE);
+}
+
+fn process_set_state(slot: t40, state: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(slot);
+    var old_state: t40 = kload(row + PROC_STATE);
+    var txid: t40 = log_begin();
+    log_write(txid, row + PROC_STATE, old_state, state);
+    log_commit(txid);
+    kstore(row + PROC_VERSION, kload(row + PROC_VERSION) + 1);
+    return state;
+}
+
+fn process_wait(slot: t40, channel: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(slot);
+    kstore(row + PROC_WAIT_CHANNEL, channel);
+    kstore(WAIT_CHANNEL_BASE + slot, channel);
+    return process_set_state(slot, PROC_BLOCKED);
+}
+
+fn process_wake_channel(channel: t40) -> t40 {
+    var slot: t40 = 0;
+    var woke: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        if kload(WAIT_CHANNEL_BASE + slot) - channel == 0 {
+            var row: t40 = process_addr(slot);
+            if kload(row + PROC_STATE) - PROC_BLOCKED == 0 {
+                kstore(row + PROC_WAIT_CHANNEL, 0);
+                kstore(WAIT_CHANNEL_BASE + slot, 0);
+                process_set_state(slot, PROC_RUNNABLE);
+                woke = woke + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return woke;
+}
+
+fn quota_set_limit(quota_id: t40, limit: t40) -> t40 {
+    if quota_id < 0 {
+        return ERR_INVALID;
+    }
+    if quota_id - QUOTA_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = quota_addr(quota_id);
+    var old_limit: t40 = kload(row + QUOTA_LIMIT);
+    var txid: t40 = log_begin();
+    log_write(txid, row + QUOTA_LIMIT, old_limit, limit);
+    log_commit(txid);
+    kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
+    return limit;
+}
+
+fn quota_remaining(quota_id: t40) -> t40 {
+    if quota_id < 0 {
+        return ERR_INVALID;
+    }
+    if quota_id - QUOTA_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = quota_addr(quota_id);
+    return kload(row + QUOTA_LIMIT) - kload(row + QUOTA_USED);
+}
+
+fn quota_charge(quota_id: t40, amount: t40) -> t40 {
+    if quota_id < 0 {
+        return ERR_INVALID;
+    }
+    if quota_id - QUOTA_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    if amount < 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = quota_addr(quota_id);
+    var used: t40 = kload(row + QUOTA_USED);
+    var limit: t40 = kload(row + QUOTA_LIMIT);
+    if used + amount - limit > 0 {
+        return ERR_NO_SPACE;
+    }
+    var txid: t40 = log_begin();
+    log_write(txid, row + QUOTA_USED, used, used + amount);
+    log_commit(txid);
+    kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
+    return used + amount;
+}
+
+fn quota_release(quota_id: t40, amount: t40) -> t40 {
+    if quota_id < 0 {
+        return ERR_INVALID;
+    }
+    if quota_id - QUOTA_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = quota_addr(quota_id);
+    var used: t40 = kload(row + QUOTA_USED);
+    var next_used: t40 = used - amount;
+    if next_used < 0 {
+        next_used = 0;
+    }
+    var txid: t40 = log_begin();
+    log_write(txid, row + QUOTA_USED, used, next_used);
+    log_commit(txid);
+    kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
+    return next_used;
+}
+
+fn macro_reconcile_processes() -> t40 {
+    var slot: t40 = 0;
+    var staged: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        if kload(DESIRED_PROCESS_BASE + slot) > 0 {
+            var row: t40 = process_addr(slot);
+            if kload(row + PROC_STATE) - PROC_RUNNABLE == 0 {
+                var quota_id: t40 = kload(row + PROC_QUOTA);
+                if quota_remaining(quota_id) > 0 {
+                    var pid: t40 = kload(row + PROC_PID);
+                    if macro_stage_thread(pid) > 0 {
+                        quota_charge(quota_id, 1);
+                        staged = staged + 1;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return staged;
+}
+
+fn namespace_addr(namespace_id: t40) -> t40 {
+    return NAMESPACE_BASE + namespace_id * NAMESPACE_ROW_WORDS;
+}
+
+fn namespace_table_init() -> t40 {
+    kclear(NAMESPACE_BASE, NAMESPACE_MAX * NAMESPACE_ROW_WORDS);
+    var row: t40 = namespace_addr(0);
+    kstore(row + NS_ID, 0);
+    kstore(row + NS_ROOT_INODE, 0);
+    kstore(row + NS_VERSION, 1);
+    kstore(row + NS_ACTIVE, 1);
+    return 1;
+}
+
+fn namespace_create(namespace_id: t40, root_inode: t40) -> t40 {
+    if namespace_id < 0 {
+        return ERR_INVALID;
+    }
+    if namespace_id - NAMESPACE_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = namespace_addr(namespace_id);
+    var txid: t40 = log_begin();
+    log_write(txid, row + NS_ACTIVE, kload(row + NS_ACTIVE), 1);
+    kstore(row + NS_ID, namespace_id);
+    kstore(row + NS_ROOT_INODE, root_inode);
+    kstore(row + NS_VERSION, kload(row + NS_VERSION) + 1);
+    log_commit(txid);
+    return namespace_id;
+}
+
+fn namespace_is_active(namespace_id: t40) -> t40 {
+    if namespace_id < 0 {
+        return 0;
+    }
+    if namespace_id - NAMESPACE_MAX >= 0 {
+        return 0;
+    }
+    return kload(namespace_addr(namespace_id) + NS_ACTIVE);
+}
+
+fn pte_entry_addr(process_slot: t40, vpn: t40) -> t40 {
+    return PTE_BASE + (process_slot * PTE_MAX_VPN + vpn) * PTE_ROW_WORDS;
+}
+
+fn pte_table_init() -> t40 {
+    kclear(PTE_BASE, PROCESS_MAX * PTE_MAX_VPN * PTE_ROW_WORDS);
+    kclear(PROCESS_CACHE_BASE, PROCESS_MAX * PROCESS_CACHE_WORDS);
+    kclear(EXEC_IMAGE_BASE, PROCESS_MAX * EXEC_IMAGE_WORDS);
+    kclear(HW_PT_BASE, PROCESS_MAX * HW_PT_WORDS);
+    return 1;
+}
+
+fn pte_map(process_slot: t40, vpn: t40, ppn: t40, flags: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    if vpn < 0 {
+        return ERR_INVALID;
+    }
+    if vpn - PTE_MAX_VPN >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = pte_entry_addr(process_slot, vpn);
+    var ns: t40 = kload(process_addr(process_slot) + PROC_NAMESPACE);
+    kstore(row + PTE_WORD, 1);
+    kstore(row + PTE_PPN, ppn);
+    kstore(row + PTE_FLAGS, flags);
+    kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
+    kstore(row + PTE_NAMESPACE, ns);
+    return 1;
+}
+
+fn pte_mark_fault(process_slot: t40, vpn: t40) -> t40 {
+    var row: t40 = pte_entry_addr(process_slot, vpn);
+    kstore(row + PTE_WORD, -1);
+    kstore(row + PTE_PPN, 0);
+    kstore(row + PTE_FLAGS, 0);
+    kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
+    return 1;
+}
+
+fn pte_entry_faults(process_slot: t40, vpn: t40) -> t40 {
+    var row: t40 = pte_entry_addr(process_slot, vpn);
+    if kload(row + PTE_WORD) > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn pte_flags_has(flags: t40, flag: t40) -> t40 {
+    if flags - flag == 0 {
+        return 1;
+    }
+    if flags - PTE_FLAG_MMIO - PTE_FLAG_COW == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
+    if parent_slot < 0 {
+        return ERR_INVALID;
+    }
+    if parent_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    if child_slot < 0 {
+        return ERR_INVALID;
+    }
+    if child_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var parent_row: t40 = process_addr(parent_slot);
+    var ns: t40 = kload(parent_row + PROC_NAMESPACE);
+    var quota_id: t40 = kload(parent_row + PROC_QUOTA);
+    var vpn: t40 = 0;
+    while PTE_MAX_VPN - vpn > 0 {
+        var src: t40 = pte_entry_addr(parent_slot, vpn);
+        if kload(src + PTE_WORD) > 0 {
+            var flags: t40 = kload(src + PTE_FLAGS);
+            if pte_flags_has(flags, PTE_FLAG_MMIO) <= 0 {
+                var ppn: t40 = kload(src + PTE_PPN);
+                if page_is_evictable(ppn) <= 0 {
+                    return ERR_INVALID;
+                }
+            }
+        }
+        vpn = vpn + 1;
+    }
+    process_create(child_slot, child_pid, ns, kload(parent_row + PROC_PRIORITY), quota_id, 0);
+    vpn = 0;
+    while PTE_MAX_VPN - vpn > 0 {
+        var src_row: t40 = pte_entry_addr(parent_slot, vpn);
+        var dst_row: t40 = pte_entry_addr(child_slot, vpn);
+        if kload(src_row + PTE_WORD) > 0 {
+            var src_flags: t40 = kload(src_row + PTE_FLAGS);
+            if pte_flags_has(src_flags, PTE_FLAG_MMIO) > 0 {
+                pte_mark_fault(child_slot, vpn);
+            } else {
+                kstore(src_row + PTE_FLAGS, PTE_FLAG_COW);
+                kstore(dst_row + PTE_WORD, kload(src_row + PTE_WORD));
+                kstore(dst_row + PTE_PPN, kload(src_row + PTE_PPN));
+                kstore(dst_row + PTE_FLAGS, PTE_FLAG_COW);
+                kstore(dst_row + PTE_VERSION, kload(dst_row + PTE_VERSION) + 1);
+                kstore(dst_row + PTE_NAMESPACE, ns);
+            }
+        }
+        vpn = vpn + 1;
+    }
+    return child_pid;
+}
+
+fn cow_fault_resolve(process_slot: t40, vpn: t40, new_ppn: t40) -> t40 {
+    var row: t40 = pte_entry_addr(process_slot, vpn);
+    if kload(row + PTE_WORD) <= 0 {
+        return ERR_INVALID;
+    }
+    var flags: t40 = kload(row + PTE_FLAGS);
+    if pte_flags_has(flags, PTE_FLAG_COW) <= 0 {
+        return ERR_INVALID;
+    }
+    var old_ppn: t40 = kload(row + PTE_PPN);
+    if page_is_evictable(old_ppn) <= 0 {
+        return ERR_INVALID;
+    }
+    kstore(row + PTE_PPN, new_ppn);
+    kstore(row + PTE_FLAGS, 0);
+    kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
+    return 1;
+}
+
+fn process_cache_addr(process_slot: t40) -> t40 {
+    return PROCESS_CACHE_BASE + process_slot * PROCESS_CACHE_WORDS;
+}
+
+fn process_cache_observe(process_slot: t40, key: t40, value: t40) -> t40 {
+    var row: t40 = process_cache_addr(process_slot);
+    kstore(row + CACHE_KEY, key);
+    kstore(row + CACHE_VALUE, value);
+    kstore(row + CACHE_VERSION, kload(row + CACHE_VERSION) + 1);
+    kstore(row + CACHE_VALID, 1);
+    return value;
+}
+
+fn process_cache_read(process_slot: t40, key: t40) -> t40 {
+    var row: t40 = process_cache_addr(process_slot);
+    if kload(row + CACHE_VALID) <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    if kload(row + CACHE_KEY) - key != 0 {
+        return ERR_NOT_FOUND;
+    }
+    return kload(row + CACHE_VALUE);
+}
+
+fn process_cache_invalidate(process_slot: t40) -> t40 {
+    var row: t40 = process_cache_addr(process_slot);
+    kstore(row + CACHE_VALID, 0);
+    unsafe { fence(0); }
+    return 1;
+}
+
+fn validate_user_span(addr: t40, count_words: t40, write: t40) -> t40 {
+    if addr <= 0 {
+        return 0;
+    }
+    if count_words < 0 {
+        return 0;
+    }
+    if addr - USER_MEM_BASE < 0 {
+        return 0;
+    }
+    if addr + count_words - USER_MEM_LIMIT > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn user_has_dmem_mmu(pid: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return 0;
+    }
+    var ctx: t40 = kload(process_addr(slot) + PROC_CONTEXT);
+    if ctx <= 0 {
+        return 0;
+    }
+    var ptbr: t40 = kload(ctx + TASK_CONTEXT_DMEM_PTBR);
+    if ptbr <= 0 {
+        return 0;
+    }
+    if ptbr - HW_PT_BASE < 0 {
+        return 0;
+    }
+    if ptbr - (HW_PT_BASE + PROCESS_MAX * HW_PT_WORDS) >= 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn hw_pte_phys_base(word: t40) -> t40 {
+    var remaining: t40 = word;
+    var phys: t40 = 0;
+    while remaining - 243 >= 0 {
+        remaining = remaining - 243;
+        phys = phys + MMU_PAGE_WORDS;
+    }
+    return phys;
+}
+
+fn user_page_offset(addr: t40) -> t40 {
+    var offset: t40 = addr;
+    while offset - MMU_PAGE_WORDS >= 0 {
+        offset = offset - MMU_PAGE_WORDS;
+    }
+    return offset;
+}
+
+fn user_translate_dmem_addr(pid: t40, addr: t40, write: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var ctx: t40 = kload(process_addr(slot) + PROC_CONTEXT);
+    if ctx <= 0 {
+        return addr;
+    }
+    var ptbr: t40 = kload(ctx + TASK_CONTEXT_DMEM_PTBR);
+    if ptbr <= 0 {
+        return addr;
+    }
+    if ptbr - HW_PT_BASE < 0 {
+        return addr;
+    }
+    if ptbr - (HW_PT_BASE + PROCESS_MAX * HW_PT_WORDS) >= 0 {
+        return addr;
+    }
+    var pages: t40 = kload(ctx + TASK_CONTEXT_DMEM_PAGES);
+    var vpn: t40 = addr / MMU_PAGE_WORDS;
+    if vpn - pages >= 0 {
+        return ERR_BAD_PTR;
+    }
+    var pte_word: t40 = kload(ptbr + vpn);
+    if pte_word <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var offset: t40 = user_page_offset(addr);
+    var phys: t40 = hw_pte_phys_base(pte_word) + offset;
+    return phys;
+}
+
+fn user_validate_span(pid: t40, addr: t40, count_words: t40, write: t40) -> t40 {
+    if count_words < 0 {
+        return 0;
+    }
+    if count_words == 0 {
+        return 1;
+    }
+    if user_has_dmem_mmu(pid) <= 0 {
+        return validate_user_span(addr, count_words, write);
+    }
+    var i: t40 = 0;
+    while count_words - i > 0 {
+        if user_translate_dmem_addr(pid, addr + i, write) < 0 {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn user_load_word(pid: t40, addr: t40) -> t40 {
+    var phys: t40 = user_translate_dmem_addr(pid, addr, 0);
+    if phys < 0 {
+        return phys;
+    }
+    return kload(phys);
+}
+
+fn user_store_word(pid: t40, addr: t40, value: t40) -> t40 {
+    var phys: t40 = user_translate_dmem_addr(pid, addr, 1);
+    if phys < 0 {
+        return phys;
+    }
+    kstore(phys, value);
+    return 1;
+}
+
+fn user_copy_cstring_to_kernel(pid: t40, src_addr: t40, dst_addr: t40, max_words: t40) -> t40 {
+    if max_words <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var i: t40 = 0;
+    while max_words - i > 0 {
+        if user_validate_span(pid, src_addr + i, 1, 0) <= 0 {
+            return ERR_BAD_PTR;
+        }
+        var word: t40 = user_load_word(pid, src_addr + i);
+        kstore(dst_addr + i, word);
+        if word == 0 {
+            return i + 1;
+        }
+        i = i + 1;
+    }
+    kstore(dst_addr + max_words - 1, 0);
+    return ERR_BAD_PTR;
+}
+
+fn validate_user_cstring(addr: t40, max_words: t40) -> t40 {
+    if validate_user_span(addr, 1, 0) <= 0 {
+        return 0;
+    }
+    var i: t40 = 0;
+    while max_words - i > 0 {
+        var c: t40 = kload(addr + i);
+        if c == 0 {
+            return i + 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn inode_addr(inode: t40) -> t40 {
+    return VFS_INODE_BASE + inode * VFS_INODE_WORDS;
+}
+
+fn dirent_addr(slot: t40) -> t40 {
+    return VFS_DIRENT_BASE + slot * VFS_DIRENT_WORDS;
+}
+
+fn dirent_name_addr(slot: t40) -> t40 {
+    return VFS_DIRENT_NAME_BASE + slot * VFS_MAX_NAME_WORDS;
+}
+
+fn extent_addr(slot: t40) -> t40 {
+    return VFS_EXTENT_BASE + slot * VFS_EXTENT_WORDS;
+}
+
+fn fd_addr(fd: t40) -> t40 {
+    return VFS_FD_BASE + fd * VFS_FD_WORDS;
+}
+
+fn vfs_component_hash(start: t40, len: t40) -> t40 {
+    var h: t40 = 17;
+    var i: t40 = 0;
+    while len - i > 0 {
+        var c: t40 = kload(start + i);
+        h = h * 31 + c;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn vfs_name_equal(slot: t40, start: t40, len: t40) -> t40 {
+    var stored_len: t40 = kload(dirent_addr(slot) + DIRENT_NAME_LEN);
+    if stored_len - len != 0 {
+        return 0;
+    }
+    var i: t40 = 0;
+    while len - i > 0 {
+        var a: t40 = kload(dirent_name_addr(slot) + i);
+        var b: t40 = kload(start + i);
+        if a - b != 0 {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn vfs_find_child(namespace_id: t40, parent_inode: t40, name_start: t40, name_len: t40, name_hash: t40) -> t40 {
+    var slot: t40 = 0;
+    while VFS_MAX_DIRENTS - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        var child: t40 = kload(row + DIRENT_CHILD);
+        if child > 0 {
+            if kload(row + DIRENT_NAMESPACE) - namespace_id == 0 {
+                if kload(row + DIRENT_PARENT) - parent_inode == 0 {
+                    if kload(row + DIRENT_HASH) - name_hash == 0 {
+                        if vfs_name_equal(slot, name_start, name_len) > 0 {
+                            return child;
+                        }
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn vfs_parent_of(inode: t40) -> t40 {
+    if inode == 0 {
+        return 0;
+    }
+    return kload(inode_addr(inode) + INODE_FLAGS);
+}
+
+fn vfs_resolve_component(namespace_id: t40, current: t40, start: t40, len: t40) -> t40 {
+    if len == 1 {
+        if kload(start) - 46 == 0 {
+            return current;
+        }
+    }
+    if len == 2 {
+        if kload(start) - 46 == 0 {
+            if kload(start + 1) - 46 == 0 {
+                return vfs_parent_of(current);
+            }
+        }
+    }
+    var h: t40 = vfs_component_hash(start, len);
+    return vfs_find_child(namespace_id, current, start, len, h);
+}
+
+fn vfs_lookup(namespace_id: t40, path_addr: t40) -> t40 {
+    if validate_user_cstring(path_addr, VFS_MAX_PATH_WORDS) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    if kload(path_addr) - 47 != 0 {
+        return ERR_INVALID;
+    }
+    var current: t40 = 0;
+    var pos: t40 = path_addr;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = kload(pos);
+        while c - 47 == 0 {
+            pos = pos + 1;
+            c = kload(pos);
+        }
+        if c == 0 {
+            return current;
+        }
+        var start: t40 = pos;
+        var len: t40 = 0;
+        var scanning: t40 = 1;
+        while scanning > 0 {
+            c = kload(pos);
+            if c == 0 {
+                scanning = 0;
+            } else {
+                if c - 47 == 0 {
+                    scanning = 0;
+                } else {
+                    len = len + 1;
+                    pos = pos + 1;
+                }
+            }
+        }
+        if len <= 0 {
+            return ERR_INVALID;
+        }
+        current = vfs_resolve_component(namespace_id, current, start, len);
+        if current < 0 {
+            return current;
+        }
+    }
+    return current;
+}
+
+fn vfs_path_parent(namespace_id: t40, path_addr: t40) -> t40 {
+    if validate_user_cstring(path_addr, VFS_MAX_PATH_WORDS) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var current: t40 = 0;
+    var pos: t40 = path_addr;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = kload(pos);
+        while c - 47 == 0 {
+            pos = pos + 1;
+            c = kload(pos);
+        }
+        if c == 0 {
+            return ERR_INVALID;
+        }
+        var start: t40 = pos;
+        var len: t40 = 0;
+        var scanning: t40 = 1;
+        while scanning > 0 {
+            c = kload(pos);
+            if c == 0 {
+                scanning = 0;
+            } else {
+                if c - 47 == 0 {
+                    scanning = 0;
+                } else {
+                    len = len + 1;
+                    pos = pos + 1;
+                }
+            }
+        }
+        if c == 0 {
+            return current;
+        }
+        current = vfs_resolve_component(namespace_id, current, start, len);
+        if current < 0 {
+            return current;
+        }
+    }
+    return current;
+}
+
+fn vfs_leaf_start(path_addr: t40) -> t40 {
+    var pos: t40 = path_addr;
+    var last: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = kload(pos);
+        if c == 0 {
+            return last;
+        }
+        if c - 47 == 0 {
+            pos = pos + 1;
+        } else {
+            last = pos;
+            while c != 0 {
+                if c - 47 == 0 {
+                    c = 0;
+                } else {
+                    pos = pos + 1;
+                    c = kload(pos);
+                }
+            }
+        }
+    }
+    return last;
+}
+
+fn vfs_leaf_len(start: t40) -> t40 {
+    var len: t40 = 0;
+    var c: t40 = kload(start);
+    while c != 0 {
+        if c - 47 == 0 {
+            return len;
+        }
+        len = len + 1;
+        c = kload(start + len);
+    }
+    return len;
+}
+
+fn vfs_find_extent(inode: t40) -> t40 {
+    var slot: t40 = 0;
+    while VFS_MAX_EXTENTS - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_INODE) - inode == 0 {
+            if kload(row + EXTENT_VERSION) > 0 {
+                return slot;
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn vfs_find_extent_covering(inode: t40, logical_word: t40) -> t40 {
+    var slot: t40 = 0;
+    while VFS_MAX_EXTENTS - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_INODE) - inode == 0 {
+            if kload(row + EXTENT_VERSION) > 0 {
+                var start: t40 = kload(row + EXTENT_LOGICAL_START);
+                var length_words: t40 = kload(row + EXTENT_LENGTH);
+                if logical_word - start >= 0 {
+                    if start + length_words - logical_word > 0 {
+                        return slot;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn vfs_extent_count(inode: t40) -> t40 {
+    var slot: t40 = 0;
+    var count: t40 = 0;
+    while VFS_MAX_EXTENTS - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_INODE) - inode == 0 {
+            if kload(row + EXTENT_VERSION) > 0 {
+                if kload(row + EXTENT_LENGTH) > 0 {
+                    count = count + 1;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return count;
+}
+
+fn vfs_alloc_extent_at(namespace_id: t40, inode: t40, logical_start: t40, length_words: t40) -> t40 {
+    if length_words <= 0 {
+        return ERR_INVALID;
+    }
+    var next: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if next - VFS_MAX_EXTENTS >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var data: t40 = kload(VFS_NEXT_DATA_ADDR);
+    if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+        return ERR_NO_SPACE;
+    }
+    var row: t40 = extent_addr(next);
+    kstore(row + EXTENT_NAMESPACE, namespace_id);
+    kstore(row + EXTENT_INODE, inode);
+    kstore(row + EXTENT_LOGICAL_START, logical_start);
+    kstore(row + EXTENT_LENGTH, length_words);
+    kstore(row + EXTENT_DATA_ADDR, data);
+    kstore(row + EXTENT_VERSION, 1);
+    kstore(VFS_NEXT_EXTENT_ADDR, next + 1);
+    kstore(VFS_NEXT_DATA_ADDR, data + length_words);
+    return next;
+}
+
+fn vfs_alloc_extent(namespace_id: t40, inode: t40, length_words: t40) -> t40 {
+    return vfs_alloc_extent_at(namespace_id, inode, 0, length_words);
+}
+
+fn vfs_ensure_extent(namespace_id: t40, inode: t40, needed_words: t40) -> t40 {
+    var slot: t40 = vfs_find_extent(inode);
+    if slot >= 0 {
+        var row: t40 = extent_addr(slot);
+        var length_words: t40 = kload(row + EXTENT_LENGTH);
+        if length_words - needed_words >= 0 {
+            return slot;
+        }
+        kstore(row + EXTENT_LENGTH, needed_words);
+        return slot;
+    }
+    return vfs_alloc_extent(namespace_id, inode, needed_words);
+}
+
+fn vfs_ensure_extent_covering(namespace_id: t40, inode: t40, logical_word: t40, remaining_words: t40) -> t40 {
+    var slot: t40 = vfs_find_extent_covering(inode, logical_word);
+    if slot >= 0 {
+        return slot;
+    }
+    var length_words: t40 = remaining_words;
+    if length_words - MMU_PAGE_WORDS > 0 {
+        length_words = MMU_PAGE_WORDS;
+    }
+    return vfs_alloc_extent_at(namespace_id, inode, logical_word, length_words);
+}
+
+fn vfs_can_reserve_extents(inode: t40, offset_words: t40, count_words: t40) -> t40 {
+    var missing_windows: t40 = 0;
+    var missing_words: t40 = 0;
+    var i: t40 = 0;
+    while count_words - i > 0 {
+        var logical_word: t40 = offset_words + i;
+        var slot: t40 = vfs_find_extent_covering(inode, logical_word);
+        var chunk: t40 = count_words - i;
+        if slot >= 0 {
+            var ex: t40 = extent_addr(slot);
+            var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+            var length_words: t40 = kload(ex + EXTENT_LENGTH);
+            var in_extent: t40 = logical_word - start;
+            var window: t40 = length_words - in_extent;
+            var remaining: t40 = count_words - i;
+            if window - remaining > 0 {
+                i = count_words;
+            } else {
+                i = i + window;
+            }
+            } else {
+            if chunk - MMU_PAGE_WORDS > 0 {
+                chunk = MMU_PAGE_WORDS;
+            }
+            missing_windows = missing_windows + 1;
+            missing_words = missing_words + chunk;
+            i = i + chunk;
+        }
+    }
+    if kload(VFS_NEXT_EXTENT_ADDR) + missing_windows - VFS_MAX_EXTENTS > 0 {
+        return 0;
+    }
+    if kload(VFS_NEXT_DATA_ADDR) + missing_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn vfs_clear_tables() -> t40 {
+    kclear(VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS);
+    kclear(VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS);
+    kclear(VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS);
+    kclear(VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS);
+    kclear(VFS_FD_BASE, VFS_MAX_FDS * VFS_FD_WORDS);
+    kclear(VFS_DATA_BASE, VFS_PAYLOAD_WORDS);
+    return 1;
+}
+
+fn vfs_format(device_id: t40) -> t40 {
+    vfs_clear_tables();
+    kstore(VFS_MAGIC_ADDR, KERNEL_MAGIC);
+    kstore(VFS_NEXT_INODE_ADDR, 1);
+    kstore(VFS_NEXT_DIRENT_ADDR, 0);
+    kstore(VFS_NEXT_EXTENT_ADDR, 0);
+    kstore(VFS_NEXT_DATA_ADDR, VFS_DATA_BASE);
+    var root: t40 = inode_addr(0);
+    kstore(root + INODE_KIND, KIND_DIR);
+    kstore(root + INODE_MODE, 1);
+    kstore(root + INODE_SIZE, 0);
+    kstore(root + INODE_LINKS, 1);
+    kstore(root + INODE_VERSION, 1);
+    kstore(root + INODE_FLAGS, 0);
+    log_checkpoint();
+    return 1;
+}
+
+fn vfs_mount(namespace_id: t40, device_id: t40) -> t40 {
+    if kload(VFS_MAGIC_ADDR) - KERNEL_MAGIC == 0 {
+        return 1;
+    }
+    return vfs_format(device_id);
+}
+
+fn vfs_add_dirent(namespace_id: t40, parent: t40, child: t40, name_start: t40, name_len: t40) -> t40 {
+    if name_len <= 0 {
+        return ERR_INVALID;
+    }
+    if name_len - VFS_MAX_NAME_WORDS > 0 {
+        return ERR_INVALID;
+    }
+    var slot: t40 = kload(VFS_NEXT_DIRENT_ADDR);
+    if slot - VFS_MAX_DIRENTS >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var h: t40 = vfs_component_hash(name_start, name_len);
+    var row: t40 = dirent_addr(slot);
+    kstore(row + DIRENT_NAMESPACE, namespace_id);
+    kstore(row + DIRENT_PARENT, parent);
+    kstore(row + DIRENT_HASH, h);
+    kstore(row + DIRENT_NAME_LEN, name_len);
+    kstore(row + DIRENT_CHILD, child);
+    kstore(row + DIRENT_VERSION, 1);
+    var i: t40 = 0;
+    while name_len - i > 0 {
+        kstore(dirent_name_addr(slot) + i, kload(name_start + i));
+        i = i + 1;
+    }
+    kstore(VFS_NEXT_DIRENT_ADDR, slot + 1);
+    return slot;
+}
+
+fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
+    var parent: t40 = vfs_path_parent(namespace_id, path_addr);
+    if parent < 0 {
+        return parent;
+    }
+    var parent_kind: t40 = kload(inode_addr(parent) + INODE_KIND);
+    if parent_kind - KIND_DIR != 0 {
+        return ERR_NOT_DIR;
+    }
+    var start: t40 = vfs_leaf_start(path_addr);
+    if start <= 0 {
+        return ERR_INVALID;
+    }
+    var len: t40 = vfs_leaf_len(start);
+    if len <= 0 {
+        return ERR_INVALID;
+    }
+    var h: t40 = vfs_component_hash(start, len);
+    var existing: t40 = vfs_find_child(namespace_id, parent, start, len, h);
+    if existing >= 0 {
+        return ERR_EXISTS;
+    }
+    var inode: t40 = kload(VFS_NEXT_INODE_ADDR);
+    if inode - VFS_MAX_INODES >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var txid: t40 = log_begin();
+    var inode_row: t40 = inode_addr(inode);
+    log_write(txid, inode_row + INODE_KIND, 0, kind);
+    kstore(inode_row + INODE_MODE, 1);
+    kstore(inode_row + INODE_SIZE, 0);
+    kstore(inode_row + INODE_LINKS, 1);
+    kstore(inode_row + INODE_VERSION, 1);
+    kstore(inode_row + INODE_FLAGS, parent);
+    log_commit(txid);
+    kstore(VFS_NEXT_INODE_ADDR, inode + 1);
+    var dir_slot: t40 = vfs_add_dirent(namespace_id, parent, inode, start, len);
+    if dir_slot < 0 {
+        return dir_slot;
+    }
+    return inode;
+}
+
+fn fd_is_open_for_pid(pid: t40, fd: t40) -> t40 {
+    if fd < 0 {
+        return 0;
+    }
+    if fd - VFS_MAX_FDS >= 0 {
+        return 0;
+    }
+    var row: t40 = fd_addr(fd);
+    if kload(row + FD_REFCOUNT) <= 0 {
+        return 0;
+    }
+    if kload(row + FD_PID) - pid != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn fd_alloc(pid: t40) -> t40 {
+    var fd: t40 = 0;
+    while VFS_MAX_FDS - fd > 0 {
+        var row: t40 = fd_addr(fd);
+        if kload(row + FD_REFCOUNT) <= 0 {
+            return fd;
+        }
+        fd = fd + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn vfs_truncate_inode(inode: t40) -> t40 {
+    var row: t40 = inode_addr(inode);
+    var txid: t40 = log_begin();
+    var old_size: t40 = kload(row + INODE_SIZE);
+    log_write(txid, row + INODE_SIZE, old_size, 0);
+    log_commit(txid);
+    var slot: t40 = 0;
+    while VFS_MAX_EXTENTS - slot > 0 {
+        var ex: t40 = extent_addr(slot);
+        if kload(ex + EXTENT_INODE) - inode == 0 {
+            kstore(ex + EXTENT_LENGTH, 0);
+            kstore(ex + EXTENT_VERSION, 0);
+        }
+        slot = slot + 1;
+    }
+    return 1;
+}
+
+fn vfs_open(pid: t40, path_addr: t40, mode: t40) -> t40 {
+    var namespace_id: t40 = process_namespace_for_pid(pid);
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        if mode - 2 == 0 {
+            inode = vfs_create(namespace_id, path_addr, KIND_FILE);
+        } else {
+            if mode - 3 == 0 {
+                inode = vfs_create(namespace_id, path_addr, KIND_FILE);
+            } else {
+                return inode;
+            }
+        }
+    }
+    if inode < 0 {
+        return inode;
+    }
+    if mode - 3 == 0 {
+        vfs_truncate_inode(inode);
+    }
+    var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
+    if kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    var fd: t40 = fd_alloc(pid);
+    if fd < 0 {
+        return fd;
+    }
+    var row: t40 = fd_addr(fd);
+    kstore(row + FD_PID, pid);
+    kstore(row + FD_NAMESPACE, namespace_id);
+    kstore(row + FD_INODE, inode);
+    kstore(row + FD_OFFSET, 0);
+    kstore(row + FD_FLAGS, mode);
+    kstore(row + FD_REFCOUNT, 1);
+    kstore(row + FD_VERSION, 1);
+    return fd;
+}
+
+fn vfs_close(pid: t40, fd: t40) -> t40 {
+    if fd_is_open_for_pid(pid, fd) <= 0 {
+        return ERR_BAD_FD;
+    }
+    kstore(fd_addr(fd) + FD_REFCOUNT, 0);
+    return 1;
+}
+
+fn vfs_read(pid: t40, fd: t40, dst_addr: t40, count_words: t40) -> t40 {
+    if fd_is_open_for_pid(pid, fd) <= 0 {
+        return ERR_BAD_FD;
+    }
+    if user_validate_span(pid, dst_addr, count_words, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var fdrow: t40 = fd_addr(fd);
+    var offset: t40 = kacq(fdrow + FD_OFFSET);
+    var namespace_id: t40 = kload(fdrow + FD_NAMESPACE);
+    var inode: t40 = kload(fdrow + FD_INODE);
+    var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
+    if kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    var size_words: t40 = kload(inode_addr(inode) + INODE_SIZE);
+    if offset - size_words >= 0 {
+        return 0;
+    }
+    var to_read: t40 = count_words;
+    var available: t40 = size_words - offset;
+    if to_read - available > 0 {
+        to_read = available;
+    }
+    var i: t40 = 0;
+    while to_read - i > 0 {
+        var logical_word: t40 = offset + i;
+        var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
+        if extent_slot < 0 {
+            return ERR_NOT_FOUND;
+        }
+        var ex: t40 = extent_addr(extent_slot);
+        var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+        var length_words: t40 = kload(ex + EXTENT_LENGTH);
+        var data: t40 = kload(ex + EXTENT_DATA_ADDR);
+        var in_extent: t40 = logical_word - start;
+        var window: t40 = length_words - in_extent;
+        var chunk: t40 = to_read - i;
+        if chunk - window > 0 {
+            chunk = window;
+        }
+        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+        if buffer_slot < 0 {
+            return buffer_slot;
+        }
+        var j: t40 = 0;
+        while chunk - j > 0 {
+            var stored: t40 = user_store_word(pid, dst_addr + i + j, kload(data + in_extent + j));
+            if stored < 0 {
+                buffer_unpin(buffer_slot);
+                return stored;
+            }
+            j = j + 1;
+        }
+        buffer_unpin(buffer_slot);
+        i = i + chunk;
+    }
+    var version: t40 = kacq(fdrow + FD_VERSION);
+    kstore(fdrow + FD_OFFSET, offset + to_read);
+    kcas(fdrow + FD_VERSION, version, version + 1);
+    return to_read;
+}
+
+fn vfs_read_kernel(pid: t40, fd: t40, dst_addr: t40, count_words: t40) -> t40 {
+    if fd_is_open_for_pid(pid, fd) <= 0 {
+        return ERR_BAD_FD;
+    }
+    if dst_addr <= 0 {
+        return ERR_BAD_PTR;
+    }
+    if count_words < 0 {
+        return ERR_BAD_PTR;
+    }
+    var fdrow: t40 = fd_addr(fd);
+    var offset: t40 = kacq(fdrow + FD_OFFSET);
+    var namespace_id: t40 = kload(fdrow + FD_NAMESPACE);
+    var inode: t40 = kload(fdrow + FD_INODE);
+    var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
+    if kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    var size_words: t40 = kload(inode_addr(inode) + INODE_SIZE);
+    if offset - size_words >= 0 {
+        return 0;
+    }
+    var to_read: t40 = count_words;
+    var available: t40 = size_words - offset;
+    if to_read - available > 0 {
+        to_read = available;
+    }
+    var i: t40 = 0;
+    while to_read - i > 0 {
+        var logical_word: t40 = offset + i;
+        var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
+        if extent_slot < 0 {
+            return ERR_NOT_FOUND;
+        }
+        var ex: t40 = extent_addr(extent_slot);
+        var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+        var length_words: t40 = kload(ex + EXTENT_LENGTH);
+        var data: t40 = kload(ex + EXTENT_DATA_ADDR);
+        var in_extent: t40 = logical_word - start;
+        var window: t40 = length_words - in_extent;
+        var chunk: t40 = to_read - i;
+        if chunk - window > 0 {
+            chunk = window;
+        }
+        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+        if buffer_slot < 0 {
+            return buffer_slot;
+        }
+        var j: t40 = 0;
+        while chunk - j > 0 {
+            kstore(dst_addr + i + j, kload(data + in_extent + j));
+            j = j + 1;
+        }
+        buffer_unpin(buffer_slot);
+        i = i + chunk;
+    }
+    var version: t40 = kacq(fdrow + FD_VERSION);
+    kstore(fdrow + FD_OFFSET, offset + to_read);
+    kcas(fdrow + FD_VERSION, version, version + 1);
+    return to_read;
+}
+
+fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
+    if fd_is_open_for_pid(pid, fd) <= 0 {
+        return ERR_BAD_FD;
+    }
+    if user_validate_span(pid, src_addr, count_words, 0) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var fdrow: t40 = fd_addr(fd);
+    var mode: t40 = kload(fdrow + FD_FLAGS);
+    if mode == 0 {
+        return ERR_INVALID;
+    }
+    var offset: t40 = kacq(fdrow + FD_OFFSET);
+    var namespace_id: t40 = kload(fdrow + FD_NAMESPACE);
+    var inode: t40 = kload(fdrow + FD_INODE);
+    var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
+    if kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    if vfs_can_reserve_extents(inode, offset, count_words) <= 0 {
+        return ERR_NO_SPACE;
+    }
+    var inode_row: t40 = inode_addr(inode);
+    var old_size: t40 = kload(inode_row + INODE_SIZE);
+    var i: t40 = 0;
+    while count_words - i > 0 {
+        var logical_word: t40 = offset + i;
+        var remaining: t40 = count_words - i;
+        var extent_slot: t40 = vfs_ensure_extent_covering(namespace_id, inode, logical_word, remaining);
+        if extent_slot < 0 {
+            return extent_slot;
+        }
+        var ex: t40 = extent_addr(extent_slot);
+        var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+        var length_words: t40 = kload(ex + EXTENT_LENGTH);
+        var data: t40 = kload(ex + EXTENT_DATA_ADDR);
+        var in_extent: t40 = logical_word - start;
+        var window: t40 = length_words - in_extent;
+        var chunk: t40 = remaining;
+        if chunk - window > 0 {
+            chunk = window;
+        }
+        var log_room: t40 = WAL_CAPACITY - 2;
+        if chunk - log_room > 0 {
+            chunk = log_room;
+        }
+        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+        if buffer_slot < 0 {
+            return buffer_slot;
+        }
+        var txid: t40 = log_begin();
+        var j: t40 = 0;
+        while chunk - j > 0 {
+            var dst: t40 = data + in_extent + j;
+            var src_phys: t40 = user_translate_dmem_addr(pid, src_addr + i + j, 0);
+            if src_phys < 0 {
+                buffer_unpin(buffer_slot);
+                return src_phys;
+            }
+            log_write(txid, dst, kload(dst), kload(src_phys));
+            j = j + 1;
+        }
+        var chunk_end: t40 = logical_word + chunk;
+        if chunk_end - old_size > 0 {
+            log_write(txid, inode_row + INODE_SIZE, old_size, chunk_end);
+            old_size = chunk_end;
+        }
+        log_commit(txid);
+        buffer_mark_dirty(buffer_slot);
+        buffer_unpin(buffer_slot);
+        i = i + chunk;
+    }
+    var version: t40 = kacq(fdrow + FD_VERSION);
+    kstore(fdrow + FD_OFFSET, offset + count_words);
+    kcas(fdrow + FD_VERSION, version, version + 1);
+    return count_words;
+}
+
+fn vfs_stat(namespace_id: t40, path_addr: t40, out_addr: t40) -> t40 {
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    var row: t40 = inode_addr(inode);
+    var size_words: t40 = kload(row + INODE_SIZE);
+    if out_addr > 0 {
+        if validate_user_span(out_addr, 6, 1) <= 0 {
+            return ERR_BAD_PTR;
+        }
+        kstore(out_addr, inode);
+        kstore(out_addr + 1, kload(row + INODE_KIND));
+        kstore(out_addr + 2, size_words);
+        kstore(out_addr + 3, 1);
+        kstore(out_addr + 4, kload(row + INODE_FLAGS));
+        kstore(out_addr + 5, kload(row + INODE_VERSION));
+    }
+    return size_words;
+}
+
+fn vfs_stat_user(pid: t40, namespace_id: t40, path_addr: t40, out_addr: t40) -> t40 {
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    var row: t40 = inode_addr(inode);
+    var size_words: t40 = kload(row + INODE_SIZE);
+    if out_addr > 0 {
+        if user_validate_span(pid, out_addr, 6, 1) <= 0 {
+            return ERR_BAD_PTR;
+        }
+        var stored: t40 = user_store_word(pid, out_addr, inode);
+        if stored < 0 {
+            return stored;
+        }
+        stored = user_store_word(pid, out_addr + 1, kload(row + INODE_KIND));
+        if stored < 0 {
+            return stored;
+        }
+        stored = user_store_word(pid, out_addr + 2, size_words);
+        if stored < 0 {
+            return stored;
+        }
+        stored = user_store_word(pid, out_addr + 3, 1);
+        if stored < 0 {
+            return stored;
+        }
+        stored = user_store_word(pid, out_addr + 4, kload(row + INODE_FLAGS));
+        if stored < 0 {
+            return stored;
+        }
+        stored = user_store_word(pid, out_addr + 5, kload(row + INODE_VERSION));
+        if stored < 0 {
+            return stored;
+        }
+    }
+    return size_words;
+}
+
+fn vfs_readdir(namespace_id: t40, path_addr: t40, out_addr: t40, max_words: t40) -> t40 {
+    if validate_user_span(out_addr, max_words, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    if kload(inode_addr(inode) + INODE_KIND) - KIND_DIR != 0 {
+        return ERR_NOT_DIR;
+    }
+    var written: t40 = 0;
+    var slot: t40 = 0;
+    while VFS_MAX_DIRENTS - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        var child: t40 = kload(row + DIRENT_CHILD);
+        if child > 0 {
+            if kload(row + DIRENT_NAMESPACE) - namespace_id == 0 {
+                if kload(row + DIRENT_PARENT) - inode == 0 {
+                    var len: t40 = kload(row + DIRENT_NAME_LEN);
+                    var needed: t40 = 3 + len;
+                    if written + needed - max_words > 0 {
+                        return written;
+                    }
+                    kstore(out_addr + written, child);
+                    kstore(out_addr + written + 1, kload(inode_addr(child) + INODE_KIND));
+                    kstore(out_addr + written + 2, len);
+                    var i: t40 = 0;
+                    while len - i > 0 {
+                        kstore(out_addr + written + 3 + i, kload(dirent_name_addr(slot) + i));
+                        i = i + 1;
+                    }
+                    written = written + needed;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return written;
+}
+
+fn vfs_readdir_user(pid: t40, namespace_id: t40, path_addr: t40, out_addr: t40, max_words: t40) -> t40 {
+    if user_validate_span(pid, out_addr, max_words, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    if kload(inode_addr(inode) + INODE_KIND) - KIND_DIR != 0 {
+        return ERR_NOT_DIR;
+    }
+    var written: t40 = 0;
+    var slot: t40 = 0;
+    while VFS_MAX_DIRENTS - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        var child: t40 = kload(row + DIRENT_CHILD);
+        if child > 0 {
+            if kload(row + DIRENT_NAMESPACE) - namespace_id == 0 {
+                if kload(row + DIRENT_PARENT) - inode == 0 {
+                    var len: t40 = kload(row + DIRENT_NAME_LEN);
+                    var needed: t40 = 3 + len;
+                    if written + needed - max_words > 0 {
+                        return written;
+                    }
+                    var stored: t40 = user_store_word(pid, out_addr + written, child);
+                    if stored < 0 {
+                        return stored;
+                    }
+                    stored = user_store_word(pid, out_addr + written + 1, kload(inode_addr(child) + INODE_KIND));
+                    if stored < 0 {
+                        return stored;
+                    }
+                    stored = user_store_word(pid, out_addr + written + 2, len);
+                    if stored < 0 {
+                        return stored;
+                    }
+                    var i: t40 = 0;
+                    while len - i > 0 {
+                        stored = user_store_word(pid, out_addr + written + 3 + i, kload(dirent_name_addr(slot) + i));
+                        if stored < 0 {
+                            return stored;
+                        }
+                        i = i + 1;
+                    }
+                    written = written + needed;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return written;
+}
+
+fn vfs_fsync(pid: t40, fd: t40) -> t40 {
+    if fd_is_open_for_pid(pid, fd) <= 0 {
+        return ERR_BAD_FD;
+    }
+    buffer_flush_all();
+    log_checkpoint();
+    return 1;
+}
+
+fn exec_image_addr(process_slot: t40) -> t40 {
+    return EXEC_IMAGE_BASE + process_slot * EXEC_IMAGE_WORDS;
+}
+
+fn exec_hw_imem_ptbr(process_slot: t40) -> t40 {
+    return HW_PT_BASE + process_slot * HW_PT_WORDS;
+}
+
+fn exec_hw_dmem_ptbr(process_slot: t40) -> t40 {
+    return exec_hw_imem_ptbr(process_slot) + HW_PT_MAX_PAGES;
+}
+
+fn exec_process_dmem_ppn(process_slot: t40) -> t40 {
+    return PROCESS_DMEM_PPN_BASE + process_slot * PROCESS_DMEM_PAGES_MAX;
+}
+
+fn exec_encode_pte(ppn: t40, user: t40, readable: t40, writable: t40, executable: t40) -> t40 {
+    var word: t40 = ppn * 243 + 1;
+    if user > 0 {
+        word = word + 3;
+    }
+    if readable > 0 {
+        word = word + 9;
+    }
+    if writable > 0 {
+        word = word + 27;
+    }
+    if executable > 0 {
+        word = word + 81;
+    }
+    return word;
+}
+
+fn exec_clear_hw_page_tables(process_slot: t40) -> t40 {
+    kclear(exec_hw_imem_ptbr(process_slot), HW_PT_WORDS);
+    return 1;
+}
+
+fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
+    if size_words - EXEC_DESC_WORDS < 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_MAGIC) - EXEC_MAGIC != 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_VERSION) - EXEC_VERSION_V1 != 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_ABI_VERSION) - EXEC_ABI_VERSION_V1 != 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_ENTRY_PC) < 0 {
+        return 0;
+    }
+    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
+    if text_pages <= 0 {
+        return 0;
+    }
+    if text_pages - HW_PT_MAX_PAGES > 0 {
+        return 0;
+    }
+    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    if data_pages <= 0 {
+        return 0;
+    }
+    if data_pages - PROCESS_DMEM_PAGES_MAX > 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_STACK_WORDS) <= 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_HEADER_SYSCALL_ABI_VERSION) - EXEC_SYSCALL_ABI_VERSION_V1 != 0 {
+        return 0;
+    }
+    if kload(image_addr + EXEC_DESC_TEXT_PPN) <= 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn is_gui_app(path_addr: t40) -> t40 {
+    if path_addr <= 0 {
+        return 0;
+    }
+    var is_calc: t40 = 1;
+    if kload(path_addr + 0) - 47 != 0 { is_calc = 0; }
+    if kload(path_addr + 1) - 98 != 0 { is_calc = 0; }
+    if kload(path_addr + 2) - 105 != 0 { is_calc = 0; }
+    if kload(path_addr + 3) - 110 != 0 { is_calc = 0; }
+    if kload(path_addr + 4) - 47 != 0 { is_calc = 0; }
+    if kload(path_addr + 5) - 99 != 0 { is_calc = 0; }
+    if kload(path_addr + 6) - 97 != 0 { is_calc = 0; }
+    if kload(path_addr + 7) - 108 != 0 { is_calc = 0; }
+    if kload(path_addr + 8) - 99 != 0 { is_calc = 0; }
+    if is_calc > 0 {
+        return 1;
+    }
+
+    var is_task: t40 = 1;
+    if kload(path_addr + 0) - 47 != 0 { is_task = 0; }
+    if kload(path_addr + 1) - 98 != 0 { is_task = 0; }
+    if kload(path_addr + 2) - 105 != 0 { is_task = 0; }
+    if kload(path_addr + 3) - 110 != 0 { is_task = 0; }
+    if kload(path_addr + 4) - 47 != 0 { is_task = 0; }
+    if kload(path_addr + 5) - 116 != 0 { is_task = 0; }
+    if kload(path_addr + 6) - 97 != 0 { is_task = 0; }
+    if kload(path_addr + 7) - 115 != 0 { is_task = 0; }
+    if kload(path_addr + 8) - 107 != 0 { is_task = 0; }
+    if is_task > 0 {
+        return 1;
+    }
+
+    var is_paint: t40 = 1;
+    if kload(path_addr + 0) - 47 != 0 { is_paint = 0; }
+    if kload(path_addr + 1) - 98 != 0 { is_paint = 0; }
+    if kload(path_addr + 2) - 105 != 0 { is_paint = 0; }
+    if kload(path_addr + 3) - 110 != 0 { is_paint = 0; }
+    if kload(path_addr + 4) - 47 != 0 { is_paint = 0; }
+    if kload(path_addr + 5) - 112 != 0 { is_paint = 0; }
+    if kload(path_addr + 6) - 97 != 0 { is_paint = 0; }
+    if kload(path_addr + 7) - 105 != 0 { is_paint = 0; }
+    if kload(path_addr + 8) - 110 != 0 { is_paint = 0; }
+    if is_paint > 0 {
+        return 1;
+    }
+
+    var is_desktop: t40 = 1;
+    if kload(path_addr + 0) - 47 != 0 { is_desktop = 0; }
+    if kload(path_addr + 1) - 98 != 0 { is_desktop = 0; }
+    if kload(path_addr + 2) - 105 != 0 { is_desktop = 0; }
+    if kload(path_addr + 3) - 110 != 0 { is_desktop = 0; }
+    if kload(path_addr + 4) - 47 != 0 { is_desktop = 0; }
+    if kload(path_addr + 5) - 100 != 0 { is_desktop = 0; }
+    if kload(path_addr + 6) - 101 != 0 { is_desktop = 0; }
+    if kload(path_addr + 7) - 115 != 0 { is_desktop = 0; }
+    if kload(path_addr + 8) - 107 != 0 { is_desktop = 0; }
+    if is_desktop > 0 {
+        return 1;
+    }
+
+    return 0;
+}
+
+fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
+    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
+    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    var text_ppn: t40 = kload(image_addr + EXEC_DESC_TEXT_PPN);
+    var data_ppn: t40 = exec_process_dmem_ppn(process_slot);
+    exec_clear_hw_page_tables(process_slot);
+    kclear(data_ppn * MMU_PAGE_WORDS, data_pages * MMU_PAGE_WORDS);
+    var vpn: t40 = 0;
+    while text_pages - vpn > 0 {
+        kstore(exec_hw_imem_ptbr(process_slot) + vpn, exec_encode_pte(text_ppn + vpn, 1, 0, 0, 1));
+        pte_map(process_slot, vpn, text_ppn + vpn, 0);
+        vpn = vpn + 1;
+    }
+    vpn = 0;
+    while data_pages - vpn > 0 {
+        kstore(exec_hw_dmem_ptbr(process_slot) + vpn, exec_encode_pte(data_ppn + vpn, 1, 1, 1, 0));
+        vpn = vpn + 1;
+    }
+    kstore(exec_hw_dmem_ptbr(process_slot) + USER_SCRATCH_VPN_BASE, exec_encode_pte(data_ppn, 1, 1, 1, 0));
+    if is_gui > 0 {
+        var vram_vpn: t40 = 1851;
+        while 2297 - vram_vpn > 0 {
+            kstore(exec_hw_dmem_ptbr(process_slot) + vram_vpn, exec_encode_pte(vram_vpn, 1, 1, 1, 0));
+            vram_vpn = vram_vpn + 1;
+        }
+    }
+    return text_pages + data_pages;
+}
+
+fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
+    var row: t40 = process_addr(process_slot);
+    var ctx: t40 = kload(row + PROC_CONTEXT);
+    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    if ctx <= 0 {
+        ctx = process_default_context_addr(process_slot);
+        kstore(row + PROC_CONTEXT, ctx);
+    }
+    kclear(ctx, TASK_CONTEXT_WORDS);
+    kstore(ctx + TASK_CONTEXT_EPC, kload(image_addr + EXEC_HEADER_ENTRY_PC));
+    kstore(ctx + TASK_CONTEXT_STATUS, TASK_STATUS_USER_RESUME);
+    kstore(ctx + TASK_CONTEXT_IMEM_PTBR, exec_hw_imem_ptbr(process_slot));
+    kstore(ctx + TASK_CONTEXT_IMEM_PAGES, kload(image_addr + EXEC_HEADER_TEXT_PAGES));
+    kstore(ctx + TASK_CONTEXT_DMEM_PTBR, exec_hw_dmem_ptbr(process_slot));
+    var dmem_pages: t40 = data_pages;
+    if dmem_pages - (USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES) < 0 {
+        dmem_pages = USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES;
+    }
+    if is_gui > 0 {
+        dmem_pages = 2297;
+    }
+    kstore(ctx + TASK_CONTEXT_DMEM_PAGES, dmem_pages);
+    kstore(ctx + TASK_CONTEXT_SP, kload(image_addr + EXEC_HEADER_STACK_WORDS));
+    var heap: t40 = process_heap_addr(process_slot);
+    var heap_start: t40 = data_pages * MMU_PAGE_WORDS;
+    kstore(heap + PROC_HEAP_START, heap_start);
+    kstore(heap + PROC_HEAP_BREAK, heap_start);
+    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DMEM_PAGES_MAX * MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_MAPPED_PAGES, data_pages);
+    kstore(CURRENT_CONTEXT_ADDR, ctx);
+    kstore(CURRENT_PID_ADDR, kload(row + PROC_PID));
+    return ctx;
+}
+
+fn process_map_heap_pages(process_slot: t40, required_pages: t40) -> t40 {
+    if required_pages <= 0 {
+        return ERR_INVALID;
+    }
+    if required_pages - PROCESS_DMEM_PAGES_MAX > 0 {
+        return ERR_NO_SPACE;
+    }
+    var heap: t40 = process_heap_addr(process_slot);
+    var mapped: t40 = kload(heap + PROC_HEAP_MAPPED_PAGES);
+    var data_ppn: t40 = exec_process_dmem_ppn(process_slot);
+    while required_pages - mapped > 0 {
+        kclear((data_ppn + mapped) * MMU_PAGE_WORDS, MMU_PAGE_WORDS);
+        kstore(exec_hw_dmem_ptbr(process_slot) + mapped, exec_encode_pte(data_ppn + mapped, 1, 1, 1, 0));
+        mapped = mapped + 1;
+    }
+    kstore(heap + PROC_HEAP_MAPPED_PAGES, mapped);
+    return mapped;
+}
+
+fn process_brk(pid: t40, new_break: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var heap: t40 = process_heap_addr(slot);
+    var heap_start: t40 = kload(heap + PROC_HEAP_START);
+    var heap_limit: t40 = kload(heap + PROC_HEAP_LIMIT);
+    if new_break - heap_start < 0 {
+        return ERR_INVALID;
+    }
+    if new_break - heap_limit > 0 {
+        return ERR_NO_SPACE;
+    }
+    var required_pages: t40 = (new_break + MMU_PAGE_WORDS - 1) / MMU_PAGE_WORDS;
+    var mapped: t40 = process_map_heap_pages(slot, required_pages);
+    if mapped < 0 {
+        return mapped;
+    }
+    kstore(heap + PROC_HEAP_BREAK, new_break);
+    var ctx: t40 = kload(process_addr(slot) + PROC_CONTEXT);
+    if ctx > 0 {
+        var current_pages: t40 = kload(ctx + TASK_CONTEXT_DMEM_PAGES);
+        if required_pages - current_pages > 0 {
+            kstore(ctx + TASK_CONTEXT_DMEM_PAGES, required_pages);
+        }
+    }
+    process_cache_invalidate(slot);
+    return new_break;
+}
+
+fn process_sbrk(pid: t40, delta: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var heap: t40 = process_heap_addr(slot);
+    var old_break: t40 = kload(heap + PROC_HEAP_BREAK);
+    var next_break: t40 = old_break + delta;
+    var status: t40 = process_brk(pid, next_break);
+    if status < 0 {
+        return status;
+    }
+    return old_break;
+}
+
+fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(process_slot);
+    var pid: t40 = kload(row + PROC_PID);
+    if pid <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    var namespace_id: t40 = kload(row + PROC_NAMESPACE);
+    var size_words: t40 = vfs_stat(namespace_id, path_addr, 0);
+    if size_words < 0 {
+        return size_words;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
+        return ERR_INVALID;
+    }
+    if size_words - EXEC_IMAGE_WORDS > 0 {
+        return ERR_NO_SPACE;
+    }
+    var fd: t40 = vfs_open(pid, path_addr, 0);
+    if fd < 0 {
+        return fd;
+    }
+    var dst: t40 = exec_image_addr(process_slot);
+    var read_count: t40 = vfs_read_kernel(pid, fd, dst, size_words);
+    vfs_close(pid, fd);
+    if read_count < 0 {
+        return read_count;
+    }
+    if exec_descriptor_valid(dst, read_count) <= 0 {
+        return ERR_INVALID;
+    }
+    var is_gui: t40 = is_gui_app(path_addr);
+    exec_map_descriptor(process_slot, dst, is_gui);
+    exec_install_context(process_slot, dst, is_gui);
+    unsafe { csr_write(mmu_enable, 1); }
+    process_cache_invalidate(process_slot);
+    process_set_state(process_slot, PROC_RUNNABLE);
+    return read_count;
+}
+
+fn app_addr(app_id: t40) -> t40 {
+    return APP_REGISTRY_BASE + app_id * APP_ROW_WORDS;
+}
+
+fn app_registry_init() -> t40 {
+    kclear(APP_REGISTRY_BASE, APP_MAX * APP_ROW_WORDS);
+    return 1;
+}
+
+fn app_path_hash(path_addr: t40) -> t40 {
+    var words: t40 = validate_user_cstring(path_addr, VFS_MAX_PATH_WORDS);
+    if words <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var hash: t40 = vfs_component_hash(path_addr, words - 1);
+    if hash < 0 {
+        return 0 - hash;
+    }
+    return hash;
+}
+
+fn app_cap_has(caps: t40, cap: t40) -> t40 {
+    var remaining: t40 = caps;
+    if remaining - APP_CAP_IPC >= 0 {
+        if cap - APP_CAP_IPC == 0 {
+            return 1;
+        }
+        remaining = remaining - APP_CAP_IPC;
+    }
+    if remaining - APP_CAP_PROCESS >= 0 {
+        if cap - APP_CAP_PROCESS == 0 {
+            return 1;
+        }
+        remaining = remaining - APP_CAP_PROCESS;
+    }
+    if remaining - APP_CAP_GRAPHICS >= 0 {
+        if cap - APP_CAP_GRAPHICS == 0 {
+            return 1;
+        }
+        remaining = remaining - APP_CAP_GRAPHICS;
+    }
+    if remaining - APP_CAP_FS_WRITE >= 0 {
+        if cap - APP_CAP_FS_WRITE == 0 {
+            return 1;
+        }
+        remaining = remaining - APP_CAP_FS_WRITE;
+    }
+    if remaining - APP_CAP_FS_READ >= 0 {
+        if cap - APP_CAP_FS_READ == 0 {
+            return 1;
+        }
+        remaining = remaining - APP_CAP_FS_READ;
+    }
+    if remaining - APP_CAP_CONSOLE >= 0 {
+        if cap - APP_CAP_CONSOLE == 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn app_caps_allow(granted: t40, required: t40) -> t40 {
+    var cap: t40 = APP_CAP_CONSOLE;
+    while APP_CAP_IPC - cap >= 0 {
+        if app_cap_has(required, cap) > 0 {
+            if app_cap_has(granted, cap) <= 0 {
+                return 0;
+            }
+        }
+        cap = cap * 2;
+    }
+    return 1;
+}
+
+fn app_find(namespace_id: t40, path_addr: t40) -> t40 {
+    var hash: t40 = app_path_hash(path_addr);
+    if hash < 0 {
+        return hash;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    var app_id: t40 = 0;
+    while APP_MAX - app_id > 0 {
+        var row: t40 = app_addr(app_id);
+        if kacq(row + APP_VERSION) > 0 {
+            if kload(row + APP_NAMESPACE) - namespace_id == 0 {
+                if kload(row + APP_PATH_HASH) - hash == 0 {
+                    if kload(row + APP_INODE) - inode == 0 {
+                        return app_id;
+                    }
+                }
+            }
+        }
+        app_id = app_id + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn app_first_free() -> t40 {
+    var app_id: t40 = 0;
+    while APP_MAX - app_id > 0 {
+        var row: t40 = app_addr(app_id);
+        if kacq(row + APP_VERSION) <= 0 {
+            return app_id;
+        }
+        app_id = app_id + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn app_register(namespace_id: t40, path_addr: t40, caps: t40, quota_id: t40, trusted: t40, max_image_words: t40) -> t40 {
+    if namespace_is_active(namespace_id) <= 0 {
+        return ERR_INVALID;
+    }
+    if quota_id < 0 {
+        return ERR_INVALID;
+    }
+    if quota_id - QUOTA_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    if max_image_words <= 0 {
+        return ERR_INVALID;
+    }
+    if max_image_words - EXEC_IMAGE_WORDS > 0 {
+        return ERR_INVALID;
+    }
+    var hash: t40 = app_path_hash(path_addr);
+    if hash < 0 {
+        return hash;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
+        return ERR_INVALID;
+    }
+    if vfs_stat(namespace_id, path_addr, 0) - EXEC_DESC_WORDS < 0 {
+        return ERR_INVALID;
+    }
+    if app_find(namespace_id, path_addr) >= 0 {
+        return ERR_EXISTS;
+    }
+    var app_id: t40 = app_first_free();
+    if app_id < 0 {
+        return app_id;
+    }
+    var row: t40 = app_addr(app_id);
+    kstore(row + APP_NAMESPACE, namespace_id);
+    kstore(row + APP_PATH_HASH, hash);
+    kstore(row + APP_INODE, inode);
+    kstore(row + APP_CAPS, caps);
+    kstore(row + APP_QUOTA, quota_id);
+    kstore(row + APP_TRUSTED, trusted);
+    kstore(row + APP_LAUNCH_COUNT, 0);
+    kstore(row + APP_MAX_IMAGE, max_image_words);
+    kstore(row + APP_FLAGS, 0);
+    unsafe { fence(1); }
+    kcas(row + APP_VERSION, 0, 1);
+    return app_id;
+}
+
+fn app_launch_count(app_id: t40) -> t40 {
+    if app_id < 0 {
+        return ERR_INVALID;
+    }
+    if app_id - APP_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = app_addr(app_id);
+    if kacq(row + APP_VERSION) <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    return kload(row + APP_LAUNCH_COUNT);
+}
+
+fn app_launch(pid: t40, path_addr: t40, required_caps: t40) -> t40 {
+    var process_slot: t40 = process_find_pid(pid);
+    if process_slot < 0 {
+        return process_slot;
+    }
+    var proc_row: t40 = process_addr(process_slot);
+    var namespace_id: t40 = kload(proc_row + PROC_NAMESPACE);
+    var app_id: t40 = app_find(namespace_id, path_addr);
+    if app_id < 0 {
+        return app_id;
+    }
+    var row: t40 = app_addr(app_id);
+    if kload(row + APP_TRUSTED) <= 0 {
+        return ERR_INVALID;
+    }
+    if app_caps_allow(kload(row + APP_CAPS), required_caps) <= 0 {
+        return ERR_INVALID;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode - kload(row + APP_INODE) != 0 {
+        return ERR_INVALID;
+    }
+    if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
+        return ERR_INVALID;
+    }
+    var size_words: t40 = vfs_stat(namespace_id, path_addr, 0);
+    if size_words < 0 {
+        return size_words;
+    }
+    if size_words - kload(row + APP_MAX_IMAGE) > 0 {
+        return ERR_NO_SPACE;
+    }
+    var quota_id: t40 = kload(row + APP_QUOTA);
+    if quota_charge(quota_id, 1) < 0 {
+        return ERR_NO_SPACE;
+    }
+    var loaded: t40 = exec_process(process_slot, path_addr);
+    if loaded < 0 {
+        quota_release(quota_id, 1);
+        return loaded;
+    }
+    var version: t40 = kacq(row + APP_VERSION);
+    kstore(row + APP_LAUNCH_COUNT, kload(row + APP_LAUNCH_COUNT) + 1);
+    kcas(row + APP_VERSION, version, version + 1);
+    return loaded;
+}
+
+fn kernel_set_return(status: t40, payload: t40, detail: t40) -> t40 {
+    kstore(SYS_STATUS_ADDR, status);
+    kstore(SYS_PAYLOAD_ADDR, payload);
+    kstore(SYS_DETAIL_ADDR, detail);
+    return status;
+}
+
+fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t40, arg3: t40) -> t40 {
+    if service - 1 == 0 {
+        unsafe { csr_write(console_ctrl, 3); }
+        unsafe { csr_write(console_out, arg0); }
+        return kernel_set_return(1, arg0, 0);
+    }
+    if service - 2 == 0 {
+        unsafe { csr_write(console_ctrl, 1); }
+        return kernel_set_return(1, 0, 0);
+    }
+    if service - 3 == 0 {
+        unsafe { csr_write(console_ctrl, -1); }
+        return kernel_set_return(1, 0, 0);
+    }
+    if service - 6 == 0 {
+        var path_addr: t40 = 10000;
+        unsafe {
+            store(path_addr + 0, 47);   // /
+            store(path_addr + 1, 98);   // b
+            store(path_addr + 2, 105);  // i
+            store(path_addr + 3, 110);  // n
+            store(path_addr + 4, 47);   // /
+            store(path_addr + 5, 100);  // d
+            store(path_addr + 6, 101);  // e
+            store(path_addr + 7, 115);  // s
+            store(path_addr + 8, 107);  // k
+            store(path_addr + 9, 116);  // t
+            store(path_addr + 10, 111); // o
+            store(path_addr + 11, 112); // p
+            store(path_addr + 12, 0);   // \0
+        }
+        var parent_slot: t40 = process_find_pid(pid);
+        var loaded: t40 = exec_process(parent_slot, path_addr);
+        if loaded < 0 {
+            var spin: t40 = 1;
+            while spin > 0 {
+                spin = 1;
+            }
+        }
+        return kernel_set_return(1, loaded, 0);
+    }
+    if service - 7 == 0 {
+        return kernel_set_return(1, pid, 0);
+    }
+    if service - 8 == 0 {
+        var cycles: t40 = 0;
+        unsafe { cycles = csr_read(cycle); }
+        return kernel_set_return(1, cycles, 0);
+    }
+    if service - 9 == 0 {
+        var available: t40 = 0;
+        unsafe { available = csr_read(console_in_ctrl); }
+        if available <= 0 {
+            return kernel_set_return(0, 0, ERR_EOF);
+        }
+        var key: t40 = 0;
+        unsafe { key = csr_read(console_in); }
+        unsafe { csr_write(console_in_ctrl, 1); }
+        return kernel_set_return(1, key, 0);
+    }
+    if service - 12 == 0 {
+        var path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if path_words < 0 {
+            return kernel_set_return(-1, 0, path_words);
+        }
+        var fd: t40 = vfs_open(pid, SYSCALL_PATH_COPY_BASE, arg1);
+        if fd < 0 {
+            return kernel_set_return(-1, 0, fd);
+        }
+        return kernel_set_return(1, fd, 0);
+    }
+    if service - 13 == 0 {
+        var closed: t40 = vfs_close(pid, arg0);
+        if closed < 0 {
+            return kernel_set_return(-1, 0, closed);
+        }
+        return kernel_set_return(1, 0, 0);
+    }
+    if service - 14 == 0 {
+        var read_count: t40 = vfs_read(pid, arg0, arg1, arg2);
+        if read_count < 0 {
+            return kernel_set_return(-1, 0, read_count);
+        }
+        if read_count == 0 {
+            return kernel_set_return(0, 0, ERR_EOF);
+        }
+        return kernel_set_return(1, read_count, 0);
+    }
+    if service - 15 == 0 {
+        var write_count: t40 = vfs_write(pid, arg0, arg1, arg2);
+        if write_count < 0 {
+            return kernel_set_return(-1, 0, write_count);
+        }
+        return kernel_set_return(1, write_count, 0);
+    }
+    if service - 16 == 0 {
+        var stat_ns: t40 = process_namespace_for_pid(pid);
+        var stat_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if stat_path_words < 0 {
+            return kernel_set_return(-1, 0, stat_path_words);
+        }
+        var size_words: t40 = vfs_stat_user(pid, stat_ns, SYSCALL_PATH_COPY_BASE, arg1);
+        if size_words < 0 {
+            return kernel_set_return(-1, 0, size_words);
+        }
+        return kernel_set_return(1, size_words, 0);
+    }
+    if service - 17 == 0 {
+        var dir_ns: t40 = process_namespace_for_pid(pid);
+        var dir_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if dir_path_words < 0 {
+            return kernel_set_return(-1, 0, dir_path_words);
+        }
+        var written: t40 = vfs_readdir_user(pid, dir_ns, SYSCALL_PATH_COPY_BASE, arg1, arg2);
+        if written < 0 {
+            return kernel_set_return(-1, 0, written);
+        }
+        return kernel_set_return(1, written, 0);
+    }
+    if service - 18 == 0 {
+        var brk_status: t40 = process_brk(pid, arg0);
+        if brk_status < 0 {
+            return kernel_set_return(-1, 0, brk_status);
+        }
+        return kernel_set_return(1, brk_status, 0);
+    }
+    if service - 19 == 0 {
+        var old_break: t40 = process_sbrk(pid, arg0);
+        if old_break < 0 {
+            return kernel_set_return(-1, 0, old_break);
+        }
+        return kernel_set_return(1, old_break, 0);
+    }
+    if service - 20 == 0 {
+        var parent_slot: t40 = process_find_pid(pid);
+        if parent_slot < 0 {
+            return kernel_set_return(-1, 0, parent_slot);
+        }
+        var child_pid: t40 = fork_process(parent_slot, arg0, arg1);
+        if child_pid < 0 {
+            return kernel_set_return(-1, 0, child_pid);
+        }
+        return kernel_set_return(1, child_pid, 0);
+    }
+    if service - 21 == 0 {
+        var exec_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if exec_path_words < 0 {
+            return kernel_set_return(-1, 0, exec_path_words);
+        }
+        var exec_words: t40 = app_launch(pid, SYSCALL_PATH_COPY_BASE, 0);
+        if exec_words < 0 {
+            return kernel_set_return(-1, 0, exec_words);
+        }
+        return kernel_set_return(1, exec_words, 0);
+    }
+    if service - 22 == 0 {
+        unsafe { csr_write(console_ctrl, 2); }
+        unsafe { csr_write(console_out, arg0); }
+        unsafe { csr_write(console_ctrl, 3); }
+        return kernel_set_return(1, arg0, 0);
+    }
+    if service - 23 == 0 {
+        var send_ns: t40 = process_namespace_for_pid(pid);
+        var sent: t40 = ipc_send(arg0, send_ns, arg1);
+        if sent < 0 {
+            return kernel_set_return(-1, 0, sent);
+        }
+        return kernel_set_return(1, sent, 0);
+    }
+    if service - 24 == 0 {
+        var recv_ns: t40 = process_namespace_for_pid(pid);
+        var received: t40 = ipc_recv_user(pid, arg0, recv_ns, arg1);
+        if received < 0 {
+            return kernel_set_return(-1, 0, received);
+        }
+        if received == 0 {
+            return kernel_set_return(0, 0, ERR_EOF);
+        }
+        return kernel_set_return(1, received, 0);
+    }
+    if service - 25 == 0 {
+        var fb_base: t40 = framebuffer_init(arg0, arg1);
+        if fb_base < 0 {
+            return kernel_set_return(-1, 0, fb_base);
+        }
+        return kernel_set_return(1, fb_base, 0);
+    }
+    if service - 26 == 0 {
+        var flips: t40 = framebuffer_flip();
+        if flips < 0 {
+            return kernel_set_return(-1, 0, flips);
+        }
+        return kernel_set_return(1, flips, 0);
+    }
+    if service - 27 == 0 {
+        var window_id: t40 = window_create(pid, arg0, arg1, arg2, arg3);
+        if window_id < 0 {
+            return kernel_set_return(-1, 0, window_id);
+        }
+        return kernel_set_return(1, window_id, 0);
+    }
+    if service - 28 == 0 {
+        var window_buffer: t40 = window_get_buffer(pid, arg0);
+        if window_buffer < 0 {
+            return kernel_set_return(-1, 0, window_buffer);
+        }
+        return kernel_set_return(1, window_buffer, 0);
+    }
+    if service - 29 == 0 {
+        var present_count: t40 = window_present(pid, arg0);
+        if present_count < 0 {
+            return kernel_set_return(-1, 0, present_count);
+        }
+        return kernel_set_return(1, present_count, 0);
+    }
+    if service - 30 == 0 {
+        var moved: t40 = window_move(pid, arg0, arg1, arg2);
+        if moved < 0 {
+            return kernel_set_return(-1, 0, moved);
+        }
+        return kernel_set_return(1, moved, 0);
+    }
+    if service - 31 == 0 {
+        var zed: t40 = window_set_z(pid, arg0, arg1);
+        if zed < 0 {
+            return kernel_set_return(-1, 0, zed);
+        }
+        return kernel_set_return(1, zed, 0);
+    }
+    if service - 32 == 0 {
+        var destroyed: t40 = window_destroy(pid, arg0);
+        if destroyed < 0 {
+            return kernel_set_return(-1, 0, destroyed);
+        }
+        return kernel_set_return(1, destroyed, 0);
+    }
+    if service - 33 == 0 {
+        var event_read: t40 = window_read_event(pid, arg0, arg1);
+        if event_read < 0 {
+            return kernel_set_return(-1, 0, event_read);
+        }
+        if event_read == 0 {
+            return kernel_set_return(0, 0, ERR_EOF);
+        }
+        return kernel_set_return(1, event_read, 0);
+    }
+    if service - 34 == 0 {
+        var resized: t40 = window_resize(pid, arg0, arg1, arg2);
+        if resized < 0 {
+            return kernel_set_return(-1, 0, resized);
+        }
+        return kernel_set_return(1, resized, 0);
+    }
+    if service - 35 == 0 {
+        var close_requested: t40 = window_request_close(pid, arg0);
+        if close_requested < 0 {
+            return kernel_set_return(-1, 0, close_requested);
+        }
+        return kernel_set_return(1, close_requested, 0);
+    }
+    return kernel_set_return(-1, 0, ERR_INVALID);
+}
+
+fn kernel_bind_context(context_addr: t40, pid: t40) -> t40 {
+    kstore(CURRENT_CONTEXT_ADDR, context_addr);
+    kstore(CURRENT_PID_ADDR, pid);
+    return 1;
+}
+
+fn kernel_dispatch(cause_value: t40) -> t40 {
+    if cause_value - 7 == 0 {
+        var service: t40 = 0;
+        unsafe { service = csr_read(syscall_id); }
+        var ctx: t40 = kload(CURRENT_CONTEXT_ADDR);
+        var pid: t40 = kload(CURRENT_PID_ADDR);
+        var arg0: t40 = kload(ctx + 18);
+        var arg1: t40 = kload(ctx + 19);
+        var arg2: t40 = kload(ctx + 20);
+        var arg3: t40 = kload(ctx + 21);
+        var status: t40 = kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
+        kstore(ctx, kload(ctx) + 1);
+        kstore(ctx + 18, kload(SYS_STATUS_ADDR));
+        kstore(ctx + 19, kload(SYS_PAYLOAD_ADDR));
+        kstore(ctx + 20, kload(SYS_DETAIL_ADDR));
+        return status;
+    }
+    if cause_value - 1 == 0 {
+        return tier1_dequeue();
+    }
+    return ERR_INVALID;
+}
+
+fn pte_valid_state(pte_word: t40) -> t40 {
+    if pte_word > 0 {
+        return 1;
+    }
+    return -1;
+}
+
+fn pte_faults(pte_word: t40) -> t40 {
+    if pte_valid_state(pte_word) > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn pte_is_present(pte_word: t40) -> t40 {
+    if pte_valid_state(pte_word) > 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn mmu_page_walk_valid(pte_addr: t40) -> t40 {
+    var pte_word: t40 = kload(pte_addr);
+    return pte_is_present(pte_word);
+}
+
+fn cow_fault_can_remap(pte_addr: t40, ppn: t40) -> t40 {
+    if mmu_page_walk_valid(pte_addr) <= 0 {
+        return 0;
+    }
+    return cow_can_remap(ppn);
+}
+
+fn ipc_channel_addr(channel_id: t40) -> t40 {
+    return IPC_BASE + channel_id * IPC_CHANNEL_WORDS;
+}
+
+fn ipc_buffer_addr(channel_id: t40) -> t40 {
+    return IPC_BUFFER_BASE + channel_id * IPC_CAPACITY;
+}
+
+fn ipc_init() -> t40 {
+    kclear(IPC_BASE, IPC_MAX_CHANNELS * IPC_CHANNEL_WORDS);
+    kclear(IPC_BUFFER_BASE, IPC_MAX_CHANNELS * IPC_CAPACITY);
+    return 1;
+}
+
+fn ipc_open(channel_id: t40, namespace_a: t40, namespace_b: t40) -> t40 {
+    if channel_id < 0 {
+        return ERR_INVALID;
+    }
+    if channel_id - IPC_MAX_CHANNELS >= 0 {
+        return ERR_INVALID;
+    }
+    var ch: t40 = ipc_channel_addr(channel_id);
+    kstore(ch + IPC_NS_A, namespace_a);
+    kstore(ch + IPC_NS_B, namespace_b);
+    kstore(ch + IPC_BUF, ipc_buffer_addr(channel_id));
+    kstore(ch + IPC_CAP, IPC_CAPACITY);
+    kstore(ch + IPC_READ, 0);
+    kstore(ch + IPC_WRITE, 0);
+    kstore(ch + IPC_COUNT, 0);
+    kstore(ch + IPC_VERSION, 1);
+    return 1;
+}
+
+fn ipc_namespace_allowed(channel_id: t40, namespace_id: t40) -> t40 {
+    var ch: t40 = ipc_channel_addr(channel_id);
+    if kload(ch + IPC_VERSION) <= 0 {
+        return 0;
+    }
+    if kload(ch + IPC_NS_A) - namespace_id == 0 {
+        return 1;
+    }
+    if kload(ch + IPC_NS_B) - namespace_id == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn ipc_send(channel_id: t40, namespace_id: t40, word: t40) -> t40 {
+    if ipc_namespace_allowed(channel_id, namespace_id) <= 0 {
+        return ERR_INVALID;
+    }
+    var ch: t40 = ipc_channel_addr(channel_id);
+    var count: t40 = kacq(ch + IPC_COUNT);
+    if count - IPC_CAPACITY >= 0 {
+        return ERR_NO_SPACE;
+    }
+    var write_pos: t40 = kacq(ch + IPC_WRITE);
+    var buf: t40 = kload(ch + IPC_BUF);
+    kstore(buf + write_pos, word);
+    kstore(ch + IPC_WRITE, kwrap_inc(write_pos, IPC_CAPACITY));
+    kcas(ch + IPC_COUNT, count, count + 1);
+    return 1;
+}
+
+fn ipc_recv(channel_id: t40, namespace_id: t40, out_addr: t40) -> t40 {
+    if ipc_namespace_allowed(channel_id, namespace_id) <= 0 {
+        return ERR_INVALID;
+    }
+    if validate_user_span(out_addr, 1, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var ch: t40 = ipc_channel_addr(channel_id);
+    var count: t40 = kacq(ch + IPC_COUNT);
+    if count <= 0 {
+        return 0;
+    }
+    var read_pos: t40 = kacq(ch + IPC_READ);
+    var buf: t40 = kload(ch + IPC_BUF);
+    var word: t40 = kacq(buf + read_pos);
+    kstore(out_addr, word);
+    kstore(ch + IPC_READ, kwrap_inc(read_pos, IPC_CAPACITY));
+    kcas(ch + IPC_COUNT, count, count - 1);
+    return 1;
+}
+
+fn ipc_recv_user(pid: t40, channel_id: t40, namespace_id: t40, out_addr: t40) -> t40 {
+    if ipc_namespace_allowed(channel_id, namespace_id) <= 0 {
+        return ERR_INVALID;
+    }
+    if user_validate_span(pid, out_addr, 1, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var ch: t40 = ipc_channel_addr(channel_id);
+    var count: t40 = kacq(ch + IPC_COUNT);
+    if count <= 0 {
+        return 0;
+    }
+    var read_pos: t40 = kacq(ch + IPC_READ);
+    var buf: t40 = kload(ch + IPC_BUF);
+    var word: t40 = kacq(buf + read_pos);
+    var stored: t40 = user_store_word(pid, out_addr, word);
+    if stored < 0 {
+        return stored;
+    }
+    kstore(ch + IPC_READ, kwrap_inc(read_pos, IPC_CAPACITY));
+    kcas(ch + IPC_COUNT, count, count - 1);
+    return 1;
+}
+
+fn kernel_init() -> t40 {
+    kstore(KERNEL_BOOTED_ADDR, 0);
+    bootstrap_allocator_init();
+    buffer_pool_init();
+    wal_init();
+    rel_store_init();
+    scheduler_init();
+    process_table_init();
+    namespace_table_init();
+    pte_table_init();
+    process_create(0, 1, 0, 1, 0, 0);
+    app_registry_init();
+    ipc_init();
+    kclear(FB_STATE_BASE, FB_STATE_WORDS);
+    kstore(FB_STATE_BASE + FB_FRONT_INDEX, 0);
+    window_table_init();
+    vfs_format(0);
+    kstore(CURRENT_CONTEXT_ADDR, 0);
+    kstore(CURRENT_PID_ADDR, 1);
+    kstore(KERNEL_BOOTED_ADDR, 1);
+    return 1;
+}

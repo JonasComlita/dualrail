@@ -181,10 +181,10 @@ int main(int argc, char* argv[]) {
         }
     }
     if (token_ids.empty()) token_ids.push_back(cfg.bos_token_id);
-    const int needed_context = static_cast<int>(token_ids.size()) + std::max(1, max_new_tokens) + 8;
+    const int needed_context = static_cast<int>(token_ids.size()) + (std::max)(1, max_new_tokens) + 8;
     cfg.max_position_embeddings = (context_limit > 0)
-        ? std::max(context_limit, needed_context)
-        : std::max(128, needed_context);
+        ? (std::max)(context_limit, needed_context)
+        : (std::max)(128, needed_context);
     if (safetensors_path.empty()) safetensors_path = defaultSafetensorsPath(weights_dir);
 
     // Whether we need the full logit vector (sampling) or just greedy token

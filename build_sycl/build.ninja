@@ -57,7 +57,7 @@ build cmake_object_order_depends_target_test_multiwidth_vm: phony || .
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_multiwidth_vm_main.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_multiwidth_vm_main.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_multiwidth_vm_main.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -69,7 +69,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_multiwidth_vm_main.cpp.obj: C
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_uint128.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_uint128.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_uint128.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -81,7 +81,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_uint128.cpp.obj: CXX_COMPILER
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_formats.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_formats.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_formats.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -93,7 +93,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_formats.cpp.obj: CXX_COMPILER
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_isa_asm.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_isa_asm.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_isa_asm.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -105,7 +105,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_isa_asm.cpp.obj: CXX_COMPILER
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_vm_widths.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_vm_widths.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_vm_widths.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -117,7 +117,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_vm_widths.cpp.obj: CXX_COMPIL
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_kernel.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_kernel.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_kernel.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -129,7 +129,7 @@ build CMakeFiles\test_multiwidth_vm.dir\tests\test_kernel.cpp.obj: CXX_COMPILER_
 
 build CMakeFiles\test_multiwidth_vm.dir\tests\test_no_bridge.cpp.obj: CXX_COMPILER__test_multiwidth_vm_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_no_bridge.cpp || cmake_object_order_depends_target_test_multiwidth_vm
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_multiwidth_vm.dir\tests\test_no_bridge.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -172,7 +172,7 @@ build cmake_object_order_depends_target_test_ternary_lanes: phony || .
 
 build CMakeFiles\test_ternary_lanes.dir\tests\test_ternary_lanes.cpp.obj: CXX_COMPILER__test_ternary_lanes_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_ternary_lanes.cpp || cmake_object_order_depends_target_test_ternary_lanes
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_ternary_lanes.dir\tests\test_ternary_lanes.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -215,7 +215,7 @@ build cmake_object_order_depends_target_test_native_ops: phony || .
 
 build CMakeFiles\test_native_ops.dir\tests\test_native_ops.cpp.obj: CXX_COMPILER__test_native_ops_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_native_ops.cpp || cmake_object_order_depends_target_test_native_ops
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_native_ops.dir\tests\test_native_ops.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -258,7 +258,7 @@ build cmake_object_order_depends_target_test_numeric_workloads: phony || .
 
 build CMakeFiles\test_numeric_workloads.dir\tests\test_numeric_workloads.cpp.obj: CXX_COMPILER__test_numeric_workloads_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_numeric_workloads.cpp || cmake_object_order_depends_target_test_numeric_workloads
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_numeric_workloads.dir\tests\test_numeric_workloads.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -301,7 +301,7 @@ build cmake_object_order_depends_target_test_tiny_transformer_runtime: phony || 
 
 build CMakeFiles\test_tiny_transformer_runtime.dir\tests\test_tiny_transformer_runtime.cpp.obj: CXX_COMPILER__test_tiny_transformer_runtime_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_tiny_transformer_runtime.cpp || cmake_object_order_depends_target_test_tiny_transformer_runtime
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_tiny_transformer_runtime.dir\tests\test_tiny_transformer_runtime.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -344,7 +344,7 @@ build cmake_object_order_depends_target_test_bitnet_loading: phony || .
 
 build CMakeFiles\test_bitnet_loading.dir\tests\test_bitnet_loading.cpp.obj: CXX_COMPILER__test_bitnet_loading_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_bitnet_loading.cpp || cmake_object_order_depends_target_test_bitnet_loading
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_bitnet_loading.dir\tests\test_bitnet_loading.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -387,7 +387,7 @@ build cmake_object_order_depends_target_run_bitnet: phony || .
 
 build CMakeFiles\run_bitnet.dir\bitnet_weights\run_bitnet.cpp.obj: CXX_COMPILER__run_bitnet_unscanned_Debug C$:\Users\jonas\Documents\trit\bitnet_weights\run_bitnet.cpp || cmake_object_order_depends_target_run_bitnet
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_bitnet.dir\bitnet_weights\run_bitnet.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -430,7 +430,7 @@ build cmake_object_order_depends_target_run_qwen: phony || compile_shaders
 
 build CMakeFiles\run_qwen.dir\qwen3.627b_weights\run_qwen.cpp.obj: CXX_COMPILER__run_qwen_unscanned_Debug C$:\Users\jonas\Documents\trit\qwen3.627b_weights\run_qwen.cpp || cmake_object_order_depends_target_run_qwen
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_qwen.dir\qwen3.627b_weights\run_qwen.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights -external:IC:\VulkanSDK\1.4.350.0\include -external:W0
@@ -473,7 +473,7 @@ build cmake_object_order_depends_target_run_kernel: phony || .
 
 build CMakeFiles\run_kernel.dir\run_kernel.cpp.obj: CXX_COMPILER__run_kernel_unscanned_Debug C$:\Users\jonas\Documents\trit\run_kernel.cpp || cmake_object_order_depends_target_run_kernel
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_kernel.dir\run_kernel.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -506,6 +506,49 @@ build run_kernel.exe: CXX_EXECUTABLE_LINKER__run_kernel_Debug CMakeFiles\run_ker
   TARGET_SUPPORT_DIR = CMakeFiles\run_kernel.dir
 
 # =============================================================================
+# Object build statements for EXECUTABLE target run_native_kernel
+
+
+#############################################
+# Order-only phony target for run_native_kernel
+
+build cmake_object_order_depends_target_run_native_kernel: phony || .
+
+build CMakeFiles\run_native_kernel.dir\run_native_kernel.cpp.obj: CXX_COMPILER__run_native_kernel_unscanned_Debug C$:\Users\jonas\Documents\trit\run_native_kernel.cpp || cmake_object_order_depends_target_run_native_kernel
+  CONFIG = Debug
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEP_FILE = CMakeFiles\run_native_kernel.dir\run_native_kernel.cpp.obj.d
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
+  INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
+  OBJECT_DIR = CMakeFiles\run_native_kernel.dir
+  OBJECT_FILE_DIR = CMakeFiles\run_native_kernel.dir
+  TARGET_COMPILE_PDB = CMakeFiles\run_native_kernel.dir\
+  TARGET_PDB = run_native_kernel.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\run_native_kernel.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target run_native_kernel
+
+
+#############################################
+# Link the executable run_native_kernel.exe
+
+build run_native_kernel.exe: CXX_EXECUTABLE_LINKER__run_native_kernel_Debug CMakeFiles\run_native_kernel.dir\run_native_kernel.cpp.obj
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /Qoption,link,/machine:x64 /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console
+  LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\run_native_kernel.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\run_native_kernel.dir\
+  TARGET_FILE = run_native_kernel.exe
+  TARGET_IMPLIB = run_native_kernel.lib
+  TARGET_PDB = run_native_kernel.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\run_native_kernel.dir
+
+# =============================================================================
 # Object build statements for EXECUTABLE target run_gui_console
 
 
@@ -516,7 +559,7 @@ build cmake_object_order_depends_target_run_gui_console: phony || .
 
 build CMakeFiles\run_gui_console.dir\run_gui_console.cpp.obj: CXX_COMPILER__run_gui_console_unscanned_Debug C$:\Users\jonas\Documents\trit\run_gui_console.cpp || cmake_object_order_depends_target_run_gui_console
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_gui_console.dir\run_gui_console.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -559,7 +602,7 @@ build cmake_object_order_depends_target_test_ternary_ir: phony || .
 
 build CMakeFiles\test_ternary_ir.dir\tests\test_ternary_ir.cpp.obj: CXX_COMPILER__test_ternary_ir_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_ternary_ir.cpp || cmake_object_order_depends_target_test_ternary_ir
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_ternary_ir.dir\tests\test_ternary_ir.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -602,7 +645,7 @@ build cmake_object_order_depends_target_test_phase7_compiler: phony || .
 
 build CMakeFiles\test_phase7_compiler.dir\tests\test_phase7_compiler.cpp.obj: CXX_COMPILER__test_phase7_compiler_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_phase7_compiler.cpp || cmake_object_order_depends_target_test_phase7_compiler
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_phase7_compiler.dir\tests\test_phase7_compiler.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -645,7 +688,7 @@ build cmake_object_order_depends_target_test_phase_c5_pred: phony || .
 
 build CMakeFiles\test_phase_c5_pred.dir\tests\test_phase_c5_pred.cpp.obj: CXX_COMPILER__test_phase_c5_pred_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_phase_c5_pred.cpp || cmake_object_order_depends_target_test_phase_c5_pred
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_phase_c5_pred.dir\tests\test_phase_c5_pred.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -678,6 +721,135 @@ build test_phase_c5_pred.exe: CXX_EXECUTABLE_LINKER__test_phase_c5_pred_Debug CM
   TARGET_SUPPORT_DIR = CMakeFiles\test_phase_c5_pred.dir
 
 # =============================================================================
+# Object build statements for EXECUTABLE target test_phase_d_kernel
+
+
+#############################################
+# Order-only phony target for test_phase_d_kernel
+
+build cmake_object_order_depends_target_test_phase_d_kernel: phony || .
+
+build CMakeFiles\test_phase_d_kernel.dir\tests\test_phase_d_kernel.cpp.obj: CXX_COMPILER__test_phase_d_kernel_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_phase_d_kernel.cpp || cmake_object_order_depends_target_test_phase_d_kernel
+  CONFIG = Debug
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEP_FILE = CMakeFiles\test_phase_d_kernel.dir\tests\test_phase_d_kernel.cpp.obj.d
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
+  INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
+  OBJECT_DIR = CMakeFiles\test_phase_d_kernel.dir
+  OBJECT_FILE_DIR = CMakeFiles\test_phase_d_kernel.dir\tests
+  TARGET_COMPILE_PDB = CMakeFiles\test_phase_d_kernel.dir\
+  TARGET_PDB = test_phase_d_kernel.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_phase_d_kernel.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target test_phase_d_kernel
+
+
+#############################################
+# Link the executable test_phase_d_kernel.exe
+
+build test_phase_d_kernel.exe: CXX_EXECUTABLE_LINKER__test_phase_d_kernel_Debug CMakeFiles\test_phase_d_kernel.dir\tests\test_phase_d_kernel.cpp.obj
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /Qoption,link,/machine:x64 /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console
+  LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\test_phase_d_kernel.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\test_phase_d_kernel.dir\
+  TARGET_FILE = test_phase_d_kernel.exe
+  TARGET_IMPLIB = test_phase_d_kernel.lib
+  TARGET_PDB = test_phase_d_kernel.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_phase_d_kernel.dir
+
+# =============================================================================
+# Object build statements for EXECUTABLE target test_native_apps
+
+
+#############################################
+# Order-only phony target for test_native_apps
+
+build cmake_object_order_depends_target_test_native_apps: phony || .
+
+build CMakeFiles\test_native_apps.dir\tests\test_native_apps.cpp.obj: CXX_COMPILER__test_native_apps_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_native_apps.cpp || cmake_object_order_depends_target_test_native_apps
+  CONFIG = Debug
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEP_FILE = CMakeFiles\test_native_apps.dir\tests\test_native_apps.cpp.obj.d
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
+  INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
+  OBJECT_DIR = CMakeFiles\test_native_apps.dir
+  OBJECT_FILE_DIR = CMakeFiles\test_native_apps.dir\tests
+  TARGET_COMPILE_PDB = CMakeFiles\test_native_apps.dir\
+  TARGET_PDB = test_native_apps.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_native_apps.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target test_native_apps
+
+
+#############################################
+# Link the executable test_native_apps.exe
+
+build test_native_apps.exe: CXX_EXECUTABLE_LINKER__test_native_apps_Debug CMakeFiles\test_native_apps.dir\tests\test_native_apps.cpp.obj
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /Qoption,link,/machine:x64 /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console
+  LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\test_native_apps.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\test_native_apps.dir\
+  TARGET_FILE = test_native_apps.exe
+  TARGET_IMPLIB = test_native_apps.lib
+  TARGET_PDB = test_native_apps.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_native_apps.dir
+
+# =============================================================================
+# Object build statements for EXECUTABLE target test_process_handoff
+
+
+#############################################
+# Order-only phony target for test_process_handoff
+
+build cmake_object_order_depends_target_test_process_handoff: phony || .
+
+build CMakeFiles\test_process_handoff.dir\tests\test_process_handoff.cpp.obj: CXX_COMPILER__test_process_handoff_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_process_handoff.cpp || cmake_object_order_depends_target_test_process_handoff
+  CONFIG = Debug
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEP_FILE = CMakeFiles\test_process_handoff.dir\tests\test_process_handoff.cpp.obj.d
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
+  INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
+  OBJECT_DIR = CMakeFiles\test_process_handoff.dir
+  OBJECT_FILE_DIR = CMakeFiles\test_process_handoff.dir\tests
+  TARGET_COMPILE_PDB = CMakeFiles\test_process_handoff.dir\
+  TARGET_PDB = test_process_handoff.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_process_handoff.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target test_process_handoff
+
+
+#############################################
+# Link the executable test_process_handoff.exe
+
+build test_process_handoff.exe: CXX_EXECUTABLE_LINKER__test_process_handoff_Debug CMakeFiles\test_process_handoff.dir\tests\test_process_handoff.cpp.obj
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /Qoption,link,/machine:x64 /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console
+  LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\test_process_handoff.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\test_process_handoff.dir\
+  TARGET_FILE = test_process_handoff.exe
+  TARGET_IMPLIB = test_process_handoff.lib
+  TARGET_PDB = test_process_handoff.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_process_handoff.dir
+
+# =============================================================================
 # Object build statements for EXECUTABLE target test_os_platform
 
 
@@ -688,7 +860,7 @@ build cmake_object_order_depends_target_test_os_platform: phony || .
 
 build CMakeFiles\test_os_platform.dir\tests\test_os_platform.cpp.obj: CXX_COMPILER__test_os_platform_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_os_platform.cpp || cmake_object_order_depends_target_test_os_platform
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_os_platform.dir\tests\test_os_platform.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -731,7 +903,7 @@ build cmake_object_order_depends_target_run_os_demo: phony || .
 
 build CMakeFiles\run_os_demo.dir\run_os_demo.cpp.obj: CXX_COMPILER__run_os_demo_unscanned_Debug C$:\Users\jonas\Documents\trit\run_os_demo.cpp || cmake_object_order_depends_target_run_os_demo
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_os_demo.dir\run_os_demo.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -774,7 +946,7 @@ build cmake_object_order_depends_target_tritc: phony || .
 
 build CMakeFiles\tritc.dir\tritc.cpp.obj: CXX_COMPILER__tritc_unscanned_Debug C$:\Users\jonas\Documents\trit\tritc.cpp || cmake_object_order_depends_target_tritc
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\tritc.dir\tritc.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -817,7 +989,7 @@ build cmake_object_order_depends_target_benchmark_architecture: phony || .
 
 build CMakeFiles\benchmark_architecture.dir\benchmark_architecture.cpp.obj: CXX_COMPILER__benchmark_architecture_unscanned_Debug C$:\Users\jonas\Documents\trit\benchmark_architecture.cpp || cmake_object_order_depends_target_benchmark_architecture
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\benchmark_architecture.dir\benchmark_architecture.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -860,7 +1032,7 @@ build cmake_object_order_depends_target_test_benchmark: phony || .
 
 build CMakeFiles\test_benchmark.dir\tests\test_benchmark.cpp.obj: CXX_COMPILER__test_benchmark_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_benchmark.cpp || cmake_object_order_depends_target_test_benchmark
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_benchmark.dir\tests\test_benchmark.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -903,7 +1075,7 @@ build cmake_object_order_depends_target_test_malloc_micro: phony || .
 
 build CMakeFiles\test_malloc_micro.dir\tests\test_malloc_micro.cpp.obj: CXX_COMPILER__test_malloc_micro_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_malloc_micro.cpp || cmake_object_order_depends_target_test_malloc_micro
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\test_malloc_micro.dir\tests\test_malloc_micro.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -936,6 +1108,49 @@ build test_malloc_micro.exe: CXX_EXECUTABLE_LINKER__test_malloc_micro_Debug CMak
   TARGET_SUPPORT_DIR = CMakeFiles\test_malloc_micro.dir
 
 # =============================================================================
+# Object build statements for EXECUTABLE target test_all_apps
+
+
+#############################################
+# Order-only phony target for test_all_apps
+
+build cmake_object_order_depends_target_test_all_apps: phony || .
+
+build CMakeFiles\test_all_apps.dir\scratch\test_all_apps.cpp.obj: CXX_COMPILER__test_all_apps_unscanned_Debug C$:\Users\jonas\Documents\trit\scratch\test_all_apps.cpp || cmake_object_order_depends_target_test_all_apps
+  CONFIG = Debug
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+  DEP_FILE = CMakeFiles\test_all_apps.dir\scratch\test_all_apps.cpp.obj.d
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd
+  INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
+  OBJECT_DIR = CMakeFiles\test_all_apps.dir
+  OBJECT_FILE_DIR = CMakeFiles\test_all_apps.dir\scratch
+  TARGET_COMPILE_PDB = CMakeFiles\test_all_apps.dir\
+  TARGET_PDB = test_all_apps.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_all_apps.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target test_all_apps
+
+
+#############################################
+# Link the executable test_all_apps.exe
+
+build test_all_apps.exe: CXX_EXECUTABLE_LINKER__test_all_apps_Debug CMakeFiles\test_all_apps.dir\scratch\test_all_apps.cpp.obj
+  CONFIG = Debug
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /Qoption,link,/machine:x64 /Qoption,link,/debug /Qoption,link,/INCREMENTAL /Qoption,link,/subsystem:console
+  LINK_LIBRARIES = kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\test_all_apps.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\test_all_apps.dir\
+  TARGET_FILE = test_all_apps.exe
+  TARGET_IMPLIB = test_all_apps.lib
+  TARGET_PDB = test_all_apps.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\test_all_apps.dir
+
+# =============================================================================
 # Object build statements for EXECUTABLE target test_sycl_kernels
 
 
@@ -946,7 +1161,7 @@ build cmake_object_order_depends_target_test_sycl_kernels: phony || .
 
 build CMakeFiles\test_sycl_kernels.dir\tests\test_sycl_kernels.cpp.obj: CXX_COMPILER__test_sycl_kernels_unscanned_Debug C$:\Users\jonas\Documents\trit\tests\test_sycl_kernels.cpp || cmake_object_order_depends_target_test_sycl_kernels
   CONFIG = Debug
-  DEFINES = -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
   DEP_FILE = CMakeFiles\test_sycl_kernels.dir\tests\test_sycl_kernels.cpp.obj.d
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -Qstd:c++17 -MDd -fsycl -U_CONTAINER_DEBUG_LEVEL /EHsc
   INCLUDES = -IC:\Users\jonas\Documents\trit -IC:\Users\jonas\Documents\trit\bitnet_weights -IC:\Users\jonas\Documents\trit\qwen3.627b_weights
@@ -1036,9 +1251,13 @@ build run_gui_console: phony run_gui_console.exe
 
 build run_kernel: phony run_kernel.exe
 
+build run_native_kernel: phony run_native_kernel.exe
+
 build run_os_demo: phony run_os_demo.exe
 
 build run_qwen: phony run_qwen.exe
+
+build test_all_apps: phony test_all_apps.exe
 
 build test_benchmark: phony test_benchmark.exe
 
@@ -1047,6 +1266,8 @@ build test_bitnet_loading: phony test_bitnet_loading.exe
 build test_malloc_micro: phony test_malloc_micro.exe
 
 build test_multiwidth_vm: phony test_multiwidth_vm.exe
+
+build test_native_apps: phony test_native_apps.exe
 
 build test_native_ops: phony test_native_ops.exe
 
@@ -1057,6 +1278,10 @@ build test_os_platform: phony test_os_platform.exe
 build test_phase7_compiler: phony test_phase7_compiler.exe
 
 build test_phase_c5_pred: phony test_phase_c5_pred.exe
+
+build test_phase_d_kernel: phony test_phase_d_kernel.exe
+
+build test_process_handoff: phony test_process_handoff.exe
 
 build test_sycl_kernels: phony test_sycl_kernels.exe
 
@@ -1076,7 +1301,7 @@ build tritc: phony tritc.exe
 #############################################
 # Folder: C:/Users/jonas/Documents/trit/build_sycl
 
-build all: phony test_multiwidth_vm.exe test_ternary_lanes.exe test_native_ops.exe test_numeric_workloads.exe test_tiny_transformer_runtime.exe test_bitnet_loading.exe run_bitnet.exe run_qwen.exe run_kernel.exe run_gui_console.exe test_ternary_ir.exe test_phase7_compiler.exe test_phase_c5_pred.exe test_os_platform.exe run_os_demo.exe tritc.exe benchmark_architecture.exe test_benchmark.exe test_malloc_micro.exe test_sycl_kernels.exe
+build all: phony test_multiwidth_vm.exe test_ternary_lanes.exe test_native_ops.exe test_numeric_workloads.exe test_tiny_transformer_runtime.exe test_bitnet_loading.exe run_bitnet.exe run_qwen.exe run_kernel.exe run_native_kernel.exe run_gui_console.exe test_ternary_ir.exe test_phase7_compiler.exe test_phase_c5_pred.exe test_phase_d_kernel.exe test_native_apps.exe test_process_handoff.exe test_os_platform.exe run_os_demo.exe tritc.exe benchmark_architecture.exe test_benchmark.exe test_malloc_micro.exe test_all_apps.exe test_sycl_kernels.exe
 
 # =============================================================================
 # Built-in targets

@@ -1,0 +1,1216 @@
+// =============================================================================
+// tcl_asm.trit - Native TCL assembler for compiler-emitted TASM
+// =============================================================================
+//
+// This assembler is intentionally focused on the native compiler's scalar TASM
+// output. It parses .text, labels, core scalar instructions, load/store,
+// branches, calls, returns, syscalls, and emits semantic 27-trit instruction
+// words in a TCL vector. The C++ VM can keep acting as the hardware layer while
+// the final text-to-machine-code step becomes native TCL.
+
+const TCL_ASM_LABEL_WORDS: t40 = 3;
+
+const TCL_ASM_OP_NOP: t40 = 0;
+const TCL_ASM_OP_HALT: t40 = 1;
+const TCL_ASM_OP_MOV: t40 = 2;
+const TCL_ASM_OP_MOVH: t40 = 3;
+const TCL_ASM_OP_COPY: t40 = 4;
+const TCL_ASM_OP_ADD: t40 = 5;
+const TCL_ASM_OP_SUB: t40 = 6;
+const TCL_ASM_OP_MUL: t40 = 7;
+const TCL_ASM_OP_DIV: t40 = 8;
+const TCL_ASM_OP_SQRT: t40 = 9;
+const TCL_ASM_OP_NEG: t40 = 10;
+const TCL_ASM_OP_ABS: t40 = 11;
+const TCL_ASM_OP_TCMP: t40 = 12;
+const TCL_ASM_OP_TMIN: t40 = 13;
+const TCL_ASM_OP_TMAX: t40 = 14;
+const TCL_ASM_OP_TINV: t40 = 15;
+const TCL_ASM_OP_LOAD: t40 = 16;
+const TCL_ASM_OP_STORE: t40 = 17;
+const TCL_ASM_OP_JMP: t40 = 18;
+const TCL_ASM_OP_BRN: t40 = 19;
+const TCL_ASM_OP_CALL: t40 = 20;
+const TCL_ASM_OP_RET: t40 = 21;
+const TCL_ASM_OP_CVT: t40 = 22;
+const TCL_ASM_OP_BRZ: t40 = 24;
+const TCL_ASM_OP_BRP: t40 = 25;
+const TCL_ASM_OP_SYSCALL: t40 = 69;
+
+const TCL_ASM_REG_FIELD_OFFSET: t40 = 13;
+const TCL_ASM_FUNC_T1: t40 = 8;
+const TCL_ASM_FUNC_T5: t40 = 9;
+const TCL_ASM_FUNC_T10: t40 = 10;
+const TCL_ASM_FUNC_T20: t40 = 11;
+const TCL_ASM_FUNC_T40: t40 = 12;
+const TCL_ASM_FUNC_T50: t40 = 13;
+
+fn tcl_asm_words_new() -> t40 {
+    return vec_new();
+}
+
+fn tcl_asm_words_new_cap(capacity: t40) -> t40 {
+    var cap: t40 = capacity;
+    match cap - 1 {
+        neg => { cap = 1; }
+        zero => {}
+        pos => {}
+    }
+    var vec: t40 = malloc_raw(3);
+    var data: t40 = malloc_raw(cap);
+    unsafe {
+        store(vec, data);
+        store(vec + 1, 0);
+        store(vec + 2, cap);
+    }
+    return vec;
+}
+
+fn tcl_asm_words_push(vec: t40, value: t40) -> t40 {
+    var data: t40 = 0;
+    var len: t40 = 0;
+    var cap: t40 = 0;
+    unsafe {
+        data = load(vec);
+        len = load(vec + 1);
+        cap = load(vec + 2);
+    }
+    match cap - len - 1 {
+        neg => {
+            var new_cap: t40 = cap * 2;
+            match new_cap - len - 1 {
+                neg => { new_cap = len + 1; }
+                zero => {}
+                pos => {}
+            }
+            var new_data: t40 = malloc_raw(new_cap);
+            match new_data {
+                zero => { return 0 - 1; }
+                neg => { return 0 - 1; }
+                pos => {
+                    var j: t40 = 0;
+                    var copied: t40 = 0;
+                    while len - j > 0 {
+                        unsafe { copied = load(data + j); }
+                        unsafe { store(new_data + j, copied); }
+                        j = j + 1;
+                    }
+                    data = new_data;
+                    unsafe {
+                        store(vec, data);
+                        store(vec + 2, new_cap);
+                    }
+                }
+            }
+        }
+        zero => {}
+        pos => {}
+    }
+    unsafe {
+        store(data + len, value);
+        store(vec + 1, len + 1);
+    }
+    return 0;
+}
+
+fn tcl_asm_words_get(vec: t40, idx: t40) -> t40 {
+    var data: t40 = 0;
+    unsafe { data = load(vec); }
+    var val: t40 = 0;
+    unsafe { val = load(data + idx); }
+    return val;
+}
+
+fn tcl_asm_char_at(src: t40, idx: t40) -> t40 {
+    var c: t40 = 0;
+    unsafe { c = load(src + idx); }
+    return c;
+}
+
+fn tcl_asm_lower(c: t40) -> t40 {
+    match c - 65 {
+        neg => { return c; }
+        zero => { return c + 32; }
+        pos => {
+            match 90 - c {
+                neg => { return c; }
+                zero => { return c + 32; }
+                pos => { return c + 32; }
+            }
+        }
+    }
+}
+
+fn tcl_asm_is_alpha(c: t40) -> t40 {
+    var lower: t40 = tcl_asm_lower(c);
+    match lower - 97 {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match 122 - lower {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+}
+
+fn tcl_asm_is_digit(c: t40) -> t40 {
+    match c - 48 {
+        neg => { return 0; }
+        zero => { return 1; }
+        pos => {
+            match 57 - c {
+                neg => { return 0; }
+                zero => { return 1; }
+                pos => { return 1; }
+            }
+        }
+    }
+}
+
+fn tcl_asm_is_label_start(c: t40) -> t40 {
+    match c - 95 {
+        zero => { return 1; }
+        pos => {}
+        neg => {}
+    }
+    return tcl_asm_is_alpha(c);
+}
+
+fn tcl_asm_is_label_char(c: t40) -> t40 {
+    match tcl_asm_is_label_start(c) {
+        pos => { return 1; }
+        zero => {}
+        neg => {}
+    }
+    return tcl_asm_is_digit(c);
+}
+
+fn tcl_asm_is_space(c: t40) -> t40 {
+    match c - 32 { zero => { return 1; } pos => {} neg => {} }
+    match c - 9 { zero => { return 1; } pos => {} neg => {} }
+    match c - 13 { zero => { return 1; } pos => {} neg => {} }
+    return 0;
+}
+
+fn tcl_asm_is_line_end(c: t40) -> t40 {
+    match c {
+        zero => { return 1; }
+        neg => {}
+        pos => {}
+    }
+    match c - 10 { zero => { return 1; } pos => {} neg => {} }
+    match c - 59 { zero => { return 1; } pos => {} neg => {} }
+    return 0;
+}
+
+fn tcl_asm_is_delim(c: t40) -> t40 {
+    match tcl_asm_is_line_end(c) {
+        pos => { return 1; }
+        zero => {}
+        neg => {}
+    }
+    match tcl_asm_is_space(c) {
+        pos => { return 1; }
+        zero => {}
+        neg => {}
+    }
+    match c - 44 { zero => { return 1; } pos => {} neg => {} }
+    match c - 58 { zero => { return 1; } pos => {} neg => {} }
+    return 0;
+}
+
+fn tcl_asm_skip_operand_delims(src: t40, len: t40, idx: t40) -> t40 {
+    var i: t40 = idx;
+    var keep: t40 = 1;
+    var c: t40 = 0;
+    while keep > 0 {
+        match len - i {
+            pos => {}
+            zero => { return i; }
+            neg => { return i; }
+        }
+        c = tcl_asm_char_at(src, i);
+        match tcl_asm_is_space(c) {
+            pos => { i = i + 1; }
+            zero => {
+                match c - 44 {
+                    zero => { i = i + 1; }
+                    pos => { keep = 0; }
+                    neg => { keep = 0; }
+                }
+            }
+            neg => { keep = 0; }
+        }
+    }
+    return i;
+}
+
+fn tcl_asm_next_line(src: t40, len: t40, idx: t40) -> t40 {
+    var i: t40 = idx;
+    var c: t40 = 0;
+    while len - i > 0 {
+        c = tcl_asm_char_at(src, i);
+        i = i + 1;
+        match c - 10 {
+            zero => { return i; }
+            pos => {}
+            neg => {}
+        }
+    }
+    return i;
+}
+
+fn tcl_asm_next_token(src: t40, len: t40, cursor: t40, tok: t40) -> t40 {
+    var i: t40 = 0;
+    unsafe { i = load(cursor); }
+    i = tcl_asm_skip_operand_delims(src, len, i);
+    match len - i {
+        pos => {}
+        zero => { unsafe { store(cursor, i); } return 0; }
+        neg => { unsafe { store(cursor, i); } return 0; }
+    }
+    var c: t40 = tcl_asm_char_at(src, i);
+    match tcl_asm_is_line_end(c) {
+        pos => { unsafe { store(cursor, i); } return 0; }
+        zero => {}
+        neg => {}
+    }
+    var start: t40 = i;
+    while len - i > 0 {
+        c = tcl_asm_char_at(src, i);
+        match tcl_asm_is_delim(c) {
+            pos => {
+                unsafe {
+                    store(tok, start);
+                    store(tok + 1, i - start);
+                    store(cursor, i);
+                }
+                return 1;
+            }
+            zero => { i = i + 1; }
+            neg => { i = i + 1; }
+        }
+    }
+    unsafe {
+        store(tok, start);
+        store(tok + 1, i - start);
+        store(cursor, i);
+    }
+    return 1;
+}
+
+fn tcl_asm_tok_start(tok: t40) -> t40 {
+    var start: t40 = 0;
+    unsafe { start = load(tok); }
+    return start;
+}
+
+fn tcl_asm_tok_len(tok: t40) -> t40 {
+    var len: t40 = 0;
+    unsafe { len = load(tok + 1); }
+    return len;
+}
+
+fn tcl_asm_tok_char(src: t40, tok: t40, idx: t40) -> t40 {
+    return tcl_asm_char_at(src, tcl_asm_tok_start(tok) + idx);
+}
+
+fn tcl_asm_tok_eq2(src: t40, tok: t40, c0: t40, c1: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_tok_eq3(src: t40, tok: t40, c0: t40, c1: t40, c2: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_tok_eq4(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_tok_eq5(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 5 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 4)) - c4 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_tok_eq7(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 7 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 4)) - c4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 5)) - c5 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 6)) - c6 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_mnemonic_base_len(src: t40, tok: t40) -> t40 {
+    var len: t40 = tcl_asm_tok_len(tok);
+    var i: t40 = 0;
+    while len - i > 0 {
+        match tcl_asm_tok_char(src, tok, i) - 46 {
+            zero => { return i; }
+            pos => {}
+            neg => {}
+        }
+        i = i + 1;
+    }
+    return len;
+}
+
+fn tcl_asm_mnemonic_has_width(src: t40, tok: t40) -> t40 {
+    var len: t40 = tcl_asm_tok_len(tok);
+    var base_len: t40 = tcl_asm_mnemonic_base_len(src, tok);
+    match len - base_len - 1 {
+        pos => { return 1; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
+fn tcl_asm_mnemonic_width_func(src: t40, tok: t40) -> t40 {
+    var len: t40 = tcl_asm_tok_len(tok);
+    var base_len: t40 = tcl_asm_mnemonic_base_len(src, tok);
+    match len - base_len - 3 {
+        zero => {
+            match tcl_asm_lower(tcl_asm_tok_char(src, tok, base_len + 1)) - 116 {
+                zero => {}
+                pos => { return TCL_ASM_FUNC_T40; }
+                neg => { return TCL_ASM_FUNC_T40; }
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 49 {
+                zero => { return TCL_ASM_FUNC_T1; }
+                pos => {}
+                neg => {}
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 53 {
+                zero => { return TCL_ASM_FUNC_T5; }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match len - base_len - 4 {
+        zero => {
+            match tcl_asm_lower(tcl_asm_tok_char(src, tok, base_len + 1)) - 116 {
+                zero => {}
+                pos => { return TCL_ASM_FUNC_T40; }
+                neg => { return TCL_ASM_FUNC_T40; }
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 3) - 48 {
+                zero => {}
+                pos => { return TCL_ASM_FUNC_T40; }
+                neg => { return TCL_ASM_FUNC_T40; }
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 49 {
+                zero => { return TCL_ASM_FUNC_T10; }
+                pos => {}
+                neg => {}
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 50 {
+                zero => { return TCL_ASM_FUNC_T20; }
+                pos => {}
+                neg => {}
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 52 {
+                zero => { return TCL_ASM_FUNC_T40; }
+                pos => {}
+                neg => {}
+            }
+            match tcl_asm_tok_char(src, tok, base_len + 2) - 53 {
+                zero => { return TCL_ASM_FUNC_T50; }
+                pos => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    return TCL_ASM_FUNC_T40;
+}
+
+fn tcl_asm_mnemonic_base_eq2(src: t40, tok: t40, c0: t40, c1: t40) -> t40 {
+    match tcl_asm_mnemonic_base_len(src, tok) - 2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_mnemonic_base_eq3(src: t40, tok: t40, c0: t40, c1: t40, c2: t40) -> t40 {
+    match tcl_asm_mnemonic_base_len(src, tok) - 3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_mnemonic_base_eq4(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40) -> t40 {
+    match tcl_asm_mnemonic_base_len(src, tok) - 4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_mnemonic_base_eq5(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40) -> t40 {
+    match tcl_asm_mnemonic_base_len(src, tok) - 5 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 4)) - c4 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_mnemonic_base_eq7(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40) -> t40 {
+    match tcl_asm_mnemonic_base_len(src, tok) - 7 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 4)) - c4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 5)) - c5 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 6)) - c6 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
+fn tcl_asm_is_text_directive(src: t40, tok: t40) -> t40 {
+    return tcl_asm_tok_eq5(src, tok, 46, 116, 101, 120, 116);
+}
+
+fn tcl_asm_is_data_directive(src: t40, tok: t40) -> t40 {
+    return tcl_asm_tok_eq5(src, tok, 46, 100, 97, 116, 97);
+}
+
+fn tcl_asm_mnemonic_code(src: t40, tok: t40) -> t40 {
+    match tcl_asm_mnemonic_base_eq3(src, tok, 110, 111, 112) { pos => { return TCL_ASM_OP_NOP; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 104, 97, 108, 116) { pos => { return TCL_ASM_OP_HALT; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 109, 111, 118) { pos => { return TCL_ASM_OP_MOV; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 109, 111, 118, 104) { pos => { return TCL_ASM_OP_MOVH; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 99, 111, 112, 121) { pos => { return TCL_ASM_OP_COPY; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 97, 100, 100) { pos => { return TCL_ASM_OP_ADD; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 115, 117, 98) { pos => { return TCL_ASM_OP_SUB; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 109, 117, 108) { pos => { return TCL_ASM_OP_MUL; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 100, 105, 118) { pos => { return TCL_ASM_OP_DIV; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 115, 113, 114, 116) { pos => { return TCL_ASM_OP_SQRT; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 110, 101, 103) { pos => { return TCL_ASM_OP_NEG; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 97, 98, 115) { pos => { return TCL_ASM_OP_ABS; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 99, 109, 112) { pos => { return TCL_ASM_OP_TCMP; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 109, 105, 110) { pos => { return TCL_ASM_OP_TMIN; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 109, 97, 120) { pos => { return TCL_ASM_OP_TMAX; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 105, 110, 118) { pos => { return TCL_ASM_OP_TINV; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 108, 111, 97, 100) { pos => { return TCL_ASM_OP_LOAD; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq5(src, tok, 115, 116, 111, 114, 101) { pos => { return TCL_ASM_OP_STORE; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 106, 109, 112) { pos => { return TCL_ASM_OP_JMP; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 98, 114, 110) { pos => { return TCL_ASM_OP_BRN; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 98, 114, 122) { pos => { return TCL_ASM_OP_BRZ; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 98, 114, 112) { pos => { return TCL_ASM_OP_BRP; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 99, 97, 108, 108) { pos => { return TCL_ASM_OP_CALL; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq3(src, tok, 114, 101, 116) { pos => { return TCL_ASM_OP_RET; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq7(src, tok, 115, 121, 115, 99, 97, 108, 108) { pos => { return TCL_ASM_OP_SYSCALL; } zero => {} neg => {} }
+    return 0 - 1;
+}
+
+fn tcl_asm_div(a: t40, b: t40) -> t40 {
+    match b { zero => { return 0; } pos => {} neg => {} }
+    var aa: t40 = a;
+    var bb: t40 = b;
+    var sign: t40 = 1;
+    var q: t40 = 0;
+    match aa { neg => { aa = 0 - aa; sign = 0 - sign; } zero => { return 0; } pos => {} }
+    match bb { neg => { bb = 0 - bb; sign = 0 - sign; } zero => { return 0; } pos => {} }
+    while aa - bb > 0 {
+        aa = aa - bb;
+        q = q + 1;
+    }
+    match aa - bb { zero => { q = q + 1; } pos => {} neg => {} }
+    match sign { neg => { return 0 - q; } zero => { return 0; } pos => { return q; } }
+}
+
+fn tcl_asm_pow3(pos: t40) -> t40 {
+    var out: t40 = 1;
+    var i: t40 = 0;
+    while pos - i > 0 {
+        out = out * 3;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn tcl_asm_empty_word() -> t40 {
+    var out: t40 = 0;
+    var weight: t40 = 1;
+    var i: t40 = 0;
+    while 27 - i > 0 {
+        out = out - weight;
+        weight = weight * 3;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn tcl_asm_set_trit_weight(bits: t40, weight: t40, trit: t40) -> t40 {
+    return bits + ((trit + 1) * weight);
+}
+
+fn tcl_asm_set_field(bits: t40, lsb: t40, width: t40, val: t40) -> t40 {
+    var out: t40 = bits;
+    var v: t40 = val;
+    var weight: t40 = tcl_asm_pow3(lsb);
+    var i: t40 = 0;
+    var q: t40 = 0;
+    var rem: t40 = 0;
+    while width - i > 0 {
+        q = tcl_asm_div(v, 3);
+        rem = v - q * 3;
+        match rem - 1 {
+            pos => { rem = rem - 3; }
+            zero => {}
+            neg => {}
+        }
+        match rem + 1 {
+            neg => { rem = rem + 3; }
+            zero => {}
+            pos => {}
+        }
+        out = tcl_asm_set_trit_weight(out, weight, rem);
+        v = tcl_asm_div(v - rem, 3);
+        weight = weight * 3;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn tcl_asm_set_opcode(bits: t40, opcode: t40) -> t40 {
+    var out: t40 = bits;
+    var val: t40 = opcode;
+    var weight: t40 = tcl_asm_pow3(22);
+    var i: t40 = 0;
+    var digit: t40 = 0;
+    var q: t40 = 0;
+    while 4 - i > 0 {
+        q = tcl_asm_div(val, 3);
+        digit = val - q * 3;
+        out = out + digit * weight;
+        val = q;
+        weight = weight * 3;
+        i = i + 1;
+    }
+    return out;
+}
+
+fn tcl_asm_encode_r(opcode: t40, rd: t40, rs1: t40, rs2: t40, func: t40) -> t40 {
+    var bits: t40 = tcl_asm_empty_word();
+    bits = tcl_asm_set_trit_weight(bits, tcl_asm_pow3(26), 1);
+    bits = tcl_asm_set_opcode(bits, opcode);
+    bits = tcl_asm_set_field(bits, 19, 3, rd - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 16, 3, rs1 - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 13, 3, rs2 - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 10, 3, func - TCL_ASM_REG_FIELD_OFFSET);
+    return bits;
+}
+
+fn tcl_asm_encode_i(opcode: t40, rd: t40, rs1: t40, imm: t40) -> t40 {
+    var bits: t40 = tcl_asm_empty_word();
+    bits = tcl_asm_set_trit_weight(bits, tcl_asm_pow3(26), 0);
+    bits = tcl_asm_set_opcode(bits, opcode);
+    bits = tcl_asm_set_field(bits, 19, 3, rd - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 16, 3, rs1 - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 0, 16, imm);
+    return bits;
+}
+
+fn tcl_asm_encode_b(opcode: t40, rs: t40, offset: t40) -> t40 {
+    var bits: t40 = tcl_asm_empty_word();
+    bits = tcl_asm_set_opcode(bits, opcode);
+    bits = tcl_asm_set_field(bits, 19, 3, rs - TCL_ASM_REG_FIELD_OFFSET);
+    bits = tcl_asm_set_field(bits, 0, 19, offset);
+    return bits;
+}
+
+fn tcl_asm_parse_register(src: t40, tok: t40) -> t40 {
+    match tcl_asm_tok_eq2(src, tok, 108, 114) { pos => { return 25; } zero => {} neg => {} }
+    match tcl_asm_tok_eq2(src, tok, 115, 112) { pos => { return 26; } zero => {} neg => {} }
+    match tcl_asm_tok_eq4(src, tok, 122, 101, 114, 111) { pos => { return 0; } zero => {} neg => {} }
+    var len: t40 = tcl_asm_tok_len(tok);
+    match len - 2 {
+        neg => { return 0 - 1; }
+        zero => {}
+        pos => {}
+    }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - 114 {
+        zero => {}
+        pos => { return 0 - 1; }
+        neg => { return 0 - 1; }
+    }
+    var i: t40 = 1;
+    var n: t40 = 0;
+    var c: t40 = 0;
+    while len - i > 0 {
+        c = tcl_asm_tok_char(src, tok, i);
+        match tcl_asm_is_digit(c) {
+            pos => { n = n * 10 + c - 48; }
+            zero => { return 0 - 1; }
+            neg => { return 0 - 1; }
+        }
+        i = i + 1;
+    }
+    match n {
+        neg => { return 0 - 1; }
+        zero => { return 0; }
+        pos => {
+            match n - 26 {
+                pos => { return 0 - 1; }
+                zero => { return 26; }
+                neg => { return n; }
+            }
+        }
+    }
+}
+
+fn tcl_asm_parse_int(src: t40, tok: t40, out: t40) -> t40 {
+    var len: t40 = tcl_asm_tok_len(tok);
+    match len { zero => { return 0; } pos => {} neg => { return 0; } }
+    var i: t40 = 0;
+    var sign: t40 = 1;
+    var c: t40 = tcl_asm_tok_char(src, tok, 0);
+    match c - 45 {
+        zero => { sign = 0 - 1; i = 1; }
+        pos => {}
+        neg => {}
+    }
+    match c - 43 {
+        zero => { i = 1; }
+        pos => {}
+        neg => {}
+    }
+    match len - i {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    var n: t40 = 0;
+    while len - i > 0 {
+        c = tcl_asm_tok_char(src, tok, i);
+        match tcl_asm_is_digit(c) {
+            pos => { n = n * 10 + c - 48; }
+            zero => { return 0; }
+            neg => { return 0; }
+        }
+        i = i + 1;
+    }
+    unsafe { store(out, n * sign); }
+    return 1;
+}
+
+fn tcl_asm_token_same(src: t40, start_a: t40, len_a: t40, start_b: t40, len_b: t40) -> t40 {
+    match len_a - len_b { zero => {} pos => { return 0; } neg => { return 0; } }
+    var i: t40 = 0;
+    while len_a - i > 0 {
+        match tcl_asm_lower(tcl_asm_char_at(src, start_a + i)) - tcl_asm_lower(tcl_asm_char_at(src, start_b + i)) {
+            zero => {}
+            pos => { return 0; }
+            neg => { return 0; }
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn tcl_asm_add_label(labels: t40, start: t40, len: t40, address: t40) -> t40 {
+    vec_push(labels, start);
+    vec_push(labels, len);
+    vec_push(labels, address);
+    return 0;
+}
+
+fn tcl_asm_find_label(src: t40, labels: t40, tok: t40) -> t40 {
+    var tstart: t40 = tcl_asm_tok_start(tok);
+    var tlen: t40 = tcl_asm_tok_len(tok);
+    var len: t40 = vec_len(labels);
+    var i: t40 = 0;
+    while len - i > 0 {
+        match tcl_asm_token_same(src, vec_get(labels, i), vec_get(labels, i + 1), tstart, tlen) {
+            pos => { return vec_get(labels, i + 2); }
+            zero => {}
+            neg => {}
+        }
+        i = i + TCL_ASM_LABEL_WORDS;
+    }
+    return 0 - 1;
+}
+
+fn tcl_asm_resolve_absolute(src: t40, labels: t40, tok: t40) -> t40 {
+    var box: t40 = malloc_raw(1);
+    unsafe { store(box, 0); }
+    match tcl_asm_parse_int(src, tok, box) {
+        pos => {
+            var value: t40 = 0;
+            unsafe { value = load(box); }
+            free_raw(box);
+            return value;
+        }
+        zero => {}
+        neg => {}
+    }
+    free_raw(box);
+    return tcl_asm_find_label(src, labels, tok);
+}
+
+fn tcl_asm_resolve_relative(src: t40, labels: t40, tok: t40, pc: t40) -> t40 {
+    var box: t40 = malloc_raw(1);
+    unsafe { store(box, 0); }
+    match tcl_asm_parse_int(src, tok, box) {
+        pos => {
+            var value: t40 = 0;
+            unsafe { value = load(box); }
+            free_raw(box);
+            return value;
+        }
+        zero => {}
+        neg => {}
+    }
+    free_raw(box);
+    return tcl_asm_find_label(src, labels, tok) - pc;
+}
+
+fn tcl_asm_line_mnemonic(src: t40, len: t40, line_idx: t40, tok_first: t40, tok_mn: t40) -> t40 {
+    var cursor: t40 = malloc_raw(1);
+    unsafe { store(cursor, line_idx); }
+    match tcl_asm_next_token(src, len, cursor, tok_first) {
+        pos => {}
+        zero => { free_raw(cursor); return 0; }
+        neg => { free_raw(cursor); return 0; }
+    }
+    var after_first: t40 = 0;
+    unsafe { after_first = load(cursor); }
+    match len - after_first {
+        pos => {
+            match tcl_asm_char_at(src, after_first) - 58 {
+                zero => {
+                    unsafe { store(cursor, after_first + 1); }
+                    match tcl_asm_next_token(src, len, cursor, tok_mn) {
+                        pos => { free_raw(cursor); return 2; }
+                        zero => { free_raw(cursor); return 1; }
+                        neg => { free_raw(cursor); return 1; }
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    unsafe {
+        store(tok_mn, tcl_asm_tok_start(tok_first));
+        store(tok_mn + 1, tcl_asm_tok_len(tok_first));
+    }
+    free_raw(cursor);
+    return 2;
+}
+
+fn tcl_asm_instruction_word_count(src: t40, mnemonic: t40) -> t40 {
+    var func: t40 = tcl_asm_mnemonic_width_func(src, mnemonic);
+    match tcl_asm_mnemonic_has_width(src, mnemonic) {
+        pos => {
+            match (func - TCL_ASM_FUNC_T40) {
+                zero => { return 1; }
+                pos => {}
+                neg => {}
+            }
+            match tcl_asm_mnemonic_base_eq3(src, mnemonic, 109, 111, 118) {
+                pos => { return 2; }
+                zero => {}
+                neg => {}
+            }
+            match tcl_asm_mnemonic_base_eq4(src, mnemonic, 109, 111, 118, 104) {
+                pos => { return 2; }
+                zero => {}
+                neg => {}
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    return 1;
+}
+
+fn tcl_asm_first_pass(src: t40, len: t40, labels: t40) -> t40 {
+    var idx: t40 = 0;
+    var pc: t40 = 0;
+    var section: t40 = 0;
+    var first: t40 = malloc_raw(2);
+    var mnemonic: t40 = malloc_raw(2);
+    var status: t40 = 0;
+    var after_first: t40 = 0;
+    while len - idx > 0 {
+        status = tcl_asm_line_mnemonic(src, len, idx, first, mnemonic);
+        match status {
+            pos => {
+                match status - 1 {
+                    zero => {
+                        tcl_asm_add_label(labels, tcl_asm_tok_start(first), tcl_asm_tok_len(first), pc);
+                    }
+                    pos => {
+                        after_first = tcl_asm_tok_start(first) + tcl_asm_tok_len(first);
+                        match len - after_first {
+                            pos => {
+                                match tcl_asm_char_at(src, after_first) - 58 {
+                                    zero => { tcl_asm_add_label(labels, tcl_asm_tok_start(first), tcl_asm_tok_len(first), pc); }
+                                    pos => {}
+                                    neg => {}
+                                }
+                            }
+                            zero => {}
+                            neg => {}
+                        }
+                        match tcl_asm_is_text_directive(src, mnemonic) {
+                            pos => { section = 0; }
+                            zero => {
+                                match tcl_asm_is_data_directive(src, mnemonic) {
+                                    pos => { section = 1; }
+                                    zero => {
+                                        match section {
+                                            zero => { pc = pc + tcl_asm_instruction_word_count(src, mnemonic); }
+                                            pos => {}
+                                            neg => {}
+                                        }
+                                    }
+                                    neg => {}
+                                }
+                            }
+                            neg => {}
+                        }
+                    }
+                    neg => {}
+                }
+            }
+            zero => {}
+            neg => {}
+        }
+        idx = tcl_asm_next_line(src, len, idx);
+    }
+    free_raw(first);
+    free_raw(mnemonic);
+    return pc;
+}
+
+fn tcl_asm_get_operand(src: t40, len: t40, cursor: t40, tok: t40) -> t40 {
+    return tcl_asm_next_token(src, len, cursor, tok);
+}
+
+fn tcl_asm_emit_instr(src: t40, len: t40, labels: t40, line_idx: t40, pc: t40, mnemonic: t40, out: t40) -> t40 {
+    var op: t40 = tcl_asm_mnemonic_code(src, mnemonic);
+    match op {
+        neg => { tcl_asm_words_push(out, 0); return 1; }
+        zero => {}
+        pos => {}
+    }
+
+    var cursor: t40 = malloc_raw(1);
+    var tok0: t40 = malloc_raw(2);
+    var tok1: t40 = malloc_raw(2);
+    var tok2: t40 = malloc_raw(2);
+    var first: t40 = malloc_raw(2);
+    unsafe { store(cursor, line_idx); }
+    tcl_asm_next_token(src, len, cursor, first);
+    var after_first: t40 = 0;
+    unsafe { after_first = load(cursor); }
+    match len - after_first {
+        pos => {
+            match tcl_asm_char_at(src, after_first) - 58 {
+                zero => {
+                    unsafe { store(cursor, after_first + 1); }
+                    tcl_asm_next_token(src, len, cursor, first);
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+
+    var word: t40 = 0;
+    var rd: t40 = 0;
+    var r1: t40 = 0;
+    var r2: t40 = 0;
+    var imm: t40 = 0;
+    var func: t40 = tcl_asm_mnemonic_width_func(src, mnemonic);
+
+    match (op - TCL_ASM_OP_NOP) {
+        zero => { word = tcl_asm_encode_i(TCL_ASM_OP_NOP, 0, 0, 0); tcl_asm_words_push(out, word); }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_HALT) {
+        zero => { word = tcl_asm_encode_b(TCL_ASM_OP_HALT, 0, 0); tcl_asm_words_push(out, word); }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_RET) {
+        zero => { word = tcl_asm_encode_r(TCL_ASM_OP_RET, 0, 0, 0, TCL_ASM_FUNC_T40); tcl_asm_words_push(out, word); }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_SYSCALL) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            imm = tcl_asm_resolve_absolute(src, labels, tok0);
+            word = tcl_asm_encode_i(TCL_ASM_OP_SYSCALL, 0, 0, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_MOV) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            rd = tcl_asm_parse_register(src, tok0);
+            imm = tcl_asm_resolve_absolute(src, labels, tok1);
+            word = tcl_asm_encode_i(TCL_ASM_OP_MOV, rd, 0, imm);
+            tcl_asm_words_push(out, word);
+            match tcl_asm_mnemonic_has_width(src, mnemonic) {
+                pos => {
+                    match (func - TCL_ASM_FUNC_T40) {
+                        zero => {}
+                        pos => {
+                            word = tcl_asm_encode_r(TCL_ASM_OP_CVT, rd, rd, 0, func);
+                            tcl_asm_words_push(out, word);
+                        }
+                        neg => {
+                            word = tcl_asm_encode_r(TCL_ASM_OP_CVT, rd, rd, 0, func);
+                            tcl_asm_words_push(out, word);
+                        }
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_MOVH) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            rd = tcl_asm_parse_register(src, tok0);
+            imm = tcl_asm_resolve_absolute(src, labels, tok1);
+            word = tcl_asm_encode_i(TCL_ASM_OP_MOVH, rd, 0, imm);
+            tcl_asm_words_push(out, word);
+            match tcl_asm_mnemonic_has_width(src, mnemonic) {
+                pos => {
+                    match (func - TCL_ASM_FUNC_T40) {
+                        zero => {}
+                        pos => {
+                            word = tcl_asm_encode_r(TCL_ASM_OP_CVT, rd, rd, 0, func);
+                            tcl_asm_words_push(out, word);
+                        }
+                        neg => {
+                            word = tcl_asm_encode_r(TCL_ASM_OP_CVT, rd, rd, 0, func);
+                            tcl_asm_words_push(out, word);
+                        }
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_LOAD) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            match tcl_asm_get_operand(src, len, cursor, tok2) { pos => { imm = tcl_asm_resolve_absolute(src, labels, tok2); } zero => { imm = 0; } neg => { imm = 0; } }
+            rd = tcl_asm_parse_register(src, tok0);
+            r1 = tcl_asm_parse_register(src, tok1);
+            word = tcl_asm_encode_i(TCL_ASM_OP_LOAD, rd, r1, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_STORE) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            match tcl_asm_get_operand(src, len, cursor, tok2) { pos => { imm = tcl_asm_resolve_absolute(src, labels, tok2); } zero => { imm = 0; } neg => { imm = 0; } }
+            rd = tcl_asm_parse_register(src, tok0);
+            r1 = tcl_asm_parse_register(src, tok1);
+            word = tcl_asm_encode_i(TCL_ASM_OP_STORE, rd, r1, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_JMP) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            imm = tcl_asm_resolve_relative(src, labels, tok0, pc);
+            word = tcl_asm_encode_b(TCL_ASM_OP_JMP, 0, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_CALL) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            imm = tcl_asm_resolve_relative(src, labels, tok0, pc);
+            word = tcl_asm_encode_b(TCL_ASM_OP_CALL, 0, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_BRN) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            r1 = tcl_asm_parse_register(src, tok0);
+            imm = tcl_asm_resolve_relative(src, labels, tok1, pc);
+            word = tcl_asm_encode_b(TCL_ASM_OP_BRN, r1, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_BRZ) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            r1 = tcl_asm_parse_register(src, tok0);
+            imm = tcl_asm_resolve_relative(src, labels, tok1, pc);
+            word = tcl_asm_encode_b(TCL_ASM_OP_BRZ, r1, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+    match (op - TCL_ASM_OP_BRP) {
+        zero => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            r1 = tcl_asm_parse_register(src, tok0);
+            imm = tcl_asm_resolve_relative(src, labels, tok1, pc);
+            word = tcl_asm_encode_b(TCL_ASM_OP_BRP, r1, imm);
+            tcl_asm_words_push(out, word);
+        }
+        pos => {}
+        neg => {}
+    }
+
+    var rtype3: t40 = 0;
+    match (op - TCL_ASM_OP_ADD) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_SUB) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_MUL) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_DIV) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_TCMP) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_TMIN) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_TMAX) { zero => { rtype3 = 1; } pos => {} neg => {} }
+    match rtype3 {
+        pos => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            tcl_asm_get_operand(src, len, cursor, tok2);
+            rd = tcl_asm_parse_register(src, tok0);
+            r1 = tcl_asm_parse_register(src, tok1);
+            r2 = tcl_asm_parse_register(src, tok2);
+            word = tcl_asm_encode_r(op, rd, r1, r2, func);
+            tcl_asm_words_push(out, word);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    var rtype2: t40 = 0;
+    match (op - TCL_ASM_OP_COPY) { zero => { rtype2 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_SQRT) { zero => { rtype2 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_NEG) { zero => { rtype2 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_ABS) { zero => { rtype2 = 1; } pos => {} neg => {} }
+    match (op - TCL_ASM_OP_TINV) { zero => { rtype2 = 1; } pos => {} neg => {} }
+    match rtype2 {
+        pos => {
+            tcl_asm_get_operand(src, len, cursor, tok0);
+            tcl_asm_get_operand(src, len, cursor, tok1);
+            rd = tcl_asm_parse_register(src, tok0);
+            r1 = tcl_asm_parse_register(src, tok1);
+            word = tcl_asm_encode_r(op, rd, r1, 0, func);
+            tcl_asm_words_push(out, word);
+        }
+        zero => {}
+        neg => {}
+    }
+
+    free_raw(cursor);
+    free_raw(tok0);
+    free_raw(tok1);
+    free_raw(tok2);
+    free_raw(first);
+    return 1;
+}
+
+fn tcl_asm_assemble_to_words(src: t40, len: t40) -> t40 {
+    var labels: t40 = vec_new();
+    var text_words: t40 = tcl_asm_first_pass(src, len, labels);
+
+    var out: t40 = tcl_asm_words_new_cap(text_words + 1);
+    var idx: t40 = 0;
+    var pc: t40 = 0;
+    var section: t40 = 0;
+    var first: t40 = malloc_raw(2);
+    var mnemonic: t40 = malloc_raw(2);
+    var status: t40 = 0;
+    while len - idx > 0 {
+        status = tcl_asm_line_mnemonic(src, len, idx, first, mnemonic);
+        match status - 2 {
+            zero => {
+                match tcl_asm_is_text_directive(src, mnemonic) {
+                    pos => { section = 0; }
+                    zero => {
+                        match tcl_asm_is_data_directive(src, mnemonic) {
+                            pos => { section = 1; }
+                            zero => {
+                                match section {
+                                    zero => {
+                                        tcl_asm_emit_instr(src, len, labels, idx, pc, mnemonic, out);
+                                        pc = pc + tcl_asm_instruction_word_count(src, mnemonic);
+                                    }
+                                    pos => {}
+                                    neg => {}
+                                }
+                            }
+                            neg => {}
+                        }
+                    }
+                    neg => {}
+                }
+            }
+            pos => {}
+            neg => {}
+        }
+        idx = tcl_asm_next_line(src, len, idx);
+    }
+    free_raw(first);
+    free_raw(mnemonic);
+    vec_free(labels);
+    return out;
+}

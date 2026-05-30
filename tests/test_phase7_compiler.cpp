@@ -69,7 +69,11 @@ void testCompileAndRunMatchProgram() {
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "linked match executable assembles");
-    expect(linked.executable_header.text_pages == 1, "linker emits executable header");
+    const int expected_text_pages = std::max(
+        1, (linked.instruction_count + sandbox::vm::MMU_PAGE_WORDS - 1) /
+               sandbox::vm::MMU_PAGE_WORDS);
+    expect(linked.executable_header.text_pages == expected_text_pages,
+           "linker emits accurate executable text page count");
     expect(linked.instruction_count > 0, "linker reports instruction count");
 
     sandbox::vm::VMState vm(256, 256);
@@ -157,6 +161,48 @@ void testFunctionCallAndWhileLoop() {
         }
         expect(result.halted(), "call/loop image halts");
         expect(regLong(vm, 13) == 3, "while loop and direct call produce expected result");
+    }
+}
+
+void testIfElseStatements() {
+    std::cout << "[3b] If/else statement lowering\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn classify(x: t40) -> t40 {
+          if x - 5 > 0 {
+            return 10;
+          } else if x - 5 == 0 {
+            return 20;
+          } else {
+            return 30;
+          }
+        }
+
+        fn main() -> t40 {
+          return classify(4) + classify(5) + classify(6);
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_if_else.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR IF/ELSE:\n";
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << "\n";
+        }
+    }
+    expect(compiled.success, "if/else source compiles");
+    expect(contains(compiled.assembly, "if_then"), "if lowering emits then label");
+    expect(contains(compiled.assembly, "if_else"), "if lowering emits else label");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "if/else executable links");
+    sandbox::vm::VMState vm(512, 512);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "if/else image loads");
+        const auto result = sandbox::vm::run(vm, 1024);
+        expect(result.halted(), "if/else image halts");
+        expect(regLong(vm, 13) == 60, "if/else chain selects expected branches");
     }
 }
 
@@ -296,6 +342,28 @@ void testVerifierAllocatorAndDuplicateSymbols() {
     expect(!linked.success, "linker rejects duplicate symbols");
     expect(hasDiagnostic(linked.diagnostics, "duplicate symbol"),
            "duplicate symbol diagnostic is clear");
+
+    const std::string dead_source = R"(
+        fn helper() -> t40 {
+            return 7;
+        }
+
+        fn unused() -> t40 {
+            return 99;
+        }
+
+        fn main() -> t40 {
+            return helper();
+        }
+    )";
+    CompileResult dead_compiled = compileSource("dead_strip.trit", dead_source);
+    expect(dead_compiled.success, "dead-strip fixture compiles");
+    LinkOptions strip_options;
+    strip_options.dead_strip_functions = true;
+    LinkResult stripped = linkModules({dead_compiled.object}, strip_options);
+    expect(stripped.success, "dead-strip fixture links");
+    expect(contains(stripped.assembly, "helper:"), "reachable helper survives dead strip");
+    expect(!contains(stripped.assembly, "unused:"), "unreferenced function is removed");
 }
 
 void testHMGeneralizationAndLayouts() {
@@ -1080,7 +1148,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(compiled.success, "native guard test compiles successfully");
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success, "native guard test links");
-        sandbox::vm::VMState vm(65536, 65536);
+        sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
             expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native guard test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
@@ -1154,7 +1222,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(compiled.success, "native bad guard test compiles successfully");
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success, "native bad guard test links");
-        sandbox::vm::VMState vm(65536, 65536);
+        sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
             expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native bad guard test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
@@ -1219,7 +1287,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(compiled.success, "ulib + sort test compiles successfully");
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success, "sort test links");
-        sandbox::vm::VMState vm(65536, 65536);
+        sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
             expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "sort test VM image loads");
             const auto result = sandbox::vm::run(vm, 50000);
@@ -1295,7 +1363,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(compiled.success, "ulib + split buffer test compiles successfully");
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success, "split buffer test links");
-        sandbox::vm::VMState vm(65536, 65536);
+        sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
             expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "split buffer test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
@@ -1314,6 +1382,7 @@ int main() {
     testCompileAndRunMatchProgram();
     testRuntimeSyscallWrapperAndTupleSwap();
     testFunctionCallAndWhileLoop();
+    testIfElseStatements();
     testTypeDiagnostics();
     testVerifierAllocatorAndDuplicateSymbols();
     testHMGeneralizationAndLayouts();

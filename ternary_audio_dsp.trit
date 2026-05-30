@@ -1,0 +1,197 @@
+import math_utils;
+
+fn div_int_signed(a: t40, b: t40) -> t40 {
+    var pos_b: t40 = b;
+    var negate: t40 = 0;
+    match b {
+        neg => {
+            pos_b = 0 - b;
+            negate = 1;
+        }
+        zero => {
+            return 0; // Guard division by zero
+        }
+        _ => {}
+    }
+    
+    var result: t40 = 0;
+    match a {
+        neg => {
+            result = 0 - div_int(0 - a, pos_b);
+        }
+        zero => {
+            return 0;
+        }
+        pos => {
+            result = div_int(a, pos_b);
+        }
+    }
+    
+    match negate {
+        zero => { return result; }
+        _ => { return 0 - result; }
+    }
+}
+
+// Packs Mono amplitude (M in [-364, 364]) and Spatial (S in [-13, 13])
+// into a single 9-trit frame: F = S * 729 + M
+fn pack_audio(mono: t40, spatial: t40) -> t40 {
+    return spatial * 729 + mono;
+}
+
+// Unpacks the Mono component from a 9-trit frame using shifted-division
+fn unpack_mono(frame: t40) -> t40 {
+    var val_shifted: t40 = frame + 9841;
+    var S_plus_13: t40 = div_int(val_shifted, 729);
+    var M_plus_364: t40 = val_shifted - S_plus_13 * 729;
+    return M_plus_364 - 364;
+}
+
+// Unpacks the Spatial component from a 9-trit frame using shifted-division
+fn unpack_spatial(frame: t40) -> t40 {
+    var val_shifted: t40 = frame + 9841;
+    var S_plus_13: t40 = div_int(val_shifted, 729);
+    return S_plus_13 - 13;
+}
+
+// Swaps Left and Right channels by negating the spatial opponent component
+// Optimised: Performs only 1 division per frame instead of 2 (Bug 1 fix)
+fn audio_channel_swap(buf: borrow_mut<ptr<t40, user, valid>>, len: t40) -> void {
+    var i: t40 = 0;
+    while len - i > 0 {
+        var frame: t40 = 0;
+        unsafe { frame = load(buf + i); }
+        
+        var val_shifted: t40 = frame + 9841;
+        var S_plus_13: t40 = div_int(val_shifted, 729);
+        var M_plus_364: t40 = val_shifted - S_plus_13 * 729;
+        var mono: t40 = M_plus_364 - 364;
+        var spatial: t40 = S_plus_13 - 13;
+        
+        var swapped_frame: t40 = pack_audio(mono, 0 - spatial);
+        unsafe { store(buf + i, swapped_frame); }
+        i = i + 1;
+    }
+}
+
+// Collapses the spatial component to mono by zeroing it
+fn audio_collapse_mono(buf: borrow_mut<ptr<t40, user, valid>>, len: t40) -> void {
+    var i: t40 = 0;
+    while len - i > 0 {
+        var frame: t40 = 0;
+        unsafe { frame = load(buf + i); }
+        var mono: t40 = unpack_mono(frame);
+        var collapsed_frame: t40 = pack_audio(mono, 0);
+        unsafe { store(buf + i, collapsed_frame); }
+        i = i + 1;
+    }
+}
+
+// Generates the anti-noise cancellation frame (negating Mono amplitude)
+// Optimised: Performs only 1 division per frame instead of 2 (Bug 1 fix)
+fn audio_generate_anc(frame: t40) -> t40 {
+    var val_shifted: t40 = frame + 9841;
+    var S_plus_13: t40 = div_int(val_shifted, 729);
+    var M_plus_364: t40 = val_shifted - S_plus_13 * 729;
+    var mono: t40 = M_plus_364 - 364;
+    var spatial: t40 = S_plus_13 - 13;
+    return pack_audio(0 - mono, spatial);
+}
+
+// Applies an N-tap FIR filter on the mono channel of the buffer
+// Optimised: Pre-unpacks mono values to a temporary scratch buffer, which:
+// 1. Prevents redundant unpack calls in the inner loop (lowers divisions from O(len*coeff_len) to O(len))
+// 2. Fully isolates read/write buffers, eliminating the src == dest aliasing hazard (Bug 4 fix)
+fn audio_fir_filter(src: borrow<ptr<t40, user, valid>>, len: t40, dest: borrow_mut<ptr<t40, user, valid>>, coeffs: borrow<ptr<t40, user, valid>>, coeff_len: t40, coeff_sum: t40) -> void {
+    var mono_buf: t40 = malloc(len);
+    var i: t40 = 0;
+    while len - i > 0 {
+        var f: t40 = 0;
+        unsafe { f = load(src + i); }
+        var m: t40 = unpack_mono(f);
+        unsafe { store(mono_buf + i, m); }
+        i = i + 1;
+    }
+    
+    i = 0;
+    while len - i > 0 {
+        var sum: t40 = 0;
+        var k: t40 = 0;
+        while coeff_len - k > 0 {
+            var idx: t40 = i - k;
+            if idx >= 0 {
+                var m: t40 = 0;
+                unsafe { m = load(mono_buf + idx); }
+                var coeff: t40 = 0;
+                unsafe { coeff = load(coeffs + k); }
+                sum = sum + m * coeff;
+            }
+            k = k + 1;
+        }
+        var filtered_mono: t40 = div_int_signed(sum, coeff_sum);
+        var orig_f: t40 = 0;
+        unsafe { orig_f = load(src + i); }
+        var orig_s: t40 = unpack_spatial(orig_f);
+        var filtered_frame: t40 = pack_audio(filtered_mono, orig_s);
+        unsafe { store(dest + i, filtered_frame); }
+        i = i + 1;
+    }
+    free(mono_buf);
+}
+
+// Emulates ternary H-bridge Class-D output states and reports transitions/active power cycles
+// Bug Fix: transitions count excludes the step 0 startup edge (Bug 5 fix).
+fn emulate_class_d(mono_sample: t40, cycles: t40, out_transitions: borrow_mut<ptr<t40, user, valid>>, out_active: borrow_mut<ptr<t40, user, valid>>) -> void {
+    var error: t40 = 0;
+    var prev_y: t40 = 0;
+    var transitions: t40 = 0;
+    var active_cycles: t40 = 0;
+    
+    var step: t40 = 0;
+    while cycles - step > 0 {
+        var desired: t40 = mono_sample + error;
+        var y: t40 = 0;
+        
+        match desired - 182 {
+            pos => { y = 1; }
+            zero => { y = 1; }
+            neg => {
+                match desired + 182 {
+                    neg => { y = -1; }
+                    _ => { y = 0; }
+                }
+            }
+        }
+        
+        error = desired - y * 364;
+        
+        match step {
+            zero => {
+                prev_y = y;
+            }
+            _ => {
+                match y - prev_y {
+                    zero => {}
+                    _ => {
+                        transitions = transitions + 1;
+                    }
+                }
+                prev_y = y;
+            }
+        }
+        
+        match y {
+            zero => {}
+            _ => {
+                active_cycles = active_cycles + 1;
+            }
+        }
+        
+        step = step + 1;
+    }
+    
+    unsafe {
+        store(out_transitions, transitions);
+        store(out_active, active_cycles);
+    }
+}

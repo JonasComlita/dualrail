@@ -1,0 +1,480 @@
+// user_audio_app.trit
+// Verification app for Ternary Audio DSP Pipeline.
+// Avoids double-quotes in string literals to prevent compiler lexer issues.
+
+fn print_ok() -> void {
+    sys_write_char(32); // ' '
+    sys_write_char(79); // 'O'
+    sys_write_char(75); // 'K'
+    sys_newline();
+}
+
+fn print_packing_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(80); // 'P'
+    sys_write_char(65); // 'A'
+    sys_write_char(67); // 'C'
+    sys_write_char(75); // 'K'
+    sys_write_char(73); // 'I'
+    sys_write_char(78); // 'N'
+    sys_write_char(71); // 'G'
+    sys_write_char(58); // ':'
+}
+
+fn print_swap_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(87); // 'W'
+    sys_write_char(65); // 'A'
+    sys_write_char(80); // 'P'
+    sys_write_char(58); // ':'
+}
+
+fn print_collapse_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(67); // 'C'
+    sys_write_char(79); // 'O'
+    sys_write_char(76); // 'L'
+    sys_write_char(76); // 'L'
+    sys_write_char(65); // 'A'
+    sys_write_char(80); // 'P'
+    sys_write_char(83); // 'S'
+    sys_write_char(69); // 'E'
+    sys_write_char(58); // ':'
+}
+
+fn print_anc_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(65); // 'A'
+    sys_write_char(78); // 'N'
+    sys_write_char(67); // 'C'
+    sys_write_char(58); // ':'
+}
+
+fn print_class_d_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(67); // 'C'
+    sys_write_char(76); // 'L'
+    sys_write_char(65); // 'A'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(32); // ' '
+    sys_write_char(68); // 'D'
+    sys_write_char(58); // ':'
+}
+
+fn print_fir_msg() -> void {
+    sys_write_char(84); // 'T'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(84); // 'T'
+    sys_write_char(32); // ' '
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(82); // 'R'
+    sys_write_char(58); // ':'
+}
+
+fn print_class_d_silence() -> void {
+    sys_write_char(67); // 'C'
+    sys_write_char(108); // 'l'
+    sys_write_char(97); // 'a'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(45); // '-'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(105); // 'i'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(110); // 'n'
+    sys_write_char(99); // 'c'
+    sys_write_char(101); // 'e'
+    sys_write_char(32); // ' '
+    sys_write_char(84); // 'T'
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(111); // 'o'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+}
+
+fn print_class_d_active() -> void {
+    sys_write_char(67); // 'C'
+    sys_write_char(108); // 'l'
+    sys_write_char(97); // 'a'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(45); // '-'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(65); // 'A'
+    sys_write_char(99); // 'c'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(118); // 'v'
+    sys_write_char(101); // 'e'
+    sys_write_char(32); // ' '
+    sys_write_char(84); // 'T'
+    sys_write_char(114); // 'r'
+    sys_write_char(97); // 'a'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(105); // 'i'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(111); // 'o'
+    sys_write_char(110); // 'n'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+}
+
+fn print_class_d_active_cycles() -> void {
+    sys_write_char(67); // 'C'
+    sys_write_char(108); // 'l'
+    sys_write_char(97); // 'a'
+    sys_write_char(115); // 's'
+    sys_write_char(115); // 's'
+    sys_write_char(45); // '-'
+    sys_write_char(68); // 'D'
+    sys_write_char(32); // ' '
+    sys_write_char(65); // 'A'
+    sys_write_char(99); // 'c'
+    sys_write_char(116); // 't'
+    sys_write_char(105); // 'i'
+    sys_write_char(118); // 'v'
+    sys_write_char(101); // 'e'
+    sys_write_char(32); // ' '
+    sys_write_char(67); // 'C'
+    sys_write_char(121); // 'y'
+    sys_write_char(99); // 'c'
+    sys_write_char(108); // 'l'
+    sys_write_char(101); // 'e'
+    sys_write_char(115); // 's'
+    sys_write_char(58); // ':'
+    sys_write_char(32); // ' '
+}
+
+fn print_verif_successful() -> void {
+    sys_write_char(65); // 'A'
+    sys_write_char(85); // 'U'
+    sys_write_char(68); // 'D'
+    sys_write_char(73); // 'I'
+    sys_write_char(79); // 'O'
+    sys_write_char(32); // ' '
+    sys_write_char(68); // 'D'
+    sys_write_char(83); // 'S'
+    sys_write_char(80); // 'P'
+    sys_write_char(32); // ' '
+    sys_write_char(86); // 'V'
+    sys_write_char(69); // 'E'
+    sys_write_char(82); // 'R'
+    sys_write_char(73); // 'I'
+    sys_write_char(70); // 'F'
+    sys_write_char(73); // 'I'
+    sys_write_char(67); // 'C'
+    sys_write_char(65); // 'A'
+    sys_write_char(84); // 'T'
+    sys_write_char(73); // 'I'
+    sys_write_char(79); // 'O'
+    sys_write_char(78); // 'N'
+    sys_write_char(32); // ' '
+    sys_write_char(83); // 'S'
+    sys_write_char(85); // 'U'
+    sys_write_char(67); // 'C'
+    sys_write_char(67); // 'C'
+    sys_write_char(69); // 'E'
+    sys_write_char(83); // 'S'
+    sys_write_char(83); // 'S'
+    sys_write_char(70); // 'F'
+    sys_write_char(85); // 'U'
+    sys_write_char(76); // 'L'
+    sys_write_char(33); // '!'
+    sys_newline();
+}
+
+fn assert_equal(expected: t40, actual: t40) -> void {
+    match expected - actual {
+        zero => {}
+        _ => {
+            sys_write_char(65); // 'A'
+            sys_write_char(83); // 'S'
+            sys_write_char(83); // 'S'
+            sys_write_char(69); // 'E'
+            sys_write_char(82); // 'R'
+            sys_write_char(84); // 'T'
+            sys_write_char(32); // ' '
+            sys_write_char(70); // 'F'
+            sys_write_char(65); // 'A'
+            sys_write_char(73); // 'I'
+            sys_write_char(76); // 'L'
+            sys_write_char(32); // ' '
+            sys_write_char(69); // 'E'
+            sys_write_char(120); // 'x'
+            sys_write_char(112); // 'p'
+            sys_write_char(58); // ':'
+            sys_write_char(32); // ' '
+            sys_write_int(expected);
+            sys_write_char(32); // ' '
+            sys_write_char(71); // 'G'
+            sys_write_char(111); // 'o'
+            sys_write_char(116); // 't'
+            sys_write_char(58); // ':'
+            sys_write_char(32); // ' '
+            sys_write_int(actual);
+            sys_newline();
+            sys_exit(1);
+        }
+    }
+}
+
+fn main() -> t40 {
+    // 1. Pack / Unpack Verification
+    print_packing_msg();
+    
+    // Bounds + positive/negative combinations
+    var f1: t40 = pack_audio(364, 13);
+    assert_equal(364, unpack_mono(f1));
+    assert_equal(13, unpack_spatial(f1));
+    
+    var f2: t40 = pack_audio(0 - 364, 0 - 13);
+    assert_equal(0 - 364, unpack_mono(f2));
+    assert_equal(0 - 13, unpack_spatial(f2));
+    
+    var f3: t40 = pack_audio(0, 0);
+    assert_equal(0, unpack_mono(f3));
+    assert_equal(0, unpack_spatial(f3));
+    
+    var f4: t40 = pack_audio(150, 0 - 5);
+    assert_equal(150, unpack_mono(f4));
+    assert_equal(0 - 5, unpack_spatial(f4));
+    
+    print_ok();
+
+    // 2. Channel Swap Verification
+    print_swap_msg();
+    
+    var buf: t40 = malloc(3);
+    unsafe {
+        store(buf + 0, pack_audio(100, 5));
+        store(buf + 1, pack_audio(200, 0 - 8));
+        store(buf + 2, pack_audio(0 - 50, 0));
+    }
+    
+    audio_channel_swap(buf, 3);
+    
+    var sf0: t40 = 0;
+    var sf1: t40 = 0;
+    var sf2: t40 = 0;
+    unsafe {
+        sf0 = load(buf + 0);
+        sf1 = load(buf + 1);
+        sf2 = load(buf + 2);
+    }
+    
+    assert_equal(100, unpack_mono(sf0));
+    assert_equal(0 - 5, unpack_spatial(sf0));
+    
+    assert_equal(200, unpack_mono(sf1));
+    assert_equal(8, unpack_spatial(sf1));
+    
+    assert_equal(0 - 50, unpack_mono(sf2));
+    assert_equal(0, unpack_spatial(sf2));
+    
+    print_ok();
+
+    // 3. Mono Collapse Verification
+    print_collapse_msg();
+    
+    audio_collapse_mono(buf, 3);
+    
+    unsafe {
+        sf0 = load(buf + 0);
+        sf1 = load(buf + 1);
+        sf2 = load(buf + 2);
+    }
+    
+    assert_equal(100, unpack_mono(sf0));
+    assert_equal(0, unpack_spatial(sf0));
+    
+    assert_equal(200, unpack_mono(sf1));
+    assert_equal(0, unpack_spatial(sf1));
+    
+    assert_equal(0 - 50, unpack_mono(sf2));
+    assert_equal(0, unpack_spatial(sf2));
+    
+    free(buf);
+    print_ok();
+
+    // 4. ANC Verification
+    print_anc_msg();
+    
+    var noise: t40 = pack_audio(120, 3);
+    var anc: t40 = audio_generate_anc(noise);
+    
+    assert_equal(0 - 120, unpack_mono(anc));
+    assert_equal(3, unpack_spatial(anc));
+    
+    // Summing noise + cancellation mono signal = 0 (perfect cancellation)
+    assert_equal(0, unpack_mono(noise) + unpack_mono(anc));
+    
+    // Bounds verification (max negative amplitude negation is symmetric in balanced ternary)
+    var max_neg_noise: t40 = pack_audio(0 - 364, 0);
+    var max_neg_anc: t40 = audio_generate_anc(max_neg_noise);
+    assert_equal(364, unpack_mono(max_neg_anc)); // no overflow/clipping!
+    
+    print_ok();
+
+    // 5. Class-D Power Savings Verification
+    print_class_d_msg();
+    
+    var trans_ptr: t40 = malloc(1);
+    var active_ptr: t40 = malloc(1);
+    
+    // A. Silence (M = 0)
+    emulate_class_d(0, 32, trans_ptr, active_ptr);
+    var sil_trans: t40 = 0;
+    var sil_active: t40 = 0;
+    unsafe {
+        sil_trans = load(trans_ptr);
+        sil_active = load(active_ptr);
+    }
+    
+    print_class_d_silence();
+    sys_write_int(sil_trans);
+    sys_newline();
+    
+    assert_equal(0, sil_trans);
+    assert_equal(0, sil_active);
+    
+    // B. Active Signal (M = 150)
+    emulate_class_d(150, 32, trans_ptr, active_ptr);
+    var act_trans: t40 = 0;
+    var act_active: t40 = 0;
+    unsafe {
+        act_trans = load(trans_ptr);
+        act_active = load(active_ptr);
+    }
+    
+    print_class_d_active();
+    sys_write_int(act_trans);
+    sys_newline();
+    
+    print_class_d_active_cycles();
+    sys_write_int(act_active);
+    sys_newline();
+    
+    // Assert active signal actually toggles and uses energy
+    match act_trans {
+        zero => { assert_equal(1, 0); } // should be > 0
+        neg => { assert_equal(1, 0); }
+        pos => {}
+    }
+    match act_active {
+        zero => { assert_equal(1, 0); } // should be > 0
+        neg => { assert_equal(1, 0); }
+        pos => {}
+    }
+    
+    free(trans_ptr);
+    free(active_ptr);
+    print_ok();
+
+    // 6. FIR Filter Verification
+    print_fir_msg();
+    
+    var src_buf: t40 = malloc(5);
+    var dest_buf: t40 = malloc(5);
+    var coeffs: t40 = malloc(3);
+    
+    unsafe {
+        // Step input signal with spatial = 2
+        store(src_buf + 0, pack_audio(0, 2));
+        store(src_buf + 1, pack_audio(100, 2));
+        store(src_buf + 2, pack_audio(100, 2));
+        store(src_buf + 3, pack_audio(100, 2));
+        store(src_buf + 4, pack_audio(100, 2));
+        
+        // 3-tap moving average coeffs [9, 9, 9] (sum = 27)
+        store(coeffs + 0, 9);
+        store(coeffs + 1, 9);
+        store(coeffs + 2, 9);
+    }
+    
+    audio_fir_filter(src_buf, 5, dest_buf, coeffs, 3, 27);
+    
+    var df0: t40 = 0;
+    var df1: t40 = 0;
+    var df2: t40 = 0;
+    var df3: t40 = 0;
+    var df4: t40 = 0;
+    unsafe {
+        df0 = load(dest_buf + 0);
+        df1 = load(dest_buf + 1);
+        df2 = load(dest_buf + 2);
+        df3 = load(dest_buf + 3);
+        df4 = load(dest_buf + 4);
+    }
+    
+    // Calculated expected smoothed values (retaining spatial = 2):
+    // y[0] = (0 * 9) / 27 = 0
+    // y[1] = (100 * 9 + 0 * 9) / 27 = 33
+    // y[2] = (100 * 9 + 100 * 9 + 0 * 9) / 27 = 66
+    // y[3] = (100 * 9 + 100 * 9 + 100 * 9) / 27 = 100
+    // y[4] = (100 * 9 + 100 * 9 + 100 * 9) / 27 = 100
+    
+    assert_equal(0, unpack_mono(df0));
+    assert_equal(2, unpack_spatial(df0));
+    
+    assert_equal(33, unpack_mono(df1));
+    assert_equal(2, unpack_spatial(df1));
+    
+    assert_equal(66, unpack_mono(df2));
+    assert_equal(2, unpack_spatial(df2));
+    
+    assert_equal(100, unpack_mono(df3));
+    assert_equal(2, unpack_spatial(df3));
+    
+    assert_equal(100, unpack_mono(df4));
+    assert_equal(2, unpack_spatial(df4));
+    
+    free(src_buf);
+    free(dest_buf);
+    free(coeffs);
+    print_ok();
+
+    // 7. Success Output
+    sys_newline();
+    print_verif_successful();
+    
+    return 0;
+}

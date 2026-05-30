@@ -1,4 +1,5 @@
 #include "ternary_vm.h"
+#include "int128_compat.h"
 
 #include <array>
 #include <cstdint>
@@ -13,7 +14,7 @@ using sandbox::LongTriple;
 
 static int g_failures = 0;
 
-std::string toStringUnsigned(unsigned __int128 value) {
+std::string toStringUnsigned(uint128_t value) {
     if (value == 0) return "0";
 
     std::string out;
@@ -25,11 +26,11 @@ std::string toStringUnsigned(unsigned __int128 value) {
     return out;
 }
 
-std::string toStringSigned(__int128 value) {
+std::string toStringSigned(int128_t value) {
     if (value < 0) {
-        return "-" + toStringUnsigned(static_cast<unsigned __int128>(-value));
+        return "-" + toStringUnsigned(static_cast<uint128_t>(-value));
     }
-    return toStringUnsigned(static_cast<unsigned __int128>(value));
+    return toStringUnsigned(static_cast<uint128_t>(value));
 }
 
 void expect(bool condition, const std::string& message) {
@@ -38,20 +39,20 @@ void expect(bool condition, const std::string& message) {
     std::cout << "FAIL: " << message << "\n";
 }
 
-unsigned __int128 pow3(int n) {
-    unsigned __int128 value = 1;
+uint128_t pow3(int n) {
+    uint128_t value = 1;
     for (int i = 0; i < n; ++i) value *= 3;
     return value;
 }
 
-int8_t balancedRem(__int128 n) {
-    __int128 r = n % 3;
+int8_t balancedRem(int128_t n) {
+    int128_t r = n % 3;
     if (r > 1) r -= 3;
     if (r < -1) r += 3;
     return static_cast<int8_t>(r);
 }
 
-std::array<int8_t, 41> encodeBalanced41(__int128 n) {
+std::array<int8_t, 41> encodeBalanced41(int128_t n) {
     std::array<int8_t, 41> trits{};
     for (int i = 0; i < 41; ++i) {
         const int8_t trit = balancedRem(n);
@@ -62,9 +63,9 @@ std::array<int8_t, 41> encodeBalanced41(__int128 n) {
     return trits;
 }
 
-__int128 mantissaToInt(const std::array<int8_t, 50>& trits) {
-    __int128 value = 0;
-    __int128 place = 1;
+int128_t mantissaToInt(const std::array<int8_t, 50>& trits) {
+    int128_t value = 0;
+    int128_t place = 1;
     for (int i = 0; i < 41; ++i) {
         value += static_cast<int>(trits[i]) * place;
         place *= 3;
@@ -96,12 +97,12 @@ LongTriple packMantissaExp(const std::array<int8_t, 41>& mantissa, int exponent)
     return LongTriple::pack(trits);
 }
 
-LongTriple fromInt(__int128 value) {
+LongTriple fromInt(int128_t value) {
     if (value == 0) return LongTriple{0};
     return packMantissaExp(encodeBalanced41(value), 40);
 }
 
-bool exactIntegerValue(LongTriple t, __int128& out) {
+bool exactIntegerValue(LongTriple t, int128_t& out) {
     if (t.isZero()) {
         out = 0;
         return true;
@@ -109,7 +110,7 @@ bool exactIntegerValue(LongTriple t, __int128& out) {
     if (t.isSpecial()) return false;
 
     const auto trits = t.unpack();
-    __int128 mantissa = mantissaToInt(trits);
+    int128_t mantissa = mantissaToInt(trits);
     const int exponent = exponentOf(trits);
 
     if (mantissa == 0) {
@@ -118,29 +119,29 @@ bool exactIntegerValue(LongTriple t, __int128& out) {
     }
 
     if (exponent >= 40) {
-        out = mantissa * static_cast<__int128>(pow3(exponent - 40));
+        out = mantissa * static_cast<int128_t>(pow3(exponent - 40));
         return true;
     }
 
-    const __int128 divisor = static_cast<__int128>(pow3(40 - exponent));
+    const int128_t divisor = static_cast<int128_t>(pow3(40 - exponent));
     if (mantissa % divisor != 0) return false;
     out = mantissa / divisor;
     return true;
 }
 
-int signOf(__int128 value) {
+int signOf(int128_t value) {
     if (value < 0) return -1;
     if (value > 0) return 1;
     return 0;
 }
 
-unsigned __int128 abs128(__int128 value) {
+uint128_t abs128(int128_t value) {
     return value < 0
-        ? static_cast<unsigned __int128>(-value)
-        : static_cast<unsigned __int128>(value);
+        ? static_cast<uint128_t>(-value)
+        : static_cast<uint128_t>(value);
 }
 
-unsigned __int128 roundedDiv3(unsigned __int128 n) {
+uint128_t roundedDiv3(uint128_t n) {
     switch (static_cast<unsigned>(n % 3)) {
         case 0:  return n / 3;
         case 1:  return (n - 1) / 3;
@@ -148,7 +149,7 @@ unsigned __int128 roundedDiv3(unsigned __int128 n) {
     }
 }
 
-int8_t balancedRemUnsigned(unsigned __int128 n) {
+int8_t balancedRemUnsigned(uint128_t n) {
     const unsigned rem = static_cast<unsigned>(n % 3);
     if (rem == 0) return 0;
     if (rem == 1) return 1;
@@ -161,19 +162,19 @@ LongTriple referenceMultiply(LongTriple a, LongTriple b) {
 
     const auto aTrits = a.unpack();
     const auto bTrits = b.unpack();
-    const __int128 ma = mantissaToInt(aTrits);
-    const __int128 mb = mantissaToInt(bTrits);
+    const int128_t ma = mantissaToInt(aTrits);
+    const int128_t mb = mantissaToInt(bTrits);
     const int ea = exponentOf(aTrits);
     const int eb = exponentOf(bTrits);
 
     if (ma == 0 || mb == 0) return LongTriple{0};
 
     const int sign = signOf(ma) * signOf(mb);
-    unsigned __int128 magnitude = abs128(ma) * abs128(mb);
+    uint128_t magnitude = abs128(ma) * abs128(mb);
     int exponent = ea + eb - 40;
 
-    const unsigned __int128 mantissaMax = (pow3(41) - 1) / 2;
-    const unsigned __int128 mantissaMin = (pow3(40) - 1) / 2;
+    const uint128_t mantissaMax = (pow3(41) - 1) / 2;
+    const uint128_t mantissaMin = (pow3(40) - 1) / 2;
 
     while (magnitude > mantissaMax) {
         magnitude = roundedDiv3(magnitude);
@@ -222,7 +223,7 @@ void expectSameLongTriple(LongTriple got, LongTriple want, const std::string& la
 void testBalancedEncoding() {
     std::cout << "[1] balanced integer encoding\n";
 
-    for (__int128 n = -200000; n <= 200000; ++n) {
+    for (int128_t n = -200000; n <= 200000; ++n) {
         const auto mantissa = encodeBalanced41(n);
         for (int i = 0; i < 41; ++i) {
             expect(mantissa[i] >= -1 && mantissa[i] <= 1,
@@ -230,7 +231,7 @@ void testBalancedEncoding() {
         }
 
         LongTriple t = packMantissaExp(mantissa, 40);
-        __int128 decoded = 0;
+        int128_t decoded = 0;
         expect(exactIntegerValue(t, decoded), "encoded integer should decode exactly");
         expect(decoded == n, "integer round-trip " + toStringSigned(n));
     }
@@ -246,7 +247,7 @@ void testBalancedRemainder() {
     }
 
     for (int i = 0; i <= 80; ++i) {
-        const unsigned __int128 n = pow3(i);
+        const uint128_t n = pow3(i);
         const int8_t rem = sandbox::native_ops::detail::balancedRem(n);
         expect(rem >= -1 && rem <= 1, "native unsigned balancedRem out of range");
     }
@@ -258,10 +259,10 @@ void testExactSmallIntegerMultiply() {
     for (int a = -121; a <= 121; ++a) {
         for (int b = -121; b <= 121; ++b) {
             LongTriple got = sandbox::ops::multiply(fromInt(a), fromInt(b));
-            __int128 decoded = 0;
+            int128_t decoded = 0;
             expect(exactIntegerValue(got, decoded),
                    "product should be exact integer for small inputs");
-            expect(decoded == static_cast<__int128>(a) * b,
+            expect(decoded == static_cast<int128_t>(a) * b,
                    "small product " + std::to_string(a) + "*" + std::to_string(b));
         }
     }
@@ -272,18 +273,18 @@ void testExactSmallIntegerAddSubtract() {
 
     for (int a = -121; a <= 121; ++a) {
         for (int b = -121; b <= 121; ++b) {
-            __int128 decodedAdd = 0;
+            int128_t decodedAdd = 0;
             LongTriple add = sandbox::ops::add(fromInt(a), fromInt(b));
             expect(exactIntegerValue(add, decodedAdd),
                    "sum should be exact integer for small inputs");
-            expect(decodedAdd == static_cast<__int128>(a) + b,
+            expect(decodedAdd == static_cast<int128_t>(a) + b,
                    "small sum " + std::to_string(a) + "+" + std::to_string(b));
 
-            __int128 decodedSub = 0;
+            int128_t decodedSub = 0;
             LongTriple sub = sandbox::ops::subtract(fromInt(a), fromInt(b));
             expect(exactIntegerValue(sub, decodedSub),
                    "difference should be exact integer for small inputs");
-            expect(decodedSub == static_cast<__int128>(a) - b,
+            expect(decodedSub == static_cast<int128_t>(a) - b,
                    "small difference " + std::to_string(a) + "-" + std::to_string(b));
         }
     }
@@ -296,7 +297,7 @@ void testExactIntegerDivideAndSqrt() {
         for (int b = -80; b <= 80; ++b) {
             if (b == 0 || (a % b) != 0) continue;
 
-            __int128 decoded = 0;
+            int128_t decoded = 0;
             LongTriple quotient = sandbox::ops::divide(fromInt(a), fromInt(b));
             expect(exactIntegerValue(quotient, decoded),
                    "integer quotient should decode exactly");
@@ -306,8 +307,8 @@ void testExactIntegerDivideAndSqrt() {
     }
 
     for (int n = 0; n <= 2000; ++n) {
-        const __int128 square = static_cast<__int128>(n) * n;
-        __int128 decoded = 0;
+        const int128_t square = static_cast<int128_t>(n) * n;
+        int128_t decoded = 0;
         LongTriple root = sandbox::ops::sqrt(fromInt(square));
         expect(exactIntegerValue(root, decoded),
                "perfect-square sqrt should decode exactly");
@@ -315,11 +316,11 @@ void testExactIntegerDivideAndSqrt() {
     }
 }
 
-std::vector<__int128> interestingMantissas() {
-    const __int128 maxMantissa = static_cast<__int128>((pow3(41) - 1) / 2);
-    const __int128 minNormalized = static_cast<__int128>((pow3(40) - 1) / 2);
+std::vector<int128_t> interestingMantissas() {
+    const int128_t maxMantissa = static_cast<int128_t>((pow3(41) - 1) / 2);
+    const int128_t minNormalized = static_cast<int128_t>((pow3(40) - 1) / 2);
 
-    std::vector<__int128> values = {
+    std::vector<int128_t> values = {
         -maxMantissa, -maxMantissa + 1,
         -minNormalized, -minNormalized + 1,
         -1000000000000LL, -59049, -243, -122, -121, -120,
@@ -332,7 +333,7 @@ std::vector<__int128> interestingMantissas() {
     };
 
     for (int k = 0; k <= 40; ++k) {
-        const __int128 p = static_cast<__int128>(pow3(k));
+        const int128_t p = static_cast<int128_t>(pow3(k));
         values.push_back(p);
         values.push_back(-p);
         if (p > 1) {
@@ -351,7 +352,7 @@ std::vector<__int128> interestingMantissas() {
 void testReferenceMultiplyCorpus() {
     std::cout << "[6] exact reference corpus multiply\n";
 
-    const std::vector<__int128> mantissas = interestingMantissas();
+    const std::vector<int128_t> mantissas = interestingMantissas();
     const std::vector<int> exponents = {
         LongTriple::EXP_MIN, LongTriple::EXP_MIN + 1,
         -121, -40, -1, 0, 1, 40, 121,
@@ -359,7 +360,7 @@ void testReferenceMultiplyCorpus() {
     };
 
     std::vector<LongTriple> values;
-    for (__int128 mantissa : mantissas) {
+    for (int128_t mantissa : mantissas) {
         if (mantissa == 0) {
             values.push_back(LongTriple{0});
             continue;
@@ -376,15 +377,15 @@ void testReferenceMultiplyCorpus() {
         }
     }
 
-    const __int128 maxMantissa = static_cast<__int128>((pow3(41) - 1) / 2);
-    const __int128 minNormalized = static_cast<__int128>((pow3(40) - 1) / 2);
-    const std::vector<__int128> edgeMantissas = {
+    const int128_t maxMantissa = static_cast<int128_t>((pow3(41) - 1) / 2);
+    const int128_t minNormalized = static_cast<int128_t>((pow3(40) - 1) / 2);
+    const std::vector<int128_t> edgeMantissas = {
         -maxMantissa, -minNormalized, -243, -2, -1,
         1, 2, 243, minNormalized, maxMantissa
     };
 
     std::vector<LongTriple> exponentStress;
-    for (__int128 mantissa : edgeMantissas) {
+    for (int128_t mantissa : edgeMantissas) {
         const auto trits = encodeBalanced41(mantissa);
         for (int exponent : exponents) {
             exponentStress.push_back(packMantissaExp(trits, exponent));

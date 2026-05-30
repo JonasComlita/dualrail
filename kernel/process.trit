@@ -1,0 +1,182 @@
+// kernel/process.trit - Layer 2 process and two-level MMU helpers.
+
+const PROC2_PAGE_WORDS: t40 = 27;
+const PROC2_L1_ENTRIES: t40 = 27;
+const PROC2_L2_ENTRIES: t40 = 27;
+const PROC2_PTE_SCALE: t40 = 243;
+
+const PROC2_FLAG_VALID: t40 = 1;
+const PROC2_FLAG_USER: t40 = 3;
+const PROC2_FLAG_READ: t40 = 9;
+const PROC2_FLAG_WRITE: t40 = 27;
+const PROC2_FLAG_EXEC: t40 = 81;
+const PROC2_FLAG_COW: t40 = 162;
+
+const PROC2_FAULT_NOT_PRESENT: t40 = -1;
+const PROC2_FAULT_PROTECTION: t40 = -2;
+const PROC2_FAULT_COW: t40 = -3;
+
+fn proc2_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn proc2_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn proc2_l1_index(vpn: t40) -> t40 {
+    var index: t40 = 0;
+    var cursor: t40 = vpn;
+    while cursor - PROC2_L2_ENTRIES >= 0 {
+        cursor = cursor - PROC2_L2_ENTRIES;
+        index = index + 1;
+    }
+    return index;
+}
+
+fn proc2_l2_index(vpn: t40) -> t40 {
+    return vpn - proc2_l1_index(vpn) * PROC2_L2_ENTRIES;
+}
+
+fn proc2_page_offset(vaddr: t40) -> t40 {
+    var offset: t40 = vaddr;
+    while offset - PROC2_PAGE_WORDS >= 0 {
+        offset = offset - PROC2_PAGE_WORDS;
+    }
+    return offset;
+}
+
+fn proc2_encode_pte(ppn: t40, flags: t40) -> t40 {
+    return ppn * PROC2_PTE_SCALE + flags;
+}
+
+fn proc2_pte_ppn(pte: t40) -> t40 {
+    if pte <= 0 {
+        return PROC2_FAULT_NOT_PRESENT;
+    }
+    var ppn: t40 = 0;
+    var cursor: t40 = pte;
+    while cursor - PROC2_PTE_SCALE >= 0 {
+        cursor = cursor - PROC2_PTE_SCALE;
+        ppn = ppn + 1;
+    }
+    return ppn;
+}
+
+fn proc2_pte_flags(pte: t40) -> t40 {
+    if pte <= 0 {
+        return 0;
+    }
+    var cursor: t40 = pte;
+    while cursor - PROC2_PTE_SCALE >= 0 {
+        cursor = cursor - PROC2_PTE_SCALE;
+    }
+    return cursor;
+}
+
+fn proc2_has_flag(flags: t40, flag: t40) -> t40 {
+    var window: t40 = flag * 3;
+    var cursor: t40 = flags;
+    while cursor - window >= 0 {
+        cursor = cursor - window;
+    }
+    if cursor - flag >= 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn proc2_ptr_state_from_version(version: t40) -> t40 {
+    if version < 0 {
+        return -1;
+    }
+    if version == 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn proc2_bootstrap_table(root_addr: t40, l1_index: t40, table_ppn: t40) -> t40 {
+    if l1_index < 0 {
+        return PROC2_FAULT_PROTECTION;
+    }
+    if l1_index - PROC2_L1_ENTRIES >= 0 {
+        return PROC2_FAULT_PROTECTION;
+    }
+    proc2_store(root_addr + l1_index, proc2_encode_pte(table_ppn, PROC2_FLAG_VALID + PROC2_FLAG_USER + PROC2_FLAG_READ + PROC2_FLAG_WRITE));
+    return 1;
+}
+
+fn proc2_leaf_addr(root_addr: t40, vpn: t40) -> t40 {
+    if vpn < 0 {
+        return PROC2_FAULT_NOT_PRESENT;
+    }
+    var l1: t40 = proc2_l1_index(vpn);
+    if l1 - PROC2_L1_ENTRIES >= 0 {
+        return PROC2_FAULT_NOT_PRESENT;
+    }
+    var pde: t40 = proc2_load(root_addr + l1);
+    if pde <= 0 {
+        return PROC2_FAULT_NOT_PRESENT;
+    }
+    return proc2_pte_ppn(pde) * PROC2_PAGE_WORDS + proc2_l2_index(vpn);
+}
+
+fn proc2_map(root_addr: t40, vpn: t40, ppn: t40, flags: t40) -> t40 {
+    var leaf: t40 = proc2_leaf_addr(root_addr, vpn);
+    if leaf < 0 {
+        return leaf;
+    }
+    proc2_store(leaf, proc2_encode_pte(ppn, flags + PROC2_FLAG_VALID));
+    return 1;
+}
+
+fn proc2_translate(root_addr: t40, vaddr: t40, need_write: t40) -> t40 {
+    var vpn: t40 = 0;
+    var cursor: t40 = vaddr;
+    while cursor - PROC2_PAGE_WORDS >= 0 {
+        cursor = cursor - PROC2_PAGE_WORDS;
+        vpn = vpn + 1;
+    }
+    var leaf: t40 = proc2_leaf_addr(root_addr, vpn);
+    if leaf < 0 {
+        return leaf;
+    }
+    var pte: t40 = proc2_load(leaf);
+    if pte <= 0 {
+        return PROC2_FAULT_NOT_PRESENT;
+    }
+    var flags: t40 = proc2_pte_flags(pte);
+    if need_write > 0 {
+        if proc2_has_flag(flags, PROC2_FLAG_COW) > 0 {
+            return PROC2_FAULT_COW;
+        }
+        if proc2_has_flag(flags, PROC2_FLAG_WRITE) <= 0 {
+            return PROC2_FAULT_PROTECTION;
+        }
+    }
+    return proc2_pte_ppn(pte) * PROC2_PAGE_WORDS + proc2_page_offset(vaddr);
+}
+
+fn proc2_fork_leaf_as_cow(parent_leaf_addr: t40, child_leaf_addr: t40) -> t40 {
+    var pte: t40 = proc2_load(parent_leaf_addr);
+    if pte <= 0 {
+        proc2_store(child_leaf_addr, 0);
+        return 0;
+    }
+    var ppn: t40 = proc2_pte_ppn(pte);
+    var flags: t40 = proc2_pte_flags(pte);
+    if proc2_has_flag(flags, PROC2_FLAG_WRITE) > 0 {
+        flags = flags - PROC2_FLAG_WRITE;
+    }
+    if proc2_has_flag(flags, PROC2_FLAG_COW) <= 0 {
+        flags = flags + PROC2_FLAG_COW;
+    }
+    var cow_pte: t40 = proc2_encode_pte(ppn, flags);
+    proc2_store(parent_leaf_addr, cow_pte);
+    proc2_store(child_leaf_addr, cow_pte);
+    return cow_pte;
+}

@@ -1,0 +1,391 @@
+// Minimal app SDK for the native TCL OS user experience.
+//
+// The functions here intentionally sit on the public VM ABI: console syscalls,
+// memory-mapped text cells, and GPU/mouse/sprite CSRs.
+
+const OS_TEXT_BASE: t40 = 60000;
+const OS_TEXT_WIDTH: t40 = 80;
+const OS_TEXT_HEIGHT: t40 = 25;
+const OS_TEXT_WORDS: t40 = 2000;
+const OS_EVENT_KIND_KEY: t40 = 1;
+const OS_EVENT_KIND_MOUSE: t40 = 2;
+const OS_EVENT_KIND_CLOSE: t40 = 3;
+
+fn os_putc(c: t40) -> t40 {
+    return sys_write_char(c);
+}
+
+fn os_newline() -> t40 {
+    return sys_newline();
+}
+
+fn os_print_int(value: t40) -> t40 {
+    return sys_write_int(value);
+}
+
+fn os_puts(addr: t40) -> t40 {
+    var i: t40 = 0;
+    var done: t40 = 0;
+    while 1 - done > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(addr + i); }
+        if c == 0 {
+            done = 1;
+        } else {
+            sys_write_char(c);
+            i = i + 1;
+        }
+    }
+    return i;
+}
+
+fn os_text_attr(ch: t40, color: t40) -> t40 {
+    return ch + color * 256;
+}
+
+fn os_text_cell(x: t40, y: t40, ch: t40, color: t40) -> t40 {
+    if x < 0 {
+        return 0;
+    }
+    if y < 0 {
+        return 0;
+    }
+    if x - OS_TEXT_WIDTH >= 0 {
+        return 0;
+    }
+    if y - OS_TEXT_HEIGHT >= 0 {
+        return 0;
+    }
+    unsafe { store(OS_TEXT_BASE + y * OS_TEXT_WIDTH + x, os_text_attr(ch, color)); }
+    return 1;
+}
+
+fn os_clear_text(color: t40) -> t40 {
+    var i: t40 = 0;
+    var blank: t40 = os_text_attr(32, color);
+    while OS_TEXT_WORDS - i > 0 {
+        unsafe { store(OS_TEXT_BASE + i, blank); }
+        i = i + 1;
+    }
+    return i;
+}
+
+fn os_gpu_mode(mode: t40) -> t40 {
+    unsafe { csr_write(gpu_mode, mode); }
+    return mode;
+}
+
+fn os_gpu_page(page: t40) -> t40 {
+    unsafe { csr_write(gpu_page, page); }
+    return page;
+}
+
+fn os_gpu_clear(page: t40, color: t40) -> t40 {
+    unsafe {
+        csr_write(gpu_page, page);
+        csr_write(gpu_color, color);
+        csr_write(gpu_cmd, 1);
+    }
+    return 1;
+}
+
+fn os_gpu_rect(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    unsafe {
+        csr_write(gpu_x1, x1);
+        csr_write(gpu_y1, y1);
+        csr_write(gpu_x2, x2);
+        csr_write(gpu_y2, y2);
+        csr_write(gpu_color, color);
+        csr_write(gpu_cmd, 2);
+    }
+    return 1;
+}
+
+fn os_gpu_line(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    unsafe {
+        csr_write(gpu_x1, x1);
+        csr_write(gpu_y1, y1);
+        csr_write(gpu_x2, x2);
+        csr_write(gpu_y2, y2);
+        csr_write(gpu_color, color);
+        csr_write(gpu_cmd, 3);
+    }
+    return 1;
+}
+
+fn os_sprite(x: t40, y: t40, glyph: t40, color: t40) -> t40 {
+    unsafe {
+        csr_write(sprite_x, x);
+        csr_write(sprite_y, y);
+        csr_write(sprite_attr, glyph + color * 256);
+    }
+    return 1;
+}
+
+fn os_key_available() -> t40 {
+    var available: t40 = 0;
+    unsafe { available = csr_read(console_in_ctrl); }
+    return available;
+}
+
+fn os_read_key() -> t40 {
+    var available: t40 = os_key_available();
+    if available <= 0 {
+        return -1;
+    }
+    var key: t40 = 0;
+    unsafe {
+        key = csr_read(console_in);
+        csr_write(console_in_ctrl, 1);
+    }
+    return key;
+}
+
+fn os_open(path_addr: t40, mode: t40) -> t40 {
+    return sys_open(path_addr, mode);
+}
+
+fn os_close(fd: t40) -> t40 {
+    return sys_close(fd);
+}
+
+fn os_read(fd: t40, out_addr: t40, count_words: t40) -> t40 {
+    return sys_read(fd, out_addr, count_words);
+}
+
+fn os_write(fd: t40, src_addr: t40, count_words: t40) -> t40 {
+    return sys_write(fd, src_addr, count_words);
+}
+
+fn os_stat(path_addr: t40, out_addr: t40) -> t40 {
+    return sys_stat(path_addr, out_addr);
+}
+
+fn os_readdir(path_addr: t40, out_addr: t40, max_words: t40) -> t40 {
+    return sys_readdir(path_addr, out_addr, max_words);
+}
+
+fn os_ipc_send(channel: t40, word: t40) -> t40 {
+    return sys_ipc_send(channel, word);
+}
+
+fn os_ipc_recv(channel: t40, out_addr: t40) -> t40 {
+    return sys_ipc_recv(channel, out_addr);
+}
+
+fn os_fb_init(width: t40, height: t40) -> t40 {
+    return sys_fb_init(width, height);
+}
+
+fn os_fb_flip() -> t40 {
+    return sys_fb_flip();
+}
+
+fn os_window_create(x: t40, y: t40, width: t40, height: t40) -> t40 {
+    return sys_window_create(x, y, width, height);
+}
+
+fn os_window_get_buffer(window_id: t40) -> t40 {
+    return sys_window_get_buffer(window_id);
+}
+
+fn os_window_present(window_id: t40) -> t40 {
+    return sys_window_present(window_id);
+}
+
+fn os_window_move(window_id: t40, x: t40, y: t40) -> t40 {
+    return sys_window_move(window_id, x, y);
+}
+
+fn os_window_set_z(window_id: t40, z: t40) -> t40 {
+    return sys_window_set_z(window_id, z);
+}
+
+fn os_window_destroy(window_id: t40) -> t40 {
+    return sys_window_destroy(window_id);
+}
+
+fn os_window_read_event(window_id: t40, out_addr: t40) -> t40 {
+    return sys_window_read_event(window_id, out_addr);
+}
+
+fn os_window_resize(window_id: t40, width: t40, height: t40) -> t40 {
+    return sys_window_resize(window_id, width, height);
+}
+
+fn os_window_request_close(window_id: t40) -> t40 {
+    return sys_window_request_close(window_id);
+}
+
+fn os_event_kind(event_addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = load(event_addr); }
+    return val;
+}
+
+fn os_event_x_or_key(event_addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = load(event_addr + 1); }
+    return val;
+}
+
+fn os_event_y(event_addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = load(event_addr + 2); }
+    return val;
+}
+
+fn os_event_modifiers(event_addr: t40) -> t40 {
+    var val: t40 = 0;
+    unsafe { val = load(event_addr + 3); }
+    return val;
+}
+
+fn os_window_pixel_offset(width: t40, x: t40, y: t40) -> t40 {
+    return (y * width + x) * 3;
+}
+
+fn os_window_plot_rgb(buf: t40, width: t40, height: t40, x: t40, y: t40, r: t40, g: t40, b: t40) -> t40 {
+    if buf <= 0 {
+        return 0;
+    }
+    if x < 0 {
+        return 0;
+    }
+    if y < 0 {
+        return 0;
+    }
+    if x - width >= 0 {
+        return 0;
+    }
+    if y - height >= 0 {
+        return 0;
+    }
+    var off: t40 = os_window_pixel_offset(width, x, y);
+    unsafe {
+        store(buf + off, r);
+        store(buf + off + 1, g);
+        store(buf + off + 2, b);
+    }
+    return 1;
+}
+
+fn os_window_fill_rgb(buf: t40, width: t40, height: t40, r: t40, g: t40, b: t40) -> t40 {
+    if buf <= 0 {
+        return 0;
+    }
+    if width <= 0 {
+        return 0;
+    }
+    if height <= 0 {
+        return 0;
+    }
+    var words: t40 = width * height * 3;
+    var i: t40 = 0;
+    while words - i > 0 {
+        unsafe {
+            store(buf + i, r);
+            store(buf + i + 1, g);
+            store(buf + i + 2, b);
+        }
+        i = i + 3;
+    }
+    return words;
+}
+
+fn os_window_fill_rect_rgb(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, r: t40, g: t40, b: t40) -> t40 {
+    if buf <= 0 {
+        return 0;
+    }
+    if width <= 0 {
+        return 0;
+    }
+    if height <= 0 {
+        return 0;
+    }
+    if w <= 0 {
+        return 0;
+    }
+    if h <= 0 {
+        return 0;
+    }
+    var x0: t40 = x;
+    var y0: t40 = y;
+    var x1: t40 = x + w;
+    var y1: t40 = y + h;
+    if x0 < 0 {
+        x0 = 0;
+    }
+    if y0 < 0 {
+        y0 = 0;
+    }
+    if x1 - width > 0 {
+        x1 = width;
+    }
+    if y1 - height > 0 {
+        y1 = height;
+    }
+    if x1 - x0 <= 0 {
+        return 0;
+    }
+    if y1 - y0 <= 0 {
+        return 0;
+    }
+    var drawn: t40 = 0;
+    var yy: t40 = y0;
+    while y1 - yy > 0 {
+        var off: t40 = os_window_pixel_offset(width, x0, yy);
+        var xx: t40 = x0;
+        while x1 - xx > 0 {
+            unsafe {
+                store(buf + off, r);
+                store(buf + off + 1, g);
+                store(buf + off + 2, b);
+            }
+            off = off + 3;
+            drawn = drawn + 1;
+            xx = xx + 1;
+        }
+        yy = yy + 1;
+    }
+    return drawn;
+}
+
+fn os_window_draw_rect_rgb(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, r: t40, g: t40, b: t40) -> t40 {
+    if w <= 0 {
+        return 0;
+    }
+    if h <= 0 {
+        return 0;
+    }
+    var drawn: t40 = 0;
+    drawn = drawn + os_window_fill_rect_rgb(buf, width, height, x, y, w, 1, r, g, b);
+    if h - 1 > 0 {
+        drawn = drawn + os_window_fill_rect_rgb(buf, width, height, x, y + h - 1, w, 1, r, g, b);
+    }
+    if h - 2 > 0 {
+        drawn = drawn + os_window_fill_rect_rgb(buf, width, height, x, y + 1, 1, h - 2, r, g, b);
+        if w - 1 > 0 {
+            drawn = drawn + os_window_fill_rect_rgb(buf, width, height, x + w - 1, y + 1, 1, h - 2, r, g, b);
+        }
+    }
+    return drawn;
+}
+
+fn os_mouse_x() -> t40 {
+    var val: t40 = 0;
+    unsafe { val = csr_read(mouse_x); }
+    return val;
+}
+
+fn os_mouse_y() -> t40 {
+    var val: t40 = 0;
+    unsafe { val = csr_read(mouse_y); }
+    return val;
+}
+
+fn os_mouse_btn() -> t40 {
+    var val: t40 = 0;
+    unsafe { val = csr_read(mouse_btn); }
+    return val;
+}

@@ -639,7 +639,7 @@ void testCompilerGoldenPrograms() {
                 return 0;
             }
          )",
-                         "Hi\n", 65536, 65536, 50000});
+                         "Hi\n", 65536, 1000000, 50000});
         cases.push_back({"ulib_mini_vector",
                          ulib_mini + R"(
             fn main() -> t40 {
@@ -652,7 +652,7 @@ void testCompilerGoldenPrograms() {
                 return 0;
             }
          )",
-                         "42\n", 65536, 65536, 50000});
+                         "42\n", 65536, 1000000, 50000});
     }
 
     if (envFlag("C5_FULL_ULIB") && !ulib.empty()) {
@@ -669,7 +669,7 @@ void testCompilerGoldenPrograms() {
                 return 0;
             }
          )",
-                         "Hi\n", 65536, 65536, 50000});
+                         "Hi\n", 65536, 1000000, 50000});
         cases.push_back({"ulib_vector",
                          ulib + R"(
             fn main() -> t40 {
@@ -682,7 +682,7 @@ void testCompilerGoldenPrograms() {
                 return 0;
             }
          )",
-                         "42\n", 65536, 65536, 50000});
+                         "42\n", 65536, 1000000, 50000});
     }
 
     std::vector<std::string> bootstrap_outputs;

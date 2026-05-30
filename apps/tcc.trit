@@ -1,0 +1,64 @@
+// apps/tcc.trit - Layer 6 native compiler shell.
+
+fn tcc_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn tcc_seed_banner(addr: t40) -> t40 {
+    tcc_store(addr + 0, 84);
+    tcc_store(addr + 1, 67);
+    tcc_store(addr + 2, 67);
+    tcc_store(addr + 3, 32);
+    tcc_store(addr + 4, 82);
+    tcc_store(addr + 5, 69);
+    tcc_store(addr + 6, 65);
+    tcc_store(addr + 7, 68);
+    tcc_store(addr + 8, 89);
+    tcc_store(addr + 9, 0);
+    return addr;
+}
+
+fn tcc_is_alpha(c: t40) -> t40 {
+    if c - 65 >= 0 {
+        if 90 - c >= 0 {
+            return 1;
+        }
+    }
+    if c - 97 >= 0 {
+        if 122 - c >= 0 {
+            return 1;
+        }
+    }
+    if c - 95 == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn tcc_is_digit(c: t40) -> t40 {
+    if c - 48 >= 0 {
+        if 57 - c >= 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn tcc_token_class(c: t40) -> t40 {
+    if tcc_is_alpha(c) > 0 {
+        return 1;
+    }
+    if tcc_is_digit(c) > 0 {
+        return 2;
+    }
+    if c - 0 == 0 {
+        return 0;
+    }
+    return -1;
+}
+
+fn main() -> t40 {
+    libc_puts(tcc_seed_banner(2032));
+    return tcc_token_class(116);
+}
