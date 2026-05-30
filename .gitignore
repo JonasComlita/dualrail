@@ -5,6 +5,8 @@ qwen3.627b_weights/converted_qwen/
 qwen3.627b_weights/raw/
 build/
 build_fresh/
+build_cuda/
+build_sycl/
 todo.md
 implementationplan.md
 treatcode/node_modules/
