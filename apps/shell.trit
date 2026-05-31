@@ -157,6 +157,7 @@ fn sh_builtin_ls() -> t40 {
         var inode: t40 = sh_load(SH_OUT + pos);
         var kind:  t40 = sh_load(SH_OUT + pos + 1);
         var nlen:  t40 = sh_load(SH_OUT + pos + 2);
+        var ni: t40 = 0;
         if nlen <= 0 {
             pos = written; // stop
         } else {
@@ -169,7 +170,6 @@ fn sh_builtin_ls() -> t40 {
                     sh_putc(45); sh_putc(32); // "- "
                 }
             }
-            var ni: t40 = 0;
             while nlen - ni > 0 {
                 sh_putc(sh_load(SH_OUT + pos + 3 + ni));
                 ni = ni + 1;

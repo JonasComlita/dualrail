@@ -18,6 +18,12 @@ const DTB_FRAMEBUFFER_CTRL: t40 = 11;
 const DTB_FRAMEBUFFER_MAX_W: t40 = 12;
 const DTB_FRAMEBUFFER_MAX_H: t40 = 13;
 const DTB_FRAMEBUFFER_FORMAT: t40 = 14;
+const DTB_BLOCK_INDEX: t40 = 15;
+const DTB_BLOCK_ADDR: t40 = 16;
+const DTB_BLOCK_CMD: t40 = 17;
+const DTB_BLOCK_STATUS: t40 = 18;
+const DTB_BLOCK_COUNT: t40 = 19;
+const DTB_BLOCK_WORDS: t40 = 20;
 
 const FB_DESC_BASE: t40 = 3060;
 const FB_DESC_PHYS_BASE: t40 = 0;
@@ -88,6 +94,30 @@ fn hal_get_framebuffer_max_width() -> t40 {
 
 fn hal_get_framebuffer_max_height() -> t40 {
     return hal_dtb_slot(DTB_FRAMEBUFFER_MAX_H, 360);
+}
+
+fn hal_get_block_index_id() -> t40 {
+    return hal_dtb_slot(DTB_BLOCK_INDEX, 41);
+}
+
+fn hal_get_block_addr_id() -> t40 {
+    return hal_dtb_slot(DTB_BLOCK_ADDR, 42);
+}
+
+fn hal_get_block_cmd_id() -> t40 {
+    return hal_dtb_slot(DTB_BLOCK_CMD, 43);
+}
+
+fn hal_get_block_status_id() -> t40 {
+    return hal_dtb_slot(DTB_BLOCK_STATUS, 44);
+}
+
+fn hal_get_block_count() -> t40 {
+    unsafe { return csr_read(block_count); }
+}
+
+fn hal_get_block_words() -> t40 {
+    unsafe { return csr_read(block_words); }
 }
 
 fn hal_write_console_char(c: t40) -> void {

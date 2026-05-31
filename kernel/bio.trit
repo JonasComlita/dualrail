@@ -111,3 +111,29 @@ fn bio_wal_replay_needed(row: t40) -> t40 {
     }
     return 0;
 }
+
+fn bio_device_read(block_no: t40, dst_addr: t40) -> t40 {
+    unsafe {
+        csr_write(block_index, block_no);
+        csr_write(block_addr, dst_addr);
+        csr_write(block_cmd, 1);
+        return csr_read(block_status);
+    }
+}
+
+fn bio_device_write(block_no: t40, src_addr: t40) -> t40 {
+    unsafe {
+        csr_write(block_index, block_no);
+        csr_write(block_addr, src_addr);
+        csr_write(block_cmd, 2);
+        return csr_read(block_status);
+    }
+}
+
+fn bio_device_block_count() -> t40 {
+    unsafe { return csr_read(block_count); }
+}
+
+fn bio_device_block_words() -> t40 {
+    unsafe { return csr_read(block_words); }
+}

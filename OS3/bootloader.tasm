@@ -60,6 +60,24 @@ boot:
     mov r1, 5               ; DTB_FRAMEBUFFER_FORMAT (T5 RGB)
     store r1, r2, 14
 
+    mov r1, 41              ; DTB_BLOCK_INDEX (CSR_BLOCK_INDEX = 41)
+    store r1, r2, 15
+
+    mov r1, 42              ; DTB_BLOCK_ADDR (CSR_BLOCK_ADDR = 42)
+    store r1, r2, 16
+
+    mov r1, 43              ; DTB_BLOCK_CMD (CSR_BLOCK_CMD = 43)
+    store r1, r2, 17
+
+    mov r1, 44              ; DTB_BLOCK_STATUS (CSR_BLOCK_STATUS = 44)
+    store r1, r2, 18
+
+    mov r1, 45              ; DTB_BLOCK_COUNT (CSR_BLOCK_COUNT = 45)
+    store r1, r2, 19
+
+    mov r1, 46              ; DTB_BLOCK_WORDS (CSR_BLOCK_WORDS = 46)
+    store r1, r2, 20
+
     ; Call standard kernel initialization
     call kernel_init
 

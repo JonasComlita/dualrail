@@ -48,7 +48,8 @@ sandbox::vm::VMState compileRun(
     const std::string& name,
     const std::string& source,
     long long expected_r13,
-    const std::string& expected_output = std::string()) {
+    const std::string& expected_output = std::string(),
+    const std::string& console_input = std::string()) {
 
     using namespace sandbox::compiler;
     CompileResult compiled = compileSource(name, source);
@@ -63,6 +64,9 @@ sandbox::vm::VMState compileRun(
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
                name + " image loads");
+        if (!console_input.empty()) {
+            vm.enqueueConsoleAscii(console_input);
+        }
         const auto result = sandbox::vm::run(vm, 1000000);
         if (!result.halted()) {
             std::cout << "DEBUG " << name << ": status=" << static_cast<int>(result.status)
@@ -229,12 +233,26 @@ void testLayer5Libc() {
 void testLayer6Apps() {
     std::cout << "[4] Layer 6 shell and compiler apps\n";
     const std::string libc = readTextFile("ulib_c.trit");
+    const std::string ulibMini = readTextFile("ulib_mini.trit");
+    const std::string sdk = readTextFile("apps/os_sdk.trit");
+    const std::string token = readTextFile("tcl_token.trit");
+    const std::string lexer = readTextFile("tcl_lexer.trit");
+    const std::string frontend = readTextFile("tcl_frontend.trit");
     const std::string shell = readTextFile("apps/shell.trit");
     const std::string tcc = readTextFile("apps/tcc.trit");
+    expect(!sdk.empty(), "os_sdk.trit is present");
+    expect(!ulibMini.empty(), "ulib_mini.trit is present");
+    expect(!token.empty(), "tcl_token.trit is present");
+    expect(!lexer.empty(), "tcl_lexer.trit is present");
+    expect(!frontend.empty(), "tcl_frontend.trit is present");
     expect(!shell.empty(), "shell.trit is present");
     expect(!tcc.empty(), "tcc.trit is present");
-    compileRun("shell_app.trit", libc + "\n" + shell, 0, "TRIT SHELL\n");
-    compileRun("tcc_app.trit", libc + "\n" + tcc, 1, "TCC READY\n");
+    compileRun("shell_app.trit", libc + "\n" + sdk + "\n" + shell,
+               0, "TRIT SHELL\n", "exit\r");
+    compileRun("tcc_app.trit",
+               libc + "\n" + ulibMini + "\n" + sdk + "\n" + token + "\n" +
+                   lexer + "\n" + frontend + "\n" + tcc,
+               0, "TCC v0.1\n", "\r");
 }
 
 } // namespace

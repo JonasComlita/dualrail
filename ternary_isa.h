@@ -656,7 +656,13 @@ static constexpr int CSR_GPU_MODE       = 37;
 static constexpr int CSR_SPRITE_X       = 38;
 static constexpr int CSR_SPRITE_Y       = 39;
 static constexpr int CSR_SPRITE_ATTR    = 40;
-static constexpr int CSR_MAX_ID          = CSR_SPRITE_ATTR;
+static constexpr int CSR_BLOCK_INDEX    = 41;
+static constexpr int CSR_BLOCK_ADDR     = 42;
+static constexpr int CSR_BLOCK_CMD      = 43;
+static constexpr int CSR_BLOCK_STATUS   = 44;
+static constexpr int CSR_BLOCK_COUNT    = 45;
+static constexpr int CSR_BLOCK_WORDS    = 46;
+static constexpr int CSR_MAX_ID          = CSR_BLOCK_WORDS;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -705,6 +711,12 @@ static constexpr int CSR_MAX_ID          = CSR_SPRITE_ATTR;
         case CSR_SPRITE_X: return "sprite_x";
         case CSR_SPRITE_Y: return "sprite_y";
         case CSR_SPRITE_ATTR: return "sprite_attr";
+        case CSR_BLOCK_INDEX: return "block_index";
+        case CSR_BLOCK_ADDR: return "block_addr";
+        case CSR_BLOCK_CMD: return "block_cmd";
+        case CSR_BLOCK_STATUS: return "block_status";
+        case CSR_BLOCK_COUNT: return "block_count";
+        case CSR_BLOCK_WORDS: return "block_words";
         default: return "unknown";
     }
 }

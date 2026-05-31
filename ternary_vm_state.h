@@ -1306,6 +1306,12 @@ struct VMState {
     long long                sprite_x = 0;
     long long                sprite_y = 0;
     long long                sprite_attr = 0;
+    long long                block_index = 0;
+    long long                block_addr = 0;
+    long long                block_status = 0;
+    std::vector<std::vector<long long>> block_device =
+        std::vector<std::vector<long long>>(192, std::vector<long long>(MMU_PAGE_WORDS, 0));
+    std::vector<bool>        block_dirty = std::vector<bool>(192, false);
     int                      user_imem_ptbr = 0;
     int                      user_imem_pages = 0;
     int                      user_dmem_ptbr = 0;
@@ -1399,6 +1405,40 @@ struct VMState {
         console_input.clear();
     }
 
+    void resetBlockDevice(int blocks = 192) {
+        const int count = std::max(1, blocks);
+        block_device.assign(static_cast<std::size_t>(count),
+                            std::vector<long long>(MMU_PAGE_WORDS, 0));
+        block_dirty.assign(static_cast<std::size_t>(count), false);
+        block_index = 0;
+        block_addr = 0;
+        block_status = 0;
+    }
+
+    [[nodiscard]] bool loadBlockImage(const std::vector<long long>& image) {
+        if (image.empty() || static_cast<int>(image.size()) % MMU_PAGE_WORDS != 0) {
+            return false;
+        }
+        const int blocks = static_cast<int>(image.size()) / MMU_PAGE_WORDS;
+        resetBlockDevice(blocks);
+        for (int block = 0; block < blocks; ++block) {
+            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
+                block_device[static_cast<std::size_t>(block)][static_cast<std::size_t>(word)] =
+                    image[static_cast<std::size_t>(block * MMU_PAGE_WORDS + word)];
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] std::vector<long long> blockImage() const {
+        std::vector<long long> out;
+        out.reserve(block_device.size() * static_cast<std::size_t>(MMU_PAGE_WORDS));
+        for (const auto& block : block_device) {
+            out.insert(out.end(), block.begin(), block.end());
+        }
+        return out;
+    }
+
     // Clear both memories (set all words to zero / NOP).
     void clearMemory() {
         imem.reset();
@@ -1470,6 +1510,9 @@ struct VMState {
         sprite_x = 0;
         sprite_y = 0;
         sprite_attr = 0;
+        block_index = 0;
+        block_addr = 0;
+        block_status = 0;
         user_imem_ptbr = 0;
         user_imem_pages = 0;
         user_dmem_ptbr = 0;
@@ -1560,10 +1603,75 @@ struct VMState {
             case CSR_SPRITE_X: value = sprite_x; break;
             case CSR_SPRITE_Y: value = sprite_y; break;
             case CSR_SPRITE_ATTR: value = sprite_attr; break;
+            case CSR_BLOCK_INDEX: value = block_index; break;
+            case CSR_BLOCK_ADDR: value = block_addr; break;
+            case CSR_BLOCK_CMD: value = 0; break;
+            case CSR_BLOCK_STATUS: value = block_status; break;
+            case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.size()); break;
+            case CSR_BLOCK_WORDS: value = MMU_PAGE_WORDS; break;
             default: return false;
         }
         out = ops::fromLong(value);
         return true;
+    }
+
+    void executeBlockCommand(long long cmd) {
+        const int index = static_cast<int>(block_index);
+        const int addr = static_cast<int>(block_addr);
+        if (index < 0 || index >= static_cast<int>(block_device.size()) || addr < 0) {
+            block_status = -1;
+            return;
+        }
+        if (cmd == 1) {
+            if (addr + MMU_PAGE_WORDS > dmem.size()) {
+                block_status = -1;
+                return;
+            }
+            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+                if (dmem.store(addr + i, ops::fromLong(
+                        block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)])) !=
+                    MemFaultCode::OK) {
+                    block_status = -1;
+                    return;
+                }
+            }
+            block_status = 1;
+        } else if (cmd == 2) {
+            if (addr + MMU_PAGE_WORDS > dmem.size()) {
+                block_status = -1;
+                return;
+            }
+            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+                auto [value, fault] = dmem.load(addr + i);
+                if (fault != MemFaultCode::OK) {
+                    block_status = -1;
+                    return;
+                }
+                block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)] =
+                    ops::toLong(value);
+            }
+            block_dirty[static_cast<std::size_t>(index)] = true;
+            block_status = 1;
+        } else if (cmd == 3) {
+            if (addr + MMU_PAGE_WORDS > imem.size()) {
+                block_status = -1;
+                return;
+            }
+            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+                TritWord27 word{};
+                word.bits = static_cast<uint64_t>(
+                    block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)]);
+                if (imem.write(addr + i, word) != MemFaultCode::OK) {
+                    block_status = -1;
+                    return;
+                }
+            }
+            block_status = 1;
+        } else if (cmd < 0) {
+            block_status = 0;
+        } else {
+            block_status = -1;
+        }
     }
 
     void executeGpuCommand(long long cmd) {
@@ -1792,6 +1900,21 @@ struct VMState {
             case CSR_SPRITE_ATTR:
                 sprite_attr = value;
                 return true;
+            case CSR_BLOCK_INDEX:
+                block_index = value;
+                return true;
+            case CSR_BLOCK_ADDR:
+                block_addr = value;
+                return true;
+            case CSR_BLOCK_CMD:
+                executeBlockCommand(value);
+                return true;
+            case CSR_BLOCK_STATUS:
+                block_status = value;
+                return true;
+            case CSR_BLOCK_COUNT:
+            case CSR_BLOCK_WORDS:
+                return false;
             default:
                 return false;
         }

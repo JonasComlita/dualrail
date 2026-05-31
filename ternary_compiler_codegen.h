@@ -653,7 +653,11 @@ private:
                name == "sys_window_present" || name == "sys_window_move" ||
                name == "sys_window_set_z" || name == "sys_window_destroy" ||
                name == "sys_window_read_event" || name == "sys_window_resize" ||
-               name == "sys_window_request_close";
+               name == "sys_window_request_close" || name == "sys_socket" ||
+               name == "sys_bind" || name == "sys_connect" ||
+               name == "sys_send" || name == "sys_recv" ||
+               name == "sys_mkdir" || name == "sys_unlink" ||
+               name == "sys_sleep" || name == "sys_ps";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -2577,6 +2581,15 @@ private:
         if (name == "sys_window_read_event") return runtime::sys_window_read_event;
         if (name == "sys_window_resize") return runtime::sys_window_resize;
         if (name == "sys_window_request_close") return runtime::sys_window_request_close;
+        if (name == "sys_socket") return runtime::sys_socket;
+        if (name == "sys_bind") return runtime::sys_bind;
+        if (name == "sys_connect") return runtime::sys_connect;
+        if (name == "sys_send") return runtime::sys_send;
+        if (name == "sys_recv") return runtime::sys_recv;
+        if (name == "sys_mkdir") return runtime::sys_mkdir;
+        if (name == "sys_unlink") return runtime::sys_unlink;
+        if (name == "sys_sleep") return runtime::sys_sleep;
+        if (name == "sys_ps") return runtime::sys_ps;
         return 0;
     }
 
@@ -2599,7 +2612,18 @@ private:
                service == runtime::sys_window_get_buffer ||
                service == runtime::sys_window_present ||
                service == runtime::sys_window_read_event ||
-               service == runtime::sys_window_request_close;
+               service == runtime::sys_window_request_close ||
+               service == runtime::sys_socket ||
+               service == runtime::sys_bind ||
+               service == runtime::sys_connect ||
+               service == runtime::sys_send ||
+               service == runtime::sys_recv ||
+               service == runtime::sys_mkdir ||
+               service == runtime::sys_unlink ||
+               service == runtime::sys_waitpid ||
+               service == runtime::sys_exit ||
+               service == runtime::sys_sleep ||
+               service == runtime::sys_ps;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {

@@ -277,6 +277,12 @@ struct AssemblyResult {
     if (s == "sprite_x") return CSR_SPRITE_X;
     if (s == "sprite_y") return CSR_SPRITE_Y;
     if (s == "sprite_attr") return CSR_SPRITE_ATTR;
+    if (s == "block_index") return CSR_BLOCK_INDEX;
+    if (s == "block_addr") return CSR_BLOCK_ADDR;
+    if (s == "block_cmd") return CSR_BLOCK_CMD;
+    if (s == "block_status") return CSR_BLOCK_STATUS;
+    if (s == "block_count") return CSR_BLOCK_COUNT;
+    if (s == "block_words") return CSR_BLOCK_WORDS;
 
     if (s.empty()) return -1;
     for (char c : s) {

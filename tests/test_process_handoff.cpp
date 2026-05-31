@@ -1,10 +1,10 @@
-#include "ternary_compiler.h"
-#include "ternary_vm.h"
+#include "ternary_os.h"
 
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -124,7 +124,7 @@ sandbox::compiler::LinkResult compileInlineApp(
     return linked;
 }
 
-std::string buildBootAssembly(const sandbox::compiler::LinkResult& calc) {
+std::string buildBootAssembly() {
     std::ostringstream boot;
     boot << ".text\n";
     boot << "boot:\n";
@@ -137,43 +137,7 @@ std::string buildBootAssembly(const sandbox::compiler::LinkResult& calc) {
     boot << "    mov r1, native_trap_entry\n";
     boot << "    csrw tvec, r1\n";
 
-    appendStoreCString(boot, 10000, "/bin");
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10000\n";
-    boot << "    mov r15, 2\n";
-    boot << "    call vfs_create\n";
-
     appendStoreCString(boot, 10020, "/bin/calculator");
-    appendStoreWord(boot, 10100, 0, sandbox::vm::EXEC_MAGIC);
-    appendStoreWord(boot, 10100, 1, sandbox::vm::EXEC_VERSION_V1);
-    appendStoreWord(boot, 10100, 2, sandbox::vm::EXEC_ABI_VERSION_V1);
-    appendStoreWord(boot, 10100, 3, calc.executable_header.entry_virtual_pc);
-    appendStoreWord(boot, 10100, 4, calc.executable_header.text_pages);
-    appendStoreWord(boot, 10100, 5, calc.executable_header.data_pages);
-    appendStoreWord(boot, 10100, 6, calc.executable_header.stack_words);
-    appendStoreWord(boot, 10100, 7, calc.executable_header.syscall_abi_version);
-    appendStoreWord(boot, 10100, 8, calc.executable_header.flags);
-    appendStoreWord(boot, 10100, 9, kCalcTextPpn);
-
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10020\n";
-    boot << "    mov r15, 3\n";
-    boot << "    call vfs_create\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r14, 10020\n";
-    boot << "    mov r15, 2\n";
-    boot << "    call vfs_open\n";
-    boot << "    mov r2, 10250\n";
-    boot << "    store r13, r2, 0\n";
-    boot << "    mov r13, 1\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    mov r15, 10100\n";
-    boot << "    mov r16, 10\n";
-    boot << "    call vfs_write\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r2, 10250\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    call vfs_close\n";
     boot << "    mov r13, 0\n";
     boot << "    mov r14, 10020\n";
     boot << "    mov r15, 1\n";
@@ -202,7 +166,7 @@ std::string buildBootAssembly(const sandbox::compiler::LinkResult& calc) {
     return boot.str();
 }
 
-std::string buildWindowProbeBootAssembly(const sandbox::compiler::LinkResult& probe) {
+std::string buildWindowProbeBootAssembly() {
     std::ostringstream boot;
     boot << ".text\n";
     boot << "boot:\n";
@@ -215,43 +179,7 @@ std::string buildWindowProbeBootAssembly(const sandbox::compiler::LinkResult& pr
     boot << "    mov r1, native_trap_entry\n";
     boot << "    csrw tvec, r1\n";
 
-    appendStoreCString(boot, 10000, "/bin");
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10000\n";
-    boot << "    mov r15, 2\n";
-    boot << "    call vfs_create\n";
-
-    appendStoreCString(boot, 10030, "/bin/window_probe");
-    appendStoreWord(boot, 10100, 0, sandbox::vm::EXEC_MAGIC);
-    appendStoreWord(boot, 10100, 1, sandbox::vm::EXEC_VERSION_V1);
-    appendStoreWord(boot, 10100, 2, sandbox::vm::EXEC_ABI_VERSION_V1);
-    appendStoreWord(boot, 10100, 3, probe.executable_header.entry_virtual_pc);
-    appendStoreWord(boot, 10100, 4, probe.executable_header.text_pages);
-    appendStoreWord(boot, 10100, 5, probe.executable_header.data_pages);
-    appendStoreWord(boot, 10100, 6, probe.executable_header.stack_words);
-    appendStoreWord(boot, 10100, 7, probe.executable_header.syscall_abi_version);
-    appendStoreWord(boot, 10100, 8, probe.executable_header.flags);
-    appendStoreWord(boot, 10100, 9, kWindowProbeTextPpn);
-
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10030\n";
-    boot << "    mov r15, 3\n";
-    boot << "    call vfs_create\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r14, 10030\n";
-    boot << "    mov r15, 2\n";
-    boot << "    call vfs_open\n";
-    boot << "    mov r2, 10250\n";
-    boot << "    store r13, r2, 0\n";
-    boot << "    mov r13, 1\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    mov r15, 10100\n";
-    boot << "    mov r16, 10\n";
-    boot << "    call vfs_write\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r2, 10250\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    call vfs_close\n";
+    appendStoreCString(boot, 10030, "/bin/probe");
     boot << "    mov r13, 0\n";
     boot << "    mov r14, 10030\n";
     boot << "    mov r15, 9\n";
@@ -259,31 +187,6 @@ std::string buildWindowProbeBootAssembly(const sandbox::compiler::LinkResult& pr
     boot << "    mov r17, 1\n";
     boot << "    mov r18, 128\n";
     boot << "    call app_register\n";
-
-    appendStoreCString(boot, 10300, "/probe");
-    appendStoreWord(boot, 10320, 0, 80);
-    appendStoreWord(boot, 10320, 1, 82);
-    appendStoreWord(boot, 10320, 2, 79);
-    appendStoreWord(boot, 10320, 3, 66);
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10300\n";
-    boot << "    mov r15, 1\n";
-    boot << "    call vfs_create\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r14, 10300\n";
-    boot << "    mov r15, 2\n";
-    boot << "    call vfs_open\n";
-    boot << "    mov r2, 10330\n";
-    boot << "    store r13, r2, 0\n";
-    boot << "    mov r13, 1\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    mov r15, 10320\n";
-    boot << "    mov r16, 4\n";
-    boot << "    call vfs_write\n";
-    boot << "    mov r13, 1\n";
-    boot << "    mov r2, 10330\n";
-    boot << "    load r14, r2, 0\n";
-    boot << "    call vfs_close\n";
 
     boot << "    mov r1, ctx_launcher\n";
     boot << "    csrw scratch, r1\n";
@@ -322,9 +225,17 @@ void testDesktopLaunchesMappedCalculator() {
     if (!compiled_kernel.success || !desktop.success || !calc.success) return;
     expect(calc.executable_header.text_pages <= kHwPtMaxPages,
            "dead-stripped calculator image fits the current IMEM page-table contract");
+    sandbox::os::NativeVfsImageBuilder rootfs(768);
+    expect(rootfs.installBaseLayout().ok(), "calculator rootfs base layout installs");
+    expect(rootfs.addExecutableImage("/bin/calculator",
+                                    calc.assembled.program,
+                                    calc.executable_header,
+                                    kCalcTextPpn).ok(),
+           "calculator executable image installs into native disk root");
+    std::vector<long long> rootImage = rootfs.image();
 
     const std::string image =
-        buildBootAssembly(calc) + "\n" +
+        buildBootAssembly() + "\n" +
         trap + "\n" +
         compiled_kernel.assembly + "\n" +
         ".text\n.org " + std::to_string(kDesktopPhys) + "\n" +
@@ -343,8 +254,8 @@ void testDesktopLaunchesMappedCalculator() {
     if (!assembled.success) return;
     expect(sandbox::vm::assembler::loadAndReset(vm, assembled),
            "native desktop boot image loads");
-    expect(vm.imem.loadProgram(calc.assembled.program, kCalcTextPhys),
-           "calculator text image is installed at its physical IMEM pages");
+    expect(vm.loadBlockImage(rootImage),
+           "calculator native root image loads into VM block device");
     vm.enqueueConsoleAscii("1a");
 
     const auto result = sandbox::vm::run(vm, 8000000);
@@ -437,6 +348,8 @@ void testDesktopLaunchesMappedCalculator() {
                imem_pte.present && imem_pte.user && imem_pte.execute &&
                imem_pte.ppn == kCalcTextPpn,
            "IMEM PTE maps virtual page zero to the calculator text page");
+    expect(vm.imem.words[kCalcTextPhys] == calc.assembled.program.front(),
+           "desktop-launched calculator text was loaded from disk into IMEM");
 
     auto [dmem_pte_value, dmem_pte_fault] = vm.dmem.load(kHwPtBase + kHwPtMaxPages);
     expect(dmem_pte_fault == sandbox::vm::MemFaultCode::OK,
@@ -473,19 +386,12 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
                 store(addr + 2, 105);
                 store(addr + 3, 110);
                 store(addr + 4, 47);
-                store(addr + 5, 119);
-                store(addr + 6, 105);
-                store(addr + 7, 110);
-                store(addr + 8, 100);
-                store(addr + 9, 111);
-                store(addr + 10, 119);
-                store(addr + 11, 95);
-                store(addr + 12, 112);
-                store(addr + 13, 114);
-                store(addr + 14, 111);
-                store(addr + 15, 98);
-                store(addr + 16, 101);
-                store(addr + 17, 0);
+                store(addr + 5, 112);
+                store(addr + 6, 114);
+                store(addr + 7, 111);
+                store(addr + 8, 98);
+                store(addr + 9, 101);
+                store(addr + 10, 0);
             }
             return addr;
         }
@@ -498,9 +404,19 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     )";
     LinkResult launcher = compileInlineApp("window_probe_launcher", launcher_source, 128);
     if (!compiled_kernel.success || !probe.success || !launcher.success) return;
+    sandbox::os::NativeVfsImageBuilder rootfs(384);
+    expect(rootfs.installBaseLayout().ok(), "window probe rootfs base layout installs");
+    expect(rootfs.addExecutableImage("/bin/probe",
+                                    probe.assembled.program,
+                                    probe.executable_header,
+                                    kWindowProbeTextPpn).ok(),
+           "window probe executable image installs into native disk root");
+    expect(rootfs.addFile("/probe", {80, 82, 79, 66}).ok(),
+           "window probe data file installs into native disk root");
+    std::vector<long long> rootImage = rootfs.image();
 
     const std::string image =
-        buildWindowProbeBootAssembly(probe) + "\n" +
+        buildWindowProbeBootAssembly() + "\n" +
         trap + "\n" +
         compiled_kernel.assembly + "\n" +
         ".text\n.org " + std::to_string(kLauncherPhys) + "\n" +
@@ -519,8 +435,8 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     if (!assembled.success) return;
     expect(sandbox::vm::assembler::loadAndReset(vm, assembled),
            "window probe boot image loads");
-    expect(vm.imem.loadProgram(probe.assembled.program, kWindowProbeTextPhys),
-           "window probe text image is installed at its physical IMEM pages");
+    expect(vm.loadBlockImage(rootImage),
+           "window probe native root image loads into VM block device");
 
     const auto result = sandbox::vm::run(vm, 12000000);
     if (!result.halted()) {
@@ -538,6 +454,8 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     expect(result.halted(), "window probe app halts after drawing");
     expect(contains(vm.syscall_buffer, "WINDOW\n"),
            "window probe app ran after sys_exec");
+    expect(vm.imem.words[kWindowProbeTextPhys] == probe.assembled.program.front(),
+           "window probe text was loaded from disk into IMEM");
     expect(contains(vm.syscall_buffer, "FS\n"),
            "window probe read a VFS file through translated process DMEM");
     expect(contains(vm.syscall_buffer, "DIR\n"),

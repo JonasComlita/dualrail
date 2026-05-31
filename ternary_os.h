@@ -63,6 +63,39 @@ static constexpr int FS_VERSION = 1;
 static constexpr int DEFAULT_INODE_COUNT = 32;
 static constexpr int DIRECT_BLOCKS = 6;
 
+static constexpr int NATIVE_VFS_MAGIC = 60606;
+static constexpr int NATIVE_VFS_VERSION = 1;
+static constexpr int NATIVE_KERNEL_MAGIC = 40404;
+static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 157;
+static constexpr int NATIVE_VFS_MAX_INODES = 24;
+static constexpr int NATIVE_VFS_MAX_DIRENTS = 48;
+static constexpr int NATIVE_VFS_MAX_EXTENTS = 64;
+static constexpr int NATIVE_VFS_MAX_NAME_WORDS = 16;
+static constexpr int NATIVE_VFS_PAYLOAD_WORDS = 2048;
+static constexpr int NATIVE_KIND_FILE = 1;
+static constexpr int NATIVE_KIND_DIR = 2;
+static constexpr int NATIVE_KIND_EXEC = 3;
+static constexpr int NATIVE_VFS_DISK_SUPER_BLOCK = 0;
+static constexpr int NATIVE_VFS_DISK_INODE_BLOCK = 2;
+static constexpr int NATIVE_VFS_DISK_INODE_BLOCKS = 8;
+static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCK = 10;
+static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCKS = 11;
+static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCK = 21;
+static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS = 29;
+static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCK = 50;
+static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCKS = 15;
+static constexpr int NATIVE_VFS_DISK_DATA_BLOCK = 65;
+static constexpr int NATIVE_VFS_DISK_DATA_BLOCKS = 76;
+static constexpr int NATIVE_WAL_DISK_META_BLOCK = 141;
+static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 142;
+static constexpr int NATIVE_WAL_DISK_RECORD_BLOCKS = 15;
+static constexpr int NATIVE_VFS_INODE_WORDS = 8;
+static constexpr int NATIVE_VFS_DIRENT_WORDS = 6;
+static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
+static constexpr int NATIVE_VFS_DATA_BASE = 7400;
+static constexpr int NATIVE_EXEC_DESC_WORDS = vm::EXEC_HEADER_WORDS + 1;
+static constexpr int NATIVE_EXEC_DESC_V2_WORDS = vm::EXEC_HEADER_WORDS + 3;
+
 struct StatusResult {
     int status = T1_ERROR;
     int payload = 0;
@@ -220,6 +253,22 @@ public:
         return out;
     }
 
+    [[nodiscard]] StatusResult loadSerialized(const std::vector<long long>& image) {
+        if (image.empty() || static_cast<int>(image.size()) % BLOCK_WORDS != 0) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        const int blocks = static_cast<int>(image.size()) / BLOCK_WORDS;
+        blocks_.assign(static_cast<std::size_t>(blocks), std::vector<long long>(BLOCK_WORDS, 0));
+        dirty_.assign(static_cast<std::size_t>(blocks), false);
+        for (int block = 0; block < blocks; ++block) {
+            for (int word = 0; word < BLOCK_WORDS; ++word) {
+                blocks_[static_cast<std::size_t>(block)][static_cast<std::size_t>(word)] =
+                    image[static_cast<std::size_t>(block * BLOCK_WORDS + word)];
+            }
+        }
+        return StatusResult::success(blocks);
+    }
+
 private:
     std::vector<std::vector<long long>> blocks_;
     std::vector<bool> dirty_;
@@ -257,6 +306,7 @@ struct Inode {
     int indirect_block = -1;
     std::vector<DirectoryEntry> entries;
     std::vector<long long> data;
+    std::vector<int> indirect_blocks;
     bool executable = false;
     vm::ExecutableImageHeader exec_header;
 
@@ -331,7 +381,21 @@ public:
             inode.exec_header.text_pages = static_cast<int>(raw[13]);
             inode.exec_header.data_pages = static_cast<int>(raw[14]);
             inode.exec_header.stack_words = static_cast<int>(raw[15]);
+            inode.indirect_blocks.clear();
+            if (inode.indirect_block >= 0) {
+                std::vector<long long> indirect;
+                if (!device.readBlock(inode.indirect_block, indirect).ok()) {
+                    return StatusResult::error(ERR_INVALID);
+                }
+                for (int w = 0; w < BLOCK_WORDS; ++w) {
+                    if (indirect[static_cast<std::size_t>(w)] >= 0) {
+                        inode.indirect_blocks.push_back(
+                            static_cast<int>(indirect[static_cast<std::size_t>(w)]));
+                    }
+                }
+            }
         }
+        rebuildFreeBlocksFromInodes();
 
         // Read back file data and directory entries for all valid inodes
         for (int i = 0; i < inode_count_; ++i) {
@@ -363,8 +427,9 @@ public:
                 }
             } else {
                 inode.data.resize(static_cast<std::size_t>(inode.size_words), 0);
-                for (std::size_t d = 0; d < inode.direct.size(); ++d) {
-                    int block = inode.direct[d];
+                std::vector<int> blocks = fileDataBlocks(inode);
+                for (std::size_t d = 0; d < blocks.size(); ++d) {
+                    int block = blocks[d];
                     if (block < 0) continue;
                     std::vector<long long> raw;
                     if (device.readBlock(block, raw).ok()) {
@@ -426,11 +491,15 @@ public:
         if (!validInode(inode_id)) return StatusResult::error(ERR_NOT_FOUND);
         Inode& inode = inodes_[static_cast<std::size_t>(inode_id)];
         if (inode.kind == InodeKind::Directory) return StatusResult::error(ERR_IS_DIR);
+        const int needed = (static_cast<int>(words.size()) + BLOCK_WORDS - 1) / BLOCK_WORDS;
+        if (needed > DIRECT_BLOCKS + BLOCK_WORDS) return StatusResult::error(ERR_NO_SPACE);
+        const int required_blocks = needed + (needed > DIRECT_BLOCKS ? 1 : 0);
+        if (freeBlockCount() + allocatedBlockCount(inode) < required_blocks) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
         releaseBlocks(inode);
         inode.data = words;
         inode.size_words = static_cast<int>(words.size());
-        const int needed = (inode.size_words + BLOCK_WORDS - 1) / BLOCK_WORDS;
-        if (needed > DIRECT_BLOCKS + BLOCK_WORDS) return StatusResult::error(ERR_NO_SPACE);
         for (int i = 0; i < std::min(needed, DIRECT_BLOCKS); ++i) {
             int block = allocateBlock();
             if (block < 0) return StatusResult::error(ERR_NO_SPACE);
@@ -439,6 +508,11 @@ public:
         if (needed > DIRECT_BLOCKS) {
             inode.indirect_block = allocateBlock();
             if (inode.indirect_block < 0) return StatusResult::error(ERR_NO_SPACE);
+            for (int i = DIRECT_BLOCKS; i < needed; ++i) {
+                int block = allocateBlock();
+                if (block < 0) return StatusResult::error(ERR_NO_SPACE);
+                inode.indirect_blocks.push_back(block);
+            }
         }
         StatusResult synced = sync();
         return synced.ok() ? StatusResult::success(inode.size_words) : synced;
@@ -590,8 +664,18 @@ public:
 
         for (const Inode& inode : inodes_) {
             if (inode.kind == InodeKind::Directory) continue;
-            for (std::size_t i = 0; i < inode.direct.size(); ++i) {
-                int block = inode.direct[i];
+            if (inode.indirect_block >= 0) {
+                std::vector<long long> indirect(BLOCK_WORDS, -1);
+                for (std::size_t i = 0; i < inode.indirect_blocks.size() &&
+                                        i < static_cast<std::size_t>(BLOCK_WORDS); ++i) {
+                    indirect[i] = inode.indirect_blocks[i];
+                }
+                StatusResult wrote = device_->writeBlock(inode.indirect_block, indirect);
+                if (!wrote.ok()) return wrote;
+            }
+            std::vector<int> blocks = fileDataBlocks(inode);
+            for (std::size_t i = 0; i < blocks.size(); ++i) {
+                int block = blocks[i];
                 if (block < 0) continue;
                 std::vector<long long> raw(BLOCK_WORDS, 0);
                 const int start = static_cast<int>(i) * BLOCK_WORDS;
@@ -639,6 +723,56 @@ private:
         return -1;
     }
 
+    [[nodiscard]] int freeBlockCount() const {
+        int count = 0;
+        for (bool free : free_blocks_) {
+            if (free) ++count;
+        }
+        return count;
+    }
+
+    [[nodiscard]] static int allocatedBlockCount(const Inode& inode) {
+        int count = 0;
+        for (int block : inode.direct) {
+            if (block >= 0) ++count;
+        }
+        if (inode.indirect_block >= 0) ++count;
+        count += static_cast<int>(inode.indirect_blocks.size());
+        return count;
+    }
+
+    [[nodiscard]] static std::vector<int> fileDataBlocks(const Inode& inode) {
+        std::vector<int> blocks;
+        for (int block : inode.direct) {
+            if (block >= 0) blocks.push_back(block);
+        }
+        blocks.insert(blocks.end(), inode.indirect_blocks.begin(), inode.indirect_blocks.end());
+        return blocks;
+    }
+
+    void rebuildFreeBlocksFromInodes() {
+        free_blocks_.assign(static_cast<std::size_t>(device_ ? device_->blockCount() : 0), true);
+        for (int i = 0; i < data_start_ && i < static_cast<int>(free_blocks_.size()); ++i) {
+            free_blocks_[static_cast<std::size_t>(i)] = false;
+        }
+        for (const Inode& inode : inodes_) {
+            if (inode.kind == InodeKind::Free) continue;
+            for (int block : inode.direct) {
+                markBlockAllocated(block);
+            }
+            markBlockAllocated(inode.indirect_block);
+            for (int block : inode.indirect_blocks) {
+                markBlockAllocated(block);
+            }
+        }
+    }
+
+    void markBlockAllocated(int block) {
+        if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
+            free_blocks_[static_cast<std::size_t>(block)] = false;
+        }
+    }
+
     void releaseBlocks(Inode& inode) {
         for (int& block : inode.direct) {
             if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
@@ -651,6 +785,12 @@ private:
             free_blocks_[static_cast<std::size_t>(inode.indirect_block)] = true;
         }
         inode.indirect_block = -1;
+        for (int block : inode.indirect_blocks) {
+            if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
+                free_blocks_[static_cast<std::size_t>(block)] = true;
+            }
+        }
+        inode.indirect_blocks.clear();
     }
 
     [[nodiscard]] static std::vector<std::string> splitComponents(const std::string& path) {
@@ -678,6 +818,654 @@ private:
         } else {
             parent = path.substr(0, slash);
             name = path.substr(slash + 1);
+        }
+    }
+};
+
+// =============================================================================
+// Root filesystem image builder
+// =============================================================================
+
+class RootFsImageBuilder {
+public:
+    explicit RootFsImageBuilder(int blocks = 128, int inode_count = DEFAULT_INODE_COUNT)
+        : device_(blocks) {
+        status_ = fs_.format(device_, inode_count);
+    }
+
+    [[nodiscard]] StatusResult status() const { return status_; }
+    [[nodiscard]] TinyFileSystem& fs() { return fs_; }
+    [[nodiscard]] const TinyFileSystem& fs() const { return fs_; }
+
+    [[nodiscard]] StatusResult installBaseLayout() {
+        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp", "/var"}) {
+            StatusResult made = mkdir(dir);
+            if (!made.ok()) return made;
+        }
+        StatusResult log = mkdir("/var/log");
+        if (!log.ok()) return log;
+        return fs_.sync();
+    }
+
+    [[nodiscard]] StatusResult mkdir(const std::string& path) {
+        if (!status_.ok()) return status_;
+        if (path.empty() || path == "/") return StatusResult::success(0);
+        StatusResult found = fs_.lookup(path);
+        if (found.ok()) return StatusResult::success(found.payload);
+        StatusResult parents = ensureParentDirectories(path);
+        if (!parents.ok()) return parents;
+        return fs_.createFile(path, InodeKind::Directory);
+    }
+
+    [[nodiscard]] StatusResult addFile(const std::string& path, const std::vector<long long>& words) {
+        if (!status_.ok()) return status_;
+        StatusResult parents = ensureParentDirectories(path);
+        if (!parents.ok()) return parents;
+        StatusResult found = fs_.lookup(path);
+        if (!found.ok()) {
+            StatusResult created = fs_.createFile(path, InodeKind::File);
+            if (!created.ok()) return created;
+        }
+        return fs_.writeFile(path, words);
+    }
+
+    [[nodiscard]] StatusResult addExecutable(
+        const std::string& path,
+        const std::vector<long long>& image,
+        const vm::ExecutableImageHeader& header) {
+
+        if (!status_.ok()) return status_;
+        if (!vm::validateExecutableHeader(header)) return StatusResult::error(ERR_INVALID);
+        StatusResult parents = ensureParentDirectories(path);
+        if (!parents.ok()) return parents;
+        StatusResult found = fs_.lookup(path);
+        if (!found.ok()) {
+            StatusResult created = fs_.createFile(path, InodeKind::Executable, true);
+            if (!created.ok()) return created;
+        }
+        StatusResult wrote = fs_.writeFile(path, image);
+        if (!wrote.ok()) return wrote;
+        return fs_.markExecutable(path, header);
+    }
+
+    [[nodiscard]] StatusResult addUserRecord(
+        const std::string& username,
+        long long password_hash,
+        const std::string& home,
+        const std::string& shell) {
+
+        if (!status_.ok()) return status_;
+        if (username.empty() || home.empty() || shell.empty()) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult layout = installBaseLayout();
+        if (!layout.ok()) return layout;
+        StatusResult homeDir = mkdir(home);
+        if (!homeDir.ok()) return homeDir;
+
+        std::vector<long long> users;
+        std::vector<long long> existing;
+        StatusResult read = fs_.readFile("/etc/users", existing);
+        if (read.ok() || read.status == T1_PENDING) {
+            users = existing;
+        } else {
+            StatusResult created = fs_.createFile("/etc/users", InodeKind::File);
+            if (!created.ok() && created.detail != ERR_EXISTS) return created;
+        }
+
+        appendStringRecord(users, username);
+        users.push_back(password_hash);
+        appendStringRecord(users, home);
+        appendStringRecord(users, shell);
+        return fs_.writeFile("/etc/users", users);
+    }
+
+    [[nodiscard]] std::vector<long long> image() {
+        (void)fs_.sync();
+        return device_.serialize();
+    }
+
+private:
+    BlockDevice device_;
+    TinyFileSystem fs_;
+    StatusResult status_ = StatusResult::error(ERR_INVALID);
+
+    [[nodiscard]] StatusResult ensureParentDirectories(const std::string& path) {
+        if (path.empty() || path[0] != '/') return StatusResult::error(ERR_INVALID);
+        std::string current;
+        std::vector<std::string> parts = splitComponents(path);
+        if (parts.empty()) return StatusResult::success(0);
+        for (std::size_t i = 0; i + 1 < parts.size(); ++i) {
+            current += "/";
+            current += parts[i];
+            StatusResult found = fs_.lookup(current);
+            if (!found.ok()) {
+                StatusResult made = fs_.createFile(current, InodeKind::Directory);
+                if (!made.ok()) return made;
+            }
+        }
+        return StatusResult::success(0);
+    }
+
+    [[nodiscard]] static std::vector<std::string> splitComponents(const std::string& path) {
+        std::vector<std::string> parts;
+        std::string current;
+        for (char c : path) {
+            if (c == '/') {
+                if (!current.empty()) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current.push_back(c);
+            }
+        }
+        if (!current.empty()) parts.push_back(current);
+        return parts;
+    }
+
+    static void appendStringRecord(std::vector<long long>& out, const std::string& text) {
+        out.push_back(static_cast<long long>(text.size()));
+        for (char c : text) {
+            out.push_back(static_cast<long long>(c));
+        }
+    }
+};
+
+// =============================================================================
+// Native kernel VFS image builder
+// =============================================================================
+
+class NativeVfsImageBuilder {
+public:
+    explicit NativeVfsImageBuilder(int blocks = NATIVE_VFS_REQUIRED_BLOCKS)
+        : device_(std::max(blocks, NATIVE_VFS_REQUIRED_BLOCKS)),
+          inodes_(NATIVE_VFS_MAX_INODES * NATIVE_VFS_INODE_WORDS, 0),
+          dirents_(NATIVE_VFS_MAX_DIRENTS * NATIVE_VFS_DIRENT_WORDS, 0),
+          names_(NATIVE_VFS_MAX_DIRENTS * NATIVE_VFS_MAX_NAME_WORDS, 0),
+          extents_(NATIVE_VFS_MAX_EXTENTS * NATIVE_VFS_EXTENT_WORDS, 0),
+          data_(NATIVE_VFS_PAYLOAD_WORDS, 0) {
+        status_ = format();
+    }
+
+    [[nodiscard]] StatusResult status() const { return status_; }
+
+    [[nodiscard]] StatusResult installBaseLayout() {
+        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp", "/var"}) {
+            StatusResult made = mkdir(dir);
+            if (!made.ok()) return made;
+        }
+        return mkdir("/var/log");
+    }
+
+    [[nodiscard]] StatusResult mkdir(const std::string& path) {
+        if (!status_.ok()) return status_;
+        const std::string normalized = normalizePath(path);
+        if (normalized.empty()) return StatusResult::error(ERR_INVALID);
+        auto found = path_to_inode_.find(normalized);
+        if (found != path_to_inode_.end()) {
+            return inodeKind(found->second) == NATIVE_KIND_DIR
+                       ? StatusResult::success(found->second)
+                       : StatusResult::error(ERR_EXISTS);
+        }
+        StatusResult parents = ensureParentDirectories(normalized);
+        if (!parents.ok()) return parents;
+        return createNode(normalized, NATIVE_KIND_DIR);
+    }
+
+    [[nodiscard]] StatusResult addFile(
+        const std::string& path,
+        const std::vector<long long>& words) {
+
+        if (!status_.ok()) return status_;
+        StatusResult inode = createOrLookupFile(path, NATIVE_KIND_FILE);
+        if (!inode.ok()) return inode;
+        return writePayload(inode.payload, words);
+    }
+
+    [[nodiscard]] StatusResult addExecutableDescriptor(
+        const std::string& path,
+        const vm::ExecutableImageHeader& header,
+        int text_ppn) {
+
+        if (!status_.ok()) return status_;
+        if (!vm::validateExecutableHeader(header) || text_ppn <= 0) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult inode = createOrLookupFile(path, NATIVE_KIND_EXEC);
+        if (!inode.ok()) return inode;
+        return writePayload(inode.payload, executableDescriptor(header, text_ppn));
+    }
+
+    [[nodiscard]] StatusResult addExecutableImage(
+        const std::string& path,
+        const std::vector<isa::TritWord27>& program,
+        const vm::ExecutableImageHeader& header,
+        int text_ppn) {
+
+        if (!status_.ok()) return status_;
+        if (!vm::validateExecutableHeader(header) || text_ppn <= 0 || program.empty()) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        const int text_capacity = header.text_pages * BLOCK_WORDS;
+        if (static_cast<int>(program.size()) > text_capacity) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const int blocks = static_cast<int>((program.size() + BLOCK_WORDS - 1) / BLOCK_WORDS);
+        if (next_text_block_ + blocks > device_.blockCount()) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const int first_text_block = next_text_block_;
+        for (int block = 0; block < blocks; ++block) {
+            std::vector<long long> out(BLOCK_WORDS, 0);
+            for (int word = 0; word < BLOCK_WORDS; ++word) {
+                const int index = block * BLOCK_WORDS + word;
+                if (index < static_cast<int>(program.size())) {
+                    out[static_cast<std::size_t>(word)] =
+                        static_cast<long long>(program[static_cast<std::size_t>(index)].bits);
+                }
+            }
+            StatusResult wrote = device_.writeBlock(first_text_block + block, out);
+            if (!wrote.ok()) return wrote;
+        }
+        next_text_block_ += blocks;
+        StatusResult inode = createOrLookupFile(path, NATIVE_KIND_EXEC);
+        if (!inode.ok()) return inode;
+        return writePayload(inode.payload,
+                            executableDescriptor(header,
+                                                 text_ppn,
+                                                 first_text_block,
+                                                 static_cast<int>(program.size())));
+    }
+
+    [[nodiscard]] StatusResult addUserRecord(
+        const std::string& username,
+        long long password_hash,
+        const std::string& home,
+        const std::string& shell) {
+
+        if (username.empty() || home.empty() || shell.empty()) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult layout = installBaseLayout();
+        if (!layout.ok()) return layout;
+        StatusResult homeDir = mkdir(home);
+        if (!homeDir.ok()) return homeDir;
+
+        std::vector<long long> users = file_payloads_["/etc/users"];
+        appendStringRecord(users, username);
+        users.push_back(password_hash);
+        appendStringRecord(users, home);
+        appendStringRecord(users, shell);
+        StatusResult wrote = addFile("/etc/users", users);
+        if (wrote.ok()) file_payloads_["/etc/users"] = users;
+        return wrote;
+    }
+
+    [[nodiscard]] std::vector<long long> image() {
+        (void)sync();
+        return device_.serialize();
+    }
+
+    [[nodiscard]] StatusResult sync() {
+        if (!status_.ok()) return status_;
+        StatusResult super = writeSuperBlock();
+        if (!super.ok()) return super;
+        StatusResult wrote = writeRange(NATIVE_VFS_DISK_INODE_BLOCK,
+                                        NATIVE_VFS_DISK_INODE_BLOCKS,
+                                        inodes_);
+        if (!wrote.ok()) return wrote;
+        wrote = writeRange(NATIVE_VFS_DISK_DIRENT_BLOCK,
+                           NATIVE_VFS_DISK_DIRENT_BLOCKS,
+                           dirents_);
+        if (!wrote.ok()) return wrote;
+        wrote = writeRange(NATIVE_VFS_DISK_DIRENT_NAME_BLOCK,
+                           NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS,
+                           names_);
+        if (!wrote.ok()) return wrote;
+        wrote = writeRange(NATIVE_VFS_DISK_EXTENT_BLOCK,
+                           NATIVE_VFS_DISK_EXTENT_BLOCKS,
+                           extents_);
+        if (!wrote.ok()) return wrote;
+        wrote = writeRange(NATIVE_VFS_DISK_DATA_BLOCK,
+                           NATIVE_VFS_DISK_DATA_BLOCKS,
+                           data_);
+        if (!wrote.ok()) return wrote;
+        wrote = writeZeroBlocks(NATIVE_WAL_DISK_META_BLOCK, 1);
+        if (!wrote.ok()) return wrote;
+        return writeZeroBlocks(NATIVE_WAL_DISK_RECORD_BLOCK,
+                               NATIVE_WAL_DISK_RECORD_BLOCKS);
+    }
+
+private:
+    BlockDevice device_;
+    std::vector<long long> inodes_;
+    std::vector<long long> dirents_;
+    std::vector<long long> names_;
+    std::vector<long long> extents_;
+    std::vector<long long> data_;
+    std::map<std::string, int> path_to_inode_;
+    std::map<std::string, std::vector<long long>> file_payloads_;
+    int next_inode_ = 1;
+    int next_dirent_ = 0;
+    int next_extent_ = 0;
+    int next_data_offset_ = 0;
+    int next_text_block_ = NATIVE_VFS_REQUIRED_BLOCKS;
+    StatusResult status_ = StatusResult::error(ERR_INVALID);
+
+    [[nodiscard]] StatusResult format() {
+        std::fill(inodes_.begin(), inodes_.end(), 0);
+        std::fill(dirents_.begin(), dirents_.end(), 0);
+        std::fill(names_.begin(), names_.end(), 0);
+        std::fill(extents_.begin(), extents_.end(), 0);
+        std::fill(data_.begin(), data_.end(), 0);
+        path_to_inode_.clear();
+        file_payloads_.clear();
+        next_inode_ = 1;
+        next_dirent_ = 0;
+        next_extent_ = 0;
+        next_data_offset_ = 0;
+        next_text_block_ = NATIVE_VFS_REQUIRED_BLOCKS;
+        path_to_inode_["/"] = 0;
+        setInode(0, NATIVE_KIND_DIR, 0, 0);
+        return StatusResult::success();
+    }
+
+    [[nodiscard]] int inodeBase(int inode) const {
+        return inode * NATIVE_VFS_INODE_WORDS;
+    }
+
+    [[nodiscard]] int direntBase(int slot) const {
+        return slot * NATIVE_VFS_DIRENT_WORDS;
+    }
+
+    [[nodiscard]] int nameBase(int slot) const {
+        return slot * NATIVE_VFS_MAX_NAME_WORDS;
+    }
+
+    [[nodiscard]] int extentBase(int slot) const {
+        return slot * NATIVE_VFS_EXTENT_WORDS;
+    }
+
+    [[nodiscard]] int inodeKind(int inode) const {
+        if (inode < 0 || inode >= NATIVE_VFS_MAX_INODES) return 0;
+        return static_cast<int>(inodes_[static_cast<std::size_t>(inodeBase(inode))]);
+    }
+
+    void setInode(int inode, int kind, int size_words, int parent) {
+        const int base = inodeBase(inode);
+        inodes_[static_cast<std::size_t>(base + 0)] = kind;
+        inodes_[static_cast<std::size_t>(base + 1)] = 1;
+        inodes_[static_cast<std::size_t>(base + 2)] = size_words;
+        inodes_[static_cast<std::size_t>(base + 3)] = 1;
+        inodes_[static_cast<std::size_t>(base + 4)] = 1;
+        inodes_[static_cast<std::size_t>(base + 5)] = 0;
+        inodes_[static_cast<std::size_t>(base + 6)] = 0;
+        inodes_[static_cast<std::size_t>(base + 7)] = parent;
+    }
+
+    [[nodiscard]] StatusResult createNode(const std::string& path, int kind) {
+        const std::string normalized = normalizePath(path);
+        if (normalized.empty() || normalized == "/") return StatusResult::error(ERR_INVALID);
+        if (path_to_inode_.find(normalized) != path_to_inode_.end()) {
+            return StatusResult::error(ERR_EXISTS);
+        }
+        if (next_inode_ >= NATIVE_VFS_MAX_INODES ||
+            next_dirent_ >= NATIVE_VFS_MAX_DIRENTS) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const std::string parent_path = parentPath(normalized);
+        auto parent = path_to_inode_.find(parent_path);
+        if (parent == path_to_inode_.end()) return StatusResult::error(ERR_NOT_DIR);
+        if (inodeKind(parent->second) != NATIVE_KIND_DIR) {
+            return StatusResult::error(ERR_NOT_DIR);
+        }
+        const std::string leaf = leafName(normalized);
+        if (leaf.empty() || static_cast<int>(leaf.size()) > NATIVE_VFS_MAX_NAME_WORDS) {
+            return StatusResult::error(ERR_INVALID);
+        }
+
+        const int inode = next_inode_++;
+        setInode(inode, kind, 0, parent->second);
+        writeDirent(next_dirent_++, parent->second, inode, leaf);
+        path_to_inode_[normalized] = inode;
+        return StatusResult::success(inode);
+    }
+
+    [[nodiscard]] StatusResult createOrLookupFile(const std::string& path, int kind) {
+        const std::string normalized = normalizePath(path);
+        if (normalized.empty() || normalized == "/") return StatusResult::error(ERR_INVALID);
+        StatusResult parents = ensureParentDirectories(normalized);
+        if (!parents.ok()) return parents;
+        auto found = path_to_inode_.find(normalized);
+        if (found != path_to_inode_.end()) {
+            int existing_kind = inodeKind(found->second);
+            if (existing_kind == NATIVE_KIND_DIR) return StatusResult::error(ERR_IS_DIR);
+            if (existing_kind != kind) {
+                setInode(found->second, kind, 0, parentInode(normalized));
+            }
+            return StatusResult::success(found->second);
+        }
+        return createNode(normalized, kind);
+    }
+
+    [[nodiscard]] StatusResult writePayload(int inode, const std::vector<long long>& words) {
+        if (inode <= 0 || inode >= NATIVE_VFS_MAX_INODES) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        if (static_cast<int>(words.size()) > NATIVE_VFS_PAYLOAD_WORDS - next_data_offset_) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        for (int slot = 0; slot < next_extent_; ++slot) {
+            const int base = extentBase(slot);
+            if (extents_[static_cast<std::size_t>(base + 1)] == inode &&
+                extents_[static_cast<std::size_t>(base + 5)] > 0) {
+                extents_[static_cast<std::size_t>(base + 3)] = 0;
+                extents_[static_cast<std::size_t>(base + 5)] = 0;
+            }
+        }
+        setInode(inode, inodeKind(inode), static_cast<int>(words.size()), parentOf(inode));
+        if (words.empty()) return StatusResult::success(0);
+        if (next_extent_ >= NATIVE_VFS_MAX_EXTENTS) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const int data_addr = NATIVE_VFS_DATA_BASE + next_data_offset_;
+        const int extent = next_extent_++;
+        const int base = extentBase(extent);
+        extents_[static_cast<std::size_t>(base + 0)] = 0;
+        extents_[static_cast<std::size_t>(base + 1)] = inode;
+        extents_[static_cast<std::size_t>(base + 2)] = 0;
+        extents_[static_cast<std::size_t>(base + 3)] = static_cast<long long>(words.size());
+        extents_[static_cast<std::size_t>(base + 4)] = data_addr;
+        extents_[static_cast<std::size_t>(base + 5)] = 1;
+        for (std::size_t i = 0; i < words.size(); ++i) {
+            data_[static_cast<std::size_t>(next_data_offset_) + i] = words[i];
+        }
+        next_data_offset_ += static_cast<int>(words.size());
+        return StatusResult::success(static_cast<int>(words.size()));
+    }
+
+    void writeDirent(int slot, int parent, int child, const std::string& name) {
+        const int base = direntBase(slot);
+        dirents_[static_cast<std::size_t>(base + 0)] = 0;
+        dirents_[static_cast<std::size_t>(base + 1)] = parent;
+        dirents_[static_cast<std::size_t>(base + 2)] = componentHash(name);
+        dirents_[static_cast<std::size_t>(base + 3)] = static_cast<long long>(name.size());
+        dirents_[static_cast<std::size_t>(base + 4)] = child;
+        dirents_[static_cast<std::size_t>(base + 5)] = 1;
+        const int nbase = nameBase(slot);
+        for (std::size_t i = 0; i < name.size(); ++i) {
+            names_[static_cast<std::size_t>(nbase) + i] =
+                static_cast<unsigned char>(name[i]);
+        }
+    }
+
+    [[nodiscard]] StatusResult writeSuperBlock() {
+        std::vector<long long> block(BLOCK_WORDS, 0);
+        block[0] = NATIVE_VFS_MAGIC;
+        block[1] = NATIVE_VFS_VERSION;
+        block[2] = BLOCK_WORDS;
+        block[3] = NATIVE_VFS_MAX_INODES;
+        block[4] = NATIVE_VFS_MAX_DIRENTS;
+        block[5] = NATIVE_VFS_MAX_EXTENTS;
+        block[6] = NATIVE_VFS_PAYLOAD_WORDS;
+        block[7] = NATIVE_KERNEL_MAGIC;
+        block[8] = next_inode_;
+        block[9] = next_dirent_;
+        block[10] = next_extent_;
+        block[11] = NATIVE_VFS_DATA_BASE + next_data_offset_;
+        return device_.writeBlock(NATIVE_VFS_DISK_SUPER_BLOCK, block);
+    }
+
+    [[nodiscard]] StatusResult writeRange(
+        int first_block,
+        int block_count,
+        const std::vector<long long>& words) {
+
+        int copied = 0;
+        for (int block = 0; block < block_count; ++block) {
+            std::vector<long long> out(BLOCK_WORDS, 0);
+            for (int word = 0; word < BLOCK_WORDS; ++word) {
+                if (copied < static_cast<int>(words.size())) {
+                    out[static_cast<std::size_t>(word)] =
+                        words[static_cast<std::size_t>(copied++)];
+                }
+            }
+            StatusResult wrote = device_.writeBlock(first_block + block, out);
+            if (!wrote.ok()) return wrote;
+        }
+        return StatusResult::success(copied);
+    }
+
+    [[nodiscard]] StatusResult writeZeroBlocks(int first_block, int block_count) {
+        const std::vector<long long> zero(BLOCK_WORDS, 0);
+        for (int block = 0; block < block_count; ++block) {
+            StatusResult wrote = device_.writeBlock(first_block + block, zero);
+            if (!wrote.ok()) return wrote;
+        }
+        return StatusResult::success(block_count);
+    }
+
+    [[nodiscard]] StatusResult ensureParentDirectories(const std::string& path) {
+        std::string current;
+        const std::vector<std::string> parts = splitComponents(path);
+        if (parts.empty()) return StatusResult::success(0);
+        for (std::size_t i = 0; i + 1 < parts.size(); ++i) {
+            current += "/";
+            current += parts[i];
+            auto found = path_to_inode_.find(current);
+            if (found == path_to_inode_.end()) {
+                StatusResult made = createNode(current, NATIVE_KIND_DIR);
+                if (!made.ok()) return made;
+            } else if (inodeKind(found->second) != NATIVE_KIND_DIR) {
+                return StatusResult::error(ERR_NOT_DIR);
+            }
+        }
+        return StatusResult::success(0);
+    }
+
+    [[nodiscard]] int parentInode(const std::string& path) const {
+        auto found = path_to_inode_.find(parentPath(path));
+        return found == path_to_inode_.end() ? 0 : found->second;
+    }
+
+    [[nodiscard]] int parentOf(int inode) const {
+        if (inode < 0 || inode >= NATIVE_VFS_MAX_INODES) return 0;
+        return static_cast<int>(inodes_[static_cast<std::size_t>(inodeBase(inode) + 7)]);
+    }
+
+    [[nodiscard]] static std::vector<long long> executableDescriptor(
+        const vm::ExecutableImageHeader& header,
+        int text_ppn) {
+
+        return {
+            vm::EXEC_MAGIC,
+            header.version,
+            header.abi_version,
+            header.entry_virtual_pc,
+            header.text_pages,
+            header.data_pages,
+            header.stack_words,
+            header.syscall_abi_version,
+            header.flags,
+            text_ppn,
+        };
+    }
+
+    [[nodiscard]] static std::vector<long long> executableDescriptor(
+        const vm::ExecutableImageHeader& header,
+        int text_ppn,
+        int text_disk_block,
+        int text_words) {
+
+        std::vector<long long> descriptor = executableDescriptor(header, text_ppn);
+        descriptor.push_back(text_disk_block);
+        descriptor.push_back(text_words);
+        return descriptor;
+    }
+
+    [[nodiscard]] static long long componentHash(const std::string& name) {
+        vm::TernaryValue h = vm::ops::fromLong(17);
+        const vm::TernaryValue base = vm::ops::fromLong(31);
+        for (unsigned char c : name) {
+            h = vm::exec::addValue(
+                vm::exec::multiplyValue(h, base, TernaryMode::T40),
+                vm::ops::fromLong(static_cast<long long>(c)),
+                TernaryMode::T40);
+        }
+        return vm::ops::toLong(h);
+    }
+
+    [[nodiscard]] static std::string normalizePath(const std::string& path) {
+        if (path.empty() || path[0] != '/') return {};
+        std::string out;
+        bool prev_slash = false;
+        for (char c : path) {
+            if (c == '/') {
+                if (!prev_slash) out.push_back(c);
+                prev_slash = true;
+            } else {
+                out.push_back(c);
+                prev_slash = false;
+            }
+        }
+        while (out.size() > 1 && out.back() == '/') out.pop_back();
+        return out.empty() ? "/" : out;
+    }
+
+    [[nodiscard]] static std::string parentPath(const std::string& path) {
+        const std::size_t slash = path.find_last_of('/');
+        if (slash == std::string::npos || slash == 0) return "/";
+        return path.substr(0, slash);
+    }
+
+    [[nodiscard]] static std::string leafName(const std::string& path) {
+        const std::size_t slash = path.find_last_of('/');
+        if (slash == std::string::npos) return path;
+        return path.substr(slash + 1);
+    }
+
+    [[nodiscard]] static std::vector<std::string> splitComponents(const std::string& path) {
+        std::vector<std::string> parts;
+        std::string current;
+        for (char c : path) {
+            if (c == '/') {
+                if (!current.empty()) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current.push_back(c);
+            }
+        }
+        if (!current.empty()) parts.push_back(current);
+        return parts;
+    }
+
+    static void appendStringRecord(std::vector<long long>& out, const std::string& text) {
+        out.push_back(static_cast<long long>(text.size()));
+        for (unsigned char c : text) {
+            out.push_back(static_cast<long long>(c));
         }
     }
 };
@@ -714,10 +1502,25 @@ public:
         (void)createProcess(-1);
     }
 
+    explicit OSKernel(const std::vector<long long>& disk_image)
+        : device_tree_(defaultDeviceTree(blockCountFromImage(disk_image))),
+          block_device_(blockCountFromImage(disk_image)) {
+        (void)block_device_.loadSerialized(disk_image);
+        (void)createProcess(-1);
+    }
+
     [[nodiscard]] DeviceTree& deviceTree() { return device_tree_; }
     [[nodiscard]] BlockDevice& blockDevice() { return block_device_; }
     [[nodiscard]] TinyFileSystem& fs() { return fs_; }
     [[nodiscard]] const TinyFileSystem& fs() const { return fs_; }
+
+    [[nodiscard]] std::vector<long long> diskImage() const {
+        return block_device_.serialize();
+    }
+
+    [[nodiscard]] StatusResult shutdownSync() {
+        return fs_.sync();
+    }
 
     [[nodiscard]] StatusResult boot() {
         std::vector<std::string> errors;
@@ -856,6 +1659,28 @@ public:
         return StatusResult::success(proc->exec_header.entry_virtual_pc);
     }
 
+    [[nodiscard]] StatusResult installExecutable(
+        const std::string& path,
+        const std::vector<long long>& image,
+        const vm::ExecutableImageHeader& header) {
+
+        if (!vm::validateExecutableHeader(header)) return StatusResult::error(ERR_INVALID);
+        StatusResult found = fs_.lookup(path);
+        if (!found.ok()) {
+            StatusResult created = fs_.createFile(path, InodeKind::Executable, true);
+            if (!created.ok()) return created;
+        } else {
+            const Inode* inode = fs_.inode(found.payload);
+            if (!inode || inode->kind == InodeKind::Directory) {
+                return StatusResult::error(ERR_IS_DIR);
+            }
+        }
+        StatusResult wrote = fs_.writeFile(path, image);
+        if (!wrote.ok()) return wrote;
+        StatusResult marked = fs_.markExecutable(path, header);
+        return marked.ok() ? StatusResult::success(static_cast<int>(image.size())) : marked;
+    }
+
     [[nodiscard]] StatusResult mallocWords(int pid, int words, UserPtr<long long>& out) {
         if (words <= 0) {
             out = UserPtr<long long>{0, UserPtrState::Null};
@@ -879,6 +1704,13 @@ private:
     TinyFileSystem fs_;
     std::vector<Process> processes_;
     int next_pid_ = 1;
+
+    [[nodiscard]] static int blockCountFromImage(const std::vector<long long>& image) {
+        if (image.empty() || static_cast<int>(image.size()) % BLOCK_WORDS != 0) {
+            return 1;
+        }
+        return std::max(1, static_cast<int>(image.size()) / BLOCK_WORDS);
+    }
 
     [[nodiscard]] int createProcess(int parent) {
         Process proc;

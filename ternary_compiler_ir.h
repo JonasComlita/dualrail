@@ -189,12 +189,12 @@ static constexpr int sys_newline = 2;
 static constexpr int sys_clear = 3;
 static constexpr int sys_yield = 4;
 static constexpr int sys_sleep_until_tick = 5;
-static constexpr int sys_exit = 6;
+static constexpr int sys_exit = 44;
 static constexpr int sys_getpid = 7;
 static constexpr int sys_uptime = 8;
 static constexpr int sys_read_console_word = 9;
 static constexpr int sys_spawn_static = 10;
-static constexpr int sys_waitpid = 11;
+static constexpr int sys_waitpid = 43;
 static constexpr int sys_open = 12;
 static constexpr int sys_close = 13;
 static constexpr int sys_read = 14;
@@ -219,6 +219,15 @@ static constexpr int sys_window_destroy = 32;
 static constexpr int sys_window_read_event = 33;
 static constexpr int sys_window_resize = 34;
 static constexpr int sys_window_request_close = 35;
+static constexpr int sys_socket = 36;
+static constexpr int sys_bind = 37;
+static constexpr int sys_connect = 38;
+static constexpr int sys_send = 39;
+static constexpr int sys_recv = 40;
+static constexpr int sys_mkdir = 41;
+static constexpr int sys_unlink = 42;
+static constexpr int sys_sleep = 45;
+static constexpr int sys_ps = 46;
 } // namespace runtime
 
 } // namespace compiler

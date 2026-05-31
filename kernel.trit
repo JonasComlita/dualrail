@@ -178,8 +178,8 @@ const REL_ALLOC_STATE: t40 = 0;
 const REL_ALLOC_VERSION: t40 = 1;
 // Attribute store — second genuine kernel relation.
 // Schema: (object_id, object_type, attr_key, attr_value, txid, version)
-// 64 rows × 6 words = 384 words at 16000–16383.
-const ATTR_STORE_BASE: t40 = 16000;
+// 64 rows * 6 words = 384 words at 30000-30383.
+const ATTR_STORE_BASE: t40 = 30000;
 const ATTR_STORE_MAX: t40 = 64;
 const ATTR_STORE_WORDS: t40 = 6;
 const ATTR_OBJECT_ID: t40 = 0;
@@ -254,6 +254,27 @@ const FD_REFCOUNT: t40 = 5;
 const FD_VERSION: t40 = 6;
 
 const VFS_DATA_BASE: t40 = 7400;
+const VFS_DISK_MAGIC: t40 = 60606;
+const VFS_DISK_VERSION: t40 = 1;
+const VFS_DISK_SCRATCH: t40 = 3100;
+const VFS_DISK_REQUIRED_BLOCKS: t40 = 157;
+const VFS_DISK_SUPER_BLOCK: t40 = 0;
+const VFS_DISK_STATE_BLOCK: t40 = 1;
+const VFS_DISK_INODE_BLOCK: t40 = 2;
+const VFS_DISK_INODE_BLOCKS: t40 = 8;
+const VFS_DISK_DIRENT_BLOCK: t40 = 10;
+const VFS_DISK_DIRENT_BLOCKS: t40 = 11;
+const VFS_DISK_DIRENT_NAME_BLOCK: t40 = 21;
+const VFS_DISK_DIRENT_NAME_BLOCKS: t40 = 29;
+const VFS_DISK_EXTENT_BLOCK: t40 = 50;
+const VFS_DISK_EXTENT_BLOCKS: t40 = 15;
+const VFS_DISK_DATA_BLOCK: t40 = 65;
+const VFS_DISK_DATA_BLOCKS: t40 = 76;
+const WAL_DISK_MAGIC: t40 = 70707;
+const WAL_DISK_VERSION: t40 = 1;
+const WAL_DISK_META_BLOCK: t40 = 141;
+const WAL_DISK_RECORD_BLOCK: t40 = 142;
+const WAL_DISK_RECORD_BLOCKS: t40 = 15;
 const USER_MEM_BASE: t40 = 10000;
 const USER_MEM_LIMIT: t40 = 16000;
 const USER_SCRATCH_VPN_BASE: t40 = 370;
@@ -276,8 +297,8 @@ const IPC_VERSION: t40 = 7;
 
 const NET_MAX_SOCKETS: t40 = 8;
 const NET_SOCKET_WORDS: t40 = 8;
-const NET_BASE: t40 = 9000;
-const NET_RX_BASE: t40 = 9100;
+const NET_BASE: t40 = 29700;
+const NET_RX_BASE: t40 = 29800;
 const NET_RX_CAPACITY: t40 = 8;
 const NET_SOCK_STATE: t40 = 0;
 const NET_SOCK_OWNER: t40 = 1;
@@ -366,6 +387,9 @@ const EXEC_HEADER_SYSCALL_ABI_VERSION: t40 = 7;
 const EXEC_HEADER_FLAGS: t40 = 8;
 const EXEC_DESC_TEXT_PPN: t40 = 9;
 const EXEC_DESC_WORDS: t40 = 10;
+const EXEC_DESC_TEXT_DISK_BLOCK: t40 = 10;
+const EXEC_DESC_TEXT_WORDS: t40 = 11;
+const EXEC_DESC_V2_WORDS: t40 = 12;
 const TASK_CONTEXT_WORDS: t40 = 32;
 const TASK_CONTEXT_EPC: t40 = 0;
 const TASK_CONTEXT_STATUS: t40 = 1;
@@ -1493,12 +1517,16 @@ fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
     kstore(rec + WAL_NEW, new_data);
     kstore(rec + WAL_STATE, WAL_PENDING);
     kstore(WAL_HEAD_ADDR, kwrap_inc(head, WAL_CAPACITY));
+    if wal_addr_is_persistent(block_addr) > 0 {
+        wal_sync_to_disk();
+    }
     return head;
 }
 
 fn log_commit(txid: t40) -> t40 {
     var slot: t40 = 0;
     var changed: t40 = 0;
+    var persistent_changed: t40 = 0;
     while WAL_CAPACITY - slot > 0 {
         var rec: t40 = wal_record_addr(slot);
         var rec_txid: t40 = kload(rec + WAL_TXID);
@@ -1510,9 +1538,15 @@ fn log_commit(txid: t40) -> t40 {
                 kstore(block_addr, new_data);
                 kstore(rec + WAL_STATE, WAL_COMMITTED);
                 changed = changed + 1;
+                if wal_addr_is_persistent(block_addr) > 0 {
+                    persistent_changed = persistent_changed + 1;
+                }
             }
         }
         slot = slot + 1;
+    }
+    if persistent_changed > 0 {
+        wal_sync_to_disk();
     }
     return changed;
 }
@@ -1520,6 +1554,7 @@ fn log_commit(txid: t40) -> t40 {
 fn log_abort(txid: t40) -> t40 {
     var slot: t40 = 0;
     var changed: t40 = 0;
+    var persistent_changed: t40 = 0;
     while WAL_CAPACITY - slot > 0 {
         var rec: t40 = wal_record_addr(slot);
         var rec_txid: t40 = kload(rec + WAL_TXID);
@@ -1531,9 +1566,15 @@ fn log_abort(txid: t40) -> t40 {
                 kstore(block_addr, old_data);
                 kstore(rec + WAL_STATE, WAL_ABORTED);
                 changed = changed + 1;
+                if wal_addr_is_persistent(block_addr) > 0 {
+                    persistent_changed = persistent_changed + 1;
+                }
             }
         }
         slot = slot + 1;
+    }
+    if persistent_changed > 0 {
+        wal_sync_to_disk();
     }
     return changed;
 }
@@ -1581,6 +1622,7 @@ fn log_checkpoint() -> t40 {
     kstore(WAL_TAIL_ADDR, kload(WAL_HEAD_ADDR));
     var epoch: t40 = kload(WAL_CHECKPOINT_ADDR);
     kstore(WAL_CHECKPOINT_ADDR, epoch + 1);
+    wal_sync_to_disk();
     return cleaned;
 }
 
@@ -2998,6 +3040,288 @@ fn vfs_clear_tables() -> t40 {
     return 1;
 }
 
+fn disk_block_count() -> t40 {
+    unsafe { return csr_read(block_count); }
+}
+
+fn disk_read_block(block_no: t40, dst_addr: t40) -> t40 {
+    unsafe {
+        csr_write(block_index, block_no);
+        csr_write(block_addr, dst_addr);
+        csr_write(block_cmd, 1);
+        return csr_read(block_status);
+    }
+}
+
+fn disk_write_block(block_no: t40, src_addr: t40) -> t40 {
+    unsafe {
+        csr_write(block_index, block_no);
+        csr_write(block_addr, src_addr);
+        csr_write(block_cmd, 2);
+        return csr_read(block_status);
+    }
+}
+
+fn disk_read_imem_block(block_no: t40, dst_pc: t40) -> t40 {
+    unsafe {
+        csr_write(block_index, block_no);
+        csr_write(block_addr, dst_pc);
+        csr_write(block_cmd, 3);
+        return csr_read(block_status);
+    }
+}
+
+fn vfs_disk_available() -> t40 {
+    if disk_block_count() - VFS_DISK_REQUIRED_BLOCKS >= 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn wal_addr_in_range(addr: t40, base: t40, words: t40) -> t40 {
+    if addr - base >= 0 {
+        if base + words - addr > 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fn wal_addr_is_persistent(addr: t40) -> t40 {
+    if wal_addr_in_range(addr, VFS_MAGIC_ADDR, 5) > 0 { return 1; }
+    if wal_addr_in_range(addr, VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, VFS_DATA_BASE, VFS_PAYLOAD_WORDS) > 0 { return 1; }
+    return 0;
+}
+
+fn wal_record_is_persistent(slot: t40) -> t40 {
+    var rec: t40 = wal_record_addr(slot);
+    var state: t40 = kload(rec + WAL_STATE);
+    if state - WAL_PENDING == 0 {
+        return wal_addr_is_persistent(kload(rec + WAL_BLOCK));
+    }
+    if state - WAL_COMMITTED == 0 {
+        return wal_addr_is_persistent(kload(rec + WAL_BLOCK));
+    }
+    if state - WAL_ABORTED == 0 {
+        return wal_addr_is_persistent(kload(rec + WAL_BLOCK));
+    }
+    return 0;
+}
+
+fn vfs_sync_range_to_disk(src_addr: t40, word_count: t40, first_block: t40, block_count: t40) -> t40 {
+    var block: t40 = 0;
+    var copied: t40 = 0;
+    while block_count - block > 0 {
+        var i: t40 = 0;
+        while MMU_PAGE_WORDS - i > 0 {
+            var value: t40 = 0;
+            if word_count - copied > 0 {
+                value = kload(src_addr + copied);
+                copied = copied + 1;
+            }
+            kstore(VFS_DISK_SCRATCH + i, value);
+            i = i + 1;
+        }
+        if disk_write_block(first_block + block, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        block = block + 1;
+    }
+    return copied;
+}
+
+fn vfs_load_range_from_disk(dst_addr: t40, word_count: t40, first_block: t40, block_count: t40) -> t40 {
+    var block: t40 = 0;
+    var copied: t40 = 0;
+    while block_count - block > 0 {
+        if disk_read_block(first_block + block, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        var i: t40 = 0;
+        while MMU_PAGE_WORDS - i > 0 {
+            if word_count - copied > 0 {
+                kstore(dst_addr + copied, kload(VFS_DISK_SCRATCH + i));
+                copied = copied + 1;
+            }
+            i = i + 1;
+        }
+        block = block + 1;
+    }
+    return copied;
+}
+
+fn wal_sync_to_disk() -> t40 {
+    if vfs_disk_available() <= 0 {
+        return ERR_NO_SPACE;
+    }
+    kclear(VFS_DISK_SCRATCH, MMU_PAGE_WORDS);
+    kstore(VFS_DISK_SCRATCH + 0, WAL_DISK_MAGIC);
+    kstore(VFS_DISK_SCRATCH + 1, WAL_DISK_VERSION);
+    kstore(VFS_DISK_SCRATCH + 2, WAL_CAPACITY);
+    kstore(VFS_DISK_SCRATCH + 3, WAL_RECORD_WORDS);
+    kstore(VFS_DISK_SCRATCH + 4, kload(WAL_HEAD_ADDR));
+    kstore(VFS_DISK_SCRATCH + 5, kload(WAL_TAIL_ADDR));
+    kstore(VFS_DISK_SCRATCH + 6, kload(WAL_NEXT_TXID_ADDR));
+    kstore(VFS_DISK_SCRATCH + 7, kload(WAL_CHECKPOINT_ADDR));
+    if disk_write_block(WAL_DISK_META_BLOCK, VFS_DISK_SCRATCH) - 1 != 0 {
+        return ERR_INVALID;
+    }
+    var block: t40 = 0;
+    var word_in_block: t40 = 0;
+    var slot: t40 = 0;
+    kclear(VFS_DISK_SCRATCH, MMU_PAGE_WORDS);
+    while WAL_CAPACITY - slot > 0 {
+        var rec: t40 = wal_record_addr(slot);
+        var keep: t40 = wal_record_is_persistent(slot);
+        var j: t40 = 0;
+        while WAL_RECORD_WORDS - j > 0 {
+            var value: t40 = 0;
+            if keep > 0 {
+                value = kload(rec + j);
+            }
+            kstore(VFS_DISK_SCRATCH + word_in_block, value);
+            word_in_block = word_in_block + 1;
+            if word_in_block - MMU_PAGE_WORDS == 0 {
+                if disk_write_block(WAL_DISK_RECORD_BLOCK + block, VFS_DISK_SCRATCH) - 1 != 0 {
+                    return ERR_INVALID;
+                }
+                block = block + 1;
+                word_in_block = 0;
+                kclear(VFS_DISK_SCRATCH, MMU_PAGE_WORDS);
+            }
+            j = j + 1;
+        }
+        slot = slot + 1;
+    }
+    if word_in_block > 0 {
+        if disk_write_block(WAL_DISK_RECORD_BLOCK + block, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        block = block + 1;
+    }
+    while WAL_DISK_RECORD_BLOCKS - block > 0 {
+        kclear(VFS_DISK_SCRATCH, MMU_PAGE_WORDS);
+        if disk_write_block(WAL_DISK_RECORD_BLOCK + block, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        block = block + 1;
+    }
+    return 1;
+}
+
+fn wal_load_from_disk() -> t40 {
+    if vfs_disk_available() <= 0 {
+        return ERR_NO_SPACE;
+    }
+    if disk_read_block(WAL_DISK_META_BLOCK, VFS_DISK_SCRATCH) - 1 != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 0) - WAL_DISK_MAGIC != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 1) - WAL_DISK_VERSION != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 2) - WAL_CAPACITY != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 3) - WAL_RECORD_WORDS != 0 {
+        return ERR_INVALID;
+    }
+    kstore(WAL_HEAD_ADDR, kload(VFS_DISK_SCRATCH + 4));
+    kstore(WAL_TAIL_ADDR, kload(VFS_DISK_SCRATCH + 5));
+    kstore(WAL_NEXT_TXID_ADDR, kload(VFS_DISK_SCRATCH + 6));
+    kstore(WAL_CHECKPOINT_ADDR, kload(VFS_DISK_SCRATCH + 7));
+    if vfs_load_range_from_disk(WAL_BASE, WAL_CAPACITY * WAL_RECORD_WORDS, WAL_DISK_RECORD_BLOCK, WAL_DISK_RECORD_BLOCKS) < 0 {
+        return ERR_INVALID;
+    }
+    return 1;
+}
+
+fn vfs_sync_state_to_disk() -> t40 {
+    kclear(VFS_DISK_SCRATCH, MMU_PAGE_WORDS);
+    kstore(VFS_DISK_SCRATCH + 0, VFS_DISK_MAGIC);
+    kstore(VFS_DISK_SCRATCH + 1, VFS_DISK_VERSION);
+    kstore(VFS_DISK_SCRATCH + 2, MMU_PAGE_WORDS);
+    kstore(VFS_DISK_SCRATCH + 3, VFS_MAX_INODES);
+    kstore(VFS_DISK_SCRATCH + 4, VFS_MAX_DIRENTS);
+    kstore(VFS_DISK_SCRATCH + 5, VFS_MAX_EXTENTS);
+    kstore(VFS_DISK_SCRATCH + 6, VFS_PAYLOAD_WORDS);
+    kstore(VFS_DISK_SCRATCH + 7, kload(VFS_MAGIC_ADDR));
+    kstore(VFS_DISK_SCRATCH + 8, kload(VFS_NEXT_INODE_ADDR));
+    kstore(VFS_DISK_SCRATCH + 9, kload(VFS_NEXT_DIRENT_ADDR));
+    kstore(VFS_DISK_SCRATCH + 10, kload(VFS_NEXT_EXTENT_ADDR));
+    kstore(VFS_DISK_SCRATCH + 11, kload(VFS_NEXT_DATA_ADDR));
+    return disk_write_block(VFS_DISK_SUPER_BLOCK, VFS_DISK_SCRATCH);
+}
+
+fn vfs_load_state_from_disk() -> t40 {
+    if disk_read_block(VFS_DISK_SUPER_BLOCK, VFS_DISK_SCRATCH) - 1 != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 0) - VFS_DISK_MAGIC != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 1) - VFS_DISK_VERSION != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 2) - MMU_PAGE_WORDS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 3) - VFS_MAX_INODES != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 4) - VFS_MAX_DIRENTS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 5) - VFS_MAX_EXTENTS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 6) - VFS_PAYLOAD_WORDS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 7) - KERNEL_MAGIC != 0 {
+        return ERR_INVALID;
+    }
+    kstore(VFS_MAGIC_ADDR, kload(VFS_DISK_SCRATCH + 7));
+    kstore(VFS_NEXT_INODE_ADDR, kload(VFS_DISK_SCRATCH + 8));
+    kstore(VFS_NEXT_DIRENT_ADDR, kload(VFS_DISK_SCRATCH + 9));
+    kstore(VFS_NEXT_EXTENT_ADDR, kload(VFS_DISK_SCRATCH + 10));
+    kstore(VFS_NEXT_DATA_ADDR, kload(VFS_DISK_SCRATCH + 11));
+    return 1;
+}
+
+fn vfs_sync_to_disk() -> t40 {
+    if vfs_disk_available() <= 0 {
+        return ERR_NO_SPACE;
+    }
+    if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(VFS_DATA_BASE, VFS_PAYLOAD_WORDS, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    return 1;
+}
+
+fn vfs_load_from_disk() -> t40 {
+    if vfs_disk_available() <= 0 {
+        return ERR_NO_SPACE;
+    }
+    if vfs_load_state_from_disk() - 1 != 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(VFS_DATA_BASE, VFS_PAYLOAD_WORDS, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    kclear(VFS_FD_BASE, VFS_MAX_FDS * VFS_FD_WORDS);
+    return 1;
+}
+
 fn vfs_format(device_id: t40) -> t40 {
     vfs_clear_tables();
     kstore(VFS_MAGIC_ADDR, KERNEL_MAGIC);
@@ -3017,10 +3341,24 @@ fn vfs_format(device_id: t40) -> t40 {
 }
 
 fn vfs_mount(namespace_id: t40, device_id: t40) -> t40 {
+    if vfs_load_from_disk() > 0 {
+        if wal_load_from_disk() > 0 {
+            log_recover();
+            vfs_sync_to_disk();
+            log_checkpoint();
+        }
+        return 1;
+    }
     if kload(VFS_MAGIC_ADDR) - KERNEL_MAGIC == 0 {
         return 1;
     }
-    return vfs_format(device_id);
+    var formatted: t40 = vfs_format(device_id);
+    if formatted > 0 {
+        if vfs_disk_available() > 0 {
+            vfs_sync_to_disk();
+        }
+    }
+    return formatted;
 }
 
 fn vfs_add_dirent(namespace_id: t40, parent: t40, child: t40, name_start: t40, name_len: t40) -> t40 {
@@ -3550,6 +3888,14 @@ fn vfs_fsync(pid: t40, fd: t40) -> t40 {
         return ERR_BAD_FD;
     }
     buffer_flush_all();
+    if vfs_disk_available() > 0 {
+        var synced: t40 = vfs_sync_to_disk();
+        if synced < 0 {
+            return synced;
+        }
+        log_checkpoint();
+        return synced;
+    }
     log_checkpoint();
     return 1;
 }
@@ -3631,7 +3977,50 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if kload(image_addr + EXEC_DESC_TEXT_PPN) <= 0 {
         return 0;
     }
+    if size_words - EXEC_DESC_V2_WORDS >= 0 {
+        var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
+        var text_words: t40 = kload(image_addr + EXEC_DESC_TEXT_WORDS);
+        if disk_block <= 0 {
+            return 0;
+        }
+        if text_words <= 0 {
+            return 0;
+        }
+        if text_words - (text_pages * MMU_PAGE_WORDS) > 0 {
+            return 0;
+        }
+    }
     return 1;
+}
+
+fn exec_load_text_image(image_addr: t40, size_words: t40) -> t40 {
+    if size_words - EXEC_DESC_V2_WORDS < 0 {
+        return 1;
+    }
+    var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
+    var text_words: t40 = kload(image_addr + EXEC_DESC_TEXT_WORDS);
+    if disk_block <= 0 {
+        return ERR_INVALID;
+    }
+    if text_words <= 0 {
+        return ERR_INVALID;
+    }
+    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
+    if text_words - (text_pages * MMU_PAGE_WORDS) > 0 {
+        return ERR_INVALID;
+    }
+    var text_ppn: t40 = kload(image_addr + EXEC_DESC_TEXT_PPN);
+    var dst_pc: t40 = text_ppn * MMU_PAGE_WORDS;
+    var remaining: t40 = text_words;
+    var block: t40 = 0;
+    while remaining > 0 {
+        if disk_read_imem_block(disk_block + block, dst_pc + block * MMU_PAGE_WORDS) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        remaining = remaining - MMU_PAGE_WORDS;
+        block = block + 1;
+    }
+    return text_words;
 }
 
 fn is_gui_app(path_addr: t40) -> t40 {
@@ -3857,6 +4246,7 @@ fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
         return fd;
     }
     var dst: t40 = exec_image_addr(process_slot);
+    kclear(dst, EXEC_IMAGE_WORDS);
     var read_count: t40 = vfs_read_kernel(pid, fd, dst, size_words);
     vfs_close(pid, fd);
     if read_count < 0 {
@@ -3864,6 +4254,10 @@ fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
     }
     if exec_descriptor_valid(dst, read_count) <= 0 {
         return ERR_INVALID;
+    }
+    var text_loaded: t40 = exec_load_text_image(dst, read_count);
+    if text_loaded < 0 {
+        return text_loaded;
     }
     var is_gui: t40 = is_gui_app(path_addr);
     exec_map_descriptor(process_slot, dst, is_gui);
@@ -4802,6 +5196,7 @@ fn kernel_init() -> t40 {
     namespace_table_init();
     pte_table_init();
     process_create(0, 1, 0, 1, 0, 0);
+    vfs_mount(0, 0);
     // Tag the kernel process in attr_store so rel_join_proc_attr works from boot.
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_CREATED_TXID, 0);
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_DESIRED_STATE, PROC_RUNNABLE);
@@ -4811,7 +5206,6 @@ fn kernel_init() -> t40 {
     kclear(FB_STATE_BASE, FB_STATE_WORDS);
     kstore(FB_STATE_BASE + FB_FRONT_INDEX, 0);
     window_table_init();
-    vfs_format(0);
     kstore(CURRENT_CONTEXT_ADDR, 0);
     kstore(CURRENT_PID_ADDR, 1);
     kstore(KERNEL_BOOTED_ADDR, 1);
