@@ -293,6 +293,9 @@ fn main() -> t40 {
     var path_addr: t40 = 0;
     var last_btn: t40 = 0;
     var gui_win: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var event_kind: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
@@ -306,9 +309,22 @@ fn main() -> t40 {
     calc_draw_ui(hovered_btn, val1, val2, op, result, has_result, has_error);
 
     while 1 - done > 0 {
-        mx = os_mouse_x();
-        my = os_mouse_y();
-        btn = os_mouse_btn();
+        event_status = os_wait_event(-1, event_addr, 0);
+        k = 0;
+        if event_status > 0 {
+            event_kind = os_event_kind(event_addr);
+            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr);
+                my = os_event_y(event_addr);
+                btn = os_event_modifiers(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                done = 1;
+            }
+        }
 
         // Publish sprite tracking cursor
         os_sprite(mx, my, 43, 14); // '+' in yellow
@@ -371,8 +387,7 @@ fn main() -> t40 {
         }
 
         // Support keyboard hotkeys concurrently
-        if os_key_available() > 0 {
-            k = os_read_key();
+        if k > 0 {
             if k - 49 == 0 { click = 1; }  // '1'
             if k - 50 == 0 { click = 2; }  // '2'
             if k - 51 == 0 { click = 3; }  // '3'
@@ -485,7 +500,7 @@ fn main() -> t40 {
         last_btn = btn;
     }
 
-    path_addr = calc_seed_desktop_path(15000);
+    path_addr = calc_seed_desktop_path(10000);
     sys_exec(path_addr);
     return result;
 }

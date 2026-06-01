@@ -228,6 +228,16 @@ static constexpr int sys_mkdir = 41;
 static constexpr int sys_unlink = 42;
 static constexpr int sys_sleep = 45;
 static constexpr int sys_ps = 46;
+static constexpr int sys_fsync = 47;
+static constexpr int sys_kill = 48;
+static constexpr int sys_suspend = 49;
+static constexpr int sys_resume = 50;
+static constexpr int sys_getproc = 51;
+static constexpr int sys_futex_wait = 52;
+static constexpr int sys_futex_wake = 53;
+static constexpr int sys_ipc_recv_blocking = 54;
+static constexpr int sys_wait_event = 55;
+static constexpr int sys_sleep_ms = 56;
 } // namespace runtime
 
 } // namespace compiler

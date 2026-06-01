@@ -257,9 +257,44 @@ void testPhaseDKernelEndToEnd() {
             ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
             ok = expect_eq(macro_reconcile_processes(), 2, ok);
             ok = expect_eq(macro_publish(), 2, ok);
-            ok = expect_eq(tier1_dequeue(), 1, ok);
-            ok = expect_eq(tier1_dequeue(), 2, ok);
+            var staged_a: t40 = tier1_dequeue();
+            var staged_b: t40 = tier1_dequeue();
+            ok = expect_eq(staged_a + staged_b, 3, ok);
+            ok = expect_eq(staged_a * staged_b, 2, ok);
             ok = expect_eq(quota_remaining(0), 1, ok);
+
+            var futex_addr: t40 = USER_MEM_BASE + 10;
+            kstore(futex_addr, 7);
+            kstore(120 + TASK_CONTEXT_EPC, 200);
+            kernel_syscall_dispatch(2, 52, futex_addr, 7, 5, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
+            ok = expect_eq(process_state(1), PROC_BLOCKED, ok);
+            ok = expect_eq(wait_wake_futex(futex_addr, 1), 1, ok);
+            ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
+            ok = expect_eq(kload(120 + TASK_CONTEXT_EPC), 201, ok);
+            ok = expect_eq(kload(120 + 19), 1, ok);
+
+            kstore(120 + TASK_CONTEXT_EPC, 300);
+            kernel_syscall_dispatch(2, 56, 2, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
+            ok = expect_eq(process_state(1), PROC_SLEEPING, ok);
+            kstore(KERNEL_TICK_ADDR, kload(KERNEL_TICK_ADDR) + 1);
+            wait_expire_timeouts();
+            ok = expect_eq(process_state(1), PROC_SLEEPING, ok);
+            kstore(KERNEL_TICK_ADDR, kload(KERNEL_TICK_ADDR) + 1);
+            wait_expire_timeouts();
+            ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
+            ok = expect_eq(kload(120 + TASK_CONTEXT_EPC), 301, ok);
+
+            ipc_open(2, 0, 0);
+            kstore(120 + TASK_CONTEXT_EPC, 400);
+            kernel_syscall_dispatch(2, 54, 2, USER_MEM_BASE + 820, 10, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
+            ok = expect_eq(process_state(1), PROC_BLOCKED, ok);
+            kernel_syscall_dispatch(1, 23, 2, 999, 0, 0);
+            ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
+            ok = expect_eq(kload(USER_MEM_BASE + 820), 999, ok);
+            ok = expect_eq(kload(120 + TASK_CONTEXT_EPC), 401, ok);
 
             var path: t40 = USER_MEM_BASE;
             var root_path: t40 = USER_MEM_BASE + 20;
@@ -539,6 +574,7 @@ void testPhaseDKernelEndToEnd() {
             ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
             ok = expect_eq(kload(ipc_out + EVENT_KIND), EVENT_KIND_CLOSE, ok);
             ok = expect_eq(kload(ipc_out + EVENT_X_OR_KEY), 1, ok);
+            ok = expect_eq(signal_has(kload(PROC_SIGNAL_PENDING_BASE), SIGNAL_CLOSE_REQUEST), 1, ok);
             kernel_syscall_dispatch(1, 33, 1, ipc_out, 0, 0);
             ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
             ok = expect_eq(kload(ipc_out + EVENT_KIND), EVENT_KIND_KEY, ok);
@@ -581,6 +617,63 @@ void testPhaseDKernelEndToEnd() {
             kernel_syscall_dispatch(1, 32, 1, 0, 0, 0);
             ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
             ok = expect_eq(kload(window_addr(1) + WIN_ACTIVE), 0, ok);
+
+            kernel_syscall_dispatch(2, 27, 0, 0, 2, 2);
+            var wait_win2: t40 = kload(SYS_PAYLOAD_ADDR);
+            kstore(120 + TASK_CONTEXT_EPC, 500);
+            kernel_syscall_dispatch(2, 55, wait_win2, ipc_out, 10, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
+            window_queue_event(window_find(wait_win2), EVENT_KIND_KEY, 65, 0, 0);
+            ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
+            ok = expect_eq(kload(ipc_out + EVENT_KIND), EVENT_KIND_KEY, ok);
+            ok = expect_eq(kload(ipc_out + EVENT_X_OR_KEY), 65, ok);
+            ok = expect_eq(kload(120 + TASK_CONTEXT_EPC), 501, ok);
+            kernel_syscall_dispatch(2, 32, wait_win2, 0, 0, 0);
+
+            process_create(4, 5, 0, 1, 0, 160);
+            process_set_parent(4, 1);
+            process_create(5, 6, 0, 1, 0, 170);
+            process_set_parent(5, 5);
+            var kill_fd: t40 = vfs_open(5, path, 0);
+            ok = expect_pos(kill_fd, ok);
+            ok = expect_eq(ipc_open_owned(1, 5, 0, 1), 1, ok);
+            pte_map(4, 0, ppn, 0);
+            process_wait(4, 777);
+            kernel_syscall_dispatch(1, 49, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(4), PROC_STOPPED, ok);
+            ok = expect_eq(kload(WAIT_CHANNEL_BASE + 4), 0, ok);
+            kernel_syscall_dispatch(1, 50, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(4), PROC_RUNNABLE, ok);
+            kernel_syscall_dispatch(5, 27, 0, 0, 2, 2);
+            var killed_window: t40 = kload(SYS_PAYLOAD_ADDR);
+            var killed_window_slot: t40 = window_find(killed_window);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(kload(window_addr(killed_window_slot) + WIN_OWNER_PID), 5, ok);
+            process_wait(4, 888);
+            kernel_syscall_dispatch(1, 48, 5, SIGNAL_KILL, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(4), PROC_ZOMBIE, ok);
+            ok = expect_eq(kload(fd_addr(kill_fd) + FD_REFCOUNT), 0, ok);
+            ok = expect_eq(kload(window_addr(killed_window_slot) + WIN_ACTIVE), 0, ok);
+            ok = expect_eq(kload(ipc_channel_addr(1) + IPC_VERSION), 0, ok);
+            ok = expect_eq(kload(IPC_OWNER_BASE + 1), -1, ok);
+            ok = expect_eq(kload(WAIT_CHANNEL_BASE + 4), 0, ok);
+            ok = expect_eq(pte_entry_faults(4, 0), 1, ok);
+            ok = expect_eq(kload(PROC_PARENT_PID_BASE + 5), -1, ok);
+            kernel_syscall_dispatch(1, 51, 5, ipc_out, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(kload(ipc_out + PROCINFO_STATE), PROC_ZOMBIE, ok);
+            ok = expect_eq(kload(ipc_out + PROCINFO_PARENT_PID), 1, ok);
+            ok = expect_eq(signal_has(kload(ipc_out + PROCINFO_PENDING_SIGNALS), SIGNAL_KILL), 1, ok);
+            kernel_syscall_dispatch(1, 48, 6, SIGNAL_KILL, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_find_pid(6), ERR_NOT_FOUND, ok);
+            kernel_syscall_dispatch(1, 43, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(kload(SYS_PAYLOAD_ADDR), SIGNAL_KILL, ok);
+            ok = expect_eq(process_find_pid(5), ERR_NOT_FOUND, ok);
 
             return ok;
         }
@@ -647,7 +740,7 @@ void testPhaseDKernelEndToEnd() {
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "kernel image loads");
         vm.enqueueConsoleAscii("K");
-        const auto result = sandbox::vm::run(vm, 20000000);
+        const auto result = sandbox::vm::run(vm, 50000000);
         if (!result.halted()) {
             std::cout << "DEBUG: status=" << static_cast<int>(result.status)
                       << " pc=" << vm.pc
@@ -673,8 +766,8 @@ void testPhaseDKernelEndToEnd() {
         expect(wordAt(vm, 36000) == 1, "sys_sbrk returns success in the native kernel");
         expect(wordAt(vm, 36001) == 27, "sys_sbrk returns the old process break");
         expect(wordAt(vm, 36002) == 57, "sys_sbrk advances the process heap break");
-        expect(wordAt(vm, 36003) == 371, "sys_sbrk preserves sparse user scratch DMEM span");
-        expect(wordAt(vm, 36004) == 227002, "sys_sbrk installs the new DMEM PTE");
+        expect(wordAt(vm, 36003) == 488, "sys_sbrk preserves sparse user scratch DMEM span");
+        expect(wordAt(vm, 36004) == 871438, "sys_sbrk installs the new DMEM PTE");
     }
 }
 

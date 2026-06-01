@@ -204,6 +204,43 @@ void testSyscallsHeapForkAndExec() {
     expect(child->memory[3] == 777 && child->fork_return_payload == 0,
            "fork copies memory and records child return payload");
 
+    const int childPid = forked.payload;
+    StatusResult grandchild = kernel.sysFork(childPid);
+    expect(grandchild.ok(), "child can fork a grandchild for orphan cleanup");
+    ProcessInfo info;
+    expect(kernel.sysGetProc(childPid, info).ok() &&
+               info.parent_pid == kPid &&
+               info.state == sandbox::vm::PROC_STATE_RUNNABLE,
+           "getproc reports parent and runnable state");
+    expect(kernel.sysSuspend(childPid).ok() &&
+               kernel.process(childPid)->state == sandbox::vm::PROC_STATE_STOPPED,
+           "suspend moves a process to stopped");
+    expect(kernel.sysResume(childPid).ok() &&
+               kernel.process(childPid)->state == sandbox::vm::PROC_STATE_RUNNABLE,
+           "resume makes a stopped process runnable");
+    expect(kernel.createWindow(childPid, 2, 2).ok(), "child window creates before kill");
+    expect(kernel.windowCount() == 1, "window table records child window");
+    StatusResult childFd = kernel.sysOpen(childPid, "/tmp/data", true);
+    expect(childFd.ok(), "child opens fd before kill");
+    expect(kernel.sysKill(childPid, sandbox::vm::SIGNAL_KILL).ok(),
+           "kill signal succeeds");
+    child = kernel.process(childPid);
+    expect(child != nullptr &&
+               child->state == sandbox::vm::PROC_STATE_ZOMBIE &&
+               child->fds.empty() &&
+               child->memory.empty() &&
+               kernel.windowCount() == 0,
+           "killed child releases files, memory, and windows while waiting for parent");
+    Process* orphan = kernel.process(grandchild.payload);
+    expect(orphan != nullptr && orphan->parent_pid == -1,
+           "killing a parent orphans live children");
+    expect(kernel.sysKill(grandchild.payload, sandbox::vm::SIGNAL_KILL).ok() &&
+               kernel.process(grandchild.payload) == nullptr,
+           "orphaned killed child is reaped without a zombie leak");
+    expect(kernel.sysWaitPid(kPid, childPid).ok() &&
+               kernel.process(childPid) == nullptr,
+           "parent wait reaps killed zombie child");
+
     expect(kernel.fs().createFile("/bin", InodeKind::Directory).ok(), "bin directory creates");
     expect(kernel.fs().createFile("/bin/app", InodeKind::Executable, true).ok(),
            "exec file creates");
@@ -426,7 +463,8 @@ void testNativeKernelVfsMountsDiskBackedState() {
             var fd: t40 = vfs_open(1, path, 2);
             if fd < 0 { return -2; }
             if vfs_write(1, fd, src, 4) - 4 != 0 { return -3; }
-            if vfs_fsync(1, fd) - 1 != 0 { return -4; }
+            if kernel_syscall_dispatch(1, 47, fd, 0, 0, 0) - 1 != 0 { return -4; }
+            if kload(SYS_PAYLOAD_ADDR) - 1 != 0 { return -5; }
             vfs_close(1, fd);
             return 1;
         }
@@ -734,8 +772,6 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
             if kload(dst + 2) - 73 != 0 { return -6; }
             if kload(dst + 3) - 84 != 0 { return -7; }
             vfs_close(1, fd);
-            var app_id: t40 = app_register(0, app_path, APP_CAP_CONSOLE, 0, 1, EXEC_IMAGE_WORDS);
-            if app_id < 0 { return -8; }
             if app_launch(1, app_path, 0) - EXEC_DESC_V2_WORDS != 0 { return -9; }
             if kload(exec_hw_imem_ptbr(0)) - exec_encode_pte(720, 1, 0, 0, 1) != 0 { return -10; }
             var ctx: t40 = kload(process_addr(0) + PROC_CONTEXT);
@@ -760,10 +796,11 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
                "native VFS image boot driver loads");
-        const auto result = sandbox::vm::run(vm, 5000000);
+        const auto result = sandbox::vm::run(vm, 50000000);
         expect(result.halted(), "native VFS image boot driver halts");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1,
-               "native kernel mounts image-built root and launches disk app descriptor");
+        const long long bootRet = sandbox::vm::ops::toLong(vm.regfile.read(13));
+        expect(bootRet == 123,
+               "native kernel mounts image-built root and launches disk app image");
         expect(vm.imem.words[kDiskAppTextPpn * sandbox::vm::MMU_PAGE_WORDS] ==
                    appAssembly.program.front(),
                "native exec loads app text from disk into IMEM");
@@ -784,11 +821,22 @@ void testSharedStatusAndCompilerWrappers() {
 
     expect(runtime::sys_open == SYSCALL_OPEN &&
            runtime::sys_sbrk == SYSCALL_SBRK &&
-           runtime::sys_exec == SYSCALL_EXEC,
+           runtime::sys_exec == SYSCALL_EXEC &&
+           runtime::sys_fsync == SYSCALL_FSYNC &&
+           runtime::sys_kill == SYSCALL_KILL &&
+           runtime::sys_getproc == SYSCALL_GETPROC &&
+           runtime::sys_futex_wait == SYSCALL_FUTEX_WAIT &&
+           runtime::sys_wait_event == SYSCALL_WAIT_EVENT &&
+           runtime::sys_sleep_ms == SYSCALL_SLEEP_MS,
            "compiler runtime exports OS syscall ids");
     expect(sandbox::vm::SYSCALL_OPEN == SYSCALL_OPEN &&
            sandbox::vm::SYSCALL_FORK == SYSCALL_FORK &&
-           sandbox::vm::SYSCALL_EXEC == SYSCALL_EXEC,
+           sandbox::vm::SYSCALL_EXEC == SYSCALL_EXEC &&
+           sandbox::vm::SYSCALL_FSYNC == SYSCALL_FSYNC &&
+           sandbox::vm::SYSCALL_KILL == SYSCALL_KILL &&
+           sandbox::vm::SYSCALL_GETPROC == SYSCALL_GETPROC &&
+           sandbox::vm::SYSCALL_FUTEX_WAKE == SYSCALL_FUTEX_WAKE &&
+           sandbox::vm::SYSCALL_IPC_RECV_BLOCKING == SYSCALL_IPC_RECV_BLOCKING,
            "VM ABI constants reserve OS syscall ids");
 
     const std::string src = R"(
@@ -796,7 +844,14 @@ void testSharedStatusAndCompilerWrappers() {
           let grown = sys_sbrk(9);
           let child = sys_fork();
           let status = sys_exec(0);
-          return grown + child + status;
+          let synced = sys_fsync(0);
+          let killed = sys_kill(2, 2);
+          let resumed = sys_resume(2);
+          let info = sys_getproc(1, 10000);
+          let slept = sys_sleep_ms(1);
+          let woken = sys_futex_wake(10000, 1);
+          let evented = sys_wait_event(-1, 10000, 1);
+          return grown + child + status + synced + killed + resumed + info + slept + woken + evented;
         }
     )";
     CompileResult compiled = compileSource("os_wrappers.trit", src);
@@ -808,6 +863,12 @@ void testSharedStatusAndCompilerWrappers() {
     expect(contains(compiled.assembly, "syscall 19"), "sys_sbrk lowers to syscall 19");
     expect(contains(compiled.assembly, "syscall 20"), "sys_fork lowers to syscall 20");
     expect(contains(compiled.assembly, "syscall 21"), "sys_exec lowers to syscall 21");
+    expect(contains(compiled.assembly, "syscall 48"), "sys_kill lowers to syscall 48");
+    expect(contains(compiled.assembly, "syscall 50"), "sys_resume lowers to syscall 50");
+    expect(contains(compiled.assembly, "syscall 51"), "sys_getproc lowers to syscall 51");
+    expect(contains(compiled.assembly, "syscall 53"), "sys_futex_wake lowers to syscall 53");
+    expect(contains(compiled.assembly, "syscall 55"), "sys_wait_event lowers to syscall 55");
+    expect(contains(compiled.assembly, "syscall 56"), "sys_sleep_ms lowers to syscall 56");
 }
 
 } // namespace

@@ -116,6 +116,9 @@ void testIpcSdkWrappersCompile() {
         fn main() -> t40 {
             var out_addr: t40 = 10000;
             os_ipc_send(0, 77);
+            os_ipc_recv_blocking(0, out_addr, 10);
+            os_futex_wait(out_addr, 77, 10);
+            os_futex_wake(out_addr, 1);
             return os_ipc_recv(0, out_addr);
         }
     )";
@@ -128,6 +131,9 @@ void testIpcSdkWrappersCompile() {
     expect(compiled.success, "IPC SDK wrappers compile");
     expect(contains(compiled.assembly, "syscall 23"), "os_ipc_send lowers to syscall 23");
     expect(contains(compiled.assembly, "syscall 24"), "os_ipc_recv lowers to syscall 24");
+    expect(contains(compiled.assembly, "syscall 52"), "os_futex_wait lowers to syscall 52");
+    expect(contains(compiled.assembly, "syscall 53"), "os_futex_wake lowers to syscall 53");
+    expect(contains(compiled.assembly, "syscall 54"), "os_ipc_recv_blocking lowers to syscall 54");
 }
 
 void testFileSdkWrappersCompile() {
@@ -144,6 +150,7 @@ void testFileSdkWrappersCompile() {
             os_readdir(path, buf + 8, 16);
             os_read(fd, buf + 24, 4);
             os_write(fd, buf + 24, 4);
+            os_fsync(fd);
             os_close(fd);
             return fd;
         }
@@ -161,6 +168,7 @@ void testFileSdkWrappersCompile() {
     expect(contains(compiled.assembly, "syscall 15"), "os_write lowers to syscall 15");
     expect(contains(compiled.assembly, "syscall 16"), "os_stat lowers to syscall 16");
     expect(contains(compiled.assembly, "syscall 17"), "os_readdir lowers to syscall 17");
+    expect(contains(compiled.assembly, "syscall 47"), "os_fsync lowers to syscall 47");
 }
 
 void testGuiSdkWrappersCompile() {
@@ -184,6 +192,8 @@ void testGuiSdkWrappersCompile() {
             os_window_resize(win, 4, 3);
             os_window_request_close(win);
             os_window_read_event(win, 10000);
+            os_wait_event(win, 10000, 10);
+            os_window_wait_event(win, 10000, 10);
             os_event_kind(10000);
             os_event_x_or_key(10000);
             os_event_y(10000);
@@ -210,10 +220,40 @@ void testGuiSdkWrappersCompile() {
     expect(contains(compiled.assembly, "syscall 33"), "os_window_read_event lowers to syscall 33");
     expect(contains(compiled.assembly, "syscall 34"), "os_window_resize lowers to syscall 34");
     expect(contains(compiled.assembly, "syscall 35"), "os_window_request_close lowers to syscall 35");
+    expect(contains(compiled.assembly, "syscall 55"), "blocking event waits lower to syscall 55");
+}
+
+void testProcessControlSdkWrappersCompile() {
+    std::cout << "[5] Native OS process-control SDK wrappers\n";
+    using namespace sandbox::compiler;
+
+    const std::string sdk = readTextFile("apps/os_sdk.trit");
+    const std::string src = R"(
+        fn main() -> t40 {
+            var info: t40 = 10000;
+            os_getproc(1, info);
+            os_suspend(2);
+            os_resume(2);
+            os_sleep_ms(5);
+            return os_kill(2, OS_SIGNAL_KILL);
+        }
+    )";
+
+    CompileResult compiled = compileSource("native_app_process_control.trit", sdk + "\n" + src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR PROCESS SDK:\n";
+        dumpDiagnostics(compiled);
+    }
+    expect(compiled.success, "process-control SDK wrappers compile");
+    expect(contains(compiled.assembly, "syscall 48"), "os_kill lowers to syscall 48");
+    expect(contains(compiled.assembly, "syscall 49"), "os_suspend lowers to syscall 49");
+    expect(contains(compiled.assembly, "syscall 50"), "os_resume lowers to syscall 50");
+    expect(contains(compiled.assembly, "syscall 51"), "os_getproc lowers to syscall 51");
+    expect(contains(compiled.assembly, "syscall 56"), "os_sleep_ms lowers to syscall 56");
 }
 
 void testWidgetToolkitCompiles() {
-    std::cout << "[5] Native OS widget toolkit\n";
+    std::cout << "[6] Native OS widget toolkit\n";
     using namespace sandbox::compiler;
 
     const std::string sdk = readTextFile("apps/os_sdk.trit");
@@ -268,6 +308,7 @@ int main() {
     testIpcSdkWrappersCompile();
     testFileSdkWrappersCompile();
     testGuiSdkWrappersCompile();
+    testProcessControlSdkWrappersCompile();
     testWidgetToolkitCompiles();
     if (g_failures != 0) {
         std::cout << g_failures << " failure(s)\n";

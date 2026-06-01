@@ -2063,6 +2063,21 @@ inline VMStatus step(VMState& vm, const VMHooks& hooks) {
     return after;
 }
 
+inline VMStatus stepCore(VMState& vm, int core_id) {
+    if (core_id < 0 || core_id >= vm.coreCount()) return vm.status;
+    if (vm.active_core >= 0 && vm.active_core < vm.coreCount() && vm.active_core != core_id) {
+        vm.captureCoreState(vm.active_core);
+    }
+    vm.restoreCoreState(core_id);
+    if (!vm.isRunning()) {
+        vm.captureCoreState(core_id);
+        return vm.status;
+    }
+    const VMStatus after = step(vm);
+    vm.captureCoreState(core_id);
+    return after;
+}
+
 struct RunResult {
     VMStatus   status;       // Final VMStatus when execution stopped
     int        steps;        // Number of instructions executed
@@ -2074,6 +2089,43 @@ struct RunResult {
     [[nodiscard]] bool trapped() const { return status == VMStatus::TRAPPED; }
     [[nodiscard]] bool timeout() const { return status == VMStatus::RUNNING; }
 };
+
+inline RunResult runMultiCore(VMState& vm, int max_steps = 1000000) {
+    int steps = 0;
+    bool any_running = true;
+    while (any_running) {
+        any_running = false;
+        for (int core = 0; core < vm.coreCount(); ++core) {
+            if (vm.coreState(core).status == VMStatus::RUNNING) {
+                any_running = true;
+                if (max_steps >= 0 && steps >= max_steps) {
+                    RunResult timeout{VMStatus::RUNNING, steps, vm.coreState(core).pc,
+                                      TrapCode::TRAP_ILLEGAL_OP,
+                                      "TIMEOUT after " + std::to_string(steps) + " steps"};
+                    return timeout;
+                }
+                stepCore(vm, core);
+                ++steps;
+            }
+        }
+    }
+
+    VMStatus final_status = VMStatus::HALTED;
+    int final_pc = 0;
+    TrapCode trap = TrapCode::TRAP_ILLEGAL_OP;
+    for (int core = 0; core < vm.coreCount(); ++core) {
+        const VMCoreState& state = vm.coreState(core);
+        final_pc = state.pc;
+        if (state.status == VMStatus::TRAPPED) {
+            final_status = VMStatus::TRAPPED;
+            trap = decodeTrap(state.trap_reg);
+            break;
+        }
+    }
+    return RunResult{final_status, steps, final_pc, trap,
+                     (final_status == VMStatus::HALTED ? "HALT" : "TRAP") +
+                         std::string(" after ") + std::to_string(steps) + " core steps"};
+}
 
 // Run the VM until HALT, TRAP, or max_steps is reached.
 // One step is one architecturally executed instruction, regardless of opcode

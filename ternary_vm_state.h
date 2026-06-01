@@ -59,9 +59,16 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cstdint>
+#include <deque>
+#include <fstream>
+#include <cstdio>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -84,6 +91,45 @@ static constexpr int DEFAULT_IMEM_SIZE = 4096;
 // Range of I-type imm16 (±21,523,360) far exceeds this — intentional.
 // The memory can be resized at construction for large simulations.
 static constexpr int DEFAULT_DMEM_SIZE = 1000000;
+
+static constexpr int MMU_PAGE_WORDS = 27;
+static constexpr int OS_CLUSTER_WORDS = 4096;
+static constexpr int SPARSE_MEMORY_DENSE_LIMIT_WORDS = 4 * 1024 * 1024;
+static constexpr std::int64_t PRODUCTION_RAM_WORD_BYTES = 16;
+
+struct ProductionProfile {
+    int cores = 2;
+    int ram_words = 0;
+    int instruction_words = 0;
+    int disk_blocks = 0;
+    int framebuffer_words = 0;
+    int framebuffer_width = 1280;
+    int framebuffer_height = 720;
+    int max_processes = 100;
+    int max_files = 2048;
+    int max_windows = 100;
+    int hardware_page_words = MMU_PAGE_WORDS;
+    int cluster_words = OS_CLUSTER_WORDS;
+    std::int64_t ram_bytes = 4LL * 1024LL * 1024LL * 1024LL;
+    std::int64_t disk_bytes = 64LL * 1024LL * 1024LL * 1024LL;
+
+    [[nodiscard]] static ProductionProfile minimum() {
+        ProductionProfile profile;
+        profile.ram_words = static_cast<int>(
+            profile.ram_bytes / PRODUCTION_RAM_WORD_BYTES);
+        profile.instruction_words = profile.ram_words;
+        const std::int64_t block_bytes =
+            static_cast<std::int64_t>(MMU_PAGE_WORDS) * static_cast<std::int64_t>(sizeof(long long));
+        profile.disk_blocks = static_cast<int>((profile.disk_bytes + block_bytes - 1) / block_bytes);
+        profile.framebuffer_words = profile.framebuffer_width * profile.framebuffer_height;
+        return profile;
+    }
+};
+
+[[nodiscard]] inline int clustersForWords(int words, int cluster_words = OS_CLUSTER_WORDS) {
+    if (words <= 0 || cluster_words <= 0) return 0;
+    return (words + cluster_words - 1) / cluster_words;
+}
 
 // =============================================================================
 // SECTION 2 — Memory Fault Code
@@ -610,15 +656,22 @@ inline VMStateAllocator& defaultVMStateAllocator() {
     return host;
 }
 
+enum class MemoryBacking : uint8_t {
+    Auto,
+    Dense,
+    Sparse,
+};
+
 struct TernaryMemory {
-    TernaryValue* words = nullptr;
+    TernaryValue* words = nullptr; // Non-null only for dense compatibility mode.
     int capacity = 0;
     VMStateAllocator* allocator = &defaultVMStateAllocator();
 
     explicit TernaryMemory(int size = DEFAULT_DMEM_SIZE,
-                           VMStateAllocator& alloc = defaultVMStateAllocator())
+                           VMStateAllocator& alloc = defaultVMStateAllocator(),
+                           MemoryBacking backing = MemoryBacking::Auto)
         : allocator(&alloc) {
-        allocate(size);
+        allocate(size, backing);
         reset();
     }
 
@@ -627,10 +680,11 @@ struct TernaryMemory {
     }
 
     TernaryMemory(const TernaryMemory& other)
-        : allocator(other.allocator) {
-        allocate(other.capacity);
+        : allocator(other.allocator), sparse_(other.sparse_), sparse_pages_(other.sparse_pages_) {
+        allocate(other.capacity, other.sparse_ ? MemoryBacking::Sparse : MemoryBacking::Dense);
         try {
-            if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+            if (!sparse_ && capacity > 0) std::copy(other.words, other.words + capacity, words);
+            if (sparse_) sparse_pages_ = other.sparse_pages_;
         } catch (...) {
             release();
             throw;
@@ -640,17 +694,20 @@ struct TernaryMemory {
     TernaryMemory& operator=(const TernaryMemory& other) {
         if (this == &other) return *this;
         TernaryMemory tmp(other);  // copy-and-swap for strong exception safety
-        std::swap(words, tmp.words);
-        std::swap(capacity, tmp.capacity);
-        std::swap(allocator, tmp.allocator);
+        swap(tmp);
         return *this;
     }
 
     TernaryMemory(TernaryMemory&& other) noexcept
-        : words(other.words), capacity(other.capacity), allocator(other.allocator) {
+        : words(other.words),
+          capacity(other.capacity),
+          allocator(other.allocator),
+          sparse_(other.sparse_),
+          sparse_pages_(std::move(other.sparse_pages_)) {
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
+        other.sparse_ = false;
     }
 
     TernaryMemory& operator=(TernaryMemory&& other) noexcept {
@@ -659,15 +716,32 @@ struct TernaryMemory {
         words = other.words;
         capacity = other.capacity;
         allocator = other.allocator;
+        sparse_ = other.sparse_;
+        sparse_pages_ = std::move(other.sparse_pages_);
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
+        other.sparse_ = false;
         return *this;
     }
 
-    void allocate(int size) {
+    void swap(TernaryMemory& other) noexcept {
+        std::swap(words, other.words);
+        std::swap(capacity, other.capacity);
+        std::swap(allocator, other.allocator);
+        std::swap(sparse_, other.sparse_);
+        std::swap(sparse_pages_, other.sparse_pages_);
+    }
+
+    void allocate(int size, MemoryBacking backing = MemoryBacking::Auto) {
         if (size < 0) throw std::invalid_argument("negative TernaryMemory size");
         capacity = size;
+        sparse_ = backing == MemoryBacking::Sparse ||
+                  (backing == MemoryBacking::Auto && size > SPARSE_MEMORY_DENSE_LIMIT_WORDS);
+        if (sparse_) {
+            words = nullptr;
+            return;
+        }
         words = allocator->allocateDataWords(capacity);
     }
 
@@ -676,22 +750,36 @@ struct TernaryMemory {
             allocator->deallocateDataWords(words);
             words = nullptr;
         }
+        sparse_pages_.clear();
         capacity = 0;
+        sparse_ = false;
     }
 
     void reset() {
-        if (capacity > 0) std::fill(words, words + capacity, TernaryValue::zero());
+        if (sparse_) {
+            sparse_pages_.clear();
+        } else if (capacity > 0) {
+            std::fill(words, words + capacity, TernaryValue::zero());
+        }
     }
 
-    void resize(int new_size) {
+    void resize(int new_size, MemoryBacking backing = MemoryBacking::Auto) {
         release();
-        allocate(new_size);
+        allocate(new_size, backing);
         reset();
     }
 
     bool growTo(int min_size) {
         if (min_size <= capacity) return true;
         if (min_size < 0) return false;
+        if (sparse_) {
+            capacity = min_size;
+            return true;
+        }
+        if (min_size > SPARSE_MEMORY_DENSE_LIMIT_WORDS) {
+            convertDenseToSparse(min_size);
+            return true;
+        }
 
         TernaryValue* grown = nullptr;
         try {
@@ -718,7 +806,10 @@ struct TernaryMemory {
         if (addr < 0 || addr >= capacity) {
             return {TernaryValue::zero(), MemFaultCode::OUT_OF_RANGE};
         }
-        return {words[addr], MemFaultCode::OK};
+        if (!sparse_) return {words[addr], MemFaultCode::OK};
+        const auto page = sparse_pages_.find(pageIndex(addr));
+        if (page == sparse_pages_.end()) return {TernaryValue::zero(), MemFaultCode::OK};
+        return {page->second[static_cast<std::size_t>(pageOffset(addr))], MemFaultCode::OK};
     }
 
     // Store one LongTriple word to address [addr].
@@ -727,7 +818,13 @@ struct TernaryMemory {
         if (addr < 0 || addr >= capacity) {
             return MemFaultCode::OUT_OF_RANGE;
         }
-        words[addr] = val;
+        if (!sparse_) {
+            words[addr] = val;
+            return MemFaultCode::OK;
+        }
+        auto& page = sparse_pages_[pageIndex(addr)];
+        if (page.empty()) page.assign(MMU_PAGE_WORDS, TernaryValue::zero());
+        page[static_cast<std::size_t>(pageOffset(addr))] = val;
         return MemFaultCode::OK;
     }
 
@@ -740,6 +837,31 @@ struct TernaryMemory {
     }
 
     [[nodiscard]] int size() const { return capacity; }
+    [[nodiscard]] bool isSparse() const { return sparse_; }
+    [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
+
+private:
+    bool sparse_ = false;
+    std::unordered_map<int, std::vector<TernaryValue>> sparse_pages_;
+
+    [[nodiscard]] static int pageIndex(int addr) { return addr / MMU_PAGE_WORDS; }
+    [[nodiscard]] static int pageOffset(int addr) { return addr % MMU_PAGE_WORDS; }
+
+    void convertDenseToSparse(int new_capacity) {
+        std::unordered_map<int, std::vector<TernaryValue>> pages;
+        const TernaryValue zero = TernaryValue::zero();
+        for (int addr = 0; addr < capacity; ++addr) {
+            if (words[addr] == zero) continue;
+            auto& page = pages[pageIndex(addr)];
+            if (page.empty()) page.assign(MMU_PAGE_WORDS, zero);
+            page[static_cast<std::size_t>(pageOffset(addr))] = words[addr];
+        }
+        if (words != nullptr) allocator->deallocateDataWords(words);
+        words = nullptr;
+        sparse_pages_ = std::move(pages);
+        sparse_ = true;
+        capacity = new_capacity;
+    }
 };
 
 // =============================================================================
@@ -750,14 +872,15 @@ struct TernaryMemory {
 // The PC is an index into this array.
 
 struct TernaryInstructionMemory {
-    TritWord27* words = nullptr;
+    TritWord27* words = nullptr; // Non-null only for dense compatibility mode.
     int capacity = 0;
     VMStateAllocator* allocator = &defaultVMStateAllocator();
 
     explicit TernaryInstructionMemory(int size = DEFAULT_IMEM_SIZE,
-                                      VMStateAllocator& alloc = defaultVMStateAllocator())
+                                      VMStateAllocator& alloc = defaultVMStateAllocator(),
+                                      MemoryBacking backing = MemoryBacking::Auto)
         : allocator(&alloc) {
-        allocate(size);
+        allocate(size, backing);
         reset();
     }
 
@@ -766,10 +889,11 @@ struct TernaryInstructionMemory {
     }
 
     TernaryInstructionMemory(const TernaryInstructionMemory& other)
-        : allocator(other.allocator) {
-        allocate(other.capacity);
+        : allocator(other.allocator), sparse_(other.sparse_) {
+        allocate(other.capacity, other.sparse_ ? MemoryBacking::Sparse : MemoryBacking::Dense);
         try {
-            if (capacity > 0) std::copy(other.words, other.words + capacity, words);
+            if (!sparse_ && capacity > 0) std::copy(other.words, other.words + capacity, words);
+            if (sparse_) sparse_pages_ = other.sparse_pages_;
         } catch (...) {
             release();
             throw;
@@ -779,17 +903,20 @@ struct TernaryInstructionMemory {
     TernaryInstructionMemory& operator=(const TernaryInstructionMemory& other) {
         if (this == &other) return *this;
         TernaryInstructionMemory tmp(other);  // copy-and-swap for strong exception safety
-        std::swap(words, tmp.words);
-        std::swap(capacity, tmp.capacity);
-        std::swap(allocator, tmp.allocator);
+        swap(tmp);
         return *this;
     }
 
     TernaryInstructionMemory(TernaryInstructionMemory&& other) noexcept
-        : words(other.words), capacity(other.capacity), allocator(other.allocator) {
+        : words(other.words),
+          capacity(other.capacity),
+          allocator(other.allocator),
+          sparse_(other.sparse_),
+          sparse_pages_(std::move(other.sparse_pages_)) {
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
+        other.sparse_ = false;
     }
 
     TernaryInstructionMemory& operator=(TernaryInstructionMemory&& other) noexcept {
@@ -798,15 +925,32 @@ struct TernaryInstructionMemory {
         words = other.words;
         capacity = other.capacity;
         allocator = other.allocator;
+        sparse_ = other.sparse_;
+        sparse_pages_ = std::move(other.sparse_pages_);
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
+        other.sparse_ = false;
         return *this;
     }
 
-    void allocate(int size) {
+    void swap(TernaryInstructionMemory& other) noexcept {
+        std::swap(words, other.words);
+        std::swap(capacity, other.capacity);
+        std::swap(allocator, other.allocator);
+        std::swap(sparse_, other.sparse_);
+        std::swap(sparse_pages_, other.sparse_pages_);
+    }
+
+    void allocate(int size, MemoryBacking backing = MemoryBacking::Auto) {
         if (size < 0) throw std::invalid_argument("negative TernaryInstructionMemory size");
         capacity = size;
+        sparse_ = backing == MemoryBacking::Sparse ||
+                  (backing == MemoryBacking::Auto && size > SPARSE_MEMORY_DENSE_LIMIT_WORDS);
+        if (sparse_) {
+            words = nullptr;
+            return;
+        }
         words = allocator->allocateInstructionWords(capacity);
     }
 
@@ -815,16 +959,22 @@ struct TernaryInstructionMemory {
             allocator->deallocateInstructionWords(words);
             words = nullptr;
         }
+        sparse_pages_.clear();
         capacity = 0;
+        sparse_ = false;
     }
 
     void reset() {
-        if (capacity > 0) std::fill(words, words + capacity, TritWord27{});
+        if (sparse_) {
+            sparse_pages_.clear();
+        } else if (capacity > 0) {
+            std::fill(words, words + capacity, TritWord27{});
+        }
     }
 
-    void resize(int new_size) {
+    void resize(int new_size, MemoryBacking backing = MemoryBacking::Auto) {
         release();
-        allocate(new_size);
+        allocate(new_size, backing);
         reset();
     }
 
@@ -834,7 +984,10 @@ struct TernaryInstructionMemory {
         if (addr < 0 || addr >= capacity) {
             return {TritWord27{}, MemFaultCode::OUT_OF_RANGE};
         }
-        return {words[addr], MemFaultCode::OK};
+        if (!sparse_) return {words[addr], MemFaultCode::OK};
+        const auto page = sparse_pages_.find(pageIndex(addr));
+        if (page == sparse_pages_.end()) return {TritWord27{}, MemFaultCode::OK};
+        return {page->second[static_cast<std::size_t>(pageOffset(addr))], MemFaultCode::OK};
     }
 
     // Write a single instruction word (used by the assembler / test harness).
@@ -842,7 +995,13 @@ struct TernaryInstructionMemory {
         if (addr < 0 || addr >= capacity) {
             return MemFaultCode::OUT_OF_RANGE;
         }
-        words[addr] = iw;
+        if (!sparse_) {
+            words[addr] = iw;
+            return MemFaultCode::OK;
+        }
+        auto& page = sparse_pages_[pageIndex(addr)];
+        if (page.empty()) page.assign(MMU_PAGE_WORDS, TritWord27{});
+        page[static_cast<std::size_t>(pageOffset(addr))] = iw;
         return MemFaultCode::OK;
     }
 
@@ -853,7 +1012,9 @@ struct TernaryInstructionMemory {
         if (start_addr < 0) return false;
         if (start_addr + static_cast<int>(program.size()) > capacity) return false;
         for (int i = 0; i < static_cast<int>(program.size()); ++i) {
-            words[start_addr + i] = program[i];
+            if (write(start_addr + i, program[static_cast<std::size_t>(i)]) != MemFaultCode::OK) {
+                return false;
+            }
         }
         return true;
     }
@@ -863,6 +1024,15 @@ struct TernaryInstructionMemory {
     }
 
     [[nodiscard]] int size() const { return capacity; }
+    [[nodiscard]] bool isSparse() const { return sparse_; }
+    [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
+
+private:
+    bool sparse_ = false;
+    std::unordered_map<int, std::vector<TritWord27>> sparse_pages_;
+
+    [[nodiscard]] static int pageIndex(int addr) { return addr / MMU_PAGE_WORDS; }
+    [[nodiscard]] static int pageOffset(int addr) { return addr % MMU_PAGE_WORDS; }
 };
 
 // =============================================================================
@@ -935,7 +1105,7 @@ namespace ops {
 // SECTION 8b - Single-Level Page Table Helpers
 // =============================================================================
 
-static constexpr int MMU_PAGE_WORDS = 27;
+static_assert(MMU_PAGE_WORDS == 27, "hardware pages remain 27 ternary words");
 static constexpr int PTE_FLAG_VALID = 0;
 static constexpr int PTE_FLAG_USER = 1;
 static constexpr int PTE_FLAG_READ = 2;
@@ -957,11 +1127,20 @@ static constexpr int PROC_STATE_RUNNING  = 2;
 static constexpr int PROC_STATE_BLOCKED  = 3;
 static constexpr int PROC_STATE_SLEEPING = 4;
 static constexpr int PROC_STATE_EXITED   = 5;
+static constexpr int PROC_STATE_STOPPED  = 6;
+static constexpr int PROC_STATE_ZOMBIE   = 7;
+static constexpr int PROC_STATE_KILLING  = 8;
+static constexpr int PROC_STATE_CRASHED  = 9;
 static constexpr int PROC_DEFAULT_QUANTUM = 180;
 static constexpr int PROC_WAIT_NONE          = 0;
 static constexpr int PROC_WAIT_TIMER         = 1;
 static constexpr int PROC_WAIT_CONSOLE_INPUT = 2;
 static constexpr int PROC_WAIT_CHILD         = 3;
+static constexpr int SIGNAL_TERM          = 1;
+static constexpr int SIGNAL_KILL          = 2;
+static constexpr int SIGNAL_STOP          = 4;
+static constexpr int SIGNAL_CONT          = 8;
+static constexpr int SIGNAL_CLOSE_REQUEST = 16;
 
 static constexpr int SYSCALL_WRITE_INT        = 1;
 static constexpr int SYSCALL_NEWLINE          = 2;
@@ -985,6 +1164,16 @@ static constexpr int SYSCALL_SBRK             = 19;
 static constexpr int SYSCALL_FORK             = 20;
 static constexpr int SYSCALL_EXEC             = 21;
 static constexpr int SYSCALL_WRITE_CHAR       = 22;
+static constexpr int SYSCALL_FSYNC            = 47;
+static constexpr int SYSCALL_KILL             = 48;
+static constexpr int SYSCALL_SUSPEND          = 49;
+static constexpr int SYSCALL_RESUME           = 50;
+static constexpr int SYSCALL_GETPROC          = 51;
+static constexpr int SYSCALL_FUTEX_WAIT       = 52;
+static constexpr int SYSCALL_FUTEX_WAKE       = 53;
+static constexpr int SYSCALL_IPC_RECV_BLOCKING = 54;
+static constexpr int SYSCALL_WAIT_EVENT       = 55;
+static constexpr int SYSCALL_SLEEP_MS         = 56;
 
 static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;
@@ -1258,6 +1447,189 @@ struct VectorFaultState {
 // The single aggregate that the Phase 3 dispatcher reads and mutates.
 // One VMState instance = one running ternary machine.
 
+class SparseDirtyBlocks {
+public:
+    SparseDirtyBlocks() = default;
+    explicit SparseDirtyBlocks(int count, bool value = false) {
+        assign(static_cast<std::size_t>(count), value);
+    }
+
+    void assign(std::size_t count, bool value) {
+        count_ = static_cast<int>(count);
+        dirty_.clear();
+        if (value) {
+            for (int i = 0; i < count_; ++i) dirty_.insert(i);
+        }
+    }
+
+    [[nodiscard]] bool operator[](std::size_t index) const {
+        return index < static_cast<std::size_t>(count_) &&
+               dirty_.count(static_cast<int>(index)) != 0;
+    }
+
+    void set(int index, bool value = true) {
+        if (index < 0 || index >= count_) return;
+        if (value) dirty_.insert(index);
+        else dirty_.erase(index);
+    }
+
+    [[nodiscard]] std::size_t size() const { return static_cast<std::size_t>(count_); }
+    [[nodiscard]] std::size_t dirtyCount() const { return dirty_.size(); }
+
+private:
+    int count_ = 0;
+    std::unordered_set<int> dirty_;
+};
+
+class SparseBlockStorage {
+public:
+    explicit SparseBlockStorage(int block_count = 192) {
+        reset(block_count);
+    }
+
+    void reset(int block_count) {
+        block_count_ = std::max(1, block_count);
+        blocks_.clear();
+    }
+
+    [[nodiscard]] int blockCount() const { return block_count_; }
+    [[nodiscard]] int blockWords() const { return MMU_PAGE_WORDS; }
+    [[nodiscard]] std::size_t allocatedBlocks() const { return blocks_.size(); }
+
+    [[nodiscard]] bool attachBackingFile(const std::string& path) {
+        backing_path_ = path;
+        return loadCompactBacking() && rewriteCompactBacking();
+    }
+
+    void detachBackingFile() {
+        backing_path_.clear();
+    }
+
+    [[nodiscard]] const std::string& backingPath() const { return backing_path_; }
+
+    [[nodiscard]] bool readBlock(int index, std::vector<long long>& out) const {
+        if (index < 0 || index >= block_count_) return false;
+        out.assign(MMU_PAGE_WORDS, 0);
+        const auto found = blocks_.find(index);
+        if (found != blocks_.end()) {
+            out = found->second;
+            return true;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
+        if (index < 0 || index >= block_count_) return false;
+        if (static_cast<int>(data.size()) != MMU_PAGE_WORDS) return false;
+        blocks_[index] = data;
+        return backing_path_.empty() || rewriteCompactBacking();
+    }
+
+    [[nodiscard]] std::vector<long long> serializeDense() const {
+        std::vector<long long> out;
+        out.reserve(static_cast<std::size_t>(block_count_) * static_cast<std::size_t>(MMU_PAGE_WORDS));
+        std::vector<long long> block;
+        for (int index = 0; index < block_count_; ++index) {
+            (void)readBlock(index, block);
+            out.insert(out.end(), block.begin(), block.end());
+        }
+        return out;
+    }
+
+    [[nodiscard]] bool loadSerialized(const std::vector<long long>& image) {
+        if (image.empty() || static_cast<int>(image.size()) % MMU_PAGE_WORDS != 0) return false;
+        const int blocks = static_cast<int>(image.size()) / MMU_PAGE_WORDS;
+        reset(blocks);
+        for (int block = 0; block < blocks; ++block) {
+            std::vector<long long> payload(MMU_PAGE_WORDS, 0);
+            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
+                payload[static_cast<std::size_t>(word)] =
+                    image[static_cast<std::size_t>(block * MMU_PAGE_WORDS + word)];
+            }
+            if (!isZeroBlock(payload)) blocks_[block] = std::move(payload);
+        }
+        return true;
+    }
+
+private:
+    int block_count_ = 1;
+    std::unordered_map<int, std::vector<long long>> blocks_;
+    std::string backing_path_;
+
+    [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& data) {
+        for (long long value : data) {
+            if (value != 0) return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool loadCompactBacking() {
+        if (backing_path_.empty()) return true;
+        std::ifstream file(backing_path_, std::ios::binary);
+        if (!file.good()) return true;
+        long long magic = 0;
+        int count = 0;
+        file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+        file.read(reinterpret_cast<char*>(&count), sizeof(count));
+        if (!file.good() || magic != kSparseDiskMagic || count < 0) return false;
+        blocks_.clear();
+        for (int i = 0; i < count; ++i) {
+            int index = -1;
+            std::vector<long long> payload(MMU_PAGE_WORDS, 0);
+            file.read(reinterpret_cast<char*>(&index), sizeof(index));
+            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
+                file.read(reinterpret_cast<char*>(&payload[static_cast<std::size_t>(word)]),
+                          sizeof(long long));
+            }
+            if (!file.good()) return false;
+            if (index >= 0 && index < block_count_ && !isZeroBlock(payload)) {
+                blocks_[index] = std::move(payload);
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool rewriteCompactBacking() const {
+        if (backing_path_.empty()) return true;
+        std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
+        if (!file.good()) return false;
+        const long long magic = kSparseDiskMagic;
+        const int count = static_cast<int>(blocks_.size());
+        file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        for (const auto& [index, payload] : blocks_) {
+            file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+            for (long long word : payload) {
+                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+            }
+        }
+        file.flush();
+        return static_cast<bool>(file);
+    }
+
+    static constexpr long long kSparseDiskMagic = 0x54524954535031LL; // "TRITSP1"
+};
+
+struct VMCoreState {
+    TernaryRegisterFile regfile;
+    int pc = 0;
+    VMStatus status = VMStatus::RUNNING;
+    TernaryValue trap_reg = encodeNoTrap();
+    PrivilegeMode privilege = PrivilegeMode::Kernel;
+    PrivilegeMode previous_privilege = PrivilegeMode::Kernel;
+    bool interrupt_enable = false;
+    bool previous_interrupt_enable = false;
+    int epc = 0;
+    int cause = 0;
+    int tvec = 0;
+    int scratch = 0;
+    long long timer_reload = 0;
+    long long timer_counter = 0;
+    bool timer_enable = false;
+    bool timer_pending = false;
+    int current_process = -1;
+};
+
 struct VMState {
     TernaryRegisterFile      regfile;   // r0..r26 general-purpose registers
     TernaryInstructionMemory imem;      // Instruction memory (Harvard IMEM)
@@ -1309,9 +1681,8 @@ struct VMState {
     long long                block_index = 0;
     long long                block_addr = 0;
     long long                block_status = 0;
-    std::vector<std::vector<long long>> block_device =
-        std::vector<std::vector<long long>>(192, std::vector<long long>(MMU_PAGE_WORDS, 0));
-    std::vector<bool>        block_dirty = std::vector<bool>(192, false);
+    SparseBlockStorage      block_device = SparseBlockStorage(192);
+    SparseDirtyBlocks       block_dirty = SparseDirtyBlocks(192, false);
     int                      user_imem_ptbr = 0;
     int                      user_imem_pages = 0;
     int                      user_dmem_ptbr = 0;
@@ -1321,6 +1692,11 @@ struct VMState {
     bool                     atomic_reservation_valid = false;
     int                      atomic_reservation_addr = -1;
     long long                standalone_heap_break = 2000;
+    ProductionProfile        profile;
+    std::vector<VMCoreState> cores;
+    int                      active_core = 0;
+    std::vector<std::deque<int>> core_run_queues;
+    std::deque<int>          global_run_queue;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -1331,6 +1707,7 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        configureCores(1);
         resetControlState();
     }
 
@@ -1340,6 +1717,7 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        configureCores(1);
         resetControlState();
     }
 
@@ -1350,6 +1728,25 @@ struct VMState {
           accumulator(TernaryValue::zero()) {
         vregfile.reset(vector_length);
         vector_faults.reset(vector_length);
+        configureCores(1);
+        resetControlState();
+    }
+
+    explicit VMState(const ProductionProfile& production,
+                     VMStateAllocator& allocator = defaultVMStateAllocator())
+        : regfile(),
+          imem(production.instruction_words, allocator, MemoryBacking::Sparse),
+          dmem(production.ram_words, allocator, MemoryBacking::Sparse),
+          pc(0),
+          status(VMStatus::RUNNING),
+          trap_reg(encodeNoTrap()),
+          block_device(production.disk_blocks),
+          block_dirty(production.disk_blocks, false),
+          accumulator(TernaryValue::zero()),
+          profile(production) {
+        vregfile.reset(vector_length);
+        vector_faults.reset(vector_length);
+        configureCores(production.cores);
         resetControlState();
     }
 
@@ -1375,6 +1772,8 @@ struct VMState {
         // Initialize SP to top of data memory.
         // native_ops::fromInt puts a small integer into LongTriple format.
         regfile.write(R26_SP, ops::fromLong(dmem.size() - 1));
+        for (auto& core : cores) core = VMCoreState{};
+        if (!cores.empty()) captureCoreState(0);
     }
 
     void enqueueConsoleInput(long long word) {
@@ -1405,10 +1804,114 @@ struct VMState {
         console_input.clear();
     }
 
+    void configureCores(int count) {
+        const int normalized = std::max(1, count);
+        cores.assign(static_cast<std::size_t>(normalized), VMCoreState{});
+        core_run_queues.assign(static_cast<std::size_t>(normalized), std::deque<int>{});
+        active_core = 0;
+        captureCoreState(0);
+    }
+
+    [[nodiscard]] int coreCount() const {
+        return static_cast<int>(cores.size());
+    }
+
+    void captureCoreState(int core_id) {
+        if (core_id < 0 || core_id >= coreCount()) return;
+        VMCoreState& core = cores[static_cast<std::size_t>(core_id)];
+        core.regfile = regfile;
+        core.pc = pc;
+        core.status = status;
+        core.trap_reg = trap_reg;
+        core.privilege = privilege;
+        core.previous_privilege = previous_privilege;
+        core.interrupt_enable = interrupt_enable;
+        core.previous_interrupt_enable = previous_interrupt_enable;
+        core.epc = epc;
+        core.cause = cause;
+        core.tvec = tvec;
+        core.scratch = scratch;
+        core.timer_reload = timer_reload;
+        core.timer_counter = timer_counter;
+        core.timer_enable = timer_enable;
+        core.timer_pending = timer_pending;
+    }
+
+    void restoreCoreState(int core_id) {
+        if (core_id < 0 || core_id >= coreCount()) return;
+        const VMCoreState& core = cores[static_cast<std::size_t>(core_id)];
+        regfile = core.regfile;
+        pc = core.pc;
+        status = core.status;
+        trap_reg = core.trap_reg;
+        privilege = core.privilege;
+        previous_privilege = core.previous_privilege;
+        interrupt_enable = core.interrupt_enable;
+        previous_interrupt_enable = core.previous_interrupt_enable;
+        epc = core.epc;
+        cause = core.cause;
+        tvec = core.tvec;
+        scratch = core.scratch;
+        timer_reload = core.timer_reload;
+        timer_counter = core.timer_counter;
+        timer_enable = core.timer_enable;
+        timer_pending = core.timer_pending;
+        active_core = core_id;
+    }
+
+    [[nodiscard]] VMCoreState& coreState(int core_id) {
+        return cores[static_cast<std::size_t>(std::max(0, std::min(core_id, coreCount() - 1)))];
+    }
+
+    [[nodiscard]] const VMCoreState& coreState(int core_id) const {
+        return cores[static_cast<std::size_t>(std::max(0, std::min(core_id, coreCount() - 1)))];
+    }
+
+    void setCoreCurrentProcess(int core_id, int pid) {
+        if (core_id < 0 || core_id >= coreCount()) return;
+        cores[static_cast<std::size_t>(core_id)].current_process = pid;
+    }
+
+    void enqueueProcess(int pid, int preferred_core = -1) {
+        if (preferred_core >= 0 && preferred_core < coreCount()) {
+            core_run_queues[static_cast<std::size_t>(preferred_core)].push_back(pid);
+            return;
+        }
+        global_run_queue.push_back(pid);
+    }
+
+    [[nodiscard]] int dequeueProcess(int core_id) {
+        if (core_id < 0 || core_id >= coreCount()) return -1;
+        auto& queue = core_run_queues[static_cast<std::size_t>(core_id)];
+        if (queue.empty()) loadBalanceRunQueues();
+        if (queue.empty()) return -1;
+        const int pid = queue.front();
+        queue.pop_front();
+        return pid;
+    }
+
+    void loadBalanceRunQueues() {
+        while (!global_run_queue.empty()) {
+            int target = 0;
+            for (int core = 1; core < coreCount(); ++core) {
+                if (core_run_queues[static_cast<std::size_t>(core)].size() <
+                    core_run_queues[static_cast<std::size_t>(target)].size()) {
+                    target = core;
+                }
+            }
+            core_run_queues[static_cast<std::size_t>(target)].push_back(global_run_queue.front());
+            global_run_queue.pop_front();
+        }
+    }
+
+    [[nodiscard]] std::size_t runQueueDepth(int core_id) const {
+        if (core_id < 0 || core_id >= coreCount()) return 0;
+        return core_run_queues[static_cast<std::size_t>(core_id)].size();
+    }
+
     void resetBlockDevice(int blocks = 192) {
         const int count = std::max(1, blocks);
-        block_device.assign(static_cast<std::size_t>(count),
-                            std::vector<long long>(MMU_PAGE_WORDS, 0));
+        block_device.reset(count);
         block_dirty.assign(static_cast<std::size_t>(count), false);
         block_index = 0;
         block_addr = 0;
@@ -1421,22 +1924,19 @@ struct VMState {
         }
         const int blocks = static_cast<int>(image.size()) / MMU_PAGE_WORDS;
         resetBlockDevice(blocks);
-        for (int block = 0; block < blocks; ++block) {
-            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
-                block_device[static_cast<std::size_t>(block)][static_cast<std::size_t>(word)] =
-                    image[static_cast<std::size_t>(block * MMU_PAGE_WORDS + word)];
-            }
-        }
-        return true;
+        return block_device.loadSerialized(image);
     }
 
     [[nodiscard]] std::vector<long long> blockImage() const {
-        std::vector<long long> out;
-        out.reserve(block_device.size() * static_cast<std::size_t>(MMU_PAGE_WORDS));
-        for (const auto& block : block_device) {
-            out.insert(out.end(), block.begin(), block.end());
-        }
-        return out;
+        return block_device.serializeDense();
+    }
+
+    [[nodiscard]] bool attachBlockBackingFile(const std::string& path) {
+        return block_device.attachBackingFile(path);
+    }
+
+    [[nodiscard]] std::size_t allocatedDiskBlocks() const {
+        return block_device.allocatedBlocks();
     }
 
     // Clear both memories (set all words to zero / NOP).
@@ -1607,7 +2107,7 @@ struct VMState {
             case CSR_BLOCK_ADDR: value = block_addr; break;
             case CSR_BLOCK_CMD: value = 0; break;
             case CSR_BLOCK_STATUS: value = block_status; break;
-            case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.size()); break;
+            case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.blockCount()); break;
             case CSR_BLOCK_WORDS: value = MMU_PAGE_WORDS; break;
             default: return false;
         }
@@ -1618,18 +2118,22 @@ struct VMState {
     void executeBlockCommand(long long cmd) {
         const int index = static_cast<int>(block_index);
         const int addr = static_cast<int>(block_addr);
-        if (index < 0 || index >= static_cast<int>(block_device.size()) || addr < 0) {
+        if (index < 0 || index >= block_device.blockCount() || addr < 0) {
             block_status = -1;
             return;
         }
+        std::vector<long long> block;
         if (cmd == 1) {
             if (addr + MMU_PAGE_WORDS > dmem.size()) {
                 block_status = -1;
                 return;
             }
+            if (!block_device.readBlock(index, block)) {
+                block_status = -1;
+                return;
+            }
             for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
-                if (dmem.store(addr + i, ops::fromLong(
-                        block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)])) !=
+                if (dmem.store(addr + i, ops::fromLong(block[static_cast<std::size_t>(i)])) !=
                     MemFaultCode::OK) {
                     block_status = -1;
                     return;
@@ -1647,20 +2151,26 @@ struct VMState {
                     block_status = -1;
                     return;
                 }
-                block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)] =
-                    ops::toLong(value);
+                block.push_back(ops::toLong(value));
             }
-            block_dirty[static_cast<std::size_t>(index)] = true;
+            if (!block_device.writeBlock(index, block)) {
+                block_status = -1;
+                return;
+            }
+            block_dirty.set(index, true);
             block_status = 1;
         } else if (cmd == 3) {
             if (addr + MMU_PAGE_WORDS > imem.size()) {
                 block_status = -1;
                 return;
             }
+            if (!block_device.readBlock(index, block)) {
+                block_status = -1;
+                return;
+            }
             for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
                 TritWord27 word{};
-                word.bits = static_cast<uint64_t>(
-                    block_device[static_cast<std::size_t>(index)][static_cast<std::size_t>(i)]);
+                word.bits = static_cast<uint64_t>(block[static_cast<std::size_t>(i)]);
                 if (imem.write(addr + i, word) != MemFaultCode::OK) {
                     block_status = -1;
                     return;
@@ -1681,7 +2191,7 @@ struct VMState {
         if (cmd == 1) { // Clear screen
             for (int i = base_addr; i < limit_addr; ++i) {
                 if (i >= 0 && i < dmem.size()) {
-                    dmem.words[i] = ops::fromLong(gpu_color);
+                    (void)dmem.store(i, ops::fromLong(gpu_color));
                 }
             }
         } else if (cmd == 2) { // Rect fill
@@ -1694,7 +2204,7 @@ struct VMState {
                     if (x >= 0 && x < 80 && y >= 0 && y < 60) {
                         int addr = base_addr + y * 80 + x;
                         if (addr >= 0 && addr < dmem.size()) {
-                            dmem.words[addr] = ops::fromLong(gpu_color);
+                            (void)dmem.store(addr, ops::fromLong(gpu_color));
                         }
                     }
                 }
@@ -1707,10 +2217,10 @@ struct VMState {
             int err = dx + dy, e2;
             while (true) {
                 if (x0 >= 0 && x0 < 80 && y0 >= 0 && y0 < 60) {
-                    int addr = base_addr + y0 * 80 + x0;
-                    if (addr >= 0 && addr < dmem.size()) {
-                        dmem.words[addr] = ops::fromLong(gpu_color);
-                    }
+                        int addr = base_addr + y0 * 80 + x0;
+                        if (addr >= 0 && addr < dmem.size()) {
+                            (void)dmem.store(addr, ops::fromLong(gpu_color));
+                        }
                 }
                 if (x0 == x1 && y0 == y1) break;
                 e2 = 2 * err;
@@ -1726,11 +2236,11 @@ struct VMState {
                 if (x >= 0 && x < 80) {
                     if (y_min >= 0 && y_min < 60) {
                         int addr = base_addr + y_min * 80 + x;
-                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                        if (addr >= 0 && addr < dmem.size()) (void)dmem.store(addr, ops::fromLong(gpu_color));
                     }
                     if (y_max >= 0 && y_max < 60) {
                         int addr = base_addr + y_max * 80 + x;
-                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                        if (addr >= 0 && addr < dmem.size()) (void)dmem.store(addr, ops::fromLong(gpu_color));
                     }
                 }
             }
@@ -1738,11 +2248,11 @@ struct VMState {
                 if (y >= 0 && y < 60) {
                     if (x_min >= 0 && x_min < 80) {
                         int addr = base_addr + y * 80 + x_min;
-                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                        if (addr >= 0 && addr < dmem.size()) (void)dmem.store(addr, ops::fromLong(gpu_color));
                     }
                     if (x_max >= 0 && x_max < 80) {
                         int addr = base_addr + y * 80 + x_max;
-                        if (addr >= 0 && addr < dmem.size()) dmem.words[addr] = ops::fromLong(gpu_color);
+                        if (addr >= 0 && addr < dmem.size()) (void)dmem.store(addr, ops::fromLong(gpu_color));
                     }
                 }
             }

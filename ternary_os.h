@@ -15,12 +15,17 @@
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
 
+#include <atomic>
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <fstream>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -45,6 +50,16 @@ static constexpr int SYSCALL_BRK = vm::SYSCALL_BRK;
 static constexpr int SYSCALL_SBRK = vm::SYSCALL_SBRK;
 static constexpr int SYSCALL_FORK = vm::SYSCALL_FORK;
 static constexpr int SYSCALL_EXEC = vm::SYSCALL_EXEC;
+static constexpr int SYSCALL_FSYNC = vm::SYSCALL_FSYNC;
+static constexpr int SYSCALL_KILL = vm::SYSCALL_KILL;
+static constexpr int SYSCALL_SUSPEND = vm::SYSCALL_SUSPEND;
+static constexpr int SYSCALL_RESUME = vm::SYSCALL_RESUME;
+static constexpr int SYSCALL_GETPROC = vm::SYSCALL_GETPROC;
+static constexpr int SYSCALL_FUTEX_WAIT = vm::SYSCALL_FUTEX_WAIT;
+static constexpr int SYSCALL_FUTEX_WAKE = vm::SYSCALL_FUTEX_WAKE;
+static constexpr int SYSCALL_IPC_RECV_BLOCKING = vm::SYSCALL_IPC_RECV_BLOCKING;
+static constexpr int SYSCALL_WAIT_EVENT = vm::SYSCALL_WAIT_EVENT;
+static constexpr int SYSCALL_SLEEP_MS = vm::SYSCALL_SLEEP_MS;
 
 static constexpr int ERR_NONE = 0;
 static constexpr int ERR_NOT_FOUND = 1;
@@ -56,6 +71,9 @@ static constexpr int ERR_NOT_DIR = 6;
 static constexpr int ERR_IS_DIR = 7;
 static constexpr int ERR_INVALID = 8;
 static constexpr int ERR_EOF = 9;
+static constexpr int ERR_TIMEOUT = 10;
+static constexpr int ERR_AGAIN = 11;
+static constexpr int ERR_CANCELED = 12;
 
 static constexpr int BLOCK_WORDS = vm::MMU_PAGE_WORDS;
 static constexpr int FS_MAGIC = 80808;
@@ -95,6 +113,9 @@ static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
 static constexpr int NATIVE_VFS_DATA_BASE = 7400;
 static constexpr int NATIVE_EXEC_DESC_WORDS = vm::EXEC_HEADER_WORDS + 1;
 static constexpr int NATIVE_EXEC_DESC_V2_WORDS = vm::EXEC_HEADER_WORDS + 3;
+static constexpr int OS_CLUSTER_WORDS = vm::OS_CLUSTER_WORDS;
+
+using ProductionProfile = vm::ProductionProfile;
 
 struct StatusResult {
     int status = T1_ERROR;
@@ -136,18 +157,33 @@ enum class SharedOrder : int8_t {
 };
 
 struct SharedWord {
-    long long value = 0;
+    std::atomic<long long> value{0};
     SharedOrder order = SharedOrder::AcquireRelease;
 
     [[nodiscard]] long long tldr(SharedOrder required) const {
-        (void)required;
-        return value;
+        return value.load(memoryOrderFor(required, false));
     }
     [[nodiscard]] StatusResult tstr(long long desired, long long expected, SharedOrder required) {
-        (void)required;
-        if (value != expected) return StatusResult::pending(value, ERR_INVALID);
-        value = desired;
-        return StatusResult::success(desired);
+        long long observed = expected;
+        if (!value.compare_exchange_strong(
+                observed,
+                desired,
+                memoryOrderFor(required, true),
+                std::memory_order_acquire)) {
+            return StatusResult::pending(static_cast<int>(observed), ERR_INVALID);
+        }
+        return StatusResult::success(static_cast<int>(desired));
+    }
+
+private:
+    [[nodiscard]] static std::memory_order memoryOrderFor(SharedOrder order, bool store) {
+        switch (order) {
+            case SharedOrder::Relaxed: return std::memory_order_relaxed;
+            case SharedOrder::Sequential: return std::memory_order_seq_cst;
+            case SharedOrder::AcquireRelease:
+                return store ? std::memory_order_acq_rel : std::memory_order_acquire;
+        }
+        return std::memory_order_acquire;
     }
 };
 
@@ -219,35 +255,57 @@ struct DeviceTree {
 class BlockDevice {
 public:
     explicit BlockDevice(int block_count = 128)
-        : blocks_(static_cast<std::size_t>(std::max(1, block_count)),
-                  std::vector<long long>(BLOCK_WORDS, 0)),
-          dirty_(static_cast<std::size_t>(std::max(1, block_count)), false) {}
+        : block_count_(std::max(1, block_count)) {}
 
-    [[nodiscard]] int blockCount() const { return static_cast<int>(blocks_.size()); }
+    BlockDevice(int block_count, std::string backing_path)
+        : block_count_(std::max(1, block_count)), backing_path_(std::move(backing_path)) {
+        (void)loadCompactBacking();
+        (void)rewriteCompactBacking();
+    }
+
+    [[nodiscard]] int blockCount() const { return block_count_; }
     [[nodiscard]] int blockWords() const { return BLOCK_WORDS; }
+    [[nodiscard]] std::size_t allocatedBlocks() const { return blocks_.size(); }
+
+    [[nodiscard]] StatusResult attachBackingFile(const std::string& path) {
+        backing_path_ = path;
+        return loadCompactBacking() && rewriteCompactBacking()
+                   ? StatusResult::success(block_count_)
+                   : StatusResult::error(ERR_INVALID);
+    }
 
     [[nodiscard]] StatusResult readBlock(int index, std::vector<long long>& out) const {
         if (index < 0 || index >= blockCount()) return StatusResult::error(ERR_INVALID);
-        out = blocks_[static_cast<std::size_t>(index)];
+        out.assign(BLOCK_WORDS, 0);
+        auto found = blocks_.find(index);
+        if (found != blocks_.end()) {
+            out = found->second;
+            return StatusResult::success(BLOCK_WORDS);
+        }
         return StatusResult::success(BLOCK_WORDS);
     }
 
     [[nodiscard]] StatusResult writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= blockCount()) return StatusResult::error(ERR_INVALID);
         if (static_cast<int>(data.size()) != BLOCK_WORDS) return StatusResult::error(ERR_INVALID);
-        blocks_[static_cast<std::size_t>(index)] = data;
-        dirty_[static_cast<std::size_t>(index)] = true;
+        blocks_[index] = data;
+        dirty_.insert(index);
+        if (!backing_path_.empty() && !rewriteCompactBacking()) {
+            return StatusResult::error(ERR_INVALID);
+        }
         return StatusResult::success(BLOCK_WORDS);
     }
 
     [[nodiscard]] bool dirty(int index) const {
-        return index >= 0 && index < blockCount() && dirty_[static_cast<std::size_t>(index)];
+        return index >= 0 && index < blockCount() && dirty_.count(index) != 0;
     }
 
     [[nodiscard]] std::vector<long long> serialize() const {
         std::vector<long long> out;
-        out.reserve(static_cast<std::size_t>(blockCount() * BLOCK_WORDS));
-        for (const auto& block : blocks_) {
+        out.reserve(static_cast<std::size_t>(blockCount()) * static_cast<std::size_t>(BLOCK_WORDS));
+        std::vector<long long> block;
+        for (int index = 0; index < blockCount(); ++index) {
+            (void)readBlock(index, block);
             out.insert(out.end(), block.begin(), block.end());
         }
         return out;
@@ -258,20 +316,90 @@ public:
             return StatusResult::error(ERR_INVALID);
         }
         const int blocks = static_cast<int>(image.size()) / BLOCK_WORDS;
-        blocks_.assign(static_cast<std::size_t>(blocks), std::vector<long long>(BLOCK_WORDS, 0));
-        dirty_.assign(static_cast<std::size_t>(blocks), false);
+        block_count_ = std::max(1, blocks);
+        blocks_.clear();
+        dirty_.clear();
         for (int block = 0; block < blocks; ++block) {
+            std::vector<long long> payload(BLOCK_WORDS, 0);
             for (int word = 0; word < BLOCK_WORDS; ++word) {
-                blocks_[static_cast<std::size_t>(block)][static_cast<std::size_t>(word)] =
+                payload[static_cast<std::size_t>(word)] =
                     image[static_cast<std::size_t>(block * BLOCK_WORDS + word)];
             }
+            if (!isZeroBlock(payload)) blocks_[block] = std::move(payload);
         }
         return StatusResult::success(blocks);
     }
 
 private:
-    std::vector<std::vector<long long>> blocks_;
-    std::vector<bool> dirty_;
+    int block_count_ = 1;
+    std::unordered_map<int, std::vector<long long>> blocks_;
+    std::unordered_set<int> dirty_;
+    std::string backing_path_;
+
+    [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& block) {
+        for (long long word : block) {
+            if (word != 0) return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool ensureBackingFile() const {
+        if (backing_path_.empty()) return true;
+        std::fstream file(backing_path_, std::ios::in | std::ios::out | std::ios::binary);
+        if (file.good()) return true;
+        std::ofstream create(backing_path_, std::ios::binary);
+        create.close();
+        return static_cast<bool>(std::fstream(backing_path_, std::ios::in | std::ios::out | std::ios::binary));
+    }
+
+    [[nodiscard]] bool loadCompactBacking() {
+        if (backing_path_.empty()) return true;
+        if (!ensureBackingFile()) return false;
+        std::ifstream file(backing_path_, std::ios::binary);
+        if (!file.good()) return false;
+        long long magic = 0;
+        int count = 0;
+        file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+        file.read(reinterpret_cast<char*>(&count), sizeof(count));
+        if (!file.good()) return true;
+        if (magic != kSparseDiskMagic || count < 0) return false;
+        blocks_.clear();
+        for (int i = 0; i < count; ++i) {
+            int index = -1;
+            std::vector<long long> payload(BLOCK_WORDS, 0);
+            file.read(reinterpret_cast<char*>(&index), sizeof(index));
+            for (int word = 0; word < BLOCK_WORDS; ++word) {
+                file.read(reinterpret_cast<char*>(&payload[static_cast<std::size_t>(word)]),
+                          sizeof(long long));
+            }
+            if (!file.good()) return false;
+            if (index >= 0 && index < block_count_ && !isZeroBlock(payload)) {
+                blocks_[index] = std::move(payload);
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool rewriteCompactBacking() const {
+        if (backing_path_.empty()) return true;
+        if (!ensureBackingFile()) return false;
+        std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
+        if (!file.good()) return false;
+        const long long magic = kSparseDiskMagic;
+        const int count = static_cast<int>(blocks_.size());
+        file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        for (const auto& [index, payload] : blocks_) {
+            file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+            for (long long word : payload) {
+                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+            }
+        }
+        file.flush();
+        return static_cast<bool>(file);
+    }
+
+    static constexpr long long kSparseDiskMagic = 0x54524954535031LL;
 };
 
 // =============================================================================
@@ -326,6 +454,8 @@ public:
         for (int i = 0; i < data_start_ && i < device.blockCount(); ++i) {
             free_blocks_[static_cast<std::size_t>(i)] = false;
         }
+        next_alloc_block_ = data_start_;
+        free_block_count_ = std::max(0, device.blockCount() - data_start_);
         inodes_.assign(static_cast<std::size_t>(inode_count_), Inode{});
         for (int i = 0; i < inode_count_; ++i) inodes_[static_cast<std::size_t>(i)].id = i;
         Inode& root = inodes_[0];
@@ -694,6 +824,8 @@ private:
     bool mounted_ = false;
     int inode_count_ = 0;
     int data_start_ = 0;
+    int next_alloc_block_ = 0;
+    int free_block_count_ = 0;
     std::vector<bool> free_blocks_;
     std::vector<Inode> inodes_;
 
@@ -714,9 +846,18 @@ private:
     }
 
     [[nodiscard]] int allocateBlock() {
-        for (int i = data_start_; i < static_cast<int>(free_blocks_.size()); ++i) {
+        if (free_block_count_ <= 0) return -1;
+        const int total = static_cast<int>(free_blocks_.size());
+        if (next_alloc_block_ < data_start_ || next_alloc_block_ >= total) {
+            next_alloc_block_ = data_start_;
+        }
+        for (int scanned = 0; scanned < total - data_start_; ++scanned) {
+            int i = next_alloc_block_ + scanned;
+            if (i >= total) i = data_start_ + (i - total);
             if (free_blocks_[static_cast<std::size_t>(i)]) {
                 free_blocks_[static_cast<std::size_t>(i)] = false;
+                --free_block_count_;
+                next_alloc_block_ = i + 1;
                 return i;
             }
         }
@@ -724,11 +865,7 @@ private:
     }
 
     [[nodiscard]] int freeBlockCount() const {
-        int count = 0;
-        for (bool free : free_blocks_) {
-            if (free) ++count;
-        }
-        return count;
+        return free_block_count_;
     }
 
     [[nodiscard]] static int allocatedBlockCount(const Inode& inode) {
@@ -755,6 +892,8 @@ private:
         for (int i = 0; i < data_start_ && i < static_cast<int>(free_blocks_.size()); ++i) {
             free_blocks_[static_cast<std::size_t>(i)] = false;
         }
+        free_block_count_ = std::max(0, static_cast<int>(free_blocks_.size()) - data_start_);
+        next_alloc_block_ = data_start_;
         for (const Inode& inode : inodes_) {
             if (inode.kind == InodeKind::Free) continue;
             for (int block : inode.direct) {
@@ -769,25 +908,40 @@ private:
 
     void markBlockAllocated(int block) {
         if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
-            free_blocks_[static_cast<std::size_t>(block)] = false;
+            if (free_blocks_[static_cast<std::size_t>(block)]) {
+                free_blocks_[static_cast<std::size_t>(block)] = false;
+                --free_block_count_;
+            }
         }
     }
 
     void releaseBlocks(Inode& inode) {
         for (int& block : inode.direct) {
             if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
-                free_blocks_[static_cast<std::size_t>(block)] = true;
+                if (!free_blocks_[static_cast<std::size_t>(block)]) {
+                    free_blocks_[static_cast<std::size_t>(block)] = true;
+                    ++free_block_count_;
+                    next_alloc_block_ = std::min(next_alloc_block_, block);
+                }
             }
             block = -1;
         }
         if (inode.indirect_block >= 0 &&
             inode.indirect_block < static_cast<int>(free_blocks_.size())) {
-            free_blocks_[static_cast<std::size_t>(inode.indirect_block)] = true;
+            if (!free_blocks_[static_cast<std::size_t>(inode.indirect_block)]) {
+                free_blocks_[static_cast<std::size_t>(inode.indirect_block)] = true;
+                ++free_block_count_;
+                next_alloc_block_ = std::min(next_alloc_block_, inode.indirect_block);
+            }
         }
         inode.indirect_block = -1;
         for (int block : inode.indirect_blocks) {
             if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
-                free_blocks_[static_cast<std::size_t>(block)] = true;
+                if (!free_blocks_[static_cast<std::size_t>(block)]) {
+                    free_blocks_[static_cast<std::size_t>(block)] = true;
+                    ++free_block_count_;
+                    next_alloc_block_ = std::min(next_alloc_block_, block);
+                }
             }
         }
         inode.indirect_blocks.clear();
@@ -1485,6 +1639,7 @@ struct Process {
     int parent_pid = -1;
     int state = vm::PROC_STATE_FREE;
     int exit_status = 0;
+    int pending_signals = 0;
     int heap_start = 0;
     int heap_break = 0;
     int heap_limit = 0;
@@ -1494,16 +1649,45 @@ struct Process {
     std::map<int, OpenFile> fds;
 };
 
+struct ProcessInfo {
+    int pid = -1;
+    int state = vm::PROC_STATE_FREE;
+    int parent_pid = -1;
+    int exit_status = 0;
+    int pending_signals = 0;
+    int open_fds = 0;
+    int memory_words = 0;
+};
+
+struct WindowRecord {
+    int id = -1;
+    int owner_pid = -1;
+    int width = 0;
+    int height = 0;
+};
+
 class OSKernel {
 public:
     explicit OSKernel(int blocks = 128)
-        : device_tree_(defaultDeviceTree(blocks)), block_device_(blocks) {
+        : profile_(toyProfile(blocks)),
+          device_tree_(defaultDeviceTree(blocks)),
+          block_device_(blocks) {
         (void)fs_.format(block_device_);
         (void)createProcess(-1);
     }
 
+    explicit OSKernel(const ProductionProfile& profile, const std::string& disk_path = {})
+        : profile_(profile),
+          device_tree_(defaultDeviceTree(profile.disk_blocks)),
+          block_device_(profile.disk_blocks) {
+        if (!disk_path.empty()) (void)block_device_.attachBackingFile(disk_path);
+        (void)fs_.format(block_device_, std::max(DEFAULT_INODE_COUNT, profile_.max_files + 8));
+        (void)createProcess(-1);
+    }
+
     explicit OSKernel(const std::vector<long long>& disk_image)
-        : device_tree_(defaultDeviceTree(blockCountFromImage(disk_image))),
+        : profile_(toyProfile(blockCountFromImage(disk_image))),
+          device_tree_(defaultDeviceTree(blockCountFromImage(disk_image))),
           block_device_(blockCountFromImage(disk_image)) {
         (void)block_device_.loadSerialized(disk_image);
         (void)createProcess(-1);
@@ -1513,6 +1697,9 @@ public:
     [[nodiscard]] BlockDevice& blockDevice() { return block_device_; }
     [[nodiscard]] TinyFileSystem& fs() { return fs_; }
     [[nodiscard]] const TinyFileSystem& fs() const { return fs_; }
+    [[nodiscard]] const ProductionProfile& productionProfile() const { return profile_; }
+    [[nodiscard]] int processCount() const { return static_cast<int>(processes_.size()); }
+    [[nodiscard]] int windowCount() const { return static_cast<int>(windows_.size()); }
 
     [[nodiscard]] std::vector<long long> diskImage() const {
         return block_device_.serialize();
@@ -1633,6 +1820,9 @@ public:
     [[nodiscard]] StatusResult sysFork(int pid) {
         const Process* parent = process(pid);
         if (!parent) return StatusResult::error(ERR_INVALID);
+        if (static_cast<int>(processes_.size()) >= profile_.max_processes) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
         Process child = *parent;
         child.pid = next_pid_++;
         child.parent_pid = parent->pid;
@@ -1657,6 +1847,66 @@ public:
         proc->heap_limit = proc->heap_start + proc->exec_header.stack_words + vm::MMU_PAGE_WORDS;
         proc->state = vm::PROC_STATE_RUNNABLE;
         return StatusResult::success(proc->exec_header.entry_virtual_pc);
+    }
+
+    [[nodiscard]] StatusResult sysExit(int pid, int status) {
+        Process* proc = process(pid);
+        if (!proc) return StatusResult::error(ERR_INVALID);
+        return finishProcessExit(*proc, status, vm::PROC_STATE_ZOMBIE);
+    }
+
+    [[nodiscard]] StatusResult sysWaitPid(int parent_pid, int child_pid) {
+        Process* child = process(child_pid);
+        if (!child) return StatusResult::error(ERR_NOT_FOUND);
+        if (child->parent_pid != parent_pid) return StatusResult::error(ERR_INVALID);
+        if (!isTerminalState(child->state)) return StatusResult::pending(0);
+        const int status = child->exit_status;
+        reapProcess(*child);
+        return StatusResult::success(status);
+    }
+
+    [[nodiscard]] StatusResult sysKill(int pid, int signal) {
+        Process* proc = process(pid);
+        if (!proc) return StatusResult::error(ERR_INVALID);
+        if (!isSignal(signal)) return StatusResult::error(ERR_INVALID);
+        addSignal(*proc, signal);
+        if (signal == vm::SIGNAL_KILL) {
+            proc->state = vm::PROC_STATE_KILLING;
+            return finishProcessExit(*proc, vm::SIGNAL_KILL, vm::PROC_STATE_ZOMBIE);
+        }
+        if (signal == vm::SIGNAL_STOP) {
+            proc->state = vm::PROC_STATE_STOPPED;
+            return StatusResult::success(proc->state);
+        }
+        if (signal == vm::SIGNAL_CONT) {
+            proc->pending_signals &= ~vm::SIGNAL_STOP;
+            proc->pending_signals &= ~vm::SIGNAL_CONT;
+            proc->state = vm::PROC_STATE_RUNNABLE;
+            return StatusResult::success(proc->state);
+        }
+        addSignal(*proc, vm::SIGNAL_CLOSE_REQUEST);
+        return StatusResult::success(proc->pending_signals);
+    }
+
+    [[nodiscard]] StatusResult sysSuspend(int pid) {
+        return sysKill(pid, vm::SIGNAL_STOP);
+    }
+
+    [[nodiscard]] StatusResult sysResume(int pid) {
+        return sysKill(pid, vm::SIGNAL_CONT);
+    }
+
+    [[nodiscard]] StatusResult sysGetProc(int pid, ProcessInfo& out) const {
+        const Process* proc = process(pid);
+        if (!proc) return StatusResult::error(ERR_INVALID);
+        out.pid = proc->pid;
+        out.state = proc->state;
+        out.parent_pid = proc->parent_pid;
+        out.exit_status = proc->exit_status;
+        out.pending_signals = proc->pending_signals;
+        out.open_fds = static_cast<int>(proc->fds.size());
+        out.memory_words = static_cast<int>(proc->memory.size());
+        return StatusResult::success(7);
     }
 
     [[nodiscard]] StatusResult installExecutable(
@@ -1698,12 +1948,43 @@ public:
         return StatusResult::success(base);
     }
 
+    [[nodiscard]] StatusResult createWindow(int pid, int width, int height) {
+        if (!process(pid)) return StatusResult::error(ERR_INVALID);
+        if (width <= 0 || height <= 0) return StatusResult::error(ERR_INVALID);
+        if (static_cast<int>(windows_.size()) >= profile_.max_windows) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const long long words = static_cast<long long>(width) * static_cast<long long>(height);
+        if (words > profile_.framebuffer_words) return StatusResult::error(ERR_NO_SPACE);
+        const int id = next_window_id_++;
+        windows_.push_back(WindowRecord{id, pid, width, height});
+        return StatusResult::success(id);
+    }
+
 private:
+    ProductionProfile profile_;
     DeviceTree device_tree_;
     BlockDevice block_device_;
     TinyFileSystem fs_;
     std::vector<Process> processes_;
+    std::vector<WindowRecord> windows_;
     int next_pid_ = 1;
+    int next_window_id_ = 1;
+
+    [[nodiscard]] static ProductionProfile toyProfile(int blocks) {
+        ProductionProfile profile;
+        profile.cores = 1;
+        profile.ram_words = vm::DEFAULT_DMEM_SIZE;
+        profile.instruction_words = vm::DEFAULT_IMEM_SIZE;
+        profile.disk_blocks = std::max(1, blocks);
+        profile.framebuffer_words = 80 * 60;
+        profile.framebuffer_width = 80;
+        profile.framebuffer_height = 60;
+        profile.max_processes = 128;
+        profile.max_files = DEFAULT_INODE_COUNT;
+        profile.max_windows = 8;
+        return profile;
+    }
 
     [[nodiscard]] static int blockCountFromImage(const std::vector<long long>& image) {
         if (image.empty() || static_cast<int>(image.size()) % BLOCK_WORDS != 0) {
@@ -1713,6 +1994,7 @@ private:
     }
 
     [[nodiscard]] int createProcess(int parent) {
+        if (static_cast<int>(processes_.size()) >= profile_.max_processes) return -1;
         Process proc;
         proc.pid = next_pid_++;
         proc.parent_pid = parent;
@@ -1723,6 +2005,70 @@ private:
         proc.memory.resize(static_cast<std::size_t>(proc.heap_start), 0);
         processes_.push_back(proc);
         return proc.pid;
+    }
+
+    [[nodiscard]] static bool isTerminalState(int state) {
+        return state == vm::PROC_STATE_EXITED ||
+               state == vm::PROC_STATE_ZOMBIE ||
+               state == vm::PROC_STATE_CRASHED;
+    }
+
+    [[nodiscard]] static bool isSignal(int signal) {
+        return signal == vm::SIGNAL_TERM ||
+               signal == vm::SIGNAL_KILL ||
+               signal == vm::SIGNAL_STOP ||
+               signal == vm::SIGNAL_CONT ||
+               signal == vm::SIGNAL_CLOSE_REQUEST;
+    }
+
+    static void addSignal(Process& proc, int signal) {
+        if ((proc.pending_signals & signal) == 0) {
+            proc.pending_signals |= signal;
+        }
+    }
+
+    void cleanupOrphans(int parent_pid) {
+        for (auto& proc : processes_) {
+            if (proc.parent_pid != parent_pid) continue;
+            if (isTerminalState(proc.state)) {
+                reapProcess(proc);
+            } else {
+                proc.parent_pid = -1;
+            }
+        }
+    }
+
+    void cleanupProcess(Process& proc) {
+        proc.fds.clear();
+        proc.memory.clear();
+        proc.heap_break = proc.heap_start;
+        windows_.erase(
+            std::remove_if(windows_.begin(), windows_.end(),
+                           [&](const WindowRecord& window) { return window.owner_pid == proc.pid; }),
+            windows_.end());
+    }
+
+    void reapProcess(Process& proc) {
+        cleanupProcess(proc);
+        proc.pid = -1;
+        proc.parent_pid = -1;
+        proc.state = vm::PROC_STATE_FREE;
+        proc.exit_status = 0;
+        proc.pending_signals = 0;
+    }
+
+    [[nodiscard]] StatusResult finishProcessExit(Process& proc, int status, int final_state) {
+        const int pid = proc.pid;
+        const int parent = proc.parent_pid;
+        proc.exit_status = status;
+        cleanupProcess(proc);
+        cleanupOrphans(pid);
+        if (parent > 0 && process(parent)) {
+            proc.state = final_state;
+            return StatusResult::success(final_state);
+        }
+        reapProcess(proc);
+        return StatusResult::success(vm::PROC_STATE_FREE);
     }
 
     [[nodiscard]] static int nextFd(const Process& proc) {

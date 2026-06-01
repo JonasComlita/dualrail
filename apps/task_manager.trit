@@ -69,12 +69,15 @@ fn task_draw_int(x: t40, y: t40, val: t40, color: t40) -> t40 {
 }
 
 // Decode PROC_STATE into a short label and write it at (x, y).
-// States: 1=RUNNABLE, 2=RUNNING, 3=BLOCKED, 4=SLEEP, 5=EXITED
 fn task_draw_state(x: t40, y: t40, state: t40) -> t40 {
     var color: t40 = 2;  // dim default
     if state - 2 == 0 { color = 5; } // RUNNING -> cyan
     if state - 3 == 0 { color = 9; } // BLOCKED -> red
     if state - 5 == 0 { color = 8; } // EXITED  -> dark
+    if state - 6 == 0 { color = 11; } // STOPPED -> yellow
+    if state - 7 == 0 { color = 8; }  // ZOMBIE -> dark
+    if state - 8 == 0 { color = 9; }  // KILLING -> red
+    if state - 9 == 0 { color = 12; } // CRASHED -> magenta
     // RUNNABLE
     if state - 1 == 0 {
         os_text_cell(x,     y, 82, color); // R
@@ -110,8 +113,82 @@ fn task_draw_state(x: t40, y: t40, state: t40) -> t40 {
         os_text_cell(x + 2, y, 84, color); // T
         return 3;
     }
+    // STOPPED
+    if state - 6 == 0 {
+        os_text_cell(x,     y, 83, color); // S
+        os_text_cell(x + 1, y, 84, color); // T
+        os_text_cell(x + 2, y, 80, color); // P
+        return 3;
+    }
+    // ZOMBIE
+    if state - 7 == 0 {
+        os_text_cell(x,     y, 90, color); // Z
+        os_text_cell(x + 1, y, 79, color); // O
+        os_text_cell(x + 2, y, 77, color); // M
+        return 3;
+    }
+    // KILLING
+    if state - 8 == 0 {
+        os_text_cell(x,     y, 75, color); // K
+        os_text_cell(x + 1, y, 73, color); // I
+        os_text_cell(x + 2, y, 76, color); // L
+        return 3;
+    }
+    // CRASHED
+    if state - 9 == 0 {
+        os_text_cell(x,     y, 67, color); // C
+        os_text_cell(x + 1, y, 82, color); // R
+        os_text_cell(x + 2, y, 72, color); // H
+        return 3;
+    }
     // Unknown
     os_text_cell(x,     y, 63, 8); // ?
+    return 1;
+}
+
+const TM_BTN_KILL: t40 = 10;
+const TM_BTN_SUSPEND: t40 = 20;
+const TM_BTN_RESUME: t40 = 30;
+const TM_BTN_EXIT: t40 = 99;
+
+fn task_draw_kill_button(is_hovered: t40) -> t40 {
+    var color: t40 = 9;
+    if is_hovered > 0 {
+        color = 5;
+    }
+    os_text_cell(16, 21, 91, color); // [
+    os_text_cell(17, 21, 75, color); // K
+    os_text_cell(18, 21, 73, color); // I
+    os_text_cell(19, 21, 76, color); // L
+    os_text_cell(20, 21, 76, color); // L
+    os_text_cell(21, 21, 93, color); // ]
+    return 1;
+}
+
+fn task_draw_suspend_button(is_hovered: t40) -> t40 {
+    var color: t40 = 11;
+    if is_hovered > 0 {
+        color = 5;
+    }
+    os_text_cell(24, 21, 91, color); // [
+    os_text_cell(25, 21, 83, color); // S
+    os_text_cell(26, 21, 85, color); // U
+    os_text_cell(27, 21, 83, color); // S
+    os_text_cell(28, 21, 80, color); // P
+    os_text_cell(29, 21, 93, color); // ]
+    return 1;
+}
+
+fn task_draw_resume_button(is_hovered: t40) -> t40 {
+    var color: t40 = 10;
+    if is_hovered > 0 {
+        color = 5;
+    }
+    os_text_cell(32, 21, 91, color); // [
+    os_text_cell(33, 21, 82, color); // R
+    os_text_cell(34, 21, 85, color); // U
+    os_text_cell(35, 21, 78, color); // N
+    os_text_cell(36, 21, 93, color); // ]
     return 1;
 }
 
@@ -120,12 +197,28 @@ fn task_draw_exit_button(is_hovered: t40) -> t40 {
     if is_hovered > 0 {
         color = 5; // Cyan highlight
     }
-    os_text_cell(37, 21, 91, color); // '['
-    os_text_cell(38, 21, 69, color); // 'E'
-    os_text_cell(39, 21, 88, color); // 'X'
-    os_text_cell(40, 21, 73, color); // 'I'
-    os_text_cell(41, 21, 84, color); // 'T'
-    os_text_cell(42, 21, 93, color); // ']'
+    os_text_cell(39, 21, 91, color); // '['
+    os_text_cell(40, 21, 69, color); // 'E'
+    os_text_cell(41, 21, 88, color); // 'X'
+    os_text_cell(42, 21, 73, color); // 'I'
+    os_text_cell(43, 21, 84, color); // 'T'
+    os_text_cell(44, 21, 93, color); // ']'
+    return 1;
+}
+
+fn task_draw_controls(hovered_btn: t40) -> t40 {
+    var bKill: t40 = 0;
+    var bSuspend: t40 = 0;
+    var bResume: t40 = 0;
+    var bExit: t40 = 0;
+    if hovered_btn - TM_BTN_KILL == 0 { bKill = 1; }
+    if hovered_btn - TM_BTN_SUSPEND == 0 { bSuspend = 1; }
+    if hovered_btn - TM_BTN_RESUME == 0 { bResume = 1; }
+    if hovered_btn - TM_BTN_EXIT == 0 { bExit = 1; }
+    task_draw_kill_button(bKill);
+    task_draw_suspend_button(bSuspend);
+    task_draw_resume_button(bResume);
+    task_draw_exit_button(bExit);
     return 1;
 }
 
@@ -134,10 +227,102 @@ fn task_draw_exit_button(is_hovered: t40) -> t40 {
 const TM_PS_BUF: t40 = 11000;
 const TM_PS_MAX: t40 = 8;
 const TM_PS_WORDS: t40 = 5;
+const TM_INFO_BUF: t40 = 11100;
 
-fn task_draw_ui(hovered_btn: t40) -> t40 {
-    var bExit: t40 = 0;
-    if hovered_btn - 99 == 0 { bExit = 1; }
+fn task_button_at(mx: t40, my: t40) -> t40 {
+    if my - 21 != 0 {
+        return 0;
+    }
+    if mx - 16 >= 0 {
+        if 21 - mx >= 0 { return TM_BTN_KILL; }
+    }
+    if mx - 24 >= 0 {
+        if 29 - mx >= 0 { return TM_BTN_SUSPEND; }
+    }
+    if mx - 32 >= 0 {
+        if 36 - mx >= 0 { return TM_BTN_RESUME; }
+    }
+    if mx - 39 >= 0 {
+        if 44 - mx >= 0 { return TM_BTN_EXIT; }
+    }
+    return 0;
+}
+
+fn task_row_index_at_y(y: t40) -> t40 {
+    if y - 9 == 0 { return 0; }
+    if y - 12 == 0 { return 1; }
+    if y - 15 == 0 { return 2; }
+    if y - 18 == 0 { return 3; }
+    return -1;
+}
+
+fn task_pid_at_index(index: t40) -> t40 {
+    if index < 0 {
+        return 0;
+    }
+    var count: t40 = os_ps(TM_PS_BUF, TM_PS_MAX);
+    if count <= 0 {
+        return 0;
+    }
+    if index - count >= 0 {
+        return 0;
+    }
+    var pid: t40 = 0;
+    unsafe { pid = load(TM_PS_BUF + index * TM_PS_WORDS); }
+    return pid;
+}
+
+fn task_apply_action(action: t40, selected_pid: t40) -> t40 {
+    if selected_pid <= 0 {
+        return 0;
+    }
+    var self_pid: t40 = sys_getpid();
+    if selected_pid - self_pid == 0 {
+        return 0;
+    }
+    if action - TM_BTN_KILL == 0 {
+        return os_kill(selected_pid, OS_SIGNAL_KILL);
+    }
+    if action - TM_BTN_SUSPEND == 0 {
+        return os_suspend(selected_pid);
+    }
+    if action - TM_BTN_RESUME == 0 {
+        return os_resume(selected_pid);
+    }
+    return 0;
+}
+
+fn task_draw_selected_info(selected_pid: t40) -> t40 {
+    os_text_cell(18, 19, 80, 8); // P
+    os_text_cell(19, 19, 73, 8); // I
+    os_text_cell(20, 19, 68, 8); // D
+    if selected_pid <= 0 {
+        os_text_cell(22, 19, 45, 8); // -
+        return 1;
+    }
+    task_draw_int(22, 19, selected_pid, 14);
+    if os_getproc(selected_pid, TM_INFO_BUF) > 0 {
+        var parent_pid: t40 = 0;
+        var pending: t40 = 0;
+        unsafe {
+            parent_pid = load(TM_INFO_BUF + 2);
+            pending = load(TM_INFO_BUF + 4);
+        }
+        os_text_cell(30, 19, 80, 8); // P
+        os_text_cell(31, 19, 80, 8); // P
+        if parent_pid < 0 {
+            os_text_cell(33, 19, 45, 8); // -
+        } else {
+            task_draw_int(33, 19, parent_pid, 8);
+        }
+        os_text_cell(42, 19, 83, 8); // S
+        os_text_cell(43, 19, 71, 8); // G
+        task_draw_int(45, 19, pending, 8);
+    }
+    return 1;
+}
+
+fn task_draw_ui(hovered_btn: t40, selected_pid: t40) -> t40 {
 
     os_clear_text(0);
 
@@ -191,24 +376,22 @@ fn task_draw_ui(hovered_btn: t40) -> t40 {
                 entry_pri   = load(base + 2);
                 entry_quo   = load(base + 3);
             }
-            task_draw_int(21, row_y, entry_pid, 10);
+            var row_color: t40 = 10;
+            if entry_pid - selected_pid == 0 {
+                row_color = 14;
+            }
+            task_draw_int(21, row_y, entry_pid, row_color);
             task_draw_state(28, row_y, entry_state);
-            task_draw_int(40, row_y, entry_pri, 10);
-            task_draw_int(50, row_y, entry_quo, 10);
+            task_draw_int(40, row_y, entry_pri, row_color);
+            task_draw_int(50, row_y, entry_quo, row_color);
             row_y = row_y + 3;
         }
         i = i + 1;
     }
 
-    // "-- processes --" footer
-    os_text_cell(27, 19, 45, 8); os_text_cell(28, 19, 45, 8);
-    os_text_cell(30, 19, count + 48, 8);
-    os_text_cell(32, 19, 112, 8); os_text_cell(33, 19, 114, 8);
-    os_text_cell(34, 19, 111, 8); os_text_cell(35, 19, 99,  8);
-    os_text_cell(36, 19, 115, 8);
-    os_text_cell(37, 19, 45, 8); os_text_cell(38, 19, 45, 8);
+    task_draw_selected_info(selected_pid);
 
-    task_draw_exit_button(bExit);
+    task_draw_controls(hovered_btn);
     return 1;
 }
 
@@ -227,62 +410,89 @@ fn main() -> t40 {
     os_gpu_mode(0);
 
     var hovered_btn: t40 = 0;
-    task_draw_ui(hovered_btn);
+    var selected_pid: t40 = 0;
+    task_draw_ui(hovered_btn, selected_pid);
 
     var done: t40 = 0;
     var last_hovered: t40 = 0;
-    var refresh_counter: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var event_kind: t40 = 0;
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
+    var k: t40 = 0;
 
     while 1 - done > 0 {
-        var mx: t40 = os_mouse_x();
-        var my: t40 = os_mouse_y();
-        var btn: t40 = os_mouse_btn();
+        k = 0;
+        event_status = os_wait_event(-1, event_addr, 2000);
+        if event_status > 0 {
+            event_kind = os_event_kind(event_addr);
+            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr);
+                my = os_event_y(event_addr);
+                btn = os_event_modifiers(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                done = 1;
+            }
+        } else {
+            task_draw_ui(last_hovered, selected_pid);
+        }
 
         os_sprite(mx, my, 43, 14); // '+' cursor
 
-        var current_hover: t40 = 0;
-        if mx - 37 >= 0 {
-            if 42 - mx >= 0 {
-                if my - 21 == 0 {
-                    current_hover = 99; // EXIT button
+        var current_hover: t40 = task_button_at(mx, my);
+
+        if current_hover - last_hovered != 0 {
+            task_draw_ui(current_hover, selected_pid);
+            last_hovered = current_hover;
+        }
+
+        var click: t40 = 0;
+        var row_index: t40 = -1;
+        var row_pid: t40 = 0;
+        if btn - 1 == 0 {
+            if current_hover > 0 {
+                click = current_hover;
+            } else {
+                row_index = task_row_index_at_y(my);
+                row_pid = task_pid_at_index(row_index);
+                if row_pid > 0 {
+                    selected_pid = row_pid;
+                    task_draw_ui(last_hovered, selected_pid);
                 }
             }
         }
 
-        if current_hover - last_hovered != 0 {
-            task_draw_ui(current_hover);
-            last_hovered = current_hover;
-        }
-
-        // Auto-refresh every ~2000 loops so live data stays current
-        refresh_counter = refresh_counter + 1;
-        if refresh_counter - 2000 >= 0 {
-            refresh_counter = 0;
-            task_draw_ui(last_hovered);
-        }
-
-        var click: t40 = 0;
-        if btn - 1 == 0 {
-            if current_hover > 0 {
-                click = current_hover;
-            }
-        }
-
-        if os_key_available() > 0 {
-            var k: t40 = os_read_key();
-            if k - 120 == 0 { click = 99; } // 'x'
-            if k - 88 == 0 { click = 99; }  // 'X'
+        if k > 0 {
+            if k - 120 == 0 { click = TM_BTN_EXIT; } // 'x'
+            if k - 88 == 0 { click = TM_BTN_EXIT; }  // 'X'
+            if k - 107 == 0 { click = TM_BTN_KILL; } // 'k'
+            if k - 75 == 0 { click = TM_BTN_KILL; }  // 'K'
+            if k - 115 == 0 { click = TM_BTN_SUSPEND; } // 's'
+            if k - 83 == 0 { click = TM_BTN_SUSPEND; }  // 'S'
+            if k - 99 == 0 { click = TM_BTN_RESUME; } // 'c'
+            if k - 67 == 0 { click = TM_BTN_RESUME; } // 'C'
             if k - 114 == 0 {               // 'r' -> manual refresh
-                task_draw_ui(last_hovered);
+                task_draw_ui(last_hovered, selected_pid);
             }
         }
 
-        if click - 99 == 0 {
+        if click - TM_BTN_EXIT == 0 {
             done = 1;
+        } else {
+            if click > 0 {
+                task_apply_action(click, selected_pid);
+                task_draw_ui(last_hovered, selected_pid);
+            }
         }
     }
 
-    var path_addr: t40 = task_seed_desktop_path(15000);
+    var path_addr: t40 = task_seed_desktop_path(10000);
     sys_exec(path_addr);
     return 2;
 }

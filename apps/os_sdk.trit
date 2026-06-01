@@ -422,6 +422,20 @@ fn os_unlink(path_addr: t40) -> t40 {
     return sys_unlink(path_addr);
 }
 
+// --- VFS sync (service 47) ---
+
+fn os_fsync(fd: t40) -> t40 {
+    return sys_fsync(fd);
+}
+
+const OS_SIGNAL_TERM: t40 = 1;
+const OS_SIGNAL_KILL: t40 = 2;
+const OS_SIGNAL_STOP: t40 = 4;
+const OS_SIGNAL_CONT: t40 = 8;
+const OS_SIGNAL_CLOSE_REQUEST: t40 = 16;
+
+const OS_PROCINFO_WORDS: t40 = 8;
+
 // --- Process lifecycle (services 43–45) ---
 
 fn os_waitpid(child_pid: t40) -> t40 {
@@ -436,10 +450,54 @@ fn os_sleep() -> t40 {
     return sys_sleep();
 }
 
+fn os_sleep_ms(ms: t40) -> t40 {
+    return sys_sleep_ms(ms);
+}
+
 // --- Process snapshot (service 46) ---
 // Fills out_addr with up to max_entries records of 5 words each:
 //   [pid, state, priority, quota_remaining, namespace_id]
 // Returns count of entries written.
 fn os_ps(out_addr: t40, max_entries: t40) -> t40 {
     return sys_ps(out_addr, max_entries);
+}
+
+// --- Process control (services 48-51) ---
+// os_getproc writes [pid, state, parent_pid, exit_status, pending_signals, priority, quota_remaining, namespace_id].
+fn os_kill(pid: t40, signal: t40) -> t40 {
+    return sys_kill(pid, signal);
+}
+
+fn os_suspend(pid: t40) -> t40 {
+    return sys_suspend(pid);
+}
+
+fn os_resume(pid: t40) -> t40 {
+    return sys_resume(pid);
+}
+
+fn os_getproc(pid: t40, out_addr: t40) -> t40 {
+    return sys_getproc(pid, out_addr);
+}
+
+// --- Blocking waits (services 52-56) ---
+
+fn os_futex_wait(addr: t40, expected: t40, timeout_ms: t40) -> t40 {
+    return sys_futex_wait(addr, expected, timeout_ms);
+}
+
+fn os_futex_wake(addr: t40, count: t40) -> t40 {
+    return sys_futex_wake(addr, count);
+}
+
+fn os_ipc_recv_blocking(channel: t40, out_addr: t40, timeout_ms: t40) -> t40 {
+    return sys_ipc_recv_blocking(channel, out_addr, timeout_ms);
+}
+
+fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {
+    return sys_wait_event(window_id, out_addr, timeout_ms);
+}
+
+fn os_window_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {
+    return sys_wait_event(window_id, out_addr, timeout_ms);
 }

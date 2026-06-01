@@ -8,15 +8,17 @@
 
 namespace {
 
-constexpr int kDesktopPhys = 140000;
-constexpr int kLauncherPhys = 150000;
+constexpr int kDesktopTextPpn = 7000;
+constexpr int kDesktopTextPhys = kDesktopTextPpn * sandbox::vm::MMU_PAGE_WORDS;
+constexpr int kLauncherTextPpn = 7600;
+constexpr int kLauncherTextPhys = kLauncherTextPpn * sandbox::vm::MMU_PAGE_WORDS;
 constexpr int kCalcTextPpn = 8200;
 constexpr int kCalcTextPhys = kCalcTextPpn * sandbox::vm::MMU_PAGE_WORDS;
 constexpr int kWindowProbeTextPpn = 8600;
 constexpr int kWindowProbeTextPhys = kWindowProbeTextPpn * sandbox::vm::MMU_PAGE_WORDS;
 constexpr int kHwPtBase = 19300;
 constexpr int kHwPtMaxPages = 512;
-constexpr int kProcessDmemPpnBase = 900;
+constexpr int kProcessDmemPpnBase = 3200;
 constexpr int kFbStateBase = 23650;
 constexpr int kFbFrontIndex = 5;
 constexpr int kFbBackBufferBase = 43000;
@@ -48,6 +50,21 @@ long long wordAt(const sandbox::vm::VMState& vm, int addr) {
     auto [value, fault] = vm.dmem.load(addr);
     (void)fault;
     return sandbox::vm::ops::toLong(value);
+}
+
+sandbox::vm::VMState productionVm() {
+    return sandbox::vm::VMState(sandbox::vm::ProductionProfile::minimum());
+}
+
+bool imemWordEquals(const sandbox::vm::VMState& vm, int addr, sandbox::isa::TritWord27 expected) {
+    auto [word, fault] = vm.imem.fetch(addr);
+    return fault == sandbox::vm::MemFaultCode::OK && word == expected;
+}
+
+std::string disassembleAt(const sandbox::vm::VMState& vm, int addr) {
+    auto [word, fault] = vm.imem.fetch(addr);
+    if (fault != sandbox::vm::MemFaultCode::OK) return "<fetch fault>";
+    return sandbox::isa::disassemble(word);
 }
 
 void dumpDiagnostics(const sandbox::compiler::CompileResult& compiled) {
@@ -124,7 +141,7 @@ sandbox::compiler::LinkResult compileInlineApp(
     return linked;
 }
 
-std::string buildBootAssembly() {
+std::string buildBootExecAssembly(const std::string& path) {
     std::ostringstream boot;
     boot << ".text\n";
     boot << "boot:\n";
@@ -137,70 +154,30 @@ std::string buildBootAssembly() {
     boot << "    mov r1, native_trap_entry\n";
     boot << "    csrw tvec, r1\n";
 
-    appendStoreCString(boot, 10020, "/bin/calculator");
-    boot << "    mov r13, 0\n";
+    appendStoreCString(boot, 10020, path);
+    boot << "    mov r13, 1\n";
     boot << "    mov r14, 10020\n";
-    boot << "    mov r15, 1\n";
-    boot << "    mov r16, 0\n";
-    boot << "    mov r17, 1\n";
-    boot << "    mov r18, 128\n";
-    boot << "    call app_register\n";
-
-    boot << "    mov r1, 12345\n";
-    boot << "    mov r2, 62000\n";
-    boot << "    store r1, r2, 0\n";
-
-    boot << "    mov r1, ctx_desktop\n";
-    boot << "    csrw scratch, r1\n";
-    boot << "    mov sp, 12000\n";
-    boot << "    mov r1, " << kDesktopPhys << "\n";
-    boot << "    csrw epc, r1\n";
-    boot << "    mov r1, 35\n";
-    boot << "    csrw status, r1\n";
-    boot << "    eret\n";
-    boot << ".data\n";
-    boot << ".org 64\n";
-    boot << "ctx_desktop: .word 0, 35, 0, 0, 0, 0\n";
-    boot << ".org 95\n";
-    boot << ".word 12000\n";
-    return boot.str();
-}
-
-std::string buildWindowProbeBootAssembly() {
-    std::ostringstream boot;
-    boot << ".text\n";
-    boot << "boot:\n";
-    boot << "    mov sp, 16383\n";
-    boot << "    call kernel_init\n";
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 0\n";
     boot << "    mov r15, 0\n";
-    boot << "    call ipc_open\n";
-    boot << "    mov r1, native_trap_entry\n";
-    boot << "    csrw tvec, r1\n";
+    boot << "    call app_launch\n";
 
-    appendStoreCString(boot, 10030, "/bin/probe");
-    boot << "    mov r13, 0\n";
-    boot << "    mov r14, 10030\n";
-    boot << "    mov r15, 9\n";
-    boot << "    mov r16, 0\n";
-    boot << "    mov r17, 1\n";
-    boot << "    mov r18, 128\n";
-    boot << "    call app_register\n";
-
-    boot << "    mov r1, ctx_launcher\n";
+    boot << "    mov r2, 3019\n";
+    boot << "    load r1, r2, 0\n";
     boot << "    csrw scratch, r1\n";
-    boot << "    mov sp, 12000\n";
-    boot << "    mov r1, " << kLauncherPhys << "\n";
-    boot << "    csrw epc, r1\n";
-    boot << "    mov r1, 35\n";
-    boot << "    csrw status, r1\n";
+    boot << "    load r3, r1, 0\n";
+    boot << "    csrw epc, r3\n";
+    boot << "    load r3, r1, 1\n";
+    boot << "    csrw status, r3\n";
+    boot << "    load r3, r1, 2\n";
+    boot << "    csrw user_imem_ptbr, r3\n";
+    boot << "    load r3, r1, 3\n";
+    boot << "    csrw user_imem_pages, r3\n";
+    boot << "    load r3, r1, 4\n";
+    boot << "    csrw user_dmem_ptbr, r3\n";
+    boot << "    load r3, r1, 5\n";
+    boot << "    csrw user_dmem_pages, r3\n";
+    boot << "    load r3, r1, 31\n";
+    boot << "    copy sp, r3\n";
     boot << "    eret\n";
-    boot << ".data\n";
-    boot << ".org 64\n";
-    boot << "ctx_launcher: .word 0, 35, 0, 0, 0, 0\n";
-    boot << ".org 95\n";
-    boot << ".word 12000\n";
     return boot.str();
 }
 
@@ -223,10 +200,17 @@ void testDesktopLaunchesMappedCalculator() {
     LinkResult desktop = compileApp("desktop", 512);
     LinkResult calc = compileApp("calculator", 256);
     if (!compiled_kernel.success || !desktop.success || !calc.success) return;
+    expect(desktop.executable_header.text_pages <= kHwPtMaxPages,
+           "dead-stripped desktop image fits the current IMEM page-table contract");
     expect(calc.executable_header.text_pages <= kHwPtMaxPages,
            "dead-stripped calculator image fits the current IMEM page-table contract");
-    sandbox::os::NativeVfsImageBuilder rootfs(768);
+    sandbox::os::NativeVfsImageBuilder rootfs(2048);
     expect(rootfs.installBaseLayout().ok(), "calculator rootfs base layout installs");
+    expect(rootfs.addExecutableImage("/bin/desktop",
+                                    desktop.assembled.program,
+                                    desktop.executable_header,
+                                    kDesktopTextPpn).ok(),
+           "desktop executable image installs into native disk root");
     expect(rootfs.addExecutableImage("/bin/calculator",
                                     calc.assembled.program,
                                     calc.executable_header,
@@ -235,11 +219,9 @@ void testDesktopLaunchesMappedCalculator() {
     std::vector<long long> rootImage = rootfs.image();
 
     const std::string image =
-        buildBootAssembly() + "\n" +
+        buildBootExecAssembly("/bin/desktop") + "\n" +
         trap + "\n" +
-        compiled_kernel.assembly + "\n" +
-        ".text\n.org " + std::to_string(kDesktopPhys) + "\n" +
-        desktop.assembly + "\n";
+        compiled_kernel.assembly + "\n";
 
     auto assembled = sandbox::vm::assembler::assemble(image);
     if (!assembled.success) {
@@ -250,15 +232,15 @@ void testDesktopLaunchesMappedCalculator() {
     }
     expect(assembled.success, "native desktop boot image assembles");
 
-    sandbox::vm::VMState vm(262144, 1000000);
+    sandbox::vm::VMState vm = productionVm();
     if (!assembled.success) return;
     expect(sandbox::vm::assembler::loadAndReset(vm, assembled),
            "native desktop boot image loads");
     expect(vm.loadBlockImage(rootImage),
            "calculator native root image loads into VM block device");
-    vm.enqueueConsoleAscii("1a");
+    vm.enqueueConsoleAscii("777\r1a");
 
-    const auto result = sandbox::vm::run(vm, 8000000);
+    const auto result = sandbox::vm::run(vm, 50000000);
     const bool mapped_handoff =
         vm.mmu_enable &&
         vm.user_imem_ptbr == kHwPtBase &&
@@ -282,8 +264,8 @@ void testDesktopLaunchesMappedCalculator() {
                   << " syscall=" << vm.syscall_id
                   << " priv=" << static_cast<int>(vm.privilege)
                   << " trap=" << sandbox::vm::ops::toLong(vm.trap_reg)
-                  << " insn='" << sandbox::isa::disassemble(vm.imem.words[vm.pc]) << "'"
-                  << " epc_insn='" << sandbox::isa::disassemble(vm.imem.words[vm.epc]) << "'"
+                  << " insn='" << disassembleAt(vm, vm.pc) << "'"
+                  << " epc_insn='" << disassembleAt(vm, vm.epc) << "'"
                   << " buffer='" << vm.syscall_buffer << "'\n";
     }
     expect(result.halted() || mapped_handoff,
@@ -300,6 +282,8 @@ void testDesktopLaunchesMappedCalculator() {
                   << " buffer='" << vm.syscall_buffer << "'\n";
     }
     expect(contains(vm.syscall_buffer, "DESKTOP\n"), "desktop ran before launch");
+    expect(imemWordEquals(vm, kDesktopTextPhys, desktop.assembled.program.front()),
+           "desktop text was loaded from disk into IMEM");
     if (result.halted()) {
         expect(contains(vm.syscall_buffer, "144 + 12 = 156\n"),
                "mapped calculator ran after sys_exec");
@@ -333,14 +317,6 @@ void testDesktopLaunchesMappedCalculator() {
            "calculator window buffer user VPN maps to the compositor backing buffer");
 
     auto [imem_pte_value, imem_pte_fault] = vm.dmem.load(kHwPtBase);
-    if (sandbox::vm::ops::toLong(imem_pte_value) == 0 ||
-        (result.halted() && !contains(vm.syscall_buffer, "144 + 12 = 156\n"))) {
-        std::cout << "DEBUG pte imem_word=" << sandbox::vm::ops::toLong(imem_pte_value)
-                  << " dmem_word=" << sandbox::vm::ops::toLong(vm.dmem.load(kHwPtBase + kHwPtMaxPages).first)
-                  << " calc_text_pages=" << calc.executable_header.text_pages
-                  << " calc_data_pages=" << calc.executable_header.data_pages
-                  << " calc_program_words=" << calc.instruction_count << "\n";
-    }
     expect(imem_pte_fault == sandbox::vm::MemFaultCode::OK,
            "IMEM PTE can be read");
     sandbox::vm::PageTableEntry imem_pte;
@@ -348,7 +324,7 @@ void testDesktopLaunchesMappedCalculator() {
                imem_pte.present && imem_pte.user && imem_pte.execute &&
                imem_pte.ppn == kCalcTextPpn,
            "IMEM PTE maps virtual page zero to the calculator text page");
-    expect(vm.imem.words[kCalcTextPhys] == calc.assembled.program.front(),
+    expect(imemWordEquals(vm, kCalcTextPhys, calc.assembled.program.front()),
            "desktop-launched calculator text was loaded from disk into IMEM");
 
     auto [dmem_pte_value, dmem_pte_fault] = vm.dmem.load(kHwPtBase + kHwPtMaxPages);
@@ -386,12 +362,19 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
                 store(addr + 2, 105);
                 store(addr + 3, 110);
                 store(addr + 4, 47);
-                store(addr + 5, 112);
-                store(addr + 6, 114);
-                store(addr + 7, 111);
-                store(addr + 8, 98);
-                store(addr + 9, 101);
-                store(addr + 10, 0);
+                store(addr + 5, 119);
+                store(addr + 6, 105);
+                store(addr + 7, 110);
+                store(addr + 8, 100);
+                store(addr + 9, 111);
+                store(addr + 10, 119);
+                store(addr + 11, 95);
+                store(addr + 12, 112);
+                store(addr + 13, 114);
+                store(addr + 14, 111);
+                store(addr + 15, 98);
+                store(addr + 16, 101);
+                store(addr + 17, 0);
             }
             return addr;
         }
@@ -404,9 +387,16 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     )";
     LinkResult launcher = compileInlineApp("window_probe_launcher", launcher_source, 128);
     if (!compiled_kernel.success || !probe.success || !launcher.success) return;
+    expect(launcher.executable_header.text_pages <= kHwPtMaxPages,
+           "dead-stripped launcher image fits the current IMEM page-table contract");
     sandbox::os::NativeVfsImageBuilder rootfs(384);
     expect(rootfs.installBaseLayout().ok(), "window probe rootfs base layout installs");
-    expect(rootfs.addExecutableImage("/bin/probe",
+    expect(rootfs.addExecutableImage("/bin/launcher",
+                                    launcher.assembled.program,
+                                    launcher.executable_header,
+                                    kLauncherTextPpn).ok(),
+           "launcher executable image installs into native disk root");
+    expect(rootfs.addExecutableImage("/bin/window_probe",
                                     probe.assembled.program,
                                     probe.executable_header,
                                     kWindowProbeTextPpn).ok(),
@@ -416,11 +406,9 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     std::vector<long long> rootImage = rootfs.image();
 
     const std::string image =
-        buildWindowProbeBootAssembly() + "\n" +
+        buildBootExecAssembly("/bin/launcher") + "\n" +
         trap + "\n" +
-        compiled_kernel.assembly + "\n" +
-        ".text\n.org " + std::to_string(kLauncherPhys) + "\n" +
-        launcher.assembly + "\n";
+        compiled_kernel.assembly + "\n";
 
     auto assembled = sandbox::vm::assembler::assemble(image);
     if (!assembled.success) {
@@ -431,14 +419,14 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     }
     expect(assembled.success, "window probe boot image assembles");
 
-    sandbox::vm::VMState vm(262144, 1000000);
+    sandbox::vm::VMState vm = productionVm();
     if (!assembled.success) return;
     expect(sandbox::vm::assembler::loadAndReset(vm, assembled),
            "window probe boot image loads");
     expect(vm.loadBlockImage(rootImage),
            "window probe native root image loads into VM block device");
 
-    const auto result = sandbox::vm::run(vm, 12000000);
+    const auto result = sandbox::vm::run(vm, 50000000);
     if (!result.halted()) {
         std::cout << "DEBUG window probe: status=" << static_cast<int>(result.status)
                   << " pc=" << vm.pc
@@ -454,7 +442,9 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     expect(result.halted(), "window probe app halts after drawing");
     expect(contains(vm.syscall_buffer, "WINDOW\n"),
            "window probe app ran after sys_exec");
-    expect(vm.imem.words[kWindowProbeTextPhys] == probe.assembled.program.front(),
+    expect(imemWordEquals(vm, kLauncherTextPhys, launcher.assembled.program.front()),
+           "launcher text was loaded from disk into IMEM");
+    expect(imemWordEquals(vm, kWindowProbeTextPhys, probe.assembled.program.front()),
            "window probe text was loaded from disk into IMEM");
     expect(contains(vm.syscall_buffer, "FS\n"),
            "window probe read a VFS file through translated process DMEM");

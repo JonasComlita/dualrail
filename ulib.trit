@@ -60,6 +60,10 @@ fn sleep_until_tick(tick: t40) -> t40 {
     return sys_sleep_until_tick(tick);
 }
 
+fn sleep_ms(ms: t40) -> t40 {
+    return sys_sleep_ms(ms);
+}
+
 fn exit(status: t40) -> t40 {
     return sys_exit(status);
 }
@@ -82,6 +86,30 @@ fn spawn_static(entry_pc: t40) -> t40 {
 
 fn waitpid(pid: t40) -> t40 {
     return sys_waitpid(pid);
+}
+
+fn kill(pid: t40, signal: t40) -> t40 {
+    return sys_kill(pid, signal);
+}
+
+fn suspend(pid: t40) -> t40 {
+    return sys_suspend(pid);
+}
+
+fn resume(pid: t40) -> t40 {
+    return sys_resume(pid);
+}
+
+fn getproc(pid: t40, out_addr: t40) -> t40 {
+    return sys_getproc(pid, out_addr);
+}
+
+fn futex_wait(addr: t40, expected: t40, timeout_ms: t40) -> t40 {
+    return sys_futex_wait(addr, expected, timeout_ms);
+}
+
+fn futex_wake(addr: t40, count: t40) -> t40 {
+    return sys_futex_wake(addr, count);
 }
 
 fn fork() -> t40 {
@@ -1208,6 +1236,10 @@ fn close(fd: t40) -> t40 {
     return sys_close(fd);
 }
 
+fn fsync(fd: t40) -> t40 {
+    return sys_fsync(fd);
+}
+
 // FIX: was sys_read(fd, count) — missing buf argument.
 fn read(fd: t40, buf: borrow_mut<ptr<t40, user, valid>>, count: t40) -> t40 {
     return sys_read(fd, buf, count);
@@ -1236,6 +1268,14 @@ fn ipc_send(channel: t40, word: t40) -> t40 {
 
 fn ipc_recv(channel: t40, out: borrow_mut<ptr<t40, user, valid>>) -> t40 {
     return sys_ipc_recv(channel, out);
+}
+
+fn ipc_recv_blocking(channel: t40, out: borrow_mut<ptr<t40, user, valid>>, timeout_ms: t40) -> t40 {
+    return sys_ipc_recv_blocking(channel, out, timeout_ms);
+}
+
+fn wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {
+    return sys_wait_event(window_id, out_addr, timeout_ms);
 }
 
 // =============================================================================
@@ -2924,4 +2964,3 @@ fn split_buf_free(buf: borrow<ptr<t40, user, unknown>>) -> void {
         }
     }
 }
-

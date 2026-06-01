@@ -657,7 +657,12 @@ private:
                name == "sys_bind" || name == "sys_connect" ||
                name == "sys_send" || name == "sys_recv" ||
                name == "sys_mkdir" || name == "sys_unlink" ||
-               name == "sys_sleep" || name == "sys_ps";
+               name == "sys_sleep" || name == "sys_ps" ||
+               name == "sys_fsync" || name == "sys_kill" ||
+               name == "sys_suspend" || name == "sys_resume" ||
+               name == "sys_getproc" || name == "sys_futex_wait" ||
+               name == "sys_futex_wake" || name == "sys_ipc_recv_blocking" ||
+               name == "sys_wait_event" || name == "sys_sleep_ms";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -2590,6 +2595,16 @@ private:
         if (name == "sys_unlink") return runtime::sys_unlink;
         if (name == "sys_sleep") return runtime::sys_sleep;
         if (name == "sys_ps") return runtime::sys_ps;
+        if (name == "sys_fsync") return runtime::sys_fsync;
+        if (name == "sys_kill") return runtime::sys_kill;
+        if (name == "sys_suspend") return runtime::sys_suspend;
+        if (name == "sys_resume") return runtime::sys_resume;
+        if (name == "sys_getproc") return runtime::sys_getproc;
+        if (name == "sys_futex_wait") return runtime::sys_futex_wait;
+        if (name == "sys_futex_wake") return runtime::sys_futex_wake;
+        if (name == "sys_ipc_recv_blocking") return runtime::sys_ipc_recv_blocking;
+        if (name == "sys_wait_event") return runtime::sys_wait_event;
+        if (name == "sys_sleep_ms") return runtime::sys_sleep_ms;
         return 0;
     }
 
@@ -2623,7 +2638,17 @@ private:
                service == runtime::sys_waitpid ||
                service == runtime::sys_exit ||
                service == runtime::sys_sleep ||
-               service == runtime::sys_ps;
+               service == runtime::sys_ps ||
+               service == runtime::sys_fsync ||
+               service == runtime::sys_kill ||
+               service == runtime::sys_suspend ||
+               service == runtime::sys_resume ||
+               service == runtime::sys_getproc ||
+               service == runtime::sys_futex_wait ||
+               service == runtime::sys_futex_wake ||
+               service == runtime::sys_ipc_recv_blocking ||
+               service == runtime::sys_wait_event ||
+               service == runtime::sys_sleep_ms;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {

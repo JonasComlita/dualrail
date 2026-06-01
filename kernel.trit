@@ -19,6 +19,10 @@ const ERR_NOT_DIR: t40 = -6;
 const ERR_IS_DIR: t40 = -7;
 const ERR_INVALID: t40 = -8;
 const ERR_EOF: t40 = -9;
+const ERR_TIMEOUT: t40 = -10;
+const ERR_AGAIN: t40 = -11;
+const ERR_CANCELED: t40 = -12;
+const SYS_BLOCKED: t40 = 2;
 
 const KIND_FREE: t40 = 0;
 const KIND_FILE: t40 = 1;
@@ -65,6 +69,15 @@ const COMPOSITOR_FRAME_COUNT_ADDR: t40 = 3029;
 const WINDOW_FOCUS_ID_ADDR: t40 = 3030;
 const INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3031;
 const BUFFER_CLOCK_HAND_ADDR: t40 = 3032;
+const KERNEL_TICK_ADDR: t40 = 3033;
+const INPUT_LAST_MOUSE_X_ADDR: t40 = 3034;
+const INPUT_LAST_MOUSE_Y_ADDR: t40 = 3035;
+
+const PROC_PARENT_PID_BASE: t40 = 3040;
+const PROC_EXIT_STATUS_BASE: t40 = 3048;
+const PROC_SIGNAL_PENDING_BASE: t40 = 3056;
+const PROC_CLEANED_BASE: t40 = 3064;
+const IPC_OWNER_BASE: t40 = 3072;
 
 const BOOTSTRAP_BITMAP_BASE: t40 = 3200;
 
@@ -150,6 +163,34 @@ const EVENT_MODIFIERS: t40 = 3;
 const EVENT_KIND_KEY: t40 = 1;
 const EVENT_KIND_MOUSE: t40 = 2;
 const EVENT_KIND_CLOSE: t40 = 3;
+const EVENT_KIND_TIMEOUT: t40 = 4;
+
+const WAIT_QUEUE_MAX: t40 = 16;
+const WAIT_QUEUE_WORDS: t40 = 3;
+const WAIT_QUEUE_BASE: t40 = 27500;
+const WQ_CHANNEL: t40 = 0;
+const WQ_HEAD: t40 = 1;
+const WQ_VERSION: t40 = 2;
+const WAIT_PROC_NEXT_BASE: t40 = 27560;
+const WAIT_KIND_BASE: t40 = 27570;
+const WAIT_DEADLINE_BASE: t40 = 27580;
+const WAIT_ARG0_BASE: t40 = 27590;
+const WAIT_ARG1_BASE: t40 = 27600;
+const WAIT_ARG2_BASE: t40 = 27610;
+const WAIT_NO_DEADLINE: t40 = -1;
+const WAIT_KIND_NONE: t40 = 0;
+const WAIT_KIND_LEGACY: t40 = 1;
+const WAIT_KIND_FUTEX: t40 = 2;
+const WAIT_KIND_IPC: t40 = 3;
+const WAIT_KIND_WINDOW: t40 = 4;
+const WAIT_KIND_INPUT: t40 = 5;
+const WAIT_KIND_SLEEP: t40 = 6;
+const WAIT_CHAN_WAITPID_BASE: t40 = 100000;
+const WAIT_CHAN_IPC_BASE: t40 = 101000;
+const WAIT_CHAN_WINDOW_BASE: t40 = 102000;
+const WAIT_CHAN_INPUT: t40 = 103000;
+const WAIT_CHAN_SLEEP_BASE: t40 = 104000;
+const WAIT_CHAN_FUTEX_BASE: t40 = 105000;
 
 // WAL — expanded to 80 slots using 4000–4399 (400 words / 5 words each).
 const WAL_RECORD_WORDS: t40 = 5;
@@ -278,7 +319,7 @@ const WAL_DISK_RECORD_BLOCKS: t40 = 15;
 const USER_MEM_BASE: t40 = 10000;
 const USER_MEM_LIMIT: t40 = 16000;
 const USER_SCRATCH_VPN_BASE: t40 = 370;
-const USER_SCRATCH_PAGES: t40 = 1;
+const USER_SCRATCH_PAGES: t40 = 118;
 const SYSCALL_PATH_COPY_BASE: t40 = 15800;
 
 const IPC_MAX_CHANNELS: t40 = 8;
@@ -331,6 +372,26 @@ const PROC_RUNNING: t40 = 2;
 const PROC_BLOCKED: t40 = 3;
 const PROC_SLEEPING: t40 = 4;
 const PROC_EXITED: t40 = 5;
+const PROC_STOPPED: t40 = 6;
+const PROC_ZOMBIE: t40 = 7;
+const PROC_KILLING: t40 = 8;
+const PROC_CRASHED: t40 = 9;
+
+const SIGNAL_TERM: t40 = 1;
+const SIGNAL_KILL: t40 = 2;
+const SIGNAL_STOP: t40 = 4;
+const SIGNAL_CONT: t40 = 8;
+const SIGNAL_CLOSE_REQUEST: t40 = 16;
+
+const PROCINFO_WORDS: t40 = 8;
+const PROCINFO_PID: t40 = 0;
+const PROCINFO_STATE: t40 = 1;
+const PROCINFO_PARENT_PID: t40 = 2;
+const PROCINFO_EXIT_STATUS: t40 = 3;
+const PROCINFO_PENDING_SIGNALS: t40 = 4;
+const PROCINFO_PRIORITY: t40 = 5;
+const PROCINFO_QUOTA_REMAINING: t40 = 6;
+const PROCINFO_NAMESPACE: t40 = 7;
 
 const QUOTA_MAX: t40 = 8;
 const QUOTA_ROW_WORDS: t40 = 4;
@@ -409,8 +470,10 @@ const PROC_HEAP_START: t40 = 0;
 const PROC_HEAP_BREAK: t40 = 1;
 const PROC_HEAP_LIMIT: t40 = 2;
 const PROC_HEAP_MAPPED_PAGES: t40 = 3;
-const PROCESS_DMEM_PAGES_MAX: t40 = 16;
-const PROCESS_DMEM_PPN_BASE: t40 = 900;
+const PROCESS_DMEM_PAGES_MAX: t40 = 192;
+const PROCESS_SCRATCH_PPN_OFFSET: t40 = 74;
+const PROCESS_DATA_PAGES_MAX: t40 = 74;
+const PROCESS_DMEM_PPN_BASE: t40 = 3200;
 const PROCESS_CONTEXT_BASE: t40 = 28000;
 
 const APP_MAX: t40 = 16;
@@ -433,6 +496,7 @@ const APP_CAP_FS_WRITE: t40 = 4;
 const APP_CAP_GRAPHICS: t40 = 8;
 const APP_CAP_PROCESS: t40 = 16;
 const APP_CAP_IPC: t40 = 32;
+const APP_CAP_SYSTEM: t40 = 63;
 
 struct PageHeader {
     ppn: t40;
@@ -1090,6 +1154,7 @@ fn window_queue_event(slot: t40, kind: t40, x_or_key: t40, y: t40, modifiers: t4
     kstore(row + WIN_EVENT_WRITE, kwrap_inc(write_pos, WINDOW_EVENT_CAPACITY));
     kstore(row + WIN_EVENT_COUNT, count + 1);
     kstore(row + WIN_VERSION, kload(row + WIN_VERSION) + 1);
+    wait_wake_window(kload(row + WIN_ID));
     return count + 1;
 }
 
@@ -1231,6 +1296,12 @@ fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
         if modifiers > 0 {
             if window_close_hit(slot, x_or_key, y) > 0 {
                 var close_id: t40 = kload(window_addr(slot) + WIN_ID);
+                var owner_pid: t40 = kload(window_addr(slot) + WIN_OWNER_PID);
+                var owner_slot: t40 = process_find_pid(owner_pid);
+                if owner_slot >= 0 {
+                    process_add_signal(owner_slot, SIGNAL_CLOSE_REQUEST);
+                    process_wake_for_signal(owner_slot);
+                }
                 var close_queued: t40 = window_queue_event(slot, EVENT_KIND_CLOSE, close_id, 0, 0);
                 if close_queued < 0 {
                     return close_queued;
@@ -1419,6 +1490,12 @@ fn window_request_close(pid: t40, window_id: t40) -> t40 {
     if slot < 0 {
         return slot;
     }
+    var owner_pid: t40 = kload(window_addr(slot) + WIN_OWNER_PID);
+    var owner_slot: t40 = process_find_pid(owner_pid);
+    if owner_slot >= 0 {
+        process_add_signal(owner_slot, SIGNAL_CLOSE_REQUEST);
+        process_wake_for_signal(owner_slot);
+    }
     return window_queue_event(slot, EVENT_KIND_CLOSE, window_id, 0, 0);
 }
 
@@ -1427,6 +1504,7 @@ fn window_destroy(pid: t40, window_id: t40) -> t40 {
     if slot < 0 {
         return slot;
     }
+    wait_cancel_channel(wait_channel_window(window_id));
     kclear(window_addr(slot), WINDOW_ROW_WORDS);
     kclear(window_event_addr(slot, 0), WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
     kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
@@ -1991,6 +2069,11 @@ fn scheduler_init() -> t40 {
     kstore(TIER1_COUNT_ADDR, 0);
     kstore(MACRO_COUNT_ADDR, 0);
     kstore(SCHED_EPOCH_ADDR, 0);
+    kstore(KERNEL_TICK_ADDR, 0);
+    kstore(INPUT_LAST_MOUSE_X_ADDR, 0);
+    kstore(INPUT_LAST_MOUSE_Y_ADDR, 0);
+    kstore(INPUT_LAST_MOUSE_BTN_ADDR, 0);
+    wait_queue_init();
     return 1;
 }
 
@@ -2011,20 +2094,30 @@ fn tier1_enqueue(thread_id: t40) -> t40 {
 }
 
 fn tier1_dequeue() -> t40 {
-    var count: t40 = kacq(TIER1_COUNT_ADDR);
-    if count <= 0 {
-        return ERR_NOT_FOUND;
+    var skipped: t40 = 0;
+    while TIER1_CAPACITY - skipped > 0 {
+        var count: t40 = kacq(TIER1_COUNT_ADDR);
+        if count <= 0 {
+            return ERR_NOT_FOUND;
+        }
+        var head: t40 = kacq(TIER1_HEAD_ADDR);
+        var slot_addr: t40 = TIER1_QUEUE_BASE + head;
+        var thread_id: t40 = kacq(slot_addr);
+        kcas(slot_addr, thread_id, -1);
+        kstore(TIER1_HEAD_ADDR, kwrap_inc(head, TIER1_CAPACITY));
+        kstore(TIER1_COUNT_ADDR, count - 1);
+        if thread_id >= 0 {
+            var proc_slot: t40 = process_find_pid(thread_id);
+            if proc_slot < 0 {
+                return thread_id;
+            }
+            if kload(process_addr(proc_slot) + PROC_STATE) - PROC_RUNNABLE == 0 {
+                return thread_id;
+            }
+        }
+        skipped = skipped + 1;
     }
-    var head: t40 = kacq(TIER1_HEAD_ADDR);
-    var slot_addr: t40 = TIER1_QUEUE_BASE + head;
-    var thread_id: t40 = kacq(slot_addr);
-    if thread_id < 0 {
-        return ERR_NOT_FOUND;
-    }
-    kcas(slot_addr, thread_id, -1);
-    kstore(TIER1_HEAD_ADDR, kwrap_inc(head, TIER1_CAPACITY));
-    kstore(TIER1_COUNT_ADDR, count - 1);
-    return thread_id;
+    return ERR_NOT_FOUND;
 }
 
 fn macro_stage_thread(thread_id: t40) -> t40 {
@@ -2085,6 +2178,10 @@ fn process_table_init() -> t40 {
     kclear(PROCESS_HEAP_BASE, PROCESS_MAX * PROCESS_HEAP_WORDS);
     kclear(DESIRED_PROCESS_BASE, PROCESS_MAX);
     kclear(WAIT_CHANNEL_BASE, PROCESS_MAX);
+    kclear(PROC_PARENT_PID_BASE, PROCESS_MAX);
+    kclear(PROC_EXIT_STATUS_BASE, PROCESS_MAX);
+    kclear(PROC_SIGNAL_PENDING_BASE, PROCESS_MAX);
+    kclear(PROC_CLEANED_BASE, PROCESS_MAX);
     var i: t40 = 0;
     while QUOTA_MAX - i > 0 {
         var q: t40 = quota_addr(i);
@@ -2117,10 +2214,14 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     kstore(row + PROC_QUOTA, quota_id);
     kstore(row + PROC_CONTEXT, ctx);
     kstore(row + PROC_WAIT_CHANNEL, 0);
+    kstore(PROC_PARENT_PID_BASE + slot, -1);
+    kstore(PROC_EXIT_STATUS_BASE + slot, 0);
+    kstore(PROC_SIGNAL_PENDING_BASE + slot, 0);
+    kstore(PROC_CLEANED_BASE + slot, 0);
     var heap: t40 = process_heap_addr(slot);
     kstore(heap + PROC_HEAP_START, MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_BREAK, MMU_PAGE_WORDS);
-    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DMEM_PAGES_MAX * MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DATA_PAGES_MAX * MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_MAPPED_PAGES, 1);
     log_commit(txid);
     kstore(row + PROC_VERSION, kload(row + PROC_VERSION) + 1);
@@ -2152,6 +2253,104 @@ fn process_find_pid(pid: t40) -> t40 {
     return ERR_NOT_FOUND;
 }
 
+fn process_set_parent(slot: t40, parent_pid: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    kstore(PROC_PARENT_PID_BASE + slot, parent_pid);
+    return parent_pid;
+}
+
+fn process_terminal_state(state: t40) -> t40 {
+    if state - PROC_EXITED == 0 {
+        return 1;
+    }
+    if state - PROC_ZOMBIE == 0 {
+        return 1;
+    }
+    if state - PROC_CRASHED == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn signal_valid(signal: t40) -> t40 {
+    if signal - SIGNAL_TERM == 0 { return 1; }
+    if signal - SIGNAL_KILL == 0 { return 1; }
+    if signal - SIGNAL_STOP == 0 { return 1; }
+    if signal - SIGNAL_CONT == 0 { return 1; }
+    if signal - SIGNAL_CLOSE_REQUEST == 0 { return 1; }
+    return 0;
+}
+
+fn signal_has(mask: t40, signal: t40) -> t40 {
+    var cursor: t40 = mask;
+    if cursor - SIGNAL_CLOSE_REQUEST >= 0 {
+        if signal - SIGNAL_CLOSE_REQUEST == 0 { return 1; }
+        cursor = cursor - SIGNAL_CLOSE_REQUEST;
+    }
+    if cursor - SIGNAL_CONT >= 0 {
+        if signal - SIGNAL_CONT == 0 { return 1; }
+        cursor = cursor - SIGNAL_CONT;
+    }
+    if cursor - SIGNAL_STOP >= 0 {
+        if signal - SIGNAL_STOP == 0 { return 1; }
+        cursor = cursor - SIGNAL_STOP;
+    }
+    if cursor - SIGNAL_KILL >= 0 {
+        if signal - SIGNAL_KILL == 0 { return 1; }
+        cursor = cursor - SIGNAL_KILL;
+    }
+    if cursor - SIGNAL_TERM >= 0 {
+        if signal - SIGNAL_TERM == 0 { return 1; }
+    }
+    return 0;
+}
+
+fn signal_add(mask: t40, signal: t40) -> t40 {
+    if signal_has(mask, signal) > 0 {
+        return mask;
+    }
+    return mask + signal;
+}
+
+fn signal_remove(mask: t40, signal: t40) -> t40 {
+    if signal_has(mask, signal) <= 0 {
+        return mask;
+    }
+    return mask - signal;
+}
+
+fn process_add_signal(slot: t40, signal: t40) -> t40 {
+    if signal_valid(signal) <= 0 {
+        return ERR_INVALID;
+    }
+    var pending: t40 = kload(PROC_SIGNAL_PENDING_BASE + slot);
+    pending = signal_add(pending, signal);
+    kstore(PROC_SIGNAL_PENDING_BASE + slot, pending);
+    return pending;
+}
+
+fn process_clear_wait(slot: t40) -> t40 {
+    return wait_clear_slot(slot);
+}
+
+fn process_wake_for_signal(slot: t40) -> t40 {
+    var state: t40 = process_state(slot);
+    if state - PROC_BLOCKED == 0 {
+        process_clear_wait(slot);
+        return process_set_state(slot, PROC_RUNNABLE);
+    }
+    if state - PROC_SLEEPING == 0 {
+        process_clear_wait(slot);
+        return process_set_state(slot, PROC_RUNNABLE);
+    }
+    return state;
+}
+
 fn process_namespace_for_pid(pid: t40) -> t40 {
     var slot: t40 = process_find_pid(pid);
     if slot < 0 {
@@ -2176,7 +2375,157 @@ fn process_set_state(slot: t40, state: t40) -> t40 {
     return state;
 }
 
-fn process_wait(slot: t40, channel: t40) -> t40 {
+fn wait_queue_addr(slot: t40) -> t40 {
+    return WAIT_QUEUE_BASE + slot * WAIT_QUEUE_WORDS;
+}
+
+fn wait_queue_init() -> t40 {
+    kclear(WAIT_QUEUE_BASE, WAIT_QUEUE_MAX * WAIT_QUEUE_WORDS);
+    kclear(WAIT_KIND_BASE, PROCESS_MAX);
+    kclear(WAIT_DEADLINE_BASE, PROCESS_MAX);
+    kclear(WAIT_ARG0_BASE, PROCESS_MAX);
+    kclear(WAIT_ARG1_BASE, PROCESS_MAX);
+    kclear(WAIT_ARG2_BASE, PROCESS_MAX);
+    var i: t40 = 0;
+    while WAIT_QUEUE_MAX - i > 0 {
+        kstore(wait_queue_addr(i) + WQ_HEAD, -1);
+        i = i + 1;
+    }
+    i = 0;
+    while PROCESS_MAX - i > 0 {
+        kstore(WAIT_PROC_NEXT_BASE + i, -1);
+        kstore(WAIT_DEADLINE_BASE + i, WAIT_NO_DEADLINE);
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn wait_queue_find(channel: t40) -> t40 {
+    var slot: t40 = 0;
+    while WAIT_QUEUE_MAX - slot > 0 {
+        var row: t40 = wait_queue_addr(slot);
+        if kload(row + WQ_VERSION) > 0 {
+            if kload(row + WQ_CHANNEL) - channel == 0 {
+                return slot;
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn wait_queue_get(channel: t40) -> t40 {
+    var found: t40 = wait_queue_find(channel);
+    if found >= 0 {
+        return found;
+    }
+    var slot: t40 = 0;
+    while WAIT_QUEUE_MAX - slot > 0 {
+        var row: t40 = wait_queue_addr(slot);
+        if kload(row + WQ_VERSION) <= 0 {
+            kstore(row + WQ_CHANNEL, channel);
+            kstore(row + WQ_HEAD, -1);
+            kstore(row + WQ_VERSION, 1);
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    return ERR_NO_SPACE;
+}
+
+fn wait_queue_remove_proc(channel: t40, proc_slot: t40) -> t40 {
+    if proc_slot < 0 {
+        return ERR_INVALID;
+    }
+    var queue_slot: t40 = wait_queue_find(channel);
+    if queue_slot < 0 {
+        return 0;
+    }
+    var row: t40 = wait_queue_addr(queue_slot);
+    var prev: t40 = -1;
+    var cur: t40 = kload(row + WQ_HEAD);
+    while cur >= 0 {
+        var next: t40 = kload(WAIT_PROC_NEXT_BASE + cur);
+        if cur - proc_slot == 0 {
+            if prev < 0 {
+                kstore(row + WQ_HEAD, next);
+            } else {
+                kstore(WAIT_PROC_NEXT_BASE + prev, next);
+            }
+            kstore(WAIT_PROC_NEXT_BASE + proc_slot, -1);
+            kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
+            return 1;
+        }
+        prev = cur;
+        cur = next;
+    }
+    return 0;
+}
+
+fn wait_queue_push(channel: t40, proc_slot: t40) -> t40 {
+    if proc_slot < 0 {
+        return ERR_INVALID;
+    }
+    if proc_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var queue_slot: t40 = wait_queue_get(channel);
+    if queue_slot < 0 {
+        return queue_slot;
+    }
+    wait_queue_remove_proc(channel, proc_slot);
+    var row: t40 = wait_queue_addr(queue_slot);
+    kstore(WAIT_PROC_NEXT_BASE + proc_slot, kload(row + WQ_HEAD));
+    kstore(row + WQ_HEAD, proc_slot);
+    kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
+    return 1;
+}
+
+fn wait_queue_pop(channel: t40) -> t40 {
+    var queue_slot: t40 = wait_queue_find(channel);
+    if queue_slot < 0 {
+        return ERR_NOT_FOUND;
+    }
+    var row: t40 = wait_queue_addr(queue_slot);
+    var head: t40 = kload(row + WQ_HEAD);
+    if head < 0 {
+        return ERR_NOT_FOUND;
+    }
+    var next: t40 = kload(WAIT_PROC_NEXT_BASE + head);
+    kstore(row + WQ_HEAD, next);
+    kstore(WAIT_PROC_NEXT_BASE + head, -1);
+    kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
+    return head;
+}
+
+fn wait_deadline_from_timeout(timeout_ticks: t40) -> t40 {
+    if timeout_ticks <= 0 {
+        return WAIT_NO_DEADLINE;
+    }
+    return kload(KERNEL_TICK_ADDR) + timeout_ticks;
+}
+
+fn wait_channel_waitpid(pid: t40) -> t40 {
+    return WAIT_CHAN_WAITPID_BASE + pid;
+}
+
+fn wait_channel_ipc(channel_id: t40) -> t40 {
+    return WAIT_CHAN_IPC_BASE + channel_id;
+}
+
+fn wait_channel_window(window_id: t40) -> t40 {
+    return WAIT_CHAN_WINDOW_BASE + window_id;
+}
+
+fn wait_channel_sleep(pid: t40) -> t40 {
+    return WAIT_CHAN_SLEEP_BASE + pid;
+}
+
+fn wait_channel_futex(addr: t40) -> t40 {
+    return WAIT_CHAN_FUTEX_BASE + addr;
+}
+
+fn wait_clear_slot(slot: t40) -> t40 {
     if slot < 0 {
         return ERR_INVALID;
     }
@@ -2184,27 +2533,321 @@ fn process_wait(slot: t40, channel: t40) -> t40 {
         return ERR_INVALID;
     }
     var row: t40 = process_addr(slot);
+    var channel: t40 = kload(row + PROC_WAIT_CHANNEL);
+    if channel != 0 {
+        wait_queue_remove_proc(channel, slot);
+    }
+    kstore(row + PROC_WAIT_CHANNEL, 0);
+    kstore(WAIT_CHANNEL_BASE + slot, 0);
+    kstore(WAIT_KIND_BASE + slot, WAIT_KIND_NONE);
+    kstore(WAIT_DEADLINE_BASE + slot, WAIT_NO_DEADLINE);
+    kstore(WAIT_ARG0_BASE + slot, 0);
+    kstore(WAIT_ARG1_BASE + slot, 0);
+    kstore(WAIT_ARG2_BASE + slot, 0);
+    kstore(WAIT_PROC_NEXT_BASE + slot, -1);
+    return 1;
+}
+
+fn wait_complete_slot(slot: t40, status: t40, payload: t40, detail: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(slot);
+    var ctx: t40 = kload(row + PROC_CONTEXT);
+    if ctx > 0 {
+        kstore(ctx + TASK_CONTEXT_EPC, kload(ctx + TASK_CONTEXT_EPC) + 1);
+        kstore(ctx + 18, status);
+        kstore(ctx + 19, payload);
+        kstore(ctx + 20, detail);
+    }
+    wait_clear_slot(slot);
+    process_set_state(slot, PROC_RUNNABLE);
+    return 1;
+}
+
+fn process_block_on(slot: t40, channel: t40, kind: t40, timeout_ticks: t40, arg0: t40, arg1: t40, arg2: t40, state: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(slot);
+    wait_clear_slot(slot);
     kstore(row + PROC_WAIT_CHANNEL, channel);
     kstore(WAIT_CHANNEL_BASE + slot, channel);
-    return process_set_state(slot, PROC_BLOCKED);
+    kstore(WAIT_KIND_BASE + slot, kind);
+    kstore(WAIT_DEADLINE_BASE + slot, wait_deadline_from_timeout(timeout_ticks));
+    kstore(WAIT_ARG0_BASE + slot, arg0);
+    kstore(WAIT_ARG1_BASE + slot, arg1);
+    kstore(WAIT_ARG2_BASE + slot, arg2);
+    var queued: t40 = wait_queue_push(channel, slot);
+    if queued < 0 {
+        wait_clear_slot(slot);
+        return queued;
+    }
+    return process_set_state(slot, state);
+}
+
+fn process_wait(slot: t40, channel: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    return process_block_on(slot, channel, WAIT_KIND_LEGACY, 0, 0, 0, 0, PROC_BLOCKED);
 }
 
 fn process_wake_channel(channel: t40) -> t40 {
-    var slot: t40 = 0;
     var woke: t40 = 0;
-    while PROCESS_MAX - slot > 0 {
-        if kload(WAIT_CHANNEL_BASE + slot) - channel == 0 {
-            var row: t40 = process_addr(slot);
-            if kload(row + PROC_STATE) - PROC_BLOCKED == 0 {
-                kstore(row + PROC_WAIT_CHANNEL, 0);
-                kstore(WAIT_CHANNEL_BASE + slot, 0);
-                process_set_state(slot, PROC_RUNNABLE);
+    var slot: t40 = wait_queue_pop(channel);
+    while slot >= 0 {
+        wait_complete_slot(slot, 1, 0, 0);
+        woke = woke + 1;
+        slot = wait_queue_pop(channel);
+    }
+    return woke;
+}
+
+fn wait_cancel_channel(channel: t40) -> t40 {
+    var canceled: t40 = 0;
+    var slot: t40 = wait_queue_pop(channel);
+    while slot >= 0 {
+        wait_complete_slot(slot, -1, 0, ERR_CANCELED);
+        canceled = canceled + 1;
+        slot = wait_queue_pop(channel);
+    }
+    return canceled;
+}
+
+fn wait_wake_waitpid(pid: t40, exit_code: t40) -> t40 {
+    var channel: t40 = wait_channel_waitpid(pid);
+    var woke: t40 = 0;
+    var slot: t40 = wait_queue_pop(channel);
+    while slot >= 0 {
+        wait_complete_slot(slot, 1, exit_code, 0);
+        woke = woke + 1;
+        slot = wait_queue_pop(channel);
+    }
+    return woke;
+}
+
+fn wait_wake_futex(addr: t40, count: t40) -> t40 {
+    if count <= 0 {
+        return 0;
+    }
+    var channel: t40 = wait_channel_futex(addr);
+    var woke: t40 = 0;
+    var slot: t40 = wait_queue_pop(channel);
+    while slot >= 0 {
+        wait_complete_slot(slot, 1, 1, 0);
+        woke = woke + 1;
+        if woke - count >= 0 {
+            return woke;
+        }
+        slot = wait_queue_pop(channel);
+    }
+    return woke;
+}
+
+fn wait_wake_one_ipc(channel_id: t40) -> t40 {
+    var wait_channel: t40 = wait_channel_ipc(channel_id);
+    var slot: t40 = wait_queue_pop(wait_channel);
+    if slot < 0 {
+        return 0;
+    }
+    var pid: t40 = kload(process_addr(slot) + PROC_PID);
+    var out_addr: t40 = kload(WAIT_ARG1_BASE + slot);
+    var namespace_id: t40 = process_namespace_for_pid(pid);
+    var received: t40 = ipc_recv_user(pid, channel_id, namespace_id, out_addr);
+    if received > 0 {
+        wait_complete_slot(slot, 1, received, 0);
+        return 1;
+    }
+    if received < 0 {
+        wait_complete_slot(slot, -1, 0, received);
+        return 1;
+    }
+    wait_queue_push(wait_channel, slot);
+    return 0;
+}
+
+fn wait_wake_window(window_id: t40) -> t40 {
+    var wait_channel: t40 = wait_channel_window(window_id);
+    var slot: t40 = wait_queue_pop(wait_channel);
+    if slot < 0 {
+        return 0;
+    }
+    var pid: t40 = kload(process_addr(slot) + PROC_PID);
+    var out_addr: t40 = kload(WAIT_ARG1_BASE + slot);
+    var event_read: t40 = window_read_event(pid, window_id, out_addr);
+    if event_read > 0 {
+        wait_complete_slot(slot, 1, event_read, 0);
+        return 1;
+    }
+    if event_read < 0 {
+        wait_complete_slot(slot, -1, 0, event_read);
+        return 1;
+    }
+    wait_queue_push(wait_channel, slot);
+    return 0;
+}
+
+fn wait_store_event(pid: t40, out_addr: t40, kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
+    if user_validate_span(pid, out_addr, WINDOW_EVENT_WORDS, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    if user_store_word(pid, out_addr + EVENT_KIND, kind) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(pid, out_addr + EVENT_X_OR_KEY, x_or_key) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(pid, out_addr + EVENT_Y, y) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(pid, out_addr + EVENT_MODIFIERS, modifiers) < 0 { return ERR_BAD_PTR; }
+    return 1;
+}
+
+fn wait_read_input_event(pid: t40, out_addr: t40) -> t40 {
+    var available: t40 = 0;
+    unsafe { available = csr_read(console_in_ctrl); }
+    if available > 0 {
+        var key: t40 = 0;
+        unsafe { key = csr_read(console_in); }
+        unsafe { csr_write(console_in_ctrl, 1); }
+        return wait_store_event(pid, out_addr, EVENT_KIND_KEY, key, 0, 0);
+    }
+
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
+    unsafe { mx = csr_read(mouse_x); }
+    unsafe { my = csr_read(mouse_y); }
+    unsafe { btn = csr_read(mouse_btn); }
+    if mx - kload(INPUT_LAST_MOUSE_X_ADDR) != 0 {
+        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+    }
+    if my - kload(INPUT_LAST_MOUSE_Y_ADDR) != 0 {
+        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+    }
+    if btn - kload(INPUT_LAST_MOUSE_BTN_ADDR) != 0 {
+        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+    }
+    return 0;
+}
+
+fn wait_wake_input() -> t40 {
+    var woke: t40 = 0;
+    var slot: t40 = wait_queue_pop(WAIT_CHAN_INPUT);
+    while slot >= 0 {
+        var pid: t40 = kload(process_addr(slot) + PROC_PID);
+        var out_addr: t40 = kload(WAIT_ARG1_BASE + slot);
+        var delivered: t40 = wait_read_input_event(pid, out_addr);
+        if delivered > 0 {
+            wait_complete_slot(slot, 1, delivered, 0);
+            woke = woke + 1;
+            slot = wait_queue_pop(WAIT_CHAN_INPUT);
+        } else {
+            if delivered < 0 {
+                wait_complete_slot(slot, -1, 0, delivered);
                 woke = woke + 1;
+                slot = wait_queue_pop(WAIT_CHAN_INPUT);
+            } else {
+                wait_queue_push(WAIT_CHAN_INPUT, slot);
+                return woke;
+            }
+        }
+    }
+    return woke;
+}
+
+fn wait_timeout_slot(slot: t40) -> t40 {
+    var kind: t40 = kload(WAIT_KIND_BASE + slot);
+    if kind - WAIT_KIND_SLEEP == 0 {
+        return wait_complete_slot(slot, 1, 1, 0);
+    }
+    return wait_complete_slot(slot, 0, 0, ERR_TIMEOUT);
+}
+
+fn wait_expire_timeouts() -> t40 {
+    var now: t40 = kload(KERNEL_TICK_ADDR);
+    var slot: t40 = 0;
+    var expired: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        var deadline: t40 = kload(WAIT_DEADLINE_BASE + slot);
+        if deadline >= 0 {
+            if now - deadline >= 0 {
+                var state: t40 = kload(process_addr(slot) + PROC_STATE);
+                if state - PROC_BLOCKED == 0 {
+                    wait_timeout_slot(slot);
+                    expired = expired + 1;
+                } else {
+                    if state - PROC_SLEEPING == 0 {
+                        wait_timeout_slot(slot);
+                        expired = expired + 1;
+                    }
+                }
             }
         }
         slot = slot + 1;
     }
-    return woke;
+    return expired;
+}
+
+fn kernel_timer_tick() -> t40 {
+    kstore(KERNEL_TICK_ADDR, kload(KERNEL_TICK_ADDR) + 1);
+    wait_wake_input();
+    window_poll_input_driver();
+    wait_expire_timeouts();
+    return kload(KERNEL_TICK_ADDR);
+}
+
+fn scheduler_switch_to_pid(pid: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var row: t40 = process_addr(slot);
+    var state: t40 = kload(row + PROC_STATE);
+    if state - PROC_RUNNABLE != 0 {
+        if state - PROC_RUNNING != 0 {
+            return ERR_INVALID;
+        }
+    }
+    var ctx: t40 = kload(row + PROC_CONTEXT);
+    if ctx <= 0 {
+        return ERR_INVALID;
+    }
+    kstore(CURRENT_CONTEXT_ADDR, ctx);
+    kstore(CURRENT_PID_ADDR, pid);
+    return pid;
+}
+
+fn scheduler_pick_next() -> t40 {
+    var pid: t40 = tier1_dequeue();
+    if pid < 0 {
+        macro_reconcile_processes();
+        macro_publish();
+        pid = tier1_dequeue();
+    }
+    return pid;
+}
+
+fn kernel_schedule_next() -> t40 {
+    var pid: t40 = scheduler_pick_next();
+    if pid > 0 {
+        return scheduler_switch_to_pid(pid);
+    }
+    return ERR_NOT_FOUND;
 }
 
 fn quota_set_limit(quota_id: t40, limit: t40) -> t40 {
@@ -2275,6 +2918,296 @@ fn quota_release(quota_id: t40, amount: t40) -> t40 {
     log_commit(txid);
     kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
     return next_used;
+}
+
+fn process_release_windows(pid: t40) -> t40 {
+    var slot: t40 = 0;
+    var released: t40 = 0;
+    while WINDOW_MAX - slot > 0 {
+        var row: t40 = window_addr(slot);
+        if kload(row + WIN_ACTIVE) > 0 {
+            if kload(row + WIN_OWNER_PID) - pid == 0 {
+                if kload(WINDOW_FOCUS_ID_ADDR) - kload(row + WIN_ID) == 0 {
+                    kstore(WINDOW_FOCUS_ID_ADDR, -1);
+                }
+                kclear(row, WINDOW_ROW_WORDS);
+                kclear(window_event_addr(slot, 0), WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
+                kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
+                released = released + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return released;
+}
+
+fn process_release_fds(pid: t40) -> t40 {
+    var fd: t40 = 0;
+    var released: t40 = 0;
+    while VFS_MAX_FDS - fd > 0 {
+        var row: t40 = fd_addr(fd);
+        if kload(row + FD_REFCOUNT) > 0 {
+            if kload(row + FD_PID) - pid == 0 {
+                kclear(row, VFS_FD_WORDS);
+                released = released + 1;
+            }
+        }
+        fd = fd + 1;
+    }
+    return released;
+}
+
+fn process_release_ipc(pid: t40) -> t40 {
+    var channel_id: t40 = 0;
+    var released: t40 = 0;
+    while IPC_MAX_CHANNELS - channel_id > 0 {
+        if kload(IPC_OWNER_BASE + channel_id) - pid == 0 {
+            kclear(ipc_channel_addr(channel_id), IPC_CHANNEL_WORDS);
+            kclear(ipc_buffer_addr(channel_id), IPC_CAPACITY);
+            kstore(IPC_OWNER_BASE + channel_id, -1);
+            released = released + 1;
+        }
+        channel_id = channel_id + 1;
+    }
+    return released;
+}
+
+fn process_release_net(pid: t40) -> t40 {
+    var socket_id: t40 = 0;
+    var released: t40 = 0;
+    while NET_MAX_SOCKETS - socket_id > 0 {
+        var row: t40 = net_socket_row(socket_id);
+        if kload(row + NET_SOCK_STATE) > 0 {
+            if kload(row + NET_SOCK_OWNER) - pid == 0 {
+                kclear(row, NET_SOCKET_WORDS);
+                kclear(net_rx_base(socket_id), NET_RX_CAPACITY);
+                released = released + 1;
+            }
+        }
+        socket_id = socket_id + 1;
+    }
+    return released;
+}
+
+fn process_release_memory(process_slot: t40) -> t40 {
+    exec_clear_hw_page_tables(process_slot);
+    var vpn: t40 = 0;
+    while PTE_MAX_VPN - vpn > 0 {
+        kclear(pte_entry_addr(process_slot, vpn), PTE_ROW_WORDS);
+        vpn = vpn + 1;
+    }
+    var heap: t40 = process_heap_addr(process_slot);
+    var mapped_pages: t40 = kload(heap + PROC_HEAP_MAPPED_PAGES);
+    if mapped_pages <= 0 {
+        mapped_pages = 1;
+    }
+    if mapped_pages - PROCESS_DMEM_PAGES_MAX > 0 {
+        mapped_pages = PROCESS_DMEM_PAGES_MAX;
+    }
+    kclear(exec_process_dmem_ppn(process_slot) * MMU_PAGE_WORDS, mapped_pages * MMU_PAGE_WORDS);
+    kclear(exec_image_addr(process_slot), EXEC_IMAGE_WORDS);
+    kclear(heap, PROCESS_HEAP_WORDS);
+    process_cache_invalidate(process_slot);
+    return 1;
+}
+
+fn process_release_resources(process_slot: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    if kload(PROC_CLEANED_BASE + process_slot) > 0 {
+        return 0;
+    }
+    var row: t40 = process_addr(process_slot);
+    var pid: t40 = kload(row + PROC_PID);
+    process_release_windows(pid);
+    process_release_fds(pid);
+    process_release_ipc(pid);
+    process_release_net(pid);
+    process_clear_wait(process_slot);
+    quota_release(kload(row + PROC_QUOTA), 1);
+    process_release_memory(process_slot);
+    kstore(PROC_CLEANED_BASE + process_slot, 1);
+    return 1;
+}
+
+fn process_reap_slot(process_slot: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    wait_clear_slot(process_slot);
+    process_release_resources(process_slot);
+    kclear(process_addr(process_slot), PROCESS_ROW_WORDS);
+    kstore(DESIRED_PROCESS_BASE + process_slot, 0);
+    kstore(WAIT_CHANNEL_BASE + process_slot, 0);
+    kstore(PROC_PARENT_PID_BASE + process_slot, -1);
+    kstore(PROC_EXIT_STATUS_BASE + process_slot, 0);
+    kstore(PROC_SIGNAL_PENDING_BASE + process_slot, 0);
+    kstore(PROC_CLEANED_BASE + process_slot, 0);
+    return 1;
+}
+
+fn process_cleanup_orphans(parent_pid: t40) -> t40 {
+    var slot: t40 = 0;
+    var cleaned: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        if kload(PROC_PARENT_PID_BASE + slot) - parent_pid == 0 {
+            var state: t40 = process_state(slot);
+            if process_terminal_state(state) > 0 {
+                process_reap_slot(slot);
+                cleaned = cleaned + 1;
+            } else {
+                process_set_parent(slot, -1);
+                cleaned = cleaned + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return cleaned;
+}
+
+fn process_finish_exit(process_slot: t40, status: t40, final_state: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(process_slot);
+    var pid: t40 = kload(row + PROC_PID);
+    var parent_pid: t40 = kload(PROC_PARENT_PID_BASE + process_slot);
+    kstore(PROC_EXIT_STATUS_BASE + process_slot, status);
+    wait_clear_slot(process_slot);
+    process_release_resources(process_slot);
+    process_cleanup_orphans(pid);
+    if parent_pid > 0 {
+        if process_find_pid(parent_pid) >= 0 {
+            process_set_state(process_slot, final_state);
+            wait_wake_waitpid(pid, status);
+            process_wake_channel(pid);
+            process_wake_channel(parent_pid);
+            return final_state;
+        }
+    }
+    process_reap_slot(process_slot);
+    return PROC_FREE;
+}
+
+fn process_wait_child(parent_pid: t40, child_pid: t40) -> t40 {
+    var caller_slot: t40 = process_find_pid(parent_pid);
+    if caller_slot < 0 {
+        return caller_slot;
+    }
+    var target_slot: t40 = process_find_pid(child_pid);
+    if target_slot < 0 {
+        return ERR_NOT_FOUND;
+    }
+    if kload(PROC_PARENT_PID_BASE + target_slot) - parent_pid != 0 {
+        return ERR_INVALID;
+    }
+    var target_state: t40 = process_state(target_slot);
+    if process_terminal_state(target_state) > 0 {
+        var status: t40 = kload(PROC_EXIT_STATUS_BASE + target_slot);
+        process_reap_slot(target_slot);
+        return status;
+    }
+    process_wait(caller_slot, child_pid);
+    return 0;
+}
+
+fn process_request_close(pid: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    process_add_signal(slot, SIGNAL_CLOSE_REQUEST);
+    process_wake_for_signal(slot);
+    var win_slot: t40 = 0;
+    var queued: t40 = 0;
+    while WINDOW_MAX - win_slot > 0 {
+        var row: t40 = window_addr(win_slot);
+        if kload(row + WIN_ACTIVE) > 0 {
+            if kload(row + WIN_OWNER_PID) - pid == 0 {
+                var window_id: t40 = kload(row + WIN_ID);
+                if window_queue_event(win_slot, EVENT_KIND_CLOSE, window_id, 0, 0) > 0 {
+                    queued = queued + 1;
+                }
+            }
+        }
+        win_slot = win_slot + 1;
+    }
+    return queued;
+}
+
+fn process_signal(pid: t40, signal: t40) -> t40 {
+    if signal_valid(signal) <= 0 {
+        return ERR_INVALID;
+    }
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var state: t40 = process_state(slot);
+    if process_terminal_state(state) > 0 {
+        return ERR_INVALID;
+    }
+    process_add_signal(slot, signal);
+    if signal - SIGNAL_KILL == 0 {
+        process_set_state(slot, PROC_KILLING);
+        return process_finish_exit(slot, SIGNAL_KILL, PROC_ZOMBIE);
+    }
+    if signal - SIGNAL_STOP == 0 {
+        process_clear_wait(slot);
+        return process_set_state(slot, PROC_STOPPED);
+    }
+    if signal - SIGNAL_CONT == 0 {
+        var pending: t40 = kload(PROC_SIGNAL_PENDING_BASE + slot);
+        pending = signal_remove(pending, SIGNAL_STOP);
+        kstore(PROC_SIGNAL_PENDING_BASE + slot, signal_remove(pending, SIGNAL_CONT));
+        if state - PROC_STOPPED == 0 {
+            return process_set_state(slot, PROC_RUNNABLE);
+        }
+        return process_wake_for_signal(slot);
+    }
+    if signal - SIGNAL_CLOSE_REQUEST == 0 {
+        return process_request_close(pid);
+    }
+    if signal - SIGNAL_TERM == 0 {
+        process_add_signal(slot, SIGNAL_CLOSE_REQUEST);
+        var queued: t40 = process_request_close(pid);
+        if queued <= 0 {
+            process_wake_for_signal(slot);
+        }
+        return queued;
+    }
+    return ERR_INVALID;
+}
+
+fn kernel_getproc_user(caller_pid: t40, target_pid: t40, out_addr: t40) -> t40 {
+    var slot: t40 = process_find_pid(target_pid);
+    if slot < 0 {
+        return slot;
+    }
+    if user_validate_span(caller_pid, out_addr, PROCINFO_WORDS, 1) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var row: t40 = process_addr(slot);
+    if user_store_word(caller_pid, out_addr + PROCINFO_PID, kload(row + PROC_PID)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_STATE, kload(row + PROC_STATE)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_PARENT_PID, kload(PROC_PARENT_PID_BASE + slot)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_EXIT_STATUS, kload(PROC_EXIT_STATUS_BASE + slot)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_PENDING_SIGNALS, kload(PROC_SIGNAL_PENDING_BASE + slot)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_PRIORITY, kload(row + PROC_PRIORITY)) < 0 { return ERR_BAD_PTR; }
+    var qid: t40 = kload(row + PROC_QUOTA);
+    if user_store_word(caller_pid, out_addr + PROCINFO_QUOTA_REMAINING, quota_remaining(qid)) < 0 { return ERR_BAD_PTR; }
+    if user_store_word(caller_pid, out_addr + PROCINFO_NAMESPACE, kload(row + PROC_NAMESPACE)) < 0 { return ERR_BAD_PTR; }
+    return PROCINFO_WORDS;
 }
 
 fn macro_reconcile_processes() -> t40 {
@@ -2433,6 +3366,7 @@ fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
         vpn = vpn + 1;
     }
     process_create(child_slot, child_pid, ns, kload(parent_row + PROC_PRIORITY), quota_id, 0);
+    process_set_parent(child_slot, kload(parent_row + PROC_PID));
     vpn = 0;
     while PTE_MAX_VPN - vpn > 0 {
         var src_row: t40 = pte_entry_addr(parent_slot, vpn);
@@ -2546,6 +3480,14 @@ fn user_has_dmem_mmu(pid: t40) -> t40 {
 fn hw_pte_phys_base(word: t40) -> t40 {
     var remaining: t40 = word;
     var phys: t40 = 0;
+    while remaining - 59049 >= 0 {
+        remaining = remaining - 59049;
+        phys = phys + 6561;
+    }
+    while remaining - 6561 >= 0 {
+        remaining = remaining - 6561;
+        phys = phys + 729;
+    }
     while remaining - 243 >= 0 {
         remaining = remaining - 243;
         phys = phys + MMU_PAGE_WORDS;
@@ -2723,6 +3665,10 @@ fn vfs_find_child(namespace_id: t40, parent_inode: t40, name_start: t40, name_le
             if kload(row + DIRENT_NAMESPACE) - namespace_id == 0 {
                 if kload(row + DIRENT_PARENT) - parent_inode == 0 {
                     if kload(row + DIRENT_HASH) - name_hash == 0 {
+                        if vfs_name_equal(slot, name_start, name_len) > 0 {
+                            return child;
+                        }
+                    } else {
                         if vfs_name_equal(slot, name_start, name_len) > 0 {
                             return child;
                         }
@@ -3965,7 +4911,7 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if data_pages <= 0 {
         return 0;
     }
-    if data_pages - PROCESS_DMEM_PAGES_MAX > 0 {
+    if data_pages - PROCESS_DATA_PAGES_MAX > 0 {
         return 0;
     }
     if kload(image_addr + EXEC_HEADER_STACK_WORDS) <= 0 {
@@ -4104,7 +5050,15 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
         kstore(exec_hw_dmem_ptbr(process_slot) + vpn, exec_encode_pte(data_ppn + vpn, 1, 1, 1, 0));
         vpn = vpn + 1;
     }
-    kstore(exec_hw_dmem_ptbr(process_slot) + USER_SCRATCH_VPN_BASE, exec_encode_pte(data_ppn, 1, 1, 1, 0));
+    var scratch_page: t40 = 0;
+    while USER_SCRATCH_PAGES - scratch_page > 0 {
+        var scratch_ppn: t40 = data_ppn + PROCESS_SCRATCH_PPN_OFFSET + scratch_page;
+        kclear(scratch_ppn * MMU_PAGE_WORDS, MMU_PAGE_WORDS);
+        kstore(
+            exec_hw_dmem_ptbr(process_slot) + USER_SCRATCH_VPN_BASE + scratch_page,
+            exec_encode_pte(scratch_ppn, 1, 1, 1, 0));
+        scratch_page = scratch_page + 1;
+    }
     if is_gui > 0 {
         var vram_vpn: t40 = 1851;
         while 2297 - vram_vpn > 0 {
@@ -4142,7 +5096,7 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
     var heap_start: t40 = data_pages * MMU_PAGE_WORDS;
     kstore(heap + PROC_HEAP_START, heap_start);
     kstore(heap + PROC_HEAP_BREAK, heap_start);
-    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DMEM_PAGES_MAX * MMU_PAGE_WORDS);
+    kstore(heap + PROC_HEAP_LIMIT, PROCESS_DATA_PAGES_MAX * MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_MAPPED_PAGES, data_pages);
     kstore(CURRENT_CONTEXT_ADDR, ctx);
     kstore(CURRENT_PID_ADDR, kload(row + PROC_PID));
@@ -4153,7 +5107,7 @@ fn process_map_heap_pages(process_slot: t40, required_pages: t40) -> t40 {
     if required_pages <= 0 {
         return ERR_INVALID;
     }
-    if required_pages - PROCESS_DMEM_PAGES_MAX > 0 {
+    if required_pages - PROCESS_DATA_PAGES_MAX > 0 {
         return ERR_NO_SPACE;
     }
     var heap: t40 = process_heap_addr(process_slot);
@@ -4275,6 +5229,61 @@ fn app_addr(app_id: t40) -> t40 {
 fn app_registry_init() -> t40 {
     kclear(APP_REGISTRY_BASE, APP_MAX * APP_ROW_WORDS);
     return 1;
+}
+
+fn app_seed_bin_path(path_addr: t40) -> t40 {
+    kstore(path_addr + 0, 47);
+    kstore(path_addr + 1, 98);
+    kstore(path_addr + 2, 105);
+    kstore(path_addr + 3, 110);
+    kstore(path_addr + 4, 0);
+    return path_addr;
+}
+
+fn app_seed_bin_child_path(path_addr: t40, dirent_slot: t40) -> t40 {
+    kstore(path_addr + 0, 47);
+    kstore(path_addr + 1, 98);
+    kstore(path_addr + 2, 105);
+    kstore(path_addr + 3, 110);
+    kstore(path_addr + 4, 47);
+    var len: t40 = kload(dirent_addr(dirent_slot) + DIRENT_NAME_LEN);
+    var i: t40 = 0;
+    while len - i > 0 {
+        kstore(path_addr + 5 + i, kload(dirent_name_addr(dirent_slot) + i));
+        i = i + 1;
+    }
+    kstore(path_addr + 5 + len, 0);
+    return path_addr;
+}
+
+fn app_registry_autoload_bin() -> t40 {
+    var path_addr: t40 = SYSCALL_PATH_COPY_BASE;
+    app_seed_bin_path(path_addr);
+    var bin_inode: t40 = vfs_lookup(0, path_addr);
+    if bin_inode < 0 {
+        return 0;
+    }
+    var loaded: t40 = 0;
+    var slot: t40 = 0;
+    while VFS_MAX_DIRENTS - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        var child: t40 = kload(row + DIRENT_CHILD);
+        if child > 0 {
+            if kload(row + DIRENT_NAMESPACE) == 0 {
+                if kload(row + DIRENT_PARENT) - bin_inode == 0 {
+                    if kload(inode_addr(child) + INODE_KIND) - KIND_EXEC == 0 {
+                        app_seed_bin_child_path(path_addr, slot);
+                        var registered: t40 = app_register(0, path_addr, APP_CAP_SYSTEM, 0, 1, EXEC_IMAGE_WORDS);
+                        if registered >= 0 {
+                            loaded = loaded + 1;
+                        }
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return loaded;
 }
 
 fn app_path_hash(path_addr: t40) -> t40 {
@@ -4825,31 +5834,35 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
     }
     // Process lifecycle: waitpid, exit, sleep
     if service - 43 == 0 {
-        var target_pid: t40 = arg0;
         var caller_slot: t40 = process_find_pid(pid);
         if caller_slot < 0 {
             return kernel_set_return(-1, 0, caller_slot);
         }
-        var target_slot: t40 = process_find_pid(target_pid);
+        var target_slot: t40 = process_find_pid(arg0);
         if target_slot < 0 {
-            return kernel_set_return(1, 0, 0);
+            return kernel_set_return(-1, 0, target_slot);
         }
-        var target_state: t40 = kload(process_addr(target_slot) + PROC_STATE);
-        if target_state - PROC_EXITED == 0 {
-            return kernel_set_return(1, kload(process_addr(target_slot) + PROC_WAIT_CHANNEL), 0);
+        if kload(PROC_PARENT_PID_BASE + target_slot) - pid != 0 {
+            return kernel_set_return(-1, 0, ERR_INVALID);
         }
-        process_wait(caller_slot, target_pid);
-        return kernel_set_return(1, 0, 0);
+        var target_state: t40 = process_state(target_slot);
+        if process_terminal_state(target_state) > 0 {
+            var child_status: t40 = kload(PROC_EXIT_STATUS_BASE + target_slot);
+            process_reap_slot(target_slot);
+            return kernel_set_return(1, child_status, 0);
+        }
+        var wait_child: t40 = process_block_on(caller_slot, wait_channel_waitpid(arg0), WAIT_KIND_LEGACY, 0, arg0, 0, 0, PROC_BLOCKED);
+        if wait_child < 0 {
+            return kernel_set_return(-1, 0, wait_child);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
     }
     if service - 44 == 0 {
         var exit_slot: t40 = process_find_pid(pid);
         if exit_slot < 0 {
             return kernel_set_return(-1, 0, exit_slot);
         }
-        var exit_row: t40 = process_addr(exit_slot);
-        kstore(exit_row + PROC_WAIT_CHANNEL, arg0);
-        process_set_state(exit_slot, PROC_EXITED);
-        process_wake_channel(pid);
+        process_finish_exit(exit_slot, arg0, PROC_ZOMBIE);
         return kernel_set_return(1, arg0, 0);
     }
     if service - 45 == 0 {
@@ -4857,8 +5870,11 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         if sleep_slot < 0 {
             return kernel_set_return(-1, 0, sleep_slot);
         }
-        process_set_state(sleep_slot, PROC_SLEEPING);
-        return kernel_set_return(1, 0, 0);
+        var slept: t40 = process_block_on(sleep_slot, wait_channel_sleep(pid), WAIT_KIND_SLEEP, 1, 0, 0, 0, PROC_SLEEPING);
+        if slept < 0 {
+            return kernel_set_return(-1, 0, slept);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
     }
     // Process snapshot
     if service - 46 == 0 {
@@ -4867,6 +5883,134 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
             return kernel_set_return(-1, 0, ps_count);
         }
         return kernel_set_return(1, ps_count, 0);
+    }
+    // VFS sync
+    if service - 47 == 0 {
+        var fsynced: t40 = vfs_fsync(pid, arg0);
+        if fsynced < 0 {
+            return kernel_set_return(-1, 0, fsynced);
+        }
+        return kernel_set_return(1, fsynced, 0);
+    }
+    // Process control
+    if service - 48 == 0 {
+        var killed: t40 = process_signal(arg0, arg1);
+        if killed < 0 {
+            return kernel_set_return(-1, 0, killed);
+        }
+        return kernel_set_return(1, killed, 0);
+    }
+    if service - 49 == 0 {
+        var suspended: t40 = process_signal(arg0, SIGNAL_STOP);
+        if suspended < 0 {
+            return kernel_set_return(-1, 0, suspended);
+        }
+        return kernel_set_return(1, suspended, 0);
+    }
+    if service - 50 == 0 {
+        var resumed: t40 = process_signal(arg0, SIGNAL_CONT);
+        if resumed < 0 {
+            return kernel_set_return(-1, 0, resumed);
+        }
+        return kernel_set_return(1, resumed, 0);
+    }
+    if service - 51 == 0 {
+        var procinfo: t40 = kernel_getproc_user(pid, arg0, arg1);
+        if procinfo < 0 {
+            return kernel_set_return(-1, 0, procinfo);
+        }
+        return kernel_set_return(1, procinfo, 0);
+    }
+    if service - 52 == 0 {
+        if user_validate_span(pid, arg0, 1, 0) <= 0 {
+            return kernel_set_return(-1, 0, ERR_BAD_PTR);
+        }
+        var futex_word: t40 = user_load_word(pid, arg0);
+        if futex_word - arg1 != 0 {
+            return kernel_set_return(0, 0, ERR_AGAIN);
+        }
+        var futex_slot: t40 = process_find_pid(pid);
+        if futex_slot < 0 {
+            return kernel_set_return(-1, 0, futex_slot);
+        }
+        var futex_blocked: t40 = process_block_on(futex_slot, wait_channel_futex(arg0), WAIT_KIND_FUTEX, arg2, arg0, arg1, 0, PROC_BLOCKED);
+        if futex_blocked < 0 {
+            return kernel_set_return(-1, 0, futex_blocked);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
+    }
+    if service - 53 == 0 {
+        var futex_woke: t40 = wait_wake_futex(arg0, arg1);
+        return kernel_set_return(1, futex_woke, 0);
+    }
+    if service - 54 == 0 {
+        var block_recv_ns: t40 = process_namespace_for_pid(pid);
+        var block_received: t40 = ipc_recv_user(pid, arg0, block_recv_ns, arg1);
+        if block_received < 0 {
+            return kernel_set_return(-1, 0, block_received);
+        }
+        if block_received > 0 {
+            return kernel_set_return(1, block_received, 0);
+        }
+        var block_recv_slot: t40 = process_find_pid(pid);
+        if block_recv_slot < 0 {
+            return kernel_set_return(-1, 0, block_recv_slot);
+        }
+        var block_recv_wait: t40 = process_block_on(block_recv_slot, wait_channel_ipc(arg0), WAIT_KIND_IPC, arg2, arg0, arg1, 0, PROC_BLOCKED);
+        if block_recv_wait < 0 {
+            return kernel_set_return(-1, 0, block_recv_wait);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
+    }
+    if service - 55 == 0 {
+        if arg0 >= 0 {
+            var wait_event_read: t40 = window_read_event(pid, arg0, arg1);
+            if wait_event_read < 0 {
+                return kernel_set_return(-1, 0, wait_event_read);
+            }
+            if wait_event_read > 0 {
+                return kernel_set_return(1, wait_event_read, 0);
+            }
+            var wait_event_slot: t40 = process_find_pid(pid);
+            if wait_event_slot < 0 {
+                return kernel_set_return(-1, 0, wait_event_slot);
+            }
+            var wait_event_blocked: t40 = process_block_on(wait_event_slot, wait_channel_window(arg0), WAIT_KIND_WINDOW, arg2, arg0, arg1, 0, PROC_BLOCKED);
+            if wait_event_blocked < 0 {
+                return kernel_set_return(-1, 0, wait_event_blocked);
+            }
+            return kernel_set_return(SYS_BLOCKED, 0, 0);
+        }
+        var input_event: t40 = wait_read_input_event(pid, arg1);
+        if input_event < 0 {
+            return kernel_set_return(-1, 0, input_event);
+        }
+        if input_event > 0 {
+            return kernel_set_return(1, input_event, 0);
+        }
+        var input_wait_slot: t40 = process_find_pid(pid);
+        if input_wait_slot < 0 {
+            return kernel_set_return(-1, 0, input_wait_slot);
+        }
+        var input_wait_blocked: t40 = process_block_on(input_wait_slot, WAIT_CHAN_INPUT, WAIT_KIND_INPUT, arg2, arg0, arg1, 0, PROC_BLOCKED);
+        if input_wait_blocked < 0 {
+            return kernel_set_return(-1, 0, input_wait_blocked);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
+    }
+    if service - 56 == 0 {
+        if arg0 <= 0 {
+            return kernel_set_return(1, 1, 0);
+        }
+        var sleep_ms_slot: t40 = process_find_pid(pid);
+        if sleep_ms_slot < 0 {
+            return kernel_set_return(-1, 0, sleep_ms_slot);
+        }
+        var sleep_ms_blocked: t40 = process_block_on(sleep_ms_slot, wait_channel_sleep(pid), WAIT_KIND_SLEEP, arg0, 0, 0, 0, PROC_SLEEPING);
+        if sleep_ms_blocked < 0 {
+            return kernel_set_return(-1, 0, sleep_ms_blocked);
+        }
+        return kernel_set_return(SYS_BLOCKED, 0, 0);
     }
     return kernel_set_return(-1, 0, ERR_INVALID);
 }
@@ -4888,6 +6032,22 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
         var arg2: t40 = kload(ctx + 20);
         var arg3: t40 = kload(ctx + 21);
         var status: t40 = kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
+        if status - SYS_BLOCKED == 0 {
+            kernel_schedule_next();
+            return status;
+        }
+        if status > 0 {
+            if service - 6 == 0 {
+                if kload(SYS_PAYLOAD_ADDR) > 0 {
+                    return status;
+                }
+            }
+            if service - 21 == 0 {
+                if kload(SYS_PAYLOAD_ADDR) > 0 {
+                    return status;
+                }
+            }
+        }
         kstore(ctx, kload(ctx) + 1);
         kstore(ctx + 18, kload(SYS_STATUS_ADDR));
         kstore(ctx + 19, kload(SYS_PAYLOAD_ADDR));
@@ -4895,7 +6055,8 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
         return status;
     }
     if cause_value - 1 == 0 {
-        return tier1_dequeue();
+        kernel_timer_tick();
+        return kernel_schedule_next();
     }
     return ERR_INVALID;
 }
@@ -4944,6 +6105,7 @@ fn ipc_buffer_addr(channel_id: t40) -> t40 {
 fn ipc_init() -> t40 {
     kclear(IPC_BASE, IPC_MAX_CHANNELS * IPC_CHANNEL_WORDS);
     kclear(IPC_BUFFER_BASE, IPC_MAX_CHANNELS * IPC_CAPACITY);
+    kclear(IPC_OWNER_BASE, IPC_MAX_CHANNELS);
     return 1;
 }
 
@@ -4963,6 +6125,16 @@ fn ipc_open(channel_id: t40, namespace_a: t40, namespace_b: t40) -> t40 {
     kstore(ch + IPC_WRITE, 0);
     kstore(ch + IPC_COUNT, 0);
     kstore(ch + IPC_VERSION, 1);
+    kstore(IPC_OWNER_BASE + channel_id, -1);
+    return 1;
+}
+
+fn ipc_open_owned(channel_id: t40, owner_pid: t40, namespace_a: t40, namespace_b: t40) -> t40 {
+    var opened: t40 = ipc_open(channel_id, namespace_a, namespace_b);
+    if opened < 0 {
+        return opened;
+    }
+    kstore(IPC_OWNER_BASE + channel_id, owner_pid);
     return 1;
 }
 
@@ -4994,6 +6166,7 @@ fn ipc_send(channel_id: t40, namespace_id: t40, word: t40) -> t40 {
     kstore(buf + write_pos, word);
     kstore(ch + IPC_WRITE, kwrap_inc(write_pos, IPC_CAPACITY));
     kcas(ch + IPC_COUNT, count, count + 1);
+    wait_wake_one_ipc(channel_id);
     return 1;
 }
 
@@ -5201,6 +6374,7 @@ fn kernel_init() -> t40 {
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_CREATED_TXID, 0);
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_DESIRED_STATE, PROC_RUNNABLE);
     app_registry_init();
+    app_registry_autoload_bin();
     ipc_init();
     net_init();
     kclear(FB_STATE_BASE, FB_STATE_WORDS);

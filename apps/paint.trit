@@ -93,6 +93,12 @@ fn main() -> t40 {
     var draw_cnt: t40 = 0;
     var cur_page: t40 = 0;
     var k: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var event_kind: t40 = 0;
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
@@ -111,10 +117,22 @@ fn main() -> t40 {
     paint_draw_header(active_color);
 
     while 1 - done > 0 {
-        // Query mouse state
-        var mx: t40 = os_mouse_x();
-        var my: t40 = os_mouse_y();
-        var btn: t40 = os_mouse_btn();
+        k = 0;
+        event_status = os_wait_event(-1, event_addr, 0);
+        if event_status > 0 {
+            event_kind = os_event_kind(event_addr);
+            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr);
+                my = os_event_y(event_addr);
+                btn = os_event_modifiers(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                done = 1;
+            }
+        }
 
         // Convert graphics my (0-59) to text cell coordinate (0-24) for cursor sprite
         // text_y = my * 25 / 60
@@ -187,8 +205,7 @@ fn main() -> t40 {
         }
 
         // Support keyboard hotkeys concurrently
-        if os_key_available() > 0 {
-            k = os_read_key();
+        if k > 0 {
             if k - 49 == 0 { active_color = 4; paint_draw_header(active_color); }  // '1'
             if k - 50 == 0 { active_color = 10; paint_draw_header(active_color); } // '2'
             if k - 51 == 0 { active_color = 5; paint_draw_header(active_color); }  // '3'
@@ -202,7 +219,7 @@ fn main() -> t40 {
     }
 
     // Exit back to the desktop
-    var path_addr: t40 = paint_seed_desktop_path(15000);
+    var path_addr: t40 = paint_seed_desktop_path(10000);
     sys_exec(path_addr);
     return 1;
 }

@@ -330,6 +330,9 @@ fn show_login_screen() -> t40 {
     var h_login: t40 = 0;
     var h_cancel: t40 = 0;
     var last_btn: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var event_kind: t40 = 0;
 
     os_clear_text(0);
     
@@ -366,9 +369,22 @@ fn show_login_screen() -> t40 {
     draw_login_button(34, 14, btn_cancel_addr, 6, 0);
 
     while 1 - login_done > 0 {
-        mx = os_mouse_x();
-        my = os_mouse_y();
-        btn = os_mouse_btn();
+        k = 0;
+        event_status = os_wait_event(-1, event_addr, 0);
+        if event_status > 0 {
+            event_kind = os_event_kind(event_addr);
+            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr);
+                my = os_event_y(event_addr);
+                btn = os_event_modifiers(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                k = 27;
+            }
+        }
 
         // Publish sprite tracking cursor
         os_sprite(mx, my, 43, 14); // '+' in yellow
@@ -409,9 +425,7 @@ fn show_login_screen() -> t40 {
         }
 
         // Support keyboard hotkeys concurrently
-        if os_key_available() > 0 {
-            k = os_read_key();
-            
+        if k > 0 {
             if k - 13 == 0 { // Enter key -> click LOGIN
                 click = 1;
             } else {
@@ -516,6 +530,13 @@ fn main() -> t40 {
     var h3: t40 = 0;
     var h4: t40 = 0;
     var last_btn: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var event_kind: t40 = 0;
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
+    var k: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     
@@ -556,10 +577,22 @@ fn main() -> t40 {
     draw_button_text(19, logout_btn_addr, 9, 0);
 
     while 1 - done > 0 {
-        // Query mouse coordinates and buttons
-        var mx: t40 = os_mouse_x();
-        var my: t40 = os_mouse_y();
-        var btn: t40 = os_mouse_btn();
+        k = 0;
+        event_status = os_wait_event(-1, event_addr, 0);
+        if event_status > 0 {
+            event_kind = os_event_kind(event_addr);
+            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr);
+                my = os_event_y(event_addr);
+                btn = os_event_modifiers(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+            }
+            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                k = 52;
+            }
+        }
 
         // Publish sprite tracking cursor
         os_sprite(mx, my, 43, 14); // '+' in yellow
@@ -609,8 +642,7 @@ fn main() -> t40 {
         }
 
         // Support keyboard hotkeys concurrently
-        if os_key_available() > 0 {
-            var k: t40 = os_read_key();
+        if k > 0 {
             if k - 49 == 0 { click = 1; }
             if k - 50 == 0 { click = 2; }
             if k - 51 == 0 { click = 3; }

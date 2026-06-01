@@ -309,6 +309,69 @@ struct GDICache {
     int lastHeight = 0;
 } g_gdi;
 
+namespace {
+
+constexpr int kKernelBootedAddr = 3000;
+constexpr int kInputLastMouseBtnAddr = 3031;
+constexpr int kInputLastMouseXAddr = 3034;
+constexpr int kInputLastMouseYAddr = 3035;
+constexpr int kProcessMax = 8;
+constexpr int kProcessRowWords = 8;
+constexpr int kProcessBase = 9864;
+constexpr int kProcState = 2;
+constexpr int kProcRunnable = 1;
+constexpr int kProcRunning = 2;
+constexpr int kProcBlocked = 3;
+constexpr int kProcSleeping = 4;
+constexpr int kWaitDeadlineBase = 27580;
+
+long long vmDmemWord(const sandbox::vm::VMState& vm, int addr) {
+    auto [word, fault] = vm.dmem.load(addr);
+    if (fault != sandbox::vm::MemFaultCode::OK) {
+        return 0;
+    }
+    return sandbox::vm::ops::toLong(word);
+}
+
+bool vmInputPendingForWaiter(const sandbox::vm::VMState& vm) {
+    if (!vm.console_input.empty()) {
+        return true;
+    }
+    if (vm.mouse_x != vmDmemWord(vm, kInputLastMouseXAddr)) {
+        return true;
+    }
+    if (vm.mouse_y != vmDmemWord(vm, kInputLastMouseYAddr)) {
+        return true;
+    }
+    return vm.mouse_btn != vmDmemWord(vm, kInputLastMouseBtnAddr);
+}
+
+bool vmCanIdleWithoutStepping(const sandbox::vm::VMState& vm) {
+    if (vmDmemWord(vm, kKernelBootedAddr) <= 0) {
+        return false;
+    }
+    if (vmInputPendingForWaiter(vm)) {
+        return false;
+    }
+
+    bool saw_waiting = false;
+    for (int slot = 0; slot < kProcessMax; ++slot) {
+        const long long state = vmDmemWord(vm, kProcessBase + slot * kProcessRowWords + kProcState);
+        if (state == kProcRunnable || state == kProcRunning) {
+            return false;
+        }
+        if (state == kProcBlocked || state == kProcSleeping) {
+            if (vmDmemWord(vm, kWaitDeadlineBase + slot) >= 0) {
+                return false;
+            }
+            saw_waiting = true;
+        }
+    }
+    return saw_waiting;
+}
+
+} // namespace
+
 // Helper Cyberpunk color palette builder
 static COLORREF getCyberColor(int idx) {
     switch (idx & 0x0F) {
@@ -901,6 +964,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     continue;
                 }
                 last_time = now;
+
+                bool idle_waiting = false;
+                {
+                    std::lock_guard<std::mutex> lock(g_vm_mutex);
+                    idle_waiting = vmCanIdleWithoutStepping(*g_vm);
+                }
+                if (idle_waiting) {
+                    // All runnable work is parked on indefinite wait channels; let the host UI sleep
+                    // until keyboard or mouse input makes a waiter runnable again.
+                    std::this_thread::sleep_for(milliseconds(5));
+                    continue;
+                }
 
                 // 1 GHz = 1000 instructions per microsecond
                 long long target_steps = elapsed * 1000;
