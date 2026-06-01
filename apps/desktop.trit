@@ -95,6 +95,98 @@ fn desktop_seed_paint_path(addr: t40) -> t40 {
     return addr;
 }
 
+fn desktop_seed_file_manager_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);   // /
+        store(addr + 1, 98);   // b
+        store(addr + 2, 105);  // i
+        store(addr + 3, 110);  // n
+        store(addr + 4, 47);   // /
+        store(addr + 5, 102);  // f
+        store(addr + 6, 105);  // i
+        store(addr + 7, 108);  // l
+        store(addr + 8, 101);  // e
+        store(addr + 9, 95);   // _
+        store(addr + 10, 109); // m
+        store(addr + 11, 97);  // a
+        store(addr + 12, 110); // n
+        store(addr + 13, 97);  // a
+        store(addr + 14, 103); // g
+        store(addr + 15, 101); // e
+        store(addr + 16, 114); // r
+        store(addr + 17, 0);   // \0
+    }
+    return addr;
+}
+
+fn desktop_seed_settings_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);   // /
+        store(addr + 1, 98);   // b
+        store(addr + 2, 105);  // i
+        store(addr + 3, 110);  // n
+        store(addr + 4, 47);   // /
+        store(addr + 5, 115);  // s
+        store(addr + 6, 101);  // e
+        store(addr + 7, 116);  // t
+        store(addr + 8, 116);  // t
+        store(addr + 9, 105);  // i
+        store(addr + 10, 110); // n
+        store(addr + 11, 103); // g
+        store(addr + 12, 115); // s
+        store(addr + 13, 0);   // \0
+    }
+    return addr;
+}
+
+fn desktop_seed_terminal_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);   // /
+        store(addr + 1, 98);   // b
+        store(addr + 2, 105);  // i
+        store(addr + 3, 110);  // n
+        store(addr + 4, 47);   // /
+        store(addr + 5, 116);  // t
+        store(addr + 6, 101);  // e
+        store(addr + 7, 114);  // r
+        store(addr + 8, 109);  // m
+        store(addr + 9, 105);  // i
+        store(addr + 10, 110); // n
+        store(addr + 11, 97);  // a
+        store(addr + 12, 108); // l
+        store(addr + 13, 0);   // \0
+    }
+    return addr;
+}
+
+fn desktop_launch_hotkey(key: t40) -> t40 {
+    if key - 49 == 0 {
+        var path_addr: t40 = desktop_seed_calculator_path(10000);
+        return sys_exec(path_addr);
+    }
+    if key - 50 == 0 {
+        var path_addr: t40 = desktop_seed_task_manager_path(10000);
+        return sys_exec(path_addr);
+    }
+    if key - 51 == 0 {
+        var path_addr: t40 = desktop_seed_paint_path(10000);
+        return sys_exec(path_addr);
+    }
+    if key - 52 == 0 {
+        var path_addr: t40 = desktop_seed_file_manager_path(10000);
+        return sys_exec(path_addr);
+    }
+    if key - 53 == 0 {
+        var path_addr: t40 = desktop_seed_settings_path(10000);
+        return sys_exec(path_addr);
+    }
+    if key - 54 == 0 {
+        var path_addr: t40 = desktop_seed_terminal_path(10000);
+        return sys_exec(path_addr);
+    }
+    return 0;
+}
+
 fn draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     var x: t40 = x1;
     while x2 - x >= 0 {
@@ -227,20 +319,13 @@ fn desktop_draw_hud() -> t40 {
     
     os_text_cell(48, 16, 79, 2); os_text_cell(49, 16, 82, 2); // "OR"
     os_text_cell(51, 16, 75, 2); os_text_cell(52, 16, 69, 2); os_text_cell(53, 16, 89, 2); os_text_cell(54, 16, 83, 2); // "KEYS"
-    os_text_cell(56, 16, 49, 2); os_text_cell(57, 16, 45, 2); os_text_cell(58, 16, 51, 2); // "1-3"
+    os_text_cell(56, 16, 49, 2); os_text_cell(57, 16, 45, 2); os_text_cell(58, 16, 54, 2); // "1-6"
     
     return 1;
 }
 
 fn draw_button_text(y: t40, text_addr: t40, len: t40, is_hovered: t40) -> t40 {
-    var color: t40 = 10; // green
-    if is_hovered > 0 {
-        color = 5; // highlight cyan
-    }
-    os_text_cell(18, y, 91, color); // '['
-    draw_string(20, y, text_addr, len, color);
-    os_text_cell(20 + len + 1, y, 93, color); // ']'
-    return 1;
+    return widget_draw_text_button_text(18, y, len + 4, text_addr, len, is_hovered, 0, 0, 1);
 }
 
 fn seed_btn_calc(addr: t40) -> t40 {
@@ -272,9 +357,36 @@ fn seed_btn_paint(addr: t40) -> t40 {
     return addr;
 }
 
+fn seed_btn_files(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 52); store(addr + 1, 46); store(addr + 2, 32); store(addr + 3, 70); // "4. F"
+        store(addr + 4, 73); store(addr + 5, 76); store(addr + 6, 69); store(addr + 7, 83); // "ILES"
+        store(addr + 8, 0);
+    }
+    return addr;
+}
+
+fn seed_btn_settings(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 53); store(addr + 1, 46); store(addr + 2, 32); store(addr + 3, 83); // "5. S"
+        store(addr + 4, 69); store(addr + 5, 84); store(addr + 6, 84); store(addr + 7, 73); // "ETTI"
+        store(addr + 8, 78); store(addr + 9, 71); store(addr + 10, 83); store(addr + 11, 0); // "NGS"
+    }
+    return addr;
+}
+
+fn seed_btn_terminal(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 54); store(addr + 1, 46); store(addr + 2, 32); store(addr + 3, 84); // "6. T"
+        store(addr + 4, 69); store(addr + 5, 82); store(addr + 6, 77); store(addr + 7, 73); // "ERMI"
+        store(addr + 8, 78); store(addr + 9, 65); store(addr + 10, 76); store(addr + 11, 0); // "NAL"
+    }
+    return addr;
+}
+
 fn seed_btn_logout(addr: t40) -> t40 {
     unsafe {
-        store(addr + 0, 52); store(addr + 1, 46); store(addr + 2, 32); store(addr + 3, 76); // "4. L"
+        store(addr + 0, 55); store(addr + 1, 46); store(addr + 2, 32); store(addr + 3, 76); // "7. L"
         store(addr + 4, 79); store(addr + 5, 71); store(addr + 6, 79); store(addr + 7, 85); // "OGOU"
         store(addr + 8, 84); store(addr + 9, 0); // "T"
     }
@@ -295,15 +407,42 @@ fn seed_btn_cancel(addr: t40) -> t40 {
     return addr;
 }
 
-fn draw_login_button(x: t40, y: t40, text_addr: t40, len: t40, is_hovered: t40) -> t40 {
-    var color: t40 = 10; // green
-    if is_hovered > 0 {
-        color = 5; // cyan highlight
+const DESK_LOGIN_PASS_WIDGET: t40 = 12100;
+const DESK_LOGIN_BUTTON_BASE: t40 = 12140;
+const DESK_LOGIN_CHILDREN: t40 = 12240;
+const DESK_LOGIN_CHILD_COUNT: t40 = 3;
+
+fn desktop_login_button_at_index(index: t40) -> t40 {
+    return DESK_LOGIN_BUTTON_BASE + index * WIDGET_WORDS;
+}
+
+fn desktop_login_init_button(index: t40, id: t40, x: t40, y: t40, w: t40) -> t40 {
+    var addr: t40 = desktop_login_button_at_index(index);
+    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 1, 0, -1);
+    widget_store(addr + WIDGET_AUX, id);
+    widget_store(DESK_LOGIN_CHILDREN + index + 1, addr);
+    return addr;
+}
+
+fn desktop_login_init_widgets(passcode_addr: t40) -> t40 {
+    widget_passwordfield_init(DESK_LOGIN_PASS_WIDGET, passcode_addr, 8, 28, 12, 10, 1, 0, -1);
+    widget_store(DESK_LOGIN_CHILDREN + 0, DESK_LOGIN_PASS_WIDGET);
+    desktop_login_init_button(0, 1, 22, 14, 7);
+    desktop_login_init_button(1, 2, 34, 14, 8);
+    widget_set_focus(DESK_LOGIN_PASS_WIDGET, 1);
+    return DESK_LOGIN_CHILD_COUNT;
+}
+
+fn desktop_login_button_at(mx: t40, my: t40) -> t40 {
+    var hit: t40 = widget_panel_route_xy(DESK_LOGIN_CHILDREN + 1, 2, mx, my);
+    if hit > 0 {
+        return widget_load(hit + WIDGET_AUX);
     }
-    os_text_cell(x, y, 91, color); // '['
-    draw_string(x + 1, y, text_addr, len, color);
-    os_text_cell(x + len + 1, y, 93, color); // ']'
-    return 1;
+    return 0;
+}
+
+fn draw_login_button(x: t40, y: t40, text_addr: t40, len: t40, is_hovered: t40) -> t40 {
+    return widget_draw_text_button_text(x, y, len + 2, text_addr, len, is_hovered, 0, 0, 1);
 }
 
 fn show_login_screen() -> t40 {
@@ -340,6 +479,7 @@ fn show_login_screen() -> t40 {
     draw_box(18, 6, 62, 16, 6); // Hot pink border
     
     draw_string(28, 8, header_addr, 21, 3); // Amber header
+    desktop_login_init_widgets(passcode_addr);
     
     // Draw Username: ADMIN
     os_text_cell(22, 10, 85, 10); // 'U'
@@ -353,16 +493,13 @@ fn show_login_screen() -> t40 {
     os_text_cell(31, 10, 73, 14); // 'I'
     os_text_cell(32, 10, 78, 14); // 'N'
 
-    // Draw PASS: [        ]
+    // Draw PASS field
     os_text_cell(22, 12, 80, 10); // 'P'
     os_text_cell(23, 12, 65, 10); // 'A'
     os_text_cell(24, 12, 83, 10); // 'S'
     os_text_cell(25, 12, 83, 10); // 'S'
     os_text_cell(26, 12, 58, 10); // ':'
-    os_text_cell(28, 12, 91, 10); // '['
-    os_text_cell(29, 12, 32, 10); os_text_cell(30, 12, 32, 10); os_text_cell(31, 12, 32, 10); os_text_cell(32, 12, 32, 10);
-    os_text_cell(33, 12, 32, 10); os_text_cell(34, 12, 32, 10); os_text_cell(35, 12, 32, 10); os_text_cell(36, 12, 32, 10);
-    os_text_cell(37, 12, 93, 10); // ']'
+    widget_draw_passwordfield(DESK_LOGIN_PASS_WIDGET);
 
     // Draw buttons
     draw_login_button(22, 14, btn_login_addr, 5, 0);
@@ -370,7 +507,7 @@ fn show_login_screen() -> t40 {
 
     while 1 - login_done > 0 {
         k = 0;
-        event_status = os_wait_event(-1, event_addr, 0);
+        event_status = os_wait_event(-1, event_addr, 1);
         if event_status > 0 {
             event_kind = os_event_kind(event_addr);
             if event_kind - OS_EVENT_KIND_MOUSE == 0 {
@@ -390,19 +527,7 @@ fn show_login_screen() -> t40 {
         os_sprite(mx, my, 43, 14); // '+' in yellow
 
         // Hover checking
-        current_hover = 0;
-        if my - 14 == 0 {
-            if mx - 22 >= 0 {
-                if 28 - mx >= 0 {
-                    current_hover = 1; // LOGIN button
-                }
-            }
-            if mx - 34 >= 0 {
-                if 42 - mx >= 0 {
-                    current_hover = 2; // CANCEL button
-                }
-            }
-        }
+        current_hover = desktop_login_button_at(mx, my);
 
         if current_hover - last_hover != 0 {
             h_login = 0;
@@ -432,19 +557,9 @@ fn show_login_screen() -> t40 {
                 if k - 27 == 0 { // Escape key -> click CANCEL
                     click = 2;
                 } else {
-                    if k - 8 == 0 { // Backspace
-                        if entered_count > 0 {
-                            entered_count = entered_count - 1;
-                            os_text_cell(29 + entered_count, 12, 32, 10);
-                        }
-                    } else {
-                        if entered_count - 8 < 0 {
-                            if k - 32 >= 0 {
-                                unsafe { store(passcode_addr + entered_count, k); }
-                                os_text_cell(29 + entered_count, 12, 42, 10); // Show '*'
-                                entered_count = entered_count + 1;
-                            }
-                        }
+                    if widget_textfield_handle_key(DESK_LOGIN_PASS_WIDGET, k) > 0 {
+                        entered_count = widget_load(DESK_LOGIN_PASS_WIDGET + WIDGET_TEXT_LEN);
+                        widget_draw_passwordfield(DESK_LOGIN_PASS_WIDGET);
                     }
                 }
             }
@@ -501,11 +616,12 @@ fn show_login_screen() -> t40 {
                 }
                 
                 entered_count = 0;
-                reset_x = 29;
-                while 37 - reset_x > 0 {
-                    os_text_cell(reset_x, 12, 32, 10);
-                    reset_x = reset_x + 1;
-                }
+                widget_store(passcode_addr, 0);
+                widget_store(DESK_LOGIN_PASS_WIDGET + WIDGET_TEXT_LEN, 0);
+                widget_store(DESK_LOGIN_PASS_WIDGET + WIDGET_CURSOR, 0);
+                widget_store(DESK_LOGIN_PASS_WIDGET + WIDGET_SEL_START, 0);
+                widget_store(DESK_LOGIN_PASS_WIDGET + WIDGET_SEL_END, 0);
+                widget_draw_passwordfield(DESK_LOGIN_PASS_WIDGET);
             }
         }
         last_btn = btn;
@@ -521,6 +637,9 @@ fn main() -> t40 {
     var calc_addr: t40 = 0;
     var task_addr: t40 = 0;
     var paint_addr: t40 = 0;
+    var files_addr: t40 = 0;
+    var settings_addr: t40 = 0;
+    var terminal_addr: t40 = 0;
     var logout_btn_addr: t40 = 0;
     var key: t40 = -1;
     var done: t40 = 0;
@@ -529,6 +648,9 @@ fn main() -> t40 {
     var h2: t40 = 0;
     var h3: t40 = 0;
     var h4: t40 = 0;
+    var h5: t40 = 0;
+    var h6: t40 = 0;
+    var h7: t40 = 0;
     var last_btn: t40 = 0;
     var event_addr: t40 = 10100;
     var event_status: t40 = 0;
@@ -537,6 +659,7 @@ fn main() -> t40 {
     var my: t40 = 0;
     var btn: t40 = 0;
     var k: t40 = 0;
+    var immediate_key: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     
@@ -545,6 +668,9 @@ fn main() -> t40 {
     os_putc(49); os_putc(32); os_putc(67); os_putc(65); os_putc(76); os_putc(67); os_newline();
     os_putc(50); os_putc(32); os_putc(84); os_putc(65); os_putc(83); os_putc(75); os_putc(83); os_newline();
     os_putc(51); os_putc(32); os_putc(80); os_putc(65); os_putc(73); os_putc(78); os_putc(84); os_newline();
+    os_putc(52); os_putc(32); os_putc(70); os_putc(73); os_putc(76); os_putc(69); os_putc(83); os_newline();
+    os_putc(53); os_putc(32); os_putc(83); os_putc(69); os_putc(84); os_putc(84); os_putc(73); os_putc(78); os_putc(71); os_putc(83); os_newline();
+    os_putc(54); os_putc(32); os_putc(84); os_putc(69); os_putc(82); os_putc(77); os_putc(73); os_putc(78); os_putc(65); os_putc(76); os_newline();
 
     if in_kernel == 0 {
         // Standalone test mode: clear and draw title/menu required by test expectations, then exit
@@ -564,33 +690,52 @@ fn main() -> t40 {
         unsafe { store(62000, 12345); } // Mark logged in
     }
 
+    if os_key_available() > 0 {
+        var boot_key: t40 = os_read_key();
+        var boot_launch: t40 = desktop_launch_hotkey(boot_key);
+        if boot_launch != 0 {
+            return boot_key;
+        }
+    }
+
     desktop_draw_hud();
 
     calc_addr = seed_btn_calc(13000);
     task_addr = seed_btn_task(13050);
     paint_addr = seed_btn_paint(13100);
-    logout_btn_addr = seed_btn_logout(13150);
+    files_addr = seed_btn_files(13150);
+    settings_addr = seed_btn_settings(13200);
+    terminal_addr = seed_btn_terminal(13250);
+    logout_btn_addr = seed_btn_logout(13300);
 
-    draw_button_text(7, calc_addr, 13, 0);
-    draw_button_text(11, task_addr, 15, 0);
-    draw_button_text(15, paint_addr, 8, 0);
+    draw_button_text(6, calc_addr, 13, 0);
+    draw_button_text(8, task_addr, 15, 0);
+    draw_button_text(10, paint_addr, 8, 0);
+    draw_button_text(12, files_addr, 8, 0);
+    draw_button_text(14, settings_addr, 11, 0);
+    draw_button_text(16, terminal_addr, 11, 0);
     draw_button_text(19, logout_btn_addr, 9, 0);
 
     while 1 - done > 0 {
         k = 0;
-        event_status = os_wait_event(-1, event_addr, 0);
-        if event_status > 0 {
-            event_kind = os_event_kind(event_addr);
-            if event_kind - OS_EVENT_KIND_MOUSE == 0 {
-                mx = os_event_x_or_key(event_addr);
-                my = os_event_y(event_addr);
-                btn = os_event_modifiers(event_addr);
-            }
-            if event_kind - OS_EVENT_KIND_KEY == 0 {
-                k = os_event_x_or_key(event_addr);
-            }
-            if event_kind - OS_EVENT_KIND_CLOSE == 0 {
-                k = 52;
+        immediate_key = os_read_key();
+        if immediate_key >= 0 {
+            k = immediate_key;
+        } else {
+            event_status = os_wait_event(-1, event_addr, 0);
+            if event_status > 0 {
+                event_kind = os_event_kind(event_addr);
+                if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                    mx = os_event_x_or_key(event_addr);
+                    my = os_event_y(event_addr);
+                    btn = os_event_modifiers(event_addr);
+                }
+                if event_kind - OS_EVENT_KIND_KEY == 0 {
+                    k = os_event_x_or_key(event_addr);
+                }
+                if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                    k = 55;
+                }
             }
         }
 
@@ -601,17 +746,26 @@ fn main() -> t40 {
         var current_hover: t40 = 0;
         if mx - 18 >= 0 {
             if 40 - mx >= 0 {
-                if my - 7 == 0 {
+                if my - 6 == 0 {
                     current_hover = 1;
                 }
-                if my - 11 == 0 {
+                if my - 8 == 0 {
                     current_hover = 2;
                 }
-                if my - 15 == 0 {
+                if my - 10 == 0 {
                     current_hover = 3;
                 }
-                if my - 19 == 0 {
+                if my - 12 == 0 {
                     current_hover = 4;
+                }
+                if my - 14 == 0 {
+                    current_hover = 5;
+                }
+                if my - 16 == 0 {
+                    current_hover = 6;
+                }
+                if my - 19 == 0 {
+                    current_hover = 7;
                 }
             }
         }
@@ -621,14 +775,23 @@ fn main() -> t40 {
             h2 = 0;
             h3 = 0;
             h4 = 0;
+            h5 = 0;
+            h6 = 0;
+            h7 = 0;
             if current_hover - 1 == 0 { h1 = 1; }
             if current_hover - 2 == 0 { h2 = 1; }
             if current_hover - 3 == 0 { h3 = 1; }
             if current_hover - 4 == 0 { h4 = 1; }
-            draw_button_text(7, calc_addr, 13, h1);
-            draw_button_text(11, task_addr, 15, h2);
-            draw_button_text(15, paint_addr, 8, h3);
-            draw_button_text(19, logout_btn_addr, 9, h4);
+            if current_hover - 5 == 0 { h5 = 1; }
+            if current_hover - 6 == 0 { h6 = 1; }
+            if current_hover - 7 == 0 { h7 = 1; }
+            draw_button_text(6, calc_addr, 13, h1);
+            draw_button_text(8, task_addr, 15, h2);
+            draw_button_text(10, paint_addr, 8, h3);
+            draw_button_text(12, files_addr, 8, h4);
+            draw_button_text(14, settings_addr, 11, h5);
+            draw_button_text(16, terminal_addr, 11, h6);
+            draw_button_text(19, logout_btn_addr, 9, h7);
             hovered = current_hover;
         }
 
@@ -647,6 +810,9 @@ fn main() -> t40 {
             if k - 50 == 0 { click = 2; }
             if k - 51 == 0 { click = 3; }
             if k - 52 == 0 { click = 4; }
+            if k - 53 == 0 { click = 5; }
+            if k - 54 == 0 { click = 6; }
+            if k - 55 == 0 { click = 7; }
         }
 
         if click - 1 == 0 {
@@ -665,6 +831,21 @@ fn main() -> t40 {
             done = 1;
         }
         if click - 4 == 0 {
+            var path_addr: t40 = desktop_seed_file_manager_path(10000);
+            var res: t40 = sys_exec(path_addr);
+            done = 1;
+        }
+        if click - 5 == 0 {
+            var path_addr: t40 = desktop_seed_settings_path(10000);
+            var res: t40 = sys_exec(path_addr);
+            done = 1;
+        }
+        if click - 6 == 0 {
+            var path_addr: t40 = desktop_seed_terminal_path(10000);
+            var res: t40 = sys_exec(path_addr);
+            done = 1;
+        }
+        if click - 7 == 0 {
             unsafe { store(62000, 0); } // Clear logged in flag
             login_ok = show_login_screen();
             if login_ok == 0 {
@@ -672,9 +853,12 @@ fn main() -> t40 {
             }
             unsafe { store(62000, 12345); } // Mark logged in
             desktop_draw_hud();
-            draw_button_text(7, calc_addr, 13, 0);
-            draw_button_text(11, task_addr, 15, 0);
-            draw_button_text(15, paint_addr, 8, 0);
+            draw_button_text(6, calc_addr, 13, 0);
+            draw_button_text(8, task_addr, 15, 0);
+            draw_button_text(10, paint_addr, 8, 0);
+            draw_button_text(12, files_addr, 8, 0);
+            draw_button_text(14, settings_addr, 11, 0);
+            draw_button_text(16, terminal_addr, 11, 0);
             draw_button_text(19, logout_btn_addr, 9, 0);
             hovered = 0;
         }

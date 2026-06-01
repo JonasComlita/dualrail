@@ -17,7 +17,57 @@ fn paint_seed_desktop_path(addr: t40) -> t40 {
     return addr;
 }
 
+const PAINT_WIDGET_BASE: t40 = 11200;
+const PAINT_CHILDREN_ADDR: t40 = 11800;
+const PAINT_CHILD_COUNT: t40 = 7;
+const PAINT_LABEL_BUF: t40 = 11900;
+const PAINT_TOOL_CLEAR: t40 = 10;
+const PAINT_TOOL_EXIT: t40 = 99;
+
+fn paint_widget_at_index(index: t40) -> t40 {
+    return PAINT_WIDGET_BASE + index * WIDGET_WORDS;
+}
+
+fn paint_seed_clear_label(addr: t40) -> t40 {
+    unsafe { store(addr + 0, 67); store(addr + 1, 76); store(addr + 2, 82); store(addr + 3, 0); }
+    return addr;
+}
+
+fn paint_seed_exit_label(addr: t40) -> t40 {
+    unsafe { store(addr + 0, 69); store(addr + 1, 88); store(addr + 2, 73); store(addr + 3, 84); store(addr + 4, 0); }
+    return addr;
+}
+
+fn paint_init_tool(index: t40, id: t40, x: t40, y: t40, w: t40) -> t40 {
+    var addr: t40 = paint_widget_at_index(index);
+    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 1, 0, -1);
+    widget_store(addr + WIDGET_AUX, id);
+    widget_store(PAINT_CHILDREN_ADDR + index, addr);
+    return addr;
+}
+
+fn paint_init_widgets() -> t40 {
+    paint_init_tool(0, 1, 9, 0, 3);
+    paint_init_tool(1, 2, 13, 0, 3);
+    paint_init_tool(2, 3, 17, 0, 3);
+    paint_init_tool(3, 4, 21, 0, 3);
+    paint_init_tool(4, 5, 25, 0, 3);
+    paint_init_tool(5, PAINT_TOOL_CLEAR, 45, 0, 5);
+    paint_init_tool(6, PAINT_TOOL_EXIT, 65, 0, 6);
+    return PAINT_CHILD_COUNT;
+}
+
+fn paint_toolbar_at(mx: t40, my: t40) -> t40 {
+    var hit: t40 = widget_panel_route_xy(PAINT_CHILDREN_ADDR, PAINT_CHILD_COUNT, mx, my);
+    if hit > 0 {
+        return widget_load(hit + WIDGET_AUX);
+    }
+    return 0;
+}
+
 fn paint_draw_header(active_color: t40) -> t40 {
+    paint_init_widgets();
+
     // Clear top row of text cells (row 0)
     var x: t40 = 0;
     while 80 - x > 0 {
@@ -33,26 +83,27 @@ fn paint_draw_header(active_color: t40) -> t40 {
     os_text_cell(5, 0, 84, 3);
     os_text_cell(6, 0, 58, 3); // ':'
 
-    // Colors: [1] (red: 4), [2] (green: 10), [3] (cyan: 5), [4] (yellow: 14), [5] (magenta: 6)
-    os_text_cell(9, 0, 91, 2);
-    os_text_cell(10, 0, 49, 4); // '1'
-    os_text_cell(11, 0, 93, 2);
-
-    os_text_cell(13, 0, 91, 2);
-    os_text_cell(14, 0, 50, 10); // '2'
-    os_text_cell(15, 0, 93, 2);
-
-    os_text_cell(17, 0, 91, 2);
-    os_text_cell(18, 0, 51, 5); // '3'
-    os_text_cell(19, 0, 93, 2);
-
-    os_text_cell(21, 0, 91, 2);
-    os_text_cell(22, 0, 52, 14); // '4'
-    os_text_cell(23, 0, 93, 2);
-
-    os_text_cell(25, 0, 91, 2);
-    os_text_cell(26, 0, 53, 6); // '5'
-    os_text_cell(27, 0, 93, 2);
+    // Color swatches
+    var red_focus: t40 = 0;
+    var green_focus: t40 = 0;
+    var cyan_focus: t40 = 0;
+    var yellow_focus: t40 = 0;
+    var magenta_focus: t40 = 0;
+    if active_color - 4 == 0 { red_focus = 1; }
+    if active_color - 10 == 0 { green_focus = 1; }
+    if active_color - 5 == 0 { cyan_focus = 1; }
+    if active_color - 14 == 0 { yellow_focus = 1; }
+    if active_color - 6 == 0 { magenta_focus = 1; }
+    widget_draw_text_button_char(9, 0, 3, 49, 0, 0, red_focus, 1);
+    os_text_cell(10, 0, 49, 4);
+    widget_draw_text_button_char(13, 0, 3, 50, 0, 0, green_focus, 1);
+    os_text_cell(14, 0, 50, 10);
+    widget_draw_text_button_char(17, 0, 3, 51, 0, 0, cyan_focus, 1);
+    os_text_cell(18, 0, 51, 5);
+    widget_draw_text_button_char(21, 0, 3, 52, 0, 0, yellow_focus, 1);
+    os_text_cell(22, 0, 52, 14);
+    widget_draw_text_button_char(25, 0, 3, 53, 0, 0, magenta_focus, 1);
+    os_text_cell(26, 0, 53, 6);
 
     // Active color indicator
     os_text_cell(30, 0, 65, 2); // 'A'
@@ -60,21 +111,9 @@ fn paint_draw_header(active_color: t40) -> t40 {
     os_text_cell(32, 0, 58, 2); // ':'
     os_text_cell(34, 0, 42, active_color); // '*' in active color
 
-    // Clear Button: [C] Clear
-    os_text_cell(45, 0, 91, 2);
-    os_text_cell(46, 0, 67, 10); // 'C'
-    os_text_cell(47, 0, 93, 2);
-    os_text_cell(49, 0, 76, 2); // 'L'
-    os_text_cell(50, 0, 82, 2); // 'R'
-
-    // Exit Button: [X] Exit
-    os_text_cell(65, 0, 91, 2);
-    os_text_cell(66, 0, 88, 6); // 'X'
-    os_text_cell(67, 0, 93, 2);
-    os_text_cell(69, 0, 69, 2); // 'E'
-    os_text_cell(70, 0, 88, 2); // 'X'
-    os_text_cell(71, 0, 73, 2); // 'I'
-    os_text_cell(72, 0, 84, 2); // 'T'
+    // Toolbar buttons
+    widget_draw_text_button_text(45, 0, 5, paint_seed_clear_label(PAINT_LABEL_BUF), 3, 0, 0, 0, 1);
+    widget_draw_text_button_text(65, 0, 6, paint_seed_exit_label(PAINT_LABEL_BUF + 10), 4, 0, 0, 0, 1);
 
     // Separator line under header
     x = 0;
@@ -99,6 +138,7 @@ fn main() -> t40 {
     var mx: t40 = 0;
     var my: t40 = 0;
     var btn: t40 = 0;
+    var toolbar_hit: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
@@ -145,52 +185,19 @@ fn main() -> t40 {
         if btn - 1 == 0 {
             // Check if clicking the header (my < 5 corresponding to text rows 0 and 1)
             if sprite_y - 2 < 0 {
-                // Color button selection
-                if mx - 9 >= 0 {
-                    if 11 - mx >= 0 {
-                        active_color = 4; // Red
-                        paint_draw_header(active_color);
-                    }
+                toolbar_hit = paint_toolbar_at(mx, sprite_y);
+                if toolbar_hit - 1 == 0 { active_color = 4; paint_draw_header(active_color); }
+                if toolbar_hit - 2 == 0 { active_color = 10; paint_draw_header(active_color); }
+                if toolbar_hit - 3 == 0 { active_color = 5; paint_draw_header(active_color); }
+                if toolbar_hit - 4 == 0 { active_color = 14; paint_draw_header(active_color); }
+                if toolbar_hit - 5 == 0 { active_color = 6; paint_draw_header(active_color); }
+                if toolbar_hit - PAINT_TOOL_CLEAR == 0 {
+                    os_gpu_clear(0, 0);
+                    os_gpu_clear(1, 0);
+                    paint_draw_header(active_color);
                 }
-                if mx - 13 >= 0 {
-                    if 15 - mx >= 0 {
-                        active_color = 10; // Green
-                        paint_draw_header(active_color);
-                    }
-                }
-                if mx - 17 >= 0 {
-                    if 19 - mx >= 0 {
-                        active_color = 5; // Cyan
-                        paint_draw_header(active_color);
-                    }
-                }
-                if mx - 21 >= 0 {
-                    if 23 - mx >= 0 {
-                        active_color = 14; // Yellow
-                        paint_draw_header(active_color);
-                    }
-                }
-                if mx - 25 >= 0 {
-                    if 27 - mx >= 0 {
-                        active_color = 6; // Magenta
-                        paint_draw_header(active_color);
-                    }
-                }
-
-                // Clear button
-                if mx - 45 >= 0 {
-                    if 52 - mx >= 0 {
-                        os_gpu_clear(0, 0);
-                        os_gpu_clear(1, 0);
-                        paint_draw_header(active_color);
-                    }
-                }
-
-                // Exit button
-                if mx - 65 >= 0 {
-                    if 73 - mx >= 0 {
-                        done = 1;
-                    }
+                if toolbar_hit - PAINT_TOOL_EXIT == 0 {
+                    done = 1;
                 }
             } else {
                 // Drawing region: Draw a 2x2 rect on canvas

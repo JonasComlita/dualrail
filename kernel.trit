@@ -5029,6 +5029,18 @@ fn is_gui_app(path_addr: t40) -> t40 {
         return 1;
     }
 
+    // Consumer shell apps use the text/GPU memory range even when their
+    // executable path is discovered dynamically from /bin.
+    var is_bin_child: t40 = 1;
+    if kload(path_addr + 0) - 47 != 0 { is_bin_child = 0; }
+    if kload(path_addr + 1) - 98 != 0 { is_bin_child = 0; }
+    if kload(path_addr + 2) - 105 != 0 { is_bin_child = 0; }
+    if kload(path_addr + 3) - 110 != 0 { is_bin_child = 0; }
+    if kload(path_addr + 4) - 47 != 0 { is_bin_child = 0; }
+    if is_bin_child > 0 {
+        return 1;
+    }
+
     return 0;
 }
 

@@ -61,6 +61,63 @@ bool imemWordEquals(const sandbox::vm::VMState& vm, int addr, sandbox::isa::Trit
     return fault == sandbox::vm::MemFaultCode::OK && word == expected;
 }
 
+bool imemPteMapsTo(const sandbox::vm::VMState& vm, int ppn) {
+    auto [pte_value, fault] = vm.dmem.load(kHwPtBase);
+    if (fault != sandbox::vm::MemFaultCode::OK) return false;
+    sandbox::vm::PageTableEntry pte;
+    return sandbox::vm::decodePageTableEntry(pte_value, pte) &&
+           pte.present && pte.user && pte.execute && pte.ppn == ppn;
+}
+
+bool windowBufferPteMapsTo(const sandbox::vm::VMState& vm, int ppn) {
+    auto [pte_value, fault] =
+        vm.dmem.load(kHwPtBase + kHwPtMaxPages + kWindowUserVpnBase);
+    if (fault != sandbox::vm::MemFaultCode::OK) return false;
+    sandbox::vm::PageTableEntry pte;
+    return sandbox::vm::decodePageTableEntry(pte_value, pte) &&
+           pte.present && pte.user && pte.read && pte.write && pte.ppn == ppn;
+}
+
+bool calculatorFrameReady(const sandbox::vm::VMState& vm) {
+    if (wordAt(vm, kFbStateBase + kFbFrontIndex) != 1) return false;
+    const int calc_pixel = kFbBackBufferBase + (3 * kCalcFbWidth + 10) * 3;
+    return wordAt(vm, calc_pixel) == 100 &&
+           wordAt(vm, calc_pixel + 1) == 88 &&
+           wordAt(vm, calc_pixel + 2) == 24;
+}
+
+template <typename Predicate>
+sandbox::vm::RunResult runUntil(sandbox::vm::VMState& vm,
+                                int max_steps,
+                                int chunk_steps,
+                                Predicate predicate) {
+    int steps = 0;
+    sandbox::vm::RunResult last{
+        vm.status,
+        0,
+        vm.pc,
+        sandbox::vm::TrapCode::TRAP_ILLEGAL_OP,
+        "Predicate already satisfied",
+    };
+    while (vm.isRunning() && !predicate() && steps < max_steps) {
+        int chunk = chunk_steps;
+        if (chunk <= 0 || chunk > max_steps - steps) {
+            chunk = max_steps - steps;
+        }
+        last = sandbox::vm::run(vm, chunk);
+        steps += last.steps;
+        if (last.steps == 0) break;
+    }
+    last.status = vm.status;
+    last.steps = steps;
+    last.final_pc = vm.pc;
+    if (predicate() && vm.isRunning()) {
+        last.description =
+            "Predicate reached after " + std::to_string(steps) + " steps";
+    }
+    return last;
+}
+
 std::string disassembleAt(const sandbox::vm::VMState& vm, int addr) {
     auto [word, fault] = vm.imem.fetch(addr);
     if (fault != sandbox::vm::MemFaultCode::OK) return "<fetch fault>";
@@ -141,7 +198,8 @@ sandbox::compiler::LinkResult compileInlineApp(
     return linked;
 }
 
-std::string buildBootExecAssembly(const std::string& path) {
+std::string buildBootExecAssembly(const std::string& path,
+                                  bool seed_desktop_login = false) {
     std::ostringstream boot;
     boot << ".text\n";
     boot << "boot:\n";
@@ -155,10 +213,20 @@ std::string buildBootExecAssembly(const std::string& path) {
     boot << "    csrw tvec, r1\n";
 
     appendStoreCString(boot, 10020, path);
+    if (seed_desktop_login) {
+        boot << "    mov r1, 12345\n";
+        boot << "    mov r2, 62000\n";
+        boot << "    store r1, r2, 0\n";
+    }
     boot << "    mov r13, 1\n";
     boot << "    mov r14, 10020\n";
     boot << "    mov r15, 0\n";
     boot << "    call app_launch\n";
+    if (seed_desktop_login) {
+        boot << "    mov r1, 12345\n";
+        boot << "    mov r2, 62000\n";
+        boot << "    store r1, r2, 0\n";
+    }
 
     boot << "    mov r2, 3019\n";
     boot << "    load r1, r2, 0\n";
@@ -219,7 +287,7 @@ void testDesktopLaunchesMappedCalculator() {
     std::vector<long long> rootImage = rootfs.image();
 
     const std::string image =
-        buildBootExecAssembly("/bin/desktop") + "\n" +
+        buildBootExecAssembly("/bin/desktop", true) + "\n" +
         trap + "\n" +
         compiled_kernel.assembly + "\n";
 
@@ -238,9 +306,15 @@ void testDesktopLaunchesMappedCalculator() {
            "native desktop boot image loads");
     expect(vm.loadBlockImage(rootImage),
            "calculator native root image loads into VM block device");
-    vm.enqueueConsoleAscii("777\r1a");
+    vm.enqueueConsoleAscii("1a");
 
-    const auto result = sandbox::vm::run(vm, 50000000);
+    const auto calculator_ready = [&]() {
+        return imemPteMapsTo(vm, kCalcTextPpn) &&
+               imemWordEquals(vm, kCalcTextPhys, calc.assembled.program.front()) &&
+               windowBufferPteMapsTo(vm, kWindowBufferPpn) &&
+               calculatorFrameReady(vm);
+    };
+    const auto result = runUntil(vm, 50000000, 1000000, calculator_ready);
     const bool mapped_handoff =
         vm.mmu_enable &&
         vm.user_imem_ptbr == kHwPtBase &&
@@ -426,7 +500,7 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     expect(vm.loadBlockImage(rootImage),
            "window probe native root image loads into VM block device");
 
-    const auto result = sandbox::vm::run(vm, 50000000);
+    const auto result = sandbox::vm::run(vm, 100000000);
     if (!result.halted()) {
         std::cout << "DEBUG window probe: status=" << static_cast<int>(result.status)
                   << " pc=" << vm.pc

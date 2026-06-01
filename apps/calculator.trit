@@ -17,6 +17,64 @@ fn calc_seed_desktop_path(addr: t40) -> t40 {
     return addr;
 }
 
+const CALC_WIDGET_BASE: t40 = 11200;
+const CALC_CHILDREN_ADDR: t40 = 11800;
+const CALC_CHILD_COUNT: t40 = 18;
+
+fn calc_widget_at_index(index: t40) -> t40 {
+    return CALC_WIDGET_BASE + index * WIDGET_WORDS;
+}
+
+fn calc_seed_exit_label(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 69);
+        store(addr + 1, 88);
+        store(addr + 2, 73);
+        store(addr + 3, 84);
+        store(addr + 4, 0);
+    }
+    return addr;
+}
+
+fn calc_init_button(index: t40, id: t40, x: t40, y: t40, w: t40, label: t40) -> t40 {
+    var addr: t40 = calc_widget_at_index(index);
+    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 1, 0, -1);
+    widget_store(addr + WIDGET_AUX, id);
+    widget_store(addr + WIDGET_VALUE, 0);
+    widget_store(CALC_CHILDREN_ADDR + index, addr);
+    return addr;
+}
+
+fn calc_init_widgets() -> t40 {
+    calc_init_button(0, 17, 34, 7, 3, 60);
+    calc_init_button(1, 7, 25, 9, 3, 55);
+    calc_init_button(2, 8, 28, 9, 3, 56);
+    calc_init_button(3, 9, 31, 9, 3, 57);
+    calc_init_button(4, 14, 34, 9, 3, 47);
+    calc_init_button(5, 4, 25, 12, 3, 52);
+    calc_init_button(6, 5, 28, 12, 3, 53);
+    calc_init_button(7, 6, 31, 12, 3, 54);
+    calc_init_button(8, 13, 34, 12, 3, 42);
+    calc_init_button(9, 1, 25, 15, 3, 49);
+    calc_init_button(10, 2, 28, 15, 3, 50);
+    calc_init_button(11, 3, 31, 15, 3, 51);
+    calc_init_button(12, 12, 34, 15, 3, 45);
+    calc_init_button(13, 10, 25, 18, 3, 67);
+    calc_init_button(14, 16, 28, 18, 3, 48);
+    calc_init_button(15, 11, 31, 18, 3, 61);
+    calc_init_button(16, 15, 34, 18, 3, 43);
+    calc_init_button(17, 99, 27, 21, 6, 69);
+    return CALC_CHILD_COUNT;
+}
+
+fn calc_button_at(mx: t40, my: t40) -> t40 {
+    var hit: t40 = widget_panel_route_xy(CALC_CHILDREN_ADDR, CALC_CHILD_COUNT, mx, my);
+    if hit <= 0 {
+        return 0;
+    }
+    return widget_load(hit + WIDGET_AUX);
+}
+
 fn calc_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     var x: t40 = x1;
     while x2 - x >= 0 {
@@ -34,28 +92,12 @@ fn calc_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
 }
 
 fn calc_draw_button(x: t40, y: t40, label: t40, is_hovered: t40) -> t40 {
-    var color: t40 = 10; // Green default
-    if is_hovered > 0 {
-        color = 5; // Cyan highlight
-    }
-    os_text_cell(x, y, 91, color);      // '['
-    os_text_cell(x + 1, y, label, color);
-    os_text_cell(x + 2, y, 93, color);  // ']'
-    return 1;
+    return widget_draw_text_button_char(x, y, 3, label, is_hovered, 0, 0, 1);
 }
 
 fn calc_draw_exit_button(is_hovered: t40) -> t40 {
-    var color: t40 = 6; // Pink default
-    if is_hovered > 0 {
-        color = 5; // Cyan highlight
-    }
-    os_text_cell(27, 21, 91, color); // '['
-    os_text_cell(28, 21, 69, color); // 'E'
-    os_text_cell(29, 21, 88, color); // 'X'
-    os_text_cell(30, 21, 73, color); // 'I'
-    os_text_cell(31, 21, 84, color); // 'T'
-    os_text_cell(32, 21, 93, color); // ']'
-    return 1;
+    var label_addr: t40 = calc_seed_exit_label(10900);
+    return widget_draw_text_button_text(27, 21, 6, label_addr, 4, is_hovered, 0, 0, 1);
 }
 
 fn calc_number_length(val: t40) -> t40 {
@@ -248,6 +290,7 @@ fn calc_draw_gui_surface() -> t40 {
     // Display and status lamp.
     widget_draw_panel(buf, 12, 12, 1, 1, 10, 2, 1);
     os_window_fill_rect_rgb(buf, 12, 12, 8, 1, 2, 2, 100, 88, 24);
+    os_window_present(win);
 
     // Button grid. The small window uses tile buttons today; the same widget
     // routine draws glyph labels automatically when larger app windows arrive.
@@ -296,6 +339,8 @@ fn main() -> t40 {
     var event_addr: t40 = 10100;
     var event_status: t40 = 0;
     var event_kind: t40 = 0;
+    var focused_addr: t40 = 0;
+    var focused_btn: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
@@ -306,7 +351,12 @@ fn main() -> t40 {
 
     os_gpu_mode(0);
     gui_win = calc_draw_gui_surface();
-    calc_draw_ui(hovered_btn, val1, val2, op, result, has_result, has_error);
+    calc_init_widgets();
+    focused_addr = widget_focus_first(CALC_CHILDREN_ADDR, CALC_CHILD_COUNT);
+    if focused_addr > 0 {
+        focused_btn = widget_load(focused_addr + WIDGET_AUX);
+    }
+    calc_draw_ui(focused_btn, val1, val2, op, result, has_result, has_error);
 
     while 1 - done > 0 {
         event_status = os_wait_event(-1, event_addr, 0);
@@ -332,48 +382,14 @@ fn main() -> t40 {
         // Hover checking & Click routing
         current_hover = 0;
 
-        if mx - 25 >= 0 {
-            if 36 - mx >= 0 {
-                // Keypad rows mapping
-                if my - 7 == 0 {
-                    if mx - 34 == 0 { current_hover = 17; } // Backspace
-                }
-                if my - 9 == 0 {
-                    if mx - 25 == 0 { current_hover = 7; } // '7'
-                    if mx - 28 == 0 { current_hover = 8; } // '8'
-                    if mx - 31 == 0 { current_hover = 9; } // '9'
-                    if mx - 34 == 0 { current_hover = 14; } // '/'
-                }
-                if my - 12 == 0 {
-                    if mx - 25 == 0 { current_hover = 4; } // '4'
-                    if mx - 28 == 0 { current_hover = 5; } // '5'
-                    if mx - 31 == 0 { current_hover = 6; } // '6'
-                    if mx - 34 == 0 { current_hover = 13; } // '*'
-                }
-                if my - 15 == 0 {
-                    if mx - 25 == 0 { current_hover = 1; } // '1'
-                    if mx - 28 == 0 { current_hover = 2; } // '2'
-                    if mx - 31 == 0 { current_hover = 3; } // '3'
-                    if mx - 34 == 0 { current_hover = 12; } // '-'
-                }
-                if my - 18 == 0 {
-                    if mx - 25 == 0 { current_hover = 10; } // 'C' (Clear)
-                    if mx - 28 == 0 { current_hover = 16; } // '0'
-                    if mx - 31 == 0 { current_hover = 11; } // '=' (Calculate)
-                    if mx - 34 == 0 { current_hover = 15; } // '+'
-                }
-                if my - 21 == 0 {
-                    if mx - 27 >= 0 {
-                        if 32 - mx >= 0 {
-                            current_hover = 99; // EXIT
-                        }
-                    }
-                }
-            }
-        }
+        current_hover = calc_button_at(mx, my);
 
         if current_hover - last_hovered != 0 {
-            calc_draw_ui(current_hover, val1, val2, op, result, has_result, has_error);
+            var active_btn: t40 = current_hover;
+            if active_btn <= 0 {
+                active_btn = focused_btn;
+            }
+            calc_draw_ui(active_btn, val1, val2, op, result, has_result, has_error);
             last_hovered = current_hover;
         }
 
@@ -388,6 +404,18 @@ fn main() -> t40 {
 
         // Support keyboard hotkeys concurrently
         if k > 0 {
+            if k - 9 == 0 {
+                focused_addr = widget_focus_next(CALC_CHILDREN_ADDR, CALC_CHILD_COUNT, focused_addr);
+                if focused_addr > 0 {
+                    focused_btn = widget_load(focused_addr + WIDGET_AUX);
+                    calc_draw_ui(focused_btn, val1, val2, op, result, has_result, has_error);
+                }
+            }
+            if k - 32 == 0 {
+                if focused_btn > 0 {
+                    click = focused_btn;
+                }
+            }
             if k - 49 == 0 { click = 1; }  // '1'
             if k - 50 == 0 { click = 2; }  // '2'
             if k - 51 == 0 { click = 3; }  // '3'
@@ -494,7 +522,7 @@ fn main() -> t40 {
                         }
                     }
                 }
-                calc_draw_ui(0, val1, val2, op, result, has_result, has_error);
+                calc_draw_ui(focused_btn, val1, val2, op, result, has_result, has_error);
             }
         }
         last_btn = btn;

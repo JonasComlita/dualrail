@@ -1,7 +1,7 @@
 // apps/shell.trit - TRIT OS command shell.
 //
 // Provides a readline loop, command dispatcher, and a set of built-in
-// commands: calc, paint, tasks, ls, ps, exit, help.
+// commands: calc, paint, tasks, files, settings, ls, ps, exit, help.
 
 // ── Scratch layout ─────────────────────────────────────────────────
 // 2000 : banner string
@@ -136,6 +136,27 @@ fn sh_seed_tasks(addr: t40) -> t40 {
     return addr;
 }
 
+fn sh_seed_files(addr: t40) -> t40 {
+    // "/bin/file_manager\0"
+    sh_store(addr,   47); sh_store(addr+1,  98); sh_store(addr+2, 105);
+    sh_store(addr+3,110); sh_store(addr+4,  47); sh_store(addr+5, 102);
+    sh_store(addr+6,105); sh_store(addr+7, 108); sh_store(addr+8, 101);
+    sh_store(addr+9, 95); sh_store(addr+10,109); sh_store(addr+11, 97);
+    sh_store(addr+12,110); sh_store(addr+13, 97); sh_store(addr+14,103);
+    sh_store(addr+15,101); sh_store(addr+16,114); sh_store(addr+17,  0);
+    return addr;
+}
+
+fn sh_seed_settings(addr: t40) -> t40 {
+    // "/bin/settings\0"
+    sh_store(addr,   47); sh_store(addr+1,  98); sh_store(addr+2, 105);
+    sh_store(addr+3,110); sh_store(addr+4,  47); sh_store(addr+5, 115);
+    sh_store(addr+6,101); sh_store(addr+7, 116); sh_store(addr+8, 116);
+    sh_store(addr+9,105); sh_store(addr+10,110); sh_store(addr+11,103);
+    sh_store(addr+12,115); sh_store(addr+13,  0);
+    return addr;
+}
+
 fn sh_seed_root(addr: t40) -> t40 {
     // "/\0"
     sh_store(addr, 47); sh_store(addr+1, 0);
@@ -220,10 +241,12 @@ fn sh_builtin_ps() -> t40 {
 // ── built-in: help ─────────────────────────────────────────────────
 
 fn sh_builtin_help() -> t40 {
-    // "calc paint tasks ls ps exit help"
+    // "calc paint tasks files settings ls ps exit help"
     sh_putc(99);  sh_putc(97);  sh_putc(108); sh_putc(99);  sh_newline(); // calc
     sh_putc(112); sh_putc(97);  sh_putc(105); sh_putc(110); sh_putc(116); sh_newline(); // paint
     sh_putc(116); sh_putc(97);  sh_putc(115); sh_putc(107); sh_putc(115); sh_newline(); // tasks
+    sh_putc(102); sh_putc(105); sh_putc(108); sh_putc(101); sh_putc(115); sh_newline(); // files
+    sh_putc(115); sh_putc(101); sh_putc(116); sh_putc(116); sh_putc(105); sh_putc(110); sh_putc(103); sh_putc(115); sh_newline(); // settings
     sh_putc(108); sh_putc(115); sh_newline(); // ls
     sh_putc(112); sh_putc(115); sh_newline(); // ps
     sh_putc(101); sh_putc(120); sh_putc(105); sh_putc(116); sh_newline(); // exit
@@ -296,6 +319,38 @@ fn main() -> t40 {
                             sh_seed_tasks(SH_PATH);
                             sys_exec(SH_PATH);
                             running = 0;
+                        }
+                    }
+                }
+            }
+
+            // "files" (5 chars)
+            if running > 0 {
+                if len - 5 == 0 {
+                    if sh_cmd_eq4(102, 105, 108, 101) > 0 { // f i l e
+                        if sh_load(SH_BUF + 4) - 115 == 0 { // s
+                            sh_seed_files(SH_PATH);
+                            sys_exec(SH_PATH);
+                            running = 0;
+                        }
+                    }
+                }
+            }
+
+            // "settings" (8 chars)
+            if running > 0 {
+                if len - 8 == 0 {
+                    if sh_cmd_eq4(115, 101, 116, 116) > 0 { // s e t t
+                        if sh_load(SH_BUF + 4) - 105 == 0 {
+                            if sh_load(SH_BUF + 5) - 110 == 0 {
+                                if sh_load(SH_BUF + 6) - 103 == 0 {
+                                    if sh_load(SH_BUF + 7) - 115 == 0 {
+                                        sh_seed_settings(SH_PATH);
+                                        sys_exec(SH_PATH);
+                                        running = 0;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

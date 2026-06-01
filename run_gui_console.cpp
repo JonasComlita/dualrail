@@ -37,8 +37,9 @@ std::string readTextFile(const std::string& path) {
 sandbox::compiler::LinkResult compileApp(const std::string& app_name, int stack_words = 256) {
     using namespace sandbox::compiler;
     const std::string sdk = readTextFile("apps/os_sdk.trit");
+    const std::string widget = readTextFile("apps/libwidget.trit");
     const std::string app = readTextFile("apps/" + app_name + ".trit");
-    CompileResult compiled = compileSource(app_name + ".trit", sdk + "\n" + app);
+    CompileResult compiled = compileSource(app_name + ".trit", sdk + "\n" + widget + "\n" + app);
     if (!compiled.success) {
         std::string err = "Failed to compile " + app_name + ":\n";
         for (const auto& diag : compiled.diagnostics) {

@@ -791,7 +791,7 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     expect(compiled.success, "native VFS image boot driver compiles");
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "native VFS image boot driver links");
-    sandbox::vm::VMState vm(262144, 1000000);
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     expect(vm.loadBlockImage(image), "native VFS image loads into VM block device");
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
@@ -799,10 +799,12 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
         const auto result = sandbox::vm::run(vm, 50000000);
         expect(result.halted(), "native VFS image boot driver halts");
         const long long bootRet = sandbox::vm::ops::toLong(vm.regfile.read(13));
-        expect(bootRet == 123,
-               "native kernel mounts image-built root and launches disk app image");
-        expect(vm.imem.words[kDiskAppTextPpn * sandbox::vm::MMU_PAGE_WORDS] ==
-                   appAssembly.program.front(),
+        expect(bootRet == 1,
+               "native kernel mounts image-built root and maps disk app image");
+        auto [diskAppWord, diskAppFault] =
+            vm.imem.fetch(kDiskAppTextPpn * sandbox::vm::MMU_PAGE_WORDS);
+        expect(diskAppFault == sandbox::vm::MemFaultCode::OK &&
+                   diskAppWord == appAssembly.program.front(),
                "native exec loads app text from disk into IMEM");
     }
 }

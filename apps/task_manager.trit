@@ -152,58 +152,19 @@ const TM_BTN_RESUME: t40 = 30;
 const TM_BTN_EXIT: t40 = 99;
 
 fn task_draw_kill_button(is_hovered: t40) -> t40 {
-    var color: t40 = 9;
-    if is_hovered > 0 {
-        color = 5;
-    }
-    os_text_cell(16, 21, 91, color); // [
-    os_text_cell(17, 21, 75, color); // K
-    os_text_cell(18, 21, 73, color); // I
-    os_text_cell(19, 21, 76, color); // L
-    os_text_cell(20, 21, 76, color); // L
-    os_text_cell(21, 21, 93, color); // ]
-    return 1;
+    return widget_draw_text_button_text(16, 21, 6, task_seed_label(TM_LABEL_BUF, TM_BTN_KILL), 4, is_hovered, 0, 0, 1);
 }
 
 fn task_draw_suspend_button(is_hovered: t40) -> t40 {
-    var color: t40 = 11;
-    if is_hovered > 0 {
-        color = 5;
-    }
-    os_text_cell(24, 21, 91, color); // [
-    os_text_cell(25, 21, 83, color); // S
-    os_text_cell(26, 21, 85, color); // U
-    os_text_cell(27, 21, 83, color); // S
-    os_text_cell(28, 21, 80, color); // P
-    os_text_cell(29, 21, 93, color); // ]
-    return 1;
+    return widget_draw_text_button_text(24, 21, 6, task_seed_label(TM_LABEL_BUF + 10, TM_BTN_SUSPEND), 4, is_hovered, 0, 0, 1);
 }
 
 fn task_draw_resume_button(is_hovered: t40) -> t40 {
-    var color: t40 = 10;
-    if is_hovered > 0 {
-        color = 5;
-    }
-    os_text_cell(32, 21, 91, color); // [
-    os_text_cell(33, 21, 82, color); // R
-    os_text_cell(34, 21, 85, color); // U
-    os_text_cell(35, 21, 78, color); // N
-    os_text_cell(36, 21, 93, color); // ]
-    return 1;
+    return widget_draw_text_button_text(32, 21, 5, task_seed_label(TM_LABEL_BUF + 20, TM_BTN_RESUME), 3, is_hovered, 0, 0, 1);
 }
 
 fn task_draw_exit_button(is_hovered: t40) -> t40 {
-    var color: t40 = 6; // Pink default
-    if is_hovered > 0 {
-        color = 5; // Cyan highlight
-    }
-    os_text_cell(39, 21, 91, color); // '['
-    os_text_cell(40, 21, 69, color); // 'E'
-    os_text_cell(41, 21, 88, color); // 'X'
-    os_text_cell(42, 21, 73, color); // 'I'
-    os_text_cell(43, 21, 84, color); // 'T'
-    os_text_cell(44, 21, 93, color); // ']'
-    return 1;
+    return widget_draw_text_button_text(39, 21, 6, task_seed_label(TM_LABEL_BUF + 30, TM_BTN_EXIT), 4, is_hovered, 0, 0, 1);
 }
 
 fn task_draw_controls(hovered_btn: t40) -> t40 {
@@ -228,32 +189,60 @@ const TM_PS_BUF: t40 = 11000;
 const TM_PS_MAX: t40 = 8;
 const TM_PS_WORDS: t40 = 5;
 const TM_INFO_BUF: t40 = 11100;
+const TM_LABEL_BUF: t40 = 11200;
+const TM_LISTBOX_ADDR: t40 = 12000;
+const TM_BUTTON_BASE: t40 = 12040;
+const TM_BUTTON_CHILDREN_ADDR: t40 = 12300;
+const TM_BUTTON_COUNT: t40 = 4;
+
+fn task_widget_button_at_index(index: t40) -> t40 {
+    return TM_BUTTON_BASE + index * WIDGET_WORDS;
+}
+
+fn task_seed_label(addr: t40, kind: t40) -> t40 {
+    if kind - TM_BTN_KILL == 0 {
+        unsafe { store(addr + 0, 75); store(addr + 1, 73); store(addr + 2, 76); store(addr + 3, 76); store(addr + 4, 0); }
+        return addr;
+    }
+    if kind - TM_BTN_SUSPEND == 0 {
+        unsafe { store(addr + 0, 83); store(addr + 1, 85); store(addr + 2, 83); store(addr + 3, 80); store(addr + 4, 0); }
+        return addr;
+    }
+    if kind - TM_BTN_RESUME == 0 {
+        unsafe { store(addr + 0, 82); store(addr + 1, 85); store(addr + 2, 78); store(addr + 3, 0); }
+        return addr;
+    }
+    unsafe { store(addr + 0, 69); store(addr + 1, 88); store(addr + 2, 73); store(addr + 3, 84); store(addr + 4, 0); }
+    return addr;
+}
+
+fn task_init_button(index: t40, id: t40, x: t40, y: t40, w: t40) -> t40 {
+    var addr: t40 = task_widget_button_at_index(index);
+    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 1, 0, -1);
+    widget_store(addr + WIDGET_AUX, id);
+    widget_store(TM_BUTTON_CHILDREN_ADDR + index, addr);
+    return addr;
+}
+
+fn task_init_widgets(count: t40) -> t40 {
+    widget_listbox_init(TM_LISTBOX_ADDR, 16, 7, 48, 12, 0, -1, count);
+    task_init_button(0, TM_BTN_KILL, 16, 21, 6);
+    task_init_button(1, TM_BTN_SUSPEND, 24, 21, 6);
+    task_init_button(2, TM_BTN_RESUME, 32, 21, 5);
+    task_init_button(3, TM_BTN_EXIT, 39, 21, 6);
+    return count;
+}
 
 fn task_button_at(mx: t40, my: t40) -> t40 {
-    if my - 21 != 0 {
-        return 0;
-    }
-    if mx - 16 >= 0 {
-        if 21 - mx >= 0 { return TM_BTN_KILL; }
-    }
-    if mx - 24 >= 0 {
-        if 29 - mx >= 0 { return TM_BTN_SUSPEND; }
-    }
-    if mx - 32 >= 0 {
-        if 36 - mx >= 0 { return TM_BTN_RESUME; }
-    }
-    if mx - 39 >= 0 {
-        if 44 - mx >= 0 { return TM_BTN_EXIT; }
+    var hit: t40 = widget_panel_route_xy(TM_BUTTON_CHILDREN_ADDR, TM_BUTTON_COUNT, mx, my);
+    if hit > 0 {
+        return widget_load(hit + WIDGET_AUX);
     }
     return 0;
 }
 
-fn task_row_index_at_y(y: t40) -> t40 {
-    if y - 9 == 0 { return 0; }
-    if y - 12 == 0 { return 1; }
-    if y - 15 == 0 { return 2; }
-    if y - 18 == 0 { return 3; }
-    return -1;
+fn task_row_index_at_xy(x: t40, y: t40) -> t40 {
+    return widget_listbox_row_at(TM_LISTBOX_ADDR, x, y);
 }
 
 fn task_pid_at_index(index: t40) -> t40 {
@@ -350,21 +339,17 @@ fn task_draw_ui(hovered_btn: t40, selected_pid: t40) -> t40 {
     os_text_cell(40, 6, 80, 14); os_text_cell(41, 6, 82, 14); os_text_cell(42, 6, 73, 14); // PRI
     os_text_cell(50, 6, 81, 14); os_text_cell(51, 6, 85, 14); os_text_cell(52, 6, 79, 14); // QUO
 
-    // Separator
-    var x: t40 = 16;
-    while 64 - x > 0 {
-        os_text_cell(x, 7, 45, 8);
-        x = x + 1;
-    }
-
     // Query live process table
     var count: t40 = os_ps(TM_PS_BUF, TM_PS_MAX);
     if count < 0 { count = 0; }
+    task_init_widgets(count);
+    widget_draw_text_listbox_frame(TM_LISTBOX_ADDR);
+    widget_text_fill(17, 8, 45, 10, 32, 0);
 
-    var row_y: t40 = 9;
+    var row_y: t40 = 8;
     var i: t40 = 0;
     while count - i > 0 {
-        if row_y - 19 < 0 {
+        if row_y - 18 < 0 {
             var base: t40 = TM_PS_BUF + i * TM_PS_WORDS;
             var entry_pid: t40 = 0;
             var entry_state: t40 = 0;
@@ -379,12 +364,13 @@ fn task_draw_ui(hovered_btn: t40, selected_pid: t40) -> t40 {
             var row_color: t40 = 10;
             if entry_pid - selected_pid == 0 {
                 row_color = 14;
+                os_text_cell(18, row_y, 62, row_color);
             }
             task_draw_int(21, row_y, entry_pid, row_color);
             task_draw_state(28, row_y, entry_state);
             task_draw_int(40, row_y, entry_pri, row_color);
             task_draw_int(50, row_y, entry_quo, row_color);
-            row_y = row_y + 3;
+            row_y = row_y + 1;
         }
         i = i + 1;
     }
@@ -459,7 +445,7 @@ fn main() -> t40 {
             if current_hover > 0 {
                 click = current_hover;
             } else {
-                row_index = task_row_index_at_y(my);
+                row_index = task_row_index_at_xy(mx, my);
                 row_pid = task_pid_at_index(row_index);
                 if row_pid > 0 {
                     selected_pid = row_pid;

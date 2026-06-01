@@ -94,6 +94,7 @@ static constexpr int DEFAULT_DMEM_SIZE = 1000000;
 
 static constexpr int MMU_PAGE_WORDS = 27;
 static constexpr int OS_CLUSTER_WORDS = 4096;
+static constexpr int SPARSE_VM_PAGE_WORDS = OS_CLUSTER_WORDS;
 static constexpr int SPARSE_MEMORY_DENSE_LIMIT_WORDS = 4 * 1024 * 1024;
 static constexpr std::int64_t PRODUCTION_RAM_WORD_BYTES = 16;
 
@@ -704,10 +705,12 @@ struct TernaryMemory {
           allocator(other.allocator),
           sparse_(other.sparse_),
           sparse_pages_(std::move(other.sparse_pages_)) {
+        invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.invalidateSparseCache();
     }
 
     TernaryMemory& operator=(TernaryMemory&& other) noexcept {
@@ -718,10 +721,12 @@ struct TernaryMemory {
         allocator = other.allocator;
         sparse_ = other.sparse_;
         sparse_pages_ = std::move(other.sparse_pages_);
+        invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.invalidateSparseCache();
         return *this;
     }
 
@@ -731,6 +736,8 @@ struct TernaryMemory {
         std::swap(allocator, other.allocator);
         std::swap(sparse_, other.sparse_);
         std::swap(sparse_pages_, other.sparse_pages_);
+        invalidateSparseCache();
+        other.invalidateSparseCache();
     }
 
     void allocate(int size, MemoryBacking backing = MemoryBacking::Auto) {
@@ -751,6 +758,7 @@ struct TernaryMemory {
             words = nullptr;
         }
         sparse_pages_.clear();
+        invalidateSparseCache();
         capacity = 0;
         sparse_ = false;
     }
@@ -758,6 +766,7 @@ struct TernaryMemory {
     void reset() {
         if (sparse_) {
             sparse_pages_.clear();
+            invalidateSparseCache();
         } else if (capacity > 0) {
             std::fill(words, words + capacity, TernaryValue::zero());
         }
@@ -807,8 +816,19 @@ struct TernaryMemory {
             return {TernaryValue::zero(), MemFaultCode::OUT_OF_RANGE};
         }
         if (!sparse_) return {words[addr], MemFaultCode::OK};
-        const auto page = sparse_pages_.find(pageIndex(addr));
-        if (page == sparse_pages_.end()) return {TernaryValue::zero(), MemFaultCode::OK};
+        const int page_index = pageIndex(addr);
+        if (cached_sparse_page_index_ == page_index && cached_sparse_page_ != nullptr) {
+            return {(*cached_sparse_page_)[static_cast<std::size_t>(pageOffset(addr))],
+                    MemFaultCode::OK};
+        }
+        const auto page = sparse_pages_.find(page_index);
+        if (page == sparse_pages_.end()) {
+            cached_sparse_page_index_ = -1;
+            cached_sparse_page_ = nullptr;
+            return {TernaryValue::zero(), MemFaultCode::OK};
+        }
+        cached_sparse_page_index_ = page_index;
+        cached_sparse_page_ = &page->second;
         return {page->second[static_cast<std::size_t>(pageOffset(addr))], MemFaultCode::OK};
     }
 
@@ -822,9 +842,12 @@ struct TernaryMemory {
             words[addr] = val;
             return MemFaultCode::OK;
         }
-        auto& page = sparse_pages_[pageIndex(addr)];
-        if (page.empty()) page.assign(MMU_PAGE_WORDS, TernaryValue::zero());
+        const int page_index = pageIndex(addr);
+        auto& page = sparse_pages_[page_index];
+        if (page.empty()) page.assign(SPARSE_VM_PAGE_WORDS, TernaryValue::zero());
         page[static_cast<std::size_t>(pageOffset(addr))] = val;
+        cached_sparse_page_index_ = page_index;
+        cached_sparse_page_ = &page;
         return MemFaultCode::OK;
     }
 
@@ -843,9 +866,16 @@ struct TernaryMemory {
 private:
     bool sparse_ = false;
     std::unordered_map<int, std::vector<TernaryValue>> sparse_pages_;
+    mutable int cached_sparse_page_index_ = -1;
+    mutable const std::vector<TernaryValue>* cached_sparse_page_ = nullptr;
 
-    [[nodiscard]] static int pageIndex(int addr) { return addr / MMU_PAGE_WORDS; }
-    [[nodiscard]] static int pageOffset(int addr) { return addr % MMU_PAGE_WORDS; }
+    [[nodiscard]] static int pageIndex(int addr) { return addr / SPARSE_VM_PAGE_WORDS; }
+    [[nodiscard]] static int pageOffset(int addr) { return addr % SPARSE_VM_PAGE_WORDS; }
+
+    void invalidateSparseCache() const {
+        cached_sparse_page_index_ = -1;
+        cached_sparse_page_ = nullptr;
+    }
 
     void convertDenseToSparse(int new_capacity) {
         std::unordered_map<int, std::vector<TernaryValue>> pages;
@@ -853,7 +883,7 @@ private:
         for (int addr = 0; addr < capacity; ++addr) {
             if (words[addr] == zero) continue;
             auto& page = pages[pageIndex(addr)];
-            if (page.empty()) page.assign(MMU_PAGE_WORDS, zero);
+            if (page.empty()) page.assign(SPARSE_VM_PAGE_WORDS, zero);
             page[static_cast<std::size_t>(pageOffset(addr))] = words[addr];
         }
         if (words != nullptr) allocator->deallocateDataWords(words);
@@ -861,6 +891,7 @@ private:
         sparse_pages_ = std::move(pages);
         sparse_ = true;
         capacity = new_capacity;
+        invalidateSparseCache();
     }
 };
 
@@ -913,10 +944,12 @@ struct TernaryInstructionMemory {
           allocator(other.allocator),
           sparse_(other.sparse_),
           sparse_pages_(std::move(other.sparse_pages_)) {
+        invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.invalidateSparseCache();
     }
 
     TernaryInstructionMemory& operator=(TernaryInstructionMemory&& other) noexcept {
@@ -927,10 +960,12 @@ struct TernaryInstructionMemory {
         allocator = other.allocator;
         sparse_ = other.sparse_;
         sparse_pages_ = std::move(other.sparse_pages_);
+        invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.invalidateSparseCache();
         return *this;
     }
 
@@ -940,6 +975,8 @@ struct TernaryInstructionMemory {
         std::swap(allocator, other.allocator);
         std::swap(sparse_, other.sparse_);
         std::swap(sparse_pages_, other.sparse_pages_);
+        invalidateSparseCache();
+        other.invalidateSparseCache();
     }
 
     void allocate(int size, MemoryBacking backing = MemoryBacking::Auto) {
@@ -960,6 +997,7 @@ struct TernaryInstructionMemory {
             words = nullptr;
         }
         sparse_pages_.clear();
+        invalidateSparseCache();
         capacity = 0;
         sparse_ = false;
     }
@@ -967,6 +1005,7 @@ struct TernaryInstructionMemory {
     void reset() {
         if (sparse_) {
             sparse_pages_.clear();
+            invalidateSparseCache();
         } else if (capacity > 0) {
             std::fill(words, words + capacity, TritWord27{});
         }
@@ -985,8 +1024,19 @@ struct TernaryInstructionMemory {
             return {TritWord27{}, MemFaultCode::OUT_OF_RANGE};
         }
         if (!sparse_) return {words[addr], MemFaultCode::OK};
-        const auto page = sparse_pages_.find(pageIndex(addr));
-        if (page == sparse_pages_.end()) return {TritWord27{}, MemFaultCode::OK};
+        const int page_index = pageIndex(addr);
+        if (cached_sparse_page_index_ == page_index && cached_sparse_page_ != nullptr) {
+            return {(*cached_sparse_page_)[static_cast<std::size_t>(pageOffset(addr))],
+                    MemFaultCode::OK};
+        }
+        const auto page = sparse_pages_.find(page_index);
+        if (page == sparse_pages_.end()) {
+            cached_sparse_page_index_ = -1;
+            cached_sparse_page_ = nullptr;
+            return {TritWord27{}, MemFaultCode::OK};
+        }
+        cached_sparse_page_index_ = page_index;
+        cached_sparse_page_ = &page->second;
         return {page->second[static_cast<std::size_t>(pageOffset(addr))], MemFaultCode::OK};
     }
 
@@ -999,9 +1049,12 @@ struct TernaryInstructionMemory {
             words[addr] = iw;
             return MemFaultCode::OK;
         }
-        auto& page = sparse_pages_[pageIndex(addr)];
-        if (page.empty()) page.assign(MMU_PAGE_WORDS, TritWord27{});
+        const int page_index = pageIndex(addr);
+        auto& page = sparse_pages_[page_index];
+        if (page.empty()) page.assign(SPARSE_VM_PAGE_WORDS, TritWord27{});
         page[static_cast<std::size_t>(pageOffset(addr))] = iw;
+        cached_sparse_page_index_ = page_index;
+        cached_sparse_page_ = &page;
         return MemFaultCode::OK;
     }
 
@@ -1030,9 +1083,16 @@ struct TernaryInstructionMemory {
 private:
     bool sparse_ = false;
     std::unordered_map<int, std::vector<TritWord27>> sparse_pages_;
+    mutable int cached_sparse_page_index_ = -1;
+    mutable const std::vector<TritWord27>* cached_sparse_page_ = nullptr;
 
-    [[nodiscard]] static int pageIndex(int addr) { return addr / MMU_PAGE_WORDS; }
-    [[nodiscard]] static int pageOffset(int addr) { return addr % MMU_PAGE_WORDS; }
+    [[nodiscard]] static int pageIndex(int addr) { return addr / SPARSE_VM_PAGE_WORDS; }
+    [[nodiscard]] static int pageOffset(int addr) { return addr % SPARSE_VM_PAGE_WORDS; }
+
+    void invalidateSparseCache() const {
+        cached_sparse_page_index_ = -1;
+        cached_sparse_page_ = nullptr;
+    }
 };
 
 // =============================================================================

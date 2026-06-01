@@ -1,0 +1,94 @@
+// apps/terminal.trit - Windowed terminal surface for the command shell.
+
+fn term_seed_desktop_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47); store(addr + 1, 98); store(addr + 2, 105);
+        store(addr + 3, 110); store(addr + 4, 47); store(addr + 5, 100);
+        store(addr + 6, 101); store(addr + 7, 115); store(addr + 8, 107);
+        store(addr + 9, 116); store(addr + 10, 111); store(addr + 11, 112);
+        store(addr + 12, 0);
+    }
+    return addr;
+}
+
+fn term_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var x: t40 = x1;
+    while x2 - x >= 0 {
+        os_text_cell(x, y1, 45, color);
+        os_text_cell(x, y2, 45, color);
+        x = x + 1;
+    }
+    var y: t40 = y1 + 1;
+    while y2 - y > 0 {
+        os_text_cell(x1, y, 124, color);
+        os_text_cell(x2, y, 124, color);
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn term_draw_ui() -> t40 {
+    os_clear_text(0);
+    // TERMINAL
+    os_text_cell(32, 2, 84, 3); os_text_cell(33, 2, 69, 3);
+    os_text_cell(34, 2, 82, 3); os_text_cell(35, 2, 77, 3);
+    os_text_cell(36, 2, 73, 3); os_text_cell(37, 2, 78, 3);
+    os_text_cell(38, 2, 65, 3); os_text_cell(39, 2, 76, 3);
+
+    term_draw_box(10, 4, 70, 20, 10);
+    os_text_cell(13, 6, 84, 14); os_text_cell(14, 6, 82, 14);
+    os_text_cell(15, 6, 73, 14); os_text_cell(16, 6, 84, 14);
+    os_text_cell(17, 6, 32, 14); os_text_cell(18, 6, 83, 14);
+    os_text_cell(19, 6, 72, 14); os_text_cell(20, 6, 69, 14);
+    os_text_cell(21, 6, 76, 14); os_text_cell(22, 6, 76, 14);
+
+    os_text_cell(13, 9, 62, 10); os_text_cell(15, 9, 104, 8);
+    os_text_cell(16, 9, 101, 8); os_text_cell(17, 9, 108, 8);
+    os_text_cell(18, 9, 112, 8);
+
+    os_text_cell(13, 12, 62, 10); os_text_cell(15, 12, 108, 8);
+    os_text_cell(16, 12, 115, 8); os_text_cell(18, 12, 47, 8);
+
+    os_text_cell(18, 21, 91, 6); os_text_cell(19, 21, 88, 6); os_text_cell(20, 21, 93, 6);
+    os_text_cell(22, 21, 67, 8); os_text_cell(23, 21, 76, 8); os_text_cell(24, 21, 79, 8);
+    os_text_cell(25, 21, 83, 8); os_text_cell(26, 21, 69, 8);
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_clear_text(0);
+        os_text_cell(0, 0, 84, 10); os_text_cell(1, 0, 69, 10);
+        os_text_cell(2, 0, 82, 10); os_text_cell(3, 0, 77, 10);
+        os_text_cell(4, 0, 73, 10); os_text_cell(5, 0, 78, 10);
+        os_text_cell(6, 0, 65, 10); os_text_cell(7, 0, 76, 10);
+        os_putc(84); os_putc(69); os_putc(82); os_putc(77); os_putc(73);
+        os_putc(78); os_putc(65); os_putc(76); os_newline();
+        return 1;
+    }
+
+    os_gpu_mode(0);
+    term_draw_ui();
+    var done: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var kind: t40 = 0;
+    var k: t40 = 0;
+    while 1 - done > 0 {
+        event_status = os_wait_event(-1, event_addr, 1000);
+        if event_status > 0 {
+            kind = os_event_kind(event_addr);
+            if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
+            if kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+                if k - 120 == 0 { done = 1; }
+                if k - 88 == 0 { done = 1; }
+            }
+        }
+    }
+    var path_addr: t40 = term_seed_desktop_path(10000);
+    sys_exec(path_addr);
+    return 1;
+}

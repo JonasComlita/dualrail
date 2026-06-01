@@ -105,6 +105,18 @@ void testNativeApps() {
            "paint fills the primary canvas through the GPU CSR");
     expect(wordAt(paint, 60000) == 80 + 14 * 256,
            "paint labels its text overlay");
+
+    sandbox::vm::VMState files = compileAndRunApp("file_manager", "FILES\n");
+    expect(wordAt(files, 60000) == 70 + 10 * 256,
+           "file manager draws its text-mode title");
+
+    sandbox::vm::VMState settings = compileAndRunApp("settings", "SETTINGS\n");
+    expect(wordAt(settings, 60000) == 83 + 10 * 256,
+           "settings app draws its text-mode title");
+
+    sandbox::vm::VMState terminal = compileAndRunApp("terminal", "TERMINAL\n");
+    expect(wordAt(terminal, 60000) == 84 + 10 * 256,
+           "terminal app draws its text-mode title");
 }
 
 void testIpcSdkWrappersCompile() {
@@ -297,6 +309,94 @@ void testWidgetToolkitCompiles() {
     LinkResult hit_linked = linkModules({hit_compiled.object}, options);
     expect(hit_linked.success, "widget hit-test helper links");
     expect(contains(hit_linked.assembly, "widget_hit_window_rect:"), "used widget hit-test survives stripping");
+
+    const std::string behavior_src = R"(
+        fn main() -> t40 {
+            var button_a: t40 = 11000;
+            var button_b: t40 = 11040;
+            var children: t40 = 11100;
+            var event_addr: t40 = 11200;
+            var text_buf: t40 = 11300;
+            var routed: t40 = 0;
+            var focused: t40 = 0;
+
+            widget_init(button_a, WIDGET_KIND_BUTTON, 2, 2, 5, 1, 0, 7);
+            widget_init(button_b, WIDGET_KIND_BUTTON, 8, 2, 5, 1, 0, 7);
+            widget_store(children, button_a);
+            widget_store(children + 1, button_b);
+
+            unsafe {
+                store(event_addr + 0, OS_EVENT_KIND_MOUSE);
+                store(event_addr + 1, 9);
+                store(event_addr + 2, 2);
+                store(event_addr + 3, 1);
+            }
+            routed = widget_panel_route_event(children, 2, event_addr, 0, 0);
+            if routed - button_b != 0 { return 10; }
+
+            focused = widget_focus_first(children, 2);
+            if focused - button_a != 0 { return 20; }
+            focused = widget_focus_next(children, 2, focused);
+            if focused - button_b != 0 { return 30; }
+
+            widget_clear_dirty(button_b);
+            widget_invalidate_rect(button_b, 1, 1, 2, 2);
+            widget_invalidate_rect(button_b, 0, 0, 1, 1);
+            if widget_load(button_b + WIDGET_DIRTY_X) != 0 { return 40; }
+            if widget_load(button_b + WIDGET_DIRTY_Y) != 0 { return 41; }
+            if widget_load(button_b + WIDGET_DIRTY_W) - 3 != 0 { return 42; }
+            if widget_load(button_b + WIDGET_DIRTY_H) - 3 != 0 { return 43; }
+
+            widget_passwordfield_init(button_a, text_buf, 8, 0, 0, 10, 1, 0, -1);
+            widget_set_focus(button_a, 1);
+            widget_textfield_handle_key(button_a, 65);
+            widget_textfield_handle_key(button_a, 66);
+            widget_textfield_handle_key(button_a, 8);
+            if widget_load(button_a + WIDGET_TEXT_LEN) - 1 != 0 { return 50; }
+            if widget_load(text_buf) - 65 != 0 { return 51; }
+
+            widget_textfield_select_all(button_a);
+            widget_textfield_handle_key(button_a, 67);
+            if widget_load(button_a + WIDGET_TEXT_LEN) - 1 != 0 { return 52; }
+            if widget_load(text_buf) - 67 != 0 { return 53; }
+
+            os_clear_text(0);
+            widget_draw_text_button_char(1, 1, 3, 65, 1, 0, 0, 1);
+            widget_draw_passwordfield(button_a);
+            return 123;
+        }
+    )";
+
+    CompileResult behavior_compiled = compileSource("native_widget_behavior.trit", sdk + "\n" + widget + "\n" + behavior_src);
+    if (!behavior_compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR WIDGET BEHAVIOR:\n";
+        dumpDiagnostics(behavior_compiled);
+    }
+    expect(behavior_compiled.success, "widget behavior test compiles");
+    LinkResult behavior_linked = linkModules({behavior_compiled.object}, options);
+    expect(behavior_linked.success, "widget behavior test links");
+    sandbox::vm::VMState vm(65536, 1000000);
+    if (behavior_linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, behavior_linked.assembled.program),
+               "widget behavior test loads");
+        const auto result = sandbox::vm::run(vm, 200000);
+        if (!result.halted()) {
+            std::cout << "DEBUG widget behavior: status="
+                      << static_cast<int>(result.status)
+                      << " pc=" << vm.pc
+                      << " trap=" << sandbox::vm::ops::toLong(vm.trap_reg)
+                      << "\n";
+        }
+        expect(result.halted(), "widget behavior test halts cleanly");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(13)) == 123,
+               "widget hit testing, focus, dirty rects, and text editing behave");
+        expect(wordAt(vm, 60000 + 1 * 80 + 1) == 91 + 5 * 256,
+               "widget redraw writes highlighted button left edge");
+        expect(wordAt(vm, 60000 + 1 * 80 + 2) == 65 + 5 * 256,
+               "widget redraw writes highlighted button label");
+        expect(wordAt(vm, 60000 + 0 * 80 + 0) == 91 + 5 * 256,
+               "password field redraw writes focused field border");
+    }
 }
 
 } // namespace

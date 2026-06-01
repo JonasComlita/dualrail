@@ -1,5 +1,922 @@
 const WIDGET_EVENT_NONE: t40 = 0;
 const WIDGET_EVENT_HIT: t40 = 1;
+const WIDGET_EVENT_ACTIVATE: t40 = 2;
+const WIDGET_EVENT_CHANGED: t40 = 3;
+
+const WIDGET_KIND_PANEL: t40 = 1;
+const WIDGET_KIND_LABEL: t40 = 2;
+const WIDGET_KIND_BUTTON: t40 = 3;
+const WIDGET_KIND_TEXTFIELD: t40 = 4;
+const WIDGET_KIND_PASSWORDFIELD: t40 = 5;
+const WIDGET_KIND_LISTBOX: t40 = 6;
+const WIDGET_KIND_SCROLLBAR: t40 = 7;
+
+const WIDGET_X: t40 = 0;
+const WIDGET_Y: t40 = 1;
+const WIDGET_W: t40 = 2;
+const WIDGET_H: t40 = 3;
+const WIDGET_FOCUS: t40 = 4;
+const WIDGET_DIRTY: t40 = 5;
+const WIDGET_ENABLED: t40 = 6;
+const WIDGET_PARENT: t40 = 7;
+const WIDGET_WINDOW: t40 = 8;
+const WIDGET_KIND: t40 = 9;
+const WIDGET_STATE: t40 = 10;
+const WIDGET_VALUE: t40 = 11;
+const WIDGET_SCROLL: t40 = 12;
+const WIDGET_SELECTED: t40 = 13;
+const WIDGET_CURSOR: t40 = 14;
+const WIDGET_SEL_START: t40 = 15;
+const WIDGET_SEL_END: t40 = 16;
+const WIDGET_DIRTY_X: t40 = 17;
+const WIDGET_DIRTY_Y: t40 = 18;
+const WIDGET_DIRTY_W: t40 = 19;
+const WIDGET_DIRTY_H: t40 = 20;
+const WIDGET_TEXT_ADDR: t40 = 21;
+const WIDGET_TEXT_LEN: t40 = 22;
+const WIDGET_TEXT_MAX: t40 = 23;
+const WIDGET_ITEM_ADDR: t40 = 24;
+const WIDGET_ITEM_COUNT: t40 = 25;
+const WIDGET_ROW_H: t40 = 26;
+const WIDGET_AUX: t40 = 27;
+const WIDGET_WORDS: t40 = 32;
+
+const WIDGET_THEME_BG: t40 = 0;
+const WIDGET_THEME_PANEL: t40 = 10;
+const WIDGET_THEME_PANEL_DIM: t40 = 2;
+const WIDGET_THEME_TEXT: t40 = 10;
+const WIDGET_THEME_MUTED: t40 = 8;
+const WIDGET_THEME_ACCENT: t40 = 5;
+const WIDGET_THEME_DANGER: t40 = 9;
+const WIDGET_THEME_WARN: t40 = 14;
+const WIDGET_THEME_TITLE: t40 = 3;
+const WIDGET_THEME_SPACING: t40 = 1;
+const WIDGET_THEME_TITLEBAR_H: t40 = 1;
+const WIDGET_THEME_CONTROL_H: t40 = 1;
+
+fn widget_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn widget_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn widget_min(a: t40, b: t40) -> t40 {
+    if a - b < 0 {
+        return a;
+    }
+    return b;
+}
+
+fn widget_max(a: t40, b: t40) -> t40 {
+    if a - b > 0 {
+        return a;
+    }
+    return b;
+}
+
+fn widget_init(addr: t40, kind: t40, x: t40, y: t40, w: t40, h: t40, parent: t40, window_id: t40) -> t40 {
+    widget_store(addr + WIDGET_X, x);
+    widget_store(addr + WIDGET_Y, y);
+    widget_store(addr + WIDGET_W, w);
+    widget_store(addr + WIDGET_H, h);
+    widget_store(addr + WIDGET_FOCUS, 0);
+    widget_store(addr + WIDGET_DIRTY, 1);
+    widget_store(addr + WIDGET_ENABLED, 1);
+    widget_store(addr + WIDGET_PARENT, parent);
+    widget_store(addr + WIDGET_WINDOW, window_id);
+    widget_store(addr + WIDGET_KIND, kind);
+    widget_store(addr + WIDGET_STATE, 0);
+    widget_store(addr + WIDGET_VALUE, 0);
+    widget_store(addr + WIDGET_SCROLL, 0);
+    widget_store(addr + WIDGET_SELECTED, -1);
+    widget_store(addr + WIDGET_CURSOR, 0);
+    widget_store(addr + WIDGET_SEL_START, 0);
+    widget_store(addr + WIDGET_SEL_END, 0);
+    widget_store(addr + WIDGET_TEXT_ADDR, 0);
+    widget_store(addr + WIDGET_TEXT_LEN, 0);
+    widget_store(addr + WIDGET_TEXT_MAX, 0);
+    widget_store(addr + WIDGET_ITEM_ADDR, 0);
+    widget_store(addr + WIDGET_ITEM_COUNT, 0);
+    widget_store(addr + WIDGET_ROW_H, 1);
+    widget_store(addr + WIDGET_AUX, 0);
+    widget_invalidate_rect(addr, 0, 0, w, h);
+    return addr;
+}
+
+fn widget_set_bounds(addr: t40, x: t40, y: t40, w: t40, h: t40) -> t40 {
+    widget_store(addr + WIDGET_X, x);
+    widget_store(addr + WIDGET_Y, y);
+    widget_store(addr + WIDGET_W, w);
+    widget_store(addr + WIDGET_H, h);
+    return widget_invalidate_rect(addr, 0, 0, w, h);
+}
+
+fn widget_label_init(addr: t40, text_addr: t40, len: t40, x: t40, y: t40, w: t40, h: t40, parent: t40, window_id: t40) -> t40 {
+    widget_init(addr, WIDGET_KIND_LABEL, x, y, w, h, parent, window_id);
+    widget_store(addr + WIDGET_TEXT_ADDR, text_addr);
+    widget_store(addr + WIDGET_TEXT_LEN, len);
+    return addr;
+}
+
+fn widget_set_enabled(addr: t40, enabled: t40) -> t40 {
+    var old: t40 = widget_load(addr + WIDGET_ENABLED);
+    widget_store(addr + WIDGET_ENABLED, enabled);
+    if old - enabled != 0 {
+        widget_mark_dirty(addr);
+    }
+    return enabled;
+}
+
+fn widget_mark_dirty(addr: t40) -> t40 {
+    return widget_invalidate_rect(addr, 0, 0, widget_load(addr + WIDGET_W), widget_load(addr + WIDGET_H));
+}
+
+fn widget_clear_dirty(addr: t40) -> t40 {
+    widget_store(addr + WIDGET_DIRTY, 0);
+    widget_store(addr + WIDGET_DIRTY_X, 0);
+    widget_store(addr + WIDGET_DIRTY_Y, 0);
+    widget_store(addr + WIDGET_DIRTY_W, 0);
+    widget_store(addr + WIDGET_DIRTY_H, 0);
+    return 1;
+}
+
+fn widget_invalidate_rect(addr: t40, x: t40, y: t40, w: t40, h: t40) -> t40 {
+    var old_x: t40 = 0;
+    var old_y: t40 = 0;
+    var old_w: t40 = 0;
+    var old_h: t40 = 0;
+    var left_edge: t40 = 0;
+    var top_edge: t40 = 0;
+    var right_edge: t40 = 0;
+    var bottom_edge: t40 = 0;
+    if w <= 0 {
+        return 0;
+    }
+    if h <= 0 {
+        return 0;
+    }
+    if widget_load(addr + WIDGET_DIRTY) <= 0 {
+        widget_store(addr + WIDGET_DIRTY_X, x);
+        widget_store(addr + WIDGET_DIRTY_Y, y);
+        widget_store(addr + WIDGET_DIRTY_W, w);
+        widget_store(addr + WIDGET_DIRTY_H, h);
+    } else {
+        old_x = widget_load(addr + WIDGET_DIRTY_X);
+        old_y = widget_load(addr + WIDGET_DIRTY_Y);
+        old_w = widget_load(addr + WIDGET_DIRTY_W);
+        old_h = widget_load(addr + WIDGET_DIRTY_H);
+        left_edge = widget_min(old_x, x);
+        top_edge = widget_min(old_y, y);
+        right_edge = widget_max(old_x + old_w, x + w);
+        bottom_edge = widget_max(old_y + old_h, y + h);
+        widget_store(addr + WIDGET_DIRTY_X, left_edge);
+        widget_store(addr + WIDGET_DIRTY_Y, top_edge);
+        widget_store(addr + WIDGET_DIRTY_W, right_edge - left_edge);
+        widget_store(addr + WIDGET_DIRTY_H, bottom_edge - top_edge);
+    }
+    widget_store(addr + WIDGET_DIRTY, 1);
+    return 1;
+}
+
+fn widget_contains_xy(addr: t40, x: t40, y: t40) -> t40 {
+    if widget_load(addr + WIDGET_ENABLED) <= 0 {
+        return 0;
+    }
+    var wx: t40 = widget_load(addr + WIDGET_X);
+    var wy: t40 = widget_load(addr + WIDGET_Y);
+    var ww: t40 = widget_load(addr + WIDGET_W);
+    var wh: t40 = widget_load(addr + WIDGET_H);
+    if x - wx < 0 {
+        return 0;
+    }
+    if y - wy < 0 {
+        return 0;
+    }
+    if wx + ww - x <= 0 {
+        return 0;
+    }
+    if wy + wh - y <= 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn widget_hit_widget_event(event_addr: t40, window_x: t40, window_y: t40, widget_addr: t40) -> t40 {
+    if os_event_kind(event_addr) - OS_EVENT_KIND_MOUSE != 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    var local_x: t40 = os_event_x_or_key(event_addr) - window_x;
+    var local_y: t40 = os_event_y(event_addr) - window_y;
+    if widget_contains_xy(widget_addr, local_x, local_y) > 0 {
+        return WIDGET_EVENT_HIT;
+    }
+    return WIDGET_EVENT_NONE;
+}
+
+fn widget_hit_window_rect(event_addr: t40, window_x: t40, window_y: t40, x: t40, y: t40, w: t40, h: t40) -> t40 {
+    if os_event_kind(event_addr) - OS_EVENT_KIND_MOUSE != 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    var local_x: t40 = os_event_x_or_key(event_addr) - window_x;
+    var local_y: t40 = os_event_y(event_addr) - window_y;
+    if local_x - x < 0 { return WIDGET_EVENT_NONE; }
+    if local_y - y < 0 { return WIDGET_EVENT_NONE; }
+    if x + w - local_x <= 0 { return WIDGET_EVENT_NONE; }
+    if y + h - local_y <= 0 { return WIDGET_EVENT_NONE; }
+    return WIDGET_EVENT_HIT;
+}
+
+fn widget_set_focus(addr: t40, focused: t40) -> t40 {
+    var old: t40 = widget_load(addr + WIDGET_FOCUS);
+    widget_store(addr + WIDGET_FOCUS, focused);
+    if old - focused != 0 {
+        widget_mark_dirty(addr);
+    }
+    return focused;
+}
+
+fn widget_focus_first(children_addr: t40, count: t40) -> t40 {
+    var i: t40 = 0;
+    while count - i > 0 {
+        var child: t40 = widget_load(children_addr + i);
+        if child > 0 {
+            if widget_load(child + WIDGET_ENABLED) > 0 {
+                widget_set_focus(child, 1);
+                return child;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn widget_focus_next(children_addr: t40, count: t40, current_addr: t40) -> t40 {
+    var seen_current: t40 = 0;
+    var i: t40 = 0;
+    while count - i > 0 {
+        var child: t40 = widget_load(children_addr + i);
+        if child - current_addr == 0 {
+            seen_current = 1;
+            widget_set_focus(child, 0);
+        } else {
+            if seen_current > 0 {
+                if child > 0 {
+                    if widget_load(child + WIDGET_ENABLED) > 0 {
+                        widget_set_focus(child, 1);
+                        return child;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return widget_focus_first(children_addr, count);
+}
+
+fn widget_panel_route_xy(children_addr: t40, count: t40, x: t40, y: t40) -> t40 {
+    var i: t40 = count - 1;
+    while i >= 0 {
+        var child: t40 = widget_load(children_addr + i);
+        if child > 0 {
+            if widget_contains_xy(child, x, y) > 0 {
+                return child;
+            }
+        }
+        i = i - 1;
+    }
+    return 0;
+}
+
+fn widget_panel_route_event(children_addr: t40, count: t40, event_addr: t40, window_x: t40, window_y: t40) -> t40 {
+    if os_event_kind(event_addr) - OS_EVENT_KIND_MOUSE != 0 {
+        return 0;
+    }
+    var local_x: t40 = os_event_x_or_key(event_addr) - window_x;
+    var local_y: t40 = os_event_y(event_addr) - window_y;
+    return widget_panel_route_xy(children_addr, count, local_x, local_y);
+}
+
+fn widget_text_fill(x: t40, y: t40, w: t40, h: t40, ch: t40, color: t40) -> t40 {
+    var yy: t40 = 0;
+    var drawn: t40 = 0;
+    while h - yy > 0 {
+        var xx: t40 = 0;
+        while w - xx > 0 {
+            drawn = drawn + os_text_cell(x + xx, y + yy, ch, color);
+            xx = xx + 1;
+        }
+        yy = yy + 1;
+    }
+    return drawn;
+}
+
+fn widget_draw_text_rect(x: t40, y: t40, w: t40, h: t40, color: t40) -> t40 {
+    if w <= 0 {
+        return 0;
+    }
+    if h <= 0 {
+        return 0;
+    }
+    var drawn: t40 = 0;
+    var xx: t40 = 0;
+    while w - xx > 0 {
+        drawn = drawn + os_text_cell(x + xx, y, 45, color);
+        if h - 1 > 0 {
+            drawn = drawn + os_text_cell(x + xx, y + h - 1, 45, color);
+        }
+        xx = xx + 1;
+    }
+    var yy: t40 = 1;
+    while h - yy - 1 > 0 {
+        drawn = drawn + os_text_cell(x, y + yy, 124, color);
+        if w - 1 > 0 {
+            drawn = drawn + os_text_cell(x + w - 1, y + yy, 124, color);
+        }
+        yy = yy + 1;
+    }
+    return drawn;
+}
+
+fn widget_draw_text_panel(x: t40, y: t40, w: t40, h: t40, active: t40) -> t40 {
+    var color: t40 = WIDGET_THEME_PANEL;
+    if active > 0 {
+        color = WIDGET_THEME_ACCENT;
+    }
+    widget_text_fill(x + 1, y + 1, w - 2, h - 2, 32, WIDGET_THEME_BG);
+    return widget_draw_text_rect(x, y, w, h, color);
+}
+
+fn widget_draw_text_label(x: t40, y: t40, text_addr: t40, len: t40, color: t40) -> t40 {
+    var i: t40 = 0;
+    while len - i > 0 {
+        var c: t40 = widget_load(text_addr + i);
+        os_text_cell(x + i, y, c, color);
+        i = i + 1;
+    }
+    return len;
+}
+
+fn widget_draw_text_label_widget(addr: t40, color: t40) -> t40 {
+    widget_draw_text_label(widget_load(addr + WIDGET_X), widget_load(addr + WIDGET_Y), widget_load(addr + WIDGET_TEXT_ADDR), widget_load(addr + WIDGET_TEXT_LEN), color);
+    widget_clear_dirty(addr);
+    return 1;
+}
+
+fn widget_draw_text_button_char(x: t40, y: t40, w: t40, label: t40, hovered: t40, pressed: t40, focused: t40, enabled: t40) -> t40 {
+    var color: t40 = WIDGET_THEME_TEXT;
+    if enabled <= 0 {
+        color = WIDGET_THEME_MUTED;
+    } else {
+        if pressed > 0 {
+            color = WIDGET_THEME_WARN;
+        } else {
+            if hovered > 0 {
+                color = WIDGET_THEME_ACCENT;
+            } else {
+                if focused > 0 {
+                    color = WIDGET_THEME_TITLE;
+                }
+            }
+        }
+    }
+    if w <= 0 {
+        return 0;
+    }
+    os_text_cell(x, y, 91, color);
+    var i: t40 = 1;
+    while w - i - 1 > 0 {
+        os_text_cell(x + i, y, 32, color);
+        i = i + 1;
+    }
+    if w - 1 > 0 {
+        os_text_cell(x + w - 1, y, 93, color);
+    }
+    if w - 2 > 0 {
+        var tx: t40 = x + w / 2;
+        os_text_cell(tx, y, label, color);
+    }
+    return 1;
+}
+
+fn widget_draw_text_button_text(x: t40, y: t40, w: t40, text_addr: t40, len: t40, hovered: t40, pressed: t40, focused: t40, enabled: t40) -> t40 {
+    var color: t40 = WIDGET_THEME_TEXT;
+    if enabled <= 0 {
+        color = WIDGET_THEME_MUTED;
+    } else {
+        if pressed > 0 {
+            color = WIDGET_THEME_WARN;
+        } else {
+            if hovered > 0 {
+                color = WIDGET_THEME_ACCENT;
+            } else {
+                if focused > 0 {
+                    color = WIDGET_THEME_TITLE;
+                }
+            }
+        }
+    }
+    os_text_cell(x, y, 91, color);
+    var i: t40 = 1;
+    while w - i - 1 > 0 {
+        os_text_cell(x + i, y, 32, color);
+        i = i + 1;
+    }
+    if w - 1 > 0 {
+        os_text_cell(x + w - 1, y, 93, color);
+    }
+    var text_x: t40 = x + 1;
+    if w - len - 2 > 0 {
+        text_x = x + (w - len) / 2;
+    }
+    i = 0;
+    while len - i > 0 {
+        if x + w - text_x - i - 1 > 0 {
+            os_text_cell(text_x + i, y, widget_load(text_addr + i), color);
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn widget_button_set_hover(addr: t40, hover: t40) -> t40 {
+    var old: t40 = widget_load(addr + WIDGET_STATE);
+    var pressed: t40 = widget_load(addr + WIDGET_VALUE);
+    widget_store(addr + WIDGET_STATE, hover);
+    if old - hover != 0 {
+        widget_mark_dirty(addr);
+    }
+    if pressed > 0 {
+        widget_store(addr + WIDGET_VALUE, pressed);
+    }
+    return hover;
+}
+
+fn widget_button_set_pressed(addr: t40, pressed: t40) -> t40 {
+    var old: t40 = widget_load(addr + WIDGET_VALUE);
+    widget_store(addr + WIDGET_VALUE, pressed);
+    if old - pressed != 0 {
+        widget_mark_dirty(addr);
+    }
+    return pressed;
+}
+
+fn widget_button_key(addr: t40, key: t40) -> t40 {
+    if widget_load(addr + WIDGET_ENABLED) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if widget_load(addr + WIDGET_FOCUS) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if key - 13 == 0 {
+        widget_mark_dirty(addr);
+        return WIDGET_EVENT_ACTIVATE;
+    }
+    if key - 32 == 0 {
+        widget_mark_dirty(addr);
+        return WIDGET_EVENT_ACTIVATE;
+    }
+    return WIDGET_EVENT_NONE;
+}
+
+fn widget_button_mouse(addr: t40, x: t40, y: t40, btn: t40, last_btn: t40) -> t40 {
+    var hit: t40 = widget_contains_xy(addr, x, y);
+    widget_button_set_hover(addr, hit);
+    if hit <= 0 {
+        widget_button_set_pressed(addr, 0);
+        return WIDGET_EVENT_NONE;
+    }
+    if btn > 0 {
+        widget_button_set_pressed(addr, 1);
+        if last_btn <= 0 {
+            widget_set_focus(addr, 1);
+            return WIDGET_EVENT_ACTIVATE;
+        }
+    } else {
+        widget_button_set_pressed(addr, 0);
+    }
+    return WIDGET_EVENT_HIT;
+}
+
+fn widget_textfield_init(addr: t40, text_addr: t40, max_len: t40, x: t40, y: t40, w: t40, h: t40, parent: t40, window_id: t40) -> t40 {
+    widget_init(addr, WIDGET_KIND_TEXTFIELD, x, y, w, h, parent, window_id);
+    widget_store(addr + WIDGET_TEXT_ADDR, text_addr);
+    widget_store(addr + WIDGET_TEXT_MAX, max_len);
+    widget_store(addr + WIDGET_TEXT_LEN, 0);
+    widget_store(addr + WIDGET_CURSOR, 0);
+    widget_store(addr + WIDGET_SEL_START, 0);
+    widget_store(addr + WIDGET_SEL_END, 0);
+    widget_store(text_addr, 0);
+    return addr;
+}
+
+fn widget_passwordfield_init(addr: t40, text_addr: t40, max_len: t40, x: t40, y: t40, w: t40, h: t40, parent: t40, window_id: t40) -> t40 {
+    widget_textfield_init(addr, text_addr, max_len, x, y, w, h, parent, window_id);
+    widget_store(addr + WIDGET_KIND, WIDGET_KIND_PASSWORDFIELD);
+    return addr;
+}
+
+fn widget_textfield_selection_start(addr: t40) -> t40 {
+    var a: t40 = widget_load(addr + WIDGET_SEL_START);
+    var b: t40 = widget_load(addr + WIDGET_SEL_END);
+    if a - b <= 0 {
+        return a;
+    }
+    return b;
+}
+
+fn widget_textfield_selection_end(addr: t40) -> t40 {
+    var a: t40 = widget_load(addr + WIDGET_SEL_START);
+    var b: t40 = widget_load(addr + WIDGET_SEL_END);
+    if a - b >= 0 {
+        return a;
+    }
+    return b;
+}
+
+fn widget_textfield_clear_selection(addr: t40) -> t40 {
+    var cursor: t40 = widget_load(addr + WIDGET_CURSOR);
+    widget_store(addr + WIDGET_SEL_START, cursor);
+    widget_store(addr + WIDGET_SEL_END, cursor);
+    return cursor;
+}
+
+fn widget_textfield_select_all(addr: t40) -> t40 {
+    var len: t40 = widget_load(addr + WIDGET_TEXT_LEN);
+    widget_store(addr + WIDGET_SEL_START, 0);
+    widget_store(addr + WIDGET_SEL_END, len);
+    widget_store(addr + WIDGET_CURSOR, len);
+    widget_mark_dirty(addr);
+    return len;
+}
+
+fn widget_textfield_delete_selection(addr: t40) -> t40 {
+    var start: t40 = widget_textfield_selection_start(addr);
+    var end: t40 = widget_textfield_selection_end(addr);
+    if end - start <= 0 {
+        return 0;
+    }
+    var text_addr: t40 = widget_load(addr + WIDGET_TEXT_ADDR);
+    var len: t40 = widget_load(addr + WIDGET_TEXT_LEN);
+    var i: t40 = 0;
+    while len - end - i >= 0 {
+        widget_store(text_addr + start + i, widget_load(text_addr + end + i));
+        i = i + 1;
+    }
+    len = len - (end - start);
+    widget_store(addr + WIDGET_TEXT_LEN, len);
+    widget_store(addr + WIDGET_CURSOR, start);
+    widget_store(addr + WIDGET_SEL_START, start);
+    widget_store(addr + WIDGET_SEL_END, start);
+    widget_mark_dirty(addr);
+    return 1;
+}
+
+fn widget_textfield_insert_char(addr: t40, c: t40) -> t40 {
+    if widget_load(addr + WIDGET_ENABLED) <= 0 {
+        return 0;
+    }
+    widget_textfield_delete_selection(addr);
+    var text_addr: t40 = widget_load(addr + WIDGET_TEXT_ADDR);
+    var len: t40 = widget_load(addr + WIDGET_TEXT_LEN);
+    var max_len: t40 = widget_load(addr + WIDGET_TEXT_MAX);
+    if len - max_len >= 0 {
+        return 0;
+    }
+    var cursor: t40 = widget_load(addr + WIDGET_CURSOR);
+    var j: t40 = len;
+    while j - cursor >= 0 {
+        widget_store(text_addr + j + 1, widget_load(text_addr + j));
+        j = j - 1;
+    }
+    widget_store(text_addr + cursor, c);
+    len = len + 1;
+    cursor = cursor + 1;
+    widget_store(addr + WIDGET_TEXT_LEN, len);
+    widget_store(addr + WIDGET_CURSOR, cursor);
+    widget_store(addr + WIDGET_SEL_START, cursor);
+    widget_store(addr + WIDGET_SEL_END, cursor);
+    widget_mark_dirty(addr);
+    return 1;
+}
+
+fn widget_textfield_backspace(addr: t40) -> t40 {
+    if widget_textfield_delete_selection(addr) > 0 {
+        return 1;
+    }
+    var cursor: t40 = widget_load(addr + WIDGET_CURSOR);
+    if cursor <= 0 {
+        return 0;
+    }
+    var text_addr: t40 = widget_load(addr + WIDGET_TEXT_ADDR);
+    var len: t40 = widget_load(addr + WIDGET_TEXT_LEN);
+    var i: t40 = cursor - 1;
+    while len - i > 0 {
+        widget_store(text_addr + i, widget_load(text_addr + i + 1));
+        i = i + 1;
+    }
+    cursor = cursor - 1;
+    len = len - 1;
+    widget_store(addr + WIDGET_CURSOR, cursor);
+    widget_store(addr + WIDGET_TEXT_LEN, len);
+    widget_store(addr + WIDGET_SEL_START, cursor);
+    widget_store(addr + WIDGET_SEL_END, cursor);
+    widget_mark_dirty(addr);
+    return 1;
+}
+
+fn widget_textfield_handle_key(addr: t40, key: t40) -> t40 {
+    if widget_load(addr + WIDGET_ENABLED) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if widget_load(addr + WIDGET_FOCUS) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if key - 13 == 0 {
+        return WIDGET_EVENT_ACTIVATE;
+    }
+    if key - 8 == 0 {
+        if widget_textfield_backspace(addr) > 0 {
+            return WIDGET_EVENT_CHANGED;
+        }
+        return WIDGET_EVENT_NONE;
+    }
+    if key - 1 == 0 {
+        widget_textfield_select_all(addr);
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 37 == 0 {
+        var cursor_l: t40 = widget_load(addr + WIDGET_CURSOR);
+        if cursor_l > 0 {
+            cursor_l = cursor_l - 1;
+            widget_store(addr + WIDGET_CURSOR, cursor_l);
+            widget_textfield_clear_selection(addr);
+            widget_mark_dirty(addr);
+        }
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 39 == 0 {
+        var cursor_r: t40 = widget_load(addr + WIDGET_CURSOR);
+        if widget_load(addr + WIDGET_TEXT_LEN) - cursor_r > 0 {
+            cursor_r = cursor_r + 1;
+            widget_store(addr + WIDGET_CURSOR, cursor_r);
+            widget_textfield_clear_selection(addr);
+            widget_mark_dirty(addr);
+        }
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 32 >= 0 {
+        if widget_textfield_insert_char(addr, key) > 0 {
+            return WIDGET_EVENT_CHANGED;
+        }
+    }
+    return WIDGET_EVENT_NONE;
+}
+
+fn widget_draw_textfield(addr: t40, password: t40) -> t40 {
+    var x: t40 = widget_load(addr + WIDGET_X);
+    var y: t40 = widget_load(addr + WIDGET_Y);
+    var w: t40 = widget_load(addr + WIDGET_W);
+    var enabled: t40 = widget_load(addr + WIDGET_ENABLED);
+    var focused: t40 = widget_load(addr + WIDGET_FOCUS);
+    var color: t40 = WIDGET_THEME_TEXT;
+    if enabled <= 0 {
+        color = WIDGET_THEME_MUTED;
+    } else {
+        if focused > 0 {
+            color = WIDGET_THEME_ACCENT;
+        }
+    }
+    os_text_cell(x, y, 91, color);
+    var i: t40 = 0;
+    var inside: t40 = w - 2;
+    var text_addr: t40 = widget_load(addr + WIDGET_TEXT_ADDR);
+    var len: t40 = widget_load(addr + WIDGET_TEXT_LEN);
+    var cursor: t40 = widget_load(addr + WIDGET_CURSOR);
+    var sel_s: t40 = widget_textfield_selection_start(addr);
+    var sel_e: t40 = widget_textfield_selection_end(addr);
+    while inside - i > 0 {
+        var ch: t40 = 32;
+        var cell_color: t40 = color;
+        if len - i > 0 {
+            if password > 0 {
+                ch = 42;
+            } else {
+                ch = widget_load(text_addr + i);
+            }
+            if i - sel_s >= 0 {
+                if sel_e - i > 0 {
+                    cell_color = WIDGET_THEME_WARN;
+                }
+            }
+        }
+        if focused > 0 {
+            if i - cursor == 0 {
+                if ch - 32 == 0 {
+                    ch = 95;
+                }
+                cell_color = WIDGET_THEME_TITLE;
+            }
+        }
+        os_text_cell(x + 1 + i, y, ch, cell_color);
+        i = i + 1;
+    }
+    os_text_cell(x + w - 1, y, 93, color);
+    widget_clear_dirty(addr);
+    return 1;
+}
+
+fn widget_draw_passwordfield(addr: t40) -> t40 {
+    return widget_draw_textfield(addr, 1);
+}
+
+fn widget_listbox_init(addr: t40, x: t40, y: t40, w: t40, h: t40, parent: t40, window_id: t40, count: t40) -> t40 {
+    widget_init(addr, WIDGET_KIND_LISTBOX, x, y, w, h, parent, window_id);
+    widget_store(addr + WIDGET_ITEM_COUNT, count);
+    widget_store(addr + WIDGET_SELECTED, 0);
+    widget_store(addr + WIDGET_SCROLL, 0);
+    widget_store(addr + WIDGET_ROW_H, 1);
+    return addr;
+}
+
+fn widget_listbox_visible_rows(addr: t40) -> t40 {
+    var h: t40 = widget_load(addr + WIDGET_H) - 2;
+    if h <= 0 {
+        return 1;
+    }
+    var row_h: t40 = widget_load(addr + WIDGET_ROW_H);
+    if row_h <= 0 {
+        return h;
+    }
+    return h / row_h;
+}
+
+fn widget_listbox_scroll_to_selected(addr: t40) -> t40 {
+    var selected: t40 = widget_load(addr + WIDGET_SELECTED);
+    var scroll: t40 = widget_load(addr + WIDGET_SCROLL);
+    var visible: t40 = widget_listbox_visible_rows(addr);
+    if selected - scroll < 0 {
+        scroll = selected;
+    }
+    if selected - (scroll + visible) >= 0 {
+        scroll = selected - visible + 1;
+    }
+    if scroll < 0 {
+        scroll = 0;
+    }
+    widget_store(addr + WIDGET_SCROLL, scroll);
+    widget_mark_dirty(addr);
+    return scroll;
+}
+
+fn widget_listbox_select(addr: t40, index: t40) -> t40 {
+    var count: t40 = widget_load(addr + WIDGET_ITEM_COUNT);
+    if count <= 0 {
+        widget_store(addr + WIDGET_SELECTED, -1);
+        widget_store(addr + WIDGET_SCROLL, 0);
+        widget_mark_dirty(addr);
+        return -1;
+    }
+    if index < 0 {
+        index = 0;
+    }
+    if index - count >= 0 {
+        index = count - 1;
+    }
+    widget_store(addr + WIDGET_SELECTED, index);
+    widget_listbox_scroll_to_selected(addr);
+    return index;
+}
+
+fn widget_listbox_row_at(addr: t40, x: t40, y: t40) -> t40 {
+    if widget_contains_xy(addr, x, y) <= 0 {
+        return -1;
+    }
+    var local_y: t40 = y - widget_load(addr + WIDGET_Y) - 1;
+    if local_y < 0 {
+        return -1;
+    }
+    var row_h: t40 = widget_load(addr + WIDGET_ROW_H);
+    if row_h <= 0 {
+        row_h = 1;
+    }
+    var row: t40 = widget_load(addr + WIDGET_SCROLL) + local_y / row_h;
+    if row - widget_load(addr + WIDGET_ITEM_COUNT) >= 0 {
+        return -1;
+    }
+    return row;
+}
+
+fn widget_listbox_handle_mouse(addr: t40, x: t40, y: t40, btn: t40, last_btn: t40) -> t40 {
+    if btn <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if last_btn > 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    var row: t40 = widget_listbox_row_at(addr, x, y);
+    if row < 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    widget_set_focus(addr, 1);
+    widget_listbox_select(addr, row);
+    return WIDGET_EVENT_CHANGED;
+}
+
+fn widget_listbox_handle_key(addr: t40, key: t40) -> t40 {
+    if widget_load(addr + WIDGET_ENABLED) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    if widget_load(addr + WIDGET_FOCUS) <= 0 {
+        return WIDGET_EVENT_NONE;
+    }
+    var selected: t40 = widget_load(addr + WIDGET_SELECTED);
+    if key - 38 == 0 {
+        widget_listbox_select(addr, selected - 1);
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 40 == 0 {
+        widget_listbox_select(addr, selected + 1);
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 33 == 0 {
+        widget_listbox_select(addr, selected - widget_listbox_visible_rows(addr));
+        return WIDGET_EVENT_CHANGED;
+    }
+    if key - 34 == 0 {
+        widget_listbox_select(addr, selected + widget_listbox_visible_rows(addr));
+        return WIDGET_EVENT_CHANGED;
+    }
+    return WIDGET_EVENT_NONE;
+}
+
+fn widget_scrollbar_thumb_size(total: t40, visible: t40, track_h: t40) -> t40 {
+    if total <= 0 {
+        return track_h;
+    }
+    if visible - total >= 0 {
+        return track_h;
+    }
+    var size: t40 = visible * track_h / total;
+    if size <= 0 {
+        size = 1;
+    }
+    return size;
+}
+
+fn widget_scrollbar_thumb_pos(total: t40, visible: t40, offset: t40, track_h: t40) -> t40 {
+    if total <= 0 {
+        return 0;
+    }
+    if visible - total >= 0 {
+        return 0;
+    }
+    var thumb_h: t40 = widget_scrollbar_thumb_size(total, visible, track_h);
+    var range: t40 = track_h - thumb_h;
+    var scroll_range: t40 = total - visible;
+    if scroll_range <= 0 {
+        return 0;
+    }
+    return offset * range / scroll_range;
+}
+
+fn widget_draw_text_scrollbar(x: t40, y: t40, h: t40, total: t40, visible: t40, offset: t40) -> t40 {
+    var thumb_h: t40 = widget_scrollbar_thumb_size(total, visible, h);
+    var thumb_y: t40 = widget_scrollbar_thumb_pos(total, visible, offset, h);
+    var i: t40 = 0;
+    while h - i > 0 {
+        var ch: t40 = 124;
+        var color: t40 = WIDGET_THEME_MUTED;
+        if i - thumb_y >= 0 {
+            if thumb_y + thumb_h - i > 0 {
+                ch = 35;
+                color = WIDGET_THEME_ACCENT;
+            }
+        }
+        os_text_cell(x, y + i, ch, color);
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn widget_draw_text_listbox_frame(addr: t40) -> t40 {
+    var x: t40 = widget_load(addr + WIDGET_X);
+    var y: t40 = widget_load(addr + WIDGET_Y);
+    var w: t40 = widget_load(addr + WIDGET_W);
+    var h: t40 = widget_load(addr + WIDGET_H);
+    var color: t40 = WIDGET_THEME_PANEL;
+    if widget_load(addr + WIDGET_FOCUS) > 0 {
+        color = WIDGET_THEME_ACCENT;
+    }
+    widget_draw_text_rect(x, y, w, h, color);
+    widget_draw_text_scrollbar(x + w - 1, y + 1, h - 2, widget_load(addr + WIDGET_ITEM_COUNT), widget_listbox_visible_rows(addr), widget_load(addr + WIDGET_SCROLL));
+    widget_clear_dirty(addr);
+    return 1;
+}
 
 fn widget_draw_panel(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, active: t40) -> t40 {
     var r: t40 = 20;
@@ -106,20 +1023,40 @@ fn widget_draw_char(buf: t40, width: t40, height: t40, x: t40, y: t40, label: t4
     return os_window_fill_rect_rgb(buf, width, height, x, y + 2, 3, 1, r, g, b);
 }
 
-fn widget_draw_button(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, label: t40, active: t40) -> t40 {
+fn widget_draw_label(buf: t40, width: t40, height: t40, x: t40, y: t40, text_addr: t40, len: t40, r: t40, g: t40, b: t40) -> t40 {
+    var i: t40 = 0;
+    var drawn: t40 = 0;
+    while len - i > 0 {
+        drawn = drawn + widget_draw_char(buf, width, height, x + i * 4, y, widget_load(text_addr + i), r, g, b);
+        i = i + 1;
+    }
+    return drawn;
+}
+
+fn widget_draw_button_state(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, label: t40, hover: t40, pressed: t40, focused: t40, enabled: t40) -> t40 {
     var r: t40 = 42;
     var g: t40 = 48;
     var b: t40 = 68;
     var br: t40 = 86;
     var bg: t40 = 94;
     var bb: t40 = 112;
-    if active > 0 {
-        r = 68;
-        g = 76;
-        b = 96;
-        br = 116;
-        bg = 110;
-        bb = 74;
+    var tr: t40 = 112;
+    var tg: t40 = 112;
+    var tb: t40 = 104;
+    if enabled <= 0 {
+        r = 30; g = 32; b = 38; br = 54; bg = 58; bb = 66; tr = 70; tg = 72; tb = 72;
+    } else {
+        if pressed > 0 {
+            r = 72; g = 64; b = 42; br = 140; bg = 120; bb = 66; tr = 150; tg = 138; tb = 80;
+        } else {
+            if hover > 0 {
+                r = 56; g = 68; b = 86; br = 92; bg = 126; bb = 132; tr = 140; tg = 150; tb = 140;
+            } else {
+                if focused > 0 {
+                    r = 50; g = 58; b = 74; br = 122; bg = 100; bb = 62; tr = 142; tg = 132; tb = 92;
+                }
+            }
+        }
     }
     os_window_fill_rect_rgb(buf, width, height, x, y, w, h, r, g, b);
     os_window_draw_rect_rgb(buf, width, height, x, y, w, h, br, bg, bb);
@@ -127,21 +1064,12 @@ fn widget_draw_button(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40,
         if h - 5 >= 0 {
             var tx: t40 = x + (w - 3) / 2;
             var ty: t40 = y + (h - 5) / 2;
-            widget_draw_char(buf, width, height, tx, ty, label, 112, 112, 104);
+            widget_draw_char(buf, width, height, tx, ty, label, tr, tg, tb);
         }
     }
     return 1;
 }
 
-fn widget_hit_window_rect(event_addr: t40, window_x: t40, window_y: t40, x: t40, y: t40, w: t40, h: t40) -> t40 {
-    if os_event_kind(event_addr) - OS_EVENT_KIND_MOUSE != 0 {
-        return WIDGET_EVENT_NONE;
-    }
-    var local_x: t40 = os_event_x_or_key(event_addr) - window_x;
-    var local_y: t40 = os_event_y(event_addr) - window_y;
-    if local_x - x < 0 { return WIDGET_EVENT_NONE; }
-    if local_y - y < 0 { return WIDGET_EVENT_NONE; }
-    if x + w - local_x <= 0 { return WIDGET_EVENT_NONE; }
-    if y + h - local_y <= 0 { return WIDGET_EVENT_NONE; }
-    return WIDGET_EVENT_HIT;
+fn widget_draw_button(buf: t40, width: t40, height: t40, x: t40, y: t40, w: t40, h: t40, label: t40, active: t40) -> t40 {
+    return widget_draw_button_state(buf, width, height, x, y, w, h, label, active, 0, 0, 1);
 }

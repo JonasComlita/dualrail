@@ -1,0 +1,159 @@
+// apps/file_manager.trit - VFS-backed file browser.
+
+fn fm_seed_desktop_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47); store(addr + 1, 98); store(addr + 2, 105);
+        store(addr + 3, 110); store(addr + 4, 47); store(addr + 5, 100);
+        store(addr + 6, 101); store(addr + 7, 115); store(addr + 8, 107);
+        store(addr + 9, 116); store(addr + 10, 111); store(addr + 11, 112);
+        store(addr + 12, 0);
+    }
+    return addr;
+}
+
+fn fm_seed_root_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 0);
+    }
+    return addr;
+}
+
+fn fm_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var x: t40 = x1;
+    while x2 - x >= 0 {
+        os_text_cell(x, y1, 45, color);
+        os_text_cell(x, y2, 45, color);
+        x = x + 1;
+    }
+    var y: t40 = y1 + 1;
+    while y2 - y > 0 {
+        os_text_cell(x1, y, 124, color);
+        os_text_cell(x2, y, 124, color);
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn fm_draw_title() -> t40 {
+    os_text_cell(28, 2, 70, 3);  // F
+    os_text_cell(29, 2, 73, 3);  // I
+    os_text_cell(30, 2, 76, 3);  // L
+    os_text_cell(31, 2, 69, 3);  // E
+    os_text_cell(32, 2, 32, 3);
+    os_text_cell(33, 2, 77, 3);  // M
+    os_text_cell(34, 2, 65, 3);  // A
+    os_text_cell(35, 2, 78, 3);  // N
+    os_text_cell(36, 2, 65, 3);  // A
+    os_text_cell(37, 2, 71, 3);  // G
+    os_text_cell(38, 2, 69, 3);  // E
+    os_text_cell(39, 2, 82, 3);  // R
+    return 1;
+}
+
+fn fm_draw_footer() -> t40 {
+    os_text_cell(18, 21, 91, 6); // [
+    os_text_cell(19, 21, 88, 6); // X
+    os_text_cell(20, 21, 93, 6); // ]
+    os_text_cell(22, 21, 67, 8); // C
+    os_text_cell(23, 21, 76, 8); // L
+    os_text_cell(24, 21, 79, 8); // O
+    os_text_cell(25, 21, 83, 8); // S
+    os_text_cell(26, 21, 69, 8); // E
+    return 1;
+}
+
+fn fm_draw_ui() -> t40 {
+    os_clear_text(0);
+    fm_draw_title();
+    fm_draw_box(14, 4, 66, 20, 10);
+    fm_draw_footer();
+
+    os_text_cell(18, 6, 47, 14); // /
+
+    var root: t40 = fm_seed_root_path(10000);
+    var out: t40 = 10100;
+    var written: t40 = os_readdir(root, out, 180);
+    if written <= 0 {
+        os_text_cell(18, 9, 69, 9);  // E
+        os_text_cell(19, 9, 77, 9);  // M
+        os_text_cell(20, 9, 80, 9);  // P
+        os_text_cell(21, 9, 84, 9);  // T
+        os_text_cell(22, 9, 89, 9);  // Y
+        return 0;
+    }
+
+    var pos: t40 = 0;
+    var row: t40 = 8;
+    var kind: t40 = 0;
+    var nlen: t40 = 0;
+    var mark: t40 = 0;
+    var i: t40 = 0;
+    var ch: t40 = 0;
+    while written - pos > 0 {
+        if 19 - row > 0 {
+            kind = 0;
+            nlen = 0;
+            unsafe {
+                kind = load(out + pos + 1);
+                nlen = load(out + pos + 2);
+            }
+            if nlen <= 0 {
+                pos = written;
+            } else {
+                mark = 45;
+                if kind - 2 == 0 { mark = 100; }
+                if kind - 3 == 0 { mark = 42; }
+                os_text_cell(18, row, mark, 10);
+                i = 0;
+                while nlen - i > 0 {
+                    ch = 0;
+                    unsafe { ch = load(out + pos + 3 + i); }
+                    os_text_cell(21 + i, row, ch, 14);
+                    i = i + 1;
+                }
+                pos = pos + 3 + nlen;
+                row = row + 2;
+            }
+        } else {
+            pos = written;
+        }
+    }
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_clear_text(0);
+        os_text_cell(0, 0, 70, 10); os_text_cell(1, 0, 73, 10);
+        os_text_cell(2, 0, 76, 10); os_text_cell(3, 0, 69, 10);
+        os_text_cell(4, 0, 83, 10);
+        os_putc(70); os_putc(73); os_putc(76); os_putc(69); os_putc(83); os_newline();
+        return 1;
+    }
+
+    os_gpu_mode(0);
+    fm_draw_ui();
+    var done: t40 = 0;
+    var event_addr: t40 = 10100;
+    var event_status: t40 = 0;
+    var kind: t40 = 0;
+    var k: t40 = 0;
+    while 1 - done > 0 {
+        event_status = os_wait_event(-1, event_addr, 1000);
+        if event_status > 0 {
+            kind = os_event_kind(event_addr);
+            if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
+            if kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(event_addr);
+                if k - 120 == 0 { done = 1; }
+                if k - 88 == 0 { done = 1; }
+            }
+        }
+    }
+    var path_addr: t40 = fm_seed_desktop_path(10000);
+    sys_exec(path_addr);
+    return 1;
+}
