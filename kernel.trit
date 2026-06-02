@@ -73,11 +73,12 @@ const KERNEL_TICK_ADDR: t40 = 3033;
 const INPUT_LAST_MOUSE_X_ADDR: t40 = 3034;
 const INPUT_LAST_MOUSE_Y_ADDR: t40 = 3035;
 
-const PROC_PARENT_PID_BASE: t40 = 3040;
-const PROC_EXIT_STATUS_BASE: t40 = 3048;
-const PROC_SIGNAL_PENDING_BASE: t40 = 3056;
-const PROC_CLEANED_BASE: t40 = 3064;
-const IPC_OWNER_BASE: t40 = 3072;
+const PROC_PARENT_PID_BASE: t40 = 130000;
+const PROC_EXIT_STATUS_BASE: t40 = 130100;
+const PROC_SIGNAL_PENDING_BASE: t40 = 130200;
+const PROC_CLEANED_BASE: t40 = 130300;
+const IPC_OWNER_BASE: t40 = 130400;
+const PROC_CAPS_BASE: t40 = 131350;
 
 const BOOTSTRAP_BITMAP_BASE: t40 = 3200;
 
@@ -94,7 +95,7 @@ const PH_NAMESPACE: t40 = 5;
 // 64 frames × 10 words = 640 words → 29000–29639.
 const BUFFER_MAX_FRAMES: t40 = 64;
 const BUFFER_FRAME_WORDS: t40 = 10;
-const BUFFER_POOL_BASE: t40 = 29000;
+const BUFFER_POOL_BASE: t40 = 130700;
 const BF_VALID: t40 = 0;
 const BF_NAMESPACE: t40 = 1;
 const BF_INODE: t40 = 2;
@@ -107,10 +108,10 @@ const BF_LAST_USED: t40 = 8;
 const BF_REF_BIT: t40 = 9;
 // Namespace CDC version counters: incremented on every dirty mark.
 // A subscriber polling ns_dirty_version detects any write in O(1).
-const NS_DIRTY_VERSION_BASE: t40 = 28900;
-const NS_DIRTY_VERSION_WORDS: t40 = 8;
+const NS_DIRTY_VERSION_BASE: t40 = 130600;
+const NS_DIRTY_VERSION_WORDS: t40 = 64;
 
-const FB_STATE_BASE: t40 = 23650;
+const FB_STATE_BASE: t40 = 131500;
 const FB_VALID: t40 = 0;
 const FB_WIDTH: t40 = 1;
 const FB_HEIGHT: t40 = 2;
@@ -122,24 +123,24 @@ const FB_PAGES: t40 = 7;
 const FB_FLIP_COUNT: t40 = 8;
 const FB_PINNED_PAGES: t40 = 9;
 const FB_STATE_WORDS: t40 = 10;
-const FB_FRONT_BUFFER_BASE: t40 = 40000;
-const FB_BACK_BUFFER_BASE: t40 = 43000;
-const FB_MAX_WORDS: t40 = 1728;
+const FB_FRONT_BUFFER_BASE: t40 = 2000000;
+const FB_BACK_BUFFER_BASE: t40 = 4800000;
+const FB_MAX_WORDS: t40 = 2764800;
 const FB_PPN_BASE: t40 = 32;
-const FB_MAX_PINNED_PAGES: t40 = 64;
+const FB_MAX_PINNED_PAGES: t40 = 102400;
 const FB_FORMAT_T5_RGB: t40 = 1;
 
-const WINDOW_MAX: t40 = 8;
+const WINDOW_MAX: t40 = 100;
 const WINDOW_ROW_WORDS: t40 = 16;
-const WINDOW_BASE: t40 = 23700;
-const WINDOW_EVENT_BASE: t40 = 23850;
+const WINDOW_BASE: t40 = 132000;
+const WINDOW_EVENT_BASE: t40 = 134000;
 const WINDOW_EVENT_CAPACITY: t40 = 8;
 const WINDOW_EVENT_WORDS: t40 = 4;
-const WINDOW_BUFFER_BASE: t40 = 45630;
-const WINDOW_BUFFER_WORDS: t40 = 486;
-const WINDOW_BUFFER_PAGES: t40 = 18;
+const WINDOW_BUFFER_BASE: t40 = 8000019;
+const WINDOW_BUFFER_WORDS: t40 = 6912;
+const WINDOW_BUFFER_PAGES: t40 = 256;
 const WINDOW_USER_VPN_BASE: t40 = 64;
-const WINDOW_USER_PAGES: t40 = 18;
+const WINDOW_USER_PAGES: t40 = 256;
 const WIN_ACTIVE: t40 = 0;
 const WIN_ID: t40 = 1;
 const WIN_OWNER_PID: t40 = 2;
@@ -165,18 +166,18 @@ const EVENT_KIND_MOUSE: t40 = 2;
 const EVENT_KIND_CLOSE: t40 = 3;
 const EVENT_KIND_TIMEOUT: t40 = 4;
 
-const WAIT_QUEUE_MAX: t40 = 16;
+const WAIT_QUEUE_MAX: t40 = 128;
 const WAIT_QUEUE_WORDS: t40 = 3;
-const WAIT_QUEUE_BASE: t40 = 27500;
+const WAIT_QUEUE_BASE: t40 = 138000;
 const WQ_CHANNEL: t40 = 0;
 const WQ_HEAD: t40 = 1;
 const WQ_VERSION: t40 = 2;
-const WAIT_PROC_NEXT_BASE: t40 = 27560;
-const WAIT_KIND_BASE: t40 = 27570;
-const WAIT_DEADLINE_BASE: t40 = 27580;
-const WAIT_ARG0_BASE: t40 = 27590;
-const WAIT_ARG1_BASE: t40 = 27600;
-const WAIT_ARG2_BASE: t40 = 27610;
+const WAIT_PROC_NEXT_BASE: t40 = 138500;
+const WAIT_KIND_BASE: t40 = 138600;
+const WAIT_DEADLINE_BASE: t40 = 138700;
+const WAIT_ARG0_BASE: t40 = 138800;
+const WAIT_ARG1_BASE: t40 = 138900;
+const WAIT_ARG2_BASE: t40 = 139000;
 const WAIT_NO_DEADLINE: t40 = -1;
 const WAIT_KIND_NONE: t40 = 0;
 const WAIT_KIND_LEGACY: t40 = 1;
@@ -220,7 +221,7 @@ const REL_ALLOC_VERSION: t40 = 1;
 // Attribute store — second genuine kernel relation.
 // Schema: (object_id, object_type, attr_key, attr_value, txid, version)
 // 64 rows * 6 words = 384 words at 30000-30383.
-const ATTR_STORE_BASE: t40 = 30000;
+const ATTR_STORE_BASE: t40 = 139200;
 const ATTR_STORE_MAX: t40 = 64;
 const ATTR_STORE_WORDS: t40 = 6;
 const ATTR_OBJECT_ID: t40 = 0;
@@ -241,21 +242,21 @@ const ATTR_KEY_REPLICA_TXID: t40 = 5;
 const ATTR_KEY_DESIRED_STATE: t40 = 6;
 const ATTR_KEY_ACTUAL_STATE: t40 = 7;
 
-const TIER1_CAPACITY: t40 = 32;
-const TIER1_QUEUE_BASE: t40 = 4800;
-const MACRO_CAPACITY: t40 = 32;
-const MACRO_QUEUE_BASE: t40 = 4860;
+const TIER1_CAPACITY: t40 = 128;
+const TIER1_QUEUE_BASE: t40 = 140000;
+const MACRO_CAPACITY: t40 = 128;
+const MACRO_QUEUE_BASE: t40 = 140200;
 
-const VFS_MAX_INODES: t40 = 24;
-const VFS_MAX_DIRENTS: t40 = 48;
-const VFS_MAX_EXTENTS: t40 = 64;
-const VFS_MAX_FDS: t40 = 32;
+const VFS_MAX_INODES: t40 = 2048;
+const VFS_MAX_DIRENTS: t40 = 4096;
+const VFS_MAX_EXTENTS: t40 = 4096;
+const VFS_MAX_FDS: t40 = 2048;
 const VFS_MAX_NAME_WORDS: t40 = 16;
 const VFS_MAX_PATH_WORDS: t40 = 64;
-const VFS_PAYLOAD_WORDS: t40 = 2048;
+const VFS_PAYLOAD_WORDS: t40 = 65536;
 
 const VFS_INODE_WORDS: t40 = 8;
-const VFS_INODE_BASE: t40 = 5000;
+const VFS_INODE_BASE: t40 = 150000;
 const INODE_KIND: t40 = 0;
 const INODE_MODE: t40 = 1;
 const INODE_SIZE: t40 = 2;
@@ -266,17 +267,17 @@ const INODE_MTIME: t40 = 6;
 const INODE_FLAGS: t40 = 7;
 
 const VFS_DIRENT_WORDS: t40 = 6;
-const VFS_DIRENT_BASE: t40 = 5300;
+const VFS_DIRENT_BASE: t40 = 170000;
 const DIRENT_NAMESPACE: t40 = 0;
 const DIRENT_PARENT: t40 = 1;
 const DIRENT_HASH: t40 = 2;
 const DIRENT_NAME_LEN: t40 = 3;
 const DIRENT_CHILD: t40 = 4;
 const DIRENT_VERSION: t40 = 5;
-const VFS_DIRENT_NAME_BASE: t40 = 5600;
+const VFS_DIRENT_NAME_BASE: t40 = 195000;
 
 const VFS_EXTENT_WORDS: t40 = 6;
-const VFS_EXTENT_BASE: t40 = 6400;
+const VFS_EXTENT_BASE: t40 = 265000;
 const EXTENT_NAMESPACE: t40 = 0;
 const EXTENT_INODE: t40 = 1;
 const EXTENT_LOGICAL_START: t40 = 2;
@@ -285,7 +286,7 @@ const EXTENT_DATA_ADDR: t40 = 4;
 const EXTENT_VERSION: t40 = 5;
 
 const VFS_FD_WORDS: t40 = 7;
-const VFS_FD_BASE: t40 = 6900;
+const VFS_FD_BASE: t40 = 290000;
 const FD_PID: t40 = 0;
 const FD_NAMESPACE: t40 = 1;
 const FD_INODE: t40 = 2;
@@ -294,27 +295,27 @@ const FD_FLAGS: t40 = 4;
 const FD_REFCOUNT: t40 = 5;
 const FD_VERSION: t40 = 6;
 
-const VFS_DATA_BASE: t40 = 7400;
+const VFS_DATA_BASE: t40 = 310000;
 const VFS_DISK_MAGIC: t40 = 60606;
 const VFS_DISK_VERSION: t40 = 1;
 const VFS_DISK_SCRATCH: t40 = 3100;
-const VFS_DISK_REQUIRED_BLOCKS: t40 = 157;
+const VFS_DISK_REQUIRED_BLOCKS: t40 = 7303;
 const VFS_DISK_SUPER_BLOCK: t40 = 0;
 const VFS_DISK_STATE_BLOCK: t40 = 1;
 const VFS_DISK_INODE_BLOCK: t40 = 2;
-const VFS_DISK_INODE_BLOCKS: t40 = 8;
-const VFS_DISK_DIRENT_BLOCK: t40 = 10;
-const VFS_DISK_DIRENT_BLOCKS: t40 = 11;
-const VFS_DISK_DIRENT_NAME_BLOCK: t40 = 21;
-const VFS_DISK_DIRENT_NAME_BLOCKS: t40 = 29;
-const VFS_DISK_EXTENT_BLOCK: t40 = 50;
-const VFS_DISK_EXTENT_BLOCKS: t40 = 15;
-const VFS_DISK_DATA_BLOCK: t40 = 65;
-const VFS_DISK_DATA_BLOCKS: t40 = 76;
+const VFS_DISK_INODE_BLOCKS: t40 = 607;
+const VFS_DISK_DIRENT_BLOCK: t40 = 609;
+const VFS_DISK_DIRENT_BLOCKS: t40 = 911;
+const VFS_DISK_DIRENT_NAME_BLOCK: t40 = 1520;
+const VFS_DISK_DIRENT_NAME_BLOCKS: t40 = 2428;
+const VFS_DISK_EXTENT_BLOCK: t40 = 3948;
+const VFS_DISK_EXTENT_BLOCKS: t40 = 911;
+const VFS_DISK_DATA_BLOCK: t40 = 4859;
+const VFS_DISK_DATA_BLOCKS: t40 = 2428;
 const WAL_DISK_MAGIC: t40 = 70707;
 const WAL_DISK_VERSION: t40 = 1;
-const WAL_DISK_META_BLOCK: t40 = 141;
-const WAL_DISK_RECORD_BLOCK: t40 = 142;
+const WAL_DISK_META_BLOCK: t40 = 7287;
+const WAL_DISK_RECORD_BLOCK: t40 = 7288;
 const WAL_DISK_RECORD_BLOCKS: t40 = 15;
 const USER_MEM_BASE: t40 = 10000;
 const USER_MEM_LIMIT: t40 = 16000;
@@ -322,10 +323,10 @@ const USER_SCRATCH_VPN_BASE: t40 = 370;
 const USER_SCRATCH_PAGES: t40 = 118;
 const SYSCALL_PATH_COPY_BASE: t40 = 15800;
 
-const IPC_MAX_CHANNELS: t40 = 8;
+const IPC_MAX_CHANNELS: t40 = 128;
 const IPC_CHANNEL_WORDS: t40 = 8;
-const IPC_BASE: t40 = 9600;
-const IPC_BUFFER_BASE: t40 = 9800;
+const IPC_BASE: t40 = 380000;
+const IPC_BUFFER_BASE: t40 = 382000;
 const IPC_CAPACITY: t40 = 8;
 const IPC_NS_A: t40 = 0;
 const IPC_NS_B: t40 = 1;
@@ -336,10 +337,10 @@ const IPC_WRITE: t40 = 5;
 const IPC_COUNT: t40 = 6;
 const IPC_VERSION: t40 = 7;
 
-const NET_MAX_SOCKETS: t40 = 8;
+const NET_MAX_SOCKETS: t40 = 128;
 const NET_SOCKET_WORDS: t40 = 8;
-const NET_BASE: t40 = 29700;
-const NET_RX_BASE: t40 = 29800;
+const NET_BASE: t40 = 384000;
+const NET_RX_BASE: t40 = 386000;
 const NET_RX_CAPACITY: t40 = 8;
 const NET_SOCK_STATE: t40 = 0;
 const NET_SOCK_OWNER: t40 = 1;
@@ -354,9 +355,9 @@ const NET_STATE_OPEN: t40 = 1;
 const NET_STATE_BOUND: t40 = 2;
 const NET_STATE_CONNECTED: t40 = 3;
 
-const PROCESS_MAX: t40 = 8;
+const PROCESS_MAX: t40 = 100;
 const PROCESS_ROW_WORDS: t40 = 8;
-const PROCESS_BASE: t40 = 9864;
+const PROCESS_BASE: t40 = 390000;
 const PROC_PID: t40 = 0;
 const PROC_NAMESPACE: t40 = 1;
 const PROC_STATE: t40 = 2;
@@ -393,28 +394,28 @@ const PROCINFO_PRIORITY: t40 = 5;
 const PROCINFO_QUOTA_REMAINING: t40 = 6;
 const PROCINFO_NAMESPACE: t40 = 7;
 
-const QUOTA_MAX: t40 = 8;
+const QUOTA_MAX: t40 = 128;
 const QUOTA_ROW_WORDS: t40 = 4;
-const QUOTA_BASE: t40 = 9928;
+const QUOTA_BASE: t40 = 391000;
 const QUOTA_ID: t40 = 0;
 const QUOTA_LIMIT: t40 = 1;
 const QUOTA_USED: t40 = 2;
 const QUOTA_VERSION: t40 = 3;
 
-const DESIRED_PROCESS_BASE: t40 = 9960;
-const WAIT_CHANNEL_BASE: t40 = 9970;
+const DESIRED_PROCESS_BASE: t40 = 391600;
+const WAIT_CHANNEL_BASE: t40 = 391700;
 
-const NAMESPACE_MAX: t40 = 8;
+const NAMESPACE_MAX: t40 = 64;
 const NAMESPACE_ROW_WORDS: t40 = 4;
-const NAMESPACE_BASE: t40 = 17000;
+const NAMESPACE_BASE: t40 = 392000;
 const NS_ID: t40 = 0;
 const NS_ROOT_INODE: t40 = 1;
 const NS_VERSION: t40 = 2;
 const NS_ACTIVE: t40 = 3;
 
-const PTE_MAX_VPN: t40 = 16;
+const PTE_MAX_VPN: t40 = 512;
 const PTE_ROW_WORDS: t40 = 5;
-const PTE_BASE: t40 = 17100;
+const PTE_BASE: t40 = 393000;
 const PTE_WORD: t40 = 0;
 const PTE_PPN: t40 = 1;
 const PTE_FLAGS: t40 = 2;
@@ -424,14 +425,14 @@ const PTE_FLAG_COW: t40 = 1;
 const PTE_FLAG_MMIO: t40 = 2;
 
 const PROCESS_CACHE_WORDS: t40 = 4;
-const PROCESS_CACHE_BASE: t40 = 17800;
+const PROCESS_CACHE_BASE: t40 = 650000;
 const CACHE_KEY: t40 = 0;
 const CACHE_VALUE: t40 = 1;
 const CACHE_VERSION: t40 = 2;
 const CACHE_VALID: t40 = 3;
 
 const EXEC_IMAGE_WORDS: t40 = 128;
-const EXEC_IMAGE_BASE: t40 = 18000;
+const EXEC_IMAGE_BASE: t40 = 651000;
 const EXEC_HEADER_WORDS: t40 = 9;
 const EXEC_MAGIC: t40 = 40404;
 const EXEC_VERSION_V1: t40 = 1;
@@ -465,7 +466,7 @@ const HW_PT_MAX_PAGES: t40 = 512;
 const HW_PT_WORDS: t40 = 1024;
 const HW_PT_BASE: t40 = 19300;
 const PROCESS_HEAP_WORDS: t40 = 4;
-const PROCESS_HEAP_BASE: t40 = 23450;
+const PROCESS_HEAP_BASE: t40 = 668000;
 const PROC_HEAP_START: t40 = 0;
 const PROC_HEAP_BREAK: t40 = 1;
 const PROC_HEAP_LIMIT: t40 = 2;
@@ -473,12 +474,12 @@ const PROC_HEAP_MAPPED_PAGES: t40 = 3;
 const PROCESS_DMEM_PAGES_MAX: t40 = 192;
 const PROCESS_SCRATCH_PPN_OFFSET: t40 = 74;
 const PROCESS_DATA_PAGES_MAX: t40 = 74;
-const PROCESS_DMEM_PPN_BASE: t40 = 3200;
-const PROCESS_CONTEXT_BASE: t40 = 28000;
+const PROCESS_DMEM_PPN_BASE: t40 = 30000;
+const PROCESS_CONTEXT_BASE: t40 = 669000;
 
-const APP_MAX: t40 = 16;
+const APP_MAX: t40 = 256;
 const APP_ROW_WORDS: t40 = 10;
-const APP_REGISTRY_BASE: t40 = 19100;
+const APP_REGISTRY_BASE: t40 = 665000;
 const APP_NAMESPACE: t40 = 0;
 const APP_PATH_HASH: t40 = 1;
 const APP_INODE: t40 = 2;
@@ -952,8 +953,8 @@ fn framebuffer_init(width: t40, height: t40) -> t40 {
         framebuffer_release_pins();
     }
     kclear(FB_STATE_BASE, FB_STATE_WORDS);
-    kclear(FB_FRONT_BUFFER_BASE, FB_MAX_WORDS);
-    kclear(FB_BACK_BUFFER_BASE, FB_MAX_WORDS);
+    kclear(FB_FRONT_BUFFER_BASE, words);
+    kclear(FB_BACK_BUFFER_BASE, words);
     var i: t40 = 0;
     while pages - i > 0 {
         page_pin(FB_PPN_BASE + i);
@@ -1005,7 +1006,6 @@ fn window_event_addr(slot: t40, index: t40) -> t40 {
 fn window_table_init() -> t40 {
     kclear(WINDOW_BASE, WINDOW_MAX * WINDOW_ROW_WORDS);
     kclear(WINDOW_EVENT_BASE, WINDOW_MAX * WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
-    kclear(WINDOW_BUFFER_BASE, WINDOW_MAX * WINDOW_BUFFER_WORDS);
     kstore(WINDOW_NEXT_ID_ADDR, 0);
     kstore(COMPOSITOR_FRAME_COUNT_ADDR, 0);
     kstore(WINDOW_FOCUS_ID_ADDR, ERR_NOT_FOUND);
@@ -2182,6 +2182,7 @@ fn process_table_init() -> t40 {
     kclear(PROC_EXIT_STATUS_BASE, PROCESS_MAX);
     kclear(PROC_SIGNAL_PENDING_BASE, PROCESS_MAX);
     kclear(PROC_CLEANED_BASE, PROCESS_MAX);
+    kclear(PROC_CAPS_BASE, PROCESS_MAX);
     var i: t40 = 0;
     while QUOTA_MAX - i > 0 {
         var q: t40 = quota_addr(i);
@@ -2218,6 +2219,7 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     kstore(PROC_EXIT_STATUS_BASE + slot, 0);
     kstore(PROC_SIGNAL_PENDING_BASE + slot, 0);
     kstore(PROC_CLEANED_BASE + slot, 0);
+    kstore(PROC_CAPS_BASE + slot, 0);
     var heap: t40 = process_heap_addr(slot);
     kstore(heap + PROC_HEAP_START, MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_BREAK, MMU_PAGE_WORDS);
@@ -2262,6 +2264,51 @@ fn process_set_parent(slot: t40, parent_pid: t40) -> t40 {
     }
     kstore(PROC_PARENT_PID_BASE + slot, parent_pid);
     return parent_pid;
+}
+
+fn process_set_caps(slot: t40, caps: t40) -> t40 {
+    if slot < 0 {
+        return ERR_INVALID;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    kstore(PROC_CAPS_BASE + slot, caps);
+    return caps;
+}
+
+fn process_has_cap(slot: t40, cap: t40) -> t40 {
+    if slot < 0 {
+        return 0;
+    }
+    if slot - PROCESS_MAX >= 0 {
+        return 0;
+    }
+    return app_cap_has(kload(PROC_CAPS_BASE + slot), cap);
+}
+
+fn process_control_authorized(caller_pid: t40, target_pid: t40) -> t40 {
+    var caller_slot: t40 = process_find_pid(caller_pid);
+    if caller_slot < 0 {
+        return caller_slot;
+    }
+    var target_slot: t40 = process_find_pid(target_pid);
+    if target_slot < 0 {
+        return target_slot;
+    }
+    if caller_pid - target_pid == 0 {
+        return 1;
+    }
+    if caller_pid - 1 == 0 {
+        return 1;
+    }
+    if process_has_cap(caller_slot, APP_CAP_PROCESS) > 0 {
+        return 1;
+    }
+    if kload(PROC_PARENT_PID_BASE + target_slot) - caller_pid == 0 {
+        return 1;
+    }
+    return ERR_INVALID;
 }
 
 fn process_terminal_state(state: t40) -> t40 {
@@ -2521,8 +2568,19 @@ fn wait_channel_sleep(pid: t40) -> t40 {
     return WAIT_CHAN_SLEEP_BASE + pid;
 }
 
-fn wait_channel_futex(addr: t40) -> t40 {
-    return WAIT_CHAN_FUTEX_BASE + addr;
+fn wait_futex_key(pid: t40, addr: t40) -> t40 {
+    if user_validate_span(pid, addr, 1, 0) <= 0 {
+        return ERR_BAD_PTR;
+    }
+    var phys: t40 = user_translate_dmem_addr(pid, addr, 0);
+    if phys < 0 {
+        return phys;
+    }
+    return phys;
+}
+
+fn wait_channel_futex_key(key: t40) -> t40 {
+    return WAIT_CHAN_FUTEX_BASE + key;
 }
 
 fn wait_clear_slot(slot: t40) -> t40 {
@@ -2636,11 +2694,11 @@ fn wait_wake_waitpid(pid: t40, exit_code: t40) -> t40 {
     return woke;
 }
 
-fn wait_wake_futex(addr: t40, count: t40) -> t40 {
+fn wait_wake_futex_key(key: t40, count: t40) -> t40 {
     if count <= 0 {
         return 0;
     }
-    var channel: t40 = wait_channel_futex(addr);
+    var channel: t40 = wait_channel_futex_key(key);
     var woke: t40 = 0;
     var slot: t40 = wait_queue_pop(channel);
     while slot >= 0 {
@@ -2652,6 +2710,14 @@ fn wait_wake_futex(addr: t40, count: t40) -> t40 {
         slot = wait_queue_pop(channel);
     }
     return woke;
+}
+
+fn wait_wake_futex(pid: t40, addr: t40, count: t40) -> t40 {
+    var key: t40 = wait_futex_key(pid, addr);
+    if key < 0 {
+        return key;
+    }
+    return wait_wake_futex_key(key, count);
 }
 
 fn wait_wake_one_ipc(channel_id: t40) -> t40 {
@@ -3050,6 +3116,7 @@ fn process_reap_slot(process_slot: t40) -> t40 {
     kstore(PROC_EXIT_STATUS_BASE + process_slot, 0);
     kstore(PROC_SIGNAL_PENDING_BASE + process_slot, 0);
     kstore(PROC_CLEANED_BASE + process_slot, 0);
+    kstore(PROC_CAPS_BASE + process_slot, 0);
     return 1;
 }
 
@@ -3278,10 +3345,7 @@ fn pte_entry_addr(process_slot: t40, vpn: t40) -> t40 {
 }
 
 fn pte_table_init() -> t40 {
-    kclear(PTE_BASE, PROCESS_MAX * PTE_MAX_VPN * PTE_ROW_WORDS);
     kclear(PROCESS_CACHE_BASE, PROCESS_MAX * PROCESS_CACHE_WORDS);
-    kclear(EXEC_IMAGE_BASE, PROCESS_MAX * EXEC_IMAGE_WORDS);
-    kclear(HW_PT_BASE, PROCESS_MAX * HW_PT_WORDS);
     return 1;
 }
 
@@ -3367,6 +3431,7 @@ fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
     }
     process_create(child_slot, child_pid, ns, kload(parent_row + PROC_PRIORITY), quota_id, 0);
     process_set_parent(child_slot, kload(parent_row + PROC_PID));
+    process_set_caps(child_slot, kload(PROC_CAPS_BASE + parent_slot));
     vpn = 0;
     while PTE_MAX_VPN - vpn > 0 {
         var src_row: t40 = pte_entry_addr(parent_slot, vpn);
@@ -4080,6 +4145,27 @@ fn vfs_sync_range_to_disk(src_addr: t40, word_count: t40, first_block: t40, bloc
     return copied;
 }
 
+fn vfs_blocks_for_words(word_count: t40) -> t40 {
+    if word_count <= 0 {
+        return 0;
+    }
+    var blocks: t40 = 0;
+    var remaining: t40 = word_count;
+    while remaining > 0 {
+        blocks = blocks + 1;
+        remaining = remaining - MMU_PAGE_WORDS;
+    }
+    return blocks;
+}
+
+fn vfs_sync_used_range_to_disk(src_addr: t40, word_count: t40, first_block: t40, max_blocks: t40) -> t40 {
+    var blocks: t40 = vfs_blocks_for_words(word_count);
+    if blocks - max_blocks > 0 {
+        return ERR_INVALID;
+    }
+    return vfs_sync_range_to_disk(src_addr, word_count, first_block, blocks);
+}
+
 fn vfs_load_range_from_disk(dst_addr: t40, word_count: t40, first_block: t40, block_count: t40) -> t40 {
     var block: t40 = 0;
     var copied: t40 = 0;
@@ -4098,6 +4184,14 @@ fn vfs_load_range_from_disk(dst_addr: t40, word_count: t40, first_block: t40, bl
         block = block + 1;
     }
     return copied;
+}
+
+fn vfs_load_used_range_from_disk(dst_addr: t40, word_count: t40, first_block: t40, max_blocks: t40) -> t40 {
+    var blocks: t40 = vfs_blocks_for_words(word_count);
+    if blocks - max_blocks > 0 {
+        return ERR_INVALID;
+    }
+    return vfs_load_range_from_disk(dst_addr, word_count, first_block, blocks);
 }
 
 fn wal_sync_to_disk() -> t40 {
@@ -4246,11 +4340,16 @@ fn vfs_sync_to_disk() -> t40 {
         return ERR_NO_SPACE;
     }
     if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
-    if vfs_sync_range_to_disk(VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_sync_range_to_disk(VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_sync_range_to_disk(VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_sync_range_to_disk(VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_sync_range_to_disk(VFS_DATA_BASE, VFS_PAYLOAD_WORDS, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    var inode_words: t40 = kload(VFS_NEXT_INODE_ADDR) * VFS_INODE_WORDS;
+    var dirent_words: t40 = kload(VFS_NEXT_DIRENT_ADDR) * VFS_DIRENT_WORDS;
+    var name_words: t40 = kload(VFS_NEXT_DIRENT_ADDR) * VFS_MAX_NAME_WORDS;
+    var extent_words: t40 = kload(VFS_NEXT_EXTENT_ADDR) * VFS_EXTENT_WORDS;
+    var data_words: t40 = kload(VFS_NEXT_DATA_ADDR) - VFS_DATA_BASE;
+    if vfs_sync_used_range_to_disk(VFS_INODE_BASE, inode_words, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_used_range_to_disk(VFS_DIRENT_BASE, dirent_words, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_used_range_to_disk(VFS_DIRENT_NAME_BASE, name_words, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_used_range_to_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_used_range_to_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
     return 1;
 }
 
@@ -4259,11 +4358,16 @@ fn vfs_load_from_disk() -> t40 {
         return ERR_NO_SPACE;
     }
     if vfs_load_state_from_disk() - 1 != 0 { return ERR_INVALID; }
-    if vfs_load_range_from_disk(VFS_INODE_BASE, VFS_MAX_INODES * VFS_INODE_WORDS, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_load_range_from_disk(VFS_DIRENT_BASE, VFS_MAX_DIRENTS * VFS_DIRENT_WORDS, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_load_range_from_disk(VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_load_range_from_disk(VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
-    if vfs_load_range_from_disk(VFS_DATA_BASE, VFS_PAYLOAD_WORDS, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    var inode_words: t40 = kload(VFS_NEXT_INODE_ADDR) * VFS_INODE_WORDS;
+    var dirent_words: t40 = kload(VFS_NEXT_DIRENT_ADDR) * VFS_DIRENT_WORDS;
+    var name_words: t40 = kload(VFS_NEXT_DIRENT_ADDR) * VFS_MAX_NAME_WORDS;
+    var extent_words: t40 = kload(VFS_NEXT_EXTENT_ADDR) * VFS_EXTENT_WORDS;
+    var data_words: t40 = kload(VFS_NEXT_DATA_ADDR) - VFS_DATA_BASE;
+    if vfs_load_used_range_from_disk(VFS_INODE_BASE, inode_words, VFS_DISK_INODE_BLOCK, VFS_DISK_INODE_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_used_range_from_disk(VFS_DIRENT_BASE, dirent_words, VFS_DISK_DIRENT_BLOCK, VFS_DISK_DIRENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_used_range_from_disk(VFS_DIRENT_NAME_BASE, name_words, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_used_range_from_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_used_range_from_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
     kclear(VFS_FD_BASE, VFS_MAX_FDS * VFS_FD_WORDS);
     return 1;
 }
@@ -5508,10 +5612,63 @@ fn app_launch(pid: t40, path_addr: t40, required_caps: t40) -> t40 {
         quota_release(quota_id, 1);
         return loaded;
     }
+    process_set_caps(process_slot, kload(row + APP_CAPS));
     var version: t40 = kacq(row + APP_VERSION);
     kstore(row + APP_LAUNCH_COUNT, kload(row + APP_LAUNCH_COUNT) + 1);
     kcas(row + APP_VERSION, version, version + 1);
     return loaded;
+}
+
+fn app_spawn(parent_pid: t40, path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {
+    if child_slot <= 0 {
+        return 0 - ERR_INVALID;
+    }
+    if child_slot - PROCESS_MAX >= 0 {
+        return 0 - ERR_INVALID;
+    }
+    if child_pid <= 1 {
+        return 0 - ERR_INVALID;
+    }
+    var parent_slot: t40 = process_find_pid(parent_pid);
+    if parent_slot < 0 {
+        return parent_slot;
+    }
+
+    var child_state: t40 = kload(process_addr(child_slot) + PROC_STATE);
+    if child_state > 0 {
+        if process_terminal_state(child_state) > 0 {
+            process_reap_slot(child_slot);
+        } else {
+            return 0 - ERR_EXISTS;
+        }
+    }
+
+    var slot: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        if slot - child_slot != 0 {
+            var row: t40 = process_addr(slot);
+            if kload(row + PROC_STATE) > 0 {
+                if kload(row + PROC_PID) - child_pid == 0 {
+                    return 0 - ERR_EXISTS;
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+
+    var parent_row: t40 = process_addr(parent_slot);
+    process_create(child_slot, child_pid, kload(parent_row + PROC_NAMESPACE), kload(parent_row + PROC_PRIORITY), kload(parent_row + PROC_QUOTA), 0);
+    process_set_parent(child_slot, parent_pid);
+    var loaded: t40 = app_launch(child_pid, path_addr, 0);
+    if loaded < 0 {
+        process_reap_slot(child_slot);
+        return loaded;
+    }
+    if loaded - EXEC_DESC_WORDS < 0 {
+        process_reap_slot(child_slot);
+        return 0 - loaded;
+    }
+    return child_pid;
 }
 
 fn kernel_set_return(status: t40, payload: t40, detail: t40) -> t40 {
@@ -5906,6 +6063,10 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
     }
     // Process control
     if service - 48 == 0 {
+        var kill_auth: t40 = process_control_authorized(pid, arg0);
+        if kill_auth < 0 {
+            return kernel_set_return(-1, 0, kill_auth);
+        }
         var killed: t40 = process_signal(arg0, arg1);
         if killed < 0 {
             return kernel_set_return(-1, 0, killed);
@@ -5913,6 +6074,10 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         return kernel_set_return(1, killed, 0);
     }
     if service - 49 == 0 {
+        var suspend_auth: t40 = process_control_authorized(pid, arg0);
+        if suspend_auth < 0 {
+            return kernel_set_return(-1, 0, suspend_auth);
+        }
         var suspended: t40 = process_signal(arg0, SIGNAL_STOP);
         if suspended < 0 {
             return kernel_set_return(-1, 0, suspended);
@@ -5920,6 +6085,10 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         return kernel_set_return(1, suspended, 0);
     }
     if service - 50 == 0 {
+        var resume_auth: t40 = process_control_authorized(pid, arg0);
+        if resume_auth < 0 {
+            return kernel_set_return(-1, 0, resume_auth);
+        }
         var resumed: t40 = process_signal(arg0, SIGNAL_CONT);
         if resumed < 0 {
             return kernel_set_return(-1, 0, resumed);
@@ -5934,8 +6103,9 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         return kernel_set_return(1, procinfo, 0);
     }
     if service - 52 == 0 {
-        if user_validate_span(pid, arg0, 1, 0) <= 0 {
-            return kernel_set_return(-1, 0, ERR_BAD_PTR);
+        var futex_key: t40 = wait_futex_key(pid, arg0);
+        if futex_key < 0 {
+            return kernel_set_return(-1, 0, futex_key);
         }
         var futex_word: t40 = user_load_word(pid, arg0);
         if futex_word - arg1 != 0 {
@@ -5945,14 +6115,17 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         if futex_slot < 0 {
             return kernel_set_return(-1, 0, futex_slot);
         }
-        var futex_blocked: t40 = process_block_on(futex_slot, wait_channel_futex(arg0), WAIT_KIND_FUTEX, arg2, arg0, arg1, 0, PROC_BLOCKED);
+        var futex_blocked: t40 = process_block_on(futex_slot, wait_channel_futex_key(futex_key), WAIT_KIND_FUTEX, arg2, arg0, arg1, 0, PROC_BLOCKED);
         if futex_blocked < 0 {
             return kernel_set_return(-1, 0, futex_blocked);
         }
         return kernel_set_return(SYS_BLOCKED, 0, 0);
     }
     if service - 53 == 0 {
-        var futex_woke: t40 = wait_wake_futex(arg0, arg1);
+        var futex_woke: t40 = wait_wake_futex(pid, arg0, arg1);
+        if futex_woke < 0 {
+            return kernel_set_return(-1, 0, futex_woke);
+        }
         return kernel_set_return(1, futex_woke, 0);
     }
     if service - 54 == 0 {
@@ -6023,6 +6196,17 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
             return kernel_set_return(-1, 0, sleep_ms_blocked);
         }
         return kernel_set_return(SYS_BLOCKED, 0, 0);
+    }
+    if service - 57 == 0 {
+        var spawn_path_words: t40 = user_copy_cstring_to_kernel(pid, arg0, SYSCALL_PATH_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if spawn_path_words < 0 {
+            return kernel_set_return(-1, 0, spawn_path_words);
+        }
+        var spawned: t40 = app_spawn(pid, SYSCALL_PATH_COPY_BASE, arg1, arg2);
+        if spawned < 0 {
+            return kernel_set_return(-1, 0, 0 - spawned);
+        }
+        return kernel_set_return(1, spawned, 0);
     }
     return kernel_set_return(-1, 0, ERR_INVALID);
 }
@@ -6381,6 +6565,7 @@ fn kernel_init() -> t40 {
     namespace_table_init();
     pte_table_init();
     process_create(0, 1, 0, 1, 0, 0);
+    process_set_caps(0, APP_CAP_SYSTEM);
     vfs_mount(0, 0);
     // Tag the kernel process in attr_store so rel_join_proc_attr works from boot.
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_CREATED_TXID, 0);

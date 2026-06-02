@@ -225,8 +225,5 @@ fn main() -> t40 {
         }
     }
 
-    // Exit back to the desktop
-    var path_addr: t40 = paint_seed_desktop_path(10000);
-    sys_exec(path_addr);
     return 1;
 }

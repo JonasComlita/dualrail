@@ -50,6 +50,36 @@ bool writeCsrLong(sandbox::vm::VMState& vm, int csr, long long value) {
     return vm.writeCSR(csr, sandbox::vm::ops::fromLong(value));
 }
 
+template <typename Labels>
+std::string nearestLabel(const Labels& labels, int pc) {
+    std::string nearest = "<none>";
+    int nearest_pc = -1;
+    for (const auto& [label, label_pc] : labels) {
+        if (label_pc <= pc && label_pc > nearest_pc) {
+            nearest = label;
+            nearest_pc = label_pc;
+        }
+    }
+    std::ostringstream out;
+    out << nearest << "@" << nearest_pc << "+" << (pc - nearest_pc);
+    return out.str();
+}
+
+template <typename RunResult, typename Labels>
+void dumpNativeRunIfFailed(const std::string& name,
+                           const RunResult& result,
+                           const sandbox::vm::VMState& vm,
+                           const Labels& labels) {
+    const long long ret = sandbox::vm::ops::toLong(vm.regfile.read(13));
+    if (result.halted() && ret == 1) return;
+    std::cout << "DEBUG " << name
+              << ": status=" << static_cast<int>(result.status)
+              << " pc=" << vm.pc
+              << " nearest=" << nearestLabel(labels, vm.pc)
+              << " trap=" << sandbox::vm::ops::toLong(vm.trap_reg)
+              << " r13=" << ret << "\n";
+}
+
 void testDeviceTreeAndBlockDevice() {
     std::cout << "[1] Trit OS device tree and block storage\n";
     using namespace sandbox::os;
@@ -479,11 +509,13 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(writerCompiled.success, "native VFS persistence writer compiles");
     LinkResult writerLinked = linkModules({writerCompiled.object});
     expect(writerLinked.success, "native VFS persistence writer links");
-    sandbox::vm::VMState writerVm(262144, 1000000);
+    sandbox::vm::VMState writerVm(sandbox::vm::ProductionProfile::minimum());
+    writerVm.resetBlockDevice(8192);
     if (writerLinked.success) {
         expect(sandbox::vm::loadAndReset(writerVm, writerLinked.assembled.program),
                "native VFS persistence writer loads");
-        const auto writerResult = sandbox::vm::run(writerVm, 5000000);
+        const auto writerResult = sandbox::vm::run(writerVm, 50000000);
+        dumpNativeRunIfFailed("vfs-writer", writerResult, writerVm, writerLinked.assembled.labels);
         expect(writerResult.halted(), "native VFS persistence writer halts");
         expect(sandbox::vm::ops::toLong(writerVm.regfile.read(13)) == 1,
                "native VFS persistence writer syncs file to disk");
@@ -529,12 +561,13 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(readerCompiled.success, "native VFS persistence reader compiles");
     LinkResult readerLinked = linkModules({readerCompiled.object});
     expect(readerLinked.success, "native VFS persistence reader links");
-    sandbox::vm::VMState readerVm(262144, 1000000);
+    sandbox::vm::VMState readerVm(sandbox::vm::ProductionProfile::minimum());
     expect(readerVm.loadBlockImage(diskImage), "native VFS disk image loads into rebooted VM");
     if (readerLinked.success) {
         expect(sandbox::vm::loadAndReset(readerVm, readerLinked.assembled.program),
                "native VFS persistence reader loads");
-        const auto readerResult = sandbox::vm::run(readerVm, 5000000);
+        const auto readerResult = sandbox::vm::run(readerVm, 50000000);
+        dumpNativeRunIfFailed("vfs-reader", readerResult, readerVm, readerLinked.assembled.labels);
         expect(readerResult.halted(), "native VFS persistence reader halts");
         expect(sandbox::vm::ops::toLong(readerVm.regfile.read(13)) == 1,
                "native VFS persistence reader mounts and reads disk-backed file");
@@ -573,24 +606,26 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(pendingCompiled.success, "native pending WAL crash writer compiles");
     LinkResult pendingLinked = linkModules({pendingCompiled.object});
     expect(pendingLinked.success, "native pending WAL crash writer links");
-    sandbox::vm::VMState pendingVm(262144, 1000000);
+    sandbox::vm::VMState pendingVm(sandbox::vm::ProductionProfile::minimum());
     expect(pendingVm.loadBlockImage(diskImage), "pending WAL writer starts from synced disk");
     if (pendingLinked.success) {
         expect(sandbox::vm::loadAndReset(pendingVm, pendingLinked.assembled.program),
                "pending WAL writer loads");
-        const auto pendingResult = sandbox::vm::run(pendingVm, 5000000);
+        const auto pendingResult = sandbox::vm::run(pendingVm, 50000000);
+        dumpNativeRunIfFailed("pending-wal-writer", pendingResult, pendingVm, pendingLinked.assembled.labels);
         expect(pendingResult.halted(), "pending WAL writer halts");
         expect(sandbox::vm::ops::toLong(pendingVm.regfile.read(13)) == 1,
                "pending WAL writer persists an uncommitted journal record");
     }
 
-    sandbox::vm::VMState pendingReaderVm(262144, 1000000);
+    sandbox::vm::VMState pendingReaderVm(sandbox::vm::ProductionProfile::minimum());
     expect(pendingReaderVm.loadBlockImage(pendingVm.blockImage()),
            "pending WAL disk image loads into rebooted VM");
     if (readerLinked.success) {
         expect(sandbox::vm::loadAndReset(pendingReaderVm, readerLinked.assembled.program),
                "pending WAL recovery reader loads");
-        const auto pendingReaderResult = sandbox::vm::run(pendingReaderVm, 5000000);
+        const auto pendingReaderResult = sandbox::vm::run(pendingReaderVm, 50000000);
+        dumpNativeRunIfFailed("pending-wal-reader", pendingReaderResult, pendingReaderVm, readerLinked.assembled.labels);
         expect(pendingReaderResult.halted(), "pending WAL recovery reader halts");
         expect(sandbox::vm::ops::toLong(pendingReaderVm.regfile.read(13)) == 1,
                "pending WAL recovery rolls back to synced file contents");
@@ -630,12 +665,13 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(committedCompiled.success, "native committed WAL crash writer compiles");
     LinkResult committedLinked = linkModules({committedCompiled.object});
     expect(committedLinked.success, "native committed WAL crash writer links");
-    sandbox::vm::VMState committedVm(262144, 1000000);
+    sandbox::vm::VMState committedVm(sandbox::vm::ProductionProfile::minimum());
     expect(committedVm.loadBlockImage(diskImage), "committed WAL writer starts from synced disk");
     if (committedLinked.success) {
         expect(sandbox::vm::loadAndReset(committedVm, committedLinked.assembled.program),
                "committed WAL writer loads");
-        const auto committedResult = sandbox::vm::run(committedVm, 5000000);
+        const auto committedResult = sandbox::vm::run(committedVm, 50000000);
+        dumpNativeRunIfFailed("committed-wal-writer", committedResult, committedVm, committedLinked.assembled.labels);
         expect(committedResult.halted(), "committed WAL writer halts");
         expect(sandbox::vm::ops::toLong(committedVm.regfile.read(13)) == 1,
                "committed WAL writer persists committed journal without fsyncing VFS");
@@ -675,16 +711,17 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(committedReaderCompiled.success, "native committed WAL recovery reader compiles");
     LinkResult committedReaderLinked = linkModules({committedReaderCompiled.object});
     expect(committedReaderLinked.success, "native committed WAL recovery reader links");
-    sandbox::vm::VMState committedReaderVm(262144, 1000000);
+    sandbox::vm::VMState committedReaderVm(sandbox::vm::ProductionProfile::minimum());
     expect(committedReaderVm.loadBlockImage(committedVm.blockImage()),
            "committed WAL disk image loads into rebooted VM");
     if (committedReaderLinked.success) {
         expect(sandbox::vm::loadAndReset(committedReaderVm, committedReaderLinked.assembled.program),
                "committed WAL recovery reader loads");
-        const auto committedReaderResult = sandbox::vm::run(committedReaderVm, 5000000);
+        const auto committedReaderResult = sandbox::vm::run(committedReaderVm, 50000000);
+        dumpNativeRunIfFailed("committed-wal-reader", committedReaderResult, committedReaderVm, committedReaderLinked.assembled.labels);
         expect(committedReaderResult.halted(), "committed WAL recovery reader halts");
         const long long committedReaderRet = sandbox::vm::ops::toLong(committedReaderVm.regfile.read(13));
-        expect(committedReaderRet == 1,
+    expect(committedReaderRet == 1,
                "committed WAL recovery replays committed journal into VFS image");
     }
 }
@@ -694,7 +731,7 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     using namespace sandbox::os;
     using namespace sandbox::compiler;
 
-    NativeVfsImageBuilder builder(192);
+    NativeVfsImageBuilder builder(8192);
     expect(builder.status().ok(), "native VFS image builder formats a disk image");
     expect(builder.installBaseLayout().ok(), "native VFS base layout installs");
     expect(builder.addFile("/etc/motd", {84, 82, 73, 84}).ok(),
@@ -829,7 +866,8 @@ void testSharedStatusAndCompilerWrappers() {
            runtime::sys_getproc == SYSCALL_GETPROC &&
            runtime::sys_futex_wait == SYSCALL_FUTEX_WAIT &&
            runtime::sys_wait_event == SYSCALL_WAIT_EVENT &&
-           runtime::sys_sleep_ms == SYSCALL_SLEEP_MS,
+           runtime::sys_sleep_ms == SYSCALL_SLEEP_MS &&
+           runtime::sys_app_spawn == SYSCALL_APP_SPAWN,
            "compiler runtime exports OS syscall ids");
     expect(sandbox::vm::SYSCALL_OPEN == SYSCALL_OPEN &&
            sandbox::vm::SYSCALL_FORK == SYSCALL_FORK &&
@@ -838,7 +876,8 @@ void testSharedStatusAndCompilerWrappers() {
            sandbox::vm::SYSCALL_KILL == SYSCALL_KILL &&
            sandbox::vm::SYSCALL_GETPROC == SYSCALL_GETPROC &&
            sandbox::vm::SYSCALL_FUTEX_WAKE == SYSCALL_FUTEX_WAKE &&
-           sandbox::vm::SYSCALL_IPC_RECV_BLOCKING == SYSCALL_IPC_RECV_BLOCKING,
+           sandbox::vm::SYSCALL_IPC_RECV_BLOCKING == SYSCALL_IPC_RECV_BLOCKING &&
+           sandbox::vm::SYSCALL_APP_SPAWN == SYSCALL_APP_SPAWN,
            "VM ABI constants reserve OS syscall ids");
 
     const std::string src = R"(
@@ -851,9 +890,10 @@ void testSharedStatusAndCompilerWrappers() {
           let resumed = sys_resume(2);
           let info = sys_getproc(1, 10000);
           let slept = sys_sleep_ms(1);
+          let spawned = sys_app_spawn(0, 1, 101);
           let woken = sys_futex_wake(10000, 1);
           let evented = sys_wait_event(-1, 10000, 1);
-          return grown + child + status + synced + killed + resumed + info + slept + woken + evented;
+          return grown + child + status + synced + killed + resumed + info + slept + spawned + woken + evented;
         }
     )";
     CompileResult compiled = compileSource("os_wrappers.trit", src);
@@ -871,6 +911,7 @@ void testSharedStatusAndCompilerWrappers() {
     expect(contains(compiled.assembly, "syscall 53"), "sys_futex_wake lowers to syscall 53");
     expect(contains(compiled.assembly, "syscall 55"), "sys_wait_event lowers to syscall 55");
     expect(contains(compiled.assembly, "syscall 56"), "sys_sleep_ms lowers to syscall 56");
+    expect(contains(compiled.assembly, "syscall 57"), "sys_app_spawn lowers to syscall 57");
 }
 
 } // namespace

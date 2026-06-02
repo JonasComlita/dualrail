@@ -269,10 +269,37 @@ void testPhaseDKernelEndToEnd() {
             kernel_syscall_dispatch(2, 52, futex_addr, 7, 5, 0);
             ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
             ok = expect_eq(process_state(1), PROC_BLOCKED, ok);
-            ok = expect_eq(wait_wake_futex(futex_addr, 1), 1, ok);
+            ok = expect_eq(wait_wake_futex(2, futex_addr, 1), 1, ok);
             ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
             ok = expect_eq(kload(120 + TASK_CONTEXT_EPC), 201, ok);
             ok = expect_eq(kload(120 + 19), 1, ok);
+
+            process_create(6, 7, 0, 1, 0, 180);
+            process_create(7, 8, 0, 1, 0, 220);
+            var futex_va: t40 = 10;
+            var futex_ppn_a: t40 = exec_process_dmem_ppn(6);
+            var futex_ppn_b: t40 = exec_process_dmem_ppn(7);
+            kstore(exec_hw_dmem_ptbr(6), exec_encode_pte(futex_ppn_a, 1, 1, 1, 0));
+            kstore(exec_hw_dmem_ptbr(7), exec_encode_pte(futex_ppn_b, 1, 1, 1, 0));
+            kstore(180 + TASK_CONTEXT_DMEM_PTBR, exec_hw_dmem_ptbr(6));
+            kstore(180 + TASK_CONTEXT_DMEM_PAGES, 1);
+            kstore(220 + TASK_CONTEXT_DMEM_PTBR, exec_hw_dmem_ptbr(7));
+            kstore(220 + TASK_CONTEXT_DMEM_PAGES, 1);
+            kstore(futex_ppn_a * MMU_PAGE_WORDS + futex_va, 42);
+            kstore(futex_ppn_b * MMU_PAGE_WORDS + futex_va, 42);
+            kstore(180 + TASK_CONTEXT_EPC, 600);
+            kernel_syscall_dispatch(7, 52, futex_va, 42, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), SYS_BLOCKED, ok);
+            ok = expect_eq(process_state(6), PROC_BLOCKED, ok);
+            kernel_syscall_dispatch(8, 53, futex_va, 1, 0, 0);
+            ok = expect_eq(kload(SYS_PAYLOAD_ADDR), 0, ok);
+            ok = expect_eq(process_state(6), PROC_BLOCKED, ok);
+            kernel_syscall_dispatch(7, 53, futex_va, 1, 0, 0);
+            ok = expect_eq(kload(SYS_PAYLOAD_ADDR), 1, ok);
+            ok = expect_eq(process_state(6), PROC_RUNNABLE, ok);
+            ok = expect_eq(kload(180 + TASK_CONTEXT_EPC), 601, ok);
+            process_reap_slot(6);
+            process_reap_slot(7);
 
             kstore(120 + TASK_CONTEXT_EPC, 300);
             kernel_syscall_dispatch(2, 56, 2, 0, 0, 0);
@@ -386,8 +413,11 @@ void testPhaseDKernelEndToEnd() {
             var huge_fd: t40 = vfs_open(1, huge_path, 2);
             var huge_inode: t40 = vfs_lookup(0, huge_path);
             ok = expect_eq(user_has_dmem_mmu(1), 0, ok);
-            ok = expect_eq(user_validate_span(1, src, 3000, 0), 1, ok);
-            ok = expect_eq(vfs_write(1, huge_fd, src, 3000), ERR_NO_SPACE, ok);
+            var saved_next_data: t40 = kload(VFS_NEXT_DATA_ADDR);
+            kstore(VFS_NEXT_DATA_ADDR, VFS_DATA_BASE + VFS_PAYLOAD_WORDS - 10);
+            ok = expect_eq(user_validate_span(1, src, 20, 0), 1, ok);
+            ok = expect_eq(vfs_write(1, huge_fd, src, 20), ERR_NO_SPACE, ok);
+            kstore(VFS_NEXT_DATA_ADDR, saved_next_data);
             ok = expect_eq(vfs_stat(0, huge_path, 0), 0, ok);
             ok = expect_eq(vfs_extent_count(huge_inode), 0, ok);
             vfs_close(1, huge_fd);
@@ -436,6 +466,7 @@ void testPhaseDKernelEndToEnd() {
             ok = expect_eq(kload(kload(process_addr(2) + PROC_CONTEXT) + TASK_CONTEXT_DMEM_PAGES), USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES, ok);
             ok = expect_eq(kload(kload(process_addr(2) + PROC_CONTEXT) + TASK_CONTEXT_SP), 24, ok);
             ok = expect_eq(process_cache_read(2, 77), ERR_NOT_FOUND, ok);
+            ok = expect_eq(kload(PROC_CAPS_BASE + 2), APP_CAP_CONSOLE + APP_CAP_PROCESS, ok);
             kernel_syscall_dispatch(3, 19, 30, 0, 0, 0);
             kstore(36000, kload(SYS_STATUS_ADDR));
             kstore(36001, kload(SYS_PAYLOAD_ADDR));
@@ -634,6 +665,30 @@ void testPhaseDKernelEndToEnd() {
             process_set_parent(4, 1);
             process_create(5, 6, 0, 1, 0, 170);
             process_set_parent(5, 5);
+            kernel_syscall_dispatch(6, 48, 5, SIGNAL_KILL, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), -1, ok);
+            ok = expect_eq(kload(SYS_DETAIL_ADDR), ERR_INVALID, ok);
+            ok = expect_eq(process_state(4), PROC_RUNNABLE, ok);
+            kernel_syscall_dispatch(6, 49, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), -1, ok);
+            ok = expect_eq(kload(SYS_DETAIL_ADDR), ERR_INVALID, ok);
+            kernel_syscall_dispatch(6, 50, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), -1, ok);
+            ok = expect_eq(kload(SYS_DETAIL_ADDR), ERR_INVALID, ok);
+            process_set_caps(5, APP_CAP_PROCESS);
+            kernel_syscall_dispatch(6, 49, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(4), PROC_STOPPED, ok);
+            kernel_syscall_dispatch(6, 50, 5, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(4), PROC_RUNNABLE, ok);
+            process_set_caps(5, 0);
+            kernel_syscall_dispatch(5, 49, 6, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(5), PROC_STOPPED, ok);
+            kernel_syscall_dispatch(5, 50, 6, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), 1, ok);
+            ok = expect_eq(process_state(5), PROC_RUNNABLE, ok);
             var kill_fd: t40 = vfs_open(5, path, 0);
             ok = expect_pos(kill_fd, ok);
             ok = expect_eq(ipc_open_owned(1, 5, 0, 1), 1, ok);
@@ -712,11 +767,12 @@ void testPhaseDKernelEndToEnd() {
             }
         }
         expect(boot_image.success, "native Phase D boot image assembles");
-        sandbox::vm::VMState boot_vm(262144, 1000000);
+        sandbox::vm::VMState boot_vm(sandbox::vm::ProductionProfile::minimum());
+        boot_vm.resetBlockDevice(192);
         if (boot_image.success) {
             expect(sandbox::vm::assembler::loadAndReset(boot_vm, boot_image),
                    "native Phase D boot image loads");
-            const auto boot_result = sandbox::vm::run(boot_vm, 5000000);
+            const auto boot_result = sandbox::vm::run(boot_vm, 50000000);
             if (!boot_result.halted()) {
                 std::cout << "DEBUG BOOT: status=" << static_cast<int>(boot_result.status)
                           << " pc=" << boot_vm.pc
@@ -736,7 +792,8 @@ void testPhaseDKernelEndToEnd() {
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "kernel.trit plus driver links");
-    sandbox::vm::VMState vm(262144, 1000000);
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
+    vm.resetBlockDevice(192);
     if (linked.success) {
         expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "kernel image loads");
         vm.enqueueConsoleAscii("K");
@@ -767,7 +824,8 @@ void testPhaseDKernelEndToEnd() {
         expect(wordAt(vm, 36001) == 27, "sys_sbrk returns the old process break");
         expect(wordAt(vm, 36002) == 57, "sys_sbrk advances the process heap break");
         expect(wordAt(vm, 36003) == 488, "sys_sbrk preserves sparse user scratch DMEM span");
-        expect(wordAt(vm, 36004) == 871438, "sys_sbrk installs the new DMEM PTE");
+        const long long expected_sbrk_pte = (30000 + 2 * 192 + 2) * 243 + 40;
+        expect(wordAt(vm, 36004) == expected_sbrk_pte, "sys_sbrk installs the new DMEM PTE");
     }
 }
 

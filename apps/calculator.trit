@@ -528,7 +528,5 @@ fn main() -> t40 {
         last_btn = btn;
     }
 
-    path_addr = calc_seed_desktop_path(10000);
-    sys_exec(path_addr);
     return result;
 }

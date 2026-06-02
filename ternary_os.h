@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <fstream>
 #include <map>
 #include <set>
@@ -60,6 +61,7 @@ static constexpr int SYSCALL_FUTEX_WAKE = vm::SYSCALL_FUTEX_WAKE;
 static constexpr int SYSCALL_IPC_RECV_BLOCKING = vm::SYSCALL_IPC_RECV_BLOCKING;
 static constexpr int SYSCALL_WAIT_EVENT = vm::SYSCALL_WAIT_EVENT;
 static constexpr int SYSCALL_SLEEP_MS = vm::SYSCALL_SLEEP_MS;
+static constexpr int SYSCALL_APP_SPAWN = vm::SYSCALL_APP_SPAWN;
 
 static constexpr int ERR_NONE = 0;
 static constexpr int ERR_NOT_FOUND = 1;
@@ -74,6 +76,9 @@ static constexpr int ERR_EOF = 9;
 static constexpr int ERR_TIMEOUT = 10;
 static constexpr int ERR_AGAIN = 11;
 static constexpr int ERR_CANCELED = 12;
+static constexpr int ERR_ACCESS = 13;
+static constexpr int ERR_CORRUPT = 14;
+static constexpr int ERR_SIGNATURE = 15;
 
 static constexpr int BLOCK_WORDS = vm::MMU_PAGE_WORDS;
 static constexpr int FS_MAGIC = 80808;
@@ -84,36 +89,48 @@ static constexpr int DIRECT_BLOCKS = 6;
 static constexpr int NATIVE_VFS_MAGIC = 60606;
 static constexpr int NATIVE_VFS_VERSION = 1;
 static constexpr int NATIVE_KERNEL_MAGIC = 40404;
-static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 157;
-static constexpr int NATIVE_VFS_MAX_INODES = 24;
-static constexpr int NATIVE_VFS_MAX_DIRENTS = 48;
-static constexpr int NATIVE_VFS_MAX_EXTENTS = 64;
+static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 7303;
+static constexpr int NATIVE_VFS_MAX_INODES = 2048;
+static constexpr int NATIVE_VFS_MAX_DIRENTS = 4096;
+static constexpr int NATIVE_VFS_MAX_EXTENTS = 4096;
 static constexpr int NATIVE_VFS_MAX_NAME_WORDS = 16;
-static constexpr int NATIVE_VFS_PAYLOAD_WORDS = 2048;
+static constexpr int NATIVE_VFS_PAYLOAD_WORDS = 65536;
 static constexpr int NATIVE_KIND_FILE = 1;
 static constexpr int NATIVE_KIND_DIR = 2;
 static constexpr int NATIVE_KIND_EXEC = 3;
 static constexpr int NATIVE_VFS_DISK_SUPER_BLOCK = 0;
 static constexpr int NATIVE_VFS_DISK_INODE_BLOCK = 2;
-static constexpr int NATIVE_VFS_DISK_INODE_BLOCKS = 8;
-static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCK = 10;
-static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCKS = 11;
-static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCK = 21;
-static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS = 29;
-static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCK = 50;
-static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCKS = 15;
-static constexpr int NATIVE_VFS_DISK_DATA_BLOCK = 65;
-static constexpr int NATIVE_VFS_DISK_DATA_BLOCKS = 76;
-static constexpr int NATIVE_WAL_DISK_META_BLOCK = 141;
-static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 142;
+static constexpr int NATIVE_VFS_DISK_INODE_BLOCKS = 607;
+static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCK = 609;
+static constexpr int NATIVE_VFS_DISK_DIRENT_BLOCKS = 911;
+static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCK = 1520;
+static constexpr int NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS = 2428;
+static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCK = 3948;
+static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCKS = 911;
+static constexpr int NATIVE_VFS_DISK_DATA_BLOCK = 4859;
+static constexpr int NATIVE_VFS_DISK_DATA_BLOCKS = 2428;
+static constexpr int NATIVE_WAL_DISK_META_BLOCK = 7287;
+static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 7288;
 static constexpr int NATIVE_WAL_DISK_RECORD_BLOCKS = 15;
 static constexpr int NATIVE_VFS_INODE_WORDS = 8;
 static constexpr int NATIVE_VFS_DIRENT_WORDS = 6;
 static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
-static constexpr int NATIVE_VFS_DATA_BASE = 7400;
+static constexpr int NATIVE_VFS_DATA_BASE = 310000;
 static constexpr int NATIVE_EXEC_DESC_WORDS = vm::EXEC_HEADER_WORDS + 1;
 static constexpr int NATIVE_EXEC_DESC_V2_WORDS = vm::EXEC_HEADER_WORDS + 3;
 static constexpr int OS_CLUSTER_WORDS = vm::OS_CLUSTER_WORDS;
+static constexpr int PACKAGE_MAGIC = 90909;
+static constexpr int PACKAGE_FORMAT_VERSION = 1;
+static constexpr int RELEASE_IMAGE_MAGIC = 91919;
+static constexpr int SIGNED_EXEC_METADATA_VERSION = 1;
+
+static constexpr int CAP_FILE_READ = 1 << 0;
+static constexpr int CAP_FILE_WRITE = 1 << 1;
+static constexpr int CAP_WINDOW = 1 << 2;
+static constexpr int CAP_IPC = 1 << 3;
+static constexpr int CAP_PROCESS_CONTROL = 1 << 4;
+static constexpr int CAP_ALL =
+    CAP_FILE_READ | CAP_FILE_WRITE | CAP_WINDOW | CAP_IPC | CAP_PROCESS_CONTROL;
 
 using ProductionProfile = vm::ProductionProfile;
 
@@ -132,6 +149,320 @@ struct StatusResult {
         return StatusResult{T1_ERROR, payload, detail};
     }
     [[nodiscard]] bool ok() const { return status == T1_SUCCESS; }
+};
+
+struct FsConsistencyReport {
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+    int checked_inodes = 0;
+    int files = 0;
+    int directories = 0;
+    int executables = 0;
+    int referenced_blocks = 0;
+    int free_blocks = 0;
+
+    [[nodiscard]] bool ok() const { return errors.empty(); }
+    [[nodiscard]] StatusResult status() const {
+        return ok() ? StatusResult::success(checked_inodes)
+                    : StatusResult::error(ERR_CORRUPT, static_cast<int>(errors.size()));
+    }
+    void fail(const std::string& message) { errors.push_back(message); }
+    void warn(const std::string& message) { warnings.push_back(message); }
+};
+
+enum class BootMode : int {
+    Normal = 0,
+    Recovery = 1,
+};
+
+struct BootRecoveryReport {
+    BootMode mode = BootMode::Normal;
+    StatusResult status = StatusResult::error(ERR_INVALID);
+    FsConsistencyReport fsck;
+    std::string reason;
+};
+
+enum class JournalWritePhase : int {
+    BeforeBegin = 0,
+    AfterBegin = 1,
+    AfterRecord = 2,
+    AfterCommit = 3,
+    AfterApply = 4,
+    AfterCheckpoint = 5,
+};
+
+struct JournalReplayRecord {
+    int address = -1;
+    long long old_value = 0;
+    long long new_value = 0;
+    bool committed = false;
+    bool applied = false;
+};
+
+class JournalReplayHarness {
+public:
+    explicit JournalReplayHarness(int words)
+        : words_(static_cast<std::size_t>(std::max(1, words)), 0) {}
+
+    [[nodiscard]] long long read(int address) const {
+        if (address < 0 || address >= static_cast<int>(words_.size())) return 0;
+        return words_[static_cast<std::size_t>(address)];
+    }
+
+    [[nodiscard]] StatusResult seed(int address, long long value) {
+        if (!validAddress(address)) return StatusResult::error(ERR_INVALID);
+        words_[static_cast<std::size_t>(address)] = value;
+        return StatusResult::success(address);
+    }
+
+    [[nodiscard]] StatusResult simulateWriteCrash(
+        int address,
+        long long new_value,
+        JournalWritePhase phase) {
+
+        if (!validAddress(address)) return StatusResult::error(ERR_INVALID);
+        const long long old_value = words_[static_cast<std::size_t>(address)];
+        if (phase == JournalWritePhase::BeforeBegin ||
+            phase == JournalWritePhase::AfterBegin) {
+            return StatusResult::pending(address, ERR_CANCELED);
+        }
+
+        JournalReplayRecord record{address, old_value, new_value, false, false};
+        if (phase == JournalWritePhase::AfterCommit ||
+            phase == JournalWritePhase::AfterApply ||
+            phase == JournalWritePhase::AfterCheckpoint) {
+            record.committed = true;
+        }
+        if (phase == JournalWritePhase::AfterApply ||
+            phase == JournalWritePhase::AfterCheckpoint) {
+            record.applied = true;
+            words_[static_cast<std::size_t>(address)] = new_value;
+        }
+        journal_.push_back(record);
+        if (phase == JournalWritePhase::AfterCheckpoint) {
+            journal_.clear();
+        }
+        return StatusResult::success(address);
+    }
+
+    [[nodiscard]] StatusResult recover() {
+        for (const JournalReplayRecord& record : journal_) {
+            if (!validAddress(record.address)) return StatusResult::error(ERR_CORRUPT);
+            words_[static_cast<std::size_t>(record.address)] =
+                record.committed ? record.new_value : record.old_value;
+        }
+        journal_.clear();
+        return StatusResult::success(static_cast<int>(words_.size()));
+    }
+
+    [[nodiscard]] int pendingRecords() const {
+        return static_cast<int>(journal_.size());
+    }
+
+private:
+    std::vector<long long> words_;
+    std::vector<JournalReplayRecord> journal_;
+
+    [[nodiscard]] bool validAddress(int address) const {
+        return address >= 0 && address < static_cast<int>(words_.size());
+    }
+};
+
+struct SignedExecutableMetadata {
+    int version = SIGNED_EXEC_METADATA_VERSION;
+    std::string signer;
+    long long content_hash = 0;
+    long long header_hash = 0;
+    long long signature = 0;
+    int flags = 0;
+    bool present = false;
+};
+
+struct PackageEntry {
+    std::string path;
+    std::vector<long long> words;
+    bool executable = false;
+    vm::ExecutableImageHeader header;
+    SignedExecutableMetadata metadata;
+};
+
+struct PackageImage {
+    int magic = PACKAGE_MAGIC;
+    int version = PACKAGE_FORMAT_VERSION;
+    std::string name;
+    int update_epoch = 0;
+    std::vector<PackageEntry> entries;
+};
+
+[[nodiscard]] inline long long stableWordHash(
+    const std::vector<long long>& words,
+    std::uint64_t seed = 1469598103934665603ULL) {
+
+    std::uint64_t hash = seed;
+    for (long long word : words) {
+        hash ^= static_cast<std::uint64_t>(word) + 0x9e3779b97f4a7c15ULL +
+                (hash << 6) + (hash >> 2);
+        hash *= 1099511628211ULL;
+    }
+    return static_cast<long long>(hash & 0x3fffffffffffffffLL);
+}
+
+[[nodiscard]] inline std::vector<long long> executableHeaderWords(
+    const vm::ExecutableImageHeader& header) {
+
+    return {
+        header.magic,
+        header.version,
+        header.abi_version,
+        header.entry_virtual_pc,
+        header.text_pages,
+        header.data_pages,
+        header.stack_words,
+        header.syscall_abi_version,
+        header.flags,
+    };
+}
+
+inline void appendStringWords(std::vector<long long>& out, const std::string& text) {
+    out.push_back(static_cast<long long>(text.size()));
+    for (unsigned char c : text) out.push_back(static_cast<long long>(c));
+}
+
+[[nodiscard]] inline std::vector<long long> stringWords(const std::string& text) {
+    std::vector<long long> out;
+    appendStringWords(out, text);
+    return out;
+}
+
+[[nodiscard]] inline SignedExecutableMetadata signExecutableMetadata(
+    const std::vector<long long>& image,
+    const vm::ExecutableImageHeader& header,
+    const std::string& signer,
+    const std::string& secret,
+    int flags = 0) {
+
+    SignedExecutableMetadata metadata;
+    metadata.signer = signer;
+    metadata.content_hash = stableWordHash(image);
+    metadata.header_hash = stableWordHash(executableHeaderWords(header), 0xcbf29ce484222325ULL);
+    metadata.flags = flags;
+    std::vector<long long> signature_words = {
+        metadata.content_hash,
+        metadata.header_hash,
+        static_cast<long long>(metadata.flags),
+    };
+    std::vector<long long> signer_words = stringWords(signer);
+    std::vector<long long> secret_words = stringWords(secret);
+    signature_words.insert(signature_words.end(), signer_words.begin(), signer_words.end());
+    signature_words.insert(signature_words.end(), secret_words.begin(), secret_words.end());
+    metadata.signature = stableWordHash(signature_words, 0x84222325cbf29ce4ULL);
+    metadata.present = true;
+    return metadata;
+}
+
+[[nodiscard]] inline bool executableMetadataMatches(
+    const std::vector<long long>& image,
+    const vm::ExecutableImageHeader& header,
+    const SignedExecutableMetadata& metadata) {
+
+    return metadata.present &&
+           metadata.version == SIGNED_EXEC_METADATA_VERSION &&
+           metadata.content_hash == stableWordHash(image) &&
+           metadata.header_hash == stableWordHash(executableHeaderWords(header), 0xcbf29ce484222325ULL) &&
+           metadata.signature != 0;
+}
+
+[[nodiscard]] inline bool verifySignedExecutableMetadata(
+    const std::vector<long long>& image,
+    const vm::ExecutableImageHeader& header,
+    const SignedExecutableMetadata& metadata,
+    const std::string& secret) {
+
+    if (!executableMetadataMatches(image, header, metadata)) return false;
+    SignedExecutableMetadata expected =
+        signExecutableMetadata(image, header, metadata.signer, secret, metadata.flags);
+    return expected.signature == metadata.signature;
+}
+
+[[nodiscard]] inline std::vector<long long> encodeSignedExecutableMetadata(
+    const SignedExecutableMetadata& metadata) {
+
+    std::vector<long long> out = {
+        SIGNED_EXEC_METADATA_VERSION,
+        metadata.present ? 1LL : 0LL,
+        metadata.content_hash,
+        metadata.header_hash,
+        metadata.signature,
+        metadata.flags,
+    };
+    appendStringWords(out, metadata.signer);
+    return out;
+}
+
+[[nodiscard]] inline std::vector<long long> encodePackageManifest(const PackageImage& package) {
+    std::vector<long long> out = {
+        package.magic,
+        package.version,
+        package.update_epoch,
+        static_cast<long long>(package.entries.size()),
+    };
+    appendStringWords(out, package.name);
+    for (const PackageEntry& entry : package.entries) {
+        out.push_back(entry.executable ? 1LL : 0LL);
+        appendStringWords(out, entry.path);
+        out.push_back(static_cast<long long>(entry.words.size()));
+        out.push_back(stableWordHash(entry.words));
+        out.push_back(entry.metadata.present ? entry.metadata.signature : 0);
+    }
+    return out;
+}
+
+class PackageImageBuilder {
+public:
+    PackageImageBuilder(std::string name, int update_epoch)
+        : package_{PACKAGE_MAGIC, PACKAGE_FORMAT_VERSION, std::move(name), update_epoch, {}} {}
+
+    [[nodiscard]] StatusResult addFile(
+        const std::string& path,
+        const std::vector<long long>& words) {
+
+        if (!validPackagePath(path)) return StatusResult::error(ERR_INVALID);
+        PackageEntry entry;
+        entry.path = path;
+        entry.words = words;
+        package_.entries.push_back(std::move(entry));
+        return StatusResult::success(static_cast<int>(package_.entries.size()));
+    }
+
+    [[nodiscard]] StatusResult addExecutable(
+        const std::string& path,
+        const std::vector<long long>& image,
+        const vm::ExecutableImageHeader& header,
+        const SignedExecutableMetadata& metadata) {
+
+        if (!validPackagePath(path) ||
+            !vm::validateExecutableHeader(header) ||
+            !executableMetadataMatches(image, header, metadata)) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        PackageEntry entry;
+        entry.path = path;
+        entry.words = image;
+        entry.executable = true;
+        entry.header = header;
+        entry.metadata = metadata;
+        package_.entries.push_back(std::move(entry));
+        return StatusResult::success(static_cast<int>(package_.entries.size()));
+    }
+
+    [[nodiscard]] PackageImage build() const { return package_; }
+
+private:
+    PackageImage package_;
+
+    [[nodiscard]] static bool validPackagePath(const std::string& path) {
+        return !path.empty() && path[0] == '/' && path.find("..") == std::string::npos;
+    }
 };
 
 enum class UserPtrState : int8_t {
@@ -577,6 +908,129 @@ public:
     }
 
     [[nodiscard]] bool mounted() const { return mounted_; }
+
+    [[nodiscard]] FsConsistencyReport checkConsistency() const {
+        FsConsistencyReport report;
+        if (!mounted_) {
+            report.fail("filesystem is not mounted");
+            return report;
+        }
+        if (!device_) {
+            report.fail("filesystem has no attached block device");
+            return report;
+        }
+        if (inode_count_ <= 0 ||
+            inode_count_ != static_cast<int>(inodes_.size())) {
+            report.fail("inode table size does not match superblock metadata");
+        }
+        if (data_start_ <= 1 || data_start_ >= device_->blockCount()) {
+            report.fail("data region starts outside the block device");
+        }
+        if (free_blocks_.size() != static_cast<std::size_t>(device_->blockCount())) {
+            report.fail("free block bitmap size does not match block device");
+        }
+        if (!validInode(0) ||
+            inodes_[0].kind != InodeKind::Directory) {
+            report.fail("root inode is not a valid directory");
+        }
+
+        std::unordered_map<int, int> block_owner;
+        for (int block = 0; block < data_start_ && block < device_->blockCount(); ++block) {
+            if (block < static_cast<int>(free_blocks_.size()) &&
+                free_blocks_[static_cast<std::size_t>(block)]) {
+                report.fail("reserved block is marked free: " + std::to_string(block));
+            }
+        }
+
+        auto checkBlock = [&](int block, int inode_id, const std::string& label) {
+            if (block < 0) return;
+            if (block < data_start_ || block >= device_->blockCount()) {
+                report.fail(label + " references block outside data region: " + std::to_string(block));
+                return;
+            }
+            auto existing = block_owner.find(block);
+            if (existing != block_owner.end() && existing->second != inode_id) {
+                report.fail(label + " duplicates block " + std::to_string(block));
+                return;
+            }
+            block_owner[block] = inode_id;
+            if (block < static_cast<int>(free_blocks_.size()) &&
+                free_blocks_[static_cast<std::size_t>(block)]) {
+                report.fail(label + " references a block marked free: " + std::to_string(block));
+            }
+            ++report.referenced_blocks;
+        };
+
+        for (std::size_t i = 0; i < inodes_.size(); ++i) {
+            const Inode& inode = inodes_[i];
+            if (inode.kind == InodeKind::Free) continue;
+            ++report.checked_inodes;
+            if (inode.id != static_cast<int>(i)) {
+                report.fail("inode id does not match table slot: " + std::to_string(static_cast<int>(i)));
+            }
+            if (inode.size_words < 0) {
+                report.fail("inode has negative size: " + std::to_string(inode.id));
+            }
+            if (inode.kind == InodeKind::Directory) {
+                ++report.directories;
+                bool saw_dot = false;
+                bool saw_dotdot = false;
+                for (const DirectoryEntry& entry : inode.entries) {
+                    if (entry.name == ".") saw_dot = true;
+                    if (entry.name == "..") saw_dotdot = true;
+                    if (entry.name.empty()) {
+                        report.fail("directory contains an empty entry name");
+                    }
+                    if (!validInode(entry.inode)) {
+                        report.fail("directory entry points at an invalid inode: " + entry.name);
+                    }
+                }
+                if (!saw_dot || !saw_dotdot) {
+                    report.fail("directory missing dot entries: inode " + std::to_string(inode.id));
+                }
+            } else {
+                if (inode.kind == InodeKind::Executable || inode.executable) {
+                    ++report.executables;
+                    if (!vm::validateExecutableHeader(inode.exec_header)) {
+                        report.fail("executable inode has invalid header: " + std::to_string(inode.id));
+                    }
+                } else {
+                    ++report.files;
+                }
+                if (inode.size_words != static_cast<int>(inode.data.size())) {
+                    report.fail("file payload size does not match inode size: " +
+                                std::to_string(inode.id));
+                }
+                const int expected_blocks = (inode.size_words + BLOCK_WORDS - 1) / BLOCK_WORDS;
+                if (static_cast<int>(fileDataBlocks(inode).size()) < expected_blocks) {
+                    report.fail("file inode is missing data blocks: " + std::to_string(inode.id));
+                }
+            }
+
+            for (int block : inode.direct) {
+                checkBlock(block, inode.id, "inode " + std::to_string(inode.id));
+            }
+            checkBlock(inode.indirect_block, inode.id,
+                       "inode " + std::to_string(inode.id) + " indirect");
+            for (int block : inode.indirect_blocks) {
+                checkBlock(block, inode.id,
+                           "inode " + std::to_string(inode.id) + " indirect data");
+            }
+        }
+
+        for (int block = data_start_; block < static_cast<int>(free_blocks_.size()); ++block) {
+            const bool referenced = block_owner.find(block) != block_owner.end();
+            const bool marked_free = free_blocks_[static_cast<std::size_t>(block)];
+            if (referenced && marked_free) {
+                report.fail("referenced block is marked free: " + std::to_string(block));
+            }
+            if (!referenced && !marked_free) {
+                report.warn("unreferenced block is marked allocated: " + std::to_string(block));
+            }
+            if (marked_free) ++report.free_blocks;
+        }
+        return report;
+    }
 
     [[nodiscard]] StatusResult createFile(
         const std::string& path,
@@ -1624,6 +2078,82 @@ private:
     }
 };
 
+class ReleaseImageBuilder {
+public:
+    ReleaseImageBuilder(std::string name, int update_epoch, int blocks = 192)
+        : builder_(blocks),
+          release_name_(std::move(name)),
+          update_epoch_(update_epoch),
+          status_(builder_.status()) {}
+
+    [[nodiscard]] StatusResult status() const { return status_; }
+
+    [[nodiscard]] StatusResult installBaseLayout() {
+        if (!status_.ok()) return status_;
+        StatusResult layout = builder_.installBaseLayout();
+        if (!layout.ok()) return layout;
+        layout = builder_.mkdir("/var/packages");
+        if (!layout.ok()) return layout;
+        return builder_.addFile("/etc/release", encodeReleaseManifest());
+    }
+
+    [[nodiscard]] StatusResult addPackage(const PackageImage& package) {
+        if (!status_.ok()) return status_;
+        if (package.magic != PACKAGE_MAGIC ||
+            package.version != PACKAGE_FORMAT_VERSION ||
+            package.name.empty()) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult layout = installBaseLayout();
+        if (!layout.ok()) return layout;
+
+        packages_.push_back(package);
+        StatusResult manifest = builder_.addFile(
+            "/var/packages/" + package.name + ".manifest",
+            encodePackageManifest(package));
+        if (!manifest.ok()) return manifest;
+
+        for (const PackageEntry& entry : package.entries) {
+            StatusResult wrote = builder_.addFile(entry.path, entry.words);
+            if (!wrote.ok()) return wrote;
+            if (entry.executable && entry.metadata.present) {
+                wrote = builder_.addFile(entry.path + ".sig",
+                                         encodeSignedExecutableMetadata(entry.metadata));
+                if (!wrote.ok()) return wrote;
+            }
+        }
+        return builder_.addFile("/etc/release", encodeReleaseManifest());
+    }
+
+    [[nodiscard]] std::vector<long long> image() {
+        (void)builder_.addFile("/etc/release", encodeReleaseManifest());
+        return builder_.image();
+    }
+
+private:
+    NativeVfsImageBuilder builder_;
+    std::string release_name_;
+    int update_epoch_ = 0;
+    std::vector<PackageImage> packages_;
+    StatusResult status_ = StatusResult::error(ERR_INVALID);
+
+    [[nodiscard]] std::vector<long long> encodeReleaseManifest() const {
+        std::vector<long long> out = {
+            RELEASE_IMAGE_MAGIC,
+            PACKAGE_FORMAT_VERSION,
+            update_epoch_,
+            static_cast<long long>(packages_.size()),
+        };
+        appendStringWords(out, release_name_);
+        for (const PackageImage& package : packages_) {
+            appendStringWords(out, package.name);
+            out.push_back(package.update_epoch);
+            out.push_back(static_cast<long long>(package.entries.size()));
+        }
+        return out;
+    }
+};
+
 // =============================================================================
 // Process, heap, and syscall facade
 // =============================================================================
@@ -1640,6 +2170,7 @@ struct Process {
     int state = vm::PROC_STATE_FREE;
     int exit_status = 0;
     int pending_signals = 0;
+    int capabilities = CAP_ALL;
     int heap_start = 0;
     int heap_break = 0;
     int heap_limit = 0;
@@ -1655,6 +2186,7 @@ struct ProcessInfo {
     int parent_pid = -1;
     int exit_status = 0;
     int pending_signals = 0;
+    int capabilities = CAP_ALL;
     int open_fds = 0;
     int memory_words = 0;
 };
@@ -1664,6 +2196,27 @@ struct WindowRecord {
     int owner_pid = -1;
     int width = 0;
     int height = 0;
+};
+
+struct IpcMessage {
+    int from_pid = -1;
+    int to_pid = -1;
+    long long payload = 0;
+};
+
+struct ProcessIsolationReport {
+    std::vector<std::string> errors;
+    int live_processes = 0;
+    int open_fds = 0;
+    int windows = 0;
+    int ipc_messages = 0;
+
+    [[nodiscard]] bool ok() const { return errors.empty(); }
+    [[nodiscard]] StatusResult status() const {
+        return ok() ? StatusResult::success(live_processes)
+                    : StatusResult::error(ERR_CORRUPT, static_cast<int>(errors.size()));
+    }
+    void fail(const std::string& message) { errors.push_back(message); }
 };
 
 class OSKernel {
@@ -1700,9 +2253,14 @@ public:
     [[nodiscard]] const ProductionProfile& productionProfile() const { return profile_; }
     [[nodiscard]] int processCount() const { return static_cast<int>(processes_.size()); }
     [[nodiscard]] int windowCount() const { return static_cast<int>(windows_.size()); }
+    [[nodiscard]] int ipcMessageCount() const { return static_cast<int>(ipc_messages_.size()); }
 
     [[nodiscard]] std::vector<long long> diskImage() const {
         return block_device_.serialize();
+    }
+
+    [[nodiscard]] FsConsistencyReport checkFilesystemConsistency() const {
+        return fs_.checkConsistency();
     }
 
     [[nodiscard]] StatusResult shutdownSync() {
@@ -1714,6 +2272,48 @@ public:
         StatusResult dt = device_tree_.validate(&errors);
         if (!dt.ok()) return dt;
         return fs_.mount(block_device_);
+    }
+
+    [[nodiscard]] BootRecoveryReport bootWithRecovery() {
+        BootRecoveryReport report;
+        StatusResult booted = boot();
+        if (booted.ok()) {
+            report.fsck = fs_.checkConsistency();
+            if (report.fsck.ok()) {
+                report.mode = BootMode::Normal;
+                report.status = StatusResult::success();
+                return report;
+            }
+            report.reason = "filesystem consistency check failed";
+        } else {
+            report.reason = "normal boot failed";
+        }
+
+        report.mode = BootMode::Recovery;
+        StatusResult formatted = fs_.format(block_device_,
+                                            std::max(DEFAULT_INODE_COUNT,
+                                                     profile_.max_files + 8));
+        if (!formatted.ok()) {
+            report.status = formatted;
+            return report;
+        }
+        (void)fs_.createFile("/var", InodeKind::Directory);
+        (void)fs_.createFile("/var/log", InodeKind::Directory);
+        StatusResult log = fs_.createFile("/var/log/recovery", InodeKind::File);
+        if (!log.ok() && log.detail != ERR_EXISTS) {
+            report.status = log;
+            return report;
+        }
+        std::vector<long long> reason_words;
+        appendStringWords(reason_words, report.reason);
+        StatusResult wrote = fs_.writeFile("/var/log/recovery", reason_words);
+        if (!wrote.ok()) {
+            report.status = wrote;
+            return report;
+        }
+        report.fsck = fs_.checkConsistency();
+        report.status = report.fsck.status();
+        return report;
     }
 
     [[nodiscard]] Process* process(int pid) {
@@ -1730,9 +2330,65 @@ public:
         return nullptr;
     }
 
+    [[nodiscard]] StatusResult setProcessCapabilities(int pid, int capabilities) {
+        Process* proc = process(pid);
+        if (!proc) return StatusResult::error(ERR_INVALID);
+        proc->capabilities = capabilities & CAP_ALL;
+        return StatusResult::success(proc->capabilities);
+    }
+
+    [[nodiscard]] StatusResult capabilityCheck(int pid, int capability) const {
+        const Process* proc = process(pid);
+        if (!proc) return StatusResult::error(ERR_INVALID);
+        return hasCapability(*proc, capability)
+                   ? StatusResult::success(capability)
+                   : StatusResult::error(ERR_ACCESS, capability);
+    }
+
+    [[nodiscard]] ProcessIsolationReport checkProcessIsolation() const {
+        ProcessIsolationReport report;
+        std::set<int> live_pids;
+        for (const Process& proc : processes_) {
+            if (proc.pid < 0 || proc.state == vm::PROC_STATE_FREE) continue;
+            ++report.live_processes;
+            if (!live_pids.insert(proc.pid).second) {
+                report.fail("duplicate live pid: " + std::to_string(proc.pid));
+            }
+            if (proc.heap_break < proc.heap_start || proc.heap_break > proc.heap_limit) {
+                report.fail("process heap bounds are inconsistent: " + std::to_string(proc.pid));
+            }
+            for (const auto& [fd, open] : proc.fds) {
+                (void)fd;
+                ++report.open_fds;
+                if (!fs_.inode(open.inode)) {
+                    report.fail("process fd points at an invalid inode: " + std::to_string(proc.pid));
+                }
+            }
+        }
+        for (const WindowRecord& window : windows_) {
+            ++report.windows;
+            if (live_pids.count(window.owner_pid) == 0) {
+                report.fail("window is owned by a non-live process: " +
+                            std::to_string(window.owner_pid));
+            }
+        }
+        for (const IpcMessage& message : ipc_messages_) {
+            ++report.ipc_messages;
+            if (live_pids.count(message.from_pid) == 0 ||
+                live_pids.count(message.to_pid) == 0) {
+                report.fail("IPC message references a non-live process");
+            }
+        }
+        return report;
+    }
+
     [[nodiscard]] StatusResult sysOpen(int pid, const std::string& path, bool writable = false) {
         Process* proc = process(pid);
         if (!proc) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*proc, CAP_FILE_READ) ||
+            (writable && !hasCapability(*proc, CAP_FILE_WRITE))) {
+            return StatusResult::error(ERR_ACCESS);
+        }
         StatusResult found = fs_.lookup(path);
         if (!found.ok()) return found;
         int fd = nextFd(*proc);
@@ -1752,6 +2408,7 @@ public:
     [[nodiscard]] StatusResult sysRead(int pid, int fd, int count, std::vector<long long>& out) {
         Process* proc = process(pid);
         if (!proc) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*proc, CAP_FILE_READ)) return StatusResult::error(ERR_ACCESS);
         auto fdIt = proc->fds.find(fd);
         if (fdIt == proc->fds.end()) return StatusResult::error(ERR_BAD_FD);
         const Inode* inode = fs_.inode(fdIt->second.inode);
@@ -1771,6 +2428,7 @@ public:
     [[nodiscard]] StatusResult sysWrite(int pid, int fd, const std::vector<long long>& words) {
         Process* proc = process(pid);
         if (!proc) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*proc, CAP_FILE_WRITE)) return StatusResult::error(ERR_ACCESS);
         auto fdIt = proc->fds.find(fd);
         if (fdIt == proc->fds.end()) return StatusResult::error(ERR_BAD_FD);
         if (!fdIt->second.writable) return StatusResult::error(ERR_INVALID);
@@ -1888,12 +2546,51 @@ public:
         return StatusResult::success(proc->pending_signals);
     }
 
+    [[nodiscard]] StatusResult sysKillFrom(int caller_pid, int target_pid, int signal) {
+        const Process* caller = process(caller_pid);
+        if (!caller) return StatusResult::error(ERR_INVALID);
+        if (caller_pid != target_pid && !hasCapability(*caller, CAP_PROCESS_CONTROL)) {
+            return StatusResult::error(ERR_ACCESS);
+        }
+        return sysKill(target_pid, signal);
+    }
+
     [[nodiscard]] StatusResult sysSuspend(int pid) {
         return sysKill(pid, vm::SIGNAL_STOP);
     }
 
     [[nodiscard]] StatusResult sysResume(int pid) {
         return sysKill(pid, vm::SIGNAL_CONT);
+    }
+
+    [[nodiscard]] StatusResult sysSuspendFrom(int caller_pid, int target_pid) {
+        return sysKillFrom(caller_pid, target_pid, vm::SIGNAL_STOP);
+    }
+
+    [[nodiscard]] StatusResult sysResumeFrom(int caller_pid, int target_pid) {
+        return sysKillFrom(caller_pid, target_pid, vm::SIGNAL_CONT);
+    }
+
+    [[nodiscard]] StatusResult sysIpcSend(int from_pid, int to_pid, long long payload) {
+        const Process* sender = process(from_pid);
+        if (!sender || !process(to_pid)) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*sender, CAP_IPC)) return StatusResult::error(ERR_ACCESS);
+        ipc_messages_.push_back(IpcMessage{from_pid, to_pid, payload});
+        return StatusResult::success(static_cast<int>(ipc_messages_.size()));
+    }
+
+    [[nodiscard]] StatusResult sysIpcRecv(int pid, long long& payload) {
+        const Process* receiver = process(pid);
+        if (!receiver) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*receiver, CAP_IPC)) return StatusResult::error(ERR_ACCESS);
+        for (auto it = ipc_messages_.begin(); it != ipc_messages_.end(); ++it) {
+            if (it->to_pid != pid) continue;
+            payload = it->payload;
+            const int from = it->from_pid;
+            ipc_messages_.erase(it);
+            return StatusResult::success(from);
+        }
+        return StatusResult::pending(0, ERR_AGAIN);
     }
 
     [[nodiscard]] StatusResult sysGetProc(int pid, ProcessInfo& out) const {
@@ -1904,9 +2601,10 @@ public:
         out.parent_pid = proc->parent_pid;
         out.exit_status = proc->exit_status;
         out.pending_signals = proc->pending_signals;
+        out.capabilities = proc->capabilities;
         out.open_fds = static_cast<int>(proc->fds.size());
         out.memory_words = static_cast<int>(proc->memory.size());
-        return StatusResult::success(7);
+        return StatusResult::success(8);
     }
 
     [[nodiscard]] StatusResult installExecutable(
@@ -1949,7 +2647,9 @@ public:
     }
 
     [[nodiscard]] StatusResult createWindow(int pid, int width, int height) {
-        if (!process(pid)) return StatusResult::error(ERR_INVALID);
+        const Process* owner = process(pid);
+        if (!owner) return StatusResult::error(ERR_INVALID);
+        if (!hasCapability(*owner, CAP_WINDOW)) return StatusResult::error(ERR_ACCESS);
         if (width <= 0 || height <= 0) return StatusResult::error(ERR_INVALID);
         if (static_cast<int>(windows_.size()) >= profile_.max_windows) {
             return StatusResult::error(ERR_NO_SPACE);
@@ -1968,6 +2668,7 @@ private:
     TinyFileSystem fs_;
     std::vector<Process> processes_;
     std::vector<WindowRecord> windows_;
+    std::deque<IpcMessage> ipc_messages_;
     int next_pid_ = 1;
     int next_window_id_ = 1;
 
@@ -1993,12 +2694,17 @@ private:
         return std::max(1, static_cast<int>(image.size()) / BLOCK_WORDS);
     }
 
+    [[nodiscard]] static bool hasCapability(const Process& proc, int capability) {
+        return (proc.capabilities & capability) == capability;
+    }
+
     [[nodiscard]] int createProcess(int parent) {
         if (static_cast<int>(processes_.size()) >= profile_.max_processes) return -1;
         Process proc;
         proc.pid = next_pid_++;
         proc.parent_pid = parent;
         proc.state = vm::PROC_STATE_RUNNABLE;
+        proc.capabilities = CAP_ALL;
         proc.heap_start = vm::MMU_PAGE_WORDS;
         proc.heap_break = proc.heap_start;
         proc.heap_limit = proc.heap_start + 9 * vm::MMU_PAGE_WORDS;
@@ -2042,6 +2748,12 @@ private:
         proc.fds.clear();
         proc.memory.clear();
         proc.heap_break = proc.heap_start;
+        ipc_messages_.erase(
+            std::remove_if(ipc_messages_.begin(), ipc_messages_.end(),
+                           [&](const IpcMessage& message) {
+                               return message.from_pid == proc.pid || message.to_pid == proc.pid;
+                           }),
+            ipc_messages_.end());
         windows_.erase(
             std::remove_if(windows_.begin(), windows_.end(),
                            [&](const WindowRecord& window) { return window.owner_pid == proc.pid; }),
@@ -2077,6 +2789,95 @@ private:
         return fd;
     }
 };
+
+[[nodiscard]] inline std::vector<std::string> splitPackagePath(const std::string& path) {
+    std::vector<std::string> parts;
+    std::string current;
+    for (char c : path) {
+        if (c == '/') {
+            if (!current.empty()) {
+                parts.push_back(current);
+                current.clear();
+            }
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) parts.push_back(current);
+    return parts;
+}
+
+[[nodiscard]] inline StatusResult ensureKernelParentDirectories(
+    OSKernel& kernel,
+    const std::string& path) {
+
+    if (path.empty() || path[0] != '/') return StatusResult::error(ERR_INVALID);
+    std::string current;
+    const std::vector<std::string> parts = splitPackagePath(path);
+    for (std::size_t i = 0; i + 1 < parts.size(); ++i) {
+        current += "/";
+        current += parts[i];
+        StatusResult found = kernel.fs().lookup(current);
+        if (found.ok()) continue;
+        StatusResult made = kernel.fs().createFile(current, InodeKind::Directory);
+        if (!made.ok() && made.detail != ERR_EXISTS) return made;
+    }
+    return StatusResult::success();
+}
+
+[[nodiscard]] inline StatusResult writeKernelFile(
+    OSKernel& kernel,
+    const std::string& path,
+    const std::vector<long long>& words) {
+
+    StatusResult parents = ensureKernelParentDirectories(kernel, path);
+    if (!parents.ok()) return parents;
+    StatusResult found = kernel.fs().lookup(path);
+    if (!found.ok()) {
+        StatusResult created = kernel.fs().createFile(path, InodeKind::File);
+        if (!created.ok()) return created;
+    }
+    return kernel.fs().writeFile(path, words);
+}
+
+[[nodiscard]] inline StatusResult installPackage(OSKernel& kernel, const PackageImage& package) {
+    if (package.magic != PACKAGE_MAGIC ||
+        package.version != PACKAGE_FORMAT_VERSION ||
+        package.name.empty()) {
+        return StatusResult::error(ERR_INVALID);
+    }
+
+    StatusResult manifest =
+        writeKernelFile(kernel,
+                        "/var/packages/" + package.name + ".manifest",
+                        encodePackageManifest(package));
+    if (!manifest.ok()) return manifest;
+
+    for (const PackageEntry& entry : package.entries) {
+        if (entry.path.empty() || entry.path[0] != '/') {
+            return StatusResult::error(ERR_INVALID);
+        }
+        if (entry.executable) {
+            if (!executableMetadataMatches(entry.words, entry.header, entry.metadata)) {
+                return StatusResult::error(ERR_SIGNATURE);
+            }
+            StatusResult parents = ensureKernelParentDirectories(kernel, entry.path);
+            if (!parents.ok()) return parents;
+            StatusResult installed =
+                kernel.installExecutable(entry.path, entry.words, entry.header);
+            if (!installed.ok()) return installed;
+            StatusResult sidecar =
+                writeKernelFile(kernel,
+                                entry.path + ".sig",
+                                encodeSignedExecutableMetadata(entry.metadata));
+            if (!sidecar.ok()) return sidecar;
+        } else {
+            StatusResult wrote = writeKernelFile(kernel, entry.path, entry.words);
+            if (!wrote.ok()) return wrote;
+        }
+    }
+    return kernel.shutdownSync();
+}
 
 } // namespace os
 } // namespace sandbox

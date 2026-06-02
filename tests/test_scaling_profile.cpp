@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -25,6 +26,19 @@ long long readCsrLong(sandbox::vm::VMState& vm, int csr) {
 
 bool writeCsrLong(sandbox::vm::VMState& vm, int csr, long long value) {
     return vm.writeCSR(csr, sandbox::vm::ops::fromLong(value));
+}
+
+std::string readTextFile(const std::string& path) {
+    std::ifstream in(path, std::ios::in | std::ios::binary);
+    std::ostringstream out;
+    out << in.rdbuf();
+    return out.str();
+}
+
+long long fileSizeBytes(const std::string& path) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.good()) return -1;
+    return static_cast<long long>(in.tellg());
 }
 
 void testProductionProfileGeometryAndSparseMemory() {
@@ -94,6 +108,21 @@ void testSparseFileBackedDisk() {
            "sparse file-backed disk write succeeds");
     expect(writer.allocatedDiskBlocks() == 1 && writer.block_dirty[last_block],
            "sparse disk tracks only the touched high block");
+    const long long first_write_size = fileSizeBytes(path);
+    for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+        expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9100 + i)) == vm::MemFaultCode::OK,
+               "disk overwrite seed stores into sparse DMEM");
+    }
+    expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_CMD, 2), "last sparse disk block overwrites");
+    expect(readCsrLong(writer, sandbox::isa::CSR_BLOCK_STATUS) == 1,
+           "sparse file-backed disk overwrite succeeds");
+    const long long second_write_size = fileSizeBytes(path);
+    const long long compact_record_bytes =
+        static_cast<long long>(sizeof(int) + sizeof(long long) * vm::MMU_PAGE_WORDS);
+    expect(second_write_size == first_write_size + compact_record_bytes,
+           "sparse disk overwrite appends one touched-block record");
+    expect(writer.allocatedDiskBlocks() == 1,
+           "sparse disk overwrite keeps one live touched block");
 
     vm::VMState reader(profile);
     expect(reader.attachBlockBackingFile(path), "rebooted VM attaches sparse disk image file");
@@ -101,7 +130,7 @@ void testSparseFileBackedDisk() {
     expect(writeCsrLong(reader, sandbox::isa::CSR_BLOCK_ADDR, 4096), "reboot block destination writes");
     expect(writeCsrLong(reader, sandbox::isa::CSR_BLOCK_CMD, 1), "reboot sparse disk block reads");
     auto [reloaded, reload_fault] = reader.dmem.load(4096 + 26);
-    expect(reload_fault == vm::MemFaultCode::OK && vm::ops::toLong(reloaded) == 9026,
+    expect(reload_fault == vm::MemFaultCode::OK && vm::ops::toLong(reloaded) == 9126,
            "sparse file-backed disk preserves high block contents");
 
     std::remove(path.c_str());
@@ -136,6 +165,71 @@ void testTwoCoreExecutionAndRunQueues() {
     expect(vm::ops::toLong(machine.coreState(1).regfile.read(13)) == 22,
            "core 1 keeps an independent register file");
 
+    machine.restoreCoreState(0);
+    machine.vector_length = 3;
+    machine.vregfile.reset(machine.vector_length);
+    machine.vector_faults.reset(machine.vector_length);
+    machine.vregfile.reg[0].write(0, vm::ops::fromLong(101));
+    machine.vector_faults.setLane(1, vm::TrapCode::TRAP_DIV_ZERO);
+    machine.accumulator = vm::ops::fromLong(1001);
+    machine.mmu_enable = true;
+    machine.user_imem_ptbr = 111;
+    machine.user_imem_pages = 7;
+    machine.user_dmem_ptbr = 222;
+    machine.user_dmem_pages = 9;
+    machine.syscall_id = 33;
+    machine.console_char_mode = true;
+    machine.gpu_page = 1;
+    machine.block_index = 44;
+    machine.block_addr = 55;
+    machine.captureCoreState(0);
+
+    machine.restoreCoreState(1);
+    machine.vector_length = 4;
+    machine.vregfile.reset(machine.vector_length);
+    machine.vector_faults.reset(machine.vector_length);
+    machine.vregfile.reg[0].write(0, vm::ops::fromLong(202));
+    machine.accumulator = vm::ops::fromLong(2002);
+    machine.mmu_enable = false;
+    machine.user_imem_ptbr = 333;
+    machine.user_imem_pages = 11;
+    machine.user_dmem_ptbr = 444;
+    machine.user_dmem_pages = 13;
+    machine.syscall_id = 66;
+    machine.console_char_mode = false;
+    machine.gpu_page = 0;
+    machine.block_index = 77;
+    machine.block_addr = 88;
+    machine.captureCoreState(1);
+
+    machine.restoreCoreState(0);
+    expect(machine.mmu_enable && machine.user_imem_ptbr == 111 &&
+               machine.user_dmem_ptbr == 222,
+           "core 0 restores independent MMU CSR state");
+    expect(machine.vector_length == 3 &&
+               vm::ops::toLong(machine.vregfile.reg[0].read(0)) == 101 &&
+               machine.vector_faults.any(),
+           "core 0 restores vector lanes and lane faults");
+    expect(vm::ops::toLong(machine.accumulator) == 1001 &&
+               machine.syscall_id == 33 && machine.console_char_mode &&
+               machine.gpu_page == 1 && machine.block_index == 44 &&
+               machine.block_addr == 55,
+           "core 0 restores accumulator, syscall mode, and device CSR staging");
+
+    machine.restoreCoreState(1);
+    expect(!machine.mmu_enable && machine.user_imem_ptbr == 333 &&
+               machine.user_dmem_ptbr == 444,
+           "core 1 restores independent MMU CSR state");
+    expect(machine.vector_length == 4 &&
+               vm::ops::toLong(machine.vregfile.reg[0].read(0)) == 202 &&
+               !machine.vector_faults.any(),
+           "core 1 restores vector lanes independently");
+    expect(vm::ops::toLong(machine.accumulator) == 2002 &&
+               machine.syscall_id == 66 && !machine.console_char_mode &&
+               machine.gpu_page == 0 && machine.block_index == 77 &&
+               machine.block_addr == 88,
+           "core 1 restores accumulator, syscall mode, and device CSR staging");
+
     for (int pid = 1; pid <= 100; ++pid) machine.enqueueProcess(pid);
     machine.loadBalanceRunQueues();
     const std::size_t c0 = machine.runQueueDepth(0);
@@ -144,8 +238,62 @@ void testTwoCoreExecutionAndRunQueues() {
            "global load balancing spreads 100 runnable processes across two cores");
 }
 
+void testNativeKernelProductionConstants() {
+    std::cout << "[4] Native kernel production constants\n";
+    using namespace sandbox;
+    using namespace sandbox::compiler;
+
+    const std::string kernel = readTextFile("kernel.trit");
+    expect(!kernel.empty(), "native kernel source is available");
+    const std::string driver = R"(
+        fn main() -> t40 {
+            var process_max: t40 = PROCESS_MAX;
+            var window_max: t40 = WINDOW_MAX;
+            var inode_max: t40 = VFS_MAX_INODES;
+            var dirent_max: t40 = VFS_MAX_DIRENTS;
+            var fb_words: t40 = FB_MAX_WORDS;
+            var ipc_max: t40 = IPC_MAX_CHANNELS;
+            var net_max: t40 = NET_MAX_SOCKETS;
+            var process_dmem_base: t40 = PROCESS_DMEM_PPN_BASE * MMU_PAGE_WORDS;
+            var hw_pt_end: t40 = HW_PT_BASE + PROCESS_MAX * HW_PT_WORDS;
+            var window_words: t40 = WINDOW_BUFFER_WORDS;
+            var required_blocks: t40 = VFS_DISK_REQUIRED_BLOCKS;
+            if process_max - 100 < 0 { return -1; }
+            if window_max - 100 < 0 { return -2; }
+            if inode_max - 2048 != 0 { return -3; }
+            if dirent_max - 1000 < 0 { return -4; }
+            if fb_words - (1280 * 720 * 3) < 0 { return -5; }
+            if ipc_max - 100 < 0 { return -6; }
+            if net_max - 100 < 0 { return -7; }
+            if process_dmem_base - hw_pt_end <= 0 { return -8; }
+            if window_words - (64 * 36 * 3) < 0 { return -9; }
+            if required_blocks - 8192 >= 0 { return -10; }
+            return 1;
+        }
+    )";
+    CompileResult compiled = compileSource("native_kernel_production_constants.trit",
+                                           kernel + "\n" + driver);
+    if (!compiled.success) {
+        for (const auto& diagnostic : compiled.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(compiled.success, "native kernel production constant probe compiles");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "native kernel production constant probe links");
+    vm::VMState machine(262144, 1000000);
+    if (linked.success) {
+        expect(vm::loadAndReset(machine, linked.assembled.program),
+               "native kernel production constant probe loads");
+        const vm::RunResult result = vm::run(machine, 1000000);
+        expect(result.halted(), "native kernel production constant probe halts");
+        expect(vm::ops::toLong(machine.regfile.read(13)) == 1,
+               "compiled native kernel exposes production-scale limits");
+    }
+}
+
 void testProductionOsStressLimits() {
-    std::cout << "[4] Production OS process, file, and window stress limits\n";
+    std::cout << "[5] Production OS process, file, and window stress limits\n";
     using namespace sandbox::os;
 
     ProductionProfile profile = ProductionProfile::minimum();
@@ -185,6 +333,7 @@ int main() {
     testProductionProfileGeometryAndSparseMemory();
     testSparseFileBackedDisk();
     testTwoCoreExecutionAndRunQueues();
+    testNativeKernelProductionConstants();
     testProductionOsStressLimits();
 
     if (g_failures != 0) {

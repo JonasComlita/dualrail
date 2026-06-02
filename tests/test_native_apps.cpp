@@ -243,6 +243,8 @@ void testProcessControlSdkWrappersCompile() {
     const std::string src = R"(
         fn main() -> t40 {
             var info: t40 = 10000;
+            var path: t40 = 10100;
+            os_spawn_app(path, 1, 101);
             os_getproc(1, info);
             os_suspend(2);
             os_resume(2);
@@ -262,6 +264,7 @@ void testProcessControlSdkWrappersCompile() {
     expect(contains(compiled.assembly, "syscall 50"), "os_resume lowers to syscall 50");
     expect(contains(compiled.assembly, "syscall 51"), "os_getproc lowers to syscall 51");
     expect(contains(compiled.assembly, "syscall 56"), "os_sleep_ms lowers to syscall 56");
+    expect(contains(compiled.assembly, "syscall 57"), "os_spawn_app lowers to syscall 57");
 }
 
 void testWidgetToolkitCompiles() {

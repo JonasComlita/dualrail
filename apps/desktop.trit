@@ -1,3 +1,17 @@
+const DESKTOP_CALC_SLOT: t40 = 1;
+const DESKTOP_TASK_SLOT: t40 = 2;
+const DESKTOP_PAINT_SLOT: t40 = 3;
+const DESKTOP_FILES_SLOT: t40 = 4;
+const DESKTOP_SETTINGS_SLOT: t40 = 5;
+const DESKTOP_TERMINAL_SLOT: t40 = 6;
+
+const DESKTOP_CALC_PID: t40 = 101;
+const DESKTOP_TASK_PID: t40 = 102;
+const DESKTOP_PAINT_PID: t40 = 103;
+const DESKTOP_FILES_PID: t40 = 104;
+const DESKTOP_SETTINGS_PID: t40 = 105;
+const DESKTOP_TERMINAL_PID: t40 = 106;
+
 fn desktop_title() -> t40 {
     os_text_cell(0, 0, 84, 11); // 'T'
     os_text_cell(1, 0, 82, 11); // 'R'
@@ -159,30 +173,34 @@ fn desktop_seed_terminal_path(addr: t40) -> t40 {
     return addr;
 }
 
+fn desktop_launch_child(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {
+    return os_spawn_app(path_addr, child_slot, child_pid);
+}
+
 fn desktop_launch_hotkey(key: t40) -> t40 {
     if key - 49 == 0 {
         var path_addr: t40 = desktop_seed_calculator_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
     }
     if key - 50 == 0 {
         var path_addr: t40 = desktop_seed_task_manager_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
     }
     if key - 51 == 0 {
         var path_addr: t40 = desktop_seed_paint_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
     }
     if key - 52 == 0 {
         var path_addr: t40 = desktop_seed_file_manager_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
     }
     if key - 53 == 0 {
         var path_addr: t40 = desktop_seed_settings_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
     }
     if key - 54 == 0 {
         var path_addr: t40 = desktop_seed_terminal_path(10000);
-        return sys_exec(path_addr);
+        return desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
     }
     return 0;
 }
@@ -693,9 +711,6 @@ fn main() -> t40 {
     if os_key_available() > 0 {
         var boot_key: t40 = os_read_key();
         var boot_launch: t40 = desktop_launch_hotkey(boot_key);
-        if boot_launch != 0 {
-            return boot_key;
-        }
     }
 
     desktop_draw_hud();
@@ -817,33 +832,27 @@ fn main() -> t40 {
 
         if click - 1 == 0 {
             var path_addr: t40 = desktop_seed_calculator_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
         }
         if click - 2 == 0 {
             var path_addr: t40 = desktop_seed_task_manager_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
         }
         if click - 3 == 0 {
             var path_addr: t40 = desktop_seed_paint_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
         }
         if click - 4 == 0 {
             var path_addr: t40 = desktop_seed_file_manager_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
         }
         if click - 5 == 0 {
             var path_addr: t40 = desktop_seed_settings_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
         }
         if click - 6 == 0 {
             var path_addr: t40 = desktop_seed_terminal_path(10000);
-            var res: t40 = sys_exec(path_addr);
-            done = 1;
+            var res: t40 = desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
         }
         if click - 7 == 0 {
             unsafe { store(62000, 0); } // Clear logged in flag

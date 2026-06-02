@@ -501,3 +501,9 @@ fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {
 fn os_window_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {
     return sys_wait_event(window_id, out_addr, timeout_ms);
 }
+
+// --- Desktop app launch (service 57) ---
+
+fn os_spawn_app(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {
+    return sys_app_spawn(path_addr, child_slot, child_pid);
+}

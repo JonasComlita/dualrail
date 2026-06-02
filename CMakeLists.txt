@@ -3,6 +3,7 @@ project(TernaryGPUBackendValidation LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
 
 add_compile_definitions(NOMINMAX)
 
@@ -120,6 +121,10 @@ add_executable(test_production_layers tests/test_production_layers.cpp)
 target_compile_features(test_production_layers PUBLIC cxx_std_17)
 target_compile_definitions(test_production_layers PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_production_hardening tests/test_production_hardening.cpp)
+target_compile_features(test_production_hardening PUBLIC cxx_std_17)
+target_compile_definitions(test_production_hardening PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_native_apps tests/test_native_apps.cpp)
 target_compile_features(test_native_apps PUBLIC cxx_std_17)
 target_compile_definitions(test_native_apps PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -139,6 +144,30 @@ target_compile_definitions(test_os_platform PRIVATE TERNARY_IGNORE_LONG_DOUBLE_A
 add_executable(test_scaling_profile_compact tests/test_scaling_profile.cpp)
 target_compile_features(test_scaling_profile_compact PUBLIC cxx_std_17)
 target_compile_definitions(test_scaling_profile_compact PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_test(NAME test_production_hardening
+         COMMAND test_production_hardening
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_custom_target(production_profile
+    DEPENDS
+        test_production_layers
+        test_production_hardening
+        test_os_platform
+        test_scaling_profile_compact
+        test_consumer_shell_productization
+)
+
+add_custom_target(ci_production
+    COMMAND $<TARGET_FILE:test_production_layers>
+    COMMAND $<TARGET_FILE:test_production_hardening>
+    COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_scaling_profile_compact>
+    COMMAND $<TARGET_FILE:test_consumer_shell_productization>
+    DEPENDS production_profile
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
 
 add_executable(run_os_demo run_os_demo.cpp)
 target_compile_features(run_os_demo PUBLIC cxx_std_17)

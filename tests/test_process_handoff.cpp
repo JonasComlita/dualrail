@@ -18,14 +18,24 @@ constexpr int kWindowProbeTextPpn = 8600;
 constexpr int kWindowProbeTextPhys = kWindowProbeTextPpn * sandbox::vm::MMU_PAGE_WORDS;
 constexpr int kHwPtBase = 19300;
 constexpr int kHwPtMaxPages = 512;
-constexpr int kProcessDmemPpnBase = 3200;
-constexpr int kFbStateBase = 23650;
+constexpr int kHwPtWords = 1024;
+constexpr int kProcessBase = 390000;
+constexpr int kProcessRowWords = 8;
+constexpr int kProcPid = 0;
+constexpr int kProcState = 2;
+constexpr int kProcContext = 5;
+constexpr int kTaskContextDmemPages = 5;
+constexpr int kProcessDmemPpnBase = 30000;
+constexpr int kProcessDmemPagesMax = 192;
+constexpr int kFbStateBase = 131500;
 constexpr int kFbFrontIndex = 5;
-constexpr int kFbBackBufferBase = 43000;
+constexpr int kFbBackBufferBase = 4800000;
 constexpr int kCalcFbWidth = 20;
 constexpr int kWindowUserVpnBase = 64;
-constexpr int kWindowBufferPpn = 1690;
-constexpr int kWindowUserMappedPages = 82;
+constexpr int kWindowBufferPpn = 296297;
+constexpr int kWindowUserMappedPages = 320;
+constexpr int kCalcProcessSlot = 1;
+constexpr int kCalcPid = 101;
 
 int g_failures = 0;
 
@@ -69,9 +79,42 @@ bool imemPteMapsTo(const sandbox::vm::VMState& vm, int ppn) {
            pte.present && pte.user && pte.execute && pte.ppn == ppn;
 }
 
+int imemPtbrForSlot(int process_slot) {
+    return kHwPtBase + process_slot * kHwPtWords;
+}
+
+int dmemPtbrForSlot(int process_slot) {
+    return imemPtbrForSlot(process_slot) + kHwPtMaxPages;
+}
+
+int processAddr(int process_slot) {
+    return kProcessBase + process_slot * kProcessRowWords;
+}
+
+int processDmemPpn(int process_slot) {
+    return kProcessDmemPpnBase + process_slot * kProcessDmemPagesMax;
+}
+
+bool imemPteMapsTo(const sandbox::vm::VMState& vm, int process_slot, int ppn) {
+    auto [pte_value, fault] = vm.dmem.load(imemPtbrForSlot(process_slot));
+    if (fault != sandbox::vm::MemFaultCode::OK) return false;
+    sandbox::vm::PageTableEntry pte;
+    return sandbox::vm::decodePageTableEntry(pte_value, pte) &&
+           pte.present && pte.user && pte.execute && pte.ppn == ppn;
+}
+
 bool windowBufferPteMapsTo(const sandbox::vm::VMState& vm, int ppn) {
     auto [pte_value, fault] =
         vm.dmem.load(kHwPtBase + kHwPtMaxPages + kWindowUserVpnBase);
+    if (fault != sandbox::vm::MemFaultCode::OK) return false;
+    sandbox::vm::PageTableEntry pte;
+    return sandbox::vm::decodePageTableEntry(pte_value, pte) &&
+           pte.present && pte.user && pte.read && pte.write && pte.ppn == ppn;
+}
+
+bool windowBufferPteMapsTo(const sandbox::vm::VMState& vm, int process_slot, int ppn) {
+    auto [pte_value, fault] =
+        vm.dmem.load(dmemPtbrForSlot(process_slot) + kWindowUserVpnBase);
     if (fault != sandbox::vm::MemFaultCode::OK) return false;
     sandbox::vm::PageTableEntry pte;
     return sandbox::vm::decodePageTableEntry(pte_value, pte) &&
@@ -250,7 +293,7 @@ std::string buildBootExecAssembly(const std::string& path,
 }
 
 void testDesktopLaunchesMappedCalculator() {
-    std::cout << "[1] Desktop-triggered process image handoff\n";
+    std::cout << "[1] Desktop-triggered concurrent app launch\n";
     using namespace sandbox::compiler;
 
     const std::string kernel = readTextFile("kernel.trit");
@@ -272,7 +315,7 @@ void testDesktopLaunchesMappedCalculator() {
            "dead-stripped desktop image fits the current IMEM page-table contract");
     expect(calc.executable_header.text_pages <= kHwPtMaxPages,
            "dead-stripped calculator image fits the current IMEM page-table contract");
-    sandbox::os::NativeVfsImageBuilder rootfs(2048);
+    sandbox::os::NativeVfsImageBuilder rootfs(16384);
     expect(rootfs.installBaseLayout().ok(), "calculator rootfs base layout installs");
     expect(rootfs.addExecutableImage("/bin/desktop",
                                     desktop.assembled.program,
@@ -309,17 +352,19 @@ void testDesktopLaunchesMappedCalculator() {
     vm.enqueueConsoleAscii("1a");
 
     const auto calculator_ready = [&]() {
-        return imemPteMapsTo(vm, kCalcTextPpn) &&
+        return wordAt(vm, processAddr(0) + kProcPid) == 1 &&
+               wordAt(vm, processAddr(0) + kProcState) > 0 &&
+               wordAt(vm, processAddr(kCalcProcessSlot) + kProcPid) == kCalcPid &&
+               wordAt(vm, processAddr(kCalcProcessSlot) + kProcState) > 0 &&
+               imemPteMapsTo(vm, 0, kDesktopTextPpn) &&
+               imemPteMapsTo(vm, kCalcProcessSlot, kCalcTextPpn) &&
                imemWordEquals(vm, kCalcTextPhys, calc.assembled.program.front()) &&
-               windowBufferPteMapsTo(vm, kWindowBufferPpn) &&
+               windowBufferPteMapsTo(vm, kCalcProcessSlot, kWindowBufferPpn) &&
                calculatorFrameReady(vm);
     };
     const auto result = runUntil(vm, 50000000, 1000000, calculator_ready);
-    const bool mapped_handoff =
-        vm.mmu_enable &&
-        vm.user_imem_ptbr == kHwPtBase &&
-        vm.user_dmem_ptbr == kHwPtBase + kHwPtMaxPages;
-    if (!result.halted() && !mapped_handoff) {
+    const bool launched_concurrently = calculator_ready();
+    if (!launched_concurrently) {
         std::string nearest = "<none>";
         int nearest_pc = -1;
         for (const auto& [label, pc] : assembled.labels) {
@@ -328,7 +373,7 @@ void testDesktopLaunchesMappedCalculator() {
                 nearest_pc = pc;
             }
         }
-        std::cout << "DEBUG handoff: status=" << static_cast<int>(result.status)
+        std::cout << "DEBUG spawn: status=" << static_cast<int>(result.status)
                   << " pc=" << vm.pc
                   << " nearest=" << nearest << "@" << nearest_pc
                   << " cause=" << vm.cause
@@ -338,35 +383,24 @@ void testDesktopLaunchesMappedCalculator() {
                   << " syscall=" << vm.syscall_id
                   << " priv=" << static_cast<int>(vm.privilege)
                   << " trap=" << sandbox::vm::ops::toLong(vm.trap_reg)
+                  << " desktop_pid=" << wordAt(vm, processAddr(0) + kProcPid)
+                  << " calc_pid=" << wordAt(vm, processAddr(kCalcProcessSlot) + kProcPid)
+                  << " calc_state=" << wordAt(vm, processAddr(kCalcProcessSlot) + kProcState)
                   << " insn='" << disassembleAt(vm, vm.pc) << "'"
                   << " epc_insn='" << disassembleAt(vm, vm.epc) << "'"
                   << " buffer='" << vm.syscall_buffer << "'\n";
     }
-    expect(result.halted() || mapped_handoff,
-           "desktop launch reaches mapped calculator handoff");
-    if (result.halted() && !contains(vm.syscall_buffer, "144 + 12 = 156\n")) {
-        std::cout << "DEBUG handoff halted=" << result.halted()
-                  << " pc=" << vm.pc
-                  << " r13=" << sandbox::vm::ops::toLong(vm.regfile.read(13))
-                  << " r14=" << sandbox::vm::ops::toLong(vm.regfile.read(14))
-                  << " r15=" << sandbox::vm::ops::toLong(vm.regfile.read(15))
-                  << " mmu=" << vm.mmu_enable
-                  << " imem_ptbr=" << vm.user_imem_ptbr
-                  << " dmem_ptbr=" << vm.user_dmem_ptbr
-                  << " buffer='" << vm.syscall_buffer << "'\n";
-    }
+    expect(launched_concurrently,
+           "desktop launch reaches calculator child process without replacing desktop");
     expect(contains(vm.syscall_buffer, "DESKTOP\n"), "desktop ran before launch");
     expect(imemWordEquals(vm, kDesktopTextPhys, desktop.assembled.program.front()),
            "desktop text was loaded from disk into IMEM");
-    if (result.halted()) {
-        expect(contains(vm.syscall_buffer, "144 + 12 = 156\n"),
-               "mapped calculator ran after sys_exec");
-    }
-    expect(vm.mmu_enable, "exec handoff enables the MMU for the launched image");
-    expect(vm.user_imem_ptbr == kHwPtBase,
-           "calculator context installs per-process IMEM page table");
-    expect(vm.user_dmem_ptbr == kHwPtBase + kHwPtMaxPages,
-           "calculator context installs per-process DMEM page table");
+    expect(!result.halted(), "desktop remains alive after launching calculator");
+    expect(vm.mmu_enable, "concurrent launch keeps the MMU enabled");
+    expect(wordAt(vm, processAddr(0) + kProcPid) == 1,
+           "desktop process slot stays owned by the desktop pid");
+    expect(wordAt(vm, processAddr(kCalcProcessSlot) + kProcPid) == kCalcPid,
+           "calculator launches in its reserved child process slot");
 
     expect(wordAt(vm, kFbStateBase + kFbFrontIndex) == 1,
            "desktop-launched calculator presents a compositor frame");
@@ -377,11 +411,14 @@ void testDesktopLaunchesMappedCalculator() {
            "desktop-launched calculator status green channel reaches visible framebuffer");
     expect(wordAt(vm, calc_pixel + 2) == 24,
            "desktop-launched calculator status blue channel reaches visible framebuffer");
-    expect(vm.user_dmem_pages >= kWindowUserMappedPages,
-           "desktop-launched calculator maps its window buffer into user DMEM");
+    const int calc_context =
+        static_cast<int>(wordAt(vm, processAddr(kCalcProcessSlot) + kProcContext));
+    expect(calc_context > 0 &&
+               wordAt(vm, calc_context + kTaskContextDmemPages) >= kWindowUserMappedPages,
+           "desktop-launched calculator maps its window buffer into child user DMEM");
 
     auto [calc_window_pte_value, calc_window_pte_fault] =
-        vm.dmem.load(kHwPtBase + kHwPtMaxPages + kWindowUserVpnBase);
+        vm.dmem.load(dmemPtbrForSlot(kCalcProcessSlot) + kWindowUserVpnBase);
     expect(calc_window_pte_fault == sandbox::vm::MemFaultCode::OK,
            "calculator window buffer PTE can be read");
     sandbox::vm::PageTableEntry calc_window_pte;
@@ -390,25 +427,34 @@ void testDesktopLaunchesMappedCalculator() {
                calc_window_pte.write && calc_window_pte.ppn == kWindowBufferPpn,
            "calculator window buffer user VPN maps to the compositor backing buffer");
 
-    auto [imem_pte_value, imem_pte_fault] = vm.dmem.load(kHwPtBase);
+    auto [desktop_imem_pte_value, desktop_imem_pte_fault] = vm.dmem.load(imemPtbrForSlot(0));
+    expect(desktop_imem_pte_fault == sandbox::vm::MemFaultCode::OK,
+           "desktop IMEM PTE can be read");
+    sandbox::vm::PageTableEntry desktop_imem_pte;
+    expect(sandbox::vm::decodePageTableEntry(desktop_imem_pte_value, desktop_imem_pte) &&
+               desktop_imem_pte.present && desktop_imem_pte.user && desktop_imem_pte.execute &&
+               desktop_imem_pte.ppn == kDesktopTextPpn,
+           "desktop IMEM PTE remains mapped to desktop text");
+
+    auto [imem_pte_value, imem_pte_fault] = vm.dmem.load(imemPtbrForSlot(kCalcProcessSlot));
     expect(imem_pte_fault == sandbox::vm::MemFaultCode::OK,
-           "IMEM PTE can be read");
+           "calculator IMEM PTE can be read");
     sandbox::vm::PageTableEntry imem_pte;
     expect(sandbox::vm::decodePageTableEntry(imem_pte_value, imem_pte) &&
                imem_pte.present && imem_pte.user && imem_pte.execute &&
                imem_pte.ppn == kCalcTextPpn,
-           "IMEM PTE maps virtual page zero to the calculator text page");
+           "calculator IMEM PTE maps virtual page zero to the calculator text page");
     expect(imemWordEquals(vm, kCalcTextPhys, calc.assembled.program.front()),
            "desktop-launched calculator text was loaded from disk into IMEM");
 
-    auto [dmem_pte_value, dmem_pte_fault] = vm.dmem.load(kHwPtBase + kHwPtMaxPages);
+    auto [dmem_pte_value, dmem_pte_fault] = vm.dmem.load(dmemPtbrForSlot(kCalcProcessSlot));
     expect(dmem_pte_fault == sandbox::vm::MemFaultCode::OK,
-           "DMEM PTE can be read");
+           "calculator DMEM PTE can be read");
     sandbox::vm::PageTableEntry dmem_pte;
     expect(sandbox::vm::decodePageTableEntry(dmem_pte_value, dmem_pte) &&
-               dmem_pte.present && dmem_pte.user && dmem_pte.read &&
-               dmem_pte.write && dmem_pte.ppn == kProcessDmemPpnBase,
-           "DMEM PTE maps virtual data page zero to the process data page");
+                dmem_pte.present && dmem_pte.user && dmem_pte.read &&
+                dmem_pte.write && dmem_pte.ppn == processDmemPpn(kCalcProcessSlot),
+           "calculator DMEM PTE maps virtual data page zero to the child process data page");
 }
 
 void testWindowProbeRunsThroughMappedWindowBuffer() {
@@ -463,7 +509,7 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     if (!compiled_kernel.success || !probe.success || !launcher.success) return;
     expect(launcher.executable_header.text_pages <= kHwPtMaxPages,
            "dead-stripped launcher image fits the current IMEM page-table contract");
-    sandbox::os::NativeVfsImageBuilder rootfs(384);
+    sandbox::os::NativeVfsImageBuilder rootfs(16384);
     expect(rootfs.installBaseLayout().ok(), "window probe rootfs base layout installs");
     expect(rootfs.addExecutableImage("/bin/launcher",
                                     launcher.assembled.program,

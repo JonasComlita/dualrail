@@ -2043,6 +2043,38 @@ struct VMHooks {
     Hook onHalt;
 };
 
+struct PerformanceCounters {
+    long long steps = 0;
+    long long syscalls = 0;
+    long long branches = 0;
+    long long traps = 0;
+    long long halts = 0;
+};
+
+[[nodiscard]] inline VMHooks makeProfilerHooks(PerformanceCounters& counters) {
+    VMHooks hooks;
+    hooks.onStep = [&counters](const VMState& vm, int pc_before) {
+        ++counters.steps;
+        auto [raw, fault] = vm.imem.fetch(pc_before);
+        if (fault != MemFaultCode::OK) return;
+        const InstructionWord iw = InstructionWord::decode(raw);
+        if (iw.opcode == Opcode::SYSCALL) {
+            ++counters.syscalls;
+        } else if (iw.opcode == Opcode::BRN || iw.opcode == Opcode::BRZ ||
+                   iw.opcode == Opcode::BRP || iw.opcode == Opcode::JMP ||
+                   iw.opcode == Opcode::CALL || iw.opcode == Opcode::RET) {
+            ++counters.branches;
+        }
+    };
+    hooks.onTrap = [&counters](const VMState&, int) {
+        ++counters.traps;
+    };
+    hooks.onHalt = [&counters](const VMState&, int) {
+        ++counters.halts;
+    };
+    return hooks;
+}
+
 // Execute one instruction and notify hooks after the architectural state for
 // that instruction has been committed. Terminal hooks fire after onStep.
 inline VMStatus step(VMState& vm, const VMHooks& hooks) {

@@ -1234,6 +1234,7 @@ static constexpr int SYSCALL_FUTEX_WAKE       = 53;
 static constexpr int SYSCALL_IPC_RECV_BLOCKING = 54;
 static constexpr int SYSCALL_WAIT_EVENT       = 55;
 static constexpr int SYSCALL_SLEEP_MS         = 56;
+static constexpr int SYSCALL_APP_SPAWN        = 57;
 
 static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;
@@ -1550,6 +1551,7 @@ public:
     void reset(int block_count) {
         block_count_ = std::max(1, block_count);
         blocks_.clear();
+        compact_record_count_ = 0;
     }
 
     [[nodiscard]] int blockCount() const { return block_count_; }
@@ -1558,7 +1560,9 @@ public:
 
     [[nodiscard]] bool attachBackingFile(const std::string& path) {
         backing_path_ = path;
-        return loadCompactBacking() && rewriteCompactBacking();
+        blocks_.clear();
+        compact_record_count_ = 0;
+        return loadCompactBacking();
     }
 
     void detachBackingFile() {
@@ -1581,8 +1585,12 @@ public:
     [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= block_count_) return false;
         if (static_cast<int>(data.size()) != MMU_PAGE_WORDS) return false;
-        blocks_[index] = data;
-        return backing_path_.empty() || rewriteCompactBacking();
+        if (isZeroBlock(data)) {
+            blocks_.erase(index);
+        } else {
+            blocks_[index] = data;
+        }
+        return backing_path_.empty() || appendCompactRecord(index, data);
     }
 
     [[nodiscard]] std::vector<long long> serializeDense() const {
@@ -1615,6 +1623,7 @@ private:
     int block_count_ = 1;
     std::unordered_map<int, std::vector<long long>> blocks_;
     std::string backing_path_;
+    int compact_record_count_ = 0;
 
     [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& data) {
         for (long long value : data) {
@@ -1626,13 +1635,14 @@ private:
     [[nodiscard]] bool loadCompactBacking() {
         if (backing_path_.empty()) return true;
         std::ifstream file(backing_path_, std::ios::binary);
-        if (!file.good()) return true;
+        if (!file.good()) return initializeCompactBacking();
         long long magic = 0;
         int count = 0;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         file.read(reinterpret_cast<char*>(&count), sizeof(count));
         if (!file.good() || magic != kSparseDiskMagic || count < 0) return false;
         blocks_.clear();
+        compact_record_count_ = count;
         for (int i = 0; i < count; ++i) {
             int index = -1;
             std::vector<long long> payload(MMU_PAGE_WORDS, 0);
@@ -1642,27 +1652,50 @@ private:
                           sizeof(long long));
             }
             if (!file.good()) return false;
-            if (index >= 0 && index < block_count_ && !isZeroBlock(payload)) {
-                blocks_[index] = std::move(payload);
+            if (index >= 0 && index < block_count_) {
+                if (isZeroBlock(payload)) {
+                    blocks_.erase(index);
+                } else {
+                    blocks_[index] = std::move(payload);
+                }
             }
         }
         return true;
     }
 
-    [[nodiscard]] bool rewriteCompactBacking() const {
+    [[nodiscard]] bool initializeCompactBacking() {
         if (backing_path_.empty()) return true;
         std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
         if (!file.good()) return false;
         const long long magic = kSparseDiskMagic;
-        const int count = static_cast<int>(blocks_.size());
+        const int count = 0;
         file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
         file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        for (const auto& [index, payload] : blocks_) {
-            file.write(reinterpret_cast<const char*>(&index), sizeof(index));
-            for (long long word : payload) {
-                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
-            }
+        file.flush();
+        compact_record_count_ = 0;
+        return static_cast<bool>(file);
+    }
+
+    [[nodiscard]] bool appendCompactRecord(int index, const std::vector<long long>& payload) {
+        if (backing_path_.empty()) return true;
+        std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+        if (!file.good()) {
+            if (!initializeCompactBacking()) return false;
+            file.open(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+            if (!file.good()) return false;
         }
+
+        file.seekp(0, std::ios::end);
+        file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+        for (long long word : payload) {
+            file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+        }
+        if (!file.good()) return false;
+
+        ++compact_record_count_;
+        file.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
+        file.write(reinterpret_cast<const char*>(&compact_record_count_),
+                   sizeof(compact_record_count_));
         file.flush();
         return static_cast<bool>(file);
     }
@@ -1675,10 +1708,15 @@ struct VMCoreState {
     int pc = 0;
     VMStatus status = VMStatus::RUNNING;
     TernaryValue trap_reg = encodeNoTrap();
+    int vector_length = DEFAULT_VECTOR_LENGTH;
+    TernaryVectorFile vregfile;
+    VectorFaultState vector_faults;
+    TernaryValue accumulator = TernaryValue::zero();
     PrivilegeMode privilege = PrivilegeMode::Kernel;
     PrivilegeMode previous_privilege = PrivilegeMode::Kernel;
     bool interrupt_enable = false;
     bool previous_interrupt_enable = false;
+    bool trap_routing_enabled = false;
     int epc = 0;
     int cause = 0;
     int tvec = 0;
@@ -1687,6 +1725,35 @@ struct VMCoreState {
     long long timer_counter = 0;
     bool timer_enable = false;
     bool timer_pending = false;
+    int user_imem_base = 0;
+    int user_imem_limit = 0;
+    int user_dmem_base = 0;
+    int user_dmem_limit = 0;
+    int syscall_id = 0;
+    bool console_char_mode = false;
+    bool mmu_enable = false;
+    int user_imem_ptbr = 0;
+    int user_imem_pages = 0;
+    int user_dmem_ptbr = 0;
+    int user_dmem_pages = 0;
+    int page_fault_addr = 0;
+    int page_fault_access = OS_PAGE_ACCESS_LOAD;
+    long long mouse_x = 0;
+    long long mouse_y = 0;
+    long long mouse_btn = 0;
+    long long gpu_x1 = 0;
+    long long gpu_y1 = 0;
+    long long gpu_x2 = 0;
+    long long gpu_y2 = 0;
+    long long gpu_color = 0;
+    long long gpu_page = 0;
+    long long gpu_mode = 0;
+    long long sprite_x = 0;
+    long long sprite_y = 0;
+    long long sprite_attr = 0;
+    long long block_index = 0;
+    long long block_addr = 0;
+    long long block_status = 0;
     int current_process = -1;
 };
 
@@ -1832,7 +1899,15 @@ struct VMState {
         // Initialize SP to top of data memory.
         // native_ops::fromInt puts a small integer into LongTriple format.
         regfile.write(R26_SP, ops::fromLong(dmem.size() - 1));
-        for (auto& core : cores) core = VMCoreState{};
+        for (auto& core : cores) {
+            core = VMCoreState{};
+            core.vector_length = vector_length;
+            core.vregfile.reset(vector_length);
+            core.vector_faults.reset(vector_length);
+            core.accumulator = TernaryValue::zero();
+            core.user_imem_limit = imem.size();
+            core.user_dmem_limit = dmem.size();
+        }
         if (!cores.empty()) captureCoreState(0);
     }
 
@@ -1867,6 +1942,14 @@ struct VMState {
     void configureCores(int count) {
         const int normalized = std::max(1, count);
         cores.assign(static_cast<std::size_t>(normalized), VMCoreState{});
+        for (auto& core : cores) {
+            core.vector_length = vector_length;
+            core.vregfile.reset(vector_length);
+            core.vector_faults.reset(vector_length);
+            core.accumulator = TernaryValue::zero();
+            core.user_imem_limit = imem.size();
+            core.user_dmem_limit = dmem.size();
+        }
         core_run_queues.assign(static_cast<std::size_t>(normalized), std::deque<int>{});
         active_core = 0;
         captureCoreState(0);
@@ -1883,10 +1966,15 @@ struct VMState {
         core.pc = pc;
         core.status = status;
         core.trap_reg = trap_reg;
+        core.vector_length = vector_length;
+        core.vregfile = vregfile;
+        core.vector_faults = vector_faults;
+        core.accumulator = accumulator;
         core.privilege = privilege;
         core.previous_privilege = previous_privilege;
         core.interrupt_enable = interrupt_enable;
         core.previous_interrupt_enable = previous_interrupt_enable;
+        core.trap_routing_enabled = trap_routing_enabled;
         core.epc = epc;
         core.cause = cause;
         core.tvec = tvec;
@@ -1895,6 +1983,35 @@ struct VMState {
         core.timer_counter = timer_counter;
         core.timer_enable = timer_enable;
         core.timer_pending = timer_pending;
+        core.user_imem_base = user_imem_base;
+        core.user_imem_limit = user_imem_limit;
+        core.user_dmem_base = user_dmem_base;
+        core.user_dmem_limit = user_dmem_limit;
+        core.syscall_id = syscall_id;
+        core.console_char_mode = console_char_mode;
+        core.mmu_enable = mmu_enable;
+        core.user_imem_ptbr = user_imem_ptbr;
+        core.user_imem_pages = user_imem_pages;
+        core.user_dmem_ptbr = user_dmem_ptbr;
+        core.user_dmem_pages = user_dmem_pages;
+        core.page_fault_addr = page_fault_addr;
+        core.page_fault_access = page_fault_access;
+        core.mouse_x = mouse_x;
+        core.mouse_y = mouse_y;
+        core.mouse_btn = mouse_btn;
+        core.gpu_x1 = gpu_x1;
+        core.gpu_y1 = gpu_y1;
+        core.gpu_x2 = gpu_x2;
+        core.gpu_y2 = gpu_y2;
+        core.gpu_color = gpu_color;
+        core.gpu_page = gpu_page;
+        core.gpu_mode = gpu_mode;
+        core.sprite_x = sprite_x;
+        core.sprite_y = sprite_y;
+        core.sprite_attr = sprite_attr;
+        core.block_index = block_index;
+        core.block_addr = block_addr;
+        core.block_status = block_status;
     }
 
     void restoreCoreState(int core_id) {
@@ -1904,10 +2021,15 @@ struct VMState {
         pc = core.pc;
         status = core.status;
         trap_reg = core.trap_reg;
+        vector_length = core.vector_length;
+        vregfile = core.vregfile;
+        vector_faults = core.vector_faults;
+        accumulator = core.accumulator;
         privilege = core.privilege;
         previous_privilege = core.previous_privilege;
         interrupt_enable = core.interrupt_enable;
         previous_interrupt_enable = core.previous_interrupt_enable;
+        trap_routing_enabled = core.trap_routing_enabled;
         epc = core.epc;
         cause = core.cause;
         tvec = core.tvec;
@@ -1916,6 +2038,35 @@ struct VMState {
         timer_counter = core.timer_counter;
         timer_enable = core.timer_enable;
         timer_pending = core.timer_pending;
+        user_imem_base = core.user_imem_base;
+        user_imem_limit = core.user_imem_limit;
+        user_dmem_base = core.user_dmem_base;
+        user_dmem_limit = core.user_dmem_limit;
+        syscall_id = core.syscall_id;
+        console_char_mode = core.console_char_mode;
+        mmu_enable = core.mmu_enable;
+        user_imem_ptbr = core.user_imem_ptbr;
+        user_imem_pages = core.user_imem_pages;
+        user_dmem_ptbr = core.user_dmem_ptbr;
+        user_dmem_pages = core.user_dmem_pages;
+        page_fault_addr = core.page_fault_addr;
+        page_fault_access = core.page_fault_access;
+        mouse_x = core.mouse_x;
+        mouse_y = core.mouse_y;
+        mouse_btn = core.mouse_btn;
+        gpu_x1 = core.gpu_x1;
+        gpu_y1 = core.gpu_y1;
+        gpu_x2 = core.gpu_x2;
+        gpu_y2 = core.gpu_y2;
+        gpu_color = core.gpu_color;
+        gpu_page = core.gpu_page;
+        gpu_mode = core.gpu_mode;
+        sprite_x = core.sprite_x;
+        sprite_y = core.sprite_y;
+        sprite_attr = core.sprite_attr;
+        block_index = core.block_index;
+        block_addr = core.block_addr;
+        block_status = core.block_status;
         active_core = core_id;
     }
 

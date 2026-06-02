@@ -88,7 +88,5 @@ fn main() -> t40 {
             }
         }
     }
-    var path_addr: t40 = term_seed_desktop_path(10000);
-    sys_exec(path_addr);
     return 1;
 }

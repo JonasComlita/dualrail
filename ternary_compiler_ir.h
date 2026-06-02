@@ -238,6 +238,7 @@ static constexpr int sys_futex_wake = 53;
 static constexpr int sys_ipc_recv_blocking = 54;
 static constexpr int sys_wait_event = 55;
 static constexpr int sys_sleep_ms = 56;
+static constexpr int sys_app_spawn = 57;
 } // namespace runtime
 
 } // namespace compiler
