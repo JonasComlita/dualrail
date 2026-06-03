@@ -990,52 +990,94 @@ Phase 8 completion criteria:
 
 ## Phase 9: Ternary xv6-Class Native Kernel and Userland Integration
 
+Status: completed; this phase is completed by `tcl_native_rewrite.md` Phases
+D, E, and F.
+
+Goal: transition from the host-emulated C++ substrate facade to a fully native,
+VM-executed kernel and userland stack, implementing the complete xv6-class
+operating system contract natively in `.trit`. Phase 9 became too broad to
+remain a single implementation checklist, so the active source of truth is now
+the more precise TCL-native rewrite plan.
+
+Completion source of truth:
+
+| README Phase 9 concern | Current owner |
+|------------------------|---------------|
+| Native trap path, bootstrap allocator, buffer pool, WAL, relational state store, scheduler, VFS, IPC baseline, PTE layout, COW fork, namespaces, and process cache | `tcl_native_rewrite.md` Phase D: Native OS Kernel |
+| Persistent block device, root filesystem image, WAL-on-disk recovery, `fsync`, disk-backed executable loading, and real process image handoff | `tcl_native_rewrite.md` Phase E: Persistent Memory and Disk-Backed System Substrate |
+| Scaling pass, blocking IPC/futex/event waits, signals and process control, six-layer GUI stack, widget toolkit, consumer shell, and production hardening | `tcl_native_rewrite.md` Phase F: Production OS Surface and Consumer Experience |
+| Compiler self-hosting and retirement of the C++ bootstrap compiler | `tcl_native_rewrite.md` Phase H: Self-Hosting, after the OS is distributable |
+
+Phase 9 is considered complete because the current D/E/F acceptance scope is
+covered by the production gate: `ci_production` runs the production layer,
+production hardening, OS platform, scaling profile, and consumer shell
+productization tests. Direct D/E/F regression targets remain
+`test_phase_d_kernel`, `test_process_handoff`, and `test_native_apps`.
+Self-hosting is deliberately not part of Phase 9 completion; it now belongs to
+Phase H so compiler bring-up does not obscure native OS product failures.
+
+Retired Phase 9 track mapping:
+
+| Old track | Replacement |
+|-----------|-------------|
+| 9.1 Two-pass register allocator integration | `tcl_native_rewrite.md` A7, C3, and C.5 pre-D compiler gate |
+| 9.2 Pointer access and standard library support | `tcl_native_rewrite.md` C.5 and Phase D syscall/user-pointer contracts |
+| 9.3 User-space heap allocator | `tcl_native_rewrite.md` D9 process memory plus F1 production scaling |
+| 9.4 Native interactive shell | `tcl_native_rewrite.md` D9 baseline shell handoff plus F5 consumer shell productization |
+| 9.5 Native inode filesystem | `tcl_native_rewrite.md` D8 VFS contract plus Phase E disk-backed persistence |
+| 9.6 Dynamic kernel heap management | `tcl_native_rewrite.md` D3 buffer pool, D9 PTE/process model, and F1 scaling |
+| 9.7 Dynamic process lifecycle | `tcl_native_rewrite.md` D9 fork/exec model plus E5 disk-backed process image handoff |
+| 9.8 IPC syscall mechanism | `tcl_native_rewrite.md` D8l IPC primitive plus F2 blocking waits and F3 process control |
+| 9.9 Simulation realism gap | `tcl_native_rewrite.md` F1 scaling pass and F6 hardening; hardware backend work continues in Phase 12 |
+| 9.10 Block cache optimization and safety hardening | `tcl_native_rewrite.md` D3/D4 buffer/WAL model, Phase E recovery, and F6 hardening |
+
+## Phase 10: Ternary OS Distribution, Host Runtime, and Bootstrapping
+
 Status: planned.
 
-Goal: Transition from the host-emulated C++ substrate facade to a fully native, VM-executed kernel and userland stack, implementing the complete xv6-class operating system contract natively in our high-level systems language.
+Goal: turn the completed native Ternary OS milestone into something ordinary
+users can launch, install, reboot, inspect, and recover. Because commodity
+Intel, AMD, and ARM CPUs cannot execute the ternary ISA directly, the first
+distribution path is a desktop host runtime around the VM. The second path is a
+bare-metal UEFI host runtime that boots directly on standard x86-64 machines
+and runs the ternary VM without Windows, Linux, or macOS underneath.
 
-### Scope and Implementation Tracks (Refactored Sequence)
+Major goals:
 
-#### Track 9.1: Two-Pass Register Allocator Integration
-- **Closed Allocation Loop**: Upgrade the backend code generator in `tritc` to completely bind the code-generation phase to our two-pass graph-coloring allocator, ensuring that instruction selection is driven directly by liveness analysis rather than a flat pool of five scratch registers. Fixing this compiler correctness gap is our absolute first prerequisite.
+- Define immutable boot/package images (`.tboot` or `.tiso`) with manifest,
+  ABI/profile metadata, kernel image, application images, root filesystem seed,
+  checksums, and signatures.
+- Define mutable sparse user disks (`.tdisk`) and optional VM snapshots
+  (`.tsnap`) separately from immutable boot images.
+- Build a release image builder that compiles the kernel and apps, installs
+  `/bin`, `/apps`, `/etc`, `/home`, `/tmp`, and `/var`, and emits signed image
+  artifacts.
+- Build a desktop host runtime around the existing VM: framebuffer-to-texture
+  display, keyboard/mouse routing, audio hooks, sparse disk mounting, pause,
+  reset, logs, and deterministic crash bundles.
+- Package the desktop runtime for Windows first, then Linux and macOS.
+- Prototype a UEFI bare-metal host runtime using GOP framebuffer output,
+  FAT-loaded boot images, input/timer/storage bridges, and the ternary VM
+  execution loop.
+- Produce a live USB image only after the UEFI runtime boots the graphical
+  desktop reliably.
+- Treat dual-boot integration as the last distribution step because it touches
+  user boot partitions and has the highest operational risk.
 
-#### Track 9.2: Pointer Access and Standard Library Support (Completed)
-- **Standard Non-Atomic Memory Access**: Wire standard non-atomic `load` and `store` unsafe intrinsics in the compiler and refactor `ulib.trit:parse_args` to eliminate syntax errors, standardizing type-conforming control flow matching (`match sign(...)`) and host-agnostic image headers.
+Phase 10 completion criteria:
 
-#### Track 9.3: User-Space Dynamic Heap Allocator (malloc/free in .trit)
-- **Freestanding Allocator**: Write a robust dynamic memory allocator in `ulib.trit` using a first-fit or best-fit list algorithm.
-- **System Backing**: Drive the allocator's capacity by querying `sbrk()` syscalls when current block chunks are exhausted, establishing safe thread-local/process-local dynamic memory management for all downstream native OS components.
+- A release image builder emits versioned `.tboot/.tiso` and `.tdisk`
+  artifacts from source.
+- The desktop host runtime can boot the release image, persist user state,
+  restore the mutable disk, and export a diagnostic bundle after guest crash.
+- Windows installer packaging is automated; Linux/macOS packaging has at least
+  reproducible developer builds.
+- UEFI prototype boots from removable media to a visible Ternary OS framebuffer
+  and can load the same release image format.
+- Live USB creation is documented and tested on at least one development
+  machine or emulator target.
 
-#### Track 9.4: VM-Native Ternary Interactive Shell
-- **Init & Interactive Command Shell**: Design and implement a full-featured interactive command-line shell and init process written entirely in native `.trit` to replace the bootstrap TASM shell (`minimal_kernel_bringup.tasm`).
-- **Stack Validation**: The native shell will leverage `ulib.trit` to spawn, wait, and exit, validating the entire compiler, linker, VM, and syscall ABI stack in a single runnable artifact.
-
-#### Track 9.5: The Native Inode Filesystem
-- **On-Disk Directory Structures**: Write a native, VM-executed library in `.trit` that implements direct and indirect block indexing, directory entry parsing (`namei`), and path-to-inode resolution entirely within the VM.
-- **File Descriptors**: Maintain a per-process file descriptor table inside the kernel's process table, mapping virtual FD integers to underlying native inode nodes and read/write offset pointers.
-
-#### Track 9.6: Dynamic Kernel Heap Management (brk/sbrk)
-- **Dynamic Page Mapping**: Implement native kernel handlers for `brk` and `sbrk` syscalls that dynamically manipulate page table entries (PTEs) inside the active process's single-level virtual memory space.
-- **Page Allocator**: Maintain a physical page free list within the kernel memory space to allocate or free 27-word frames, cleanly reporting protection/page faults upon out-of-bounds heap operations.
-
-#### Track 9.7: Dynamic Process Lifecycle (fork/exec)
-- **Native Process Spawning**: Build a VM-native `fork()` syscall that creates a new process table entry, allocates new physical pages, and duplicates the active process memory block-for-block inside the VM.
-- **Disk-Backed Exec**: Build a VM-native `exec(path)` syscall that queries the native filesystem path, validates the self-describing executable header, wipes the current virtual address space, maps new text/data pages, and jumps to the new entry point virtual PC.
-
-#### Track 9.8: Inter-Process Communication (IPC) Syscall Mechanism
-- **Ternary-Native Pipes**: Implement a buffered pipe buffer inside the kernel, allowing cooperative byte stream movement between file descriptors with read/write blocking.
-- **Event Signals & Synchronization**: Provide lightweight user-space communication gates using atomic memory-order fences (`FENCE.0`, `TLDR`/`TSTR`) and `T1` status signals to allow safe multi-task coordination.
-
-#### Track 9.9: Bridging the Simulation Realism Gap
-- **Address Physical Timing Discrepancies**: Address the critiques that our VM simplifies bare-metal hardware stresses (atomic instruction execution without pipeline stalls, uniform-latency $O(1)$ memory access, and sequential multitasking instead of parallel bus contention).
-- **Synthetic Cache & TLB Modeling**: Introduce synthetic latency cycles (e.g., 1 cycle for register access, 200 cycles for DRAM hits/page-table walks) and model a fixed-size Translation Lookaside Buffer (TLB) that experiences costly flushes during context switches.
-- **True Threaded Multicore Emulation**: Support launching parallel VM execution runners on separate host threads accessing a thread-safe shared `TernaryMemory` instance, validating our atomic locks under true hardware-level memory-bus contention.
-
-#### Track 9.10: Block Cache Optimization & Substrate Refinement
-- **LRU Block Cache**: Implement a Least Recently Used (LRU) dirty block cache write-back mechanism to fully eliminate redundant mount, sync, and disk writes during heavy scheduling or process spawning cycles.
-- **Safety Hardening**: Refine pointer bounds verification and address translation checks on all kernel boundaries to ensure user processes cannot inject corrupt VM pointers.
-
-## Phase 10: Security and Post-Quantum Crypto Primitives
+## Phase 11: Security and Post-Quantum Crypto Primitives
 
 Status: future.
 
@@ -1054,7 +1096,7 @@ Major goals:
 - Use published, peer-reviewed algorithms as the cryptographic basis; optimize
   the VM/hardware execution path, not secret proprietary crypto math.
 
-## Phase 11: FPGA/ASIC and Production Hardware Backends
+## Phase 12: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 

@@ -95,6 +95,10 @@ Phase D is not allowed to begin until the compiler/runtime/VM surface below is p
 
 ## Phase D — Native OS Kernel (`kernel.trit`)
 
+Status: completed for the current native-kernel acceptance scope. Keep
+`test_phase_d_kernel`, `test_native_apps`, `test_process_handoff`, and the
+production gate as regression coverage when changing this layer.
+
 Replaces `minimal_kernel_bringup.tasm` and `ternary_os.h`. Written in `.trit`, compiled by the Phase A/B/C pipeline, and executed in kernel privilege mode.
 
 1. **D1. Low-Level Trap Entry:** Pure Assembly Stub.
@@ -385,11 +389,325 @@ Implement `fork()` as an O(1) metadata operation that duplicates PTEs and marks 
 
 ---
 
-## Phase E — Self-Hosting
+## Phase E — Persistent Memory and Disk-Backed System Substrate
 
-* **E1. Bootstrapping Evaluation:** Compile `tcl_frontend.trit`, `tcl_backend.trit`, and `ulib.trit` using the legacy Phase A C++ compiler. Run the compiled native binary inside the VM environment to compile a test program. The output must be bit-identical to the C++ compiler's native output.
-* **E2. Secondary Self-Hosting Loop:** Compile `tcl_frontend.trit` and `tcl_backend.trit` using the native compiler binary generated in step E1. If the compiler binaries from E1 and E2 match identically down to the bit level, the compiler toolchain is officially self-hosting.
-* **E3. Demolition:** Decommission the legacy C++ compiler source. All subsequent alterations to the compiler toolchain, language specifications, or transactional operating system kernel are written and maintained exclusively in native `.trit` source code.
+Status: completed for the current persistent-substrate acceptance scope.
+Validated by the OS platform and process-handoff tests, with persistence
+coverage for block geometry, root image construction, mount/recovery, `fsync`,
+WAL replay, and disk-backed executable launch.
+
+Phase E makes the Phase D kernel state durable. Phase D proves the native kernel can schedule, isolate, transact, and route file/process syscalls. Phase E proves that the same system can survive reboot, boot from a filesystem image, persist user-visible writes, replay committed WAL records, discard uncommitted WAL records, and load executable process images from disk rather than from static assembly placement.
+
+Phase E is intentionally not a new VFS contract. D8 owns the VFS semantics. Phase E is the persistence substrate underneath and around that VFS: block-device geometry, root image construction, WAL-on-disk layout, native mount/recovery, `fsync`, and disk-backed `exec` handoff.
+
+### E1. Block Device and Device-Tree Geometry
+
+The VM must expose a block device through CSRs with explicit geometry:
+
+| CSR | Meaning |
+|-----|---------|
+| `block_count` | number of addressable blocks |
+| `block_words` | words per block, matching `MMU_PAGE_WORDS` in the initial implementation |
+| `block_index` | selected block number |
+| `block_addr` | DMEM/IMEM transfer address |
+| `block_cmd` | read, write, or IMEM-read command |
+| `block_status` | last command result |
+
+The device tree must advertise `block0` with `block_words` and `block_count`. Kernel boot must reject incompatible geometry before mounting the root filesystem. Tests must prove that block writes mark dirty state, block reads recover the same payload, and serialized block images survive VM reboot.
+
+### E2. Native Disk Layout
+
+The native disk image is a deterministic block layout containing:
+
+| Region | Required content |
+|--------|------------------|
+| superblock | native VFS magic, version, block size, row capacities, next allocation cursors |
+| inode blocks | fixed-width inode rows |
+| dirent blocks | directory edge rows |
+| dirent-name blocks | T40 name-word storage |
+| extent blocks | file extent rows |
+| payload blocks | ordinary file payload words |
+| WAL meta block | persisted WAL cursor and checkpoint state |
+| WAL record blocks | persisted pending/committed transaction records |
+| executable text blocks | app text images beyond the fixed root metadata region |
+
+The initial implementation may use fixed metadata capacities, but the disk format must make those capacities explicit in the superblock so Phase F can scale them without silent image incompatibility.
+
+### E3. Format, Mount, Sync, and Recovery
+
+The kernel must provide durable helpers:
+
+```
+vfs_sync_superblock() -> T1
+vfs_sync_all_to_disk() -> T1
+vfs_load_all_from_disk() -> T1
+wal_sync_to_disk() -> T1
+wal_load_from_disk() -> T1
+vfs_fsync(pid: T40, fd: T40) -> T1
+```
+
+`kernel_init()` mounts the disk image if a valid superblock exists. If no valid image exists and boot policy allows formatting, it creates the deterministic root layout and checkpoints it before user processes begin.
+
+Recovery rules:
+
+* A pending WAL record without commit is rolled back or ignored.
+* A committed WAL record not yet checkpointed is replayed into the VFS image.
+* `vfs_fsync` flushes the touched persistent VFS ranges and WAL state to the block device.
+* The kernel must never claim a write is durable until both metadata and payload ranges required by that write can be recovered after reboot.
+
+Phase E exposes `sys_fsync` as syscall id `47`, with SDK wrappers in `os_sdk.trit` and `ulib.trit`, so user programs can explicitly publish data durability.
+
+### E4. Root Filesystem Image Builder
+
+The host-side image builder must construct native root images without bypassing the real disk layout. Required builder features:
+
+* Install deterministic base directories such as `/bin`, `/apps`, `/etc`, `/home`, `/tmp`, and `/var`.
+* Add ordinary files and directories through the same inode/dirent/extent model used by the kernel.
+* Add executable descriptors and executable text blocks.
+* Serialize the final image into VM block-device words.
+* Support reboot tests by loading the serialized image into a fresh VM.
+
+This builder exists to seed boot images, not to define alternate filesystem semantics. Anything it creates must be mountable and readable through the native kernel VFS.
+
+### E5. Disk-Backed Process Image Handoff
+
+`exec()` and app launch must consume ordinary executable files from `/bin`. Executable file metadata includes an executable header plus disk text-block location. Launch must:
+
+1. Resolve the app path through VFS lookup.
+2. Validate the executable descriptor and ABI version.
+3. Load text pages from disk into per-process IMEM using the block device.
+4. Map data, scratch, stack, window buffers, and user-visible DMEM through per-process page tables.
+5. Install the task context and return through `ERET` into the loaded user image.
+
+The desktop and launcher tests must prove `/bin/desktop`, `/bin/calculator`, and windowed app probes are loaded from the disk image into IMEM, not appended into the boot assembly through `.org`.
+
+### E6. Required Acceptance Tests
+
+Phase E is complete only when tests prove:
+
+* device-tree block geometry validation;
+* block read/write/dirty state and reboot image reload;
+* root filesystem image creation and native kernel mount;
+* file write + `fsync` + reboot + readback;
+* uncommitted WAL record recovery leaves the old committed data visible;
+* committed WAL record recovery replays the new data;
+* executable root image builder installs `/bin/*` images;
+* desktop-triggered process handoff loads text pages from disk into IMEM;
+* `sys_fsync` is exported through VM constants, compiler runtime ids, `os_sdk.trit`, and `ulib.trit`.
+
+---
+
+## Phase F — Production OS Surface and Consumer Experience
+
+Status: completed for the current production-surface acceptance scope.
+Validated by `ci_production`, including production layers, production
+hardening, OS platform, scaling profile, and consumer shell productization.
+
+Phase F turns the durable native OS into a consumer-product-shaped system. It includes the six-layer GUI work because Layers 5 and 6 are explicitly widget toolkit and consumer shell work, and Layers 1 through 4 are prerequisites for those to feel real. If the GUI work later grows large enough to require its own schedule, split it into a sub-track under F rather than moving self-hosting forward; self-hosting remains the final phase.
+
+### F1. Scaling Pass
+
+Target minimum profile:
+
+```
+2 virtual cores
+4 GiB RAM-equivalent addressable memory
+64 GiB sparse disk image
+production-scale process, file, window, IPC, socket, and framebuffer limits
+```
+
+Required work:
+
+* Define a production profile shared by VM, kernel, image builder, and tests.
+* Replace flat always-allocated IMEM/DMEM with sparse page backing.
+* Add larger OS allocation clusters above the 27-word hardware page.
+* Replace in-memory block vectors with sparse file-backed storage.
+* Move native kernel fixed limits (`PROCESS_MAX`, `VFS_MAX_INODES`, `WINDOW_MAX`, etc.) to profile-derived or dynamically allocated tables.
+* Add two-core VM execution with complete per-core architectural state.
+* Add per-core run queues and cross-core load balancing.
+* Add stress tests for at least 100 processes, 1000 files, 100 windows, high-address RAM access, and high-block disk access.
+
+### F2. Blocking IPC, Futexes, and Event Wait
+
+Required work:
+
+* Add wait queues keyed by wait channel.
+* Add `sys_futex_wait(addr, expected, timeout)` and `sys_futex_wake(addr, count)`.
+* Key futex wait channels by namespace/process/physical page identity, not raw virtual address alone.
+* Add blocking IPC receive with timeout.
+* Add blocking window/input event waits with timeout.
+* Integrate wait completion with the scheduler so blocked tasks leave the runnable queues.
+* Wake blocked tasks on IPC send, window event delivery, input arrival, signal delivery, timeout, and resource destruction.
+* Convert GUI apps away from busy polling.
+
+### F3. Signals and Process Control
+
+Required work:
+
+* Add process states for stopped, zombie, killing, crashed, and exited processes.
+* Add pending signal masks per process.
+* Add `sys_kill`, `sys_suspend`, `sys_resume`, and `sys_getproc`.
+* Enforce ownership/capability checks so ordinary apps cannot kill arbitrary processes.
+* Deliver close-request events to window owners before forced termination.
+* Force-kill cleanup must release file descriptors, windows, IPC channels, sockets, wait queues, quotas, and memory mappings.
+* Parent/child wait must reap zombies deterministically.
+* Task Manager must use these syscalls for kill/suspend/resume controls.
+
+### F4. Six-Layer GUI Stack and Widget Toolkit Completion
+
+The six GUI layers belong here:
+
+```
+Layer 1: Framebuffer and display driver
+Layer 2: 2D graphics primitives
+Layer 3: Font and text rendering
+Layer 4: Compositor, z-order, window buffers, input routing
+Layer 5: Widget toolkit
+Layer 6: Consumer shell
+```
+
+Required work:
+
+* Framebuffer syscalls allocate, pin, flip, and expose DMA-safe buffers.
+* `libgfx.trit` implements plot, fill, line, circle, blit, and blend primitives.
+* Bitmap text rendering supports labels, titles, and text fields before vector fonts.
+* The compositor owns the master framebuffer, window table, z-order, dirty flags, close events, and focused input routing.
+* `libwidget.trit` completes Label, Button, TextField, PasswordField, ListBox, ScrollBar, Panel, focus, dirty rectangles, and event routing.
+* Calculator, Paint, Task Manager, File Manager, Settings, Terminal, and Desktop use the shared widget toolkit instead of one-off drawing code.
+
+### F5. Consumer Shell Productization
+
+Required work:
+
+* Boot splash and first-run setup.
+* Login backed by persistent user records.
+* Desktop with taskbar, launcher, clock, window switching, and logout/shutdown.
+* File manager backed by the VFS.
+* Settings app for display, storage, users, and system information.
+* Terminal/shell as a windowed app.
+* App registry under `/apps` and executable images under `/bin`.
+* Persistent user preferences.
+* Crash dialog and not-responding force-close flow.
+* Reboot tests proving users, preferences, files, and app registry survive shutdown.
+
+### F6. Production Hardening
+
+Required work:
+
+* Capability checks for process control, files, windows, IPC, sockets, and device access.
+* Syscall fuzzing for invalid pointers, invalid states, and boundary sizes.
+* Crash-consistency tests for power loss during filesystem and WAL phases.
+* Memory-pressure and quota-pressure tests.
+* Scheduler fairness and starvation tests.
+* Filesystem consistency checker and recovery mode.
+* Signed executable metadata and package/update format.
+* Performance counters for scheduler, disk, compositor, and syscall paths.
+* Release image builder that produces a bootable disk image from source artifacts.
+
+---
+
+## Phase G — Distribution, Host Runtime, and Bootstrapping
+
+Phase G packages the completed native OS into bootable, distributable artifacts.
+This phase is not a new guest OS feature phase. It defines the boundary between
+the ternary guest world and the binary host world: image formats, host runtime
+contracts, release packaging, and the first bare-metal UEFI host runtime.
+
+### G1. Boot and Disk Image ABI
+
+Define stable release artifacts:
+
+| Artifact | Role |
+|----------|------|
+| `.tboot` / `.tiso` | immutable boot/package image containing manifest, kernel, app images, root filesystem seed, ABI/profile metadata, checksums, and signatures |
+| `.tdisk` | mutable sparse user disk containing persistent user state |
+| `.tsnap` | optional VM snapshot/checkpoint for debugging and fast resume |
+
+The immutable boot image and mutable user disk must remain separate so updates,
+factory reset, user backup, and reproducible tests do not overwrite each other.
+
+### G2. Release Image Builder
+
+The release builder must compile the native kernel and selected applications,
+install `/bin`, `/apps`, `/etc`, `/home`, `/tmp`, and `/var`, write the app
+registry, generate the image manifest, sign or checksum every image component,
+and emit a versioned `.tboot/.tiso` plus initial `.tdisk`.
+
+The builder must use the same executable image and VFS layout exercised by
+Phase E. It may automate packaging, but it must not define a second filesystem
+or alternate app loading path.
+
+### G3. Desktop Host Runtime
+
+Build a user-facing binary-host runtime around the ternary VM. Required host
+runtime features:
+
+* framebuffer-to-window rendering;
+* keyboard and mouse input routing into the guest device model;
+* sparse `.tdisk` mounting;
+* pause, reset, shutdown, and restart controls;
+* guest crash capture and diagnostic bundle export;
+* deterministic replay seed or trace capture for reproducible bugs;
+* VM profile selection for compact and production configurations.
+
+This is the first distribution target because it can ship on ordinary Windows,
+Linux, and macOS systems without replacing the host boot chain.
+
+### G4. Desktop Installer Packaging
+
+Package the desktop host runtime and release images:
+
+* Windows installer first, using an ordinary setup executable or MSI pipeline.
+* Linux AppImage/deb/rpm packaging after the Windows path is stable.
+* macOS `.app`/`.dmg` packaging once the runtime has a stable graphics/input
+  abstraction.
+
+Installers must include a signed release manifest, default `.tboot/.tiso`, and
+an initialized or lazily-created `.tdisk`.
+
+### G5. UEFI Bare-Metal Host Runtime
+
+Prototype an x86-64 UEFI host runtime that runs the ternary VM directly after
+firmware boot. Required minimum:
+
+* load the release image from a FAT filesystem;
+* query the UEFI GOP framebuffer and expose it to the guest display path;
+* route keyboard input into the guest input device;
+* provide a timer source for guest scheduling;
+* expose a block-device bridge backed by the boot medium or an attached image;
+* enter the same ternary VM execution loop used by the desktop host runtime.
+
+This is still emulation on binary hardware, not native ternary execution. Its
+value is that it removes the dependency on a host OS and makes a live USB
+experience possible.
+
+### G6. Live USB and Dual-Boot Acceptance
+
+Live USB comes after the UEFI runtime can boot the graphical desktop reliably.
+Dual-boot integration comes last because it modifies existing host boot
+configuration.
+
+Phase G is complete only when tests or documented manual runs prove:
+
+* release images are built reproducibly from source;
+* the desktop host runtime boots the release image and persists user state in
+  `.tdisk`;
+* crash diagnostics can be exported from the host runtime;
+* at least one desktop installer or reproducible package is generated;
+* the UEFI host runtime loads the same image format and reaches a visible
+  framebuffer;
+* live USB creation is documented and tested on a development machine or
+  emulator target.
+
+---
+
+## Phase H — Self-Hosting
+
+Self-hosting remains last. The native compiler should not become the maintenance authority until the persistent disk substrate, scaled OS profile, blocking waits, process control, GUI stack, consumer shell, production hardening, and distribution host runtime have stable acceptance tests. Otherwise the project risks debugging compiler self-hosting failures and OS product/distribution failures at the same time.
+
+* **H1. Bootstrapping Evaluation:** Compile `tcl_frontend.trit`, `tcl_backend.trit`, and `ulib.trit` using the legacy Phase A C++ compiler. Run the compiled native binary inside the VM environment to compile a test program. The output must be bit-identical to the C++ compiler's native output.
+* **H2. Secondary Self-Hosting Loop:** Compile `tcl_frontend.trit` and `tcl_backend.trit` using the native compiler binary generated in step H1. If the compiler binaries from H1 and H2 match identically down to the bit level, the compiler toolchain is officially self-hosting.
+* **H3. Demolition:** Decommission the legacy C++ compiler source. All subsequent alterations to the compiler toolchain, language specifications, transactional operating system kernel, consumer OS, and distribution system are written and maintained exclusively in native `.trit` source code.
 
 ---
 
@@ -406,7 +724,13 @@ A1 -> A2 -> A3 -> A4 -> A5 -> A6 -> A7 -> A8
                                                   |
                                             D1 -> D2 -> D3 -> D4 -> D5 -> D6 -> D7 -> D8 -> D9
                                                                                   |
-                                                                             E1 -> E2 -> E3
+                                                                                  E
+                                                                                  |
+                                                                                  F
+                                                                                  |
+                                                                             G1 -> G2 -> G3 -> G4 -> G5 -> G6
+                                                                                                      |
+                                                                                                H1 -> H2 -> H3
 ```
 
 > **Critical Guardrail for Implementing Agent:** Do not attempt to optimize early phases by building high-level relational paradigms prematurely. Phase D must follow the structural sequence exactly: the raw bootstrap page array (`D2`) and basic buffer pages (`D3`) must be completely stable before the transactional relational store engine (`D5`) is initialized.
