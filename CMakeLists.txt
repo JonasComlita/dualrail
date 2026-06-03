@@ -77,6 +77,7 @@ add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
 add_executable(run_kernel run_kernel.cpp)
 add_executable(run_native_kernel run_native_kernel.cpp)
 add_executable(run_gui_console run_gui_console.cpp)
+add_executable(build_tos_image build_tos_image.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
@@ -96,6 +97,92 @@ target_compile_definitions(run_native_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_
 
 target_compile_features(run_gui_console PUBLIC cxx_std_17)
 target_compile_definitions(run_gui_console PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+target_compile_features(build_tos_image PUBLIC cxx_std_17)
+target_compile_definitions(build_tos_image PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+find_package(SDL2 CONFIG QUIET)
+if(SDL2_FOUND)
+    add_executable(run_tos_sdl run_tos_sdl.cpp)
+    target_compile_features(run_tos_sdl PUBLIC cxx_std_17)
+    target_compile_definitions(run_tos_sdl PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(run_tos_sdl PRIVATE SDL2::SDL2main)
+    endif()
+    if(TARGET SDL2::SDL2)
+        target_link_libraries(run_tos_sdl PRIVATE SDL2::SDL2)
+    elseif(TARGET SDL2::SDL2-static)
+        target_link_libraries(run_tos_sdl PRIVATE SDL2::SDL2-static)
+    else()
+        target_include_directories(run_tos_sdl PRIVATE ${SDL2_INCLUDE_DIRS})
+        target_link_libraries(run_tos_sdl PRIVATE ${SDL2_LIBRARIES})
+    endif()
+
+    set(TOS_RELEASE_VERSION "dev" CACHE STRING "Version label embedded in staged Ternary OS images")
+    set(TOS_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/release")
+    set(TOS_RELEASE_DIR "${TOS_RELEASE_ROOT}/TernaryOS")
+    get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(TOS_RELEASE_RUNTIME_DLLS
+        "${MINGW_RUNTIME_DIR}/SDL2.dll"
+        "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
+        "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
+        "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
+    )
+    foreach(TOS_DLL ${TOS_RELEASE_RUNTIME_DLLS})
+        if(NOT EXISTS "${TOS_DLL}")
+            message(WARNING "Expected runtime DLL not found: ${TOS_DLL}")
+        endif()
+    endforeach()
+
+    add_custom_target(stage_tos_release
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${TOS_RELEASE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${TOS_RELEASE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${TOS_RELEASE_DIR}/diagnostics"
+        COMMAND $<TARGET_FILE:build_tos_image>
+                "${TOS_RELEASE_DIR}/ternary-os.tboot"
+                "${TOS_RELEASE_DIR}/ternary-os.tdisk"
+                "${TOS_RELEASE_VERSION}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:run_tos_sdl>"
+                "${TOS_RELEASE_DIR}/TernaryOS.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${TOS_RELEASE_RUNTIME_DLLS}
+                "${TOS_RELEASE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/README.txt"
+                "${TOS_RELEASE_DIR}/README.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/LICENSES.txt"
+                "${TOS_RELEASE_DIR}/LICENSES.txt"
+        DEPENDS build_tos_image run_tos_sdl
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL
+    )
+
+    add_custom_target(smoke_tos_release
+        COMMAND "${TOS_RELEASE_DIR}/TernaryOS.exe"
+                --smoke-test
+                --frames 10
+                "${TOS_RELEASE_DIR}/ternary-os.tboot"
+                "${TOS_RELEASE_DIR}/ternary-os.tdisk"
+        DEPENDS stage_tos_release
+        WORKING_DIRECTORY "${TOS_RELEASE_DIR}"
+        USES_TERMINAL
+    )
+
+    add_custom_target(package_tos_release
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${TOS_RELEASE_ROOT}/TernaryOS-windows.zip"
+        COMMAND ${CMAKE_COMMAND} -E tar cf
+                "${TOS_RELEASE_ROOT}/TernaryOS-windows.zip"
+                --format=zip
+                "TernaryOS"
+        DEPENDS stage_tos_release
+        WORKING_DIRECTORY "${TOS_RELEASE_ROOT}"
+        USES_TERMINAL
+    )
+else()
+    message(STATUS "SDL2 not found; run_tos_sdl target will not be built")
+endif()
 
 add_executable(test_ternary_ir tests/test_ternary_ir.cpp)
 target_compile_features(test_ternary_ir PUBLIC cxx_std_17)
@@ -145,6 +232,10 @@ add_executable(test_scaling_profile_compact tests/test_scaling_profile.cpp)
 target_compile_features(test_scaling_profile_compact PUBLIC cxx_std_17)
 target_compile_definitions(test_scaling_profile_compact PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_host_runtime tests/test_host_runtime.cpp)
+target_compile_features(test_host_runtime PUBLIC cxx_std_17)
+target_compile_definitions(test_host_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_test(NAME test_production_hardening
          COMMAND test_production_hardening
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -156,6 +247,7 @@ add_custom_target(production_profile
         test_os_platform
         test_scaling_profile_compact
         test_consumer_shell_productization
+        test_host_runtime
 )
 
 add_custom_target(ci_production
@@ -164,6 +256,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_os_platform>
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>
+    COMMAND $<TARGET_FILE:test_host_runtime>
     DEPENDS production_profile
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
