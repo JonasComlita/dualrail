@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -79,7 +80,7 @@ std::string statusTitle(const sandbox::host::TosRuntimeSnapshot& snapshot,
                         bool paused,
                         bool debug_overlay) {
     std::ostringstream out;
-    out << "Ternary OS";
+    out << "OS 3";
     if (debug_overlay) {
         out << " | PC " << snapshot.pc
             << " | " << sandbox::vm::vmStatusToString(snapshot.status)
@@ -109,6 +110,35 @@ void mapMouseToGuest(const SDL_Rect& dest,
     out_y = (static_cast<long long>(clamped_y) * frame_h) / dest.h;
 }
 
+std::filesystem::path executableDirectory(char** argv) {
+    char* base_path = SDL_GetBasePath();
+    if (base_path) {
+        std::filesystem::path path(base_path);
+        SDL_free(base_path);
+        if (!path.empty()) return path;
+    }
+
+    if (argv && argv[0] && argv[0][0] != '\0') {
+        std::error_code ec;
+        std::filesystem::path exe_path =
+            std::filesystem::absolute(std::filesystem::path(argv[0]), ec);
+        if (!ec && !exe_path.parent_path().empty()) return exe_path.parent_path();
+    }
+
+    std::error_code ec;
+    std::filesystem::path cwd = std::filesystem::current_path(ec);
+    return ec ? std::filesystem::path(".") : cwd;
+}
+
+std::string bundledPath(const std::filesystem::path& bundle_dir,
+                        const char* filename) {
+    return (bundle_dir / filename).string();
+}
+
+bool hasHostModifier(SDL_Keymod mods) {
+    return (mods & KMOD_CTRL) != 0 || (mods & KMOD_GUI) != 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -128,10 +158,21 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (smoke_test) {
+        SDL_setenv("SDL_VIDEODRIVER", "dummy", 0);
+    }
+
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    const std::filesystem::path bundle_dir = executableDirectory(argv);
     const std::string boot_path =
-        positional.size() >= 1 ? positional[0] : "build/ternary-os.tboot";
+        positional.size() >= 1 ? positional[0] : bundledPath(bundle_dir, "ternary-os.tboot");
     const std::string disk_path =
-        positional.size() >= 2 ? positional[1] : "build/ternary-os.tdisk";
+        positional.size() >= 2 ? positional[1] : bundledPath(bundle_dir, "ternary-os.tdisk");
+    const std::string diagnostics_path = bundledPath(bundle_dir, "diagnostics");
 
     sandbox::host::TosRuntimeConfig config;
     config.boot_image_path = boot_path;
@@ -143,28 +184,21 @@ int main(int argc, char** argv) {
     std::string error;
     if (!runtime.loadImage(&error)) {
         std::cerr << error << "\n";
+        SDL_Quit();
         return EXIT_FAILURE;
     }
     if (!runtime.start()) {
         std::cerr << "failed to start runtime\n";
+        SDL_Quit();
         return EXIT_FAILURE;
     }
 
-    if (smoke_test) {
-        SDL_setenv("SDL_VIDEODRIVER", "dummy", 0);
-    }
-
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
-        std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
-        return EXIT_FAILURE;
-    }
-
-    SDL_Window* window = SDL_CreateWindow("Ternary OS",
+    SDL_Window* window = SDL_CreateWindow("OS 3",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
-                                          960,
-                                          720,
-                                          SDL_WINDOW_RESIZABLE);
+                                          1920,
+                                          1080,
+                                          SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!window) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << "\n";
         SDL_Quit();
@@ -186,7 +220,7 @@ int main(int argc, char** argv) {
 
     TextureState texture;
     bool running = true;
-    bool debug_overlay = true;
+    bool debug_overlay = false;
     long long mouse_buttons = 0;
     int rendered_frames = 0;
     bool smoke_failed = false;
@@ -201,27 +235,33 @@ int main(int argc, char** argv) {
                 case SDL_TEXTINPUT:
                     runtime.pushTextInput(event.text.text);
                     break;
-                case SDL_KEYDOWN:
-                    if (event.key.keysym.sym == SDLK_ESCAPE) {
+                case SDL_KEYDOWN: {
+                    const SDL_Keycode key = event.key.keysym.sym;
+                    const SDL_Keymod mods = static_cast<SDL_Keymod>(event.key.keysym.mod);
+                    const bool host_command = hasHostModifier(mods);
+                    if (host_command && key == SDLK_q) {
                         running = false;
-                    } else if (event.key.keysym.sym == SDLK_SPACE) {
+                    } else if (host_command && key == SDLK_SPACE) {
                         if (runtime.paused()) runtime.resume();
                         else runtime.pause();
-                    } else if (event.key.keysym.sym == SDLK_r) {
+                    } else if (host_command && key == SDLK_r) {
                         if (!runtime.reset(&error)) std::cerr << error << "\n";
                         else if (!runtime.start()) std::cerr << "failed to restart runtime\n";
-                    } else if (event.key.keysym.sym == SDLK_d) {
-                        if (!runtime.exportDiagnostics("diagnostics", &error)) {
+                    } else if (host_command && key == SDLK_d) {
+                        if (!runtime.exportDiagnostics(diagnostics_path, &error)) {
                             std::cerr << error << "\n";
                         }
-                    } else if (event.key.keysym.sym == SDLK_F1) {
+                    } else if (key == SDLK_F1) {
                         debug_overlay = !debug_overlay;
-                    } else if (event.key.keysym.sym == SDLK_BACKSPACE) {
+                    } else if (key == SDLK_BACKSPACE) {
                         runtime.pushKeyboardInput(8);
-                    } else if (event.key.keysym.sym == SDLK_RETURN) {
+                    } else if (key == SDLK_RETURN) {
                         runtime.pushKeyboardInput(10);
+                    } else if (key == SDLK_ESCAPE) {
+                        runtime.pushKeyboardInput(27);
                     }
                     break;
+                }
                 case SDL_MOUSEBUTTONDOWN:
                     if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons |= 1;
                     break;
@@ -255,7 +295,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-        SDL_SetRenderDrawColor(renderer, 8, 16, 10, 255);
+        SDL_SetRenderDrawColor(renderer, 5, 8, 20, 255);
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture.texture, nullptr, &dest);
         SDL_RenderPresent(renderer);

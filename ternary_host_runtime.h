@@ -338,23 +338,23 @@ inline std::uint32_t rgba(int r, int g, int b, int a = 255) {
 
 inline std::uint32_t paletteColor(int index) {
     switch (index & 0x0f) {
-        case 0:  return rgba(8, 16, 10);
-        case 1:  return rgba(0, 255, 70);
-        case 2:  return rgba(0, 100, 30);
-        case 3:  return rgba(255, 120, 0);
-        case 4:  return rgba(100, 50, 0);
-        case 5:  return rgba(0, 240, 255);
-        case 6:  return rgba(255, 0, 128);
-        case 7:  return rgba(255, 255, 255);
-        case 8:  return rgba(60, 70, 60);
-        case 9:  return rgba(255, 80, 80);
-        case 10: return rgba(0, 255, 70);
-        case 11: return rgba(0, 240, 255);
-        case 12: return rgba(255, 0, 128);
-        case 13: return rgba(255, 120, 0);
-        case 14: return rgba(255, 255, 0);
-        case 15: return rgba(255, 255, 255);
-        default: return rgba(0, 255, 70);
+        case 0:  return rgba(5, 8, 20);      // Midnight blue-black (background)
+        case 1:  return rgba(0, 220, 85);    // Warm phosphor green (primary text)
+        case 2:  return rgba(0, 100, 30);    // Shadow green
+        case 3:  return rgba(255, 165, 30);  // Gold amber (status)
+        case 4:  return rgba(100, 50, 0);    // Shadow amber
+        case 5:  return rgba(0, 240, 255);   // Neon cyan (accent)
+        case 6:  return rgba(255, 0, 128);   // Hot pink
+        case 7:  return rgba(215, 230, 255); // Cool white (backlit feel)
+        case 8:  return rgba(40, 55, 80);    // Dim blue-grey (muted/borders)
+        case 9:  return rgba(255, 80, 80);   // Neon red (danger)
+        case 10: return rgba(0, 220, 85);    // Warm phosphor (desktop menu)
+        case 11: return rgba(0, 240, 255);   // Neon cyan (title)
+        case 12: return rgba(255, 0, 128);   // Hot pink
+        case 13: return rgba(255, 165, 30);  // Gold amber
+        case 14: return rgba(255, 255, 0);   // Bright yellow
+        case 15: return rgba(215, 230, 255); // Cool white
+        default: return rgba(0, 220, 85);
     }
 }
 
@@ -681,6 +681,7 @@ public:
 
     [[nodiscard]] bool loadImage(std::string* error = nullptr) {
         shutdownWorkerOnly();
+        compactLoadedDiskIfNeeded();
         TosBootImage image;
         if (!readBootImageFile(config_.boot_image_path, image, error)) return false;
         if (!config_.profile_name.empty()) image.manifest.profile_name = config_.profile_name;
@@ -697,6 +698,7 @@ public:
 
     [[nodiscard]] bool loadImage(const TosBootImage& image, std::string* error = nullptr) {
         shutdownWorkerOnly();
+        compactLoadedDiskIfNeeded();
         if (!validateBootImage(image, error)) return false;
         vm::ProductionProfile profile = profileForManifest(image.manifest);
         auto machine = std::make_unique<vm::VMState>(profile);
@@ -735,7 +737,10 @@ public:
     void shutdown() {
         shutdownWorkerOnly();
         std::lock_guard<std::mutex> lock(mutex_);
-        if (machine_) machine_->status = vm::VMStatus::HALTED;
+        if (machine_) {
+            (void)machine_->compactBlockBackingFile(false);
+            machine_->status = vm::VMStatus::HALTED;
+        }
     }
 
     [[nodiscard]] bool reset(std::string* error = nullptr) {
@@ -745,6 +750,7 @@ public:
             detail::setError(error, "runtime has no loaded VM image");
             return false;
         }
+        (void)machine_->compactBlockBackingFile(false);
         vm::ProductionProfile profile = profileForManifest(image_.manifest);
         auto machine = std::make_unique<vm::VMState>(profile);
         if (!loadBootImageIntoVm(*machine, image_, config_.disk_path, error)) return false;
@@ -896,6 +902,11 @@ private:
     void shutdownWorkerOnly() {
         worker_running_ = false;
         if (worker_.joinable()) worker_.join();
+    }
+
+    void compactLoadedDiskIfNeeded() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (machine_) (void)machine_->compactBlockBackingFile(false);
     }
 
     void runLoop() {

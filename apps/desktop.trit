@@ -235,11 +235,12 @@ fn draw_string(x: t40, y: t40, text_addr: t40, len: t40, color: t40) -> t40 {
 fn seed_login_header(addr: t40) -> t40 {
     unsafe {
         store(addr + 0, 42); store(addr + 1, 42); store(addr + 2, 42); store(addr + 3, 32); // "*** "
-        store(addr + 4, 83); store(addr + 5, 69); store(addr + 6, 67); store(addr + 7, 85); // "SECU"
-        store(addr + 8, 82); store(addr + 9, 69); store(addr + 10, 68); store(addr + 11, 32); // "RED "
-        store(addr + 12, 76); store(addr + 13, 79); store(addr + 14, 71); store(addr + 15, 73); // "LOGI"
-        store(addr + 16, 78); store(addr + 17, 32); store(addr + 18, 42); store(addr + 19, 42); // "N **"
-        store(addr + 20, 42); store(addr + 21, 0);
+        store(addr + 4, 79); store(addr + 5, 83); store(addr + 6, 32);                       // "OS "
+        store(addr + 7, 51); store(addr + 8, 32);                                             // "3 "
+        store(addr + 9, 83); store(addr + 10, 69); store(addr + 11, 67);                      // "SEC"
+        store(addr + 12, 85); store(addr + 13, 82); store(addr + 14, 69);                     // "URE"
+        store(addr + 15, 32); store(addr + 16, 42); store(addr + 17, 42); store(addr + 18, 42); // " ***"
+        store(addr + 19, 0);
     }
     return addr;
 }
@@ -275,19 +276,34 @@ fn seed_access_denied(addr: t40) -> t40 {
 }
 
 fn draw_background() -> t40 {
+    // Gradient dither: rows 1-8 pure dark, rows 9-16 sparse dots, rows 17-23 denser
     var y: t40 = 1;
     while 24 - y > 0 {
         var x: t40 = 0;
         while 80 - x > 0 {
-            var check_x: t40 = x;
-            while check_x >= 2 { check_x = check_x - 2; }
-            var check_y: t40 = y;
-            while check_y >= 2 { check_y = check_y - 2; }
-            
-            if check_x - check_y == 0 {
-                os_text_cell(x, y, 46, 8); // '.' in dim gray-green
+            // Determine dot density based on row (creates a subtle top-to-bottom gradient)
+            var threshold: t40 = 0;
+            if y > 8 { threshold = 6; }
+            if y > 14 { threshold = 4; }
+            if y > 19 { threshold = 3; }
+
+            var dot_x: t40 = x;
+            while dot_x >= threshold { dot_x = dot_x - threshold; }
+            var dot_y: t40 = y;
+            while dot_y >= threshold { dot_y = dot_y - threshold; }
+
+            if threshold > 0 {
+                if dot_x == 0 {
+                    if dot_y == 0 {
+                        os_text_cell(x, y, 46, 8); // '.' in dim blue-grey
+                    } else {
+                        os_text_cell(x, y, 32, 0);
+                    }
+                } else {
+                    os_text_cell(x, y, 32, 0);
+                }
             } else {
-                os_text_cell(x, y, 32, 0); // blank
+                os_text_cell(x, y, 32, 0);
             }
             x = x + 1;
         }
@@ -296,49 +312,192 @@ fn draw_background() -> t40 {
     return 1;
 }
 
+fn draw_taskbar() -> t40 {
+    // Fill row 24 with dim background
+    var tx: t40 = 0;
+    while 80 - tx > 0 {
+        os_text_cell(tx, 24, 32, 0);
+        tx = tx + 1;
+    }
+    // [OS3] start button
+    os_text_cell(1, 24, 91, 5);  // '['
+    os_text_cell(2, 24, 79, 7);  // 'O'
+    os_text_cell(3, 24, 83, 7);  // 'S'
+    os_text_cell(4, 24, 51, 7);  // '3'
+    os_text_cell(5, 24, 93, 5);  // ']'
+
+    // Separator
+    os_text_cell(7, 24, 124, 8); // '|'
+
+    // Right side: CTRL+Q=QUIT label
+    os_text_cell(55, 24, 67, 8);  // 'C'
+    os_text_cell(56, 24, 84, 8);  // 'T'
+    os_text_cell(57, 24, 82, 8);  // 'R'
+    os_text_cell(58, 24, 76, 8);  // 'L'
+    os_text_cell(59, 24, 43, 8);  // '+'
+    os_text_cell(60, 24, 81, 8);  // 'Q'
+    os_text_cell(61, 24, 61, 8);  // '='
+    os_text_cell(62, 24, 81, 3);  // 'Q'
+    os_text_cell(63, 24, 85, 3);  // 'U'
+    os_text_cell(64, 24, 73, 3);  // 'I'
+    os_text_cell(65, 24, 84, 3);  // 'T'
+
+    // Far right: F1=DEBUG
+    os_text_cell(68, 24, 70, 8);  // 'F'
+    os_text_cell(69, 24, 49, 8);  // '1'
+    os_text_cell(70, 24, 61, 8);  // '='
+    os_text_cell(71, 24, 68, 3);  // 'D'
+    os_text_cell(72, 24, 66, 3);  // 'B'
+    os_text_cell(73, 24, 71, 3);  // 'G'
+    return 1;
+}
+
+// Draw a single icon cell at grid col/row position
+// col: 0-2, row: 0-1; glyph: ASCII char for icon center
+fn draw_icon_cell(col: t40, row_idx: t40, glyph: t40, label_addr: t40, label_len: t40, is_hovered: t40) -> t40 {
+    // Each icon cell: 12 wide, 4 tall, starting at x=8, y=3
+    var cell_x: t40 = 8 + col * 14;
+    var cell_y: t40 = 3 + row_idx * 5;
+
+    var border_color: t40 = WIDGET_THEME_ICON_BORDER;
+    var glyph_color: t40 = WIDGET_THEME_TEXT;
+    if is_hovered > 0 {
+        border_color = WIDGET_THEME_ICON_HOVER;
+        glyph_color = WIDGET_THEME_ICON_HOVER;
+    }
+
+    // Top border
+    os_text_cell(cell_x,      cell_y, 43, border_color); // '+'
+    os_text_cell(cell_x + 1,  cell_y, 45, border_color); // '-'
+    os_text_cell(cell_x + 2,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 3,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 4,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 5,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 6,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 7,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 8,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 9,  cell_y, 45, border_color);
+    os_text_cell(cell_x + 10, cell_y, 45, border_color);
+    os_text_cell(cell_x + 11, cell_y, 43, border_color); // '+'
+
+    // Row 1: sides + empty
+    os_text_cell(cell_x, cell_y + 1, 124, border_color);  // '|'
+    var fill1: t40 = 1;
+    while 11 - fill1 > 0 {
+        os_text_cell(cell_x + fill1, cell_y + 1, 32, 0);
+        fill1 = fill1 + 1;
+    }
+    os_text_cell(cell_x + 11, cell_y + 1, 124, border_color);
+
+    // Row 2: sides + glyph centred
+    os_text_cell(cell_x, cell_y + 2, 124, border_color);
+    var fill2: t40 = 1;
+    while 11 - fill2 > 0 {
+        os_text_cell(cell_x + fill2, cell_y + 2, 32, 0);
+        fill2 = fill2 + 1;
+    }
+    os_text_cell(cell_x + 5, cell_y + 2, glyph, glyph_color); // centred glyph
+    os_text_cell(cell_x + 11, cell_y + 2, 124, border_color);
+
+    // Row 3: sides + label centred
+    os_text_cell(cell_x, cell_y + 3, 124, border_color);
+    var fill3: t40 = 1;
+    while 11 - fill3 > 0 {
+        os_text_cell(cell_x + fill3, cell_y + 3, 32, 0);
+        fill3 = fill3 + 1;
+    }
+    // Centre label (max 8 chars visible)
+    var label_x: t40 = cell_x + 1;
+    if 10 - label_len > 0 {
+        label_x = cell_x + 1 + (10 - label_len) / 2;
+    }
+    var li: t40 = 0;
+    while label_len - li > 0 {
+        var lc: t40 = 0;
+        unsafe { lc = load(label_addr + li); }
+        os_text_cell(label_x + li, cell_y + 3, lc, glyph_color);
+        li = li + 1;
+    }
+    os_text_cell(cell_x + 11, cell_y + 3, 124, border_color);
+
+    // Bottom border
+    os_text_cell(cell_x,      cell_y + 4, 43, border_color); // '+'
+    var bi: t40 = 1;
+    while 11 - bi > 0 {
+        os_text_cell(cell_x + bi, cell_y + 4, 45, border_color);
+        bi = bi + 1;
+    }
+    os_text_cell(cell_x + 11, cell_y + 4, 43, border_color); // '+'
+
+    return 1;
+}
+
 fn desktop_draw_hud() -> t40 {
     draw_background();
-    
-    // Main window panel
-    draw_box(10, 3, 70, 21, 10); // Green panel border
-    draw_box(11, 4, 69, 20, 2);  // CRT Shadow inner border
-    
-    desktop_title();
-    
-    // Status Bar specs at row 24
-    os_text_cell(2, 24, 77, 3); // 'M'
-    os_text_cell(3, 24, 69, 3); // 'E'
-    os_text_cell(4, 24, 77, 3); // 'M'
-    os_text_cell(5, 24, 58, 3); // ':'
-    os_text_cell(7, 24, 50, 3); // '2'
-    os_text_cell(8, 24, 54, 3); // '6'
-    os_text_cell(9, 24, 50, 3); // '2'
-    os_text_cell(10, 24, 75, 3); // 'K'
-    
-    os_text_cell(12, 24, 32, 3);
-    os_text_cell(13, 24, 124, 3); // '|'
-    
-    os_text_cell(15, 24, 83, 3); // 'S'
-    os_text_cell(16, 24, 84, 3); // 'T'
-    os_text_cell(17, 24, 65, 3); // 'A'
-    os_text_cell(18, 24, 84, 3); // 'T'
-    os_text_cell(19, 24, 85, 3); // 'U'
-    os_text_cell(20, 24, 83, 3); // 'S'
-    os_text_cell(21, 24, 58, 3); // ':'
-    os_text_cell(23, 24, 79, 10); // 'O'
-    os_text_cell(24, 24, 75, 10); // 'K'
-    
-    // Info panel on right
-    os_text_cell(48, 8, 67, 2); os_text_cell(49, 8, 76, 2); os_text_cell(50, 8, 73, 2); os_text_cell(51, 8, 67, 2); os_text_cell(52, 8, 75, 2); // "CLICK"
-    os_text_cell(54, 8, 65, 2); os_text_cell(55, 8, 78, 2); os_text_cell(56, 8, 32, 2); os_text_cell(57, 8, 65, 2); os_text_cell(58, 8, 80, 2); os_text_cell(59, 8, 80, 2); // "AN APP"
-    
-    os_text_cell(48, 12, 84, 2); os_text_cell(49, 12, 79, 2); // "TO"
-    os_text_cell(51, 12, 76, 2); os_text_cell(52, 12, 65, 2); os_text_cell(53, 12, 85, 2); os_text_cell(54, 12, 78, 2); os_text_cell(55, 12, 67, 2); os_text_cell(56, 12, 72, 2); // "LAUNCH"
-    
-    os_text_cell(48, 16, 79, 2); os_text_cell(49, 16, 82, 2); // "OR"
-    os_text_cell(51, 16, 75, 2); os_text_cell(52, 16, 69, 2); os_text_cell(53, 16, 89, 2); os_text_cell(54, 16, 83, 2); // "KEYS"
-    os_text_cell(56, 16, 49, 2); os_text_cell(57, 16, 45, 2); os_text_cell(58, 16, 54, 2); // "1-6"
-    
+    draw_taskbar();
+
+    // OS 3 title in top-left
+    os_text_cell(1, 0, 79, 5);  // 'O'
+    os_text_cell(2, 0, 83, 5);  // 'S'
+    os_text_cell(3, 0, 32, 5);
+    os_text_cell(4, 0, 51, 7);  // '3'
+    os_text_cell(6, 0, 45, 8);  // '-'
+    os_text_cell(8, 0, 68, 8);  // 'D'
+    os_text_cell(9, 0, 69, 8);  // 'E'
+    os_text_cell(10, 0, 83, 8); // 'S'
+    os_text_cell(11, 0, 75, 8); // 'K'
+    os_text_cell(12, 0, 84, 8); // 'T'
+    os_text_cell(13, 0, 79, 8); // 'O'
+    os_text_cell(14, 0, 80, 8); // 'P'
+
+    // System info panel on the right (cols 52-78, rows 2-13)
+    draw_box(52, 2, 78, 13, 8); // dim blue-grey border
+
+    // Panel title: SYSTEM
+    os_text_cell(61, 2, 83, 5); os_text_cell(62, 2, 89, 5); os_text_cell(63, 2, 83, 5);
+    os_text_cell(64, 2, 84, 5); os_text_cell(65, 2, 69, 5); os_text_cell(66, 2, 77, 5);
+
+    // ARCH : TERNARY T40
+    os_text_cell(54, 4, 65, 8); os_text_cell(55, 4, 82, 8); os_text_cell(56, 4, 67, 8);
+    os_text_cell(57, 4, 72, 8); os_text_cell(59, 4, 58, 8);
+    os_text_cell(61, 4, 84, 3); os_text_cell(62, 4, 69, 3); os_text_cell(63, 4, 82, 3);
+    os_text_cell(64, 4, 78, 3); os_text_cell(65, 4, 65, 3); os_text_cell(66, 4, 82, 3);
+    os_text_cell(67, 4, 89, 3); os_text_cell(69, 4, 84, 3); os_text_cell(70, 4, 52, 3);
+    os_text_cell(71, 4, 48, 3);
+
+    // CPU  : 1GHz EMU
+    os_text_cell(54, 6, 67, 8); os_text_cell(55, 6, 80, 8); os_text_cell(56, 6, 85, 8);
+    os_text_cell(59, 6, 58, 8);
+    os_text_cell(61, 6, 49, 3); os_text_cell(62, 6, 71, 3); os_text_cell(63, 6, 72, 3);
+    os_text_cell(64, 6, 122, 3); os_text_cell(65, 6, 32, 3); os_text_cell(66, 6, 69, 3);
+    os_text_cell(67, 6, 77, 3); os_text_cell(68, 6, 85, 3);
+
+    // MEM  : 1MB DMEM
+    os_text_cell(54, 8, 77, 8); os_text_cell(55, 8, 69, 8); os_text_cell(56, 8, 77, 8);
+    os_text_cell(59, 8, 58, 8);
+    os_text_cell(61, 8, 49, 3); os_text_cell(62, 8, 77, 3); os_text_cell(63, 8, 66, 3);
+    os_text_cell(65, 8, 68, 3); os_text_cell(66, 8, 77, 3); os_text_cell(67, 8, 69, 3);
+    os_text_cell(68, 8, 77, 3);
+
+    // DISK : VFS
+    os_text_cell(54, 10, 68, 8); os_text_cell(55, 10, 73, 8); os_text_cell(56, 10, 83, 8);
+    os_text_cell(57, 10, 75, 8);
+    os_text_cell(59, 10, 58, 8);
+    os_text_cell(61, 10, 86, 3); os_text_cell(62, 10, 70, 3); os_text_cell(63, 10, 83, 3);
+
+    // STATUS: OK
+    os_text_cell(54, 12, 83, 8); os_text_cell(55, 12, 84, 8); os_text_cell(56, 12, 65, 8);
+    os_text_cell(57, 12, 84, 8); os_text_cell(58, 12, 85, 8); os_text_cell(59, 12, 83, 8);
+    os_text_cell(59, 12, 58, 8);
+    os_text_cell(61, 12, 79, 1); os_text_cell(62, 12, 75, 1); // OK in green
+
+    // Hotkey hints bottom-right
+    os_text_cell(53, 15, 75, 8); os_text_cell(54, 15, 69, 8); os_text_cell(55, 15, 89, 8);
+    os_text_cell(56, 15, 83, 8); os_text_cell(58, 15, 49, 8); os_text_cell(59, 15, 45, 8);
+    os_text_cell(60, 15, 54, 8); // KEYS 1-6
+    os_text_cell(62, 15, 76, 8); os_text_cell(63, 15, 65, 8); os_text_cell(64, 15, 85, 8);
+    os_text_cell(65, 15, 78, 8); os_text_cell(66, 15, 67, 8); os_text_cell(67, 15, 72, 8); // LAUNCH
+
     return 1;
 }
 
@@ -493,10 +652,12 @@ fn show_login_screen() -> t40 {
 
     os_clear_text(0);
     
-    // Draw box for login dialog
-    draw_box(18, 6, 62, 16, 6); // Hot pink border
+    // Outer glow border (hot pink)
+    draw_box(16, 4, 64, 18, 6);
+    // Inner dialog border (cyan)
+    draw_box(18, 5, 62, 17, 5);
     
-    draw_string(28, 8, header_addr, 21, 3); // Amber header
+    draw_string(27, 6, header_addr, 19, 7); // OS 3 SECURE ***
     desktop_login_init_widgets(passcode_addr);
     
     // Draw Username: ADMIN
@@ -715,21 +876,29 @@ fn main() -> t40 {
 
     desktop_draw_hud();
 
-    calc_addr = seed_btn_calc(13000);
-    task_addr = seed_btn_task(13050);
-    paint_addr = seed_btn_paint(13100);
-    files_addr = seed_btn_files(13150);
-    settings_addr = seed_btn_settings(13200);
-    terminal_addr = seed_btn_terminal(13250);
-    logout_btn_addr = seed_btn_logout(13300);
+    // Seed icon label strings into fixed addresses
+    // CALC (4 chars)
+    unsafe {
+        store(14000, 67); store(14001, 65); store(14002, 76); store(14003, 67); store(14004, 0);
+        // TASK (4 chars)
+        store(14010, 84); store(14011, 65); store(14012, 83); store(14013, 75); store(14014, 0);
+        // PAINT (5 chars)
+        store(14020, 80); store(14021, 65); store(14022, 73); store(14023, 78); store(14024, 84); store(14025, 0);
+        // FILES (5 chars)
+        store(14030, 70); store(14031, 73); store(14032, 76); store(14033, 69); store(14034, 83); store(14035, 0);
+        // SETT. (5 chars)
+        store(14040, 83); store(14041, 69); store(14042, 84); store(14043, 84); store(14044, 46); store(14045, 0);
+        // TERM. (5 chars)
+        store(14050, 84); store(14051, 69); store(14052, 82); store(14053, 77); store(14054, 46); store(14055, 0);
+    }
 
-    draw_button_text(6, calc_addr, 13, 0);
-    draw_button_text(8, task_addr, 15, 0);
-    draw_button_text(10, paint_addr, 8, 0);
-    draw_button_text(12, files_addr, 8, 0);
-    draw_button_text(14, settings_addr, 11, 0);
-    draw_button_text(16, terminal_addr, 11, 0);
-    draw_button_text(19, logout_btn_addr, 9, 0);
+    // Draw initial icon grid (no hover)
+    draw_icon_cell(0, 0, 35, 14000, 4, 0); // # CALC
+    draw_icon_cell(1, 0, 37, 14010, 4, 0); // % TASK
+    draw_icon_cell(2, 0, 42, 14020, 5, 0); // * PAINT
+    draw_icon_cell(0, 1, 47, 14030, 5, 0); // / FILES
+    draw_icon_cell(1, 1, 64, 14040, 5, 0); // @ SETT.
+    draw_icon_cell(2, 1, 62, 14050, 5, 0); // > TERM.
 
     while 1 - done > 0 {
         k = 0;
@@ -757,56 +926,53 @@ fn main() -> t40 {
         // Publish sprite tracking cursor
         os_sprite(mx, my, 43, 14); // '+' in yellow
 
-        // Click routing
+        // Icon grid hit-test: 3 cols x 2 rows
+        // Col starts: 8, 22, 36 (cell_x = 8 + col*14)
+        // Row starts: 3, 8   (cell_y = 3 + row*5)
         var current_hover: t40 = 0;
-        if mx - 18 >= 0 {
-            if 40 - mx >= 0 {
-                if my - 6 == 0 {
-                    current_hover = 1;
+        var hx: t40 = mx - 8;
+        var hy: t40 = my - 3;
+        if hx >= 0 {
+            if hy >= 0 {
+                var col_hit: t40 = -1;
+                var row_hit: t40 = -1;
+                // Column detection
+                if hx < 12 { col_hit = 0; }
+                if hx >= 14 {
+                    if hx < 26 { col_hit = 1; }
                 }
-                if my - 8 == 0 {
-                    current_hover = 2;
+                if hx >= 28 {
+                    if hx < 40 { col_hit = 2; }
                 }
-                if my - 10 == 0 {
-                    current_hover = 3;
+                // Row detection
+                if hy < 4 { row_hit = 0; }
+                if hy >= 5 {
+                    if hy < 9 { row_hit = 1; }
                 }
-                if my - 12 == 0 {
-                    current_hover = 4;
-                }
-                if my - 14 == 0 {
-                    current_hover = 5;
-                }
-                if my - 16 == 0 {
-                    current_hover = 6;
-                }
-                if my - 19 == 0 {
-                    current_hover = 7;
+                if col_hit >= 0 {
+                    if row_hit >= 0 {
+                        current_hover = 1 + row_hit * 3 + col_hit;
+                    }
                 }
             }
         }
 
         if current_hover - hovered != 0 {
-            h1 = 0;
-            h2 = 0;
-            h3 = 0;
-            h4 = 0;
-            h5 = 0;
-            h6 = 0;
-            h7 = 0;
-            if current_hover - 1 == 0 { h1 = 1; }
-            if current_hover - 2 == 0 { h2 = 1; }
-            if current_hover - 3 == 0 { h3 = 1; }
-            if current_hover - 4 == 0 { h4 = 1; }
-            if current_hover - 5 == 0 { h5 = 1; }
-            if current_hover - 6 == 0 { h6 = 1; }
-            if current_hover - 7 == 0 { h7 = 1; }
-            draw_button_text(6, calc_addr, 13, h1);
-            draw_button_text(8, task_addr, 15, h2);
-            draw_button_text(10, paint_addr, 8, h3);
-            draw_button_text(12, files_addr, 8, h4);
-            draw_button_text(14, settings_addr, 11, h5);
-            draw_button_text(16, terminal_addr, 11, h6);
-            draw_button_text(19, logout_btn_addr, 9, h7);
+            // Redraw all 6 icons with updated hover state
+            var ih1: t40 = 0; var ih2: t40 = 0; var ih3: t40 = 0;
+            var ih4: t40 = 0; var ih5: t40 = 0; var ih6: t40 = 0;
+            if current_hover - 1 == 0 { ih1 = 1; }
+            if current_hover - 2 == 0 { ih2 = 1; }
+            if current_hover - 3 == 0 { ih3 = 1; }
+            if current_hover - 4 == 0 { ih4 = 1; }
+            if current_hover - 5 == 0 { ih5 = 1; }
+            if current_hover - 6 == 0 { ih6 = 1; }
+            draw_icon_cell(0, 0, 35, 14000, 4, ih1);
+            draw_icon_cell(1, 0, 37, 14010, 4, ih2);
+            draw_icon_cell(2, 0, 42, 14020, 5, ih3);
+            draw_icon_cell(0, 1, 47, 14030, 5, ih4);
+            draw_icon_cell(1, 1, 64, 14040, 5, ih5);
+            draw_icon_cell(2, 1, 62, 14050, 5, ih6);
             hovered = current_hover;
         }
 
@@ -862,13 +1028,12 @@ fn main() -> t40 {
             }
             unsafe { store(62000, 12345); } // Mark logged in
             desktop_draw_hud();
-            draw_button_text(6, calc_addr, 13, 0);
-            draw_button_text(8, task_addr, 15, 0);
-            draw_button_text(10, paint_addr, 8, 0);
-            draw_button_text(12, files_addr, 8, 0);
-            draw_button_text(14, settings_addr, 11, 0);
-            draw_button_text(16, terminal_addr, 11, 0);
-            draw_button_text(19, logout_btn_addr, 9, 0);
+            draw_icon_cell(0, 0, 35, 14000, 4, 0);
+            draw_icon_cell(1, 0, 37, 14010, 4, 0);
+            draw_icon_cell(2, 0, 42, 14020, 5, 0);
+            draw_icon_cell(0, 1, 47, 14030, 5, 0);
+            draw_icon_cell(1, 1, 64, 14040, 5, 0);
+            draw_icon_cell(2, 1, 62, 14050, 5, 0);
             hovered = 0;
         }
         last_btn = btn;

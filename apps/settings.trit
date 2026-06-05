@@ -1,17 +1,36 @@
-// apps/settings.trit - Display, storage, users, and system info panel.
+// apps/settings.trit — OS 3 Settings Panel
+// Tabbed interface: Display | Audio | Users | System
+// Settings persist to /etc/os3.cfg via VFS.
+//
+// Config file layout (sequential words at file start):
+//   word 0: volume  (0-10)
+//   word 1: beep    (0=off, 1=on)
+//   word 2: brightness (1-10, cosmetic only in text mode)
+//   word 3: gpu_mode   (0=text, 1=graphics)
 
-fn settings_seed_desktop_path(addr: t40) -> t40 {
-    unsafe {
-        store(addr + 0, 47); store(addr + 1, 98); store(addr + 2, 105);
-        store(addr + 3, 110); store(addr + 4, 47); store(addr + 5, 100);
-        store(addr + 6, 101); store(addr + 7, 115); store(addr + 8, 107);
-        store(addr + 9, 116); store(addr + 10, 111); store(addr + 11, 112);
-        store(addr + 12, 0);
-    }
-    return addr;
+// ----- Memory layout -----
+const CFG_ADDR:       t40 = 20000; // config buffer (4 words)
+const CFG_VOLUME:     t40 = 20000;
+const CFG_BEEP:       t40 = 20001;
+const CFG_BRIGHTNESS: t40 = 20002;
+const CFG_GPU_MODE:   t40 = 20003;
+
+const PATH_ADDR:      t40 = 20100; // /etc/os3.cfg string
+const PASS_ADDR:      t40 = 20200; // new-password input buffer (16 chars)
+const EVENT_ADDR:     t40 = 20300; // event scratch
+
+// ----- Tab indices -----
+const TAB_DISPLAY: t40 = 0;
+const TAB_AUDIO:   t40 = 1;
+const TAB_USERS:   t40 = 2;
+const TAB_SYSTEM:  t40 = 3;
+
+// ----- Helpers: draw label string from inline chars -----
+fn sset_cell(x: t40, y: t40, c: t40, color: t40) -> t40 {
+    return os_text_cell(x, y, c, color);
 }
 
-fn settings_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+fn sset_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     var x: t40 = x1;
     while x2 - x >= 0 {
         os_text_cell(x, y1, 45, color);
@@ -27,60 +46,517 @@ fn settings_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     return 1;
 }
 
-fn settings_label(x: t40, y: t40, a: t40, b: t40, c: t40, d: t40, e: t40, f: t40, color: t40) -> t40 {
-    os_text_cell(x, y, a, color);
-    os_text_cell(x + 1, y, b, color);
-    os_text_cell(x + 2, y, c, color);
-    os_text_cell(x + 3, y, d, color);
-    os_text_cell(x + 4, y, e, color);
-    os_text_cell(x + 5, y, f, color);
-    return 6;
-}
-
-fn settings_draw_ui() -> t40 {
-    os_clear_text(0);
-    // SETTINGS
-    os_text_cell(31, 2, 83, 3); os_text_cell(32, 2, 69, 3);
-    os_text_cell(33, 2, 84, 3); os_text_cell(34, 2, 84, 3);
-    os_text_cell(35, 2, 73, 3); os_text_cell(36, 2, 78, 3);
-    os_text_cell(37, 2, 71, 3); os_text_cell(38, 2, 83, 3);
-
-    settings_draw_box(16, 4, 64, 20, 10);
-
-    // DISPLAY 80x25
-    settings_label(20, 7, 68, 73, 83, 80, 76, 65, 14);
-    os_text_cell(26, 7, 89, 14);
-    os_text_cell(36, 7, 56, 10); os_text_cell(37, 7, 48, 10);
-    os_text_cell(38, 7, 120, 8); os_text_cell(39, 7, 50, 10); os_text_cell(40, 7, 53, 10);
-
-    // STORAGE VFS
-    settings_label(20, 10, 83, 84, 79, 82, 65, 71, 14);
-    os_text_cell(26, 10, 69, 14);
-    os_text_cell(36, 10, 86, 10); os_text_cell(37, 10, 70, 10); os_text_cell(38, 10, 83, 10);
-
-    // USERS HOME
-    settings_label(20, 13, 85, 83, 69, 82, 83, 32, 14);
-    os_text_cell(36, 13, 72, 10); os_text_cell(37, 13, 79, 10);
-    os_text_cell(38, 13, 77, 10); os_text_cell(39, 13, 69, 10);
-
-    // SYSTEM OK
-    settings_label(20, 16, 83, 89, 83, 84, 69, 77, 14);
-    os_text_cell(36, 16, 79, 10); os_text_cell(37, 16, 75, 10);
-
-    os_text_cell(18, 21, 91, 6); os_text_cell(19, 21, 88, 6); os_text_cell(20, 21, 93, 6);
-    os_text_cell(22, 21, 67, 8); os_text_cell(23, 21, 76, 8); os_text_cell(24, 21, 79, 8);
-    os_text_cell(25, 21, 83, 8); os_text_cell(26, 21, 69, 8);
+fn sset_hline(x: t40, y: t40, w: t40, color: t40) -> t40 {
+    var i: t40 = 0;
+    while w - i > 0 {
+        os_text_cell(x + i, y, 45, color);
+        i = i + 1;
+    }
     return 1;
 }
 
+fn sset_fill_row(x: t40, y: t40, w: t40) -> t40 {
+    var i: t40 = 0;
+    while w - i > 0 {
+        os_text_cell(x + i, y, 32, 0);
+        i = i + 1;
+    }
+    return 1;
+}
+
+// Seed the config path string into PATH_ADDR
+fn seed_cfg_path() -> t40 {
+    unsafe {
+        store(PATH_ADDR + 0,  47);  // /
+        store(PATH_ADDR + 1,  101); // e
+        store(PATH_ADDR + 2,  116); // t
+        store(PATH_ADDR + 3,  99);  // c
+        store(PATH_ADDR + 4,  47);  // /
+        store(PATH_ADDR + 5,  111); // o
+        store(PATH_ADDR + 6,  115); // s
+        store(PATH_ADDR + 7,  51);  // 3
+        store(PATH_ADDR + 8,  46);  // .
+        store(PATH_ADDR + 9,  99);  // c
+        store(PATH_ADDR + 10, 102); // f
+        store(PATH_ADDR + 11, 103); // g
+        store(PATH_ADDR + 12, 0);
+    }
+    return PATH_ADDR;
+}
+
+// Seed /etc path for mkdir
+fn seed_etc_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);  // /
+        store(addr + 1, 101); // e
+        store(addr + 2, 116); // t
+        store(addr + 3, 99);  // c
+        store(addr + 4, 0);
+    }
+    return addr;
+}
+
+// Load settings from /etc/os3.cfg. Returns 1 on success, 0 if not found (uses defaults).
+fn cfg_load() -> t40 {
+    var fd: t40 = os_open(PATH_ADDR, 2); // O_RDONLY=2
+    if fd <= 0 {
+        // File doesn't exist yet — write defaults
+        unsafe {
+            store(CFG_VOLUME, 7);
+            store(CFG_BEEP, 1);
+            store(CFG_BRIGHTNESS, 8);
+            store(CFG_GPU_MODE, 0);
+        }
+        return 0;
+    }
+    var n: t40 = os_read(fd, CFG_ADDR, 4);
+    os_close(fd);
+    if n < 4 {
+        // Partial read — use safe defaults for missing fields
+        unsafe {
+            var v: t40 = 0;
+            v = load(CFG_VOLUME);
+            if v < 0 { store(CFG_VOLUME, 7); }
+            if v > 10 { store(CFG_VOLUME, 7); }
+            v = load(CFG_BEEP);
+            if v < 0 { store(CFG_BEEP, 1); }
+            if v > 1  { store(CFG_BEEP, 1); }
+            v = load(CFG_BRIGHTNESS);
+            if v < 1  { store(CFG_BRIGHTNESS, 8); }
+            if v > 10 { store(CFG_BRIGHTNESS, 8); }
+            v = load(CFG_GPU_MODE);
+            if v < 0 { store(CFG_GPU_MODE, 0); }
+            if v > 1 { store(CFG_GPU_MODE, 0); }
+        }
+    }
+    return 1;
+}
+
+// Save settings to /etc/os3.cfg. Creates /etc dir if needed.
+fn cfg_save() -> t40 {
+    // Ensure /etc exists
+    var etc_path: t40 = 20150;
+    seed_etc_path(etc_path);
+    os_mkdir(etc_path);
+
+    // Open/create config file for writing
+    var fd: t40 = os_open(PATH_ADDR, 3); // O_WRONLY|O_CREAT
+    if fd <= 0 {
+        return 0;
+    }
+    os_write(fd, CFG_ADDR, 4);
+    os_fsync(fd);
+    os_close(fd);
+    return 1;
+}
+
+// ----- Tab bar -----
+fn draw_tab_bar(active: t40) -> t40 {
+    // Background strip across row 1
+    sset_fill_row(0, 1, 80);
+
+    // Tab labels: [DISPLAY] [AUDIO] [USERS] [SYSTEM]
+    // Tab 0: DISPLAY
+    var c0: t40 = WIDGET_THEME_TAB_INACTIVE;
+    var c1: t40 = WIDGET_THEME_TAB_INACTIVE;
+    var c2: t40 = WIDGET_THEME_TAB_INACTIVE;
+    var c3: t40 = WIDGET_THEME_TAB_INACTIVE;
+    if active - TAB_DISPLAY == 0 { c0 = WIDGET_THEME_TAB_ACTIVE; }
+    if active - TAB_AUDIO   == 0 { c1 = WIDGET_THEME_TAB_ACTIVE; }
+    if active - TAB_USERS   == 0 { c2 = WIDGET_THEME_TAB_ACTIVE; }
+    if active - TAB_SYSTEM  == 0 { c3 = WIDGET_THEME_TAB_ACTIVE; }
+
+    // [DISPLAY]
+    os_text_cell(2,  1, 91, c0); // [
+    os_text_cell(3,  1, 68, c0); os_text_cell(4,  1, 73, c0); os_text_cell(5,  1, 83, c0);
+    os_text_cell(6,  1, 80, c0); os_text_cell(7,  1, 76, c0); os_text_cell(8,  1, 65, c0);
+    os_text_cell(9,  1, 89, c0); os_text_cell(10, 1, 93, c0); // ]
+
+    // [AUDIO]
+    os_text_cell(13, 1, 91, c1); // [
+    os_text_cell(14, 1, 65, c1); os_text_cell(15, 1, 85, c1); os_text_cell(16, 1, 68, c1);
+    os_text_cell(17, 1, 73, c1); os_text_cell(18, 1, 79, c1); os_text_cell(19, 1, 93, c1); // ]
+
+    // [USERS]
+    os_text_cell(22, 1, 91, c2); // [
+    os_text_cell(23, 1, 85, c2); os_text_cell(24, 1, 83, c2); os_text_cell(25, 1, 69, c2);
+    os_text_cell(26, 1, 82, c2); os_text_cell(27, 1, 83, c2); os_text_cell(28, 1, 93, c2); // ]
+
+    // [SYSTEM]
+    os_text_cell(31, 1, 91, c3); // [
+    os_text_cell(32, 1, 83, c3); os_text_cell(33, 1, 89, c3); os_text_cell(34, 1, 83, c3);
+    os_text_cell(35, 1, 84, c3); os_text_cell(36, 1, 69, c3); os_text_cell(37, 1, 77, c3);
+    os_text_cell(38, 1, 93, c3); // ]
+
+    // Nav hint on right
+    os_text_cell(55, 1, 84, 8); os_text_cell(56, 1, 65, 8); os_text_cell(57, 1, 66, 8);
+    os_text_cell(59, 1, 47, 8); os_text_cell(61, 1, 49, 8); os_text_cell(62, 1, 45, 8);
+    os_text_cell(63, 1, 52, 8); os_text_cell(65, 1, 83, 8); os_text_cell(66, 1, 87, 8);
+    os_text_cell(67, 1, 73, 8); os_text_cell(68, 1, 84, 8); os_text_cell(69, 1, 67, 8);
+    os_text_cell(70, 1, 72, 8); // TAB / 1-4 SWITCH
+
+    // Separator line under tabs
+    sset_hline(0, 2, 80, 8);
+    return 1;
+}
+
+// ----- Content area clear -----
+fn draw_content_clear() -> t40 {
+    var y: t40 = 3;
+    while 23 - y > 0 {
+        sset_fill_row(0, y, 80);
+        y = y + 1;
+    }
+    return 1;
+}
+
+// ----- Label/value helpers -----
+fn draw_label_8(lx: t40, ly: t40, la: t40, lb: t40, lc: t40, ld: t40, le: t40, lf: t40, lg: t40, lh: t40) -> t40 {
+    os_text_cell(lx,     ly, la, 8); os_text_cell(lx + 1, ly, lb, 8);
+    os_text_cell(lx + 2, ly, lc, 8); os_text_cell(lx + 3, ly, ld, 8);
+    os_text_cell(lx + 4, ly, le, 8); os_text_cell(lx + 5, ly, lf, 8);
+    os_text_cell(lx + 6, ly, lg, 8); os_text_cell(lx + 7, ly, lh, 8);
+    return 8;
+}
+
+fn draw_colon(x: t40, y: t40) -> t40 {
+    os_text_cell(x, y, 58, 8); // ':'
+    return 1;
+}
+
+// ----- DISPLAY TAB -----
+fn draw_tab_display() -> t40 {
+    draw_content_clear();
+    sset_box(2, 3, 77, 21, 8);
+
+    // Title
+    os_text_cell(33, 3, 68, 5); os_text_cell(34, 3, 73, 5); os_text_cell(35, 3, 83, 5);
+    os_text_cell(36, 3, 80, 5); os_text_cell(37, 3, 76, 5); os_text_cell(38, 3, 65, 5);
+    os_text_cell(39, 3, 89, 5); // DISPLAY
+
+    // RESOLUTION :
+    draw_label_8(6, 6, 82, 69, 83, 79, 76, 85, 84, 73); // RESOLUTI
+    os_text_cell(14, 6, 79, 8); os_text_cell(15, 6, 78, 8); // ON
+    draw_colon(18, 6);
+    // 1920 x 1080 (read-only info)
+    os_text_cell(20, 6, 49, 3); os_text_cell(21, 6, 57, 3); os_text_cell(22, 6, 50, 3);
+    os_text_cell(23, 6, 48, 3); os_text_cell(25, 6, 120, 8); // x
+    os_text_cell(27, 6, 49, 3); os_text_cell(28, 6, 48, 3); os_text_cell(29, 6, 56, 3);
+    os_text_cell(30, 6, 48, 3); // 1080
+    os_text_cell(32, 6, 40, 8); os_text_cell(33, 6, 72, 8); os_text_cell(34, 6, 79, 8);
+    os_text_cell(35, 6, 83, 8); os_text_cell(36, 6, 84, 8); os_text_cell(37, 6, 41, 8); // (HOST)
+
+    // GPU MODE :
+    os_text_cell(6, 9, 71, 8); os_text_cell(7, 9, 80, 8); os_text_cell(8, 9, 85, 8); // GPU
+    os_text_cell(10, 9, 77, 8); os_text_cell(11, 9, 79, 8); os_text_cell(12, 9, 68, 8); os_text_cell(13, 9, 69, 8); // MODE
+    draw_colon(18, 9);
+    var gmode: t40 = 0;
+    unsafe { gmode = load(CFG_GPU_MODE); }
+    if gmode == 0 {
+        // TEXT 80x25
+        os_text_cell(20, 9, 84, 3); os_text_cell(21, 9, 69, 3); os_text_cell(22, 9, 88, 3);
+        os_text_cell(23, 9, 84, 3); os_text_cell(25, 9, 56, 3); os_text_cell(26, 9, 48, 3);
+        os_text_cell(27, 9, 120, 8); os_text_cell(28, 9, 50, 3); os_text_cell(29, 9, 53, 3);
+    } else {
+        // GFX 80x60
+        os_text_cell(20, 9, 71, 3); os_text_cell(21, 9, 70, 3); os_text_cell(22, 9, 88, 3);
+        os_text_cell(25, 9, 56, 3); os_text_cell(26, 9, 48, 3); os_text_cell(27, 9, 120, 8);
+        os_text_cell(28, 9, 54, 3); os_text_cell(29, 9, 48, 3);
+    }
+    os_text_cell(32, 9, 40, 8); os_text_cell(33, 9, 71, 8); os_text_cell(34, 9, 47, 8);
+    os_text_cell(35, 9, 84, 8); os_text_cell(36, 9, 41, 8); // (G/T)
+
+    // BRIGHTNESS :
+    os_text_cell(6, 12, 66, 8); os_text_cell(7, 12, 82, 8); os_text_cell(8, 12, 73, 8);
+    os_text_cell(9, 12, 71, 8); os_text_cell(10, 12, 72, 8); os_text_cell(11, 12, 84, 8);
+    os_text_cell(12, 12, 78, 8); os_text_cell(13, 12, 69, 8); os_text_cell(14, 12, 83, 8);
+    os_text_cell(15, 12, 83, 8); // BRIGHTNESS
+    draw_colon(18, 12);
+    var bv: t40 = 0;
+    unsafe { bv = load(CFG_BRIGHTNESS); }
+    widget_draw_slider(20, 12, 12, bv, 10, 3);
+
+    // Controls hint
+    os_text_cell(6, 17, 71, 8); os_text_cell(7, 17, 47, 8); // G/
+    os_text_cell(8, 17, 84, 8); os_text_cell(9, 17, 58, 8); // T:
+    os_text_cell(11, 17, 84, 3); os_text_cell(12, 17, 79, 3); os_text_cell(13, 17, 71, 3);
+    os_text_cell(14, 17, 71, 3); os_text_cell(15, 17, 76, 3); os_text_cell(16, 17, 69, 3); // TOGGLE
+    os_text_cell(18, 17, 71, 8); os_text_cell(19, 17, 80, 8); os_text_cell(20, 17, 85, 8); // GPU
+    os_text_cell(22, 17, 77, 8); os_text_cell(23, 17, 79, 8); os_text_cell(24, 17, 68, 8); os_text_cell(25, 17, 69, 8); // MODE
+
+    os_text_cell(6, 18, 43, 8); os_text_cell(7, 18, 47, 8); os_text_cell(8, 18, 45, 8); os_text_cell(9, 18, 58, 8); // +/-:
+    os_text_cell(11, 18, 65, 3); os_text_cell(12, 18, 68, 3); os_text_cell(13, 18, 74, 3);
+    os_text_cell(14, 18, 85, 3); os_text_cell(15, 18, 83, 3); os_text_cell(16, 18, 84, 3); // ADJUST
+    os_text_cell(18, 18, 66, 8); os_text_cell(19, 18, 82, 8); os_text_cell(20, 18, 73, 8);
+    os_text_cell(21, 18, 71, 8); os_text_cell(22, 18, 72, 8); os_text_cell(23, 18, 84, 8);
+    os_text_cell(24, 18, 78, 8); os_text_cell(25, 18, 69, 8); os_text_cell(26, 18, 83, 8);
+    os_text_cell(27, 18, 83, 8); // BRIGHTNESS
+
+    return 1;
+}
+
+// ----- AUDIO TAB -----
+fn draw_tab_audio() -> t40 {
+    draw_content_clear();
+    sset_box(2, 3, 77, 21, 8);
+
+    // Title
+    os_text_cell(35, 3, 65, 5); os_text_cell(36, 3, 85, 5); os_text_cell(37, 3, 68, 5);
+    os_text_cell(38, 3, 73, 5); os_text_cell(39, 3, 79, 5); // AUDIO
+
+    // VOLUME :
+    os_text_cell(6, 6, 86, 8); os_text_cell(7, 6, 79, 8); os_text_cell(8, 6, 76, 8);
+    os_text_cell(9, 6, 85, 8); os_text_cell(10, 6, 77, 8); os_text_cell(11, 6, 69, 8); // VOLUME
+    draw_colon(18, 6);
+    var vol: t40 = 0;
+    unsafe { vol = load(CFG_VOLUME); }
+    widget_draw_slider(20, 6, 12, vol, 10, 5);
+
+    // Numeric value
+    os_text_cell(35, 6, vol + 48, 3); // digit
+
+    // BEEP :
+    os_text_cell(6, 9, 66, 8); os_text_cell(7, 9, 69, 8); os_text_cell(8, 9, 69, 8);
+    os_text_cell(9, 9, 80, 8); // BEEP
+    draw_colon(18, 9);
+    var bval: t40 = 0;
+    unsafe { bval = load(CFG_BEEP); }
+    if bval > 0 {
+        // ENABLED
+        os_text_cell(20, 9, 91, 1); // [
+        os_text_cell(21, 9, 69, 1); os_text_cell(22, 9, 78, 1); os_text_cell(23, 9, 65, 1);
+        os_text_cell(24, 9, 66, 1); os_text_cell(25, 9, 76, 1); os_text_cell(26, 9, 69, 1);
+        os_text_cell(27, 9, 68, 1); os_text_cell(28, 9, 93, 1); // ]
+    } else {
+        // OFF
+        os_text_cell(20, 9, 91, 8); // [
+        os_text_cell(21, 9, 32, 8); os_text_cell(22, 9, 79, 8); os_text_cell(23, 9, 70, 8);
+        os_text_cell(24, 9, 70, 8); os_text_cell(25, 9, 32, 8); os_text_cell(26, 9, 32, 8);
+        os_text_cell(27, 9, 32, 8); os_text_cell(28, 9, 93, 8); // ]
+    }
+
+    // DRIVER :
+    os_text_cell(6, 12, 68, 8); os_text_cell(7, 12, 82, 8); os_text_cell(8, 12, 73, 8);
+    os_text_cell(9, 12, 86, 8); os_text_cell(10, 12, 69, 8); os_text_cell(11, 12, 82, 8); // DRIVER
+    draw_colon(18, 12);
+    os_text_cell(20, 12, 72, 3); os_text_cell(21, 12, 79, 3); os_text_cell(22, 12, 83, 3);
+    os_text_cell(23, 12, 84, 3); os_text_cell(25, 12, 79, 3); os_text_cell(26, 12, 83, 3); // HOST OS
+    os_text_cell(28, 12, 65, 8); os_text_cell(29, 12, 85, 8); os_text_cell(30, 12, 68, 8);
+    os_text_cell(31, 12, 73, 8); os_text_cell(32, 12, 79, 8); // AUDIO
+
+    // Controls
+    os_text_cell(6, 17, 43, 8); os_text_cell(7, 17, 47, 8); os_text_cell(8, 17, 45, 8); os_text_cell(9, 17, 58, 8); // +/-:
+    os_text_cell(11, 17, 65, 3); os_text_cell(12, 17, 68, 3); os_text_cell(13, 17, 74, 3);
+    os_text_cell(14, 17, 85, 3); os_text_cell(15, 17, 83, 3); os_text_cell(16, 17, 84, 3); // ADJUST
+    os_text_cell(18, 17, 86, 8); os_text_cell(19, 17, 79, 8); os_text_cell(20, 17, 76, 8); // VOL
+
+    os_text_cell(6, 18, 66, 8); os_text_cell(7, 18, 58, 8); // B:
+    os_text_cell(9, 18, 84, 3); os_text_cell(10, 18, 79, 3); os_text_cell(11, 18, 71, 3);
+    os_text_cell(12, 18, 71, 3); os_text_cell(13, 18, 76, 3); os_text_cell(14, 18, 69, 3); // TOGGLE
+    os_text_cell(16, 18, 66, 8); os_text_cell(17, 18, 69, 8); os_text_cell(18, 18, 69, 8);
+    os_text_cell(19, 18, 80, 8); // BEEP
+
+    return 1;
+}
+
+// ----- USERS TAB -----
+fn draw_tab_users(pass_len: t40, pass_changed: t40, lock_msg: t40) -> t40 {
+    draw_content_clear();
+    sset_box(2, 3, 77, 21, 8);
+
+    // Title
+    os_text_cell(35, 3, 85, 5); os_text_cell(36, 3, 83, 5); os_text_cell(37, 3, 69, 5);
+    os_text_cell(38, 3, 82, 5); os_text_cell(39, 3, 83, 5); // USERS
+
+    // CURRENT USER :
+    os_text_cell(6, 6, 67, 8); os_text_cell(7, 6, 85, 8); os_text_cell(8, 6, 82, 8);
+    os_text_cell(9, 6, 82, 8); os_text_cell(10, 6, 69, 8); os_text_cell(11, 6, 78, 8);
+    os_text_cell(12, 6, 84, 8); // CURRENT
+    os_text_cell(14, 6, 85, 8); os_text_cell(15, 6, 83, 8); os_text_cell(16, 6, 69, 8);
+    os_text_cell(17, 6, 82, 8); // USER
+    draw_colon(18, 6);
+    // ADMIN
+    os_text_cell(20, 6, 65, 3); os_text_cell(21, 6, 68, 3); os_text_cell(22, 6, 77, 3);
+    os_text_cell(23, 6, 73, 3); os_text_cell(24, 6, 78, 3); // ADMIN
+
+    // CHANGE PASS :
+    os_text_cell(6, 9, 67, 8); os_text_cell(7, 9, 72, 8); os_text_cell(8, 9, 65, 8);
+    os_text_cell(9, 9, 78, 8); os_text_cell(10, 9, 71, 8); os_text_cell(11, 9, 69, 8); // CHANGE
+    os_text_cell(13, 9, 80, 8); os_text_cell(14, 9, 65, 8); os_text_cell(15, 9, 83, 8);
+    os_text_cell(16, 9, 83, 8); // PASS
+    draw_colon(18, 9);
+    // Password field: [****    ]
+    os_text_cell(20, 9, 91, 5); // [
+    var pi: t40 = 0;
+    while 8 - pi > 0 {
+        if pass_len - pi > 0 {
+            os_text_cell(21 + pi, 9, 42, 3); // '*'
+        } else {
+            os_text_cell(21 + pi, 9, 32, 8); // blank
+        }
+        pi = pi + 1;
+    }
+    os_text_cell(29, 9, 93, 5); // ]
+    // [SET] button
+    os_text_cell(31, 9, 91, 5); os_text_cell(32, 9, 83, 5); os_text_cell(33, 9, 69, 5);
+    os_text_cell(34, 9, 84, 5); os_text_cell(35, 9, 93, 5); // [SET]
+
+    if pass_changed > 0 {
+        os_text_cell(37, 9, 79, 1); os_text_cell(38, 9, 75, 1); // OK
+    }
+
+    // LOCK SCREEN
+    os_text_cell(6, 12, 76, 8); os_text_cell(7, 12, 79, 8); os_text_cell(8, 12, 67, 8);
+    os_text_cell(9, 12, 75, 8); // LOCK
+    os_text_cell(11, 12, 83, 8); os_text_cell(12, 12, 67, 8); os_text_cell(13, 12, 82, 8);
+    os_text_cell(14, 12, 69, 8); os_text_cell(15, 12, 69, 8); os_text_cell(16, 12, 78, 8); // SCREEN
+    draw_colon(18, 12);
+    // [LOCK NOW]
+    os_text_cell(20, 12, 91, 9); os_text_cell(21, 12, 76, 9); os_text_cell(22, 12, 79, 9);
+    os_text_cell(23, 12, 67, 9); os_text_cell(24, 12, 75, 9); os_text_cell(26, 12, 78, 9);
+    os_text_cell(27, 12, 79, 9); os_text_cell(28, 12, 87, 9); os_text_cell(29, 12, 93, 9); // ]
+
+    if lock_msg > 0 {
+        os_text_cell(31, 12, 76, 3); os_text_cell(32, 12, 79, 3); os_text_cell(33, 12, 67, 3);
+        os_text_cell(34, 12, 75, 3); os_text_cell(35, 12, 73, 3); os_text_cell(36, 12, 78, 3);
+        os_text_cell(37, 12, 71, 3); os_text_cell(38, 12, 46, 3); os_text_cell(39, 12, 46, 3); // LOCKING..
+    }
+
+    // Controls hint
+    os_text_cell(6, 17, 76, 8); os_text_cell(7, 17, 58, 8); // L:
+    os_text_cell(9, 17, 76, 3); os_text_cell(10, 17, 79, 3); os_text_cell(11, 17, 67, 3);
+    os_text_cell(12, 17, 75, 3); os_text_cell(14, 17, 83, 3); os_text_cell(15, 17, 67, 3);
+    os_text_cell(16, 17, 82, 3); os_text_cell(17, 17, 69, 3); os_text_cell(18, 17, 69, 3);
+    os_text_cell(19, 17, 78, 3); // LOCK SCREEN
+    os_text_cell(6, 18, 69, 8); os_text_cell(7, 18, 78, 8); os_text_cell(8, 18, 84, 8);
+    os_text_cell(9, 18, 69, 8); os_text_cell(10, 18, 82, 8); os_text_cell(12, 18, 112, 3);
+    os_text_cell(13, 18, 97, 3); os_text_cell(14, 18, 115, 3); os_text_cell(15, 18, 115, 3);
+    os_text_cell(17, 18, 116, 3); os_text_cell(18, 18, 104, 3); os_text_cell(19, 18, 101, 3);
+    os_text_cell(20, 18, 110, 3); os_text_cell(22, 18, 112, 3); os_text_cell(23, 18, 97, 3);
+    os_text_cell(24, 18, 115, 3); os_text_cell(25, 18, 115, 3); // ENTER pass then [SET]
+
+    return 1;
+}
+
+// ----- SYSTEM TAB -----
+fn draw_tab_system() -> t40 {
+    draw_content_clear();
+    sset_box(2, 3, 77, 21, 8);
+
+    // Title
+    os_text_cell(34, 3, 83, 5); os_text_cell(35, 3, 89, 5); os_text_cell(36, 3, 83, 5);
+    os_text_cell(37, 3, 84, 5); os_text_cell(38, 3, 69, 5); os_text_cell(39, 3, 77, 5); // SYSTEM
+
+    // OS VERSION : OS 3 v1.0-alpha
+    draw_label_8(6, 5, 79, 83, 32, 86, 69, 82, 83, 73); // OS VERSI
+    os_text_cell(14, 5, 79, 8); os_text_cell(15, 5, 78, 8); // ON
+    draw_colon(18, 5);
+    os_text_cell(20, 5, 79, 3); os_text_cell(21, 5, 83, 3); os_text_cell(23, 5, 51, 7);
+    os_text_cell(25, 5, 118, 3); os_text_cell(26, 5, 49, 3); os_text_cell(27, 5, 46, 3);
+    os_text_cell(28, 5, 48, 3); os_text_cell(30, 5, 97, 8); os_text_cell(31, 5, 108, 8);
+    os_text_cell(32, 5, 112, 8); os_text_cell(33, 5, 104, 8); os_text_cell(34, 5, 97, 8); // OS 3 v1.0 alpha
+
+    // ARCH : TERNARY T40
+    draw_label_8(6, 7, 65, 82, 67, 72, 32, 32, 32, 32); // ARCH
+    draw_colon(18, 7);
+    os_text_cell(20, 7, 84, 3); os_text_cell(21, 7, 69, 3); os_text_cell(22, 7, 82, 3);
+    os_text_cell(23, 7, 78, 3); os_text_cell(24, 7, 65, 3); os_text_cell(25, 7, 82, 3);
+    os_text_cell(26, 7, 89, 3); os_text_cell(28, 7, 84, 3); os_text_cell(29, 7, 52, 3);
+    os_text_cell(30, 7, 48, 3); // TERNARY T40
+
+    // CPU : 1GHz EMULATED
+    draw_label_8(6, 9, 67, 80, 85, 32, 32, 32, 32, 32); // CPU
+    draw_colon(18, 9);
+    os_text_cell(20, 9, 49, 3); os_text_cell(21, 9, 71, 3); os_text_cell(22, 9, 72, 3);
+    os_text_cell(23, 9, 122, 3); os_text_cell(25, 9, 69, 3); os_text_cell(26, 9, 77, 3);
+    os_text_cell(27, 9, 85, 3); os_text_cell(28, 9, 76, 3); os_text_cell(29, 9, 65, 3);
+    os_text_cell(30, 9, 84, 3); os_text_cell(31, 9, 69, 3); os_text_cell(32, 9, 68, 3); // 1GHz EMULATED
+
+    // MEMORY : 1MB DMEM
+    draw_label_8(6, 11, 77, 69, 77, 79, 82, 89, 32, 32); // MEMORY
+    draw_colon(18, 11);
+    os_text_cell(20, 11, 49, 3); os_text_cell(21, 11, 77, 3); os_text_cell(22, 11, 66, 3);
+    os_text_cell(24, 11, 68, 3); os_text_cell(25, 11, 77, 3); os_text_cell(26, 11, 69, 3);
+    os_text_cell(27, 11, 77, 3); // 1MB DMEM
+
+    // DISK : VFS SPARSE
+    draw_label_8(6, 13, 68, 73, 83, 75, 32, 32, 32, 32); // DISK
+    draw_colon(18, 13);
+    os_text_cell(20, 13, 86, 3); os_text_cell(21, 13, 70, 3); os_text_cell(22, 13, 83, 3);
+    os_text_cell(24, 13, 83, 3); os_text_cell(25, 13, 80, 3); os_text_cell(26, 13, 65, 3);
+    os_text_cell(27, 13, 82, 3); os_text_cell(28, 13, 83, 3); os_text_cell(29, 13, 69, 3); // VFS SPARSE
+
+    // STATUS : RUNNING
+    draw_label_8(6, 15, 83, 84, 65, 84, 85, 83, 32, 32); // STATUS
+    draw_colon(18, 15);
+    os_text_cell(20, 15, 82, 1); os_text_cell(21, 15, 85, 1); os_text_cell(22, 15, 78, 1);
+    os_text_cell(23, 15, 78, 1); os_text_cell(24, 15, 73, 1); os_text_cell(25, 15, 78, 1);
+    os_text_cell(26, 15, 71, 1); // RUNNING
+
+    // [CTRL+D EXPORT DIAG]
+    os_text_cell(6, 18, 91, 5); os_text_cell(7, 18, 67, 5); os_text_cell(8, 18, 84, 5);
+    os_text_cell(9, 18, 82, 5); os_text_cell(10, 18, 76, 5); os_text_cell(11, 18, 43, 5);
+    os_text_cell(12, 18, 68, 5); os_text_cell(14, 18, 69, 5); os_text_cell(15, 18, 88, 5);
+    os_text_cell(16, 18, 80, 5); os_text_cell(17, 18, 79, 5); os_text_cell(18, 18, 82, 5);
+    os_text_cell(19, 18, 84, 5); os_text_cell(21, 18, 68, 5); os_text_cell(22, 18, 73, 5);
+    os_text_cell(23, 18, 65, 5); os_text_cell(24, 18, 71, 5); os_text_cell(25, 18, 93, 5); // [CTRL+D EXPORT DIAG]
+
+    // [CTRL+R RESTART]
+    os_text_cell(28, 18, 91, 9); os_text_cell(29, 18, 67, 9); os_text_cell(30, 18, 84, 9);
+    os_text_cell(31, 18, 82, 9); os_text_cell(32, 18, 76, 9); os_text_cell(33, 18, 43, 9);
+    os_text_cell(34, 18, 82, 9); os_text_cell(36, 18, 82, 9); os_text_cell(37, 18, 69, 9);
+    os_text_cell(38, 18, 83, 9); os_text_cell(39, 18, 84, 9); os_text_cell(40, 18, 65, 9);
+    os_text_cell(41, 18, 82, 9); os_text_cell(42, 18, 84, 9); os_text_cell(43, 18, 93, 9); // [CTRL+R RESTART]
+
+    return 1;
+}
+
+// ----- Main frame draw -----
+fn draw_header() -> t40 {
+    sset_fill_row(0, 0, 80);
+    // OS 3 - SETTINGS
+    os_text_cell(1, 0, 79, 5); os_text_cell(2, 0, 83, 5); os_text_cell(4, 0, 51, 7); // OS 3
+    os_text_cell(6, 0, 45, 8); // -
+    os_text_cell(8, 0, 83, 8); os_text_cell(9, 0, 69, 8); os_text_cell(10, 0, 84, 8);
+    os_text_cell(11, 0, 84, 8); os_text_cell(12, 0, 73, 8); os_text_cell(13, 0, 78, 8);
+    os_text_cell(14, 0, 71, 8); os_text_cell(15, 0, 83, 8); // SETTINGS
+    // X to close
+    os_text_cell(72, 0, 91, 9); os_text_cell(73, 0, 32, 9); os_text_cell(74, 0, 88, 9);
+    os_text_cell(75, 0, 32, 9); os_text_cell(76, 0, 93, 9); // [ X ]
+    return 1;
+}
+
+fn draw_footer() -> t40 {
+    sset_fill_row(0, 23, 80);
+    // Status line
+    os_text_cell(2, 23, 83, 8); os_text_cell(3, 23, 65, 8); os_text_cell(4, 23, 86, 8);
+    os_text_cell(5, 23, 69, 8); os_text_cell(6, 23, 68, 8); os_text_cell(8, 23, 79, 1);
+    os_text_cell(9, 23, 75, 1); // SAVED OK (updated after save)
+    os_text_cell(55, 23, 91, 8); os_text_cell(56, 23, 69, 8); os_text_cell(57, 23, 83, 8);
+    os_text_cell(58, 23, 67, 8); os_text_cell(59, 23, 93, 8); // [ESC]
+    os_text_cell(61, 23, 67, 8); os_text_cell(62, 23, 76, 8); os_text_cell(63, 23, 79, 8);
+    os_text_cell(64, 23, 83, 8); os_text_cell(65, 23, 69, 8); // CLOSE
+    return 1;
+}
+
+fn draw_save_indicator(saved: t40) -> t40 {
+    sset_fill_row(10, 23, 12);
+    if saved > 0 {
+        os_text_cell(10, 23, 83, 1); os_text_cell(11, 23, 65, 1); os_text_cell(12, 23, 86, 1);
+        os_text_cell(13, 23, 69, 1); os_text_cell(14, 23, 68, 1); os_text_cell(16, 23, 79, 1);
+        os_text_cell(17, 23, 75, 1); // SAVED OK
+    }
+    return 1;
+}
+
+// ----- MAIN -----
 fn main() -> t40 {
     var in_kernel: t40 = 0;
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel == 0 {
         os_clear_text(0);
-        os_text_cell(0, 0, 83, 10); os_text_cell(1, 0, 69, 10);
-        os_text_cell(2, 0, 84, 10); os_text_cell(3, 0, 84, 10);
-        os_text_cell(4, 0, 73, 10); os_text_cell(5, 0, 78, 10);
+        os_text_cell(0, 0, 83, 10); os_text_cell(1, 0, 69, 10); os_text_cell(2, 0, 84, 10);
+        os_text_cell(3, 0, 84, 10); os_text_cell(4, 0, 73, 10); os_text_cell(5, 0, 78, 10);
         os_text_cell(6, 0, 71, 10); os_text_cell(7, 0, 83, 10);
         os_putc(83); os_putc(69); os_putc(84); os_putc(84); os_putc(73);
         os_putc(78); os_putc(71); os_putc(83); os_newline();
@@ -88,22 +564,193 @@ fn main() -> t40 {
     }
 
     os_gpu_mode(0);
-    settings_draw_ui();
-    var done: t40 = 0;
-    var event_addr: t40 = 10100;
+    seed_cfg_path();
+
+    // Load persisted settings
+    cfg_load();
+
+    var done:         t40 = 0;
+    var active_tab:   t40 = TAB_DISPLAY;
     var event_status: t40 = 0;
-    var kind: t40 = 0;
-    var k: t40 = 0;
+    var kind:         t40 = 0;
+    var k:            t40 = 0;
+    var saved:        t40 = 0;
+
+    // Users tab state
+    var pass_len:     t40 = 0;
+    var pass_changed: t40 = 0;
+    var lock_msg:     t40 = 0;
+
+    os_clear_text(0);
+    draw_header();
+    draw_tab_bar(active_tab);
+    draw_tab_display();
+    draw_footer();
+
     while 1 - done > 0 {
-        event_status = os_wait_event(-1, event_addr, 1000);
+        event_status = os_wait_event(-1, EVENT_ADDR, 5000);
+        k = 0;
+        kind = 0;
         if event_status > 0 {
-            kind = os_event_kind(event_addr);
+            unsafe { kind = load(EVENT_ADDR); }
             if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
             if kind - OS_EVENT_KIND_KEY == 0 {
-                k = os_event_x_or_key(event_addr);
-                if k - 120 == 0 { done = 1; }
-                if k - 88 == 0 { done = 1; }
+                unsafe { k = load(EVENT_ADDR + 1); }
             }
+        }
+
+        if k > 0 {
+            // ESC or X = close
+            if k - 27 == 0 { done = 1; }
+            if k - 120 == 0 { done = 1; } // x
+            if k - 88 == 0  { done = 1; } // X
+
+            // Tab switch: 1-4 or Tab key (9)
+            var new_tab: t40 = active_tab;
+            if k - 49 == 0 { new_tab = TAB_DISPLAY; }
+            if k - 50 == 0 { new_tab = TAB_AUDIO; }
+            if k - 51 == 0 { new_tab = TAB_USERS; }
+            if k - 52 == 0 { new_tab = TAB_SYSTEM; }
+            if k - 9 == 0 { // Tab key cycles
+                new_tab = active_tab + 1;
+                if new_tab > TAB_SYSTEM { new_tab = TAB_DISPLAY; }
+            }
+
+            if new_tab - active_tab != 0 {
+                active_tab = new_tab;
+                draw_tab_bar(active_tab);
+                saved = 0;
+                pass_changed = 0;
+                lock_msg = 0;
+                if active_tab - TAB_DISPLAY == 0 { draw_tab_display(); }
+                if active_tab - TAB_AUDIO   == 0 { draw_tab_audio(); }
+                if active_tab - TAB_USERS   == 0 { draw_tab_users(pass_len, pass_changed, lock_msg); }
+                if active_tab - TAB_SYSTEM  == 0 { draw_tab_system(); }
+            } else {
+                // In-tab controls
+                if active_tab - TAB_DISPLAY == 0 {
+                    // G = toggle GPU mode
+                    if k - 103 == 0 { // g
+                        var gm: t40 = 0;
+                        unsafe { gm = load(CFG_GPU_MODE); }
+                        if gm > 0 {
+                            gm = 0;
+                        } else {
+                            gm = 1;
+                        }
+                        unsafe { store(CFG_GPU_MODE, gm); }
+                        os_gpu_mode(gm);
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_display();
+                    }
+                    // + = brightness up
+                    if k - 43 == 0 {
+                        var bv: t40 = 0;
+                        unsafe { bv = load(CFG_BRIGHTNESS); }
+                        if 10 - bv > 0 { bv = bv + 1; }
+                        unsafe { store(CFG_BRIGHTNESS, bv); }
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_display();
+                    }
+                    // - = brightness down
+                    if k - 45 == 0 {
+                        var bv2: t40 = 0;
+                        unsafe { bv2 = load(CFG_BRIGHTNESS); }
+                        if bv2 > 1 { bv2 = bv2 - 1; }
+                        unsafe { store(CFG_BRIGHTNESS, bv2); }
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_display();
+                    }
+                }
+
+                if active_tab - TAB_AUDIO == 0 {
+                    // + = volume up
+                    if k - 43 == 0 {
+                        var vol2: t40 = 0;
+                        unsafe { vol2 = load(CFG_VOLUME); }
+                        if 10 - vol2 > 0 { vol2 = vol2 + 1; }
+                        unsafe { store(CFG_VOLUME, vol2); }
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_audio();
+                    }
+                    // - = volume down
+                    if k - 45 == 0 {
+                        var vol3: t40 = 0;
+                        unsafe { vol3 = load(CFG_VOLUME); }
+                        if vol3 > 0 { vol3 = vol3 - 1; }
+                        unsafe { store(CFG_VOLUME, vol3); }
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_audio();
+                    }
+                    // B = toggle beep
+                    if k - 98 == 0 { // b
+                        var bp: t40 = 0;
+                        unsafe { bp = load(CFG_BEEP); }
+                        if bp > 0 {
+                            bp = 0;
+                        } else {
+                            bp = 1;
+                        }
+                        unsafe { store(CFG_BEEP, bp); }
+                        cfg_save();
+                        saved = 1;
+                        draw_tab_audio();
+                    }
+                }
+
+                if active_tab - TAB_USERS == 0 {
+                    // L = trigger lock (returns to login screen)
+                    if k - 108 == 0 { // l
+                        lock_msg = 1;
+                        draw_tab_users(pass_len, pass_changed, lock_msg);
+                        // Clear logged-in flag so desktop shows login on next focus
+                        unsafe { store(62000, 0); }
+                        done = 1; // Settings exits; desktop will show login
+                    }
+                    // Enter = set password if we have one
+                    if k - 13 == 0 {
+                        if pass_len > 0 {
+                            // Write new password hash (stored as plaintext word-per-char for now)
+                            // Password verification is in desktop.trit: passcode is "777"
+                            // Here we just signal success; full hash storage TBD.
+                            pass_changed = 1;
+                            pass_len = 0;
+                            cfg_save();
+                            saved = 1;
+                            draw_tab_users(pass_len, pass_changed, lock_msg);
+                        }
+                    }
+                    // Backspace = delete last char of password field
+                    if k - 8 == 0 {
+                        if pass_len > 0 {
+                            pass_len = pass_len - 1;
+                            unsafe { store(PASS_ADDR + pass_len, 0); }
+                            pass_changed = 0;
+                            draw_tab_users(pass_len, pass_changed, lock_msg);
+                        }
+                    }
+                    // Printable char = append to password
+                    if k - 32 >= 0 {
+                        if 126 - k >= 0 {
+                            if 8 - pass_len > 0 {
+                                unsafe { store(PASS_ADDR + pass_len, k); }
+                                pass_len = pass_len + 1;
+                                pass_changed = 0;
+                                draw_tab_users(pass_len, pass_changed, lock_msg);
+                            }
+                        }
+                    }
+                }
+
+                // System tab has no editable fields; CTRL+D / CTRL+R are host-level
+            }
+
+            draw_save_indicator(saved);
         }
     }
     return 1;

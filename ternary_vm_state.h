@@ -61,6 +61,7 @@
 #include <cassert>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <cstdio>
 #include <limits>
@@ -1585,12 +1586,16 @@ public:
     [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= block_count_) return false;
         if (static_cast<int>(data.size()) != MMU_PAGE_WORDS) return false;
-        if (isZeroBlock(data)) {
-            blocks_.erase(index);
-        } else {
-            blocks_[index] = data;
+
+        if (!backing_path_.empty()) {
+            if (!appendCompactRecord(index, data)) return false;
+            applyBlock(index, data);
+            if (shouldCompactBacking()) (void)rewriteCompactBacking();
+            return true;
         }
-        return backing_path_.empty() || appendCompactRecord(index, data);
+
+        applyBlock(index, data);
+        return true;
     }
 
     [[nodiscard]] std::vector<long long> serializeDense() const {
@@ -1619,6 +1624,12 @@ public:
         return true;
     }
 
+    [[nodiscard]] bool compactBackingFile(bool force = true) {
+        if (backing_path_.empty()) return true;
+        if (!force && !shouldCompactBacking()) return true;
+        return rewriteCompactBacking();
+    }
+
 private:
     int block_count_ = 1;
     std::unordered_map<int, std::vector<long long>> blocks_;
@@ -1629,6 +1640,79 @@ private:
         for (long long value : data) {
             if (value != 0) return false;
         }
+        return true;
+    }
+
+    void applyBlock(int index, const std::vector<long long>& data) {
+        if (isZeroBlock(data)) {
+            blocks_.erase(index);
+        } else {
+            blocks_[index] = data;
+        }
+    }
+
+    [[nodiscard]] bool shouldCompactBacking() const {
+        if (backing_path_.empty()) return false;
+        const long long live_records =
+            std::max<long long>(1, static_cast<long long>(blocks_.size()));
+        const long long threshold =
+            std::max<long long>(kCompactionMinRecords,
+                                live_records * kCompactionRecordMultiplier +
+                                    kCompactionSlackRecords);
+        return static_cast<long long>(compact_record_count_) > threshold;
+    }
+
+    [[nodiscard]] bool writeCompactBackingTo(const std::filesystem::path& path,
+                                             const std::vector<int>& indices) const {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        if (!file.good()) return false;
+        const long long magic = kSparseDiskMagic;
+        const int count = static_cast<int>(indices.size());
+        file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        for (int index : indices) {
+            const auto found = blocks_.find(index);
+            if (found == blocks_.end()) continue;
+            file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+            for (long long word : found->second) {
+                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+            }
+        }
+        file.flush();
+        return static_cast<bool>(file);
+    }
+
+    [[nodiscard]] bool rewriteCompactBacking() {
+        if (backing_path_.empty()) return true;
+
+        std::vector<int> indices;
+        indices.reserve(blocks_.size());
+        for (const auto& block : blocks_) indices.push_back(block.first);
+        std::sort(indices.begin(), indices.end());
+
+        const std::filesystem::path target(backing_path_);
+        std::filesystem::path temp = target;
+        temp += ".compact";
+        if (!writeCompactBackingTo(temp, indices)) {
+            std::error_code cleanup_ec;
+            std::filesystem::remove(temp, cleanup_ec);
+            return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::rename(temp, target, ec);
+        if (ec) {
+            ec.clear();
+            std::filesystem::copy_file(temp,
+                                       target,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       ec);
+            std::error_code cleanup_ec;
+            std::filesystem::remove(temp, cleanup_ec);
+            if (ec) return false;
+        }
+
+        compact_record_count_ = static_cast<int>(indices.size());
         return true;
     }
 
@@ -1701,6 +1785,9 @@ private:
     }
 
     static constexpr long long kSparseDiskMagic = 0x54524954535031LL; // "TRITSP1"
+    static constexpr int kCompactionMinRecords = 128;
+    static constexpr int kCompactionSlackRecords = 32;
+    static constexpr int kCompactionRecordMultiplier = 4;
 };
 
 struct VMCoreState {
@@ -2144,6 +2231,10 @@ struct VMState {
 
     [[nodiscard]] bool attachBlockBackingFile(const std::string& path) {
         return block_device.attachBackingFile(path);
+    }
+
+    [[nodiscard]] bool compactBlockBackingFile(bool force = true) {
+        return block_device.compactBackingFile(force);
     }
 
     [[nodiscard]] std::size_t allocatedDiskBlocks() const {

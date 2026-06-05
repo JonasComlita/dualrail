@@ -123,6 +123,12 @@ void testSparseFileBackedDisk() {
            "sparse disk overwrite appends one touched-block record");
     expect(writer.allocatedDiskBlocks() == 1,
            "sparse disk overwrite keeps one live touched block");
+    expect(writer.compactBlockBackingFile(), "sparse disk backing file compacts live records");
+    const long long compacted_size = fileSizeBytes(path);
+    const long long compact_header_bytes =
+        static_cast<long long>(sizeof(long long) + sizeof(int));
+    expect(compacted_size == compact_header_bytes + compact_record_bytes,
+           "sparse disk compaction rewrites one live block record");
 
     vm::VMState reader(profile);
     expect(reader.attachBlockBackingFile(path), "rebooted VM attaches sparse disk image file");

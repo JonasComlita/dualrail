@@ -12,11 +12,12 @@ Included files:
 
 Controls:
 - Text input and mouse input are forwarded to the guest.
-- Space pauses or resumes the VM.
-- R resets the VM.
-- D exports diagnostics to the diagnostics folder.
+- Ctrl+Space pauses or resumes the VM.
+- Ctrl+R resets the VM.
+- Ctrl+D exports diagnostics to the diagnostics folder.
+- Ctrl+Q exits the host runtime.
 - F1 toggles debug details in the window title.
-- Esc exits.
+- Esc is forwarded to the guest.
 
 Notes:
 - The guest disk is mutable. Keep a backup of ternary-os.tdisk if you want to

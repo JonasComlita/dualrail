@@ -53,10 +53,37 @@ const WIDGET_THEME_TITLE: t40 = 3;
 const WIDGET_THEME_SPACING: t40 = 1;
 const WIDGET_THEME_TITLEBAR_H: t40 = 1;
 const WIDGET_THEME_CONTROL_H: t40 = 1;
+const WIDGET_THEME_ICON_BG: t40 = 0;
+const WIDGET_THEME_ICON_BORDER: t40 = 8;
+const WIDGET_THEME_ICON_HOVER: t40 = 5;
+const WIDGET_THEME_TAB_ACTIVE: t40 = 5;
+const WIDGET_THEME_TAB_INACTIVE: t40 = 8;
 
 fn widget_store(addr: t40, value: t40) -> t40 {
     unsafe { store(addr, value); }
     return value;
+}
+
+// Draws a [====---] style progress/slider bar.
+// value: 0..max_val, fill_char: '=' fill, empty_char: '-' empty
+fn widget_draw_slider(x: t40, y: t40, inner_w: t40, value: t40, max_val: t40, color: t40) -> t40 {
+    os_text_cell(x, y, 91, color); // '['
+    var filled: t40 = 0;
+    if max_val > 0 {
+        filled = value * inner_w / max_val;
+    }
+    if filled > inner_w { filled = inner_w; }
+    var i: t40 = 0;
+    while inner_w - i > 0 {
+        if filled - i > 0 {
+            os_text_cell(x + 1 + i, y, 61, color); // '='
+        } else {
+            os_text_cell(x + 1 + i, y, 45, WIDGET_THEME_MUTED); // '-'
+        }
+        i = i + 1;
+    }
+    os_text_cell(x + 1 + inner_w, y, 93, color); // ']'
+    return 1;
 }
 
 fn widget_load(addr: t40) -> t40 {
