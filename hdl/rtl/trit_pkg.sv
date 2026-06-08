@@ -1,17 +1,19 @@
+`timescale 1ns/1ps
+
 package trit_pkg;
     typedef logic [1:0] trit_t;
 
-    localparam trit_t TRIT_NEG     = 2'b00;
-    localparam trit_t TRIT_ZERO    = 2'b01;
-    localparam trit_t TRIT_POS     = 2'b10;
-    localparam trit_t TRIT_INVALID = 2'b11;
+    localparam logic [1:0] TRIT_NEG     = 2'b00;
+    localparam logic [1:0] TRIT_ZERO    = 2'b01;
+    localparam logic [1:0] TRIT_POS     = 2'b10;
+    localparam logic [1:0] TRIT_INVALID = 2'b11;
 
     function automatic logic trit_valid(input trit_t t);
         return t != TRIT_INVALID;
     endfunction
 
     function automatic logic signed [2:0] trit_decode(input trit_t t);
-        unique case (t)
+        case (t)
             TRIT_NEG:  return -3'sd1;
             TRIT_ZERO: return  3'sd0;
             TRIT_POS:  return  3'sd1;
@@ -20,7 +22,7 @@ package trit_pkg;
     endfunction
 
     function automatic trit_t trit_encode(input logic signed [2:0] value);
-        unique case (value)
+        case (value)
             -3'sd1: return TRIT_NEG;
              3'sd0: return TRIT_ZERO;
              3'sd1: return TRIT_POS;
@@ -29,7 +31,7 @@ package trit_pkg;
     endfunction
 
     function automatic trit_t trit_negate(input trit_t t);
-        unique case (t)
+        case (t)
             TRIT_NEG:  return TRIT_POS;
             TRIT_ZERO: return TRIT_ZERO;
             TRIT_POS:  return TRIT_NEG;
@@ -70,6 +72,16 @@ package trit_pkg;
         trit_t carry;
     } trit_add_result_t;
 
+    typedef enum logic [2:0] {
+        TRIT_LANE_OP_NEG  = 3'd0,
+        TRIT_LANE_OP_AND  = 3'd1,
+        TRIT_LANE_OP_OR   = 3'd2,
+        TRIT_LANE_OP_XSUM = 3'd3,
+        TRIT_LANE_OP_ADD  = 3'd4,
+        TRIT_LANE_OP_SUB  = 3'd5,
+        TRIT_LANE_OP_TSEL = 3'd6
+    } trit_lane_op_t;
+
     function automatic trit_add_result_t trit_add3(
         input trit_t a,
         input trit_t b,
@@ -85,7 +97,7 @@ package trit_pkg;
         end
 
         total = trit_decode(a) + trit_decode(b) + trit_decode(carry_i);
-        unique case (total)
+        case (total)
             -3'sd3: begin result.sum = TRIT_ZERO; result.carry = TRIT_NEG;  end
             -3'sd2: begin result.sum = TRIT_POS;  result.carry = TRIT_NEG;  end
             -3'sd1: begin result.sum = TRIT_NEG;  result.carry = TRIT_ZERO; end

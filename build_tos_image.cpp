@@ -45,6 +45,20 @@ void appendStoreCString(std::ostringstream& out, int addr, const std::string& te
     appendStoreWord(out, addr, static_cast<int>(text.size()), 0);
 }
 
+void appendStoreTextCells(std::ostringstream& out,
+                          int x,
+                          int y,
+                          const std::string& text,
+                          int color) {
+    constexpr int kTextBase = 60000;
+    constexpr int kTextWidth = 80;
+    const int addr = kTextBase + y * kTextWidth + x;
+    for (int i = 0; i < static_cast<int>(text.size()); ++i) {
+        const int ch = static_cast<unsigned char>(text[static_cast<std::size_t>(i)]);
+        appendStoreWord(out, addr, i, ch + color * 256);
+    }
+}
+
 void appendStringWords(std::vector<long long>& out, const std::string& text) {
     out.push_back(static_cast<long long>(text.size()));
     for (unsigned char c : text) {
@@ -52,11 +66,18 @@ void appendStringWords(std::vector<long long>& out, const std::string& text) {
     }
 }
 
+int alignUp(int value, int alignment) {
+    if (alignment <= 1) return value;
+    const int remainder = value % alignment;
+    return remainder == 0 ? value : value + alignment - remainder;
+}
+
 std::string buildBootExecAssembly(const std::string& path) {
     std::ostringstream boot;
     boot << ".text\n";
     boot << "boot:\n";
     boot << "    mov sp, 16383\n";
+    appendStoreTextCells(boot, 1, 0, "OS 3 - BOOTING", 7);
     boot << "    call kernel_init\n";
     boot << "    mov r13, 0\n";
     boot << "    mov r14, 0\n";
@@ -147,14 +168,14 @@ int main(int argc, char** argv) {
     const std::string disk_path = argc >= 3 ? argv[2] : "";
     const std::string image_version = argc >= 4 ? argv[3] : "dev";
 
-    const std::vector<BundledApp> apps = {
-        {"desktop", "/bin/desktop", 8100, 512},
-        {"calculator", "/bin/calculator", 8200, 256},
-        {"task_manager", "/bin/task_manager", 8300, 256},
-        {"paint", "/bin/paint", 8400, 256},
-        {"file_manager", "/bin/file_manager", 8500, 256},
-        {"settings", "/bin/settings", 8600, 256},
-        {"terminal", "/bin/terminal", 8700, 256},
+    std::vector<BundledApp> apps = {
+        {"desktop", "/bin/desktop", 0, 512},
+        {"calculator", "/bin/calculator", 0, 256},
+        {"task_manager", "/bin/task_manager", 0, 256},
+        {"paint", "/bin/paint", 0, 256},
+        {"file_manager", "/bin/file_manager", 0, 256},
+        {"settings", "/bin/settings", 0, 256},
+        {"terminal", "/bin/terminal", 0, 256},
     };
 
     const std::string kernel = readTextFile("kernel.trit");
@@ -179,6 +200,15 @@ int main(int argc, char** argv) {
         linked_apps.push_back(compileApp(app, ok));
     }
     if (!ok) return EXIT_FAILURE;
+
+    int next_text_ppn = 8100;
+    constexpr int kAppTextPpnAlignment = 16;
+    constexpr int kAppTextPpnGuardPages = 8;
+    for (std::size_t i = 0; i < apps.size(); ++i) {
+        next_text_ppn = alignUp(next_text_ppn, kAppTextPpnAlignment);
+        apps[i].text_ppn = next_text_ppn;
+        next_text_ppn += linked_apps[i].executable_header.text_pages + kAppTextPpnGuardPages;
+    }
 
     sandbox::os::NativeVfsImageBuilder rootfs(32768);
     if (!rootfs.status().ok() || !rootfs.installBaseLayout().ok()) {

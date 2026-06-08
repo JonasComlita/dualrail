@@ -1,4 +1,6 @@
 *.exe
+*.img
+
 bitnet_weights/converted_t40/
 bitnet_weights/model/
 qwen3.627b_weights/converted_qwen/
@@ -7,8 +9,6 @@ build/
 build_fresh/
 build_cuda/
 build_sycl/
-todo.md
-implementationplan.md
 treatcode/node_modules/
 node_modules/
 scratch/

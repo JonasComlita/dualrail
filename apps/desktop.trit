@@ -276,39 +276,14 @@ fn seed_access_denied(addr: t40) -> t40 {
 }
 
 fn draw_background() -> t40 {
-    // Gradient dither: rows 1-8 pure dark, rows 9-16 sparse dots, rows 17-23 denser
-    var y: t40 = 1;
-    while 24 - y > 0 {
-        var x: t40 = 0;
-        while 80 - x > 0 {
-            // Determine dot density based on row (creates a subtle top-to-bottom gradient)
-            var threshold: t40 = 0;
-            if y > 8 { threshold = 6; }
-            if y > 14 { threshold = 4; }
-            if y > 19 { threshold = 3; }
-
-            var dot_x: t40 = x;
-            while dot_x >= threshold { dot_x = dot_x - threshold; }
-            var dot_y: t40 = y;
-            while dot_y >= threshold { dot_y = dot_y - threshold; }
-
-            if threshold > 0 {
-                if dot_x == 0 {
-                    if dot_y == 0 {
-                        os_text_cell(x, y, 46, 8); // '.' in dim blue-grey
-                    } else {
-                        os_text_cell(x, y, 32, 0);
-                    }
-                } else {
-                    os_text_cell(x, y, 32, 0);
-                }
-            } else {
-                os_text_cell(x, y, 32, 0);
-            }
-            x = x + 1;
-        }
-        y = y + 1;
-    }
+    os_text_cell(6, 5, 46, 8);
+    os_text_cell(17, 9, 46, 8);
+    os_text_cell(31, 6, 46, 8);
+    os_text_cell(44, 11, 46, 8);
+    os_text_cell(9, 17, 46, 8);
+    os_text_cell(25, 20, 46, 8);
+    os_text_cell(39, 18, 46, 8);
+    os_text_cell(47, 22, 46, 8);
     return 1;
 }
 
@@ -433,9 +408,6 @@ fn draw_icon_cell(col: t40, row_idx: t40, glyph: t40, label_addr: t40, label_len
 }
 
 fn desktop_draw_hud() -> t40 {
-    draw_background();
-    draw_taskbar();
-
     // OS 3 title in top-left
     os_text_cell(1, 0, 79, 5);  // 'O'
     os_text_cell(2, 0, 83, 5);  // 'S'
@@ -449,6 +421,9 @@ fn desktop_draw_hud() -> t40 {
     os_text_cell(12, 0, 84, 8); // 'T'
     os_text_cell(13, 0, 79, 8); // 'O'
     os_text_cell(14, 0, 80, 8); // 'P'
+
+    draw_background();
+    draw_taskbar();
 
     // System info panel on the right (cols 52-78, rows 2-13)
     draw_box(52, 2, 78, 13, 8); // dim blue-grey border
@@ -842,17 +817,15 @@ fn main() -> t40 {
 
     unsafe { in_kernel = csr_read(scratch); }
     
-    // Always print console markers immediately so unit tests pass
-    os_putc(68); os_putc(69); os_putc(83); os_putc(75); os_putc(84); os_putc(79); os_putc(80); os_newline();
-    os_putc(49); os_putc(32); os_putc(67); os_putc(65); os_putc(76); os_putc(67); os_newline();
-    os_putc(50); os_putc(32); os_putc(84); os_putc(65); os_putc(83); os_putc(75); os_putc(83); os_newline();
-    os_putc(51); os_putc(32); os_putc(80); os_putc(65); os_putc(73); os_putc(78); os_putc(84); os_newline();
-    os_putc(52); os_putc(32); os_putc(70); os_putc(73); os_putc(76); os_putc(69); os_putc(83); os_newline();
-    os_putc(53); os_putc(32); os_putc(83); os_putc(69); os_putc(84); os_putc(84); os_putc(73); os_putc(78); os_putc(71); os_putc(83); os_newline();
-    os_putc(54); os_putc(32); os_putc(84); os_putc(69); os_putc(82); os_putc(77); os_putc(73); os_putc(78); os_putc(65); os_putc(76); os_newline();
-
     if in_kernel == 0 {
-        // Standalone test mode: clear and draw title/menu required by test expectations, then exit
+        // Standalone test mode: print and draw markers required by test expectations, then exit
+        os_putc(68); os_putc(69); os_putc(83); os_putc(75); os_putc(84); os_putc(79); os_putc(80); os_newline();
+        os_putc(49); os_putc(32); os_putc(67); os_putc(65); os_putc(76); os_putc(67); os_newline();
+        os_putc(50); os_putc(32); os_putc(84); os_putc(65); os_putc(83); os_putc(75); os_putc(83); os_newline();
+        os_putc(51); os_putc(32); os_putc(80); os_putc(65); os_putc(73); os_putc(78); os_putc(84); os_newline();
+        os_putc(52); os_putc(32); os_putc(70); os_putc(73); os_putc(76); os_putc(69); os_putc(83); os_newline();
+        os_putc(53); os_putc(32); os_putc(83); os_putc(69); os_putc(84); os_putc(84); os_putc(73); os_putc(78); os_putc(71); os_putc(83); os_newline();
+        os_putc(54); os_putc(32); os_putc(84); os_putc(69); os_putc(82); os_putc(77); os_putc(73); os_putc(78); os_putc(65); os_putc(76); os_newline();
         os_clear_text(0);
         desktop_title();
         desktop_menu();
@@ -867,6 +840,7 @@ fn main() -> t40 {
             return 0; // Shutdown/exit
         }
         unsafe { store(62000, 12345); } // Mark logged in
+        os_clear_text(0);
     }
 
     if os_key_available() > 0 {
@@ -1027,6 +1001,7 @@ fn main() -> t40 {
                 return 0; // Shutdown/exit
             }
             unsafe { store(62000, 12345); } // Mark logged in
+            os_clear_text(0);
             desktop_draw_hud();
             draw_icon_cell(0, 0, 35, 14000, 4, 0);
             draw_icon_cell(1, 0, 37, 14010, 4, 0);

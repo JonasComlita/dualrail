@@ -3721,9 +3721,21 @@ fn vfs_name_equal(slot: t40, start: t40, len: t40) -> t40 {
     return 1;
 }
 
+fn vfs_dirent_limit() -> t40 {
+    var limit: t40 = kload(VFS_NEXT_DIRENT_ADDR);
+    if limit < 0 {
+        return 0;
+    }
+    if limit - VFS_MAX_DIRENTS > 0 {
+        return VFS_MAX_DIRENTS;
+    }
+    return limit;
+}
+
 fn vfs_find_child(namespace_id: t40, parent_inode: t40, name_start: t40, name_len: t40, name_hash: t40) -> t40 {
     var slot: t40 = 0;
-    while VFS_MAX_DIRENTS - slot > 0 {
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
         var row: t40 = dirent_addr(slot);
         var child: t40 = kload(row + DIRENT_CHILD);
         if child > 0 {
@@ -4852,7 +4864,8 @@ fn vfs_readdir(namespace_id: t40, path_addr: t40, out_addr: t40, max_words: t40)
     }
     var written: t40 = 0;
     var slot: t40 = 0;
-    while VFS_MAX_DIRENTS - slot > 0 {
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
         var row: t40 = dirent_addr(slot);
         var child: t40 = kload(row + DIRENT_CHILD);
         if child > 0 {
@@ -4893,7 +4906,8 @@ fn vfs_readdir_user(pid: t40, namespace_id: t40, path_addr: t40, out_addr: t40, 
     }
     var written: t40 = 0;
     var slot: t40 = 0;
-    while VFS_MAX_DIRENTS - slot > 0 {
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
         var row: t40 = dirent_addr(slot);
         var child: t40 = kload(row + DIRENT_CHILD);
         if child > 0 {
@@ -5381,7 +5395,8 @@ fn app_registry_autoload_bin() -> t40 {
     }
     var loaded: t40 = 0;
     var slot: t40 = 0;
-    while VFS_MAX_DIRENTS - slot > 0 {
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
         var row: t40 = dirent_addr(slot);
         var child: t40 = kload(row + DIRENT_CHILD);
         if child > 0 {
@@ -5467,15 +5482,7 @@ fn app_caps_allow(granted: t40, required: t40) -> t40 {
     return 1;
 }
 
-fn app_find(namespace_id: t40, path_addr: t40) -> t40 {
-    var hash: t40 = app_path_hash(path_addr);
-    if hash < 0 {
-        return hash;
-    }
-    var inode: t40 = vfs_lookup(namespace_id, path_addr);
-    if inode < 0 {
-        return inode;
-    }
+fn app_find_by_inode(namespace_id: t40, hash: t40, inode: t40) -> t40 {
     var app_id: t40 = 0;
     while APP_MAX - app_id > 0 {
         var row: t40 = app_addr(app_id);
@@ -5487,10 +5494,24 @@ fn app_find(namespace_id: t40, path_addr: t40) -> t40 {
                     }
                 }
             }
+        } else {
+            return ERR_NOT_FOUND;
         }
         app_id = app_id + 1;
     }
     return ERR_NOT_FOUND;
+}
+
+fn app_find(namespace_id: t40, path_addr: t40) -> t40 {
+    var hash: t40 = app_path_hash(path_addr);
+    if hash < 0 {
+        return hash;
+    }
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    return app_find_by_inode(namespace_id, hash, inode);
 }
 
 fn app_first_free() -> t40 {
@@ -5532,10 +5553,10 @@ fn app_register(namespace_id: t40, path_addr: t40, caps: t40, quota_id: t40, tru
     if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
         return ERR_INVALID;
     }
-    if vfs_stat(namespace_id, path_addr, 0) - EXEC_DESC_WORDS < 0 {
+    if kload(inode_addr(inode) + INODE_SIZE) - EXEC_DESC_WORDS < 0 {
         return ERR_INVALID;
     }
-    if app_find(namespace_id, path_addr) >= 0 {
+    if app_find_by_inode(namespace_id, hash, inode) >= 0 {
         return ERR_EXISTS;
     }
     var app_id: t40 = app_first_free();
@@ -6514,7 +6535,8 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
         kstore(row + INODE_VERSION, 0);
     }
     var slot: t40 = 0;
-    while VFS_MAX_DIRENTS - slot > 0 {
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
         var dr: t40 = dirent_addr(slot);
         if kload(dr + DIRENT_CHILD) - inode == 0 {
             if kload(dr + DIRENT_NAMESPACE) - namespace_id == 0 {

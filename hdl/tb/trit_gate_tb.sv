@@ -4,6 +4,10 @@ module trit_gate_tb;
     import trit_pkg::*;
 
     localparam int TRITS = 5;
+    localparam trit_t TB_NEG     = 2'b00;
+    localparam trit_t TB_ZERO    = 2'b01;
+    localparam trit_t TB_POS     = 2'b10;
+    localparam trit_t TB_INVALID = 2'b11;
 
     trit_t a;
     trit_t b;
@@ -48,9 +52,9 @@ module trit_gate_tb;
     trit_full_adder add_gate (.a(a), .b(b), .carry_i(c), .sum(y_sum), .carry_o(y_carry));
     trit_tsel tsel_gate (
         .cond(a),
-        .neg_i(TRIT_NEG),
-        .zero_i(TRIT_ZERO),
-        .pos_i(TRIT_POS),
+        .neg_i(TB_NEG),
+        .zero_i(TB_ZERO),
+        .pos_i(TB_POS),
         .y(y_tsel)
     );
 
@@ -105,19 +109,19 @@ module trit_gate_tb;
     );
 
     function automatic trit_t encode_model(input int value);
-        unique case (value)
-            -1: return TRIT_NEG;
-             0: return TRIT_ZERO;
-             1: return TRIT_POS;
-            default: return TRIT_INVALID;
+        case (value)
+            -1: return TB_NEG;
+             0: return TB_ZERO;
+             1: return TB_POS;
+            default: return TB_INVALID;
         endcase
     endfunction
 
     function automatic int decode_model(input trit_t value);
-        unique case (value)
-            TRIT_NEG: return -1;
-            TRIT_ZERO: return 0;
-            TRIT_POS: return 1;
+        case (value)
+            TB_NEG: return -1;
+            TB_ZERO: return 0;
+            TB_POS: return 1;
             default: return 0;
         endcase
     endfunction
@@ -135,7 +139,7 @@ module trit_gate_tb;
         logic [2*TRITS-1:0] out;
 
         for (int i = 0; i < TRITS; i++) begin
-            out[2*i +: 2] = TRIT_INVALID;
+            out[2*i +: 2] = TB_INVALID;
         end
         return out;
     endfunction
@@ -215,17 +219,17 @@ module trit_gate_tb;
             end
         end
 
-        a = TRIT_INVALID;
-        b = TRIT_ZERO;
-        c = TRIT_ZERO;
+        a = TB_INVALID;
+        b = TB_ZERO;
+        c = TB_ZERO;
         #1;
-        expect_trit(y_neg, TRIT_INVALID, "invalid neg");
-        expect_trit(y_and, TRIT_INVALID, "invalid and");
-        expect_trit(y_or, TRIT_INVALID, "invalid or");
-        expect_trit(y_xsum, TRIT_INVALID, "invalid xsum");
-        expect_trit(y_sum, TRIT_INVALID, "invalid full-adder sum");
-        expect_trit(y_carry, TRIT_INVALID, "invalid full-adder carry");
-        expect_trit(y_tsel, TRIT_INVALID, "invalid tsel condition");
+        expect_trit(y_neg, TB_INVALID, "invalid neg");
+        expect_trit(y_and, TB_INVALID, "invalid and");
+        expect_trit(y_or, TB_INVALID, "invalid or");
+        expect_trit(y_xsum, TB_INVALID, "invalid xsum");
+        expect_trit(y_sum, TB_INVALID, "invalid full-adder sum");
+        expect_trit(y_carry, TB_INVALID, "invalid full-adder carry");
+        expect_trit(y_tsel, TB_INVALID, "invalid tsel condition");
     endtask
 
     task automatic test_lane_gates();
@@ -234,20 +238,20 @@ module trit_gate_tb;
         lane_a = '0;
         lane_b = '0;
         for (int i = 0; i < TRITS; i++) begin
-            set_lane_trit(lane_a, i, TRIT_ZERO);
-            set_lane_trit(lane_b, i, TRIT_ZERO);
+            set_lane_trit(lane_a, i, TB_ZERO);
+            set_lane_trit(lane_b, i, TB_ZERO);
         end
-        set_lane_trit(lane_a, 0, TRIT_NEG);
-        set_lane_trit(lane_a, 1, TRIT_ZERO);
-        set_lane_trit(lane_a, 2, TRIT_POS);
-        set_lane_trit(lane_a, 3, TRIT_NEG);
-        set_lane_trit(lane_a, 4, TRIT_POS);
+        set_lane_trit(lane_a, 0, TB_NEG);
+        set_lane_trit(lane_a, 1, TB_ZERO);
+        set_lane_trit(lane_a, 2, TB_POS);
+        set_lane_trit(lane_a, 3, TB_NEG);
+        set_lane_trit(lane_a, 4, TB_POS);
 
-        set_lane_trit(lane_b, 0, TRIT_ZERO);
-        set_lane_trit(lane_b, 1, TRIT_POS);
-        set_lane_trit(lane_b, 2, TRIT_POS);
-        set_lane_trit(lane_b, 3, TRIT_NEG);
-        set_lane_trit(lane_b, 4, TRIT_NEG);
+        set_lane_trit(lane_b, 0, TB_ZERO);
+        set_lane_trit(lane_b, 1, TB_POS);
+        set_lane_trit(lane_b, 2, TB_POS);
+        set_lane_trit(lane_b, 3, TB_NEG);
+        set_lane_trit(lane_b, 4, TB_NEG);
         #1;
 
         expected = lane_a;
@@ -276,40 +280,40 @@ module trit_gate_tb;
         expect_lane(lane_y_xsum, expected, "lane xsum");
 
         for (int i = 0; i < TRITS; i++) begin
-            set_lane_trit(lane_a, i, TRIT_ZERO);
-            set_lane_trit(lane_b, i, TRIT_ZERO);
+            set_lane_trit(lane_a, i, TB_ZERO);
+            set_lane_trit(lane_b, i, TB_ZERO);
         end
-        set_lane_trit(lane_a, 0, TRIT_POS);
-        set_lane_trit(lane_b, 0, TRIT_POS);
-        set_lane_trit(expected, 0, TRIT_NEG);
-        set_lane_trit(expected, 1, TRIT_POS);
-        set_lane_trit(expected, 2, TRIT_ZERO);
-        set_lane_trit(expected, 3, TRIT_ZERO);
-        set_lane_trit(expected, 4, TRIT_ZERO);
+        set_lane_trit(lane_a, 0, TB_POS);
+        set_lane_trit(lane_b, 0, TB_POS);
+        set_lane_trit(expected, 0, TB_NEG);
+        set_lane_trit(expected, 1, TB_POS);
+        set_lane_trit(expected, 2, TB_ZERO);
+        set_lane_trit(expected, 3, TB_ZERO);
+        set_lane_trit(expected, 4, TB_ZERO);
         #1;
         expect_bit(lane_valid_add, 1'b1, "lane add valid");
         expect_lane(lane_y_add, expected, "lane add carry propagation");
 
-        set_lane_trit(lane_a, 0, TRIT_NEG);
-        set_lane_trit(lane_b, 0, TRIT_POS);
-        set_lane_trit(expected, 0, TRIT_POS);
-        set_lane_trit(expected, 1, TRIT_NEG);
-        set_lane_trit(expected, 2, TRIT_ZERO);
-        set_lane_trit(expected, 3, TRIT_ZERO);
-        set_lane_trit(expected, 4, TRIT_ZERO);
+        set_lane_trit(lane_a, 0, TB_NEG);
+        set_lane_trit(lane_b, 0, TB_POS);
+        set_lane_trit(expected, 0, TB_POS);
+        set_lane_trit(expected, 1, TB_NEG);
+        set_lane_trit(expected, 2, TB_ZERO);
+        set_lane_trit(expected, 3, TB_ZERO);
+        set_lane_trit(expected, 4, TB_ZERO);
         #1;
         expect_bit(lane_valid_sub, 1'b1, "lane sub valid");
         expect_lane(lane_y_sub, expected, "lane sub borrow propagation");
 
         for (int i = 0; i < TRITS; i++) begin
-            set_lane_trit(lane_a, i, TRIT_POS);
-            set_lane_trit(lane_b, i, TRIT_POS);
+            set_lane_trit(lane_a, i, TB_POS);
+            set_lane_trit(lane_b, i, TB_POS);
         end
         #1;
         expect_bit(lane_valid_add, 1'b0, "lane add overflow invalid");
         expect_lane(lane_y_add, invalid_lane_model(), "lane add overflow sentinel");
 
-        set_lane_trit(lane_a, 2, TRIT_INVALID);
+        set_lane_trit(lane_a, 2, TB_INVALID);
         #1;
         expect_bit(lane_valid_neg, 1'b0, "lane invalid input rejected");
         expect_lane(lane_y_neg, invalid_lane_model(), "lane invalid input sentinel");
@@ -317,16 +321,16 @@ module trit_gate_tb;
 
     task automatic test_lane_tsel();
         for (int i = 0; i < TRITS; i++) begin
-            set_lane_trit(lane_cond, i, (i == 0) ? TRIT_NEG : ((i == 1) ? TRIT_ZERO : TRIT_POS));
-            set_lane_trit(lane_neg, i, TRIT_NEG);
-            set_lane_trit(lane_zero, i, TRIT_ZERO);
-            set_lane_trit(lane_pos, i, TRIT_POS);
+            set_lane_trit(lane_cond, i, (i == 0) ? TB_NEG : ((i == 1) ? TB_ZERO : TB_POS));
+            set_lane_trit(lane_neg, i, TB_NEG);
+            set_lane_trit(lane_zero, i, TB_ZERO);
+            set_lane_trit(lane_pos, i, TB_POS);
         end
         #1;
         expect_bit(lane_valid_tsel, 1'b1, "lane tsel valid");
         expect_lane(lane_y_tsel, lane_cond, "lane tsel selects matching arms");
 
-        set_lane_trit(lane_cond, 3, TRIT_INVALID);
+        set_lane_trit(lane_cond, 3, TB_INVALID);
         #1;
         expect_bit(lane_valid_tsel, 1'b0, "lane tsel invalid predicate rejected");
         expect_lane(lane_y_tsel, invalid_lane_model(), "lane tsel invalid predicate sentinel");

@@ -575,6 +575,13 @@ fn main() -> t40 {
     var kind:         t40 = 0;
     var k:            t40 = 0;
     var saved:        t40 = 0;
+    var new_tab:      t40 = TAB_DISPLAY;
+    var gm:           t40 = 0;
+    var bv:           t40 = 0;
+    var bv2:          t40 = 0;
+    var vol2:         t40 = 0;
+    var vol3:         t40 = 0;
+    var bp:           t40 = 0;
 
     // Users tab state
     var pass_len:     t40 = 0;
@@ -606,14 +613,14 @@ fn main() -> t40 {
             if k - 88 == 0  { done = 1; } // X
 
             // Tab switch: 1-4 or Tab key (9)
-            var new_tab: t40 = active_tab;
+            new_tab = active_tab;
             if k - 49 == 0 { new_tab = TAB_DISPLAY; }
             if k - 50 == 0 { new_tab = TAB_AUDIO; }
             if k - 51 == 0 { new_tab = TAB_USERS; }
             if k - 52 == 0 { new_tab = TAB_SYSTEM; }
             if k - 9 == 0 { // Tab key cycles
                 new_tab = active_tab + 1;
-                if new_tab > TAB_SYSTEM { new_tab = TAB_DISPLAY; }
+                if new_tab - TAB_SYSTEM > 0 { new_tab = TAB_DISPLAY; }
             }
 
             if new_tab - active_tab != 0 {
@@ -631,7 +638,6 @@ fn main() -> t40 {
                 if active_tab - TAB_DISPLAY == 0 {
                     // G = toggle GPU mode
                     if k - 103 == 0 { // g
-                        var gm: t40 = 0;
                         unsafe { gm = load(CFG_GPU_MODE); }
                         if gm > 0 {
                             gm = 0;
@@ -646,7 +652,6 @@ fn main() -> t40 {
                     }
                     // + = brightness up
                     if k - 43 == 0 {
-                        var bv: t40 = 0;
                         unsafe { bv = load(CFG_BRIGHTNESS); }
                         if 10 - bv > 0 { bv = bv + 1; }
                         unsafe { store(CFG_BRIGHTNESS, bv); }
@@ -656,7 +661,6 @@ fn main() -> t40 {
                     }
                     // - = brightness down
                     if k - 45 == 0 {
-                        var bv2: t40 = 0;
                         unsafe { bv2 = load(CFG_BRIGHTNESS); }
                         if bv2 > 1 { bv2 = bv2 - 1; }
                         unsafe { store(CFG_BRIGHTNESS, bv2); }
@@ -669,7 +673,6 @@ fn main() -> t40 {
                 if active_tab - TAB_AUDIO == 0 {
                     // + = volume up
                     if k - 43 == 0 {
-                        var vol2: t40 = 0;
                         unsafe { vol2 = load(CFG_VOLUME); }
                         if 10 - vol2 > 0 { vol2 = vol2 + 1; }
                         unsafe { store(CFG_VOLUME, vol2); }
@@ -679,7 +682,6 @@ fn main() -> t40 {
                     }
                     // - = volume down
                     if k - 45 == 0 {
-                        var vol3: t40 = 0;
                         unsafe { vol3 = load(CFG_VOLUME); }
                         if vol3 > 0 { vol3 = vol3 - 1; }
                         unsafe { store(CFG_VOLUME, vol3); }
@@ -689,7 +691,6 @@ fn main() -> t40 {
                     }
                     // B = toggle beep
                     if k - 98 == 0 { // b
-                        var bp: t40 = 0;
                         unsafe { bp = load(CFG_BEEP); }
                         if bp > 0 {
                             bp = 0;

@@ -130,8 +130,10 @@ module trit_lane_add #(
     logic a_valid;
     logic b_valid;
     logic arithmetic_valid;
+    logic carry_clear;
 
     assign carry[0] = TRIT_ZERO;
+    assign carry_clear = carry[TRITS] == TRIT_ZERO;
 
     trit_lane_valid #(.TRITS(TRITS)) valid_a (.lane_i(a_i), .valid_o(a_valid));
     trit_lane_valid #(.TRITS(TRITS)) valid_b (.lane_i(b_i), .valid_o(b_valid));
@@ -154,7 +156,7 @@ module trit_lane_add #(
     endgenerate
 
     always_comb begin
-        arithmetic_valid = a_valid && b_valid && (carry[TRITS] == TRIT_ZERO);
+        arithmetic_valid = a_valid && b_valid && carry_clear;
         valid_o = arithmetic_valid;
         for (int j = 0; j < TRITS; j++) begin
             lane_o[2*j +: 2] = arithmetic_valid ? partial_sum[2*j +: 2] : TRIT_INVALID;
