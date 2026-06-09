@@ -287,6 +287,24 @@ fn draw_background() -> t40 {
     return 1;
 }
 
+fn desktop_clear_region(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var y: t40 = y1;
+    while y2 - y >= 0 {
+        var x: t40 = x1;
+        while x2 - x >= 0 {
+            os_text_cell(x, y, 32, color);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn desktop_clear_login_area() -> t40 {
+    desktop_clear_region(16, 4, 51, 18, 0);
+    return 1;
+}
+
 fn draw_taskbar() -> t40 {
     // Fill row 24 with dim background
     var tx: t40 = 0;
@@ -324,6 +342,46 @@ fn draw_taskbar() -> t40 {
     os_text_cell(71, 24, 68, 3);  // 'D'
     os_text_cell(72, 24, 66, 3);  // 'B'
     os_text_cell(73, 24, 71, 3);  // 'G'
+    return 1;
+}
+
+fn desktop_draw_launcher_line(y: t40, n: t40, a: t40, b: t40, c: t40, d: t40, e: t40) -> t40 {
+    os_text_cell(8, y, n, 5);
+    os_text_cell(9, y, 46, 8);
+    os_text_cell(11, y, a, 10);
+    os_text_cell(12, y, b, 10);
+    os_text_cell(13, y, c, 10);
+    os_text_cell(14, y, d, 10);
+    if e > 0 { os_text_cell(15, y, e, 10); }
+    return 1;
+}
+
+fn desktop_draw_launcher() -> t40 {
+    desktop_clear_region(6, 2, 44, 13, 0);
+    os_text_cell(8, 2, 76, 8); os_text_cell(9, 2, 65, 8); os_text_cell(10, 2, 85, 8);
+    os_text_cell(11, 2, 78, 8); os_text_cell(12, 2, 67, 8); os_text_cell(13, 2, 72, 8);
+    os_text_cell(15, 2, 80, 3); os_text_cell(16, 2, 65, 3); os_text_cell(17, 2, 68, 3);
+    desktop_draw_launcher_line(4, 49, 67, 65, 76, 67, 0);
+    desktop_draw_launcher_line(5, 50, 84, 65, 83, 75, 0);
+    desktop_draw_launcher_line(6, 51, 80, 65, 73, 78, 84);
+    desktop_draw_launcher_line(7, 52, 70, 73, 76, 69, 83);
+    desktop_draw_launcher_line(8, 53, 83, 69, 84, 84, 0);
+    desktop_draw_launcher_line(9, 54, 84, 69, 82, 77, 0);
+    return 1;
+}
+
+fn desktop_draw_launch_status(slot: t40, result: t40) -> t40 {
+    desktop_clear_region(8, 12, 42, 12, 0);
+    os_text_cell(8, 12, 76, 8); os_text_cell(9, 12, 65, 8); os_text_cell(10, 12, 85, 8);
+    os_text_cell(11, 12, 78, 8); os_text_cell(12, 12, 67, 8); os_text_cell(13, 12, 72, 8);
+    os_text_cell(15, 12, 48 + slot, 5);
+    if result - 999 == 0 {
+        os_text_cell(17, 12, 46, 3); os_text_cell(18, 12, 46, 3); os_text_cell(19, 12, 46, 3);
+    } else if result > 0 {
+        os_text_cell(17, 12, 79, 1); os_text_cell(18, 12, 75, 1);
+    } else {
+        os_text_cell(17, 12, 69, 9); os_text_cell(18, 12, 82, 9); os_text_cell(19, 12, 82, 9);
+    }
     return 1;
 }
 
@@ -751,7 +809,7 @@ fn show_login_screen() -> t40 {
                 draw_string(32, 14, ok_addr, 15, 10); // ACCESS GRANTED!
                 
                 delay = 0;
-                while 100000 - delay > 0 {
+                while 5000 - delay > 0 {
                     delay = delay + 1;
                 }
                 login_done = 1;
@@ -760,7 +818,7 @@ fn show_login_screen() -> t40 {
                 draw_string(33, 15, err_addr, 14, 9); // ACCESS DENIED!
                 
                 delay = 0;
-                while 100000 - delay > 0 {
+                while 5000 - delay > 0 {
                     delay = delay + 1;
                 }
                 reset_x = 30;
@@ -840,7 +898,7 @@ fn main() -> t40 {
             return 0; // Shutdown/exit
         }
         unsafe { store(62000, 12345); } // Mark logged in
-        os_clear_text(0);
+        desktop_clear_login_area();
     }
 
     if os_key_available() > 0 {
@@ -850,29 +908,7 @@ fn main() -> t40 {
 
     desktop_draw_hud();
 
-    // Seed icon label strings into fixed addresses
-    // CALC (4 chars)
-    unsafe {
-        store(14000, 67); store(14001, 65); store(14002, 76); store(14003, 67); store(14004, 0);
-        // TASK (4 chars)
-        store(14010, 84); store(14011, 65); store(14012, 83); store(14013, 75); store(14014, 0);
-        // PAINT (5 chars)
-        store(14020, 80); store(14021, 65); store(14022, 73); store(14023, 78); store(14024, 84); store(14025, 0);
-        // FILES (5 chars)
-        store(14030, 70); store(14031, 73); store(14032, 76); store(14033, 69); store(14034, 83); store(14035, 0);
-        // SETT. (5 chars)
-        store(14040, 83); store(14041, 69); store(14042, 84); store(14043, 84); store(14044, 46); store(14045, 0);
-        // TERM. (5 chars)
-        store(14050, 84); store(14051, 69); store(14052, 82); store(14053, 77); store(14054, 46); store(14055, 0);
-    }
-
-    // Draw initial icon grid (no hover)
-    draw_icon_cell(0, 0, 35, 14000, 4, 0); // # CALC
-    draw_icon_cell(1, 0, 37, 14010, 4, 0); // % TASK
-    draw_icon_cell(2, 0, 42, 14020, 5, 0); // * PAINT
-    draw_icon_cell(0, 1, 47, 14030, 5, 0); // / FILES
-    draw_icon_cell(1, 1, 64, 14040, 5, 0); // @ SETT.
-    draw_icon_cell(2, 1, 62, 14050, 5, 0); // > TERM.
+    desktop_draw_launcher();
 
     while 1 - done > 0 {
         k = 0;
@@ -931,24 +967,7 @@ fn main() -> t40 {
             }
         }
 
-        if current_hover - hovered != 0 {
-            // Redraw all 6 icons with updated hover state
-            var ih1: t40 = 0; var ih2: t40 = 0; var ih3: t40 = 0;
-            var ih4: t40 = 0; var ih5: t40 = 0; var ih6: t40 = 0;
-            if current_hover - 1 == 0 { ih1 = 1; }
-            if current_hover - 2 == 0 { ih2 = 1; }
-            if current_hover - 3 == 0 { ih3 = 1; }
-            if current_hover - 4 == 0 { ih4 = 1; }
-            if current_hover - 5 == 0 { ih5 = 1; }
-            if current_hover - 6 == 0 { ih6 = 1; }
-            draw_icon_cell(0, 0, 35, 14000, 4, ih1);
-            draw_icon_cell(1, 0, 37, 14010, 4, ih2);
-            draw_icon_cell(2, 0, 42, 14020, 5, ih3);
-            draw_icon_cell(0, 1, 47, 14030, 5, ih4);
-            draw_icon_cell(1, 1, 64, 14040, 5, ih5);
-            draw_icon_cell(2, 1, 62, 14050, 5, ih6);
-            hovered = current_hover;
-        }
+        if current_hover - hovered != 0 { hovered = current_hover; }
 
         var click: t40 = 0;
         if btn - 1 == 0 {
@@ -971,28 +990,40 @@ fn main() -> t40 {
         }
 
         if click - 1 == 0 {
+            desktop_draw_launch_status(1, 999);
             var path_addr: t40 = desktop_seed_calculator_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
+            desktop_draw_launch_status(1, res);
         }
         if click - 2 == 0 {
+            desktop_draw_launch_status(2, 999);
             var path_addr: t40 = desktop_seed_task_manager_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
+            desktop_draw_launch_status(2, res);
         }
         if click - 3 == 0 {
+            desktop_draw_launch_status(3, 999);
             var path_addr: t40 = desktop_seed_paint_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
+            desktop_draw_launch_status(3, res);
         }
         if click - 4 == 0 {
+            desktop_draw_launch_status(4, 999);
             var path_addr: t40 = desktop_seed_file_manager_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
+            desktop_draw_launch_status(4, res);
         }
         if click - 5 == 0 {
+            desktop_draw_launch_status(5, 999);
             var path_addr: t40 = desktop_seed_settings_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
+            desktop_draw_launch_status(5, res);
         }
         if click - 6 == 0 {
+            desktop_draw_launch_status(6, 999);
             var path_addr: t40 = desktop_seed_terminal_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
+            desktop_draw_launch_status(6, res);
         }
         if click - 7 == 0 {
             unsafe { store(62000, 0); } // Clear logged in flag
@@ -1001,14 +1032,9 @@ fn main() -> t40 {
                 return 0; // Shutdown/exit
             }
             unsafe { store(62000, 12345); } // Mark logged in
-            os_clear_text(0);
+            desktop_clear_login_area();
             desktop_draw_hud();
-            draw_icon_cell(0, 0, 35, 14000, 4, 0);
-            draw_icon_cell(1, 0, 37, 14010, 4, 0);
-            draw_icon_cell(2, 0, 42, 14020, 5, 0);
-            draw_icon_cell(0, 1, 47, 14030, 5, 0);
-            draw_icon_cell(1, 1, 64, 14040, 5, 0);
-            draw_icon_cell(2, 1, 62, 14050, 5, 0);
+            desktop_draw_launcher();
             hovered = 0;
         }
         last_btn = btn;

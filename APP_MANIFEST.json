@@ -1,0 +1,492 @@
+{
+  "version": 1,
+  "schema": "trit.app_manifest.v1",
+  "source_of_truth": "build_tos_image.cpp",
+  "root_layout": [
+    "/bin",
+    "/apps",
+    "/etc",
+    "/home",
+    "/tmp",
+    "/var",
+    "/var/log",
+    "/dev",
+    "/system",
+    "/system/services",
+    "/lib",
+    "/var/crash",
+    "/var/packages",
+    "/home/root/docs"
+  ],
+  "default_user": {
+    "name": "root",
+    "home": "/home/root",
+    "shell": "/bin/desktop"
+  },
+  "registry_format": {
+    "path": "/apps/registry",
+    "records": "GUI apps only",
+    "fields": [
+      "id",
+      "title",
+      "guest_path",
+      "enabled",
+      "windowed"
+    ]
+  },
+  "bundled_apps": [
+    {
+      "source": "apps/init.trit",
+      "id": "init",
+      "title": "Init",
+      "guest_path": "/bin/init",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/desktop.trit",
+      "id": "desktop",
+      "title": "Desktop",
+      "guest_path": "/bin/desktop",
+      "stack_words": 512,
+      "gui_registry": true,
+      "launch_role": "init_desktop"
+    },
+    {
+      "source": "apps/shell.trit",
+      "id": "shell",
+      "title": "Shell",
+      "guest_path": "/bin/shell",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/shell.trit",
+      "id": "sh",
+      "title": "sh",
+      "guest_path": "/bin/sh",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/terminal.trit",
+      "id": "terminal",
+      "title": "Terminal",
+      "guest_path": "/bin/terminal",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/file_manager.trit",
+      "id": "files",
+      "title": "Files",
+      "guest_path": "/bin/file_manager",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/settings.trit",
+      "id": "settings",
+      "title": "Settings",
+      "guest_path": "/bin/settings",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/task_manager.trit",
+      "id": "tasks",
+      "title": "Tasks",
+      "guest_path": "/bin/task_manager",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/task_manager.trit",
+      "id": "top",
+      "title": "top",
+      "guest_path": "/bin/top",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/task_manager.trit",
+      "id": "tasks_cmd",
+      "title": "tasks",
+      "guest_path": "/bin/tasks",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/calculator.trit",
+      "id": "calculator",
+      "title": "Calculator",
+      "guest_path": "/bin/calculator",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/paint.trit",
+      "id": "paint",
+      "title": "Paint",
+      "guest_path": "/bin/paint",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/text_editor.trit",
+      "id": "text_editor",
+      "title": "Text Editor",
+      "guest_path": "/bin/text_editor",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/text_editor.trit",
+      "id": "edit",
+      "title": "edit",
+      "guest_path": "/bin/edit",
+      "stack_words": 256,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/about.trit",
+      "id": "about",
+      "title": "About",
+      "guest_path": "/bin/about",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/help.trit",
+      "id": "help",
+      "title": "Help",
+      "guest_path": "/bin/help",
+      "stack_words": 256,
+      "gui_registry": true
+    },
+    {
+      "source": "apps/ls.trit",
+      "id": "ls",
+      "title": "ls",
+      "guest_path": "/bin/ls",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "cat",
+      "title": "cat",
+      "guest_path": "/bin/cat",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "echo",
+      "title": "echo",
+      "guest_path": "/bin/echo",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "pwd",
+      "title": "pwd",
+      "guest_path": "/bin/pwd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "cp",
+      "title": "cp",
+      "guest_path": "/bin/cp",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "mv",
+      "title": "mv",
+      "guest_path": "/bin/mv",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "rm",
+      "title": "rm",
+      "guest_path": "/bin/rm",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "mkdir",
+      "title": "mkdir",
+      "guest_path": "/bin/mkdir",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "rmdir",
+      "title": "rmdir",
+      "guest_path": "/bin/rmdir",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "touch",
+      "title": "touch",
+      "guest_path": "/bin/touch",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "stat",
+      "title": "stat",
+      "guest_path": "/bin/stat",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "find",
+      "title": "find",
+      "guest_path": "/bin/find",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/bin_core.trit",
+      "id": "grep",
+      "title": "grep",
+      "guest_path": "/bin/grep",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/clear.trit",
+      "id": "clear",
+      "title": "clear",
+      "guest_path": "/bin/clear",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/date.trit",
+      "id": "date",
+      "title": "date",
+      "guest_path": "/bin/date",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/sleep.trit",
+      "id": "sleep",
+      "title": "sleep",
+      "guest_path": "/bin/sleep",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/ps.trit",
+      "id": "ps",
+      "title": "ps",
+      "guest_path": "/bin/ps",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/kill.trit",
+      "id": "kill",
+      "title": "kill",
+      "guest_path": "/bin/kill",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/mount.trit",
+      "id": "mount",
+      "title": "mount",
+      "guest_path": "/bin/mount",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/fsck.trit",
+      "id": "fsck",
+      "title": "fsck",
+      "guest_path": "/bin/fsck",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/sync.trit",
+      "id": "sync",
+      "title": "sync",
+      "guest_path": "/bin/sync",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/reboot.trit",
+      "id": "reboot",
+      "title": "reboot",
+      "guest_path": "/bin/reboot",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/shutdown.trit",
+      "id": "shutdown",
+      "title": "shutdown",
+      "guest_path": "/bin/shutdown",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/login.trit",
+      "id": "login",
+      "title": "login",
+      "guest_path": "/bin/login",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/passwd.trit",
+      "id": "passwd",
+      "title": "passwd",
+      "guest_path": "/bin/passwd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "sessiond",
+      "title": "sessiond",
+      "guest_path": "/bin/sessiond",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "window_server",
+      "title": "window_server",
+      "guest_path": "/bin/window_server",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "compositor",
+      "title": "compositor",
+      "guest_path": "/bin/compositor",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "inputd",
+      "title": "inputd",
+      "guest_path": "/bin/inputd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "mountd",
+      "title": "mountd",
+      "guest_path": "/bin/mountd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "logd",
+      "title": "logd",
+      "guest_path": "/bin/logd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "crashd",
+      "title": "crashd",
+      "guest_path": "/bin/crashd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "updated",
+      "title": "updated",
+      "guest_path": "/bin/updated",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "packaged",
+      "title": "packaged",
+      "guest_path": "/bin/packaged",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "devd",
+      "title": "devd",
+      "guest_path": "/bin/devd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "timed",
+      "title": "timed",
+      "guest_path": "/bin/timed",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "authd",
+      "title": "authd",
+      "guest_path": "/bin/authd",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/service_stub.trit",
+      "id": "powerd",
+      "title": "powerd",
+      "guest_path": "/bin/powerd",
+      "stack_words": 128,
+      "gui_registry": false
+    }
+  ],
+  "supporting_sources": [
+    "apps/os_sdk.trit",
+    "apps/libwidget.trit",
+    "kernel.trit",
+    "OS3/native_kernel_trap_stub.tasm"
+  ],
+  "validation": {
+    "build_target": "build_tos_image",
+    "release_targets": [
+      "stage_tos_release",
+      "smoke_tos_release"
+    ],
+    "tests": [
+      "test_native_apps",
+      "test_process_handoff",
+      "test_consumer_shell_productization",
+      "test_host_runtime",
+      "test_agent_tooling"
+    ]
+  }
+}

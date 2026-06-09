@@ -1,0 +1,7 @@
+// apps/clear.trit - Clear text framebuffer.
+
+fn main() -> t40 {
+    os_clear_text(0);
+    os_putc(67); os_putc(76); os_putc(69); os_putc(65); os_putc(82); os_newline();
+    return 1;
+}

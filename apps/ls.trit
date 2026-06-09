@@ -1,0 +1,52 @@
+// apps/ls.trit - List root directory entries.
+
+const LS_PATH: t40 = 10000;
+const LS_OUT: t40 = 10100;
+
+fn ls_seed_root() -> t40 {
+    unsafe {
+        store(LS_PATH, 47);
+        store(LS_PATH + 1, 0);
+    }
+    return LS_PATH;
+}
+
+fn ls_load(addr: t40) -> t40 {
+    var v: t40 = 0;
+    unsafe { v = load(addr); }
+    return v;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(76); os_putc(83); os_newline();
+        return 1;
+    }
+    var written: t40 = os_readdir(ls_seed_root(), LS_OUT, 220);
+    if written <= 0 {
+        os_putc(63); os_newline();
+        return 0;
+    }
+    var pos: t40 = 0;
+    var i: t40 = 0;
+    while written - pos > 0 {
+        var kind: t40 = ls_load(LS_OUT + pos + 1);
+        var nlen: t40 = ls_load(LS_OUT + pos + 2);
+        if nlen <= 0 {
+            pos = written;
+        } else {
+            if kind - 2 == 0 { os_putc(100); } else { if kind - 3 == 0 { os_putc(42); } else { os_putc(45); } }
+            os_putc(32);
+            i = 0;
+            while nlen - i > 0 {
+                os_putc(ls_load(LS_OUT + pos + 3 + i));
+                i = i + 1;
+            }
+            os_newline();
+            pos = pos + 3 + nlen;
+        }
+    }
+    return 1;
+}

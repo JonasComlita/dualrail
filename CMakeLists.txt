@@ -236,6 +236,18 @@ add_executable(test_host_runtime tests/test_host_runtime.cpp)
 target_compile_features(test_host_runtime PUBLIC cxx_std_17)
 target_compile_definitions(test_host_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME test_agent_tooling
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_tooling.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_custom_target(agent_doctor
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_tool.py doctor
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL
+    )
+endif()
+
 add_test(NAME test_production_hardening
          COMMAND test_production_hardening
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

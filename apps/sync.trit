@@ -1,0 +1,42 @@
+// apps/sync.trit - Flush filesystem metadata through an open file.
+
+const SYNC_PATH: t40 = 10000;
+
+fn sync_seed_release() -> t40 {
+    unsafe {
+        store(SYNC_PATH + 0, 47);
+        store(SYNC_PATH + 1, 101);
+        store(SYNC_PATH + 2, 116);
+        store(SYNC_PATH + 3, 99);
+        store(SYNC_PATH + 4, 47);
+        store(SYNC_PATH + 5, 114);
+        store(SYNC_PATH + 6, 101);
+        store(SYNC_PATH + 7, 108);
+        store(SYNC_PATH + 8, 101);
+        store(SYNC_PATH + 9, 97);
+        store(SYNC_PATH + 10, 115);
+        store(SYNC_PATH + 11, 101);
+        store(SYNC_PATH + 12, 0);
+    }
+    return SYNC_PATH;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(83); os_putc(89); os_putc(78); os_putc(67); os_newline();
+        return 1;
+    }
+    var fd: t40 = os_open(sync_seed_release(), 2);
+    if fd <= 0 {
+        os_putc(83); os_putc(89); os_putc(78); os_putc(67); os_putc(32);
+        os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_newline();
+        return 0;
+    }
+    os_fsync(fd);
+    os_close(fd);
+    os_putc(83); os_putc(89); os_putc(78); os_putc(67); os_putc(32);
+    os_putc(79); os_putc(75); os_newline();
+    return 1;
+}

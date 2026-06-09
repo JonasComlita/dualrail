@@ -1,0 +1,11 @@
+// apps/sleep.trit - Cooperative sleep probe.
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel > 0 {
+        os_sleep_ms(50);
+    }
+    os_putc(83); os_putc(76); os_putc(69); os_putc(69); os_putc(80); os_newline();
+    return 1;
+}

@@ -1,0 +1,9 @@
+// apps/passwd.trit - Password command placeholder for Settings users tab.
+
+fn main() -> t40 {
+    os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_putc(87); os_putc(68); os_putc(58);
+    os_putc(32); os_putc(85); os_putc(83); os_putc(69); os_putc(32);
+    os_putc(83); os_putc(69); os_putc(84); os_putc(84); os_putc(73); os_putc(78); os_putc(71);
+    os_putc(83); os_newline();
+    return 1;
+}

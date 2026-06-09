@@ -52,6 +52,12 @@ void testBootLoginDesktopAndShutdown() {
     expect(shell.installBaseExperience().ok(), "consumer base layout installs");
     installDummyApps(kernel);
 
+    std::vector<DirectoryEntry> rootDir;
+    expect(shell.listDirectory("/", rootDir).ok(), "root directory lists");
+    expect(directoryContains(rootDir, "dev"), "base layout includes /dev");
+    expect(directoryContains(rootDir, "system"), "base layout includes /system");
+    expect(directoryContains(rootDir, "lib"), "base layout includes /lib");
+
     std::vector<DirectoryEntry> appsDir;
     expect(shell.listDirectory("/apps", appsDir).ok(), "app registry directory lists");
     expect(directoryContains(appsDir, "registry"), "app registry lives under /apps");
@@ -65,7 +71,10 @@ void testBootLoginDesktopAndShutdown() {
     expect(desktop.username == "ada" && desktop.home == "/home/ada",
            "desktop carries active user and home directory");
     expect(desktop.clock == "12:00", "desktop exposes taskbar clock");
-    expect(desktop.launcher.size() >= 6, "launcher exposes consumer apps");
+    expect(desktop.launcher.size() >= 9, "launcher exposes essential consumer apps");
+    expect(shell.launchApp("text_editor").ok(), "launcher starts text editor");
+    expect(shell.closeWindow(shell.snapshot().active_window_id).ok(),
+           "text editor window closes");
 
     StatusResult calcWindow = shell.launchApp("calculator");
     expect(calcWindow.ok(), "launcher starts calculator");

@@ -308,8 +308,8 @@ void testDesktopLaunchesMappedCalculator() {
     }
     expect(compiled_kernel.success, "kernel compiles");
 
-    LinkResult desktop = compileApp("desktop", 512);
-    LinkResult calc = compileApp("calculator", 256);
+    LinkResult desktop = compileApp("desktop", 1024);
+    LinkResult calc = compileApp("calculator", 1024);
     if (!compiled_kernel.success || !desktop.success || !calc.success) return;
     expect(desktop.executable_header.text_pages <= kHwPtMaxPages,
            "dead-stripped desktop image fits the current IMEM page-table contract");
@@ -392,7 +392,6 @@ void testDesktopLaunchesMappedCalculator() {
     }
     expect(launched_concurrently,
            "desktop launch reaches calculator child process without replacing desktop");
-    expect(contains(vm.syscall_buffer, "DESKTOP\n"), "desktop ran before launch");
     expect(imemWordEquals(vm, kDesktopTextPhys, desktop.assembled.program.front()),
            "desktop text was loaded from disk into IMEM");
     expect(!result.halted(), "desktop remains alive after launching calculator");

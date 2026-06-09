@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "schema": "trit.roadmap_status.v1",
+  "updated_by": "agent-tooling-pass",
+  "authoritative_gate": "tools/trit-test.ps1 production",
+  "phases": [
+    {
+      "id": "core-vm-isa",
+      "status": "verified",
+      "summary": "Ternary ISA, assembler, VM widths, integer formats, native ops, and numeric workloads have regression coverage.",
+      "evidence": [
+        "test_multiwidth_vm",
+        "test_ternary_ir",
+        "test_ternary_lanes",
+        "test_native_ops",
+        "test_numeric_workloads"
+      ]
+    },
+    {
+      "id": "compiler-runtime",
+      "status": "verified",
+      "summary": "Compiler IR, codegen, runtime wrappers, linking, allocator microcontracts, and TCL assembler have focused coverage.",
+      "evidence": [
+        "test_phase7_compiler",
+        "test_tcl_asm",
+        "test_malloc_micro",
+        "test_layer1_hal"
+      ]
+    },
+    {
+      "id": "kernel-vfs-process",
+      "status": "in_progress",
+      "summary": "Native kernel, VFS, persistent root image, process lifecycle, waits, and app handoff are implemented with production tests.",
+      "evidence": [
+        "test_os_platform",
+        "test_phase_d_kernel",
+        "test_process_handoff",
+        "test_production_layers",
+        "test_production_hardening"
+      ],
+      "open_items": [
+        "More crash recovery scenarios",
+        "Dedicated fuzz harness for syscalls with malformed pointers",
+        "First-class guest /bin diagnostic commands"
+      ]
+    },
+    {
+      "id": "desktop-host-runtime",
+      "status": "in_progress",
+      "summary": "Host SDL runner boots release images, routes input, decodes framebuffer snapshots, and exports diagnostics.",
+      "evidence": [
+        "test_host_runtime",
+        "stage_tos_release",
+        "smoke_tos_release"
+      ],
+      "open_items": [
+        "Deterministic replay traces",
+        "Framebuffer PNG export",
+        "Per-syscall trace capture"
+      ]
+    },
+    {
+      "id": "agent-operable-surface",
+      "status": "seeded",
+      "summary": "Host tools, manifests, debugging docs, and diagnostic bundle contracts now exist for recursive agent loops.",
+      "evidence": [
+        "AGENTS.md",
+        "TEST_MANIFEST.json",
+        "tools/trit_tool.py",
+        "test_agent_tooling"
+      ],
+      "open_items": [
+        "Promote replay/fuzz from placeholder to real trace/fuzz engines",
+        "Add guest /bin/doctor and /bin/test commands",
+        "Teach diagnostics to capture full syscall traces"
+      ]
+    }
+  ]
+}

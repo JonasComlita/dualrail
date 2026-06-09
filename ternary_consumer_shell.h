@@ -109,6 +109,9 @@ public:
             {"files", "Files", "/bin/file_manager", CONSUMER_APP_CAP_FILES, true},
             {"settings", "Settings", "/bin/settings", CONSUMER_APP_CAP_SETTINGS, true},
             {"terminal", "Terminal", "/bin/terminal", CONSUMER_APP_CAP_TERMINAL, true},
+            {"text_editor", "Text Editor", "/bin/text_editor", CONSUMER_APP_CAP_FILES, true},
+            {"about", "About", "/bin/about", CONSUMER_APP_CAP_SYSTEM, true},
+            {"help", "Help", "/bin/help", CONSUMER_APP_CAP_LAUNCH, true},
         };
     }
 
@@ -133,7 +136,9 @@ public:
         const std::vector<ConsumerAppEntry>& apps) {
 
         for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp",
-                                       "/var", "/var/log", "/var/crash"}) {
+                                       "/var", "/var/log", "/var/crash",
+                                       "/var/packages", "/dev", "/system",
+                                       "/system/services", "/lib"}) {
             StatusResult made = ensureDirectory(dir);
             if (!made.ok()) return made;
         }

@@ -12,10 +12,13 @@
 namespace {
 
 struct BundledApp {
-    std::string name;
+    std::string source_name;
+    std::string id;
+    std::string title;
     std::string guest_path;
     int text_ppn = 0;
     int stack_words = 256;
+    bool gui_registry = false;
 };
 
 std::string readTextFile(const std::string& path) {
@@ -66,6 +69,15 @@ void appendStringWords(std::vector<long long>& out, const std::string& text) {
     }
 }
 
+std::vector<long long> asciiWords(const std::string& text) {
+    std::vector<long long> out;
+    out.reserve(text.size());
+    for (unsigned char c : text) {
+        out.push_back(static_cast<long long>(c));
+    }
+    return out;
+}
+
 int alignUp(int value, int alignment) {
     if (alignment <= 1) return value;
     const int remainder = value % alignment;
@@ -87,16 +99,10 @@ std::string buildBootExecAssembly(const std::string& path) {
     boot << "    csrw tvec, r1\n";
 
     appendStoreCString(boot, 10020, path);
-    boot << "    mov r1, 12345\n";
-    boot << "    mov r2, 62000\n";
-    boot << "    store r1, r2, 0\n";
     boot << "    mov r13, 1\n";
     boot << "    mov r14, 10020\n";
     boot << "    mov r15, 0\n";
     boot << "    call app_launch\n";
-    boot << "    mov r1, 12345\n";
-    boot << "    mov r2, 62000\n";
-    boot << "    store r1, r2, 0\n";
 
     boot << "    mov r2, 3019\n";
     boot << "    load r1, r2, 0\n";
@@ -124,17 +130,17 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
 
     const std::string sdk = readTextFile("apps/os_sdk.trit");
     const std::string widget = readTextFile("apps/libwidget.trit");
-    const std::string source = readTextFile("apps/" + app.name + ".trit");
+    const std::string source = readTextFile("apps/" + app.source_name + ".trit");
     if (sdk.empty() || widget.empty() || source.empty()) {
-        std::cerr << "missing source for app " << app.name << "\n";
+        std::cerr << "missing source for app " << app.id << "\n";
         ok = false;
         return {};
     }
 
     CompileResult compiled =
-        compileSource(app.name + ".trit", sdk + "\n" + widget + "\n" + source);
+        compileSource(app.source_name + ".trit", sdk + "\n" + widget + "\n" + source);
     if (!compiled.success) {
-        std::cerr << "compile failed for " << app.name << ":\n";
+        std::cerr << "compile failed for " << app.id << ":\n";
         dumpDiagnostics(compiled);
         ok = false;
         return {};
@@ -146,10 +152,129 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     options.dead_strip_functions = true;
     LinkResult linked = linkModules({compiled.object}, options);
     if (!linked.success) {
-        std::cerr << "link failed for " << app.name << "\n";
+        std::cerr << "link failed for " << app.id << "\n";
         ok = false;
     }
     return linked;
+}
+
+void appendRegistryApp(std::vector<long long>& registry, const BundledApp& app) {
+    appendStringWords(registry, app.id);
+    appendStringWords(registry, app.title);
+    appendStringWords(registry, app.guest_path);
+    registry.push_back(1);
+    registry.push_back(app.gui_registry ? 1 : 0);
+}
+
+bool addTextFile(sandbox::os::NativeVfsImageBuilder& rootfs,
+                 const std::string& path,
+                 const std::string& text) {
+    return rootfs.addFile(path, asciiWords(text)).ok();
+}
+
+bool installEssentialRootFiles(sandbox::os::NativeVfsImageBuilder& rootfs,
+                               const std::vector<BundledApp>& apps,
+                               const std::string& image_version) {
+    using sandbox::os::StatusResult;
+
+    for (const std::string& dir : {"/dev", "/system", "/system/services",
+                                   "/lib", "/var/crash", "/var/packages",
+                                   "/home/root/docs"}) {
+        StatusResult made = rootfs.mkdir(dir);
+        if (!made.ok()) return false;
+    }
+
+    std::vector<long long> registry;
+    int gui_count = 0;
+    for (const BundledApp& app : apps) {
+        if (app.gui_registry) ++gui_count;
+    }
+    registry.push_back(gui_count);
+    for (const BundledApp& app : apps) {
+        if (app.gui_registry) appendRegistryApp(registry, app);
+    }
+    if (!rootfs.addFile("/apps/registry", registry).ok()) return false;
+
+    for (const BundledApp& app : apps) {
+        if (!app.gui_registry) continue;
+        const std::string metadata =
+            "id=" + app.id + "\n"
+            "title=" + app.title + "\n"
+            "path=" + app.guest_path + "\n"
+            "windowed=1\n";
+        if (!addTextFile(rootfs, "/apps/" + app.id + ".app", metadata)) {
+            return false;
+        }
+    }
+
+    std::string bin_manifest;
+    for (const BundledApp& app : apps) {
+        bin_manifest += app.guest_path + " " + app.id + " " + app.source_name + "\n";
+    }
+    if (!addTextFile(rootfs, "/system/bin.manifest", bin_manifest)) return false;
+
+    const std::string service_manifest =
+        "init first user process\n"
+        "sessiond starts login and desktop sessions\n"
+        "window_server owns windows and input routing\n"
+        "inputd normalizes keyboard and mouse events\n"
+        "mountd mounts root and user disks\n"
+        "logd records system events\n"
+        "crashd records app faults\n"
+        "updated stages system updates\n"
+        "packaged installs and removes apps\n"
+        "devd coordinates devices and drivers\n"
+        "timed owns the system clock\n"
+        "authd owns users and sessions\n"
+        "powerd coordinates shutdown and reboot\n";
+    if (!addTextFile(rootfs, "/system/services/manifest", service_manifest)) return false;
+
+    for (const std::string& service : {"sessiond", "window_server", "inputd",
+                                       "mountd", "logd", "crashd", "updated",
+                                       "packaged", "devd", "timed", "authd",
+                                       "powerd"}) {
+        if (!addTextFile(rootfs, "/system/services/" + service, "enabled\n")) {
+            return false;
+        }
+    }
+
+    for (const std::string& dev : {"null", "zero", "console", "keyboard",
+                                   "mouse", "fb0", "random", "disk0"}) {
+        if (!rootfs.addFile("/dev/" + dev, {0}).ok()) return false;
+    }
+
+    if (!addTextFile(rootfs, "/etc/os-release",
+                     "NAME=Ternary OS\n"
+                     "ID=ternary\n"
+                     "VERSION=" + image_version + "\n"
+                     "PROFILE=minimum\n")) {
+        return false;
+    }
+    if (!addTextFile(rootfs, "/etc/issue", "Ternary OS 3\n")) return false;
+    if (!addTextFile(rootfs, "/etc/motd", "Welcome to Ternary OS.\n")) return false;
+    if (!addTextFile(rootfs, "/etc/fstab", "disk0 / vfs rw\n")) return false;
+    if (!addTextFile(rootfs, "/etc/profile", "PATH=/bin\nHOME=/home/root\n")) return false;
+    if (!rootfs.addFile("/etc/first_run", {0}).ok()) return false;
+    if (!addTextFile(rootfs, "/etc/shell_prefs", "accent=green\nscale=1\n")) return false;
+    if (!addTextFile(rootfs, "/system/build",
+                     "version=" + image_version + "\n"
+                     "profile=minimum\n"
+                     "kernel=trit-native\n")) {
+        return false;
+    }
+    if (!addTextFile(rootfs, "/var/log/boot.log",
+                     "init: root filesystem mounted\n"
+                     "sessiond: desktop target ready\n")) {
+        return false;
+    }
+    if (!addTextFile(rootfs, "/var/log/system.log", "logd: ready\n")) return false;
+    if (!addTextFile(rootfs, "/var/crash/README", "crash reports land here\n")) return false;
+    if (!addTextFile(rootfs, "/var/packages/status", "base-system installed\n")) return false;
+    if (!addTextFile(rootfs, "/home/root/README",
+                     "This is the root home directory for the Ternary OS image.\n")) {
+        return false;
+    }
+    return true;
 }
 
 int usage(const char* exe) {
@@ -168,14 +293,65 @@ int main(int argc, char** argv) {
     const std::string disk_path = argc >= 3 ? argv[2] : "";
     const std::string image_version = argc >= 4 ? argv[3] : "dev";
 
+    constexpr int kGuiStackWords = 1024;
+    constexpr int kServiceStackWords = 256;
+    constexpr int kCliStackWords = 128;
+
     std::vector<BundledApp> apps = {
-        {"desktop", "/bin/desktop", 0, 512},
-        {"calculator", "/bin/calculator", 0, 256},
-        {"task_manager", "/bin/task_manager", 0, 256},
-        {"paint", "/bin/paint", 0, 256},
-        {"file_manager", "/bin/file_manager", 0, 256},
-        {"settings", "/bin/settings", 0, 256},
-        {"terminal", "/bin/terminal", 0, 256},
+        {"init", "init", "Init", "/bin/init", 0, kServiceStackWords, false},
+        {"desktop", "desktop", "Desktop", "/bin/desktop", 0, kGuiStackWords, true},
+        {"shell", "shell", "Shell", "/bin/shell", 0, kServiceStackWords, false},
+        {"shell", "sh", "sh", "/bin/sh", 0, kServiceStackWords, false},
+        {"terminal", "terminal", "Terminal", "/bin/terminal", 0, kGuiStackWords, true},
+        {"file_manager", "files", "Files", "/bin/file_manager", 0, kGuiStackWords, true},
+        {"settings", "settings", "Settings", "/bin/settings", 0, kGuiStackWords, true},
+        {"task_manager", "tasks", "Tasks", "/bin/task_manager", 0, kGuiStackWords, true},
+        {"task_manager", "top", "top", "/bin/top", 0, kServiceStackWords, false},
+        {"task_manager", "tasks_cmd", "tasks", "/bin/tasks", 0, kServiceStackWords, false},
+        {"calculator", "calculator", "Calculator", "/bin/calculator", 0, kGuiStackWords, true},
+        {"paint", "paint", "Paint", "/bin/paint", 0, kGuiStackWords, true},
+        {"text_editor", "text_editor", "Text Editor", "/bin/text_editor", 0, kGuiStackWords, true},
+        {"text_editor", "edit", "edit", "/bin/edit", 0, kServiceStackWords, false},
+        {"about", "about", "About", "/bin/about", 0, kGuiStackWords, true},
+        {"help", "help", "Help", "/bin/help", 0, kGuiStackWords, true},
+        {"ls", "ls", "ls", "/bin/ls", 0, kCliStackWords, false},
+        {"bin_core", "cat", "cat", "/bin/cat", 0, kCliStackWords, false},
+        {"bin_core", "echo", "echo", "/bin/echo", 0, kCliStackWords, false},
+        {"bin_core", "pwd", "pwd", "/bin/pwd", 0, kCliStackWords, false},
+        {"bin_core", "cp", "cp", "/bin/cp", 0, kCliStackWords, false},
+        {"bin_core", "mv", "mv", "/bin/mv", 0, kCliStackWords, false},
+        {"bin_core", "rm", "rm", "/bin/rm", 0, kCliStackWords, false},
+        {"bin_core", "mkdir", "mkdir", "/bin/mkdir", 0, kCliStackWords, false},
+        {"bin_core", "rmdir", "rmdir", "/bin/rmdir", 0, kCliStackWords, false},
+        {"bin_core", "touch", "touch", "/bin/touch", 0, kCliStackWords, false},
+        {"bin_core", "stat", "stat", "/bin/stat", 0, kCliStackWords, false},
+        {"bin_core", "find", "find", "/bin/find", 0, kCliStackWords, false},
+        {"bin_core", "grep", "grep", "/bin/grep", 0, kCliStackWords, false},
+        {"clear", "clear", "clear", "/bin/clear", 0, kCliStackWords, false},
+        {"date", "date", "date", "/bin/date", 0, kCliStackWords, false},
+        {"sleep", "sleep", "sleep", "/bin/sleep", 0, kCliStackWords, false},
+        {"ps", "ps", "ps", "/bin/ps", 0, kCliStackWords, false},
+        {"kill", "kill", "kill", "/bin/kill", 0, kCliStackWords, false},
+        {"mount", "mount", "mount", "/bin/mount", 0, kCliStackWords, false},
+        {"fsck", "fsck", "fsck", "/bin/fsck", 0, kCliStackWords, false},
+        {"sync", "sync", "sync", "/bin/sync", 0, kCliStackWords, false},
+        {"reboot", "reboot", "reboot", "/bin/reboot", 0, kCliStackWords, false},
+        {"shutdown", "shutdown", "shutdown", "/bin/shutdown", 0, kCliStackWords, false},
+        {"login", "login", "login", "/bin/login", 0, kCliStackWords, false},
+        {"passwd", "passwd", "passwd", "/bin/passwd", 0, kCliStackWords, false},
+        {"service_stub", "sessiond", "sessiond", "/bin/sessiond", 0, kCliStackWords, false},
+        {"service_stub", "window_server", "window_server", "/bin/window_server", 0, kCliStackWords, false},
+        {"service_stub", "compositor", "compositor", "/bin/compositor", 0, kCliStackWords, false},
+        {"service_stub", "inputd", "inputd", "/bin/inputd", 0, kCliStackWords, false},
+        {"service_stub", "mountd", "mountd", "/bin/mountd", 0, kCliStackWords, false},
+        {"service_stub", "logd", "logd", "/bin/logd", 0, kCliStackWords, false},
+        {"service_stub", "crashd", "crashd", "/bin/crashd", 0, kCliStackWords, false},
+        {"service_stub", "updated", "updated", "/bin/updated", 0, kCliStackWords, false},
+        {"service_stub", "packaged", "packaged", "/bin/packaged", 0, kCliStackWords, false},
+        {"service_stub", "devd", "devd", "/bin/devd", 0, kCliStackWords, false},
+        {"service_stub", "timed", "timed", "/bin/timed", 0, kCliStackWords, false},
+        {"service_stub", "authd", "authd", "/bin/authd", 0, kCliStackWords, false},
+        {"service_stub", "powerd", "powerd", "/bin/powerd", 0, kCliStackWords, false},
     };
 
     const std::string kernel = readTextFile("kernel.trit");
@@ -216,7 +392,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    std::vector<long long> registry;
     for (std::size_t i = 0; i < apps.size(); ++i) {
         const BundledApp& app = apps[i];
         const LinkResult& linked = linked_apps[i];
@@ -224,15 +399,16 @@ int main(int argc, char** argv) {
                                        linked.assembled.program,
                                        linked.executable_header,
                                        app.text_ppn).ok()) {
-            std::cerr << "failed to install " << app.name << " into root image\n";
+            std::cerr << "failed to install " << app.id << " into root image\n";
             return EXIT_FAILURE;
         }
-        appendStringWords(registry, app.name);
-        appendStringWords(registry, app.guest_path);
     }
-    (void)rootfs.addFile("/apps/registry", registry);
-    (void)rootfs.addFile("/etc/release", {84, 101, 114, 110, 97, 114, 121});
     (void)rootfs.addUserRecord("root", 333667, "/home/root", "/bin/desktop");
+    if (!installEssentialRootFiles(rootfs, apps, image_version)) {
+        std::cerr << "failed to install essential root filesystem files\n";
+        return EXIT_FAILURE;
+    }
+    (void)rootfs.addFile("/etc/release", asciiWords("Ternary OS " + image_version + "\n"));
 
     const std::string boot_source =
         buildBootExecAssembly("/bin/desktop") + "\n" +
@@ -257,7 +433,7 @@ int main(int argc, char** argv) {
         const BundledApp& app = apps[i];
         const auto& header = linked_apps[i].executable_header;
         manifest.apps.push_back({
-            app.name,
+            app.id,
             app.guest_path,
             app.text_ppn,
             header.entry_virtual_pc,

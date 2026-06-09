@@ -6177,6 +6177,9 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
             if wait_event_read > 0 {
                 return kernel_set_return(1, wait_event_read, 0);
             }
+            if arg2 <= 0 {
+                return kernel_set_return(0, 0, ERR_AGAIN);
+            }
             var wait_event_slot: t40 = process_find_pid(pid);
             if wait_event_slot < 0 {
                 return kernel_set_return(-1, 0, wait_event_slot);
@@ -6193,6 +6196,9 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         }
         if input_event > 0 {
             return kernel_set_return(1, input_event, 0);
+        }
+        if arg2 <= 0 {
+            return kernel_set_return(0, 0, ERR_AGAIN);
         }
         var input_wait_slot: t40 = process_find_pid(pid);
         if input_wait_slot < 0 {

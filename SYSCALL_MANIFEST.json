@@ -1,0 +1,316 @@
+{
+  "version": 1,
+  "schema": "trit.syscall_manifest.v1",
+  "abi": "native-kernel-syscall-abi-v1",
+  "sources": {
+    "kernel_dispatch": "kernel.trit",
+    "compiler_runtime_ids": "ternary_compiler_ir.h",
+    "vm_public_constants": "ternary_vm_state.h",
+    "app_sdk": "apps/os_sdk.trit"
+  },
+  "calling_convention": {
+    "service_id": "CSR syscall_id",
+    "arguments": [
+      "r13",
+      "r14",
+      "r15",
+      "r16"
+    ],
+    "return_status": "r13",
+    "return_payload": "r14",
+    "return_detail": "r15",
+    "blocked_status": 2
+  },
+  "services": [
+    {
+      "id": 1,
+      "name": "sys_write_int",
+      "group": "console"
+    },
+    {
+      "id": 2,
+      "name": "sys_newline",
+      "group": "console"
+    },
+    {
+      "id": 3,
+      "name": "sys_clear",
+      "group": "console"
+    },
+    {
+      "id": 4,
+      "name": "sys_yield",
+      "group": "scheduler",
+      "status": "reserved_or_legacy"
+    },
+    {
+      "id": 5,
+      "name": "sys_sleep_until_tick",
+      "group": "scheduler",
+      "status": "reserved_or_legacy"
+    },
+    {
+      "id": 6,
+      "name": "sys_exit_legacy_exec_desktop",
+      "group": "process",
+      "notes": "Kernel dispatch currently treats service 6 as desktop exec handoff."
+    },
+    {
+      "id": 7,
+      "name": "sys_getpid",
+      "group": "process"
+    },
+    {
+      "id": 8,
+      "name": "sys_uptime",
+      "group": "time"
+    },
+    {
+      "id": 9,
+      "name": "sys_read_console_word",
+      "group": "console"
+    },
+    {
+      "id": 10,
+      "name": "sys_spawn_static",
+      "group": "process",
+      "status": "reserved_or_legacy"
+    },
+    {
+      "id": 11,
+      "name": "sys_waitpid_legacy",
+      "group": "process",
+      "status": "reserved_or_legacy"
+    },
+    {
+      "id": 12,
+      "name": "sys_open",
+      "group": "vfs"
+    },
+    {
+      "id": 13,
+      "name": "sys_close",
+      "group": "vfs"
+    },
+    {
+      "id": 14,
+      "name": "sys_read",
+      "group": "vfs"
+    },
+    {
+      "id": 15,
+      "name": "sys_write",
+      "group": "vfs"
+    },
+    {
+      "id": 16,
+      "name": "sys_stat",
+      "group": "vfs"
+    },
+    {
+      "id": 17,
+      "name": "sys_readdir",
+      "group": "vfs"
+    },
+    {
+      "id": 18,
+      "name": "sys_brk",
+      "group": "memory"
+    },
+    {
+      "id": 19,
+      "name": "sys_sbrk",
+      "group": "memory"
+    },
+    {
+      "id": 20,
+      "name": "sys_fork",
+      "group": "process"
+    },
+    {
+      "id": 21,
+      "name": "sys_exec",
+      "group": "process"
+    },
+    {
+      "id": 22,
+      "name": "sys_write_char",
+      "group": "console"
+    },
+    {
+      "id": 23,
+      "name": "sys_ipc_send",
+      "group": "ipc"
+    },
+    {
+      "id": 24,
+      "name": "sys_ipc_recv",
+      "group": "ipc"
+    },
+    {
+      "id": 25,
+      "name": "sys_fb_init",
+      "group": "framebuffer"
+    },
+    {
+      "id": 26,
+      "name": "sys_fb_flip",
+      "group": "framebuffer"
+    },
+    {
+      "id": 27,
+      "name": "sys_window_create",
+      "group": "window"
+    },
+    {
+      "id": 28,
+      "name": "sys_window_get_buffer",
+      "group": "window"
+    },
+    {
+      "id": 29,
+      "name": "sys_window_present",
+      "group": "window"
+    },
+    {
+      "id": 30,
+      "name": "sys_window_move",
+      "group": "window"
+    },
+    {
+      "id": 31,
+      "name": "sys_window_set_z",
+      "group": "window"
+    },
+    {
+      "id": 32,
+      "name": "sys_window_destroy",
+      "group": "window"
+    },
+    {
+      "id": 33,
+      "name": "sys_window_read_event",
+      "group": "window"
+    },
+    {
+      "id": 34,
+      "name": "sys_window_resize",
+      "group": "window"
+    },
+    {
+      "id": 35,
+      "name": "sys_window_request_close",
+      "group": "window"
+    },
+    {
+      "id": 36,
+      "name": "sys_socket",
+      "group": "network"
+    },
+    {
+      "id": 37,
+      "name": "sys_bind",
+      "group": "network"
+    },
+    {
+      "id": 38,
+      "name": "sys_connect",
+      "group": "network"
+    },
+    {
+      "id": 39,
+      "name": "sys_send",
+      "group": "network"
+    },
+    {
+      "id": 40,
+      "name": "sys_recv",
+      "group": "network"
+    },
+    {
+      "id": 41,
+      "name": "sys_mkdir",
+      "group": "vfs"
+    },
+    {
+      "id": 42,
+      "name": "sys_unlink",
+      "group": "vfs"
+    },
+    {
+      "id": 43,
+      "name": "sys_waitpid",
+      "group": "process"
+    },
+    {
+      "id": 44,
+      "name": "sys_exit",
+      "group": "process"
+    },
+    {
+      "id": 45,
+      "name": "sys_sleep",
+      "group": "process"
+    },
+    {
+      "id": 46,
+      "name": "sys_ps",
+      "group": "process"
+    },
+    {
+      "id": 47,
+      "name": "sys_fsync",
+      "group": "vfs"
+    },
+    {
+      "id": 48,
+      "name": "sys_kill",
+      "group": "process"
+    },
+    {
+      "id": 49,
+      "name": "sys_suspend",
+      "group": "process"
+    },
+    {
+      "id": 50,
+      "name": "sys_resume",
+      "group": "process"
+    },
+    {
+      "id": 51,
+      "name": "sys_getproc",
+      "group": "process"
+    },
+    {
+      "id": 52,
+      "name": "sys_futex_wait",
+      "group": "blocking"
+    },
+    {
+      "id": 53,
+      "name": "sys_futex_wake",
+      "group": "blocking"
+    },
+    {
+      "id": 54,
+      "name": "sys_ipc_recv_blocking",
+      "group": "blocking"
+    },
+    {
+      "id": 55,
+      "name": "sys_wait_event",
+      "group": "blocking"
+    },
+    {
+      "id": 56,
+      "name": "sys_sleep_ms",
+      "group": "blocking"
+    },
+    {
+      "id": 57,
+      "name": "sys_app_spawn",
+      "group": "process"
+    }
+  ]
+}

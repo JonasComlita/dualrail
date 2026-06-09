@@ -1,0 +1,30 @@
+// apps/fsck.trit - User-space filesystem check probe.
+
+const FSCK_PATH: t40 = 10000;
+const FSCK_STAT: t40 = 10100;
+
+fn fsck_seed_root() -> t40 {
+    unsafe {
+        store(FSCK_PATH, 47);
+        store(FSCK_PATH + 1, 0);
+    }
+    return FSCK_PATH;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_newline();
+        return 1;
+    }
+    var ok: t40 = os_stat(fsck_seed_root(), FSCK_STAT);
+    if ok >= 0 {
+        os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
+        os_putc(79); os_putc(75); os_newline();
+        return 1;
+    }
+    os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
+    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_newline();
+    return 0;
+}

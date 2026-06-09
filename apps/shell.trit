@@ -163,6 +163,21 @@ fn sh_seed_root(addr: t40) -> t40 {
     return addr;
 }
 
+fn sh_seed_bin_command(addr: t40, len: t40) -> t40 {
+    sh_store(addr + 0, 47);
+    sh_store(addr + 1, 98);
+    sh_store(addr + 2, 105);
+    sh_store(addr + 3, 110);
+    sh_store(addr + 4, 47);
+    var i: t40 = 0;
+    while len - i > 0 {
+        sh_store(addr + 5 + i, sh_load(SH_BUF + i));
+        i = i + 1;
+    }
+    sh_store(addr + 5 + len, 0);
+    return addr;
+}
+
 // ── built-in: ls ───────────────────────────────────────────────────
 
 fn sh_builtin_ls() -> t40 {
@@ -247,6 +262,11 @@ fn sh_builtin_help() -> t40 {
     sh_putc(116); sh_putc(97);  sh_putc(115); sh_putc(107); sh_putc(115); sh_newline(); // tasks
     sh_putc(102); sh_putc(105); sh_putc(108); sh_putc(101); sh_putc(115); sh_newline(); // files
     sh_putc(115); sh_putc(101); sh_putc(116); sh_putc(116); sh_putc(105); sh_putc(110); sh_putc(103); sh_putc(115); sh_newline(); // settings
+    sh_putc(101); sh_putc(100); sh_putc(105); sh_putc(116); sh_newline(); // edit
+    sh_putc(97);  sh_putc(98);  sh_putc(111); sh_putc(117); sh_putc(116); sh_newline(); // about
+    sh_putc(99);  sh_putc(108); sh_putc(101); sh_putc(97);  sh_putc(114); sh_newline(); // clear
+    sh_putc(102); sh_putc(115); sh_putc(99);  sh_putc(107); sh_newline(); // fsck
+    sh_putc(115); sh_putc(121); sh_putc(110); sh_putc(99);  sh_newline(); // sync
     sh_putc(108); sh_putc(115); sh_newline(); // ls
     sh_putc(112); sh_putc(115); sh_newline(); // ps
     sh_putc(101); sh_putc(120); sh_putc(105); sh_putc(116); sh_newline(); // exit
@@ -262,6 +282,8 @@ fn main() -> t40 {
     sh_newline();
 
     var running: t40 = 1;
+    var handled: t40 = 0;
+    var launched: t40 = 0;
     while running > 0 {
         sh_print_prompt();
         var len: t40 = sh_readline();
@@ -270,10 +292,12 @@ fn main() -> t40 {
             // empty line — do nothing
         } else {
             var c0: t40 = sh_load(SH_BUF);
+            handled = 0;
 
             // "exit" (4 chars) — return to desktop
             if len - 4 == 0 {
                 if sh_cmd_eq4(101, 120, 105, 116) > 0 {  // e x i t
+                    handled = 1;
                     running = 0;
                 }
             }
@@ -282,6 +306,7 @@ fn main() -> t40 {
             if running > 0 {
                 if len - 4 == 0 {
                     if sh_cmd_eq4(104, 101, 108, 112) > 0 { // h e l p
+                        handled = 1;
                         sh_builtin_help();
                     }
                 }
@@ -291,6 +316,7 @@ fn main() -> t40 {
             if running > 0 {
                 if len - 4 == 0 {
                     if sh_cmd_eq4(99, 97, 108, 99) > 0 { // c a l c
+                        handled = 1;
                         sh_seed_calc(SH_PATH);
                         sys_exec(SH_PATH);
                         running = 0; // exec replaces us
@@ -303,6 +329,7 @@ fn main() -> t40 {
                 if len - 5 == 0 {
                     if sh_cmd_eq4(112, 97, 105, 110) > 0 { // p a i n
                         if sh_load(SH_BUF + 4) - 116 == 0 { // t
+                            handled = 1;
                             sh_seed_paint(SH_PATH);
                             sys_exec(SH_PATH);
                             running = 0;
@@ -316,6 +343,7 @@ fn main() -> t40 {
                 if len - 5 == 0 {
                     if sh_cmd_eq4(116, 97, 115, 107) > 0 { // t a s k
                         if sh_load(SH_BUF + 4) - 115 == 0 { // s
+                            handled = 1;
                             sh_seed_tasks(SH_PATH);
                             sys_exec(SH_PATH);
                             running = 0;
@@ -329,6 +357,7 @@ fn main() -> t40 {
                 if len - 5 == 0 {
                     if sh_cmd_eq4(102, 105, 108, 101) > 0 { // f i l e
                         if sh_load(SH_BUF + 4) - 115 == 0 { // s
+                            handled = 1;
                             sh_seed_files(SH_PATH);
                             sys_exec(SH_PATH);
                             running = 0;
@@ -345,6 +374,7 @@ fn main() -> t40 {
                             if sh_load(SH_BUF + 5) - 110 == 0 {
                                 if sh_load(SH_BUF + 6) - 103 == 0 {
                                     if sh_load(SH_BUF + 7) - 115 == 0 {
+                                        handled = 1;
                                         sh_seed_settings(SH_PATH);
                                         sys_exec(SH_PATH);
                                         running = 0;
@@ -360,6 +390,7 @@ fn main() -> t40 {
             if running > 0 {
                 if len - 2 == 0 {
                     if sh_cmd_eq2(108, 115) > 0 { // l s
+                        handled = 1;
                         sh_builtin_ls();
                     }
                 }
@@ -369,7 +400,21 @@ fn main() -> t40 {
             if running > 0 {
                 if len - 2 == 0 {
                     if sh_cmd_eq2(112, 115) > 0 { // p s
+                        handled = 1;
                         sh_builtin_ps();
+                    }
+                }
+            }
+
+            if running > 0 {
+                if handled == 0 {
+                    sh_seed_bin_command(SH_PATH, len);
+                    launched = sys_exec(SH_PATH);
+                    if launched > 0 {
+                        running = 0;
+                    } else {
+                        sh_putc(63);
+                        sh_newline();
                     }
                 }
             }

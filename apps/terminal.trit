@@ -11,6 +11,16 @@ fn term_seed_desktop_path(addr: t40) -> t40 {
     return addr;
 }
 
+fn term_seed_shell_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47); store(addr + 1, 98); store(addr + 2, 105);
+        store(addr + 3, 110); store(addr + 4, 47); store(addr + 5, 115);
+        store(addr + 6, 104); store(addr + 7, 101); store(addr + 8, 108);
+        store(addr + 9, 108); store(addr + 10, 0);
+    }
+    return addr;
+}
+
 fn term_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     var x: t40 = x1;
     while x2 - x >= 0 {
@@ -70,6 +80,12 @@ fn main() -> t40 {
     }
 
     os_gpu_mode(0);
+    var shell_path: t40 = term_seed_shell_path(10000);
+    var exec_result: t40 = sys_exec(shell_path);
+    if exec_result > 0 {
+        return exec_result;
+    }
+
     term_draw_ui();
     var done: t40 = 0;
     var event_addr: t40 = 10100;

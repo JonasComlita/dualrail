@@ -378,6 +378,19 @@ void testRootFilesystemImageBuilder() {
     OSKernel kernel(image);
     expect(kernel.boot().ok(), "kernel boots from built root filesystem image");
 
+    std::vector<DirectoryEntry> rootEntries;
+    expect(kernel.fs().readdir("/", rootEntries).ok(), "booted image lists root");
+    bool sawDev = false;
+    bool sawSystem = false;
+    bool sawLib = false;
+    for (const auto& entry : rootEntries) {
+        sawDev = sawDev || entry.name == "dev";
+        sawSystem = sawSystem || entry.name == "system";
+        sawLib = sawLib || entry.name == "lib";
+    }
+    expect(sawDev && sawSystem && sawLib,
+           "rootfs image contains OS device, system, and library directories");
+
     std::vector<DirectoryEntry> entries;
     expect(kernel.fs().readdir("/bin", entries).ok(), "booted image lists /bin");
     bool sawCalculator = false;

@@ -1446,12 +1446,19 @@ public:
     [[nodiscard]] const TinyFileSystem& fs() const { return fs_; }
 
     [[nodiscard]] StatusResult installBaseLayout() {
-        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp", "/var"}) {
+        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp",
+                                       "/var", "/dev", "/system", "/lib"}) {
             StatusResult made = mkdir(dir);
             if (!made.ok()) return made;
         }
         StatusResult log = mkdir("/var/log");
         if (!log.ok()) return log;
+        StatusResult crash = mkdir("/var/crash");
+        if (!crash.ok()) return crash;
+        StatusResult packages = mkdir("/var/packages");
+        if (!packages.ok()) return packages;
+        StatusResult services = mkdir("/system/services");
+        if (!services.ok()) return services;
         return fs_.sync();
     }
 
@@ -1599,11 +1606,18 @@ public:
     [[nodiscard]] StatusResult status() const { return status_; }
 
     [[nodiscard]] StatusResult installBaseLayout() {
-        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp", "/var"}) {
+        for (const std::string& dir : {"/bin", "/apps", "/etc", "/home", "/tmp",
+                                       "/var", "/dev", "/system", "/lib"}) {
             StatusResult made = mkdir(dir);
             if (!made.ok()) return made;
         }
-        return mkdir("/var/log");
+        StatusResult log = mkdir("/var/log");
+        if (!log.ok()) return log;
+        StatusResult crash = mkdir("/var/crash");
+        if (!crash.ok()) return crash;
+        StatusResult packages = mkdir("/var/packages");
+        if (!packages.ok()) return packages;
+        return mkdir("/system/services");
     }
 
     [[nodiscard]] StatusResult mkdir(const std::string& path) {

@@ -1,0 +1,7 @@
+// apps/shutdown.trit - Shutdown request placeholder.
+
+fn main() -> t40 {
+    os_putc(83); os_putc(72); os_putc(85); os_putc(84); os_putc(68); os_putc(79);
+    os_putc(87); os_putc(78); os_putc(32); os_putc(79); os_putc(75); os_newline();
+    return 1;
+}

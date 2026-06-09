@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "schema": "trit.test_manifest.v1",
+  "default_build_dir": "build",
+  "tool": "tools/trit_tool.py test",
+  "authoritative_gate": "production",
+  "suites": [
+    {
+      "name": "smoke",
+      "description": "Fast host/runtime sanity checks for agent loops.",
+      "targets": [
+        "test_host_runtime",
+        "test_production_hardening"
+      ]
+    },
+    {
+      "name": "core",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "targets": [
+        "test_multiwidth_vm",
+        "test_ternary_ir",
+        "test_ternary_lanes",
+        "test_native_ops",
+        "test_numeric_workloads"
+      ]
+    },
+    {
+      "name": "compiler",
+      "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "targets": [
+        "test_phase7_compiler",
+        "test_tcl_asm",
+        "test_malloc_micro",
+        "test_layer1_hal"
+      ]
+    },
+    {
+      "name": "os",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "targets": [
+        "test_kernel",
+        "test_os_platform",
+        "test_phase_d_kernel",
+        "test_process_handoff",
+        "test_native_apps",
+        "test_consumer_shell_productization",
+        "test_production_layers",
+        "test_production_hardening",
+        "test_host_runtime"
+      ]
+    },
+    {
+      "name": "production",
+      "description": "Current production profile gate mirrored by the CMake ci_production target.",
+      "targets": [
+        "test_production_layers",
+        "test_production_hardening",
+        "test_os_platform",
+        "test_scaling_profile_compact",
+        "test_consumer_shell_productization",
+        "test_host_runtime"
+      ]
+    },
+    {
+      "name": "apps",
+      "description": "Native app compilation and desktop productization tests.",
+      "targets": [
+        "test_native_apps",
+        "test_all_apps",
+        "test_consumer_shell_productization"
+      ]
+    },
+    {
+      "name": "benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "targets": [
+        "test_benchmark"
+      ],
+      "manual": true
+    },
+    {
+      "name": "accelerators",
+      "description": "Optional CUDA and SYCL validation targets when configured.",
+      "targets": [
+        "test_cuda_kernels",
+        "test_sycl_kernels"
+      ],
+      "manual": true,
+      "requires_cmake_options": [
+        "ENABLE_CUDA=ON",
+        "ENABLE_SYCL=ON"
+      ]
+    }
+  ]
+}

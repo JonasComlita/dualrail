@@ -1,0 +1,8 @@
+// apps/date.trit - Print kernel uptime ticks.
+
+fn main() -> t40 {
+    os_putc(85); os_putc(80); os_putc(84); os_putc(73); os_putc(77); os_putc(69); os_putc(32);
+    os_print_int(sys_uptime());
+    os_newline();
+    return 1;
+}

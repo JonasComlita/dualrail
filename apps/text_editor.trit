@@ -1,0 +1,207 @@
+// apps/text_editor.trit - Small persistent note editor.
+
+const TE_PATH: t40 = 10000;
+const TE_BUF: t40 = 10100;
+const TE_EVENT: t40 = 10300;
+const TE_MAX: t40 = 120;
+
+fn te_seed_path() -> t40 {
+    unsafe {
+        store(TE_PATH + 0, 47);
+        store(TE_PATH + 1, 104);
+        store(TE_PATH + 2, 111);
+        store(TE_PATH + 3, 109);
+        store(TE_PATH + 4, 101);
+        store(TE_PATH + 5, 47);
+        store(TE_PATH + 6, 114);
+        store(TE_PATH + 7, 111);
+        store(TE_PATH + 8, 111);
+        store(TE_PATH + 9, 116);
+        store(TE_PATH + 10, 47);
+        store(TE_PATH + 11, 110);
+        store(TE_PATH + 12, 111);
+        store(TE_PATH + 13, 116);
+        store(TE_PATH + 14, 101);
+        store(TE_PATH + 15, 0);
+    }
+    return TE_PATH;
+}
+
+fn te_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var x: t40 = x1;
+    while x2 - x >= 0 {
+        os_text_cell(x, y1, 45, color);
+        os_text_cell(x, y2, 45, color);
+        x = x + 1;
+    }
+    var y: t40 = y1 + 1;
+    while y2 - y > 0 {
+        os_text_cell(x1, y, 124, color);
+        os_text_cell(x2, y, 124, color);
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn te_load_note() -> t40 {
+    var fd: t40 = os_open(TE_PATH, 2);
+    if fd <= 0 {
+        unsafe { store(TE_BUF, 0); }
+        return 0;
+    }
+    var n: t40 = os_read(fd, TE_BUF, TE_MAX);
+    os_close(fd);
+    if n < 0 { n = 0; }
+    if n - TE_MAX >= 0 { n = TE_MAX - 1; }
+    unsafe { store(TE_BUF + n, 0); }
+    return n;
+}
+
+fn te_save_note(len: t40) -> t40 {
+    var fd: t40 = os_open(TE_PATH, 3);
+    if fd <= 0 { return 0; }
+    var wrote: t40 = os_write(fd, TE_BUF, len);
+    os_fsync(fd);
+    os_close(fd);
+    return wrote;
+}
+
+fn te_draw_header() -> t40 {
+    os_text_cell(1, 0, 79, 5);
+    os_text_cell(2, 0, 83, 5);
+    os_text_cell(4, 0, 51, 7);
+    os_text_cell(6, 0, 45, 8);
+    os_text_cell(8, 0, 84, 8);
+    os_text_cell(9, 0, 69, 8);
+    os_text_cell(10, 0, 88, 8);
+    os_text_cell(11, 0, 84, 8);
+    os_text_cell(13, 0, 69, 8);
+    os_text_cell(14, 0, 68, 8);
+    os_text_cell(15, 0, 73, 8);
+    os_text_cell(16, 0, 84, 8);
+    os_text_cell(17, 0, 79, 8);
+    os_text_cell(18, 0, 82, 8);
+    os_text_cell(63, 0, 65, 8);
+    os_text_cell(64, 0, 85, 8);
+    os_text_cell(65, 0, 84, 8);
+    os_text_cell(66, 0, 79, 8);
+    os_text_cell(68, 0, 83, 8);
+    os_text_cell(69, 0, 65, 8);
+    os_text_cell(70, 0, 86, 8);
+    os_text_cell(71, 0, 69, 8);
+    return 1;
+}
+
+fn te_clear_body() -> t40 {
+    var y: t40 = 4;
+    while 20 - y > 0 {
+        var x: t40 = 6;
+        while 74 - x > 0 {
+            os_text_cell(x, y, 32, 0);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn te_draw_note(len: t40) -> t40 {
+    te_clear_body();
+    var i: t40 = 0;
+    var x: t40 = 8;
+    var y: t40 = 5;
+    while len - i > 0 {
+        var c: t40 = 0;
+        unsafe { c = load(TE_BUF + i); }
+        if c - 10 == 0 {
+            x = 8;
+            y = y + 1;
+        } else {
+            os_text_cell(x, y, c, 14);
+            x = x + 1;
+            if x - 70 >= 0 {
+                x = 8;
+                y = y + 1;
+            }
+        }
+        if y - 19 >= 0 { i = len; }
+        i = i + 1;
+    }
+    os_text_cell(x, y, 95, 5);
+    return 1;
+}
+
+fn te_draw_frame(len: t40) -> t40 {
+    os_clear_text(0);
+    te_draw_header();
+    te_box(5, 3, 74, 20, 10);
+    os_text_cell(7, 22, 69, 8);
+    os_text_cell(8, 22, 83, 8);
+    os_text_cell(9, 22, 67, 8);
+    os_text_cell(11, 22, 67, 8);
+    os_text_cell(12, 22, 76, 8);
+    os_text_cell(13, 22, 79, 8);
+    os_text_cell(14, 22, 83, 8);
+    os_text_cell(15, 22, 69, 8);
+    te_draw_note(len);
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(84); os_putc(69); os_putc(88); os_putc(84); os_newline();
+        return 1;
+    }
+
+    os_gpu_mode(0);
+    te_seed_path();
+    var len: t40 = te_load_note();
+    te_draw_frame(len);
+
+    var done: t40 = 0;
+    var event_status: t40 = 0;
+    var kind: t40 = 0;
+    var k: t40 = 0;
+    while 1 - done > 0 {
+        event_status = os_wait_event(-1, TE_EVENT, 1000);
+        if event_status > 0 {
+            kind = os_event_kind(TE_EVENT);
+            if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
+            if kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(TE_EVENT);
+                if k - 27 == 0 { done = 1; }
+                if k - 8 == 0 {
+                    if len > 0 {
+                        len = len - 1;
+                        unsafe { store(TE_BUF + len, 0); }
+                        te_save_note(len);
+                        te_draw_note(len);
+                    }
+                } else {
+                    if k - 13 == 0 {
+                        if TE_MAX - len > 1 {
+                            unsafe { store(TE_BUF + len, 10); }
+                            len = len + 1;
+                            te_save_note(len);
+                            te_draw_note(len);
+                        }
+                    } else {
+                        if k - 32 >= 0 {
+                            if 126 - k >= 0 {
+                                if TE_MAX - len > 1 {
+                                    unsafe { store(TE_BUF + len, k); }
+                                    len = len + 1;
+                                    te_save_note(len);
+                                    te_draw_note(len);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return 1;
+}

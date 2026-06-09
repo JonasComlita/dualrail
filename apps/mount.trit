@@ -1,0 +1,8 @@
+// apps/mount.trit - Mount table view for the current v1 root.
+
+fn main() -> t40 {
+    os_putc(47); os_putc(32);
+    os_putc(86); os_putc(70); os_putc(83); os_putc(32);
+    os_putc(114); os_putc(119); os_newline();
+    return 1;
+}

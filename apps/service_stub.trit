@@ -1,0 +1,7 @@
+// apps/service_stub.trit - Minimal service daemon placeholder.
+
+fn main() -> t40 {
+    os_putc(83); os_putc(69); os_putc(82); os_putc(86); os_putc(73); os_putc(67); os_putc(69);
+    os_putc(32); os_putc(82); os_putc(69); os_putc(65); os_putc(68); os_putc(89); os_newline();
+    return 1;
+}

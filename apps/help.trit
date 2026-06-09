@@ -1,0 +1,74 @@
+// apps/help.trit - Getting started screen.
+
+const HELP_EVENT: t40 = 10000;
+
+fn help_line(y: t40, a: t40, b: t40, c: t40, d: t40, e: t40, f: t40, g: t40, h: t40, color: t40) -> t40 {
+    os_text_cell(8, y, a, color);
+    os_text_cell(9, y, b, color);
+    os_text_cell(10, y, c, color);
+    os_text_cell(11, y, d, color);
+    if e > 0 { os_text_cell(12, y, e, color); }
+    if f > 0 { os_text_cell(13, y, f, color); }
+    if g > 0 { os_text_cell(14, y, g, color); }
+    if h > 0 { os_text_cell(15, y, h, color); }
+    return 1;
+}
+
+fn help_draw() -> t40 {
+    os_clear_text(0);
+    os_text_cell(1, 0, 79, 5);
+    os_text_cell(2, 0, 83, 5);
+    os_text_cell(4, 0, 51, 7);
+    os_text_cell(6, 0, 45, 8);
+    os_text_cell(8, 0, 72, 8);
+    os_text_cell(9, 0, 69, 8);
+    os_text_cell(10, 0, 76, 8);
+    os_text_cell(11, 0, 80, 8);
+    help_line(4, 49, 45, 54, 32, 76, 65, 85, 78, 14);
+    os_text_cell(16, 4, 67, 14);
+    os_text_cell(17, 4, 72, 14);
+    help_line(6, 70, 73, 76, 69, 83, 32, 86, 73, 10);
+    os_text_cell(16, 6, 69, 10);
+    os_text_cell(17, 6, 87, 10);
+    help_line(8, 84, 69, 82, 77, 32, 79, 80, 69, 10);
+    os_text_cell(16, 8, 78, 10);
+    help_line(10, 80, 65, 73, 78, 84, 32, 68, 82, 10);
+    os_text_cell(16, 10, 65, 10);
+    os_text_cell(17, 10, 87, 10);
+    help_line(12, 83, 69, 84, 84, 32, 83, 89, 83, 10);
+    os_text_cell(16, 12, 84, 10);
+    os_text_cell(17, 12, 69, 10);
+    os_text_cell(18, 12, 77, 10);
+    help_line(14, 69, 83, 67, 32, 67, 76, 79, 83, 8);
+    os_text_cell(16, 14, 69, 8);
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(72); os_putc(69); os_putc(76); os_putc(80); os_newline();
+        return 1;
+    }
+    os_gpu_mode(0);
+    help_draw();
+    var done: t40 = 0;
+    var st: t40 = 0;
+    var kind: t40 = 0;
+    var k: t40 = 0;
+    while 1 - done > 0 {
+        st = os_wait_event(-1, HELP_EVENT, 1000);
+        if st > 0 {
+            kind = os_event_kind(HELP_EVENT);
+            if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
+            if kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(HELP_EVENT);
+                if k - 27 == 0 { done = 1; }
+                if k - 120 == 0 { done = 1; }
+                if k - 88 == 0 { done = 1; }
+            }
+        }
+    }
+    return 1;
+}

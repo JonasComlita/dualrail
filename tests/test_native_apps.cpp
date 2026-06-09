@@ -117,6 +117,10 @@ void testNativeApps() {
     sandbox::vm::VMState terminal = compileAndRunApp("terminal", "TERMINAL\n");
     expect(wordAt(terminal, 60000) == 84 + 10 * 256,
            "terminal app draws its text-mode title");
+
+    (void)compileAndRunApp("text_editor", "TEXT\n");
+    (void)compileAndRunApp("about", "ABOUT\n");
+    (void)compileAndRunApp("help", "HELP\n");
 }
 
 void testIpcSdkWrappersCompile() {

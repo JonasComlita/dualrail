@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "schema": "trit.image_format_manifest.v1",
+  "source_of_truth": "ternary_host_runtime.h",
+  "formats": {
+    "tboot": {
+      "magic_hex": "0x31544f4f424f5354",
+      "format_version": 1,
+      "endianness": "little",
+      "header": [
+        {
+          "name": "magic",
+          "type": "uint64"
+        },
+        {
+          "name": "fnv1a_checksum",
+          "type": "uint64",
+          "covers": "payload"
+        },
+        {
+          "name": "payload_size",
+          "type": "uint64"
+        }
+      ],
+      "payload": [
+        "format_version:uint32",
+        "boot_entry:int32",
+        "framebuffer_width:int32",
+        "framebuffer_height:int32",
+        "profile_name:string",
+        "image_version:string",
+        "apps:TosAppManifestEntry[]",
+        "program:TritWord27[]",
+        "data_words:int64[]",
+        "rootfs_words:int64[]"
+      ],
+      "validation": [
+        "program segment is non-empty",
+        "boot_entry is inside program segment",
+        "profile_name is minimum or compact",
+        "framebuffer dimensions are positive",
+        "rootfs_words length is a multiple of 27"
+      ]
+    },
+    "tdisk": {
+      "magic_hex": "0x54524954535031",
+      "block_words": 27,
+      "endianness": "little",
+      "header": [
+        {
+          "name": "magic",
+          "type": "uint64"
+        },
+        {
+          "name": "nonzero_block_count",
+          "type": "int32"
+        }
+      ],
+      "block_record": [
+        "block_index:int32",
+        "words:int64[27]"
+      ]
+    }
+  },
+  "tools": {
+    "build": "tools/trit-build-image.ps1",
+    "inspect": "tools/trit-inspect-image.ps1",
+    "diagnostics": "tools/trit-export-diagnostics.ps1"
+  }
+}

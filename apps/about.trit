@@ -1,0 +1,78 @@
+// apps/about.trit - System identity and diagnostics panel.
+
+const ABOUT_EVENT: t40 = 10000;
+
+fn about_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
+    var x: t40 = x1;
+    while x2 - x >= 0 {
+        os_text_cell(x, y1, 45, color);
+        os_text_cell(x, y2, 45, color);
+        x = x + 1;
+    }
+    var y: t40 = y1 + 1;
+    while y2 - y > 0 {
+        os_text_cell(x1, y, 124, color);
+        os_text_cell(x2, y, 124, color);
+        y = y + 1;
+    }
+    return 1;
+}
+
+fn about_word(x: t40, y: t40, a: t40, b: t40, c: t40, d: t40, e: t40, color: t40) -> t40 {
+    os_text_cell(x, y, a, color);
+    os_text_cell(x + 1, y, b, color);
+    os_text_cell(x + 2, y, c, color);
+    os_text_cell(x + 3, y, d, color);
+    if e > 0 { os_text_cell(x + 4, y, e, color); }
+    return 1;
+}
+
+fn about_draw() -> t40 {
+    os_clear_text(0);
+    about_box(16, 4, 63, 19, 10);
+    about_word(33, 6, 65, 66, 79, 85, 84, 3);
+    about_word(25, 9, 79, 83, 32, 51, 0, 14);
+    about_word(25, 11, 84, 69, 82, 78, 0, 8);
+    about_word(30, 11, 65, 82, 89, 32, 0, 8);
+    about_word(35, 11, 84, 52, 48, 0, 0, 8);
+    about_word(25, 13, 86, 70, 83, 32, 0, 8);
+    about_word(30, 13, 80, 82, 79, 68, 0, 8);
+    about_word(35, 13, 85, 67, 84, 73, 0, 8);
+    about_word(40, 13, 79, 78, 32, 82, 0, 8);
+    about_word(45, 13, 79, 79, 84, 0, 0, 8);
+    about_word(25, 15, 83, 84, 65, 84, 0, 8);
+    about_word(30, 15, 85, 83, 32, 79, 0, 8);
+    about_word(35, 15, 75, 0, 0, 0, 0, 1);
+    about_word(28, 18, 69, 83, 67, 32, 0, 8);
+    about_word(33, 18, 67, 76, 79, 83, 69, 8);
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(65); os_putc(66); os_putc(79); os_putc(85); os_putc(84); os_newline();
+        return 1;
+    }
+    os_gpu_mode(0);
+    about_draw();
+    var done: t40 = 0;
+    var st: t40 = 0;
+    var kind: t40 = 0;
+    var k: t40 = 0;
+    while 1 - done > 0 {
+        st = os_wait_event(-1, ABOUT_EVENT, 1000);
+        if st > 0 {
+            kind = os_event_kind(ABOUT_EVENT);
+            if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
+            if kind - OS_EVENT_KIND_KEY == 0 {
+                k = os_event_x_or_key(ABOUT_EVENT);
+                if k - 27 == 0 { done = 1; }
+                if k - 120 == 0 { done = 1; }
+                if k - 88 == 0 { done = 1; }
+            }
+        }
+    }
+    return 1;
+}

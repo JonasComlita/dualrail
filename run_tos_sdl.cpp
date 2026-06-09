@@ -3,13 +3,16 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -19,6 +22,12 @@ struct TextureState {
     int width = 0;
     int height = 0;
 };
+
+constexpr int kTextCellWidth = 8;
+constexpr int kTextCellHeight = 12;
+constexpr int kGlyphWidth = 5;
+constexpr int kGlyphHeight = 7;
+constexpr std::uint32_t kTextBackgroundRgba = 0x050814ff;
 
 void destroyTexture(TextureState& state) {
     if (state.texture) {
@@ -48,32 +57,218 @@ SDL_Rect letterboxRect(int window_w, int window_h, int source_w, int source_h) {
     return SDL_Rect{(window_w - w) / 2, (window_h - h) / 2, w, h};
 }
 
+std::pair<int, int> textureDimensions(
+    const sandbox::host::TosFramebufferSnapshot& framebuffer) {
+    if (framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25) {
+        return {framebuffer.width * kTextCellWidth,
+                framebuffer.height * kTextCellHeight};
+    }
+    return {framebuffer.width, framebuffer.height};
+}
+
+std::array<std::uint8_t, kGlyphHeight> glyphRows(char ch) {
+    if (ch >= 'a' && ch <= 'z') {
+        ch = static_cast<char>(ch - 'a' + 'A');
+    }
+
+    switch (ch) {
+        case 'A': return {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11};
+        case 'B': return {0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e};
+        case 'C': return {0x0f, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0f};
+        case 'D': return {0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e};
+        case 'E': return {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f};
+        case 'F': return {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10};
+        case 'G': return {0x0f, 0x10, 0x10, 0x13, 0x11, 0x11, 0x0f};
+        case 'H': return {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11};
+        case 'I': return {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1f};
+        case 'J': return {0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0c};
+        case 'K': return {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11};
+        case 'L': return {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f};
+        case 'M': return {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11};
+        case 'N': return {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
+        case 'O': return {0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e};
+        case 'P': return {0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10};
+        case 'Q': return {0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d};
+        case 'R': return {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11};
+        case 'S': return {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e};
+        case 'T': return {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
+        case 'U': return {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e};
+        case 'V': return {0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04};
+        case 'W': return {0x11, 0x11, 0x11, 0x15, 0x15, 0x1b, 0x11};
+        case 'X': return {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11};
+        case 'Y': return {0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04};
+        case 'Z': return {0x1f, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1f};
+
+        case '0': return {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e};
+        case '1': return {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e};
+        case '2': return {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f};
+        case '3': return {0x1e, 0x01, 0x01, 0x0e, 0x01, 0x01, 0x1e};
+        case '4': return {0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02};
+        case '5': return {0x1f, 0x10, 0x1e, 0x01, 0x01, 0x11, 0x0e};
+        case '6': return {0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e};
+        case '7': return {0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08};
+        case '8': return {0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e};
+        case '9': return {0x0e, 0x11, 0x11, 0x0f, 0x01, 0x02, 0x0c};
+
+        case '!': return {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04};
+        case '"': return {0x0a, 0x0a, 0x0a, 0x00, 0x00, 0x00, 0x00};
+        case '#': return {0x0a, 0x0a, 0x1f, 0x0a, 0x1f, 0x0a, 0x0a};
+        case '$': return {0x04, 0x0f, 0x14, 0x0e, 0x05, 0x1e, 0x04};
+        case '%': return {0x19, 0x1a, 0x02, 0x04, 0x08, 0x0b, 0x13};
+        case '&': return {0x0c, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0d};
+        case '\'': return {0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00};
+        case '(': return {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02};
+        case ')': return {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08};
+        case '*': return {0x00, 0x15, 0x0e, 0x1f, 0x0e, 0x15, 0x00};
+        case '+': return {0x00, 0x04, 0x04, 0x1f, 0x04, 0x04, 0x00};
+        case ',': return {0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x08};
+        case '-': return {0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00};
+        case '.': return {0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c};
+        case '/': return {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10};
+        case ':': return {0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00};
+        case ';': return {0x00, 0x0c, 0x0c, 0x00, 0x04, 0x04, 0x08};
+        case '<': return {0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02};
+        case '=': return {0x00, 0x00, 0x1f, 0x00, 0x1f, 0x00, 0x00};
+        case '>': return {0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08};
+        case '?': return {0x0e, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04};
+        case '@': return {0x0e, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0e};
+        case '[': return {0x0e, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0e};
+        case '\\': return {0x10, 0x08, 0x08, 0x04, 0x02, 0x02, 0x01};
+        case ']': return {0x0e, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0e};
+        case '^': return {0x04, 0x0a, 0x11, 0x00, 0x00, 0x00, 0x00};
+        case '_': return {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1f};
+        case '`': return {0x08, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00};
+        case '{': return {0x02, 0x04, 0x04, 0x08, 0x04, 0x04, 0x02};
+        case '|': return {0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
+        case '}': return {0x08, 0x04, 0x04, 0x02, 0x04, 0x04, 0x08};
+        case '~': return {0x00, 0x00, 0x08, 0x15, 0x02, 0x00, 0x00};
+        default: return {0x00, 0x00, 0x0e, 0x02, 0x04, 0x00, 0x04};
+    }
+}
+
+void fillRect(std::vector<std::uint32_t>& pixels,
+              int width,
+              int height,
+              int x,
+              int y,
+              int w,
+              int h,
+              std::uint32_t color) {
+    const int x0 = std::clamp(x, 0, width);
+    const int y0 = std::clamp(y, 0, height);
+    const int x1 = std::clamp(x + w, 0, width);
+    const int y1 = std::clamp(y + h, 0, height);
+    for (int py = y0; py < y1; ++py) {
+        for (int px = x0; px < x1; ++px) {
+            pixels[static_cast<std::size_t>(py * width + px)] = color;
+        }
+    }
+}
+
+void drawGlyph(std::vector<std::uint32_t>& pixels,
+               int width,
+               int height,
+               int x,
+               int y,
+               char ch,
+               std::uint32_t color) {
+    const auto rows = glyphRows(ch);
+    const int gx = x + (kTextCellWidth - kGlyphWidth) / 2;
+    const int gy = y + (kTextCellHeight - kGlyphHeight) / 2;
+    for (int row = 0; row < kGlyphHeight; ++row) {
+        for (int col = 0; col < kGlyphWidth; ++col) {
+            if ((rows[static_cast<std::size_t>(row)] & (1 << (kGlyphWidth - col - 1))) == 0) {
+                continue;
+            }
+            const int px = gx + col;
+            const int py = gy + row;
+            if (px >= 0 && px < width && py >= 0 && py < height) {
+                pixels[static_cast<std::size_t>(py * width + px)] = color;
+            }
+        }
+    }
+}
+
+std::vector<std::uint32_t> renderTextFramebuffer(
+    const sandbox::host::TosFramebufferSnapshot& framebuffer,
+    int width,
+    int height) {
+    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width * height),
+                                      kTextBackgroundRgba);
+    for (int cy = 0; cy < framebuffer.height; ++cy) {
+        for (int cx = 0; cx < framebuffer.width; ++cx) {
+            const int cell = cy * framebuffer.width + cx;
+            const std::size_t index = static_cast<std::size_t>(cell);
+            const char ch =
+                index < framebuffer.glyphs.size() ? framebuffer.glyphs[index] : ' ';
+            const std::uint32_t fg =
+                index < framebuffer.rgba.size() ? framebuffer.rgba[index] : kTextBackgroundRgba;
+            const int px = cx * kTextCellWidth;
+            const int py = cy * kTextCellHeight;
+            const bool is_space = ch == ' ';
+            const std::uint32_t bg =
+                is_space && fg != kTextBackgroundRgba ? fg : kTextBackgroundRgba;
+            fillRect(pixels, width, height, px, py, kTextCellWidth, kTextCellHeight, bg);
+            if (!is_space) {
+                drawGlyph(pixels, width, height, px, py, ch, fg);
+            }
+        }
+    }
+
+    const char sprite_ch = static_cast<char>(framebuffer.sprite_attr & 0xff);
+    const int sprite_color = static_cast<int>((framebuffer.sprite_attr >> 8) & 0x0f);
+    if (sprite_ch >= 32 && sprite_ch <= 126) {
+        drawGlyph(pixels, width, height,
+                  static_cast<int>(framebuffer.sprite_x) * kTextCellWidth,
+                  static_cast<int>(framebuffer.sprite_y) * kTextCellHeight,
+                  sprite_ch,
+                  sandbox::host::detail::paletteColor(sprite_color));
+    }
+    return pixels;
+}
+
+std::vector<std::uint32_t> renderFramebufferPixels(
+    const sandbox::host::TosFramebufferSnapshot& framebuffer,
+    int width,
+    int height) {
+    if (framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25) {
+        return renderTextFramebuffer(framebuffer, width, height);
+    }
+    std::vector<std::uint32_t> pixels(framebuffer.rgba.size(), 0);
+    for (std::size_t i = 0; i < framebuffer.rgba.size(); ++i) {
+        pixels[i] = framebuffer.rgba[i];
+    }
+    return pixels;
+}
+
 bool updateTexture(SDL_Renderer* renderer,
                    TextureState& texture,
                    const sandbox::host::TosFramebufferSnapshot& framebuffer) {
+    const auto [texture_width, texture_height] = textureDimensions(framebuffer);
     if (!texture.texture ||
-        texture.width != framebuffer.width ||
-        texture.height != framebuffer.height) {
+        texture.width != texture_width ||
+        texture.height != texture_height) {
         destroyTexture(texture);
         texture.texture = SDL_CreateTexture(renderer,
                                             SDL_PIXELFORMAT_ABGR8888,
                                             SDL_TEXTUREACCESS_STREAMING,
-                                            framebuffer.width,
-                                            framebuffer.height);
+                                            texture_width,
+                                            texture_height);
         if (!texture.texture) return false;
         SDL_SetTextureBlendMode(texture.texture, SDL_BLENDMODE_NONE);
-        texture.width = framebuffer.width;
-        texture.height = framebuffer.height;
+        texture.width = texture_width;
+        texture.height = texture_height;
     }
 
-    std::vector<std::uint32_t> pixels(framebuffer.rgba.size(), 0);
-    for (std::size_t i = 0; i < framebuffer.rgba.size(); ++i) {
-        pixels[i] = toSdlAbgr(framebuffer.rgba[i]);
+    std::vector<std::uint32_t> pixels =
+        renderFramebufferPixels(framebuffer, texture_width, texture_height);
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        pixels[i] = toSdlAbgr(pixels[i]);
     }
     return SDL_UpdateTexture(texture.texture,
                              nullptr,
                              pixels.data(),
-                             framebuffer.width * static_cast<int>(sizeof(std::uint32_t))) == 0;
+                             texture_width * static_cast<int>(sizeof(std::uint32_t))) == 0;
 }
 
 std::string statusTitle(const sandbox::host::TosRuntimeSnapshot& snapshot,
@@ -139,6 +334,42 @@ bool hasHostModifier(SDL_Keymod mods) {
     return (mods & KMOD_CTRL) != 0 || (mods & KMOD_GUI) != 0;
 }
 
+long long asciiFromKey(SDL_Keycode key, SDL_Keymod mods) {
+    const bool shifted = (mods & KMOD_SHIFT) != 0;
+    if (key >= SDLK_a && key <= SDLK_z) {
+        return shifted ? ('A' + key - SDLK_a) : ('a' + key - SDLK_a);
+    }
+    if (key >= SDLK_0 && key <= SDLK_9) {
+        static constexpr char shifted_digits[] = {')', '!', '@', '#', '$', '%', '^', '&', '*', '('};
+        const int digit = static_cast<int>(key - SDLK_0);
+        return shifted ? shifted_digits[digit] : ('0' + digit);
+    }
+    if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
+        return '0' + key - SDLK_KP_0;
+    }
+    switch (key) {
+        case SDLK_SPACE: return ' ';
+        case SDLK_MINUS: return shifted ? '_' : '-';
+        case SDLK_EQUALS: return shifted ? '+' : '=';
+        case SDLK_LEFTBRACKET: return shifted ? '{' : '[';
+        case SDLK_RIGHTBRACKET: return shifted ? '}' : ']';
+        case SDLK_BACKSLASH: return shifted ? '|' : '\\';
+        case SDLK_SEMICOLON: return shifted ? ':' : ';';
+        case SDLK_QUOTE: return shifted ? '"' : '\'';
+        case SDLK_COMMA: return shifted ? '<' : ',';
+        case SDLK_PERIOD: return shifted ? '>' : '.';
+        case SDLK_SLASH: return shifted ? '?' : '/';
+        case SDLK_BACKQUOTE: return shifted ? '~' : '`';
+        case SDLK_KP_PLUS: return '+';
+        case SDLK_KP_MINUS: return '-';
+        case SDLK_KP_MULTIPLY: return '*';
+        case SDLK_KP_DIVIDE: return '/';
+        case SDLK_KP_PERIOD: return '.';
+        case SDLK_KP_ENTER: return 13;
+        default: return -1;
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -146,6 +377,8 @@ int main(int argc, char** argv) {
 
     bool smoke_test = false;
     int smoke_frames = 120;
+    bool export_diagnostics_on_exit = false;
+    std::string diagnostics_override;
     std::vector<std::string> positional;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -153,6 +386,9 @@ int main(int argc, char** argv) {
             smoke_test = true;
         } else if (arg == "--frames" && i + 1 < argc) {
             smoke_frames = std::max(1, std::atoi(argv[++i]));
+        } else if (arg == "--export-diagnostics" && i + 1 < argc) {
+            export_diagnostics_on_exit = true;
+            diagnostics_override = argv[++i];
         } else {
             positional.push_back(arg);
         }
@@ -172,7 +408,9 @@ int main(int argc, char** argv) {
         positional.size() >= 1 ? positional[0] : bundledPath(bundle_dir, "ternary-os.tboot");
     const std::string disk_path =
         positional.size() >= 2 ? positional[1] : bundledPath(bundle_dir, "ternary-os.tdisk");
-    const std::string diagnostics_path = bundledPath(bundle_dir, "diagnostics");
+    const std::string diagnostics_path =
+        diagnostics_override.empty() ? bundledPath(bundle_dir, "diagnostics")
+                                     : diagnostics_override;
 
     sandbox::host::TosRuntimeConfig config;
     config.boot_image_path = boot_path;
@@ -233,7 +471,8 @@ int main(int argc, char** argv) {
                     running = false;
                     break;
                 case SDL_TEXTINPUT:
-                    runtime.pushTextInput(event.text.text);
+                    // Keydown handles the ASCII subset used by the guest OS. Keeping
+                    // text input disabled here avoids duplicate characters on Windows.
                     break;
                 case SDL_KEYDOWN: {
                     const SDL_Keycode key = event.key.keysym.sym;
@@ -256,9 +495,12 @@ int main(int argc, char** argv) {
                     } else if (key == SDLK_BACKSPACE) {
                         runtime.pushKeyboardInput(8);
                     } else if (key == SDLK_RETURN) {
-                        runtime.pushKeyboardInput(10);
+                        runtime.pushKeyboardInput(13);
                     } else if (key == SDLK_ESCAPE) {
                         runtime.pushKeyboardInput(27);
+                    } else {
+                        const long long ascii = asciiFromKey(key, mods);
+                        if (ascii >= 0) runtime.pushKeyboardInput(ascii);
                     }
                     break;
                 }
@@ -277,8 +519,9 @@ int main(int argc, char** argv) {
         int window_w = 0;
         int window_h = 0;
         SDL_GetWindowSize(window, &window_w, &window_h);
+        const auto [texture_width, texture_height] = textureDimensions(framebuffer);
         const SDL_Rect dest =
-            letterboxRect(window_w, window_h, framebuffer.width, framebuffer.height);
+            letterboxRect(window_w, window_h, texture_width, texture_height);
 
         int mouse_x = 0;
         int mouse_y = 0;
@@ -314,6 +557,13 @@ int main(int argc, char** argv) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+
+    if (export_diagnostics_on_exit || smoke_failed) {
+        if (!runtime.exportDiagnostics(diagnostics_path, &error)) {
+            std::cerr << error << "\n";
+            smoke_failed = true;
+        }
     }
 
     runtime.shutdown();

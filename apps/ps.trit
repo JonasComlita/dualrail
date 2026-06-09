@@ -1,0 +1,41 @@
+// apps/ps.trit - Process snapshot.
+
+const PS_OUT: t40 = 10000;
+
+fn ps_load(addr: t40) -> t40 {
+    var v: t40 = 0;
+    unsafe { v = load(addr); }
+    return v;
+}
+
+fn ps_state(s: t40) -> t40 {
+    if s - 1 == 0 { os_putc(82); os_putc(68); os_putc(89); return 1; }
+    if s - 2 == 0 { os_putc(82); os_putc(85); os_putc(78); return 1; }
+    if s - 3 == 0 { os_putc(66); os_putc(76); os_putc(75); return 1; }
+    if s - 4 == 0 { os_putc(90); os_putc(90); os_putc(90); return 1; }
+    if s - 5 == 0 { os_putc(88); os_putc(73); os_putc(84); return 1; }
+    os_putc(63);
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel == 0 {
+        os_putc(80); os_putc(83); os_newline();
+        return 1;
+    }
+    var count: t40 = os_ps(PS_OUT, 8);
+    os_putc(80); os_putc(73); os_putc(68); os_putc(32);
+    os_putc(83); os_putc(84); os_putc(65); os_putc(84); os_putc(69); os_newline();
+    var i: t40 = 0;
+    while count - i > 0 {
+        var base: t40 = PS_OUT + i * 5;
+        os_print_int(ps_load(base));
+        os_putc(32);
+        ps_state(ps_load(base + 1));
+        os_newline();
+        i = i + 1;
+    }
+    return count;
+}

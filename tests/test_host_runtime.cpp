@@ -168,7 +168,12 @@ void testRuntimeGraphicsResetAndDiagnostics() {
     expect(runtime.exportDiagnostics(diag_path, &error), "runtime exports diagnostics bundle");
     expect(fileExists(diag_path + "/vm_state.txt"), "diagnostics include VM state");
     expect(fileExists(diag_path + "/guest.log"), "diagnostics include guest log");
+    expect(fileExists(diag_path + "/kernel_log.txt"), "diagnostics include kernel log alias");
     expect(fileExists(diag_path + "/manifest.txt"), "diagnostics include image manifest");
+    expect(fileExists(diag_path + "/manifest.json"), "diagnostics include machine-readable manifest");
+    expect(fileExists(diag_path + "/process_table.json"), "diagnostics include process snapshot");
+    expect(fileExists(diag_path + "/syscall_trace.jsonl"), "diagnostics include syscall trace placeholder");
+    expect(fileExists(diag_path + "/crash_report.txt"), "diagnostics include crash report");
     expect(fileExists(diag_path + "/framebuffer_snapshot.txt"),
            "diagnostics include framebuffer snapshot");
 

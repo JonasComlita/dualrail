@@ -358,6 +358,52 @@ inline std::uint32_t paletteColor(int index) {
     }
 }
 
+inline std::string jsonEscape(const std::string& value) {
+    std::ostringstream out;
+    for (unsigned char ch : value) {
+        switch (ch) {
+            case '"': out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b"; break;
+            case '\f': out << "\\f"; break;
+            case '\n': out << "\\n"; break;
+            case '\r': out << "\\r"; break;
+            case '\t': out << "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    out << "\\u"
+                        << std::hex << std::setw(4) << std::setfill('0')
+                        << static_cast<int>(ch)
+                        << std::dec << std::setfill(' ');
+                } else {
+                    out << static_cast<char>(ch);
+                }
+                break;
+        }
+    }
+    return out.str();
+}
+
+inline void writeJsonString(std::ostream& out, const std::string& value) {
+    out << '"' << jsonEscape(value) << '"';
+}
+
+inline const char* processStateName(long long state) {
+    switch (state) {
+        case 0: return "free";
+        case 1: return "runnable";
+        case 2: return "running";
+        case 3: return "blocked";
+        case 4: return "sleeping";
+        case 5: return "exited";
+        case 6: return "stopped";
+        case 7: return "zombie";
+        case 8: return "killing";
+        case 9: return "crashed";
+        default: return "unknown";
+    }
+}
+
 inline long long dmemWord(const vm::VMState& machine, int addr) {
     auto [word, fault] = machine.dmem.load(addr);
     if (fault != vm::MemFaultCode::OK) return 0;
@@ -365,18 +411,41 @@ inline long long dmemWord(const vm::VMState& machine, int addr) {
 }
 
 constexpr int kKernelBootedAddr = 3000;
+constexpr int kCurrentPidAddr = 3020;
+constexpr int kSysStatusAddr = 3021;
+constexpr int kSysPayloadAddr = 3022;
+constexpr int kSysDetailAddr = 3023;
 constexpr int kInputLastMouseBtnAddr = 3031;
 constexpr int kInputLastMouseXAddr = 3034;
 constexpr int kInputLastMouseYAddr = 3035;
-constexpr int kProcessMax = 8;
+constexpr int kProcessMax = 100;
 constexpr int kProcessRowWords = 8;
+constexpr int kProcPid = 0;
+constexpr int kProcNamespace = 1;
 constexpr int kProcState = 2;
+constexpr int kProcPriority = 3;
+constexpr int kProcQuota = 4;
+constexpr int kProcContext = 5;
+constexpr int kProcWaitChannel = 6;
+constexpr int kProcVersion = 7;
 constexpr int kProcRunnable = 1;
 constexpr int kProcRunning = 2;
 constexpr int kProcBlocked = 3;
 constexpr int kProcSleeping = 4;
-constexpr int kProcessBase = 9864;
-constexpr int kWaitDeadlineBase = 27580;
+constexpr int kProcessBase = 390000;
+constexpr int kTaskContextEpc = 0;
+constexpr int kTaskContextStatus = 1;
+constexpr int kTaskContextImemPtbr = 2;
+constexpr int kTaskContextImemPages = 3;
+constexpr int kTaskContextDmemPtbr = 4;
+constexpr int kTaskContextDmemPages = 5;
+constexpr int kTaskContextSp = 31;
+constexpr int kProcParentPidBase = 130000;
+constexpr int kProcExitStatusBase = 130100;
+constexpr int kProcSignalPendingBase = 130200;
+constexpr int kProcCapsBase = 131350;
+constexpr int kWaitKindBase = 138600;
+constexpr int kWaitDeadlineBase = 138700;
 
 inline bool inputPendingForWaiter(const vm::VMState& machine) {
     if (!machine.console_input.empty()) return true;
@@ -843,9 +912,80 @@ public:
             out << "disk_path=" << config_.disk_path << "\n";
         }
         {
+            std::ofstream out(base / "manifest.json", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write manifest.json");
+                return false;
+            }
+            out << "{\n";
+            out << "  \"format_version\": 1,\n";
+            out << "  \"image\": {\n";
+            out << "    \"version\": ";
+            detail::writeJsonString(out, image_.manifest.image_version);
+            out << ",\n";
+            out << "    \"profile\": ";
+            detail::writeJsonString(out, image_.manifest.profile_name);
+            out << ",\n";
+            out << "    \"boot_entry\": " << image_.manifest.boot_entry << ",\n";
+            out << "    \"framebuffer_width\": " << image_.manifest.framebuffer_width << ",\n";
+            out << "    \"framebuffer_height\": " << image_.manifest.framebuffer_height << ",\n";
+            out << "    \"program_words\": " << image_.program.size() << ",\n";
+            out << "    \"data_words\": " << image_.data_words.size() << ",\n";
+            out << "    \"rootfs_words\": " << image_.rootfs_words.size() << "\n";
+            out << "  },\n";
+            out << "  \"runtime\": {\n";
+            out << "    \"pc\": " << machine_->pc << ",\n";
+            out << "    \"status\": ";
+            detail::writeJsonString(out, vm::vmStatusToString(machine_->status));
+            out << ",\n";
+            out << "    \"cycles\": " << machine_->cycle_count << ",\n";
+            out << "    \"privilege\": ";
+            detail::writeJsonString(out, privilegeName(machine_->privilege));
+            out << ",\n";
+            out << "    \"gpu_mode\": " << machine_->gpu_mode << ",\n";
+            out << "    \"current_pid\": " << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << ",\n";
+            out << "    \"syscall_status\": " << detail::dmemWord(*machine_, detail::kSysStatusAddr) << ",\n";
+            out << "    \"syscall_payload\": " << detail::dmemWord(*machine_, detail::kSysPayloadAddr) << ",\n";
+            out << "    \"syscall_detail\": " << detail::dmemWord(*machine_, detail::kSysDetailAddr) << ",\n";
+            out << "    \"trap\": " << vm::ops::toLong(machine_->trap_reg) << ",\n";
+            out << "    \"cause\": " << machine_->cause << "\n";
+            out << "  },\n";
+            out << "  \"disk\": {\n";
+            out << "    \"path\": ";
+            detail::writeJsonString(out, config_.disk_path);
+            out << ",\n";
+            out << "    \"allocated_blocks\": " << machine_->allocatedDiskBlocks() << "\n";
+            out << "  },\n";
+            out << "  \"apps\": [\n";
+            for (std::size_t i = 0; i < image_.manifest.apps.size(); ++i) {
+                const TosAppManifestEntry& app = image_.manifest.apps[i];
+                out << "    {\"name\": ";
+                detail::writeJsonString(out, app.name);
+                out << ", \"path\": ";
+                detail::writeJsonString(out, app.path);
+                out << ", \"text_ppn\": " << app.text_ppn
+                    << ", \"entry_pc\": " << app.entry_pc
+                    << ", \"text_pages\": " << app.text_pages
+                    << ", \"data_pages\": " << app.data_pages
+                    << ", \"stack_words\": " << app.stack_words << "}";
+                if (i + 1 < image_.manifest.apps.size()) out << ",";
+                out << "\n";
+            }
+            out << "  ]\n";
+            out << "}\n";
+        }
+        {
             std::ofstream out(base / "guest.log", std::ios::trunc);
             if (!out.good()) {
                 detail::setError(error, "failed to write guest.log");
+                return false;
+            }
+            out << machine_->syscall_buffer;
+        }
+        {
+            std::ofstream out(base / "kernel_log.txt", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write kernel_log.txt");
                 return false;
             }
             out << machine_->syscall_buffer;
@@ -863,6 +1003,78 @@ public:
             for (const TosAppManifestEntry& app : image_.manifest.apps) {
                 out << app.name << " " << app.path << " ppn=" << app.text_ppn << "\n";
             }
+        }
+        {
+            std::ofstream out(base / "process_table.json", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write process_table.json");
+                return false;
+            }
+            out << "{\n";
+            out << "  \"format_version\": 1,\n";
+            out << "  \"current_pid\": " << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << ",\n";
+            out << "  \"slots\": [\n";
+            for (int slot = 0; slot < detail::kProcessMax; ++slot) {
+                const int row = detail::kProcessBase + slot * detail::kProcessRowWords;
+                const long long state = detail::dmemWord(*machine_, row + detail::kProcState);
+                const long long context = detail::dmemWord(*machine_, row + detail::kProcContext);
+                out << "    {\"slot\": " << slot
+                    << ", \"pid\": " << detail::dmemWord(*machine_, row + detail::kProcPid)
+                    << ", \"namespace\": " << detail::dmemWord(*machine_, row + detail::kProcNamespace)
+                    << ", \"state\": " << state
+                    << ", \"state_name\": ";
+                detail::writeJsonString(out, detail::processStateName(state));
+                out << ", \"priority\": " << detail::dmemWord(*machine_, row + detail::kProcPriority)
+                    << ", \"quota\": " << detail::dmemWord(*machine_, row + detail::kProcQuota)
+                    << ", \"context\": " << context
+                    << ", \"context_epc\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextEpc)
+                    << ", \"context_status\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextStatus)
+                    << ", \"context_imem_ptbr\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextImemPtbr)
+                    << ", \"context_imem_pages\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextImemPages)
+                    << ", \"context_dmem_ptbr\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextDmemPtbr)
+                    << ", \"context_dmem_pages\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextDmemPages)
+                    << ", \"context_sp\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextSp)
+                    << ", \"wait_channel\": " << detail::dmemWord(*machine_, row + detail::kProcWaitChannel)
+                    << ", \"version\": " << detail::dmemWord(*machine_, row + detail::kProcVersion)
+                    << ", \"parent_pid\": " << detail::dmemWord(*machine_, detail::kProcParentPidBase + slot)
+                    << ", \"exit_status\": " << detail::dmemWord(*machine_, detail::kProcExitStatusBase + slot)
+                    << ", \"pending_signals\": " << detail::dmemWord(*machine_, detail::kProcSignalPendingBase + slot)
+                    << ", \"caps\": " << detail::dmemWord(*machine_, detail::kProcCapsBase + slot)
+                    << ", \"wait_kind\": " << detail::dmemWord(*machine_, detail::kWaitKindBase + slot)
+                    << ", \"wait_deadline\": " << detail::dmemWord(*machine_, detail::kWaitDeadlineBase + slot)
+                    << "}";
+                if (slot + 1 < detail::kProcessMax) out << ",";
+                out << "\n";
+            }
+            out << "  ]\n";
+            out << "}\n";
+        }
+        {
+            std::ofstream out(base / "syscall_trace.jsonl", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write syscall_trace.jsonl");
+                return false;
+            }
+            out << "{\"event\":\"trace_unavailable\","
+                << "\"reason\":\"runtime does not yet record per-syscall trace events\","
+                << "\"cycles\":" << machine_->cycle_count << "}\n";
+        }
+        {
+            std::ofstream out(base / "crash_report.txt", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write crash_report.txt");
+                return false;
+            }
+            out << "status=" << vm::vmStatusToString(machine_->status) << "\n";
+            out << "pc=" << machine_->pc << "\n";
+            out << "cycles=" << machine_->cycle_count << "\n";
+            out << "privilege=" << privilegeName(machine_->privilege) << "\n";
+            out << "trap=" << vm::ops::toLong(machine_->trap_reg) << "\n";
+            out << "cause=" << machine_->cause << "\n";
+            out << "current_pid=" << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << "\n";
+            out << "syscall_status=" << detail::dmemWord(*machine_, detail::kSysStatusAddr) << "\n";
+            out << "syscall_payload=" << detail::dmemWord(*machine_, detail::kSysPayloadAddr) << "\n";
+            out << "syscall_detail=" << detail::dmemWord(*machine_, detail::kSysDetailAddr) << "\n";
         }
         {
             TosFramebufferSnapshot framebuffer = decodeFramebuffer(*machine_);

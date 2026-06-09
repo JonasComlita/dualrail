@@ -1,0 +1,31 @@
+// apps/init.trit - First user-space process placeholder.
+
+fn init_seed_desktop(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 98);
+        store(addr + 2, 105);
+        store(addr + 3, 110);
+        store(addr + 4, 47);
+        store(addr + 5, 100);
+        store(addr + 6, 101);
+        store(addr + 7, 115);
+        store(addr + 8, 107);
+        store(addr + 9, 116);
+        store(addr + 10, 111);
+        store(addr + 11, 112);
+        store(addr + 12, 0);
+    }
+    return addr;
+}
+
+fn main() -> t40 {
+    os_putc(73); os_putc(78); os_putc(73); os_putc(84); os_newline();
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    if in_kernel > 0 {
+        var path: t40 = init_seed_desktop(10000);
+        sys_exec(path);
+    }
+    return 1;
+}
