@@ -1,9 +1,0 @@
-fn main() -> t40 {
-    var q: t40 = 5 / 3;
-    var rem: t40 = 5 - q * 3;
-    sys_write_int(q);
-    sys_newline();
-    sys_write_int(rem);
-    sys_newline();
-    return 0;
-}
