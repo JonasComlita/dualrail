@@ -108,7 +108,9 @@ void testSparseFileBackedDisk() {
            "sparse file-backed disk write succeeds");
     expect(writer.allocatedDiskBlocks() == 1 && writer.block_dirty[last_block],
            "sparse disk tracks only the touched high block");
-    const long long first_write_size = fileSizeBytes(path);
+    const long long initialized_size = fileSizeBytes(path);
+    expect(writer.pendingDiskWrites() == 1 && writer.sparseDiskRecordCount() == 0,
+           "sparse disk buffers first write before a flush barrier");
     for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
         expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9100 + i)) == vm::MemFaultCode::OK,
                "disk overwrite seed stores into sparse DMEM");
@@ -116,17 +118,40 @@ void testSparseFileBackedDisk() {
     expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_CMD, 2), "last sparse disk block overwrites");
     expect(readCsrLong(writer, sandbox::isa::CSR_BLOCK_STATUS) == 1,
            "sparse file-backed disk overwrite succeeds");
-    const long long second_write_size = fileSizeBytes(path);
+    expect(writer.pendingDiskWrites() == 1,
+           "sparse disk coalesces repeated writes to one pending block");
+    expect(fileSizeBytes(path) == initialized_size,
+           "coalesced sparse disk write does not append before flush");
+    expect(writer.flushBlockBackingFile(), "sparse disk flush persists pending block records");
+    expect(writer.pendingDiskWrites() == 0 && writer.sparseDiskRecordCount() == 1,
+           "sparse disk flush drains pending writes into one append record");
+    vm::VMBlockDeviceStats stats = writer.blockDeviceStats();
+    expect(stats.writes == 2 && stats.dirty_flushes == 1,
+           "sparse disk metrics count writes and dirty block flushes");
+    const long long first_flush_size = fileSizeBytes(path);
     const long long compact_record_bytes =
         static_cast<long long>(sizeof(int) + sizeof(long long) * vm::MMU_PAGE_WORDS);
-    expect(second_write_size == first_write_size + compact_record_bytes,
-           "sparse disk overwrite appends one touched-block record");
-    expect(writer.allocatedDiskBlocks() == 1,
-           "sparse disk overwrite keeps one live touched block");
-    expect(writer.compactBlockBackingFile(), "sparse disk backing file compacts live records");
-    const long long compacted_size = fileSizeBytes(path);
     const long long compact_header_bytes =
         static_cast<long long>(sizeof(long long) + sizeof(int));
+    expect(first_flush_size == compact_header_bytes + compact_record_bytes,
+           "sparse disk flush appends one coalesced touched-block record");
+    expect(writer.allocatedDiskBlocks() == 1,
+           "sparse disk overwrite keeps one live touched block");
+
+    for (int round = 0; round < 4; ++round) {
+        for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+            expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9200 + round + i)) ==
+                       vm::MemFaultCode::OK,
+                   "disk compact seed stores into sparse DMEM");
+        }
+        expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_CMD, 2),
+               "sparse disk repeated append write accepts");
+        expect(writer.flushBlockBackingFile(), "sparse disk repeated append write flushes");
+    }
+    expect(writer.sparseDiskRecordCount() == 5,
+           "sparse disk append log records flushed overwrites before compaction");
+    expect(writer.compactBlockBackingFile(), "sparse disk backing file compacts live records");
+    const long long compacted_size = fileSizeBytes(path);
     expect(compacted_size == compact_header_bytes + compact_record_bytes,
            "sparse disk compaction rewrites one live block record");
 
@@ -136,8 +161,69 @@ void testSparseFileBackedDisk() {
     expect(writeCsrLong(reader, sandbox::isa::CSR_BLOCK_ADDR, 4096), "reboot block destination writes");
     expect(writeCsrLong(reader, sandbox::isa::CSR_BLOCK_CMD, 1), "reboot sparse disk block reads");
     auto [reloaded, reload_fault] = reader.dmem.load(4096 + 26);
-    expect(reload_fault == vm::MemFaultCode::OK && vm::ops::toLong(reloaded) == 9126,
+    expect(reload_fault == vm::MemFaultCode::OK && vm::ops::toLong(reloaded) == 9229,
            "sparse file-backed disk preserves high block contents");
+
+    for (int block = 7; block <= 8; ++block) {
+        for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+            expect(writer.dmem.store(2048 + i, vm::ops::fromLong(block * 1000 + i)) ==
+                       vm::MemFaultCode::OK,
+                   "sequential read-ahead seed stores into sparse DMEM");
+        }
+        expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_INDEX, block),
+               "sequential read-ahead block index writes");
+        expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_ADDR, 2048),
+               "sequential read-ahead source address writes");
+        expect(writeCsrLong(writer, sandbox::isa::CSR_BLOCK_CMD, 2),
+               "sequential read-ahead seed block writes");
+    }
+    expect(writer.flushBlockBackingFile(), "sequential read-ahead seed flushes");
+
+    vm::VMState sequentialReader(profile);
+    expect(sequentialReader.attachBlockBackingFile(path),
+           "sequential read-ahead reader attaches sparse disk image file");
+    sequentialReader.resetBlockDeviceStats();
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_INDEX, 7),
+           "read-ahead first block index writes");
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_ADDR, 5000),
+           "read-ahead first block destination writes");
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_CMD, 1),
+           "read-ahead first block reads");
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_INDEX, 8),
+           "read-ahead second block index writes");
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_ADDR, 5100),
+           "read-ahead second block destination writes");
+    expect(writeCsrLong(sequentialReader, sandbox::isa::CSR_BLOCK_CMD, 1),
+           "read-ahead second block reads");
+    stats = sequentialReader.blockDeviceStats();
+    expect(stats.reads == 2 && stats.misses >= 1 && stats.hits >= 1 && stats.read_ahead >= 1,
+           "sparse disk block cache metrics record sequential read-ahead hit");
+
+    {
+        std::fstream crash(path, std::ios::binary | std::ios::in | std::ios::out);
+        expect(crash.good(), "sparse disk crash simulator opens backing file");
+        int declared_records = static_cast<int>(writer.sparseDiskRecordCount()) + 1;
+        crash.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
+        crash.write(reinterpret_cast<const char*>(&declared_records), sizeof(declared_records));
+        crash.seekp(0, std::ios::end);
+        const int partial_index = 9;
+        const long long partial_word = 123456;
+        crash.write(reinterpret_cast<const char*>(&partial_index), sizeof(partial_index));
+        crash.write(reinterpret_cast<const char*>(&partial_word), sizeof(partial_word));
+    }
+    vm::VMState recovered(profile);
+    expect(recovered.attachBlockBackingFile(path),
+           "sparse disk attach recovers from a truncated append record");
+    expect(writeCsrLong(recovered, sandbox::isa::CSR_BLOCK_INDEX, 7),
+           "recovered sparse disk block index writes");
+    expect(writeCsrLong(recovered, sandbox::isa::CSR_BLOCK_ADDR, 5200),
+           "recovered sparse disk destination writes");
+    expect(writeCsrLong(recovered, sandbox::isa::CSR_BLOCK_CMD, 1),
+           "recovered sparse disk block reads");
+    auto [recoveredWord, recoveredFault] = recovered.dmem.load(5200 + 26);
+    expect(recoveredFault == vm::MemFaultCode::OK &&
+               vm::ops::toLong(recoveredWord) == 7026,
+           "sparse disk recovery preserves last complete flushed block contents");
 
     std::remove(path.c_str());
 }

@@ -822,7 +822,10 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
             if kload(dst + 2) - 73 != 0 { return -6; }
             if kload(dst + 3) - 84 != 0 { return -7; }
             vfs_close(1, fd);
+            var lookup_before: t40 = kload(METRIC_VFS_LOOKUPS_ADDR);
             if app_launch(1, app_path, 0) - EXEC_DESC_V2_WORDS != 0 { return -9; }
+            var lookup_after: t40 = kload(METRIC_VFS_LOOKUPS_ADDR);
+            if lookup_after - lookup_before > 1 { return -14; }
             if kload(exec_hw_imem_ptbr(0)) - exec_encode_pte(720, 1, 0, 0, 1) != 0 { return -10; }
             var ctx: t40 = kload(process_addr(0) + PROC_CONTEXT);
             if ctx <= 0 { return -11; }

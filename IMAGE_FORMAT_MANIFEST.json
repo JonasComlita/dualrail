@@ -79,6 +79,7 @@
   "tools": {
     "build": "tools/trit-build-image.ps1",
     "inspect": "tools/trit-inspect-image.ps1",
+    "compact": "tools/trit-compact-disk.ps1",
     "diagnostics": "tools/trit-export-diagnostics.ps1"
   }
 }

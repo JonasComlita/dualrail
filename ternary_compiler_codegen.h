@@ -1431,8 +1431,8 @@ private:
         std::string else_label = ctx.label("if_else");
         std::string end_label = ctx.label("if_end");
         ExprCode cond = emitExpr(stmt.expr, TypeRef::trit(), ctx);
-        ctx.line("brp r" + std::to_string(cond.reg) + ", " + then_label);
-        ctx.line("jmp " + else_label);
+        ctx.line("brn r" + std::to_string(cond.reg) + ", " + else_label);
+        ctx.line("brz r" + std::to_string(cond.reg) + ", " + else_label);
         ctx.release(cond.reg);
 
         ctx.raw(then_label + ":");
@@ -1457,8 +1457,8 @@ private:
         std::string end = ctx.label("while_end");
         ctx.raw(start + ":");
         ExprCode cond = emitExpr(stmt.expr, TypeRef::unknown(), ctx);
-        ctx.line("brp r" + std::to_string(cond.reg) + ", " + body);
-        ctx.line("jmp " + end);
+        ctx.line("brn r" + std::to_string(cond.reg) + ", " + end);
+        ctx.line("brz r" + std::to_string(cond.reg) + ", " + end);
         ctx.release(cond.reg);
         ctx.raw(body + ":");
         ctx.scope_vars.push_back({});
@@ -1467,6 +1467,243 @@ private:
         ctx.scope_vars.pop_back();
         ctx.line("jmp " + start);
         ctx.raw(end + ":");
+    }
+
+    enum class MatchTselKind : uint8_t {
+        Return,
+        AssignLocal,
+    };
+
+    struct MatchTselPlan {
+        MatchTselKind kind = MatchTselKind::Return;
+        const Stmt* neg_stmt = nullptr;
+        const Stmt* zero_stmt = nullptr;
+        const Stmt* pos_stmt = nullptr;
+        std::string target_name;
+    };
+
+    [[nodiscard]] static bool isPureMatchExpr(const ExprPtr& expr) {
+        if (!expr) return false;
+        switch (expr->kind) {
+            case ExprKind::Number:
+            case ExprKind::Name:
+                return true;
+            case ExprKind::Unary:
+                return expr->text == "-" && isPureMatchExpr(expr->left);
+            case ExprKind::Binary:
+                if (expr->text == "/") return false;
+                return isPureMatchExpr(expr->left) && isPureMatchExpr(expr->right);
+            case ExprKind::Call:
+            case ExprKind::Field:
+            case ExprKind::Index:
+            case ExprKind::StructLiteral:
+            case ExprKind::ArrayLiteral:
+                return false;
+        }
+        return false;
+    }
+
+    [[nodiscard]] const MatchArm* findMatchArm(
+        const Stmt& stmt,
+        const std::string& name) const {
+
+        for (const auto& arm : stmt.arms) {
+            if (arm.name == name) return &arm;
+        }
+        for (const auto& arm : stmt.arms) {
+            if (arm.name == "_") return &arm;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] static bool armIsPureReturn(
+        const MatchArm* arm,
+        const Stmt** out_stmt) {
+
+        if (!arm || arm->body.size() != 1) return false;
+        const Stmt& stmt = arm->body.front();
+        if (stmt.kind != StmtKind::Return || !isPureMatchExpr(stmt.expr)) return false;
+        *out_stmt = &stmt;
+        return true;
+    }
+
+    [[nodiscard]] static bool simpleAssignTargetName(
+        const Stmt& stmt,
+        std::string& out) {
+
+        if (stmt.target && stmt.target->kind == ExprKind::Name) {
+            out = stmt.target->text;
+            return true;
+        }
+        if (!stmt.name.empty()) {
+            out = stmt.name;
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] static bool armIsPureLocalAssign(
+        const MatchArm* arm,
+        const Stmt** out_stmt,
+        std::string& out_target) {
+
+        if (!arm || arm->body.size() != 1) return false;
+        const Stmt& stmt = arm->body.front();
+        if (stmt.kind != StmtKind::Assign || !isPureMatchExpr(stmt.expr)) return false;
+        if (!simpleAssignTargetName(stmt, out_target)) return false;
+        *out_stmt = &stmt;
+        return true;
+    }
+
+    [[nodiscard]] bool analyzeTselMatch(
+        const Stmt& stmt,
+        const std::string& negName,
+        const std::string& zeroName,
+        const std::string& posName,
+        MatchTselPlan& plan) const {
+
+        const MatchArm* negArm = findMatchArm(stmt, negName);
+        const MatchArm* zeroArm = findMatchArm(stmt, zeroName);
+        const MatchArm* posArm = findMatchArm(stmt, posName);
+
+        const Stmt* negStmt = nullptr;
+        const Stmt* zeroStmt = nullptr;
+        const Stmt* posStmt = nullptr;
+        if (armIsPureReturn(negArm, &negStmt) &&
+            armIsPureReturn(zeroArm, &zeroStmt) &&
+            armIsPureReturn(posArm, &posStmt)) {
+            plan.kind = MatchTselKind::Return;
+            plan.neg_stmt = negStmt;
+            plan.zero_stmt = zeroStmt;
+            plan.pos_stmt = posStmt;
+            return true;
+        }
+
+        std::string negTarget;
+        std::string zeroTarget;
+        std::string posTarget;
+        if (armIsPureLocalAssign(negArm, &negStmt, negTarget) &&
+            armIsPureLocalAssign(zeroArm, &zeroStmt, zeroTarget) &&
+            armIsPureLocalAssign(posArm, &posStmt, posTarget) &&
+            negTarget == zeroTarget && negTarget == posTarget) {
+            plan.kind = MatchTselKind::AssignLocal;
+            plan.neg_stmt = negStmt;
+            plan.zero_stmt = zeroStmt;
+            plan.pos_stmt = posStmt;
+            plan.target_name = negTarget;
+            return true;
+        }
+
+        return false;
+    }
+
+    [[nodiscard]] ExprCode emitTselValue(
+        const MatchTselPlan& plan,
+        const ExprCode& cond,
+        const TypeRef& targetType,
+        const SourceSpan& span,
+        FunctionContext& ctx) {
+
+        ExprCode neg = emitExpr(plan.neg_stmt->expr, targetType, ctx);
+        ExprCode zero = emitExpr(plan.zero_stmt->expr, targetType, ctx);
+        ExprCode pos = emitExpr(plan.pos_stmt->expr, targetType, ctx);
+
+        if (!canWiden(neg.type, targetType)) {
+            diag("implicit narrowing is not allowed from " + neg.type.str() +
+                 " to " + targetType.str(), plan.neg_stmt->span);
+        }
+        if (!canWiden(zero.type, targetType)) {
+            diag("implicit narrowing is not allowed from " + zero.type.str() +
+                 " to " + targetType.str(), plan.zero_stmt->span);
+        }
+        if (!canWiden(pos.type, targetType)) {
+            diag("implicit narrowing is not allowed from " + pos.type.str() +
+                 " to " + targetType.str(), plan.pos_stmt->span);
+        }
+
+        emitCvtIfNeeded(neg, targetType, ctx);
+        emitCvtIfNeeded(zero, targetType, ctx);
+        emitCvtIfNeeded(pos, targetType, ctx);
+
+        int out = ctx.acquire();
+        ctx.line("tsel r" + std::to_string(out) + ", r" + std::to_string(cond.reg) +
+                 ", r" + std::to_string(neg.reg) + ", r" + std::to_string(zero.reg) +
+                 ", r" + std::to_string(pos.reg));
+        ValueId id = ctx.value(InstrOpcode::Tsel, targetType, span, out);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                cond.value,
+                neg.value,
+                zero.value,
+                pos.value,
+            };
+        }
+
+        ctx.release(neg.reg);
+        ctx.release(zero.reg);
+        ctx.release(pos.reg);
+        return ExprCode{out, targetType, false, id};
+    }
+
+    [[nodiscard]] bool tryEmitTselMatch(
+        const Stmt& stmt,
+        const ExprCode& cond,
+        bool isPointer,
+        const std::string& negName,
+        const std::string& zeroName,
+        const std::string& posName,
+        FunctionContext& ctx) {
+
+        if (isPointer) return false;
+
+        MatchTselPlan plan;
+        if (!analyzeTselMatch(stmt, negName, zeroName, posName, plan)) return false;
+
+        TypeRef targetType = TypeRef::unknown();
+        if (plan.kind == MatchTselKind::Return) {
+            targetType = ctx.ast->return_type;
+        } else {
+            auto local = ctx.locals.find(plan.target_name);
+            if (local == ctx.locals.end() || isAggregateType(local->second.type)) return false;
+            targetType = local->second.type;
+        }
+
+        if (!isNumericLike(targetType)) return false;
+
+        ExprCode selected = emitTselValue(plan, cond, targetType, stmt.span, ctx);
+        if (plan.kind == MatchTselKind::Return) {
+            ctx.line("store r" + std::to_string(selected.reg) + ", sp, " +
+                     std::to_string(ctx.return_slot_offset));
+            ctx.value(InstrOpcode::Store, targetType, stmt.span);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {selected.value};
+            }
+            ctx.release(selected.reg);
+            emitDropsForReturn(ctx);
+            ctx.line("load r13, sp, " + std::to_string(ctx.return_slot_offset));
+            ctx.value(InstrOpcode::Load, targetType, stmt.span);
+            ctx.line("jmp " + ctx.ast->name + "_return");
+            ctx.value(InstrOpcode::Ret, targetType, stmt.span);
+            return true;
+        }
+
+        auto local = ctx.locals.find(plan.target_name);
+        if (local == ctx.locals.end()) {
+            ctx.release(selected.reg);
+            return false;
+        }
+        ctx.moved_vars.erase(plan.target_name);
+        if (!local->second.mutable_binding) {
+            diag("cannot assign to immutable binding", stmt.span);
+        }
+        ctx.line("store r" + std::to_string(selected.reg) + ", sp, " +
+                 std::to_string(local->second.offset));
+        ctx.value(InstrOpcode::Store, targetType, stmt.span);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {selected.value};
+        }
+        ctx.release(selected.reg);
+        return true;
     }
 
     void emitMatch(const Stmt& stmt, FunctionContext& ctx) {
@@ -1503,6 +1740,7 @@ private:
                 ctx.block->instructions.back().args = {cond.value, zero_id};
             }
             cond.value = cmp_id;
+            cond.type = TypeRef::trit();
             ctx.release(reg_cmp);
         }
         // If already Trit (T1), no conversion needed
@@ -1511,6 +1749,11 @@ private:
         std::string zeroName = isPointer ? "unknown" : "zero";
         std::string posName = isPointer ? "valid" : "pos";
 
+        if (tryEmitTselMatch(stmt, cond, isPointer, negName, zeroName, posName, ctx)) {
+            ctx.release(cond.reg);
+            return;
+        }
+
         std::string neg = ctx.label("match_" + negName);
         std::string zero = ctx.label("match_" + zeroName);
         std::string pos = ctx.label("match_" + posName);
@@ -1518,11 +1761,10 @@ private:
 
         ctx.line("brn r" + std::to_string(cond.reg) + ", " + neg);
         ctx.line("brz r" + std::to_string(cond.reg) + ", " + zero);
-        ctx.line("brp r" + std::to_string(cond.reg) + ", " + pos);
 
+        emitArm(posName, pos, end, stmt, cond, ctx);
         emitArm(negName, neg, end, stmt, cond, ctx);
         emitArm(zeroName, zero, end, stmt, cond, ctx);
-        emitArm(posName, pos, end, stmt, cond, ctx);
         ctx.release(cond.reg);
         ctx.raw(end + ":");
     }
@@ -2095,7 +2337,7 @@ private:
             ctx.release(rTrue);
             ctx.release(rFalse);
 
-            ValueId id = ctx.value(InstrOpcode::Cmp, TypeRef::trit(), expr.span, rOut);
+            ValueId id = ctx.value(InstrOpcode::Tsel, TypeRef::trit(), expr.span, rOut);
             if (ctx.block && !ctx.block->instructions.empty()) {
                 ctx.block->instructions.back().args = {cmp_val,
                     (valNeg == 1) ? true_val : (valNeg == 0) ? -1 : false_val,

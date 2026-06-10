@@ -1,68 +1,137 @@
-# ABI Specification (Trit-Stack)
+# Calling Convention and ABI
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_isa.h`, `ternary_vm_state.h` |
+Source of truth: `ternary_isa.h` (register constants), `SYSCALL_MANIFEST.json` (syscall ABI), `ternary_compiler_codegen.h` (compiler enforcement).
 
 ---
 
-## 🎭 Register Conventions
-The Trit-Stack ABI categorizes the 27 general-purpose registers to ensure predictable function interoperation.
+## Calling Convention
 
-| Register | Name | Role | Preservation |
-| :--- | :--- | :--- | :--- |
-| **r0** | `zero` | Hardwired Zero | Constant |
-| **r1 - r4** | `a0 - a3` | Arguments / Return Values | Caller-Saved |
-| **r5 - r12** | `s0 - s7` | Static (Local) Variables | **Callee-Saved** |
-| **r13 - r24**| `t0 - t11`| Temporary Variables | Caller-Saved |
-| **r25** | `lr` | Link Register (Return Address) | Caller-Saved |
-| **r26** | `sp` | Stack Pointer | **Callee-Saved** |
+### Register Roles
 
----
+| Register | Role | Notes |
+|----------|------|-------|
+| r0       | Zero | Hardwired; writes discarded |
+| r1–r12   | Callee-saved | Callee must save/restore if used |
+| r13      | Arg 0 / Return value | First argument in; return value out |
+| r14      | Arg 1 | Second argument |
+| r15      | Arg 2 | Third argument |
+| r16      | Arg 3 | Fourth argument |
+| r17–r24  | Caller-saved scratch | May be clobbered by callee |
+| r25      | Link Register | Written by CALL; read by RET |
+| r26      | Stack Pointer | Grows **downward**; word-aligned |
+| r27      | Trap register | Read-only from ISA |
 
-## 📚 The Stack Model
+### Argument Passing
 
-### Growth & Alignment
-*   **Direction**: The stack grows **downward** (toward address 0).
-*   **Invariance**: `sp` always points to the **next free word** in memory.
-*   **Alignment**: All stack operations are word-aligned (50 trits).
+- Up to 4 arguments pass in **r13–r16**.
+- Additional arguments are passed on the stack (pushed before the call, popped by the caller after).
+- Arguments larger than one word (e.g., structs) are split across consecutive registers or passed by pointer.
 
-### Standard Prologue / Epilogue
-Every function that calls another function (a "non-leaf" function) must follow this pattern:
+### Return Values
 
-**Prologue**:
-```asm
-STORE sp, lr, 0   ; Save Link Register
-ADD sp, sp, -1    ; Decrement SP
-; (Optionally save s0-s7 if used)
+- Single-word return: **r13**.
+- The callee writes the return value to r13 before executing `RET`.
+
+### Stack Frame Layout
+
+```
+  high address
+  ┌─────────────────────┐  ← caller's SP before call
+  │   arg4, arg5, ...   │  (if >4 args; pushed by caller)
+  ├─────────────────────┤
+  │ callee-saved regs   │  (r1–r12 that callee uses)
+  ├─────────────────────┤
+  │   local variables   │
+  ├─────────────────────┤
+  │   ...               │
+  └─────────────────────┘  ← callee's SP (r26)
+  low address
 ```
 
-**Epilogue**:
+Stack grows **downward** (SP decrements on push). SP is always **word-aligned** (one word = one T40 register = one DMEM slot).
+
+### Call Sequence
+
 ```asm
-; (Optionally restore s0-s7)
-ADD sp, sp, 1     ; Increment SP
-LOAD lr, sp, 0    ; Restore Link Register
-RET               ; Jump back to LR
+; Caller:
+MOV  r13, <arg0>
+MOV  r14, <arg1>
+CALL target_fn          ; r25 ← PC+1; PC ← target_fn
+
+; Callee prologue:
+; (save callee-saved regs if needed)
+; do work
+; MOV r13, <return value>
+
+; Callee epilogue:
+RET                     ; PC ← toLong(r25)
 ```
 
 ---
 
-## 📩 Parameter Passing
-1.  **Small Data**: The first 4 ternary values (up to 50 trits each) are passed in `r1` through `r4`.
-2.  **Overflow**: Parameters 5 and above are passed on the stack.
-3.  **Return Values**: The primary result is returned in `r1`. Secondary results (e.g., error codes or large structs) use `r2-r4`.
+## Syscall Calling Convention
+
+Source: `SYSCALL_MANIFEST.json`
+
+```
+Caller-side (user process):
+  1. CSRW csr_syscall_id, <service_id>
+  2. MOV r13, <arg0>
+  3. MOV r14, <arg1>
+  4. MOV r15, <arg2>
+  5. MOV r16, <arg3>
+  6. SYSCALL
+
+Kernel-side return (via ERET):
+  r13 = status  (0=OK, 2=blocked, negative=error)
+  r14 = payload (service-specific return value)
+  r15 = detail  (service-specific extra data)
+```
+
+`status == 2` means the process is **blocked** (rescheduled; will be resumed when the resource is ready).
 
 ---
 
-## ⚡ Optimization: Register Shuffling
-When preparing a function call, the compiler frequently needs to move values into the argument registers (`r1-r4`).
-*   **The SWAP Rule**: Instead of using a sequence of `COPY` instructions, the compiler should use the native **`SWAP`** opcode to move values into the `a0-a3` slots. This saves cycles and avoids temporary register pressure.
+## Vector ABI
+
+Vector operations use a separate vector register file (v0–v7). Calling convention for functions that use vectors:
+- Vectors are NOT saved by the standard callee-saved convention.
+- Functions that modify vector registers must document this explicitly.
+- `VLEN Rd` writes the current vector length (number of lanes) into `Rd`.
 
 ---
 
-## 🛡️ Vector ABI
-*   **v0 - v7**: All vector registers are considered **Caller-Saved**. 
-*   **Accumulator (rA)**: The accumulator is **Caller-Saved**. It must be cleared (`ACLR`) at the start of a function if used for fresh accumulation.
+## Stack Hints in Link Options
 
-> [!IMPORTANT]
-> **Stack Underflow**: The hardware does not automatically trap on stack underflow (crossing `SP` above the initial reset value). This must be managed by the OS or compiler-inserted checks.
+When linking TCL programs, `LinkOptions::stack_hint_words` specifies the initial stack allocation (default: 24 words). The kernel uses this from `APP_MANIFEST.json` (`stack_words` field per app) to allocate stack when spawning processes.
+
+---
+
+## Binary Object Format
+
+Compiled TCL programs produce an `ObjectModule` containing:
+
+| Field | Description |
+|-------|-------------|
+| `assembly` | Textual ternary assembly (`.tasm`) |
+| `ssa` | SSA IR `Module` |
+| `symbols` | Symbol name → instruction address map |
+| `function_order` | Ordered function list for linking |
+| `function_refs` | Cross-function reference graph (for dead-stripping) |
+
+The linker (`LinkResult`) assembles all modules into a single `ExecutableImageHeader` + `AssemblyResult` ready for the VM.
+
+---
+
+## Executable Image Header
+
+After linking, the final image contains:
+
+```
+ExecutableImageHeader:
+  boot_entry    — PC value at start (default: address of "main")
+  text_words    — instruction count
+  data_words    — static data word count
+```
+
+This maps to the `.tboot` payload's `boot_entry` + `program[]` + `data_words[]` fields.

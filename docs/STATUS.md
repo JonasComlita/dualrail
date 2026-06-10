@@ -1,61 +1,112 @@
-# Project Status Dashboard: The Trit-Stack
+# Project Status Dashboard
 
-This document provides a granular view of the implementation status across the vertical stack. It is updated as milestones are reached in the `implementationplan.md`.
-
----
-
-## 🟢 [Layer 01-03] Core Execution & Hardware
-| Component | Status | Technical Notes |
-| :--- | :--- | :--- |
-| **Ternary VM Core** | ✅ **100% Stable** | Supports full fetch/decode/execute with cycle-accurate timing stubs. |
-| **73-Opcode ISA** | ✅ **100% Verified** | All instructions in `ternary_isa.h` have associated unit tests. |
-| **T40/T50 Optimization** | ✅ **Stable** | 64-bit and 128-bit native emulation paths optimized for x86_64 intrinsics. |
-| **SIMD Vector Engine** | ✅ **Functional** | Parallel ternary logic gates (AND/OR/XOR) implemented via `ternary_simd.h`. |
-| **GPU Kernels** | ⚠️ **Experimental** | Basic ALU ops working in CUDA; memory coalescing for ternary-to-binary packing pending. |
-| **Hardware Trap Lines** | ⚠️ **Partial** | Hardware-level trap signals defined; interrupt priority logic in development. |
-
-## 🟡 [Layer 04-05] Toolchain & Binary Contract
-| Component | Status | Technical Notes |
-| :--- | :--- | :--- |
-| **Two-Pass Assembler** | ✅ **Functional** | Supports labels, `.word` directives, and dual-rail binary emission. |
-| **Ternary IR (SSA)** | ⚠️ **In Progress** | Basic IR builder functional; register allocation (Linear Scan) is being integrated. |
-| **ABI Specification** | ⚠️ **Active Draft** | `r13-r18` argument passing stable; variadic argument stack protocol pending. |
-| **Linker / ELF-T** | ⏳ **Planned** | Currently using single-file "flat" binaries. Dynamic linking spec is TBD. |
-| **Math Rounding (TZR)** | ✅ **Stable** | Trit-Zone Rounding implemented for division and normalization. |
-
-## 🔴 [Layer 06-08] OS3 & High-Level Runtime
-| Component | Status | Technical Notes |
-| :--- | :--- | :--- |
-| **Privilege Isolation** | ⚠️ **Partial** | Kernel (+1) and User (0) mode bit-checks implemented in VM dispatch. |
-| **Trap Vector Table** | ⏳ **Draft** | Vector layout defined in `os_substrate_implementationplan.md`; entry/exit code in C++. |
-| **Context Switching** | ⏳ **Draft** | State-save/restore logic for `r0-r27` drafted; scheduler not yet implemented. |
-| **BitNet b1.58 Runtime**| ✅ **Stable** | Native 1.58-bit transformer inference passing validation benchmarks. |
-| **Trit-Lang Compiler** | ⏳ **Planned** | Frontend parser (C-subset) waiting for IR stability. |
+> Last synced from: `ROADMAP_STATUS.json`. Run `tools/trit-test.ps1 production` to verify.
 
 ---
 
-## 🛠️ Infrastructure & Testing
-*   **Unit Tests**: 142 tests passing across `ternary_math` and `ternary_vm`.
-*   **Fuzzing**: Constant random-op fuzzing running against the ALU to ensure sign-bit symmetry.
-*   **Benchmarks**: Currently tracking vs. native binary operations; ternary emulation overhead is ~4x-10x depending on the op.
+## Phase Status
+
+| Phase | ID | Status | Evidence Suites |
+|-------|----|--------|----------------|
+| Core VM + ISA | `core-vm-isa` | ✅ **Verified** | test_multiwidth_vm, test_ternary_ir, test_ternary_lanes, test_native_ops, test_numeric_workloads |
+| Compiler + Runtime | `compiler-runtime` | ✅ **Verified** | test_phase7_compiler, test_tcl_asm, test_malloc_micro, test_layer1_hal |
+| Kernel + VFS + Process | `kernel-vfs-process` | ⚠️ **In Progress** | test_os_platform, test_phase_d_kernel, test_process_handoff, test_production_layers, test_production_hardening |
+| Desktop + Host Runtime | `desktop-host-runtime` | ⚠️ **In Progress** | test_host_runtime, stage_tos_release, smoke_tos_release |
+| Agent-Operable Surface | `agent-operable-surface` | 🌱 **Seeded** | AGENTS.md, TEST_MANIFEST.json, trit_tool.py, test_agent_tooling |
 
 ---
 
-The folders Tier 06 (The Language), Tier 07 (OS Substrate), and Tier 08 (Applications) are a mix of things that are partially implemented and things that are purely architectural at this stage.
+## Component-Level Status
 
-Here is the current state of the implementation vs. the documentation plan:
+### Layer 0–1: Logic & ISA
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| Trit encoding (2-bit-per-trit) | ✅ Stable | `ternary_backend.h`, `ternary_scalar.h` |
+| Instruction word (TritWord27) | ✅ Stable | `ternary_isa.h` |
+| 80 opcodes (NOP–TSTR) | ✅ Stable | `ternary_isa.h` `Opcode` enum |
+| CSR file (46 registers) | ✅ Stable | `ternary_isa.h` CSR_* constants |
+| Privilege modes (Kernel/Supervisor/User) | ✅ Stable | `ternary_isa.h` `PrivilegeMode` |
+| Trap codes + OS cause codes | ✅ Stable | `ternary_isa.h` |
 
-Tier 06: The Language (In Development):
-We have the Backend (ternary_backend.h) and the IR (ternary_ir.h), but we do not yet have a formal "Trit-Lang" parser or syntax guide. Documenting this tier now would be defining the specification for the future parser.
-Tier 07: OS Substrate (Partially Built):
-I see an OS3 folder in the repository. This suggests that the kernel and privilege mapping might already have a foundation. I need to check its contents to see how much of the "Substrate" is code vs. concept.
-Tier 08: Applications & UX (Prototypes):
-We have the BitNet Runtime and benchmarks, but the high-level "Shell" and "UI Framework" are likely just planned.
-I'll check the OS3 directory now to see if we have a concrete kernel to document.
+### Layer 2–4: Math & SIMD
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| T1, T5 (integer) | ✅ Stable | `ternary_scalar.h`, `ternary_math.h` |
+| T10, T20 (floating point) | ✅ Stable | `ternary_scalar.h` |
+| Triple/T40 (native word) | ✅ Stable | `ternary_scalar.h` |
+| LongTriple/T50 (wide) | ✅ Stable | `ternary_scalar.h` |
+| Native arithmetic (bridge-free) | ✅ Stable | `ternary_native_ops.h` |
+| Transcendental ops (exp, ln, sin, cos) | ✅ Stable | `ternary_native_ops.h` |
+| TritLane types (L1–L50) | ✅ Stable | `ternary_lanes.h` |
+| AVX2 batch ops (TritLane20) | ✅ Stable | `ternary_simd.h` |
 
-The OS3 folder confirms it: Tiers 07 and 08 are currently in the "Architecture & Specification" phase.
+### Layer 5–7: VM & Assembler
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| VMState (registers, memory, CSRs) | ✅ Stable | `ternary_vm_state.h` |
+| VM dispatcher (all 80 opcodes) | ✅ Stable | `ternary_vm.h` |
+| Vector register file (8 regs × N lanes) | ✅ Stable | `ternary_vm_state.h` |
+| AI accumulator | ✅ Stable | `ternary_vm_state.h` |
+| MMU / address translation | ✅ Stable | `ternary_vm_state.h` |
+| Two-pass assembler | ✅ Stable | `ternary_asm.h` |
+| GPU kernels (CUDA/SYCL) | ⚠️ Partial | `ternary_gpu_kernels.h` |
 
-Tier 07 (OS Substrate): You have a very detailed OS_SUBSTRATE_IMPLEMENTATION_GUIDE.md and an os_fundamentals.md. These define how the kernel should work (privilege modes, security, etc.), but the actual kernel.cpp isn't in the root yet.
-Tier 08 (Applications): You have design docs for curl.md, sqlite.md, and even an xv6.md (a ternary port of the classic educational OS). These are "Planned Programs" to prove the architecture.
+### Layer 8–9: Compiler & Language
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| SSA IR (BasicBlock, Function, Module) | ✅ Stable | `ternary_compiler_ir.h` |
+| Type system (primitives, structs, arrays) | ✅ Stable | `ternary_compiler_types.h` |
+| Lexer | ✅ Stable | `ternary_compiler_lexer.h` |
+| Parser | ✅ Stable | `ternary_compiler_parser.h` |
+| IR lowering / codegen | ✅ Stable | `ternary_compiler_codegen.h` |
+| Register allocator | ✅ Stable | `ternary_compiler_ir.h` `AllocationResult` |
+| Optimizer (mem2reg, CSE, const-fold) | ✅ Stable | `ternary_compiler_ir.h` `OptimizerStats` |
+| TCL self-hosted compiler (tcl_*.trit) | ✅ Stable | `tcl_asm.trit`, `tcl_parser.trit`, etc. |
+| TCL language spec | ✅ Documented | `TCL_Spec_1.0.md` |
 
-*Last Updated: 2026-05-15*
+### Layer 10: OS Kernel
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| Syscall dispatch (57 services) | ✅ Stable | `kernel.trit`, `SYSCALL_MANIFEST.json` |
+| Process lifecycle (fork/exec/exit/wait) | ✅ Stable | `kernel.trit`, `kernel/process.trit` |
+| VFS + persistent root image | ✅ Stable | `kernel.trit`, `kernel/vfs.trit` |
+| Window manager (create/move/event) | ✅ Stable | `kernel.trit` |
+| IPC (send/recv/blocking) | ✅ Stable | `kernel.trit` |
+| Framebuffer / GPU CSR protocol | ✅ Stable | `ternary_isa.h`, `ternary_os.h` |
+| Block I/O (WAL, crash recovery) | ⚠️ Partial | `kernel/bio.trit` |
+| Networking (socket/bind/connect) | ⚠️ Partial | `kernel/net.trit` |
+| Crash recovery scenarios | ❌ Gap | `KNOWN_GAPS.md` |
+
+### Layer 11: Apps
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| os_sdk.trit (app foundation) | ✅ Stable | `apps/os_sdk.trit` |
+| libwidget.trit (GUI toolkit) | ✅ Stable | `apps/libwidget.trit` |
+| desktop.trit (compositor + dock) | ✅ Stable | `apps/desktop.trit` |
+| shell.trit (command interpreter) | ✅ Stable | `apps/shell.trit` |
+| All 50+ bundled binaries | ✅ Stable | `APP_MANIFEST.json` |
+| App golden output tests | ❌ Gap | `KNOWN_GAPS.md` |
+
+### Layer 12: Host Runtime
+| Component | Status | Source of truth |
+|-----------|--------|----------------|
+| .tboot image builder | ✅ Stable | `build_tos_image.cpp` |
+| SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
+| Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
+| Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
+| Deterministic replay | ❌ Gap | `KNOWN_GAPS.md` |
+| Syscall trace capture | ❌ Gap | `KNOWN_GAPS.md` |
+
+---
+
+## Open Items (highest priority)
+
+See `KNOWN_GAPS.md` for the full list. Top items:
+
+1. Real syscall tracing → `syscall_trace.jsonl`
+2. Deterministic replay engine for `tools/trit-replay.ps1`
+3. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
+4. Fuzz harnesses for malformed images + bad syscall pointers
+5. Crash/power-loss VFS + WAL recovery scenarios
+6. Framebuffer PNG export
+7. App golden output/snapshot tests

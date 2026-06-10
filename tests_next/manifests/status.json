@@ -1,0 +1,50 @@
+{
+  "schema": "trit.tests_next.status.v1",
+  "suite_state": "scaffolded",
+  "authoritative_suite": "tests/",
+  "new_suite": "tests_next/",
+  "last_updated": "2026-06-10",
+  "current_focus": "Create focused clean-room coverage while preserving old regression memory.",
+  "completed_setup": [
+    "directory map",
+    "agent handoff guide",
+    "coverage matrix skeleton",
+    "acceptance gate skeleton",
+    "test case template",
+    "manifest validator"
+  ],
+  "next_tasks": [
+    {
+      "id": "bootstrap.port_isa_assembler_goldens",
+      "area": "01_isa,03_assembler",
+      "status": "ready",
+      "summary": "Port old ISA and assembler checks into small golden tests with one behavior per file or case."
+    },
+    {
+      "id": "bootstrap.port_vm_core",
+      "area": "02_vm",
+      "status": "ready",
+      "summary": "Split VM arithmetic, trap, CSR, MMU, and sparse memory coverage into focused tests."
+    },
+    {
+      "id": "bootstrap.define_harness",
+      "area": "00_harness",
+      "status": "ready",
+      "summary": "Create shared assertions, golden file loading, temp workspace helpers, and deterministic seed helpers."
+    },
+    {
+      "id": "bootstrap.port_phase_d_os",
+      "area": "07_kernel,08_filesystem_vfs,09_process_ipc_scheduler",
+      "status": "ready",
+      "summary": "Break current Phase D and OS platform tests into focused kernel, VFS, process, IPC, and recovery tests."
+    },
+    {
+      "id": "bootstrap.gui_golden_plan",
+      "area": "11_graphics_gui",
+      "status": "ready",
+      "summary": "Define framebuffer snapshot format and golden comparison tolerance for text, primitives, compositor, widgets, and desktop."
+    }
+  ],
+  "blocked": [],
+  "last_commands": []
+}

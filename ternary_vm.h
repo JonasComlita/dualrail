@@ -3020,6 +3020,416 @@ inline int executeCachedBlock(VMState& vm, int max_instructions) {
     return executed;
 }
 
+static constexpr int VM_TRACE_JIT_MAX_LENGTH = 64;
+
+inline void syncTraceJitGeneration(VMState& vm) {
+    const std::uint64_t generation = vm.imem.generation();
+    if (vm.trace_jit_observed_generation == generation) return;
+    const bool had_entries =
+        !vm.hot_pc_counts.empty() || !vm.trace_jit_cache.empty() ||
+        !vm.trace_jit_unsupported_pcs.empty();
+    vm.hot_pc_counts.clear();
+    vm.trace_jit_cache.clear();
+    vm.trace_jit_unsupported_pcs.clear();
+    vm.trace_jit_observed_generation = generation;
+    if (had_entries) ++vm.trace_jit_stats.invalidations;
+}
+
+[[nodiscard]] inline bool traceJitFastPathAvailable(const VMState& vm) {
+    return vm.traceJitEnabled() &&
+           vm.isRunning() &&
+           vm.privilege == PrivilegeMode::Kernel &&
+           !vm.mmu_enable;
+}
+
+[[nodiscard]] inline bool traceJitFlatMemoryAvailable(const VMState& vm) {
+    return vm.privilege == PrivilegeMode::Kernel && !vm.mmu_enable;
+}
+
+inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
+    InstructionWord& iw = emitted.word;
+    if (iw.malformed || iw.opcode == Opcode::RESERVED) return false;
+
+    switch (iw.opcode) {
+        case Opcode::NOP:
+            emitted.op = VMTraceJitOp::Nop;
+            return true;
+        case Opcode::MOV:
+            emitted.op = VMTraceJitOp::Mov;
+            return true;
+        case Opcode::MOVH:
+            emitted.op = VMTraceJitOp::MovH;
+            return true;
+        case Opcode::COPY:
+            emitted.op = VMTraceJitOp::Copy;
+            return true;
+        case Opcode::ADD:
+        case Opcode::SUB:
+        case Opcode::MUL:
+        case Opcode::NEG:
+        case Opcode::ABS:
+            if (!exec::numericModeFromFunc(iw.func, emitted.mode)) return false;
+            switch (iw.opcode) {
+                case Opcode::ADD: emitted.op = VMTraceJitOp::Add; return true;
+                case Opcode::SUB: emitted.op = VMTraceJitOp::Sub; return true;
+                case Opcode::MUL: emitted.op = VMTraceJitOp::Mul; return true;
+                case Opcode::NEG: emitted.op = VMTraceJitOp::Neg; return true;
+                case Opcode::ABS: emitted.op = VMTraceJitOp::Abs; return true;
+                default: return false;
+            }
+        case Opcode::LOAD:
+            emitted.op = VMTraceJitOp::Load;
+            return true;
+        case Opcode::STORE:
+            emitted.op = VMTraceJitOp::Store;
+            return true;
+        case Opcode::JMP:
+            emitted.op = VMTraceJitOp::Jmp;
+            emitted.branch_target = emitted.pc + iw.offset;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::BRN:
+            emitted.op = VMTraceJitOp::Brn;
+            emitted.branch_target = emitted.pc + iw.offset;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::BRZ:
+            emitted.op = VMTraceJitOp::Brz;
+            emitted.branch_target = emitted.pc + iw.offset;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::BRP:
+            emitted.op = VMTraceJitOp::Brp;
+            emitted.branch_target = emitted.pc + iw.offset;
+            emitted.ends_trace = true;
+            return true;
+        default:
+            return false;
+    }
+}
+
+[[nodiscard]] inline bool emitTraceJitInstruction(
+    VMState& vm, int pc, VMTraceJitInstruction& out) {
+
+    int physical_pc = pc;
+    int routed_cause = OS_CAUSE_FETCH_FAULT;
+    if (!vm.translateFetchAddress(pc, physical_pc, routed_cause)) return false;
+
+    auto [raw, fetch_fc] = vm.imem.fetch(physical_pc);
+    if (fetch_fc != MemFaultCode::OK) return false;
+
+    VMTraceJitInstruction emitted;
+    emitted.pc = pc;
+    emitted.raw = raw;
+    emitted.word = InstructionWord::decode(raw);
+    if (!classifyTraceJitInstruction(emitted)) return false;
+
+    out = emitted;
+    return true;
+}
+
+[[nodiscard]] inline VMTraceJitTrace* buildTraceJitTrace(VMState& vm, int start_pc) {
+    ++vm.trace_jit_stats.compilation_attempts;
+
+    VMTraceJitTrace trace;
+    trace.start_pc = start_pc;
+    trace.imem_generation = vm.imem.generation();
+
+    std::unordered_map<int, int> pc_to_index;
+    int pc = start_pc;
+    for (int i = 0; i < VM_TRACE_JIT_MAX_LENGTH; ++i) {
+        if (pc_to_index.find(pc) != pc_to_index.end()) break;
+
+        VMTraceJitInstruction emitted;
+        if (!emitTraceJitInstruction(vm, pc, emitted)) break;
+
+        const int index = static_cast<int>(trace.instructions.size());
+        pc_to_index[pc] = index;
+        trace.instructions.push_back(emitted);
+
+        if (emitted.ends_trace) {
+            auto target = pc_to_index.find(emitted.branch_target);
+            if (target != pc_to_index.end()) {
+                trace.instructions.back().branch_target_index = target->second;
+            }
+            break;
+        }
+
+        pc = pc + 1;
+    }
+
+    if (trace.instructions.empty()) {
+        vm.trace_jit_unsupported_pcs.insert(start_pc);
+        ++vm.trace_jit_stats.unsupported_fallbacks;
+        return nullptr;
+    }
+
+    ++vm.trace_jit_stats.traces_built;
+    auto inserted = vm.trace_jit_cache.emplace(start_pc, std::move(trace));
+    return &inserted.first->second;
+}
+
+[[nodiscard]] inline bool traceJitWriteChecked(
+    VMState& vm,
+    const VMTraceJitInstruction& emitted,
+    uint8_t rd,
+    TernaryValue value) {
+
+    if (value.isInvalid()) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
+    vm.regfile.write(rd, value);
+    return true;
+}
+
+[[nodiscard]] inline bool traceJitBaseAddress(
+    VMState& vm,
+    const VMTraceJitInstruction& emitted,
+    int& out_addr) {
+
+    if (!traceJitFlatMemoryAvailable(vm)) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
+
+    const InstructionWord& iw = emitted.word;
+    const TernaryValue base_value = vm.regfile.read(iw.rs1);
+    if (!isNumericMode(base_value.mode) || base_value.isInvalid()) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
+
+    const long long addr_long = ops::toLong(base_value) + iw.imm;
+    if (addr_long < std::numeric_limits<int>::min() ||
+        addr_long > std::numeric_limits<int>::max()) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
+
+    out_addr = static_cast<int>(addr_long);
+    if (!vm.dmem.inRange(out_addr)) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
+
+    return true;
+}
+
+[[nodiscard]] inline bool executeTraceJitInstruction(
+    VMState& vm,
+    const VMTraceJitTrace& trace,
+    const VMTraceJitInstruction& emitted,
+    int current_index,
+    int& next_index,
+    bool& exit_trace) {
+
+    const InstructionWord& iw = emitted.word;
+    int pc_next = emitted.pc + 1;
+    next_index = current_index + 1;
+    exit_trace = false;
+    vm.pc = emitted.pc;
+
+    switch (emitted.op) {
+        case VMTraceJitOp::Nop:
+            break;
+
+        case VMTraceJitOp::Mov:
+            vm.regfile.write(iw.rd, ops::fromLong(iw.imm));
+            break;
+
+        case VMTraceJitOp::MovH: {
+            TernaryValue current = vm.regfile.read(iw.rd);
+            LongTriple currentLT = current.toLongTriple();
+            auto trits = currentLT.unpack();
+            int immVal = iw.imm;
+            for (int i = 16; i < 32; ++i) {
+                int r = (immVal + 1) % 3;
+                if (r < 0) r += 3;
+                int8_t trit = static_cast<int8_t>(r - 1);
+                trits[i] = trit;
+                immVal = (immVal - trit) / 3;
+            }
+            for (int i = 32; i < 50; ++i) trits[i] = 0;
+            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
+            break;
+        }
+
+        case VMTraceJitOp::Copy:
+            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            break;
+
+        case VMTraceJitOp::Add:
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::addValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+            break;
+
+        case VMTraceJitOp::Sub:
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::subtractValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+            break;
+
+        case VMTraceJitOp::Mul:
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::multiplyValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+            break;
+
+        case VMTraceJitOp::Neg:
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::negateValue(
+                    vm.regfile.read(iw.rs1), emitted.mode))) return false;
+            break;
+
+        case VMTraceJitOp::Abs:
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::absValue(
+                    vm.regfile.read(iw.rs1), emitted.mode))) return false;
+            break;
+
+        case VMTraceJitOp::Load: {
+            int addr = 0;
+            if (!traceJitBaseAddress(vm, emitted, addr)) return false;
+            auto [value, fault] = vm.dmem.load(addr);
+            if (fault != MemFaultCode::OK) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            vm.regfile.write(iw.rd, value);
+            break;
+        }
+
+        case VMTraceJitOp::Store: {
+            int addr = 0;
+            if (!traceJitBaseAddress(vm, emitted, addr)) return false;
+            if (vm.dmem.store(addr, vm.regfile.read(iw.rs_store)) != MemFaultCode::OK) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            vm.noteStoreForReservation(addr);
+            break;
+        }
+
+        case VMTraceJitOp::Jmp:
+            pc_next = emitted.branch_target;
+            next_index = emitted.branch_target_index;
+            exit_trace = next_index < 0;
+            break;
+
+        case VMTraceJitOp::Brn:
+        case VMTraceJitOp::Brz:
+        case VMTraceJitOp::Brp: {
+            ++vm.branch_instructions_count;
+            const int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            const bool taken =
+                (emitted.op == VMTraceJitOp::Brn && trit0 == T_NEG) ||
+                (emitted.op == VMTraceJitOp::Brz && trit0 == T_ZER) ||
+                (emitted.op == VMTraceJitOp::Brp && trit0 == T_POS);
+            if (taken) {
+                pc_next = emitted.branch_target;
+                next_index = emitted.branch_target_index;
+                exit_trace = next_index < 0;
+            } else {
+                pc_next = emitted.pc + 1;
+                next_index = current_index + 1;
+                exit_trace =
+                    next_index >= static_cast<int>(trace.instructions.size()) ||
+                    trace.instructions[static_cast<std::size_t>(next_index)].pc != pc_next;
+            }
+            break;
+        }
+
+        case VMTraceJitOp::Unsupported:
+        default:
+            vm.pc = emitted.pc;
+            ++vm.trace_jit_stats.interpreter_bailouts;
+            return false;
+    }
+
+    vm.completeInstruction(pc_next);
+    return true;
+}
+
+inline int executeTraceJitTrace(
+    VMState& vm,
+    const VMTraceJitTrace& trace,
+    int max_instructions) {
+
+    if (!traceJitFastPathAvailable(vm) || max_instructions == 0 ||
+        trace.instructions.empty() || vm.pc != trace.start_pc ||
+        trace.imem_generation != vm.imem.generation()) {
+        return 0;
+    }
+
+    int executed = 0;
+    int index = 0;
+    ++vm.trace_jit_stats.traces_executed;
+
+    while (vm.isRunning() &&
+           (max_instructions < 0 || executed < max_instructions) &&
+           index >= 0 &&
+           index < static_cast<int>(trace.instructions.size())) {
+
+        if (!traceJitFastPathAvailable(vm) ||
+            trace.imem_generation != vm.imem.generation()) {
+            syncTraceJitGeneration(vm);
+            break;
+        }
+
+        const VMTraceJitInstruction& emitted =
+            trace.instructions[static_cast<std::size_t>(index)];
+        if (vm.pc != emitted.pc) break;
+
+        int next_index = index + 1;
+        bool exit_trace = false;
+        if (!executeTraceJitInstruction(
+                vm, trace, emitted, index, next_index, exit_trace)) {
+            break;
+        }
+
+        ++executed;
+        ++vm.trace_jit_stats.instructions_executed;
+
+        if (!vm.isRunning() || exit_trace) break;
+        if (next_index < 0 ||
+            next_index >= static_cast<int>(trace.instructions.size())) {
+            break;
+        }
+        index = next_index;
+    }
+
+    return executed;
+}
+
+inline int executeTraceJit(VMState& vm, int max_instructions) {
+    if (!traceJitFastPathAvailable(vm) || max_instructions == 0) return 0;
+
+    syncTraceJitGeneration(vm);
+    ++vm.trace_jit_stats.hot_pc_samples;
+    const int start_pc = vm.pc;
+
+    auto cached = vm.trace_jit_cache.find(start_pc);
+    if (cached != vm.trace_jit_cache.end() &&
+        cached->second.imem_generation == vm.imem.generation()) {
+        return executeTraceJitTrace(vm, cached->second, max_instructions);
+    }
+
+    if (vm.trace_jit_unsupported_pcs.find(start_pc) != vm.trace_jit_unsupported_pcs.end()) {
+        return 0;
+    }
+
+    const long long samples = ++vm.hot_pc_counts[start_pc];
+    if (samples < vm.trace_jit_hot_threshold) return 0;
+
+    VMTraceJitTrace* trace = buildTraceJitTrace(vm, start_pc);
+    if (trace == nullptr) return 0;
+    return executeTraceJitTrace(vm, *trace, max_instructions);
+}
+
 inline VMStatus stepCore(VMState& vm, int core_id) {
     if (core_id < 0 || core_id >= vm.coreCount()) return vm.status;
     if (vm.active_core >= 0 && vm.active_core < vm.coreCount() && vm.active_core != core_id) {
@@ -3094,7 +3504,19 @@ inline RunResult run(VMState& vm, int max_steps = 1000000,
     int steps = 0;
     while (vm.isRunning()) {
         if (max_steps >= 0 && steps >= max_steps) break;
-        if (!hooks && blockCacheFastPathAvailable(vm)) {
+        if (!hooks && vm.execution_backend == VMExecutionBackend::TraceJit) {
+            const int remaining = max_steps < 0
+                ? std::numeric_limits<int>::max()
+                : max_steps - steps;
+            const int trace_steps = executeTraceJit(vm, remaining);
+            if (trace_steps > 0) {
+                steps += trace_steps;
+                continue;
+            }
+        }
+        if (!hooks &&
+            vm.execution_backend == VMExecutionBackend::CachedBlockInterpreter &&
+            blockCacheFastPathAvailable(vm)) {
             const int remaining = max_steps < 0
                 ? std::numeric_limits<int>::max()
                 : max_steps - steps;

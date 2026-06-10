@@ -125,6 +125,18 @@ void testRuntimeTextFramebufferAndInput() {
                framebuffer.glyphs[2] == 'C' &&
                framebuffer.glyphs[3] == 'D',
            "runtime routes keyboard and mouse CSR values into guest-visible state");
+
+    const sandbox::host::TosFramebufferMemorySnapshot raw = runtime.readFramebufferMemory();
+    expect(raw.changed && raw.mode == sandbox::host::TosFramebufferMode::Text80x25,
+           "runtime raw framebuffer read reports initial text contents");
+    expect(raw.words.size() >= 4 &&
+               (raw.words[0] & 0xff) == 'A' &&
+               (raw.words[1] & 0xff) == 'B',
+           "runtime raw framebuffer read preserves text cell words");
+    const sandbox::host::TosFramebufferMemorySnapshot unchanged =
+        runtime.readFramebufferMemory(raw.revision);
+    expect(!unchanged.changed && unchanged.words.empty(),
+           "runtime raw framebuffer read skips unchanged revisions");
 }
 
 void testRuntimeGraphicsResetAndDiagnostics() {
@@ -172,6 +184,16 @@ void testRuntimeGraphicsResetAndDiagnostics() {
     expect(!framebuffer.rgba.empty() && framebuffer.rgba[0] == 0xffff00ff,
            "runtime maps graphics color index through host palette");
 
+    sandbox::host::TosFramebufferMemorySnapshot raw = runtime.readFramebufferMemory();
+    expect(raw.changed && raw.mode == sandbox::host::TosFramebufferMode::Graphics80x60,
+           "runtime raw framebuffer read reports graphics mode");
+    expect(!raw.words.empty() && raw.words[0] == 14,
+           "runtime raw framebuffer read preserves graphics color indices");
+    const std::uint64_t graphics_revision = raw.revision;
+    raw = runtime.readFramebufferMemory(graphics_revision);
+    expect(!raw.changed && raw.words.empty(),
+           "runtime raw framebuffer read skips unchanged graphics revisions");
+
     expect(runtime.exportDiagnostics(diag_path, &error), "runtime exports diagnostics bundle");
     expect(fileExists(diag_path + "/vm_state.txt"), "diagnostics include VM state");
     expect(fileExists(diag_path + "/guest.log"), "diagnostics include guest log");
@@ -185,6 +207,9 @@ void testRuntimeGraphicsResetAndDiagnostics() {
            "diagnostics include framebuffer snapshot");
 
     expect(runtime.reset(&error), "runtime resets from loaded boot image");
+    raw = runtime.readFramebufferMemory(graphics_revision);
+    expect(raw.changed && raw.mode == sandbox::host::TosFramebufferMode::Text80x25,
+           "runtime raw framebuffer revision changes after reset");
     framebuffer = runtime.readFramebuffer();
     expect(framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25,
            "reset returns VM to cold text mode before guest runs");

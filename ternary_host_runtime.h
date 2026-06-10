@@ -95,6 +95,18 @@ struct TosFramebufferSnapshot {
     long long sprite_attr = 0;
 };
 
+struct TosFramebufferMemorySnapshot {
+    TosFramebufferMode mode = TosFramebufferMode::Text80x25;
+    int width = 80;
+    int height = 25;
+    std::vector<long long> words;
+    long long sprite_x = 0;
+    long long sprite_y = 0;
+    long long sprite_attr = 0;
+    std::uint64_t revision = 0;
+    bool changed = true;
+};
+
 struct TosRuntimeSnapshot {
     int pc = 0;
     vm::VMStatus status = vm::VMStatus::HALTED;
@@ -104,6 +116,9 @@ struct TosRuntimeSnapshot {
     std::string disk_path;
     std::string image_version;
     std::size_t allocated_disk_blocks = 0;
+    std::size_t pending_disk_writes = 0;
+    int sparse_disk_records = 0;
+    vm::VMBlockDeviceStats block_device_stats;
 };
 
 namespace detail {
@@ -844,6 +859,46 @@ inline TosFramebufferSnapshot decodeFramebuffer(const vm::VMState& machine) {
     return snapshot;
 }
 
+struct TosFramebufferReadPlan {
+    TosFramebufferMode mode = TosFramebufferMode::Text80x25;
+    int width = 80;
+    int height = 25;
+    int base = 60000;
+    int word_count = 80 * 25;
+};
+
+inline void mixFramebufferRevision(std::uint64_t& revision, std::uint64_t value) {
+    revision ^= value + 0x9e3779b97f4a7c15ULL + (revision << 6) + (revision >> 2);
+}
+
+inline TosFramebufferReadPlan framebufferReadPlan(const vm::VMState& machine) {
+    TosFramebufferReadPlan plan;
+    if (machine.gpu_mode == 0) {
+        return plan;
+    }
+    plan.mode = TosFramebufferMode::Graphics80x60;
+    plan.width = 80;
+    plan.height = 60;
+    plan.base = (machine.gpu_page == 0) ? 50000 : 55000;
+    plan.word_count = 80 * 60;
+    return plan;
+}
+
+inline std::uint64_t framebufferRevision(const vm::VMState& machine,
+                                         const TosFramebufferReadPlan& plan) {
+    std::uint64_t revision = 0xcbf29ce484222325ULL;
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.mode));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.width));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.height));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.base));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.word_count));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_x));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_y));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_attr));
+    mixFramebufferRevision(revision, machine.dmem.rangeGeneration(plan.base, plan.word_count));
+    return revision == 0 ? 1 : revision;
+}
+
 class TosRuntime {
 public:
     TosRuntime() = default;
@@ -976,6 +1031,32 @@ public:
         return decodeFramebuffer(*machine_);
     }
 
+    [[nodiscard]] TosFramebufferMemorySnapshot readFramebufferMemory(
+        std::uint64_t previous_revision = 0) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        TosFramebufferMemorySnapshot snapshot;
+        if (!machine_) return snapshot;
+
+        const TosFramebufferReadPlan plan = framebufferReadPlan(*machine_);
+        snapshot.mode = plan.mode;
+        snapshot.width = plan.width;
+        snapshot.height = plan.height;
+        snapshot.sprite_x = machine_->sprite_x;
+        snapshot.sprite_y = machine_->sprite_y;
+        snapshot.sprite_attr = machine_->sprite_attr;
+        snapshot.revision = framebufferRevision(*machine_, plan);
+        snapshot.changed =
+            previous_revision == 0 || snapshot.revision != previous_revision;
+        if (!snapshot.changed) return snapshot;
+
+        snapshot.words.assign(static_cast<std::size_t>(plan.word_count), 0);
+        for (int i = 0; i < plan.word_count; ++i) {
+            snapshot.words[static_cast<std::size_t>(i)] =
+                detail::dmemWord(*machine_, plan.base + i);
+        }
+        return snapshot;
+    }
+
     [[nodiscard]] TosRuntimeSnapshot snapshot() const {
         std::lock_guard<std::mutex> lock(mutex_);
         TosRuntimeSnapshot out;
@@ -988,6 +1069,9 @@ public:
         out.disk_path = config_.disk_path;
         out.image_version = image_.manifest.image_version;
         out.allocated_disk_blocks = machine_->allocatedDiskBlocks();
+        out.pending_disk_writes = machine_->pendingDiskWrites();
+        out.sparse_disk_records = machine_->sparseDiskRecordCount();
+        out.block_device_stats = machine_->blockDeviceStats();
         return out;
     }
 
@@ -1020,6 +1104,15 @@ public:
             out << "trap=" << vm::ops::toLong(machine_->trap_reg) << "\n";
             out << "cause=" << machine_->cause << "\n";
             out << "disk_path=" << config_.disk_path << "\n";
+            const vm::VMBlockDeviceStats block_stats = machine_->blockDeviceStats();
+            out << "disk_allocated_blocks=" << machine_->allocatedDiskBlocks() << "\n";
+            out << "disk_pending_writes=" << machine_->pendingDiskWrites() << "\n";
+            out << "disk_sparse_records=" << machine_->sparseDiskRecordCount() << "\n";
+            out << "disk_cache_reads=" << block_stats.reads << "\n";
+            out << "disk_cache_writes=" << block_stats.writes << "\n";
+            out << "disk_cache_hits=" << block_stats.hits << "\n";
+            out << "disk_cache_misses=" << block_stats.misses << "\n";
+            out << "disk_dirty_flushes=" << block_stats.dirty_flushes << "\n";
         }
         {
             std::ofstream out(base / "manifest.json", std::ios::trunc);
@@ -1083,7 +1176,20 @@ public:
             out << "    \"path\": ";
             detail::writeJsonString(out, config_.disk_path);
             out << ",\n";
-            out << "    \"allocated_blocks\": " << machine_->allocatedDiskBlocks() << "\n";
+            const vm::VMBlockDeviceStats block_stats = machine_->blockDeviceStats();
+            out << "    \"allocated_blocks\": " << machine_->allocatedDiskBlocks() << ",\n";
+            out << "    \"pending_writes\": " << machine_->pendingDiskWrites() << ",\n";
+            out << "    \"sparse_records\": " << machine_->sparseDiskRecordCount() << ",\n";
+            out << "    \"block_cache\": {\n";
+            out << "      \"reads\": " << block_stats.reads << ",\n";
+            out << "      \"writes\": " << block_stats.writes << ",\n";
+            out << "      \"hits\": " << block_stats.hits << ",\n";
+            out << "      \"misses\": " << block_stats.misses << ",\n";
+            out << "      \"dirty_flushes\": " << block_stats.dirty_flushes << ",\n";
+            out << "      \"flushes\": " << block_stats.flushes << ",\n";
+            out << "      \"compactions\": " << block_stats.compactions << ",\n";
+            out << "      \"read_ahead\": " << block_stats.read_ahead << "\n";
+            out << "    }\n";
             out << "  },\n";
             out << "  \"apps\": [\n";
             for (std::size_t i = 0; i < image_.manifest.apps.size(); ++i) {

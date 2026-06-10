@@ -35,6 +35,7 @@ enum class InstrOpcode : uint8_t {
     Div,
     Cvt,
     Cmp,
+    Tsel,
     Phi,
     FieldAddr,
     IndexAddr,

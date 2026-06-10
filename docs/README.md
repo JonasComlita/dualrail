@@ -1,74 +1,125 @@
-# Trit-Stack: Full-Spectrum Balanced Ternary Computing
+# Trit-Stack Documentation Hub
 
-The Trit-Stack is a vertically integrated computing environment built from the ground up on **Balanced Ternary (-1, 0, +1)** logic. This project spans from the hardware logic gates to a high-level operating system (OS3) and specialized AI runtimes.
-
----
-
-## 🏗️ The Vertical Architecture
-This system is organized as a dependency stack. Each layer is independent but follows a strict "Architecture Contract" with the layers above and below.
-
-### [Layer 0-1] The Physical & ISA Foundation
-*   **Ternary Logic Gates**: Implementation of primitive balanced gates (TSEL, XSUM, CMP) using dual-rail binary encoding.
-*   **Instruction Set (ISA)**: A fixed-width, 27-trit instruction word architecture.
-    *   **Register File**: 27 general-purpose registers (`r0`–`r26`) plus a status/trap register (`r27`).
-    *   **The 73 Opcodes**: Optimized for ternary-native operations like Trit-Zone Rounding (TZR) and symmetric comparisons.
-
-### [Layer 2-3] The Virtual Execution Engine
-*   **The VM Substrate**: A high-performance execution engine that emulates ternary hardware on binary systems. It uses a custom "T40/T50" representation to pack ternary data into 64/128-bit binary registers.
-*   **Memory Model**: A sequentially consistent, trit-addressable memory space with architectural `FENCE` support.
-
-### [Layer 4-5] Toolchain & ABI
-*   **ABI (Application Binary Interface)**: Defines the "Contract" for software.
-    *   **Calling Convention**: `r13-r18` for arguments, `r13` for return values, and `r25` as the Link Register.
-    *   **Stack Model**: Downward-growing stack with 27-trit word alignment.
-*   **Ternary IR & Assembler**: A two-pass assembler and a backend-agnostic Intermediate Representation used to bridge high-level code to ternary machine code.
-
-### [Layer 6-7] Operating System (OS3) & Applications
-*   **Kernel Substrate**: A privilege-aware kernel supporting **Kernel Mode** (+1) and **User Mode** (0).
-*   **Trap Architecture**: Synchronous traps (syscalls, math errors) and asynchronous interrupts (timer, I/O) are handled via a unified vector table.
-*   **BitNet Runtime**: A specialized inference engine for 1.58-bit Quantized Transformers, proving the efficiency of ternary for modern AI.
+> **For agents:** Start here. Read this file, then read the section that matches your task.
+> The source-of-truth JSON manifests (`TEST_MANIFEST.json`, `SYSCALL_MANIFEST.json`, etc.) always override docs when there is a conflict.
 
 ---
 
-## 🚦 Current Project Status
-| Layer | Component | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **Hardware** | Logic & ISA | ✅ Stable | ISA finalized in `ternary_isa.h` |
-| **Engine** | Ternary VM | ✅ Stable | High-speed T40/T50 execution |
-| **Toolchain** | Assembler / IR | ⚠️ Partial | Assembler functional; IR in refinement |
-| **OS** | OS3 Kernel | ⏳ Draft | Privilege & Trap model defined |
-| **Apps** | BitNet AI | ✅ Stable | Proof-of-concept inference passing |
+## What This Is
+
+A **vertically integrated, balanced-ternary computing stack** built entirely from scratch — from logic gates through virtual machine, compiler, operating system, and GUI desktop. All arithmetic is in base-3 ({-1, 0, +1}); every layer reflects this.
+
+The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.trit` source files, `.tboot` images, `.tdisk` disks).
 
 ---
 
-## 🔍 Quick-Lookup References
-*   **[Register Roles]**: `r13` (Return), `r25` (Link), `r26` (Stack).
-*   **[Privilege]**: Mode +1 = Kernel, Mode 0 = User.
-*   **[Word Size]**: 1 Word = 27 Trits.
+## Layer Map (Bottom to Top)
+
+| Layer | What | Files |
+|-------|------|-------|
+| **0 — Logic** | Trit encoding, gate primitives, backend helpers | `ternary_backend.h` |
+| **1 — ISA** | 80 opcodes, 3 instruction formats, 27 GPRs, CSRs | `ternary_isa.h` |
+| **2 — Math types** | T1/T5 integers, T10/T20/T40/T50 floats, UInt128 | `ternary_scalar.h`, `ternary_math.h`, `ternary_uint128.h` |
+| **3 — Native ops** | Bridge-free ternary arithmetic (add/mul/div/sqrt/exp/ln) | `ternary_native_ops.h` |
+| **4 — Lane/SIMD** | 2-bit-per-trit packed lane types + AVX2 batch ops | `ternary_lanes.h`, `ternary_simd.h` |
+| **5 — VM State** | Register file, memory, CSR state, vector registers | `ternary_vm_state.h` |
+| **6 — VM Dispatcher** | Fetch-decode-execute loop, all 80 opcodes | `ternary_vm.h` |
+| **7 — Assembler** | Two-pass assembler, symbol table, instruction encoding | `ternary_asm.h` |
+| **8 — Compiler IR** | SSA IR, type system, optimizer, register allocator | `ternary_compiler_*.h`, `ternary_ir.h` |
+| **9 — TCL language** | Ternary C-Like language (source files: `.trit`) | `TCL_Spec_1.0.md`, `tritc.cpp`, `tcl_*.trit` |
+| **10 — OS kernel** | Process, VFS, IPC, window manager, 57 syscalls | `kernel.trit`, `kernel/`, `ternary_os.h` |
+| **11 — Apps/SDK** | GUI apps, shell, SDK library, widget toolkit | `apps/`, `apps/os_sdk.trit`, `apps/libwidget.trit` |
+| **12 — Host runtime** | Image loader, SDL runner, boot image builder | `ternary_host_runtime.h`, `build_tos_image.cpp`, `run_tos_sdl.cpp` |
+| **AI** | BitNet 1.58-bit transformer inference engine | `ternary_transformer_runtime.h` |
 
 ---
 
-## 🚀 The Vision
-To demonstrate that **Balanced Ternary** is not a historical curiosity, but a modern architectural powerhouse for:
-1.  **AI Efficiency**: Native 1.58-bit logic for transformer inference.
-2.  **Arithmetic Symmetry**: Faster, cleaner math without "Sign Bits."
-3.  **Secure Isolation**: Using ternary state bits for intrinsic memory protection.
+## Section Index
+
+### Quick Reference (for agent loops)
+- **[00_Quick_Ref/opcode_table.md](00_Quick_Ref/opcode_table.md)** — All 80 opcodes
+- **[00_Quick_Ref/register_map.md](00_Quick_Ref/register_map.md)** — r0–r27, ABI roles
+- **[00_Quick_Ref/trit_encoding.md](00_Quick_Ref/trit_encoding.md)** — Encoding schemas
+- **[00_Quick_Ref/glossary.md](00_Quick_Ref/glossary.md)** — Terminology
+- **[00_Quick_Ref/common_patterns.md](00_Quick_Ref/common_patterns.md)** — Assembly cookbook
+- **[00_Quick_Ref/conversion_table.md](00_Quick_Ref/conversion_table.md)** — Decimal ↔ stored hex
+
+### Logic & Gates
+- **[01_Logic_Level/gates.md](01_Logic_Level/gates.md)** — Ternary gate primitives
+- **[01_Logic_Level/arithmetic.md](01_Logic_Level/arithmetic.md)** — Math primitives
+
+### ISA & Hardware
+- **[02_Hardware_ISA/encoding.md](02_Hardware_ISA/encoding.md)** — Instruction word format
+- **[02_Hardware_ISA/interrupts.md](02_Hardware_ISA/interrupts.md)** — Traps, CSRs, privilege
+
+### Execution Engine
+- **[03_Execution_Engine/vm_state.md](03_Execution_Engine/vm_state.md)** — VMState structure
+- **[03_Execution_Engine/memory_model.md](03_Execution_Engine/memory_model.md)** — DMEM, FENCE, addressing
+- **[03_Execution_Engine/vector_engine.md](03_Execution_Engine/vector_engine.md)** — Vector registers, VDOT
+
+### Binary / ABI Contract
+- **[04_Binary_Contract/abi_spec.md](04_Binary_Contract/abi_spec.md)** — Calling convention
+- **[04_Binary_Contract/asm_syntax.md](04_Binary_Contract/asm_syntax.md)** — Assembler syntax
+
+### Compiler Infrastructure
+- **[05_Compiler_Infra/ternary_ir.md](05_Compiler_Infra/ternary_ir.md)** — SSA IR nodes
+- **[05_Compiler_Infra/codegen.md](05_Compiler_Infra/codegen.md)** — IR → assembly pipeline
+
+### Language, OS, Apps
+- **[06_Language/tcl_language.md](06_Language/tcl_language.md)** — TCL syntax and features
+- **[07_OS_Substrate/kernel_overview.md](07_OS_Substrate/kernel_overview.md)** — Kernel architecture
+- **[07_OS_Substrate/syscall_table.md](07_OS_Substrate/syscall_table.md)** — All 57 syscalls
+- **[08_Applications/app_sdk.md](08_Applications/app_sdk.md)** — App SDK and widget toolkit
+- **[08_Applications/bundled_apps.md](08_Applications/bundled_apps.md)** — App inventory
+
+### Host & Build
+- **[09_Host_Runtime/image_format.md](09_Host_Runtime/image_format.md)** — .tboot/.tdisk formats
+- **[09_Host_Runtime/build_and_test.md](09_Host_Runtime/build_and_test.md)** — Build system and test runner
 
 ---
 
-The folders Tier 06 (The Language), Tier 07 (OS Substrate), and Tier 08 (Applications) are a mix of things that are partially implemented and things that are purely architectural at this stage.
+## Critical Conventions
 
-Here is the current state of the implementation vs. the documentation plan:
+| Thing | Value |
+|-------|-------|
+| Trit values | -1 (T_NEG), 0 (T_ZER), +1 (T_POS) |
+| Trit encoding in wire format | `0b00`=−1, `0b01`=0, `0b10`=+1, `0b11`=INVALID |
+| Instruction word | 27 trits packed as 54 bits in `uint64_t` |
+| Native word size | **T40** = 40-trit float in `uint64_t` |
+| General registers | r0 (zero) … r26, r27 (trap, read-only) |
+| Link register | **r25** |
+| Stack pointer | **r26** (grows downward) |
+| Return value | **r13** |
+| Args | r13–r16 |
+| Privilege modes | Kernel=T_NEG, Supervisor=T_ZER, User=T_POS |
+| Source extension | `.trit` |
+| Boot image | `.tboot` (magic `0x31544f4f424f5354`) |
+| Disk image | `.tdisk` (magic `0x54524954535031`) |
 
-Tier 06: The Language (In Development):
-We have the Backend (ternary_backend.h) and the IR (ternary_ir.h), but we do not yet have a formal "Trit-Lang" parser or syntax guide. Documenting this tier now would be defining the specification for the future parser.
-Tier 07: OS Substrate (Partially Built):
-I see an OS3 folder in the repository. This suggests that the kernel and privilege mapping might already have a foundation. I need to check its contents to see how much of the "Substrate" is code vs. concept.
-Tier 08: Applications & UX (Prototypes):
-We have the BitNet Runtime and benchmarks, but the high-level "Shell" and "UI Framework" are likely just planned.
-I'll check the OS3 directory now to see if we have a concrete kernel to document.
+---
 
-The OS3 folder confirms it: Tiers 07 and 08 are currently in the "Architecture & Specification" phase.
+## Source-of-Truth Files (agent must check before editing)
 
-Tier 07 (OS Substrate): You have a very detailed OS_SUBSTRATE_IMPLEMENTATION_GUIDE.md and an os_fundamentals.md. These define how the kernel should work (privilege modes, security, etc.), but the actual kernel.cpp isn't in the root yet.
-Tier 08 (Applications): You have design docs for curl.md, sqlite.md, and even an xv6.md (a ternary port of the classic educational OS). These are "Planned Programs" to prove the architecture.
+| File | Authority over |
+|------|---------------|
+| `ternary_isa.h` | Opcode values, field positions, trap codes, CSR IDs |
+| `SYSCALL_MANIFEST.json` | Syscall IDs and calling convention |
+| `APP_MANIFEST.json` | Guest binary paths and stack sizes |
+| `IMAGE_FORMAT_MANIFEST.json` | .tboot/.tdisk wire format |
+| `TEST_MANIFEST.json` | Test suites and commands |
+| `ROADMAP_STATUS.json` | Phase completion status |
+| `KNOWN_GAPS.md` | Missing/partial work |
+
+---
+
+## Project Status Summary
+
+| Phase | Status |
+|-------|--------|
+| Core VM + ISA | ✅ Verified |
+| Compiler + runtime | ✅ Verified |
+| Kernel + VFS + process | ⚠️ In progress |
+| Desktop + host runtime | ⚠️ In progress |
+| Agent-operable surface | 🌱 Seeded |
+
+See `ROADMAP_STATUS.json` for evidence and open items. See `KNOWN_GAPS.md` for actionable work.

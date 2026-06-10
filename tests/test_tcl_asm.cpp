@@ -127,6 +127,7 @@ std::vector<long long> assembleWithNativeTcl(const std::string& tasm) {
     }
 
     sandbox::vm::VMState vm(262144, 2097152);
+    vm.block_cache_enabled = false;
     if (!sandbox::vm::loadAndReset(vm, linked.assembled.program)) {
         expect(false, "native TCL assembler image loads");
         return {};

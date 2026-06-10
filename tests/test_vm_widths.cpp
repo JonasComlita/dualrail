@@ -180,6 +180,118 @@ void testVmWidths() {
     }
 
     {
+        VMState vm(16, 64);
+        expect(vm.execution_backend == VMExecutionBackend::CachedBlockInterpreter,
+               "trace JIT is disabled by default");
+        expect(!vm.traceJitEnabled(), "trace JIT opt-in flag is false by default");
+    }
+
+    {
+        auto compareExecution = [&](const std::string& label,
+                                    const std::vector<TritWord27>& program,
+                                    const std::vector<int>& memory_addrs,
+                                    int max_steps) {
+            VMState interpreter(128, 256);
+            VMState jit(128, 256);
+            expect(loadAndReset(interpreter, program), label + " interpreter program loads");
+            expect(loadAndReset(jit, program), label + " JIT program loads");
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            jit.setExecutionBackend(VMExecutionBackend::TraceJit);
+            jit.setTraceJitHotThreshold(1);
+
+            auto interpreterResult = sandbox::vm::run(interpreter, max_steps);
+            auto jitResult = sandbox::vm::run(jit, max_steps);
+            expect(interpreterResult.status == jitResult.status, label + " status matches");
+            expect(interpreterResult.steps == jitResult.steps, label + " steps match");
+            expect(interpreter.pc == jit.pc, label + " final PC matches");
+            expect(interpreter.cycle_count == jit.cycle_count, label + " cycle count matches");
+            for (int reg = 0; reg < REG_COUNT; ++reg) {
+                expect(interpreter.regfile.read(static_cast<uint8_t>(reg)) ==
+                           jit.regfile.read(static_cast<uint8_t>(reg)),
+                       label + " register r" + std::to_string(reg) + " matches");
+            }
+            for (int addr : memory_addrs) {
+                auto [interpreterValue, interpreterFault] = interpreter.dmem.load(addr);
+                auto [jitValue, jitFault] = jit.dmem.load(addr);
+                expect(interpreterFault == jitFault, label + " memory fault matches");
+                expect(interpreterValue == jitValue,
+                       label + " memory @" + std::to_string(addr) + " matches");
+            }
+            expect(jit.trace_jit_stats.traces_built > 0, label + " builds a trace");
+            expect(jit.trace_jit_stats.instructions_executed > 0,
+                   label + " executes trace instructions");
+        };
+
+        compareExecution("trace JIT arithmetic loop", assembleOrThrow(R"(
+            mov r1, 0
+            mov r2, 1
+            mov r3, 12
+        loop:
+            add r1, r1, r2
+            sub r3, r3, r2
+            brp r3, loop
+            halt
+        )"), {}, 128);
+
+        compareExecution("trace JIT load/store", assembleOrThrow(R"(
+            mov r1, 10
+            mov.t20 r2, 7
+            store r2, r1, 0
+            load r3, r1, 0
+            add.t20 r4, r3, r2
+            halt
+        )"), {10}, 64);
+
+        compareExecution("trace JIT direct branch", assembleOrThrow(R"(
+            mov r1, 1
+            jmp done
+            mov r1, 2
+        done:
+            add r2, r1, r1
+            halt
+        )"), {}, 32);
+    }
+
+    {
+        VMState jit(32, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 3
+            syscall 1
+            mov r2, 7
+            halt
+        )");
+        expect(loadAndReset(jit, program), "trace JIT syscall fallback program loads");
+        jit.setExecutionBackend(VMExecutionBackend::TraceJit);
+        jit.setTraceJitHotThreshold(1);
+        auto result = sandbox::vm::run(jit, 32);
+        expect(result.halted(), "trace JIT syscall fallback halts");
+        expect(jit.trace_jit_stats.unsupported_fallbacks > 0,
+               "trace JIT records unsupported syscall fallback");
+        expect(jit.syscall_buffer == "3", "interpreter handles syscall side effect");
+        expect(sandbox::vm::ops::toLong(jit.regfile.read(R2)) == 7,
+               "interpreter handles unsupported syscall path");
+    }
+
+    {
+        VMState jit(32, 16);
+        auto program = assembleOrThrow(R"(
+            mov r1, 99
+        loop:
+            load r2, r1, 0
+            jmp loop
+        )");
+        expect(loadAndReset(jit, program), "trace JIT memory bailout program loads");
+        jit.setExecutionBackend(VMExecutionBackend::TraceJit);
+        jit.setTraceJitHotThreshold(1);
+        auto result = sandbox::vm::run(jit, 16);
+        expect(result.trapped(), "trace JIT unsafe load falls back to interpreter trap");
+        expect(result.trap_code == TrapCode::TRAP_MEM_FAULT,
+               "trace JIT unsafe load preserves memory trap");
+        expect(jit.trace_jit_stats.interpreter_bailouts > 0,
+               "trace JIT records unsafe memory bailout");
+    }
+
+    {
         VMState vm(32, 64);
         auto program = assembleOrThrow(R"(
             mov.t5  r1, -5

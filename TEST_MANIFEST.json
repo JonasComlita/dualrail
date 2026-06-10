@@ -38,7 +38,7 @@
       "name": "os",
       "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
       "targets": [
-        "test_kernel",
+        "test_multiwidth_vm",
         "test_os_platform",
         "test_phase_d_kernel",
         "test_process_handoff",
@@ -74,7 +74,8 @@
       "name": "benchmark",
       "description": "Performance-oriented benchmark regression harness.",
       "targets": [
-        "test_benchmark"
+        "test_benchmark",
+        "test_trace_jit_benchmark"
       ],
       "manual": true
     },

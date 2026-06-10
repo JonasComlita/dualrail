@@ -76,6 +76,7 @@ const METRIC_TLB_HITS_ADDR: t40 = 3036;
 const METRIC_TLB_MISSES_ADDR: t40 = 3037;
 const METRIC_SPAN_CACHE_HITS_ADDR: t40 = 3038;
 const METRIC_SLOW_PATH_FAULTS_ADDR: t40 = 3039;
+const METRIC_VFS_LOOKUPS_ADDR: t40 = 3040;
 
 const PROC_PARENT_PID_BASE: t40 = 130000;
 const PROC_EXIT_STATUS_BASE: t40 = 130100;
@@ -3373,6 +3374,7 @@ fn pte_table_init() -> t40 {
     kstore(METRIC_TLB_MISSES_ADDR, 0);
     kstore(METRIC_SPAN_CACHE_HITS_ADDR, 0);
     kstore(METRIC_SLOW_PATH_FAULTS_ADDR, 0);
+    kstore(METRIC_VFS_LOOKUPS_ADDR, 0);
     return 1;
 }
 
@@ -4086,6 +4088,7 @@ fn vfs_resolve_component(namespace_id: t40, current: t40, start: t40, len: t40) 
 }
 
 fn vfs_lookup(namespace_id: t40, path_addr: t40) -> t40 {
+    metric_inc(METRIC_VFS_LOOKUPS_ADDR);
     if validate_user_cstring(path_addr, VFS_MAX_PATH_WORDS) <= 0 {
         return ERR_BAD_PTR;
     }
@@ -4247,6 +4250,26 @@ fn vfs_find_extent_covering(inode: t40, logical_word: t40) -> t40 {
     return ERR_NOT_FOUND;
 }
 
+fn vfs_readahead(namespace_id: t40, inode: t40, logical_word: t40, size_words: t40) -> t40 {
+    if logical_word - size_words >= 0 {
+        return 0;
+    }
+    var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
+    if extent_slot < 0 {
+        return 0;
+    }
+    var ex: t40 = extent_addr(extent_slot);
+    var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+    var data: t40 = kload(ex + EXTENT_DATA_ADDR);
+    var in_extent: t40 = logical_word - start;
+    var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+    if buffer_slot < 0 {
+        return 0;
+    }
+    buffer_unpin(buffer_slot);
+    return 1;
+}
+
 fn vfs_extent_count(inode: t40) -> t40 {
     var slot: t40 = 0;
     var count: t40 = 0;
@@ -4384,6 +4407,13 @@ fn disk_write_block(block_no: t40, src_addr: t40) -> t40 {
         csr_write(block_index, block_no);
         csr_write(block_addr, src_addr);
         csr_write(block_cmd, 2);
+        return csr_read(block_status);
+    }
+}
+
+fn disk_flush() -> t40 {
+    unsafe {
+        csr_write(block_cmd, 4);
         return csr_read(block_status);
     }
 }
@@ -4565,6 +4595,9 @@ fn wal_sync_to_disk() -> t40 {
         }
         block = block + 1;
     }
+    if disk_flush() - 1 != 0 {
+        return ERR_INVALID;
+    }
     return 1;
 }
 
@@ -4665,6 +4698,7 @@ fn vfs_sync_to_disk() -> t40 {
     if vfs_sync_used_range_to_disk(VFS_DIRENT_NAME_BASE, name_words, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_sync_used_range_to_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_sync_used_range_to_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    if disk_flush() - 1 != 0 { return ERR_INVALID; }
     return 1;
 }
 
@@ -4942,6 +4976,10 @@ fn vfs_read(pid: t40, fd: t40, dst_addr: t40, count_words: t40) -> t40 {
             return copied;
         }
         buffer_unpin(buffer_slot);
+        var next_logical: t40 = logical_word + chunk;
+        if next_logical - size_words < 0 {
+            vfs_readahead(namespace_id, inode, next_logical, size_words);
+        }
         i = i + chunk;
     }
     var version: t40 = kacq(fdrow + FD_VERSION);
@@ -5004,11 +5042,77 @@ fn vfs_read_kernel(pid: t40, fd: t40, dst_addr: t40, count_words: t40) -> t40 {
             j = j + 1;
         }
         buffer_unpin(buffer_slot);
+        var next_logical: t40 = logical_word + chunk;
+        if next_logical - size_words < 0 {
+            vfs_readahead(namespace_id, inode, next_logical, size_words);
+        }
         i = i + chunk;
     }
     var version: t40 = kacq(fdrow + FD_VERSION);
     kstore(fdrow + FD_OFFSET, offset + to_read);
     kcas(fdrow + FD_VERSION, version, version + 1);
+    return to_read;
+}
+
+fn vfs_read_inode_kernel(namespace_id: t40, inode: t40, offset: t40, dst_addr: t40, count_words: t40) -> t40 {
+    if dst_addr <= 0 {
+        return ERR_BAD_PTR;
+    }
+    if count_words < 0 {
+        return ERR_BAD_PTR;
+    }
+    if inode < 0 {
+        return ERR_NOT_FOUND;
+    }
+    if inode - VFS_MAX_INODES >= 0 {
+        return ERR_NOT_FOUND;
+    }
+    var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
+    if kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    var size_words: t40 = kload(inode_addr(inode) + INODE_SIZE);
+    if offset - size_words >= 0 {
+        return 0;
+    }
+    var to_read: t40 = count_words;
+    var available: t40 = size_words - offset;
+    if to_read - available > 0 {
+        to_read = available;
+    }
+    var i: t40 = 0;
+    while to_read - i > 0 {
+        var logical_word: t40 = offset + i;
+        var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
+        if extent_slot < 0 {
+            return ERR_NOT_FOUND;
+        }
+        var ex: t40 = extent_addr(extent_slot);
+        var start: t40 = kload(ex + EXTENT_LOGICAL_START);
+        var length_words: t40 = kload(ex + EXTENT_LENGTH);
+        var data: t40 = kload(ex + EXTENT_DATA_ADDR);
+        var in_extent: t40 = logical_word - start;
+        var window: t40 = length_words - in_extent;
+        var chunk: t40 = to_read - i;
+        if chunk - window > 0 {
+            chunk = window;
+        }
+        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+        if buffer_slot < 0 {
+            return buffer_slot;
+        }
+        var j: t40 = 0;
+        while chunk - j > 0 {
+            kstore(dst_addr + i + j, kload(data + in_extent + j));
+            j = j + 1;
+        }
+        buffer_unpin(buffer_slot);
+        var next_logical: t40 = logical_word + chunk;
+        if next_logical - size_words < 0 {
+            vfs_readahead(namespace_id, inode, next_logical, size_words);
+        }
+        i = i + chunk;
+    }
     return to_read;
 }
 
@@ -5614,7 +5718,7 @@ fn process_sbrk(pid: t40, delta: t40) -> t40 {
     return old_break;
 }
 
-fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
+fn exec_process_inode(process_slot: t40, namespace_id: t40, inode: t40, path_addr: t40) -> t40 {
     if process_slot < 0 {
         return ERR_INVALID;
     }
@@ -5622,33 +5726,28 @@ fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
         return ERR_INVALID;
     }
     var row: t40 = process_addr(process_slot);
-    var pid: t40 = kload(row + PROC_PID);
-    if pid <= 0 {
+    if kload(row + PROC_PID) <= 0 {
         return ERR_NOT_FOUND;
     }
-    var namespace_id: t40 = kload(row + PROC_NAMESPACE);
-    var size_words: t40 = vfs_stat(namespace_id, path_addr, 0);
-    if size_words < 0 {
-        return size_words;
-    }
-    var inode: t40 = vfs_lookup(namespace_id, path_addr);
     if inode < 0 {
         return inode;
+    }
+    if inode - VFS_MAX_INODES >= 0 {
+        return ERR_NOT_FOUND;
     }
     if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
         return ERR_INVALID;
     }
+    var size_words: t40 = kload(inode_addr(inode) + INODE_SIZE);
+    if size_words < 0 {
+        return size_words;
+    }
     if size_words - EXEC_IMAGE_WORDS > 0 {
         return ERR_NO_SPACE;
     }
-    var fd: t40 = vfs_open(pid, path_addr, 0);
-    if fd < 0 {
-        return fd;
-    }
     var dst: t40 = exec_image_addr(process_slot);
     kclear(dst, EXEC_IMAGE_WORDS);
-    var read_count: t40 = vfs_read_kernel(pid, fd, dst, size_words);
-    vfs_close(pid, fd);
+    var read_count: t40 = vfs_read_inode_kernel(namespace_id, inode, 0, dst, size_words);
     if read_count < 0 {
         return read_count;
     }
@@ -5666,6 +5765,22 @@ fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
     process_cache_invalidate(process_slot);
     process_set_state(process_slot, PROC_RUNNABLE);
     return read_count;
+}
+
+fn exec_process(process_slot: t40, path_addr: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = process_addr(process_slot);
+    var namespace_id: t40 = kload(row + PROC_NAMESPACE);
+    var inode: t40 = vfs_lookup(namespace_id, path_addr);
+    if inode < 0 {
+        return inode;
+    }
+    return exec_process_inode(process_slot, namespace_id, inode, path_addr);
 }
 
 fn app_addr(app_id: t40) -> t40 {
@@ -5926,17 +6041,17 @@ fn app_launch(pid: t40, path_addr: t40, required_caps: t40) -> t40 {
     if app_caps_allow(kload(row + APP_CAPS), required_caps) <= 0 {
         return ERR_INVALID;
     }
-    var inode: t40 = vfs_lookup(namespace_id, path_addr);
-    if inode - kload(row + APP_INODE) != 0 {
+    var inode: t40 = kload(row + APP_INODE);
+    if inode < 0 {
+        return ERR_INVALID;
+    }
+    if inode - VFS_MAX_INODES >= 0 {
         return ERR_INVALID;
     }
     if kload(inode_addr(inode) + INODE_KIND) - KIND_EXEC != 0 {
         return ERR_INVALID;
     }
-    var size_words: t40 = vfs_stat(namespace_id, path_addr, 0);
-    if size_words < 0 {
-        return size_words;
-    }
+    var size_words: t40 = kload(inode_addr(inode) + INODE_SIZE);
     if size_words - kload(row + APP_MAX_IMAGE) > 0 {
         return ERR_NO_SPACE;
     }
@@ -5944,7 +6059,7 @@ fn app_launch(pid: t40, path_addr: t40, required_caps: t40) -> t40 {
     if quota_charge(quota_id, 1) < 0 {
         return ERR_NO_SPACE;
     }
-    var loaded: t40 = exec_process(process_slot, path_addr);
+    var loaded: t40 = exec_process_inode(process_slot, namespace_id, inode, path_addr);
     if loaded < 0 {
         quota_release(quota_id, 1);
         return loaded;

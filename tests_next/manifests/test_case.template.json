@@ -1,0 +1,16 @@
+{
+  "id": "layer.feature.behavior",
+  "layer": "02_vm",
+  "feature": "short feature name",
+  "kind": "focused",
+  "source": "new",
+  "old_refs": [],
+  "proves": [
+    "one invariant",
+    "another invariant"
+  ],
+  "gate": "ci_fast",
+  "timeout_ms": 1000,
+  "deterministic": true,
+  "notes": "Copy this file shape into a test-local manifest or the layer manifest."
+}

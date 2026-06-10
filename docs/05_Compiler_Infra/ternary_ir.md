@@ -1,66 +1,225 @@
-# Ternary IR (Intermediate Representation)
+# SSA Intermediate Representation
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_ir.h` |
+Source of truth: `ternary_compiler_ir.h`
 
 ---
 
-## 🏗️ Design Philosophy
-The Ternary IR is a **Linear Builder IR**. Unlike LLVM, which uses a complex graph, the Trit-Stack IR uses a stream of instructions that map 1:1 to assembly but provide **automatic register allocation** and **static type checking**.
+## Overview
+
+The compiler uses an **SSA (Static Single Assignment) IR** between the parser and code generation. The IR is structured as:
+
+```
+Module
+ └── Function[]
+      └── BasicBlock[]
+           ├── Instr[]     (sequential instructions)
+           └── Terminator  (one per block: return/jump/branch3/halt)
+```
 
 ---
 
-## 🧬 Type System
-The IR enforces the hardware's tiered width model through the `ir::Type` enum.
+## Key Types
 
-| Category | Types | Hardware Field |
-| :--- | :--- | :--- |
-| **Numeric** | `T1`, `T5`, `T10`, `T20`, `T40`, `T50` | `FUNC_TX` |
-| **Lane** | `L1`, `L5`, `L10`, `L20`, `L40`, `L50` | `FUNC_LX` |
-
----
-
-## 📦 The `Value` Container
-Every operation in the IR returns an `ir::Value` object.
+### `ValueId`
 
 ```cpp
-struct Value {
-    Type type;    // The trit-width/mode
-    int  reg;     // The physical register (0-26 or v0-v7)
-    bool vector;  // True if stored in the Vector Register File
+using ValueId = int;
+```
 
-    bool valid() const { return reg >= 0; }
+An integer ID for each SSA value (definition). `-1` = no value.
+
+### `Instr` (Instruction)
+
+```cpp
+struct Instr {
+    ValueId def;          // SSA destination (-1 if void)
+    InstrOpcode opcode;   // What operation
+    TypeRef type;         // Result type
+    std::vector<ValueId> args; // Input value IDs
+    long long imm;        // Immediate constant
+    int aux;              // Auxiliary (width/CSR index/etc.)
+    std::string symbol;   // Symbol name for calls/labels
+    Effect effect;        // Side-effect class
+    SourceSpan span;      // Source location (for diagnostics)
 };
 ```
 
-*   **The Zero Rule**: `program.zero(type)` returns a special `Value` mapped to `r0`. This allows the IR to use the hardware's zero-wire for efficient clearing and comparison logic without allocating a temporary register.
+### `InstrOpcode` (IR opcodes, not ISA opcodes)
+
+| Opcode | Description |
+|--------|-------------|
+| `Alloca` | Stack-allocate a local |
+| `Const` | Load a constant value |
+| `Copy` | Copy one SSA value to another |
+| `Add/Sub/Mul/Div` | Arithmetic |
+| `Cvt` | Type conversion |
+| `Cmp` | Comparison → T1 result |
+| `Phi` | SSA phi node (merge at join points) |
+| `FieldAddr` | Address of struct field |
+| `IndexAddr` | Address of array element |
+| `AddrOf` | Take address of variable |
+| `Deref` | Dereference pointer |
+| `Load` | Load from memory |
+| `Store` | Store to memory |
+| `Syscall` | Issue syscall |
+| `Fence` | Memory fence |
+| `Tldr/Tstr` | Trit-level load/store |
+| `Csrr/Csrw/Csrrw` | CSR access |
+| `Call` | Direct function call |
+| `CallR` | Indirect function call |
+| `Ret` | Return from function |
+| `Swap` | Swap two values |
+| `Nop` | No operation |
+
+### `Effect` (Side-effect classification)
+
+| Effect | Meaning |
+|--------|---------|
+| `Pure` | No side effects; safe to reorder/eliminate |
+| `ReadMem` | Reads memory |
+| `WriteMem` | Writes memory |
+| `Syscall` | Issues a syscall |
+| `CSR` | Accesses a CSR |
+| `Atomic` | Atomic operation (cannot reorder across fence) |
+| `Control` | Control flow (branch, return) |
+
+### `Terminator`
+
+```cpp
+struct Terminator {
+    TerminatorKind kind;  // None/Return/Jump/Branch3/Halt
+    ValueId condition;    // For Branch3: T1 value to branch on
+    std::string target_neg;   // Branch target if condition == -1
+    std::string target_zero;  // Branch target if condition == 0
+    std::string target_pos;   // Branch target if condition == +1
+    std::string target;       // Jump/Return target
+};
+```
+
+`Branch3` maps directly to the ISA's three-way branch pattern (TCMP + BRN + BRP).
 
 ---
 
-## 🛠️ The `Program` Builder API
-The `ir::Program` class maintains the emission state and the free-register pools.
+## Module Structure
 
-### 1. Register Management
-*   **Allocation**: `allocScalar()` and `allocVector()` automatically pick the next available register from the free pool.
-*   **Release**: `release(value)` returns a register to the pool for reuse. This is the IR's primary mechanism for minimizing register pressure.
+```cpp
+struct Module {
+    std::string name;
+    std::vector<Function> functions;
+    std::vector<Diagnostic> diagnostics;
+    std::map<std::string, std::string> metadata;
+};
 
-### 2. Instruction Emission
-Methods like `prog.add(a, b)` perform three steps:
-1.  Verify `a.type == b.type`.
-2.  Allocate a destination `out = allocScalar(a.type)`.
-3.  Emit the assembly line: `add.t40 out, a, b`.
-
-### 3. Branching & Labels
-Labels are emitted as unique strings. The IR builder does not calculate offsets; it relies on the [Two-Pass Assembler](../04_Binary_Contract/asm_syntax.md) to resolve label addresses.
+struct Function {
+    std::string name;
+    std::vector<std::pair<std::string, TypeRef>> params;
+    TypeRef return_type;
+    std::vector<BasicBlock> blocks;
+    bool exported;
+    bool unsafe_allowed;
+    int ir_value_ceiling;   // Next SSA value ID to assign
+};
+```
 
 ---
 
-## 🧪 Lowering to Binary
-The `program.lower()` method is the final bridge.
-1.  Converts the internal instruction stream into a single C++ `std::string`.
-2.  Calls `vm::assembler::assemble()` on the text.
-3.  Returns an `AssemblyResult` containing the bootable binary image.
+## Optimizer Passes
 
-> [!TIP]
-> **Diagnostic Logging**: The IR builder captures semantic errors (e.g., "type mismatch in ADD") before the assembler is ever called, providing much clearer compiler diagnostics than raw assembly.
+The optimizer tracks its work via `OptimizerStats`:
+
+| Pass | Stat field |
+|------|-----------|
+| mem2reg (alloca → SSA phi) | `mem2reg_promotions` |
+| Constant folding | `constant_folds` |
+| Copy propagation | `copy_props` |
+| Strength reduction | `strength_reductions` |
+| Common subexpression elimination | `cse_hits` |
+| Dead instruction elimination | `dead_instrs` |
+| Branch simplification | `branch_simplifications` |
+| Swap optimization | `swaps` |
+
+---
+
+## Register Allocation
+
+The allocator produces an `AllocationResult`:
+
+```cpp
+struct AllocationResult {
+    bool success;
+    std::map<ValueId, int> scalar_registers;  // SSA value → r0..r26
+    std::map<ValueId, int> vector_registers;  // SSA value → v0..v7
+    std::map<ValueId, int> spill_slots;       // SSA value → stack slot
+    int spills;
+    std::set<int> callee_saved_used;
+    std::set<int> caller_saved_live_across_calls;
+    int coalesced_moves;
+    int interference_edges;
+};
+```
+
+Spilled values are stored in DMEM via the stack pointer (r26).
+
+---
+
+## Compile Pipeline
+
+```
+Source (.trit)
+  ↓ Lexer (ternary_compiler_lexer.h)
+TokenStream
+  ↓ Parser (ternary_compiler_parser.h)
+ModuleAst
+  ↓ Type inference (ternary_compiler_types.h)
+Typed AST
+  ↓ IR lowering (ternary_compiler_ir.h)
+SSA Module
+  ↓ Optimizer (ternary_compiler_codegen.h)
+Optimized SSA Module
+  ↓ Register allocator
+AllocationResult
+  ↓ Code generator (ternary_compiler_codegen.h)
+ObjectModule (assembly text)
+  ↓ Linker + Assembler (ternary_asm.h)
+ExecutableImage (TritWord27[])
+```
+
+---
+
+## Syscall IDs in IR
+
+The `runtime` namespace in `ternary_compiler_ir.h` provides C++ constants for all syscall IDs, matching `SYSCALL_MANIFEST.json`:
+
+```cpp
+namespace sandbox::compiler::runtime {
+    constexpr int sys_write_int = 1;
+    constexpr int sys_open = 12;
+    constexpr int sys_fork = 20;
+    // ... (57 total)
+}
+```
+
+When writing compiler-generated syscall sequences, use these constants — not raw integers.
+
+---
+
+## `CompileResult`
+
+The full output of one compilation:
+
+```cpp
+struct CompileResult {
+    bool success;
+    std::vector<Diagnostic> diagnostics;
+    std::shared_ptr<ModuleAst> typed_ast;
+    Module ssa_module;
+    Module optimized_module;
+    AllocationResult allocation;
+    LayoutTable layout_table;
+    OptimizerStats optimizer_stats;
+    ObjectModule object;
+    std::string assembly;
+};
+```
+
+`assembly` is the final textual `.tasm` assembly before linking.

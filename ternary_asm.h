@@ -447,7 +447,7 @@ struct MnemonicParts {
 
 [[nodiscard]] inline int instructionWordCount(const std::string& mnemonic) {
     const auto parts = splitMnemonic(mnemonic);
-    return (parts.base == "mov" && parts.has_width &&
+    return ((parts.base == "mov" || parts.base == "movh") && parts.has_width && parts.func != FUNC_T40 &&
             parts.suffix_valid && !parts.has_source_width) ? 2 : 1;
 }
 
@@ -1269,7 +1269,7 @@ struct LabelMaps {
                         try {
                             word = InstructionWord::encodeI(info.opcode,
                                 static_cast<uint8_t>(rd), 0, imm.value());
-                            if (parts.has_width) {
+                            if (parts.has_width && parts.func != FUNC_T40) {
                                 program.push_back(word);
                                 const uint8_t sourceFunc = isLaneWidthFunc(parts.func)
                                     ? matchingNumericFunc(parts.func)

@@ -63,9 +63,10 @@ void testCompileAndRunMatchProgram() {
     }
     expect(compiled.success, "match source compiles");
     expect(compiled.ssa_module.functions.size() == 1, "compile result includes SSA function");
-    expect(contains(compiled.assembly, "brn"), "match lowers negative branch");
-    expect(contains(compiled.assembly, "brz"), "match lowers zero branch");
-    expect(contains(compiled.assembly, "brp"), "match lowers positive branch");
+    expect(contains(compiled.assembly, "tsel"), "pure match return lowers to TSEL");
+    expect(!contains(compiled.assembly, "brn"), "pure match avoids negative branch");
+    expect(!contains(compiled.assembly, "brz"), "pure match avoids zero branch");
+    expect(!contains(compiled.assembly, "brp"), "pure match avoids positive branch");
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "linked match executable assembles");
@@ -82,6 +83,56 @@ void testCompileAndRunMatchProgram() {
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "linked image halts through standalone _start");
         expect(regLong(vm, 13) == 7, "main return value is preserved in r13");
+        expect(vm.branch_instructions_count == 0, "pure match executes without conditional branches");
+    }
+}
+
+void testSideEffectfulMatchKeepsBranchLowering() {
+    std::cout << "[1b] Side-effectful match keeps branch lowering\n";
+    using namespace sandbox::compiler;
+
+    const std::string src = R"(
+        fn main() -> t40 {
+          let x = 0;
+          match x {
+            neg => {
+              sys_write_char(45);
+              return -1;
+            }
+            zero => {
+              sys_write_char(48);
+              return 0;
+            }
+            pos => {
+              sys_write_char(43);
+              return 1;
+            }
+          }
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_match_side_effects.trit", src);
+    if (!compiled.success) {
+        std::cerr << "COMPILE FAIL DIAGNOSTICS FOR SIDE-EFFECTFUL MATCH:" << std::endl;
+        for (const auto& diag : compiled.diagnostics) {
+            std::cerr << "  " << diag.format() << std::endl;
+        }
+    }
+    expect(compiled.success, "side-effectful match compiles");
+    expect(contains(compiled.assembly, "brn"), "side-effectful match emits negative branch");
+    expect(contains(compiled.assembly, "brz"), "side-effectful match emits zero branch");
+    expect(!contains(compiled.assembly, "brp"), "side-effectful match uses positive fallthrough");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "side-effectful match executable assembles");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "side-effectful match image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "side-effectful match image halts");
+        expect(regLong(vm, 13) == 0, "side-effectful match returns selected arm value");
+        expect(vm.syscall_buffer == "0", "side-effectful match executes only selected arm");
+        expect(vm.branch_instructions_count > 0, "side-effectful match executes conditional branches");
     }
 }
 
@@ -145,7 +196,9 @@ void testFunctionCallAndWhileLoop() {
     }
     expect(compiled.success, "function call and while source compiles");
     expect(contains(compiled.assembly, "call inc"), "direct function call lowers to CALL");
-    expect(contains(compiled.assembly, "brp"), "while pos lowers to positive branch");
+    expect(contains(compiled.assembly, "brn"), "while lowers cold negative exit branch");
+    expect(contains(compiled.assembly, "brz"), "while lowers cold zero exit branch");
+    expect(!contains(compiled.assembly, "brp"), "while positive path falls through");
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "function call and while executable links");
@@ -1380,6 +1433,7 @@ int main() {
     sandbox::LongTriple::initPowTable();
 
     testCompileAndRunMatchProgram();
+    testSideEffectfulMatchKeepsBranchLowering();
     testRuntimeSyscallWrapperAndTupleSwap();
     testFunctionCallAndWhileLoop();
     testIfElseStatements();

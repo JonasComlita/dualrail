@@ -1,73 +1,123 @@
-# Ternary Logic Gates
+# Logic Gates and Trit Backend
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_lanes.h`, `ternary_vm.h` |
+Source of truth: `ternary_backend.h` (namespace `sandbox::backend`)
 
 ---
 
-## 🌩️ Fundamental Per-Trit Gates
-The Trit-Stack logic layer operates on **Dual-Rail encoded trits**. These gates are used in the `TL*` (Trit-Lane) instructions.
+## Overview
 
-### 1. NOT / NEG (Inverter)
-Performs a trit-flip. In balanced ternary, this is its own inverse.
-*Code Ref: `tritwiseNeg`*
-
-| Input | Output |
-| :--- | :--- |
-| `-1` | `+1` |
-| ` 0` | ` 0` |
-| `+1` | `-1` |
-
-### 2. AND / TLAND (Lattice Min)
-Returns the lower of the two inputs.
-*Code Ref: `tritwiseAnd` (using `std::min`)*
-
-| A \ B | `-1` | ` 0` | `+1` |
-| :--- | :--- | :--- | :--- |
-| **-1** | `-1` | `-1` | `-1` |
-| ** 0** | `-1` | ` 0` | ` 0` |
-| **+1** | `-1` | ` 0` | `+1` |
-
-### 3. OR / TLOR (Lattice Max)
-Returns the higher of the two inputs.
-*Code Ref: `tritwiseOr` (using `std::max`)*
-
-| A \ B | `-1` | ` 0` | `+1` |
-| :--- | :--- | :--- | :--- |
-| **-1** | `-1` | ` 0` | `+1` |
-| ** 0** | ` 0` | ` 0` | `+1` |
-| **+1** | `+1` | `+1` | `+1` |
-
-### 4. XSUM / TLADD (Modular Sum)
-Carryless addition. Also known as the ternary XOR or Half-Adder sum.
-*Code Ref: `tritwiseAddCarryless`*
-
-| A \ B | `-1` | ` 0` | `+1` |
-| :--- | :--- | :--- | :--- |
-| **-1** | `+1` | `-1` | ` 0` |
-| ** 0** | `-1` | ` 0` | `+1` |
-| **+1** | ` 0` | `+1` | `-1` |
+`ternary_backend.h` is the **lowest layer** of the stack — pure, device-safe trit helpers with no STL, no exceptions, no strings, and no virtual dispatch. It can be compiled for CPU, CUDA (`__host__ __device__`), SYCL, or FPGA simulation.
 
 ---
 
-## 🔀 Selection & Multiplexing
+## Trit Pair Encoding (2-bit per trit)
 
-### TSEL (Ternary Select)
-The most powerful control gate. It selects one of three source registers based on the sign of a condition trit.
+All lane operations use 2-bit-per-trit encoding:
 
-**Instruction Syntax:** `TSEL rd, rCond, rNeg, rZero, rPos`
+| 2-bit raw value | Balanced trit |
+|-----------------|--------------|
+| `0b00` (0)      | −1 (T_NEG)   |
+| `0b01` (1)      |  0 (T_ZER)   |
+| `0b10` (2)      | +1 (T_POS)   |
+| `0b11` (3)      | **INVALID**  |
 
-| Condition Trit | Selected Output |
-| :--- | :--- |
-| **Negative (-1)** | `rNeg` |
-| **Neutral (0)** | `rZero` |
-| **Positive (+1)** | `rPos` |
+```cpp
+// Encode balanced trit {-1, 0, +1} → 2-bit raw {0, 1, 2}
+uint8_t encodeTritPair(int8_t trit);   // trit + 1
+
+// Decode 2-bit raw → balanced trit
+int8_t decodeTritPair(uint8_t raw);    // raw - 1
+
+// Check if a 2-bit value is valid (not 0b11)
+bool validTritPair(uint8_t raw);       // raw < 3
+
+// Negate: flip sign by swapping 0 ↔ 2, leaving 1 unchanged
+uint8_t negateTritPair(uint8_t raw);   // 2U - raw
+```
 
 ---
 
-## 🛠️ Hardware Mapping (Dual-Rail)
-When implemented in FPGA/ASIC, these gates are mapped to 2-bit binary pairs. 
+## Ternary Full-Adder
 
-> [!IMPORTANT]
-> **Propagating Invalidity**: If any input to a gate is the `0b11` (Invalid) pattern, the gate output is forced to `0b11`. This ensures hardware faults are "sticky" and trigger traps immediately.
+The balanced ternary full-adder rule: if `sum > 1`, emit `sum−3, carry=+1`; if `sum < −1`, emit `sum+3, carry=−1`:
+
+```cpp
+int8_t normalizeTritSum(int& sum);     // clamps sum ∈ {-1,0,+1}, sets carry
+```
+
+Used by `addSubLane64` and `addSubLane128`.
+
+---
+
+## 64-bit Lane Operations
+
+Operate on up to 32 trits packed in a `uint64_t` (2 bits per trit).
+
+```cpp
+// Get/set trit pair at position pos
+uint8_t getPair64(uint64_t raw, int pos);
+uint64_t setPair64(uint64_t raw, int pos, uint8_t pair);
+
+// Validate: all trits valid, unused bits zero
+bool validLane64(uint64_t raw, int trits);
+
+// Create invalid sentinel (all positions = 0b11)
+uint64_t invalidLane64(int trits);
+
+// Negate all trits
+uint64_t negLane64(uint64_t raw, int trits);
+
+// Add two lanes (with balanced ternary carry propagation)
+uint64_t addLane64(uint64_t a, uint64_t b, int trits);
+
+// Subtract: a - b
+uint64_t subLane64(uint64_t a, uint64_t b, int trits);
+
+// Compare MST-first: returns -1, 0, or +1
+int8_t compareLane64(uint64_t a, uint64_t b, int trits);
+
+// Min/Max
+uint64_t minLane64(uint64_t a, uint64_t b, int trits);
+uint64_t maxLane64(uint64_t a, uint64_t b, int trits);
+```
+
+---
+
+## 128-bit Lane Operations
+
+Same API for `RawUInt128` (used for T40/T50 lanes):
+
+```cpp
+struct RawUInt128 { uint64_t lo; uint64_t hi; };
+
+uint8_t getPair128(RawUInt128 raw, int pos);
+RawUInt128 setPair128(RawUInt128 raw, int pos, uint8_t pair);
+bool validLane128(RawUInt128 raw, int trits);
+RawUInt128 invalidLane128(int trits);
+RawUInt128 negLane128(RawUInt128 raw, int trits);
+RawUInt128 addLane128(RawUInt128 a, RawUInt128 b, int trits);
+RawUInt128 subLane128(RawUInt128 a, RawUInt128 b, int trits);
+int8_t compareLane128(RawUInt128 a, RawUInt128 b, int trits);
+RawUInt128 minLane128(RawUInt128 a, RawUInt128 b, int trits);
+RawUInt128 maxLane128(RawUInt128 a, RawUInt128 b, int trits);
+```
+
+---
+
+## Compilation Modes
+
+| Macro | Effect |
+|-------|--------|
+| `__CUDACC__` or `__HIPCC__` | `TERNARY_HOST_DEVICE` = `__host__ __device__` |
+| (none) | `TERNARY_HOST_DEVICE` = empty (CPU only) |
+| `__GNUC__` or `__clang__` | `TERNARY_FORCE_INLINE` = `__attribute__((always_inline))` |
+
+---
+
+## Long Double Requirement
+
+`ternary_math.h` has a compile-time assert that `long double > double`. This means:
+- **MinGW-w64 GCC or Clang on x86**: 80-bit extended precision → OK
+- **MSVC**: 64-bit (same as double) → build with `TERNARY_IGNORE_LONG_DOUBLE_ASSERT` or use GCC/Clang
+
+This matters for transcendental operations (`exp`, `ln`, `sin`, `cos`) that use `long double` internally for precision.

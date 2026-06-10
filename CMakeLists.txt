@@ -74,9 +74,6 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
 add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
-add_executable(run_kernel run_kernel.cpp)
-add_executable(run_native_kernel run_native_kernel.cpp)
-add_executable(run_gui_console run_gui_console.cpp)
 add_executable(build_tos_image build_tos_image.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -88,15 +85,6 @@ target_compile_features(run_qwen PUBLIC cxx_std_17)
 target_compile_definitions(run_qwen PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 target_link_libraries(run_qwen PRIVATE Vulkan::Vulkan)
 add_dependencies(run_qwen compile_shaders)
-
-target_compile_features(run_kernel PUBLIC cxx_std_17)
-target_compile_definitions(run_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
-
-target_compile_features(run_native_kernel PUBLIC cxx_std_17)
-target_compile_definitions(run_native_kernel PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
-
-target_compile_features(run_gui_console PUBLIC cxx_std_17)
-target_compile_definitions(run_gui_console PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 target_compile_features(build_tos_image PUBLIC cxx_std_17)
 target_compile_definitions(build_tos_image PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -274,10 +262,6 @@ add_custom_target(ci_production
     USES_TERMINAL
 )
 
-add_executable(run_os_demo run_os_demo.cpp)
-target_compile_features(run_os_demo PUBLIC cxx_std_17)
-target_compile_definitions(run_os_demo PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
-
 add_executable(tritc tritc.cpp)
 target_compile_features(tritc PUBLIC cxx_std_17)
 target_compile_definitions(tritc PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -292,9 +276,17 @@ add_executable(test_benchmark tests/test_benchmark.cpp)
 target_compile_features(test_benchmark PUBLIC cxx_std_17)
 target_compile_definitions(test_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_trace_jit_benchmark tests/test_trace_jit_benchmark.cpp)
+target_compile_features(test_trace_jit_benchmark PUBLIC cxx_std_17)
+target_compile_definitions(test_trace_jit_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_malloc_micro tests/test_malloc_micro.cpp)
 target_compile_features(test_malloc_micro PUBLIC cxx_std_17)
 target_compile_definitions(test_malloc_micro PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_tcl_asm tests/test_tcl_asm.cpp)
+target_compile_features(test_tcl_asm PUBLIC cxx_std_17)
+target_compile_definitions(test_tcl_asm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_all_apps scratch/test_all_apps.cpp)
 target_compile_features(test_all_apps PUBLIC cxx_std_17)

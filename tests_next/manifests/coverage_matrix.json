@@ -1,0 +1,258 @@
+{
+  "schema": "trit.tests_next.coverage_matrix.v1",
+  "status_values": ["missing", "scaffolded", "ported", "expanded", "complete"],
+  "claims": [
+    {
+      "id": "isa.encoding_contract",
+      "layer": "01_isa",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_isa_asm.cpp", "tests/test_vm_widths.cpp"],
+      "required_new_coverage": [
+        "opcode encodings",
+        "register fields",
+        "immediate decoding",
+        "branch target encoding",
+        "CSR names",
+        "invalid instruction rejection"
+      ]
+    },
+    {
+      "id": "vm.execution_contract",
+      "layer": "02_vm",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_kernel.cpp", "tests/test_multiwidth_vm_main.cpp", "tests/test_vm_widths.cpp"],
+      "required_new_coverage": [
+        "numeric widths",
+        "lane families",
+        "load/store",
+        "trap/ERET",
+        "CSR reads/writes",
+        "MMU translation",
+        "sparse memory",
+        "multicore stepping"
+      ]
+    },
+    {
+      "id": "assembler.golden_contract",
+      "layer": "03_assembler",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_isa_asm.cpp", "tests/test_tcl_asm.cpp"],
+      "required_new_coverage": [
+        "labels",
+        "directives",
+        "forward/backward branches",
+        "malformed assembly diagnostics",
+        "exact emitted words"
+      ]
+    },
+    {
+      "id": "compiler.pipeline_contract",
+      "layer": "04_compiler",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_phase7_compiler.cpp", "tests/test_phase_c5_pred.cpp"],
+      "required_new_coverage": [
+        "lexer",
+        "parser",
+        "typechecker",
+        "ownership and pointer states",
+        "IR",
+        "register allocation",
+        "codegen",
+        "linking",
+        "diagnostics"
+      ]
+    },
+    {
+      "id": "language.behavior_contract",
+      "layer": "05_language",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_backend_smoke.trit", "tests/test_parser_smoke.trit", "tests/test_compiler_frontend_smoke.trit"],
+      "required_new_coverage": [
+        "arithmetic",
+        "if/while/match",
+        "functions and recursion",
+        "structs and arrays",
+        "ownership moves",
+        "unsafe load/store",
+        "width-parametric functions"
+      ]
+    },
+    {
+      "id": "runtime.ulib_sdk_contract",
+      "layer": "06_runtime_ulib",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_malloc_micro.cpp", "tests/test_native_apps.cpp"],
+      "required_new_coverage": [
+        "string helpers",
+        "formatting/parsing",
+        "malloc/free",
+        "syscall wrappers",
+        "app SDK wrappers",
+        "error conventions"
+      ]
+    },
+    {
+      "id": "kernel.native_os_contract",
+      "layer": "07_kernel",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_production_hardening.cpp"],
+      "required_new_coverage": [
+        "trap entry",
+        "syscall dispatch",
+        "process table",
+        "scheduler",
+        "signals and process control",
+        "capabilities",
+        "cleanup on crash/kill"
+      ]
+    },
+    {
+      "id": "vfs.persistence_contract",
+      "layer": "08_filesystem_vfs",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_os_platform.cpp", "tests/test_process_handoff.cpp"],
+      "required_new_coverage": [
+        "format/mount",
+        "path resolution",
+        "open/read/write/close",
+        "stat/readdir",
+        "fsync",
+        "WAL replay",
+        "crash before/after commit",
+        "large extents",
+        "disk-backed executable loading"
+      ]
+    },
+    {
+      "id": "process.ipc.scheduler_contract",
+      "layer": "09_process_ipc_scheduler",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_os_platform.cpp"],
+      "required_new_coverage": [
+        "fork/exec",
+        "COW",
+        "waitpid",
+        "futex wait/wake",
+        "blocking IPC",
+        "event waits",
+        "scheduler fairness"
+      ]
+    },
+    {
+      "id": "drivers.hal_contract",
+      "layer": "10_drivers_hal",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_layer1_hal.cpp", "tests/test_os_platform.cpp"],
+      "required_new_coverage": [
+        "device tree",
+        "framebuffer descriptor",
+        "block device CSRs",
+        "timer",
+        "input",
+        "console",
+        "network/audio placeholders"
+      ]
+    },
+    {
+      "id": "gui.six_layer_contract",
+      "layer": "11_graphics_gui",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_native_apps.cpp", "tests/test_process_handoff.cpp", "tests/test_production_layers.cpp"],
+      "required_new_coverage": [
+        "framebuffer",
+        "2D primitives",
+        "fonts/text",
+        "compositor",
+        "widgets",
+        "desktop shell",
+        "golden framebuffer snapshots"
+      ]
+    },
+    {
+      "id": "apps.consumer_bundle_contract",
+      "layer": "12_apps",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_native_apps.cpp", "tests/test_consumer_shell_productization.cpp"],
+      "required_new_coverage": [
+        "desktop",
+        "terminal",
+        "file manager",
+        "settings",
+        "task manager",
+        "calculator",
+        "paint",
+        "text editor once added"
+      ]
+    },
+    {
+      "id": "distribution.image_contract",
+      "layer": "13_distribution_images",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_host_runtime.cpp", "TEST_MANIFEST.json"],
+      "required_new_coverage": [
+        ".tboot/.tiso manifest",
+        ".tdisk persistence",
+        "release image builder",
+        "boot without source files",
+        "diagnostic export"
+      ]
+    },
+    {
+      "id": "security.hardening_contract",
+      "layer": "14_security_hardening",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_production_hardening.cpp"],
+      "required_new_coverage": [
+        "bad pointers",
+        "capability denial",
+        "signed package validation",
+        "crash cleanup",
+        "syscall fuzz boundaries"
+      ]
+    },
+    {
+      "id": "fuzz.property_contract",
+      "layer": "15_fuzz_property",
+      "status": "missing",
+      "old_refs": [],
+      "required_new_coverage": [
+        "assembler fuzz",
+        "parser fuzz",
+        "syscall fuzz",
+        "VFS operation sequence fuzz",
+        "GUI event fuzz",
+        "interpreter vs cached/JIT equivalence once available"
+      ]
+    },
+    {
+      "id": "perf.benchmark_contract",
+      "layer": "16_perf_benchmarks",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_benchmark.cpp", "benchmark_results.md"],
+      "required_new_coverage": [
+        "boot time",
+        "app launch time",
+        "VM instructions per second",
+        "branch profile",
+        "TLB/cache hit rate",
+        "frame update time",
+        "disk throughput"
+      ]
+    },
+    {
+      "id": "full_system.release_contract",
+      "layer": "17_full_system",
+      "status": "scaffolded",
+      "old_refs": ["tests/test_consumer_shell_productization.cpp", "tests/test_process_handoff.cpp"],
+      "required_new_coverage": [
+        "boot",
+        "login/desktop",
+        "launch apps",
+        "write file",
+        "reboot",
+        "readback",
+        "crash diagnostics"
+      ]
+    }
+  ]
+}

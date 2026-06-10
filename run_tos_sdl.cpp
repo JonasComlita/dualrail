@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -21,6 +22,38 @@ struct TextureState {
     SDL_Texture* texture = nullptr;
     int width = 0;
     int height = 0;
+    std::vector<std::uint32_t> pixels;
+};
+
+struct RenderMetrics {
+    std::uint64_t dirty_pixels = 0;
+    int dirty_rects = 0;
+    double render_ms = 0.0;
+    double fps = 0.0;
+    bool texture_updated = false;
+    bool skipped = false;
+};
+
+struct TextRenderCache {
+    std::vector<long long> words;
+    long long sprite_x = 0;
+    long long sprite_y = 0;
+    long long sprite_attr = 0;
+    bool valid = false;
+};
+
+struct PixelRenderCache {
+    std::vector<long long> words;
+    bool valid = false;
+};
+
+struct FrameRenderState {
+    TextureState texture;
+    sandbox::host::TosFramebufferMode mode =
+        sandbox::host::TosFramebufferMode::Text80x25;
+    TextRenderCache text;
+    PixelRenderCache pixels;
+    bool valid = false;
 };
 
 constexpr int kTextCellWidth = 8;
@@ -36,6 +69,7 @@ void destroyTexture(TextureState& state) {
     }
     state.width = 0;
     state.height = 0;
+    state.pixels.clear();
 }
 
 std::uint32_t toSdlAbgr(std::uint32_t rgba) {
@@ -57,8 +91,8 @@ SDL_Rect letterboxRect(int window_w, int window_h, int source_w, int source_h) {
     return SDL_Rect{(window_w - w) / 2, (window_h - h) / 2, w, h};
 }
 
-std::pair<int, int> textureDimensions(
-    const sandbox::host::TosFramebufferSnapshot& framebuffer) {
+template <typename Framebuffer>
+std::pair<int, int> textureDimensions(const Framebuffer& framebuffer) {
     if (framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25) {
         return {framebuffer.width * kTextCellWidth,
                 framebuffer.height * kTextCellHeight};
@@ -189,102 +223,409 @@ void drawGlyph(std::vector<std::uint32_t>& pixels,
     }
 }
 
-std::vector<std::uint32_t> renderTextFramebuffer(
-    const sandbox::host::TosFramebufferSnapshot& framebuffer,
-    int width,
-    int height) {
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width * height),
-                                      kTextBackgroundRgba);
-    for (int cy = 0; cy < framebuffer.height; ++cy) {
-        for (int cx = 0; cx < framebuffer.width; ++cx) {
-            const int cell = cy * framebuffer.width + cx;
-            const std::size_t index = static_cast<std::size_t>(cell);
-            const char ch =
-                index < framebuffer.glyphs.size() ? framebuffer.glyphs[index] : ' ';
-            const std::uint32_t fg =
-                index < framebuffer.rgba.size() ? framebuffer.rgba[index] : kTextBackgroundRgba;
-            const int px = cx * kTextCellWidth;
-            const int py = cy * kTextCellHeight;
-            const bool is_space = ch == ' ';
-            const std::uint32_t bg =
-                is_space && fg != kTextBackgroundRgba ? fg : kTextBackgroundRgba;
-            fillRect(pixels, width, height, px, py, kTextCellWidth, kTextCellHeight, bg);
-            if (!is_space) {
-                drawGlyph(pixels, width, height, px, py, ch, fg);
+bool ensureTexture(SDL_Renderer* renderer,
+                   TextureState& texture,
+                   int width,
+                   int height,
+                   bool& recreated) {
+    recreated = false;
+    if (width <= 0 || height <= 0) return false;
+    if (texture.texture && texture.width == width && texture.height == height) {
+        return true;
+    }
+
+    destroyTexture(texture);
+    texture.texture = SDL_CreateTexture(renderer,
+                                        SDL_PIXELFORMAT_ABGR8888,
+                                        SDL_TEXTUREACCESS_STREAMING,
+                                        width,
+                                        height);
+    if (!texture.texture) return false;
+    SDL_SetTextureBlendMode(texture.texture, SDL_BLENDMODE_NONE);
+    texture.width = width;
+    texture.height = height;
+    texture.pixels.assign(static_cast<std::size_t>(width * height),
+                          toSdlAbgr(kTextBackgroundRgba));
+    recreated = true;
+    return true;
+}
+
+long long framebufferWordAt(const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+                            int index) {
+    if (index < 0 || index >= static_cast<int>(framebuffer.words.size())) return 0;
+    return framebuffer.words[static_cast<std::size_t>(index)];
+}
+
+char glyphFromTextWord(long long value) {
+    const char ch = static_cast<char>(value & 0xff);
+    return (ch >= 32 && ch <= 126) ? ch : ' ';
+}
+
+std::uint32_t colorFromTextWord(long long value) {
+    const int color = static_cast<int>((value >> 8) & 0x0f);
+    return sandbox::host::detail::paletteColor(color);
+}
+
+std::uint32_t colorFromGraphicsWord(long long value) {
+    return value == 0 ? sandbox::host::detail::paletteColor(0)
+                      : sandbox::host::detail::paletteColor(static_cast<int>(value & 0x0f));
+}
+
+void addDirtyRect(std::vector<SDL_Rect>& rects,
+                  RenderMetrics& metrics,
+                  int x,
+                  int y,
+                  int w,
+                  int h) {
+    if (w <= 0 || h <= 0) return;
+    rects.push_back(SDL_Rect{x, y, w, h});
+    metrics.dirty_pixels += static_cast<std::uint64_t>(w) *
+                            static_cast<std::uint64_t>(h);
+}
+
+bool uploadDirtyRects(TextureState& texture, const std::vector<SDL_Rect>& rects) {
+    for (const SDL_Rect& rect : rects) {
+        const std::uint32_t* src =
+            texture.pixels.data() +
+            static_cast<std::size_t>(rect.y * texture.width + rect.x);
+        if (SDL_UpdateTexture(texture.texture,
+                              &rect,
+                              src,
+                              texture.width * static_cast<int>(sizeof(std::uint32_t))) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void renderTextCell(TextureState& texture,
+                    const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+                    int cell_x,
+                    int cell_y) {
+    const int index = cell_y * framebuffer.width + cell_x;
+    const long long word = framebufferWordAt(framebuffer, index);
+    const char ch = glyphFromTextWord(word);
+    const std::uint32_t fg = colorFromTextWord(word);
+    const int px = cell_x * kTextCellWidth;
+    const int py = cell_y * kTextCellHeight;
+    const bool is_space = ch == ' ';
+    const std::uint32_t bg =
+        is_space && fg != kTextBackgroundRgba ? fg : kTextBackgroundRgba;
+    fillRect(texture.pixels,
+             texture.width,
+             texture.height,
+             px,
+             py,
+             kTextCellWidth,
+             kTextCellHeight,
+             toSdlAbgr(bg));
+    if (!is_space) {
+        drawGlyph(texture.pixels,
+                  texture.width,
+                  texture.height,
+                  px,
+                  py,
+                  ch,
+                  toSdlAbgr(fg));
+    }
+}
+
+bool spriteVisible(long long sprite_attr) {
+    const char ch = static_cast<char>(sprite_attr & 0xff);
+    return ch >= 32 && ch <= 126;
+}
+
+void markTextCell(std::vector<std::uint8_t>& dirty_cells,
+                  int width,
+                  int height,
+                  int cell_x,
+                  int cell_y) {
+    if (cell_x < 0 || cell_x >= width || cell_y < 0 || cell_y >= height) return;
+    dirty_cells[static_cast<std::size_t>(cell_y * width + cell_x)] = 1;
+}
+
+void drawTextSprite(TextureState& texture,
+                    const sandbox::host::TosFramebufferMemorySnapshot& framebuffer) {
+    if (!spriteVisible(framebuffer.sprite_attr)) return;
+    const char sprite_ch = static_cast<char>(framebuffer.sprite_attr & 0xff);
+    const int sprite_color = static_cast<int>((framebuffer.sprite_attr >> 8) & 0x0f);
+    drawGlyph(texture.pixels,
+              texture.width,
+              texture.height,
+              static_cast<int>(framebuffer.sprite_x) * kTextCellWidth,
+              static_cast<int>(framebuffer.sprite_y) * kTextCellHeight,
+              sprite_ch,
+              toSdlAbgr(sandbox::host::detail::paletteColor(sprite_color)));
+}
+
+void updateTextCache(TextRenderCache& cache,
+                     const sandbox::host::TosFramebufferMemorySnapshot& framebuffer) {
+    const int cells = framebuffer.width * framebuffer.height;
+    cache.words.assign(static_cast<std::size_t>(cells), 0);
+    for (int i = 0; i < cells; ++i) {
+        cache.words[static_cast<std::size_t>(i)] = framebufferWordAt(framebuffer, i);
+    }
+    cache.sprite_x = framebuffer.sprite_x;
+    cache.sprite_y = framebuffer.sprite_y;
+    cache.sprite_attr = framebuffer.sprite_attr;
+    cache.valid = true;
+}
+
+void renderTextDirty(TextureState& texture,
+                     TextRenderCache& cache,
+                     const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+                     bool full_render,
+                     std::vector<SDL_Rect>& rects,
+                     RenderMetrics& metrics) {
+    const int cells = framebuffer.width * framebuffer.height;
+    std::vector<std::uint8_t> dirty_cells(static_cast<std::size_t>(cells),
+                                          full_render ? 1 : 0);
+
+    if (!full_render) {
+        if (!cache.valid || static_cast<int>(cache.words.size()) != cells) {
+            std::fill(dirty_cells.begin(), dirty_cells.end(), 1);
+        } else {
+            for (int i = 0; i < cells; ++i) {
+                if (framebufferWordAt(framebuffer, i) != cache.words[static_cast<std::size_t>(i)]) {
+                    dirty_cells[static_cast<std::size_t>(i)] = 1;
+                }
+            }
+            if (spriteVisible(cache.sprite_attr)) {
+                markTextCell(dirty_cells,
+                             framebuffer.width,
+                             framebuffer.height,
+                             static_cast<int>(cache.sprite_x),
+                             static_cast<int>(cache.sprite_y));
+            }
+            if (spriteVisible(framebuffer.sprite_attr)) {
+                markTextCell(dirty_cells,
+                             framebuffer.width,
+                             framebuffer.height,
+                             static_cast<int>(framebuffer.sprite_x),
+                             static_cast<int>(framebuffer.sprite_y));
             }
         }
     }
 
-    const char sprite_ch = static_cast<char>(framebuffer.sprite_attr & 0xff);
-    const int sprite_color = static_cast<int>((framebuffer.sprite_attr >> 8) & 0x0f);
-    if (sprite_ch >= 32 && sprite_ch <= 126) {
-        drawGlyph(pixels, width, height,
-                  static_cast<int>(framebuffer.sprite_x) * kTextCellWidth,
-                  static_cast<int>(framebuffer.sprite_y) * kTextCellHeight,
-                  sprite_ch,
-                  sandbox::host::detail::paletteColor(sprite_color));
+    for (int cy = 0; cy < framebuffer.height; ++cy) {
+        int run_start = -1;
+        for (int cx = 0; cx <= framebuffer.width; ++cx) {
+            const bool dirty =
+                cx < framebuffer.width &&
+                dirty_cells[static_cast<std::size_t>(cy * framebuffer.width + cx)] != 0;
+            if (dirty && run_start < 0) {
+                run_start = cx;
+            } else if (!dirty && run_start >= 0) {
+                for (int draw_x = run_start; draw_x < cx; ++draw_x) {
+                    renderTextCell(texture, framebuffer, draw_x, cy);
+                }
+                addDirtyRect(rects,
+                             metrics,
+                             run_start * kTextCellWidth,
+                             cy * kTextCellHeight,
+                             (cx - run_start) * kTextCellWidth,
+                             kTextCellHeight);
+                run_start = -1;
+            }
+        }
     }
-    return pixels;
+
+    drawTextSprite(texture, framebuffer);
+    updateTextCache(cache, framebuffer);
 }
 
-std::vector<std::uint32_t> renderFramebufferPixels(
-    const sandbox::host::TosFramebufferSnapshot& framebuffer,
-    int width,
-    int height) {
-    if (framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25) {
-        return renderTextFramebuffer(framebuffer, width, height);
+void updatePixelCache(PixelRenderCache& cache,
+                      const sandbox::host::TosFramebufferMemorySnapshot& framebuffer) {
+    const int count = framebuffer.width * framebuffer.height;
+    cache.words.assign(static_cast<std::size_t>(count), 0);
+    for (int i = 0; i < count; ++i) {
+        cache.words[static_cast<std::size_t>(i)] = framebufferWordAt(framebuffer, i);
     }
-    std::vector<std::uint32_t> pixels(framebuffer.rgba.size(), 0);
-    for (std::size_t i = 0; i < framebuffer.rgba.size(); ++i) {
-        pixels[i] = framebuffer.rgba[i];
+    cache.valid = true;
+}
+
+void renderPixelsDirty(TextureState& texture,
+                       PixelRenderCache& cache,
+                       const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+                       bool full_render,
+                       std::vector<SDL_Rect>& rects,
+                       RenderMetrics& metrics) {
+    const int width = framebuffer.width;
+    const int height = framebuffer.height;
+    const int count = width * height;
+    if (full_render || !cache.valid || static_cast<int>(cache.words.size()) != count) {
+        for (int i = 0; i < count; ++i) {
+            texture.pixels[static_cast<std::size_t>(i)] =
+                toSdlAbgr(colorFromGraphicsWord(framebufferWordAt(framebuffer, i)));
+        }
+        addDirtyRect(rects, metrics, 0, 0, width, height);
+        updatePixelCache(cache, framebuffer);
+        return;
     }
-    return pixels;
+
+    for (int y = 0; y < height; ++y) {
+        int run_start = -1;
+        for (int x = 0; x <= width; ++x) {
+            bool dirty = false;
+            if (x < width) {
+                const int index = y * width + x;
+                dirty = framebufferWordAt(framebuffer, index) !=
+                        cache.words[static_cast<std::size_t>(index)];
+                if (dirty) {
+                    texture.pixels[static_cast<std::size_t>(index)] =
+                        toSdlAbgr(colorFromGraphicsWord(framebufferWordAt(framebuffer, index)));
+                }
+            }
+            if (dirty && run_start < 0) {
+                run_start = x;
+            } else if (!dirty && run_start >= 0) {
+                addDirtyRect(rects, metrics, run_start, y, x - run_start, 1);
+                run_start = -1;
+            }
+        }
+    }
+
+    updatePixelCache(cache, framebuffer);
 }
 
 bool updateTexture(SDL_Renderer* renderer,
-                   TextureState& texture,
-                   const sandbox::host::TosFramebufferSnapshot& framebuffer) {
+                   FrameRenderState& render_state,
+                   const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+                   RenderMetrics& metrics) {
+    using clock = std::chrono::steady_clock;
+    metrics = RenderMetrics{};
+    const auto started = clock::now();
+
     const auto [texture_width, texture_height] = textureDimensions(framebuffer);
-    if (!texture.texture ||
-        texture.width != texture_width ||
-        texture.height != texture_height) {
-        destroyTexture(texture);
-        texture.texture = SDL_CreateTexture(renderer,
-                                            SDL_PIXELFORMAT_ABGR8888,
-                                            SDL_TEXTUREACCESS_STREAMING,
-                                            texture_width,
-                                            texture_height);
-        if (!texture.texture) return false;
-        SDL_SetTextureBlendMode(texture.texture, SDL_BLENDMODE_NONE);
-        texture.width = texture_width;
-        texture.height = texture_height;
+    bool recreated = false;
+    if (!ensureTexture(renderer,
+                       render_state.texture,
+                       texture_width,
+                       texture_height,
+                       recreated)) {
+        return false;
     }
 
-    std::vector<std::uint32_t> pixels =
-        renderFramebufferPixels(framebuffer, texture_width, texture_height);
-    for (std::size_t i = 0; i < pixels.size(); ++i) {
-        pixels[i] = toSdlAbgr(pixels[i]);
+    const bool mode_changed =
+        !render_state.valid || render_state.mode != framebuffer.mode || recreated;
+    if (mode_changed) {
+        render_state.text.valid = false;
+        render_state.pixels.valid = false;
     }
-    return SDL_UpdateTexture(texture.texture,
-                             nullptr,
-                             pixels.data(),
-                             texture_width * static_cast<int>(sizeof(std::uint32_t))) == 0;
+
+    if (!framebuffer.changed && !mode_changed) {
+        metrics.skipped = true;
+        const auto finished = clock::now();
+        metrics.render_ms =
+            std::chrono::duration<double, std::milli>(finished - started).count();
+        return true;
+    }
+
+    std::vector<SDL_Rect> dirty_rects;
+    if (framebuffer.mode == sandbox::host::TosFramebufferMode::Text80x25) {
+        renderTextDirty(render_state.texture,
+                        render_state.text,
+                        framebuffer,
+                        mode_changed,
+                        dirty_rects,
+                        metrics);
+    } else {
+        renderPixelsDirty(render_state.texture,
+                          render_state.pixels,
+                          framebuffer,
+                          mode_changed,
+                          dirty_rects,
+                          metrics);
+    }
+
+    metrics.dirty_rects = static_cast<int>(dirty_rects.size());
+    metrics.texture_updated = !dirty_rects.empty();
+    if (!uploadDirtyRects(render_state.texture, dirty_rects)) return false;
+    render_state.mode = framebuffer.mode;
+    render_state.valid = true;
+
+    const auto finished = clock::now();
+    metrics.render_ms =
+        std::chrono::duration<double, std::milli>(finished - started).count();
+    return true;
 }
 
 std::string statusTitle(const sandbox::host::TosRuntimeSnapshot& snapshot,
                         bool paused,
-                        bool debug_overlay) {
+                        bool debug_overlay,
+                        const RenderMetrics& metrics) {
     std::ostringstream out;
     out << "OS 3";
     if (debug_overlay) {
         out << " | PC " << snapshot.pc
             << " | " << sandbox::vm::vmStatusToString(snapshot.status)
             << " | cycles " << snapshot.cycles
-            << " | mode " << snapshot.gpu_mode;
+            << " | mode " << snapshot.gpu_mode
+            << " | fps " << std::fixed << std::setprecision(1) << metrics.fps
+            << " | dirty " << metrics.dirty_pixels << "/" << metrics.dirty_rects
+            << " | render " << std::setprecision(2) << metrics.render_ms << "ms";
         if (paused) out << " | paused";
         if (!snapshot.image_version.empty()) out << " | " << snapshot.image_version;
     }
     return out.str();
+}
+
+std::string metricsOverlayText(const RenderMetrics& metrics) {
+    std::ostringstream out;
+    out << "FPS " << std::fixed << std::setprecision(1) << metrics.fps
+        << "  DIRTY " << metrics.dirty_pixels << "/" << metrics.dirty_rects
+        << "  RENDER " << std::setprecision(2) << metrics.render_ms << "MS";
+    return out.str();
+}
+
+void drawDebugGlyph(SDL_Renderer* renderer,
+                    int x,
+                    int y,
+                    char ch,
+                    int scale,
+                    SDL_Color color) {
+    const auto rows = glyphRows(ch);
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    for (int row = 0; row < kGlyphHeight; ++row) {
+        for (int col = 0; col < kGlyphWidth; ++col) {
+            if ((rows[static_cast<std::size_t>(row)] & (1 << (kGlyphWidth - col - 1))) == 0) {
+                continue;
+            }
+            SDL_Rect pixel{x + col * scale, y + row * scale, scale, scale};
+            SDL_RenderFillRect(renderer, &pixel);
+        }
+    }
+}
+
+void drawDebugText(SDL_Renderer* renderer,
+                   int x,
+                   int y,
+                   const std::string& text,
+                   int scale,
+                   SDL_Color color) {
+    const int advance = (kGlyphWidth + 1) * scale;
+    int pen_x = x;
+    for (char ch : text) {
+        if (ch != ' ') {
+            drawDebugGlyph(renderer, pen_x, y, ch, scale, color);
+        }
+        pen_x += advance;
+    }
+}
+
+void drawDebugOverlay(SDL_Renderer* renderer, const RenderMetrics& metrics) {
+    const std::string text = metricsOverlayText(metrics);
+    const int scale = 2;
+    const int advance = (kGlyphWidth + 1) * scale;
+    SDL_Rect background{8,
+                        8,
+                        static_cast<int>(text.size()) * advance + 10,
+                        kGlyphHeight * scale + 10};
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+    SDL_RenderFillRect(renderer, &background);
+    drawDebugText(renderer, 13, 13, text, scale, SDL_Color{232, 244, 255, 255});
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
 void mapMouseToGuest(const SDL_Rect& dest,
@@ -456,107 +797,208 @@ int main(int argc, char** argv) {
     SDL_RenderSetIntegerScale(renderer, SDL_TRUE);
     SDL_StartTextInput();
 
-    TextureState texture;
+    FrameRenderState render_state;
+    RenderMetrics metrics;
     bool running = true;
     bool debug_overlay = false;
     long long mouse_buttons = 0;
     int rendered_frames = 0;
     bool smoke_failed = false;
+    bool force_present = true;
+    std::uint64_t framebuffer_revision = 0;
+    int guest_frame_w = 80;
+    int guest_frame_h = 25;
+    int source_w = 80 * kTextCellWidth;
+    int source_h = 25 * kTextCellHeight;
+
+    using Clock = std::chrono::steady_clock;
+    const auto present_interval = std::chrono::microseconds(16667);
+    auto next_present = Clock::now();
+    auto fps_window_start = Clock::now();
+    int fps_window_frames = 0;
+    double fps = 0.0;
+
+    auto notePresentedFrame = [&](Clock::time_point now) {
+        ++fps_window_frames;
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            now - fps_window_start);
+        if (elapsed.count() >= 1000000) {
+            fps = (static_cast<double>(fps_window_frames) * 1000000.0) /
+                  static_cast<double>(elapsed.count());
+            fps_window_frames = 0;
+            fps_window_start = now;
+        }
+    };
+
+    auto scheduleNextPresent = [&](Clock::time_point now) {
+        if (next_present > now) return;
+        do {
+            next_present += present_interval;
+        } while (next_present <= now);
+    };
+
+    auto resetRenderCache = [&]() {
+        destroyTexture(render_state.texture);
+        render_state = FrameRenderState{};
+        framebuffer_revision = 0;
+        force_present = true;
+        next_present = Clock::now();
+    };
+
+    auto handleEvent = [&](const SDL_Event& event) {
+        switch (event.type) {
+            case SDL_QUIT:
+                running = false;
+                break;
+            case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_EXPOSED ||
+                    event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                    event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    force_present = true;
+                }
+                break;
+            case SDL_TEXTINPUT:
+                // Keydown handles the ASCII subset used by the guest OS. Keeping
+                // text input disabled here avoids duplicate characters on Windows.
+                break;
+            case SDL_KEYDOWN: {
+                const SDL_Keycode key = event.key.keysym.sym;
+                const SDL_Keymod mods = static_cast<SDL_Keymod>(event.key.keysym.mod);
+                const bool host_command = hasHostModifier(mods);
+                if (host_command && key == SDLK_q) {
+                    running = false;
+                } else if (host_command && key == SDLK_SPACE) {
+                    if (runtime.paused()) runtime.resume();
+                    else runtime.pause();
+                    force_present = true;
+                } else if (host_command && key == SDLK_r) {
+                    if (!runtime.reset(&error)) {
+                        std::cerr << error << "\n";
+                    } else if (!runtime.start()) {
+                        std::cerr << "failed to restart runtime\n";
+                    } else {
+                        resetRenderCache();
+                    }
+                } else if (host_command && key == SDLK_d) {
+                    if (!runtime.exportDiagnostics(diagnostics_path, &error)) {
+                        std::cerr << error << "\n";
+                    }
+                } else if (key == SDLK_F1) {
+                    debug_overlay = !debug_overlay;
+                    force_present = true;
+                } else if (key == SDLK_BACKSPACE) {
+                    runtime.pushKeyboardInput(8);
+                } else if (key == SDLK_RETURN) {
+                    runtime.pushKeyboardInput(13);
+                } else if (key == SDLK_ESCAPE) {
+                    runtime.pushKeyboardInput(27);
+                } else {
+                    const long long ascii = asciiFromKey(key, mods);
+                    if (ascii >= 0) runtime.pushKeyboardInput(ascii);
+                }
+                break;
+            }
+            case SDL_MOUSEBUTTONDOWN:
+                if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons |= 1;
+                break;
+            case SDL_MOUSEBUTTONUP:
+                if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons &= ~1LL;
+                break;
+            default:
+                break;
+        }
+    };
 
     while (running) {
         SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            switch (event.type) {
-                case SDL_QUIT:
-                    running = false;
-                    break;
-                case SDL_TEXTINPUT:
-                    // Keydown handles the ASCII subset used by the guest OS. Keeping
-                    // text input disabled here avoids duplicate characters on Windows.
-                    break;
-                case SDL_KEYDOWN: {
-                    const SDL_Keycode key = event.key.keysym.sym;
-                    const SDL_Keymod mods = static_cast<SDL_Keymod>(event.key.keysym.mod);
-                    const bool host_command = hasHostModifier(mods);
-                    if (host_command && key == SDLK_q) {
-                        running = false;
-                    } else if (host_command && key == SDLK_SPACE) {
-                        if (runtime.paused()) runtime.resume();
-                        else runtime.pause();
-                    } else if (host_command && key == SDLK_r) {
-                        if (!runtime.reset(&error)) std::cerr << error << "\n";
-                        else if (!runtime.start()) std::cerr << "failed to restart runtime\n";
-                    } else if (host_command && key == SDLK_d) {
-                        if (!runtime.exportDiagnostics(diagnostics_path, &error)) {
-                            std::cerr << error << "\n";
-                        }
-                    } else if (key == SDLK_F1) {
-                        debug_overlay = !debug_overlay;
-                    } else if (key == SDLK_BACKSPACE) {
-                        runtime.pushKeyboardInput(8);
-                    } else if (key == SDLK_RETURN) {
-                        runtime.pushKeyboardInput(13);
-                    } else if (key == SDLK_ESCAPE) {
-                        runtime.pushKeyboardInput(27);
-                    } else {
-                        const long long ascii = asciiFromKey(key, mods);
-                        if (ascii >= 0) runtime.pushKeyboardInput(ascii);
-                    }
-                    break;
-                }
-                case SDL_MOUSEBUTTONDOWN:
-                    if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons |= 1;
-                    break;
-                case SDL_MOUSEBUTTONUP:
-                    if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons &= ~1LL;
-                    break;
-                default:
-                    break;
-            }
+        const auto before_wait = Clock::now();
+        int wait_ms = 0;
+        if (before_wait < next_present) {
+            wait_ms = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    next_present - before_wait)
+                    .count());
+            if (wait_ms <= 0) wait_ms = 1;
         }
+        if (wait_ms > 0 && SDL_WaitEventTimeout(&event, wait_ms)) {
+            handleEvent(event);
+        }
+        while (SDL_PollEvent(&event)) {
+            handleEvent(event);
+        }
+        if (!running) break;
 
-        const sandbox::host::TosFramebufferSnapshot framebuffer = runtime.readFramebuffer();
         int window_w = 0;
         int window_h = 0;
         SDL_GetWindowSize(window, &window_w, &window_h);
-        const auto [texture_width, texture_height] = textureDimensions(framebuffer);
-        const SDL_Rect dest =
-            letterboxRect(window_w, window_h, texture_width, texture_height);
+        SDL_Rect dest = letterboxRect(window_w, window_h, source_w, source_h);
 
         int mouse_x = 0;
         int mouse_y = 0;
         SDL_GetMouseState(&mouse_x, &mouse_y);
         long long guest_x = 0;
         long long guest_y = 0;
-        mapMouseToGuest(dest, framebuffer.width, framebuffer.height, mouse_x, mouse_y,
-                        guest_x, guest_y);
+        mapMouseToGuest(dest, guest_frame_w, guest_frame_h, mouse_x, mouse_y, guest_x, guest_y);
         runtime.updateMouseState(guest_x, guest_y, mouse_buttons);
 
-        if (!updateTexture(renderer, texture, framebuffer)) {
+        const auto now = Clock::now();
+        if (now < next_present) {
+            continue;
+        }
+
+        sandbox::host::TosFramebufferMemorySnapshot framebuffer =
+            runtime.readFramebufferMemory(framebuffer_revision);
+        const auto [texture_width, texture_height] = textureDimensions(framebuffer);
+        guest_frame_w = framebuffer.width;
+        guest_frame_h = framebuffer.height;
+        source_w = texture_width;
+        source_h = texture_height;
+        dest = letterboxRect(window_w, window_h, source_w, source_h);
+
+        if (!updateTexture(renderer, render_state, framebuffer, metrics)) {
             std::cerr << "SDL_UpdateTexture failed: " << SDL_GetError() << "\n";
             running = false;
             break;
         }
+        if (framebuffer.changed) framebuffer_revision = framebuffer.revision;
+        metrics.fps = fps;
 
-        SDL_SetRenderDrawColor(renderer, 5, 8, 20, 255);
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture.texture, nullptr, &dest);
-        SDL_RenderPresent(renderer);
+        const bool should_present =
+            render_state.texture.texture != nullptr &&
+            (metrics.texture_updated || force_present || debug_overlay || smoke_test);
+        if (should_present) {
+            const auto present_time = Clock::now();
+            notePresentedFrame(present_time);
+            metrics.fps = fps;
 
-        const sandbox::host::TosRuntimeSnapshot snapshot = runtime.snapshot();
-        SDL_SetWindowTitle(window,
-                           statusTitle(snapshot, runtime.paused(), debug_overlay).c_str());
-        if (smoke_test) {
-            if (snapshot.status == sandbox::vm::VMStatus::TRAPPED) {
-                std::cerr << "smoke test failed: VM trapped at PC " << snapshot.pc << "\n";
-                smoke_failed = true;
-                running = false;
-            } else if (++rendered_frames >= smoke_frames) {
-                std::cout << "SDL smoke test rendered " << rendered_frames << " frame(s)\n";
-                running = false;
+            SDL_SetRenderDrawColor(renderer, 5, 8, 20, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderCopy(renderer, render_state.texture.texture, nullptr, &dest);
+            if (debug_overlay) {
+                drawDebugOverlay(renderer, metrics);
             }
+            SDL_RenderPresent(renderer);
+            force_present = false;
+
+            const sandbox::host::TosRuntimeSnapshot snapshot = runtime.snapshot();
+            SDL_SetWindowTitle(window,
+                               statusTitle(snapshot, runtime.paused(), debug_overlay, metrics)
+                                   .c_str());
+            if (smoke_test) {
+                if (snapshot.status == sandbox::vm::VMStatus::TRAPPED) {
+                    std::cerr << "smoke test failed: VM trapped at PC " << snapshot.pc << "\n";
+                    smoke_failed = true;
+                    running = false;
+                } else if (++rendered_frames >= smoke_frames) {
+                    std::cout << "SDL smoke test rendered " << rendered_frames << " frame(s)\n";
+                    running = false;
+                }
+            }
+        } else {
+            force_present = false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+
+        scheduleNextPresent(Clock::now());
     }
 
     if (export_diagnostics_on_exit || smoke_failed) {
@@ -567,7 +1009,7 @@ int main(int argc, char** argv) {
     }
 
     runtime.shutdown();
-    destroyTexture(texture);
+    destroyTexture(render_state.texture);
     SDL_StopTextInput();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

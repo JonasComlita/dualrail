@@ -1,74 +1,124 @@
-# Register & ABI Quick Reference
+# Register Map
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_vm_state.h`, `ternary_isa.h` |
+Source of truth: `ternary_isa.h` — register constants and `InstructionWord` struct.
 
 ---
 
-## 🏗️ Register File Architecture
-The Trit-Stack uses a **27-register general-purpose file** plus a dedicated hardware status register (`r27`). Every register is a `TernaryValue` which can store up to 50 trits of precision.
+## General-Purpose Register File (r0–r26)
 
-### Register Map (r0–r27)
+| Register | Alias | ABI Role | Notes |
+|----------|-------|----------|-------|
+| `r0`     | `zero` | Hardwired zero | Writes are silently discarded |
+| `r1`–`r12` | — | Callee-saved | Must be preserved across calls |
+| `r13`    | `a0` / `ret` | Argument 0 / Return value | First arg in, return value out |
+| `r14`    | `a1` | Argument 1 | Second arg |
+| `r15`    | `a2` | Argument 2 | Third arg |
+| `r16`    | `a3` | Argument 3 | Fourth arg |
+| `r17`–`r24` | — | Caller-saved | Scratch; may be clobbered by callee |
+| `r25`    | `lr` | Link Register | Written by `CALL`; read by `RET` |
+| `r26`    | `sp` | Stack Pointer | Grows downward (decrements on push) |
 
-| Register | Mnemonic | Primary Role | Preservation |
-| :--- | :--- | :--- | :--- |
-| **r0** | `ZERO` | **Hardwired Zero**: Reads always return 0; writes are ignored. | - |
-| **r1 – r12** | `s0 – s11` | **Saved Temporaries**: Used for long-lived variables. | **Callee-Saved** |
-| **r13** | `v0 / a0` | **Return Value / Argument 0**: First param and result. | Caller-Saved |
-| **r14 – r18** | `a1 – a5` | **Arguments 1-5**: Function parameters. | Caller-Saved |
-| **r19 – r24** | `t0 – t5` | **Temporaries**: Volatile scratch space. | Caller-Saved |
-| **r25** | `ra` | **Link Register**: Stores return address for `CALL`. | Caller-Saved |
-| **r26** | `sp` | **Stack Pointer**: Points to the current top of stack. | **Callee-Saved** |
-| **r27** | `st` | **Trap / Status**: Dedicated fault/privilege record. | VM-Managed |
+## Trap Register (r27)
 
----
+| Register | Role | Notes |
+|----------|------|-------|
+| `r27`    | Trap register | Written by VM on any fault; **read-only from ISA** |
 
-## ⚡ The Status Register (r27)
-Unlike general registers, `r27` follows a strict **T5 (5-trit) Fault Record** format.
-
-| Trit Index | Field | Meaning |
-| :--- | :--- | :--- |
-| **0** | `fault_valid` | `0` = No Trap, `+1` = Trap Active. |
-| **1** | `fault_class` | `-1` = Div-by-Zero, `0` = Mem Fault, `+1` = Illegal Op. |
-| **2** | `privilege` | `0` = User Mode, `+1` = Kernel Mode. |
-| **3-4** | `reserved` | Reserved for future interrupt masking. |
+`r27` is a two-trit ternary fault record:
+- `trit[0]` = `fault_valid`: 0 = no fault, +1 = fault is live
+- `trit[1]` = `fault_class`: −1 = DIV_ZERO, 0 = MEM_FAULT, +1 = ILLEGAL_OP
 
 ---
 
-## 📚 Calling Convention (The Contract)
+## Vector Register File (v0–v7)
 
-### 1. Stack Anatomy
-The stack grows **downward** from high memory to low memory. The Stack Pointer (`r26`) always points to the last *used* word.
+Eight vector registers (`VECTOR_REGISTER_COUNT = 8`).
+Each register is a dynamic array of `TernaryValue` elements; length set by `vm.vector_length`.
+Width is selected per-instruction via the `func` field (T1, T5, T10, T20, T40, T50).
 
-```text
-Higher Addresses
-+-----------------------+
-|  Previous Stack Frame |
-+-----------------------+ <--- Old SP
-|  Saved Link Reg (ra)  |
-+-----------------------+
-|  Saved s0 - s11       | (Only if used by callee)
-+-----------------------+
-|  Local Variables      |
-+-----------------------+
-|  Overflow Arguments   | (Args 6+ if applicable)
-+-----------------------+ <--- Current SP
-Lower Addresses
+| Register | Description |
+|----------|-------------|
+| `v0`–`v7` | General-purpose vector registers |
+
+---
+
+## AI Accumulator
+
+A single wide accumulator register used by `ACLR`, `ALOAD`, `AADD`, `ASUB`, `AMUL`, `ASTORE`.
+Stores `TernaryValue` at T40 precision. Used for `VDOT` / `VMAC` dot-product accumulation.
+
+---
+
+## CSR File (Control & Status Registers)
+
+Accessed via `CSRR` / `CSRW` / `CSRRW`. IDs 0–46.
+
+| CSR ID | Name | Purpose |
+|--------|------|---------|
+| 0 | `epc` | Exception Program Counter (saved PC on trap) |
+| 1 | `cause` | Trap cause code |
+| 2 | `status` | Privilege status |
+| 3 | `tvec` | Trap vector base address |
+| 4 | `scratch` | Kernel scratch register |
+| 5 | `cycle` | Cycle counter |
+| 6 | `timer_reload` | Timer reload value |
+| 7 | `timer_counter` | Timer current count |
+| 8 | `timer_enable` | Timer enable flag |
+| 9 | `timer_pending` | Timer interrupt pending |
+| 10 | `user_imem_base` | User instruction memory base |
+| 11 | `user_imem_limit` | User instruction memory limit |
+| 12 | `user_dmem_base` | User data memory base |
+| 13 | `user_dmem_limit` | User data memory limit |
+| 14 | `syscall_id` | Syscall service ID (set before `SYSCALL`) |
+| 15 | `mmu_enable` | Enable/disable MMU |
+| 16 | `user_imem_ptbr` | User IMEM page table base register |
+| 17 | `user_imem_pages` | User IMEM page count |
+| 18 | `user_dmem_ptbr` | User DMEM page table base register |
+| 19 | `user_dmem_pages` | User DMEM page count |
+| 20 | `page_fault_addr` | Address that caused a page fault |
+| 21 | `page_fault_access` | Access type: −1=fetch, 0=load, +1=store |
+| 22 | `console_out` | Write character to console |
+| 23 | `console_ctrl` | Console control (flush, etc.) |
+| 24 | `console_in` | Read character from console |
+| 25 | `console_in_ctrl` | Console input control |
+| 26 | `mouse_x` | Mouse X coordinate |
+| 27 | `mouse_y` | Mouse Y coordinate |
+| 28 | `mouse_btn` | Mouse button state |
+| 29–32 | `gpu_x1/y1/x2/y2` | GPU draw region coordinates |
+| 33 | `gpu_color` | GPU draw color |
+| 34 | `gpu_cmd` | GPU command (draw rect, clear, etc.) |
+| 35 | `gpu_page` | Framebuffer page select |
+| 36 | `gpu_draw_base` | Framebuffer draw base address |
+| 37 | `gpu_mode` | GPU mode (text/pixel) |
+| 38–40 | `sprite_x/y/attr` | Sprite position and attributes |
+| 41 | `block_index` | Block device index |
+| 42 | `block_addr` | Block device address |
+| 43 | `block_cmd` | Block device command |
+| 44 | `block_status` | Block device status |
+| 45 | `block_count` | Block device transfer count |
+| 46 | `block_words` | Block device word count |
+
+---
+
+## Register Encoding
+
+A 3-trit register field covers r0–r26 (27 values).
+The field stores `register_index − 13` (balanced, from −13 to +13).
+`REG_FIELD_OFFSET = 13`.
+
+Example: r13 is stored as balanced trit `0`, r0 is stored as balanced trit `−13`.
+
+---
+
+## Quick ABI Summary
+
 ```
-
-### 2. Parameter Passing
-*   **Registers**: First 6 arguments go in `r13, r14, r15, r16, r17, r18`.
-*   **Stack**: Remaining arguments are pushed onto the stack in reverse order (Right-to-Left).
-*   **Return**: The result is always returned in `r13`.
-
-### 3. Word Alignment
-All instruction-related pointers (PC, Link Register) and the Stack Pointer **must** be aligned to 27-trit word boundaries. Misalignment triggers a `TRAP_MEM_FAULT`.
-
----
-
-## 🛡️ Privilege Model
-The Trit-Stack implements hardware-level separation:
-*   **Kernel Mode (Trit +1)**: Can execute privileged instructions (`HALT`, `RFE`, direct I/O) and modify the Trap Vector Table.
-*   **User Mode (Trit 0)**: Restricted. Any attempt to touch kernel memory or execute privileged ops triggers an `ILLEGAL_OP` trap, shifting the CPU to Kernel Mode.
-
+Callee-saved:  r1–r12          (must save/restore if used)
+Caller-saved:  r13–r24         (scratch, may be clobbered)
+Args in:       r13, r14, r15, r16
+Return value:  r13
+Link register: r25             (CALL writes here)
+Stack pointer: r26             (grows downward)
+Zero register: r0              (always reads as zero)
+Trap register: r27             (written by VM, not ISA)
+```

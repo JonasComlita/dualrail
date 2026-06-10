@@ -1,0 +1,45 @@
+{
+  "schema": "trit.tests_next.acceptance_gates.v1",
+  "gates": [
+    {
+      "name": "ci_fast",
+      "purpose": "Run on every agent loop. Should be deterministic and quick.",
+      "required_kinds": ["focused"],
+      "required_layers": ["01_isa", "02_vm", "03_assembler", "04_compiler"]
+    },
+    {
+      "name": "ci_full",
+      "purpose": "Run before replacing old tests or merging major changes.",
+      "required_kinds": ["focused", "group", "integration"],
+      "required_layers": [
+        "01_isa",
+        "02_vm",
+        "03_assembler",
+        "04_compiler",
+        "05_language",
+        "06_runtime_ulib",
+        "07_kernel",
+        "08_filesystem_vfs",
+        "09_process_ipc_scheduler",
+        "10_drivers_hal",
+        "11_graphics_gui",
+        "12_apps"
+      ]
+    },
+    {
+      "name": "ci_release",
+      "purpose": "Run before declaring a distributable OS image healthy.",
+      "required_kinds": ["focused", "group", "integration", "full_system"],
+      "required_layers": [
+        "07_kernel",
+        "08_filesystem_vfs",
+        "10_drivers_hal",
+        "11_graphics_gui",
+        "12_apps",
+        "13_distribution_images",
+        "14_security_hardening",
+        "17_full_system"
+      ]
+    }
+  ]
+}

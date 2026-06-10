@@ -64,6 +64,13 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdio>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -77,6 +84,27 @@ namespace sandbox {
 namespace vm {
 
 using namespace isa;  // bring in Opcode, TrapCode, REG_COUNT, R0_ZERO, etc.
+
+namespace detail {
+
+inline bool syncFileToStableStorage(const std::filesystem::path& path) {
+#if defined(_WIN32)
+    const std::wstring native = path.wstring();
+    const int fd = _wopen(native.c_str(), _O_RDWR | _O_BINARY);
+    if (fd < 0) return false;
+    const bool ok = _commit(fd) == 0;
+    _close(fd);
+    return ok;
+#else
+    const int fd = ::open(path.c_str(), O_RDWR);
+    if (fd < 0) return false;
+    const bool ok = ::fsync(fd) == 0;
+    ::close(fd);
+    return ok;
+#endif
+}
+
+} // namespace detail
 
 // =============================================================================
 // SECTION 1 — Memory Size Constants
@@ -682,11 +710,15 @@ struct TernaryMemory {
     }
 
     TernaryMemory(const TernaryMemory& other)
-        : allocator(other.allocator), sparse_(other.sparse_), sparse_pages_(other.sparse_pages_) {
+        : allocator(other.allocator),
+          write_generation_(other.write_generation_),
+          clear_generation_(other.clear_generation_) {
         allocate(other.capacity, other.sparse_ ? MemoryBacking::Sparse : MemoryBacking::Dense);
         try {
             if (!sparse_ && capacity > 0) std::copy(other.words, other.words + capacity, words);
-            if (sparse_) sparse_pages_ = other.sparse_pages_;
+            sparse_pages_ = other.sparse_pages_;
+            sparse_page_generations_ = other.sparse_page_generations_;
+            dense_page_generations_ = other.dense_page_generations_;
         } catch (...) {
             release();
             throw;
@@ -705,12 +737,18 @@ struct TernaryMemory {
           capacity(other.capacity),
           allocator(other.allocator),
           sparse_(other.sparse_),
-          sparse_pages_(std::move(other.sparse_pages_)) {
+          sparse_pages_(std::move(other.sparse_pages_)),
+          sparse_page_generations_(std::move(other.sparse_page_generations_)),
+          dense_page_generations_(std::move(other.dense_page_generations_)),
+          write_generation_(other.write_generation_),
+          clear_generation_(other.clear_generation_) {
         invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.write_generation_ = 1;
+        other.clear_generation_ = 1;
         other.invalidateSparseCache();
     }
 
@@ -722,11 +760,17 @@ struct TernaryMemory {
         allocator = other.allocator;
         sparse_ = other.sparse_;
         sparse_pages_ = std::move(other.sparse_pages_);
+        sparse_page_generations_ = std::move(other.sparse_page_generations_);
+        dense_page_generations_ = std::move(other.dense_page_generations_);
+        write_generation_ = other.write_generation_;
+        clear_generation_ = other.clear_generation_;
         invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
         other.allocator = &defaultVMStateAllocator();
         other.sparse_ = false;
+        other.write_generation_ = 1;
+        other.clear_generation_ = 1;
         other.invalidateSparseCache();
         return *this;
     }
@@ -737,6 +781,10 @@ struct TernaryMemory {
         std::swap(allocator, other.allocator);
         std::swap(sparse_, other.sparse_);
         std::swap(sparse_pages_, other.sparse_pages_);
+        std::swap(sparse_page_generations_, other.sparse_page_generations_);
+        std::swap(dense_page_generations_, other.dense_page_generations_);
+        std::swap(write_generation_, other.write_generation_);
+        std::swap(clear_generation_, other.clear_generation_);
         invalidateSparseCache();
         other.invalidateSparseCache();
     }
@@ -746,11 +794,15 @@ struct TernaryMemory {
         capacity = size;
         sparse_ = backing == MemoryBacking::Sparse ||
                   (backing == MemoryBacking::Auto && size > SPARSE_MEMORY_DENSE_LIMIT_WORDS);
+        sparse_pages_.clear();
+        sparse_page_generations_.clear();
         if (sparse_) {
             words = nullptr;
+            dense_page_generations_.clear();
             return;
         }
         words = allocator->allocateDataWords(capacity);
+        dense_page_generations_.assign(pageCountForCapacity(capacity), clear_generation_);
     }
 
     void release() {
@@ -759,6 +811,8 @@ struct TernaryMemory {
             words = nullptr;
         }
         sparse_pages_.clear();
+        sparse_page_generations_.clear();
+        dense_page_generations_.clear();
         invalidateSparseCache();
         capacity = 0;
         sparse_ = false;
@@ -767,10 +821,13 @@ struct TernaryMemory {
     void reset() {
         if (sparse_) {
             sparse_pages_.clear();
+            sparse_page_generations_.clear();
             invalidateSparseCache();
         } else if (capacity > 0) {
             std::fill(words, words + capacity, TernaryValue::zero());
+            dense_page_generations_.assign(pageCountForCapacity(capacity), clear_generation_);
         }
+        noteClear();
     }
 
     void resize(int new_size, MemoryBacking backing = MemoryBacking::Auto) {
@@ -806,6 +863,7 @@ struct TernaryMemory {
         }
         words = grown;
         capacity = min_size;
+        dense_page_generations_.resize(pageCountForCapacity(capacity), clear_generation_);
         return true;
     }
 
@@ -839,14 +897,16 @@ struct TernaryMemory {
         if (addr < 0 || addr >= capacity) {
             return MemFaultCode::OUT_OF_RANGE;
         }
+        const int page_index = pageIndex(addr);
         if (!sparse_) {
             words[addr] = val;
+            noteStore(page_index);
             return MemFaultCode::OK;
         }
-        const int page_index = pageIndex(addr);
         auto& page = sparse_pages_[page_index];
         if (page.empty()) page.assign(SPARSE_VM_PAGE_WORDS, TernaryValue::zero());
         page[static_cast<std::size_t>(pageOffset(addr))] = val;
+        sparse_page_generations_[page_index] = nextGeneration();
         cached_sparse_page_index_ = page_index;
         cached_sparse_page_ = &page;
         return MemFaultCode::OK;
@@ -863,33 +923,105 @@ struct TernaryMemory {
     [[nodiscard]] int size() const { return capacity; }
     [[nodiscard]] bool isSparse() const { return sparse_; }
     [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
+    [[nodiscard]] std::uint64_t generation() const { return write_generation_; }
+
+    [[nodiscard]] std::uint64_t pageGenerationForAddress(int addr) const {
+        if (addr < 0 || addr >= capacity) return 0;
+        return pageGeneration(pageIndex(addr));
+    }
+
+    [[nodiscard]] std::uint64_t rangeGeneration(int start_addr, int word_count) const {
+        if (word_count <= 0 || capacity <= 0) return generation();
+        const int start = std::clamp(start_addr, 0, capacity - 1);
+        const int end_exclusive = std::clamp(start_addr + word_count, 0, capacity);
+        if (end_exclusive <= start) return generation();
+        std::uint64_t newest = clear_generation_;
+        const int first_page = pageIndex(start);
+        const int last_page = pageIndex(end_exclusive - 1);
+        for (int page = first_page; page <= last_page; ++page) {
+            newest = std::max(newest, pageGeneration(page));
+        }
+        return newest;
+    }
 
 private:
     bool sparse_ = false;
     std::unordered_map<int, std::vector<TernaryValue>> sparse_pages_;
+    std::unordered_map<int, std::uint64_t> sparse_page_generations_;
+    std::vector<std::uint64_t> dense_page_generations_;
+    std::uint64_t write_generation_ = 1;
+    std::uint64_t clear_generation_ = 1;
     mutable int cached_sparse_page_index_ = -1;
     mutable const std::vector<TernaryValue>* cached_sparse_page_ = nullptr;
 
     [[nodiscard]] static int pageIndex(int addr) { return addr / SPARSE_VM_PAGE_WORDS; }
     [[nodiscard]] static int pageOffset(int addr) { return addr % SPARSE_VM_PAGE_WORDS; }
+    [[nodiscard]] static int pageCountForCapacity(int size) {
+        return size <= 0 ? 0 : ((size - 1) / SPARSE_VM_PAGE_WORDS) + 1;
+    }
 
     void invalidateSparseCache() const {
         cached_sparse_page_index_ = -1;
         cached_sparse_page_ = nullptr;
     }
 
+    std::vector<std::uint64_t>& densePageGenerations() {
+        if (static_cast<int>(dense_page_generations_.size()) != pageCountForCapacity(capacity)) {
+            dense_page_generations_.assign(pageCountForCapacity(capacity), clear_generation_);
+        }
+        return dense_page_generations_;
+    }
+
+    [[nodiscard]] std::uint64_t pageGeneration(int page_index) const {
+        if (sparse_) {
+            const auto it = sparse_page_generations_.find(page_index);
+            return it == sparse_page_generations_.end() ? clear_generation_ : it->second;
+        }
+        if (page_index < 0 ||
+            page_index >= static_cast<int>(dense_page_generations_.size())) {
+            return clear_generation_;
+        }
+        return dense_page_generations_[static_cast<std::size_t>(page_index)];
+    }
+
+    std::uint64_t nextGeneration() {
+        if (write_generation_ == std::numeric_limits<std::uint64_t>::max()) {
+            write_generation_ = 1;
+        }
+        return ++write_generation_;
+    }
+
+    void noteStore(int page_index) {
+        auto& generations = densePageGenerations();
+        if (page_index >= 0 && page_index < static_cast<int>(generations.size())) {
+            generations[static_cast<std::size_t>(page_index)] = nextGeneration();
+        }
+    }
+
+    void noteClear() {
+        clear_generation_ = nextGeneration();
+        if (!sparse_) {
+            dense_page_generations_.assign(pageCountForCapacity(capacity), clear_generation_);
+        }
+    }
+
     void convertDenseToSparse(int new_capacity) {
         std::unordered_map<int, std::vector<TernaryValue>> pages;
+        std::unordered_map<int, std::uint64_t> generations;
         const TernaryValue zero = TernaryValue::zero();
         for (int addr = 0; addr < capacity; ++addr) {
             if (words[addr] == zero) continue;
-            auto& page = pages[pageIndex(addr)];
+            const int page_index = pageIndex(addr);
+            auto& page = pages[page_index];
             if (page.empty()) page.assign(SPARSE_VM_PAGE_WORDS, zero);
             page[static_cast<std::size_t>(pageOffset(addr))] = words[addr];
+            generations[page_index] = pageGeneration(page_index);
         }
         if (words != nullptr) allocator->deallocateDataWords(words);
         words = nullptr;
         sparse_pages_ = std::move(pages);
+        sparse_page_generations_ = std::move(generations);
+        dense_page_generations_.clear();
         sparse_ = true;
         capacity = new_capacity;
         invalidateSparseCache();
@@ -1556,6 +1688,28 @@ private:
     std::unordered_set<int> dirty_;
 };
 
+struct VMBlockDeviceStats {
+    long long reads = 0;
+    long long writes = 0;
+    long long hits = 0;
+    long long misses = 0;
+    long long dirty_flushes = 0;
+    long long flushes = 0;
+    long long compactions = 0;
+    long long read_ahead = 0;
+
+    void reset() {
+        reads = 0;
+        writes = 0;
+        hits = 0;
+        misses = 0;
+        dirty_flushes = 0;
+        flushes = 0;
+        compactions = 0;
+        read_ahead = 0;
+    }
+};
+
 class SparseBlockStorage {
 public:
     explicit SparseBlockStorage(int block_count = 192) {
@@ -1565,34 +1719,52 @@ public:
     void reset(int block_count) {
         block_count_ = std::max(1, block_count);
         blocks_.clear();
+        read_cache_.clear();
+        pending_blocks_.clear();
         compact_record_count_ = 0;
+        stats_.reset();
     }
 
     [[nodiscard]] int blockCount() const { return block_count_; }
     [[nodiscard]] int blockWords() const { return MMU_PAGE_WORDS; }
     [[nodiscard]] std::size_t allocatedBlocks() const { return blocks_.size(); }
+    [[nodiscard]] std::size_t pendingWriteCount() const { return pending_blocks_.size(); }
+    [[nodiscard]] int backingRecordCount() const { return compact_record_count_; }
+    [[nodiscard]] VMBlockDeviceStats stats() const { return stats_; }
+    void resetStats() const { stats_.reset(); }
 
     [[nodiscard]] bool attachBackingFile(const std::string& path) {
         backing_path_ = path;
         blocks_.clear();
+        read_cache_.clear();
+        pending_blocks_.clear();
         compact_record_count_ = 0;
+        stats_.reset();
         return loadCompactBacking();
     }
 
     void detachBackingFile() {
+        (void)flushBackingFile();
         backing_path_.clear();
+        pending_blocks_.clear();
+        read_cache_.clear();
     }
 
     [[nodiscard]] const std::string& backingPath() const { return backing_path_; }
 
     [[nodiscard]] bool readBlock(int index, std::vector<long long>& out) const {
         if (index < 0 || index >= block_count_) return false;
-        out.assign(MMU_PAGE_WORDS, 0);
-        const auto found = blocks_.find(index);
-        if (found != blocks_.end()) {
-            out = found->second;
-            return true;
+        ++stats_.reads;
+        const auto cached = read_cache_.find(index);
+        if (cached != read_cache_.end()) {
+            ++stats_.hits;
+            out = cached->second;
+        } else {
+            ++stats_.misses;
+            out = materializeBlock(index);
+            cacheBlock(index, out);
         }
+        prefetchReadAhead(index + 1);
         return true;
     }
 
@@ -1600,23 +1772,22 @@ public:
         if (index < 0 || index >= block_count_) return false;
         if (static_cast<int>(data.size()) != MMU_PAGE_WORDS) return false;
 
-        if (!backing_path_.empty()) {
-            if (!appendCompactRecord(index, data)) return false;
-            applyBlock(index, data);
-            if (shouldCompactBacking()) (void)rewriteCompactBacking();
-            return true;
-        }
-
+        ++stats_.writes;
         applyBlock(index, data);
+        cacheBlock(index, data);
+        if (!backing_path_.empty()) {
+            pending_blocks_[index] = data;
+            if (shouldCompactBacking() && !rewriteCompactBacking()) return false;
+        }
         return true;
     }
 
     [[nodiscard]] std::vector<long long> serializeDense() const {
         std::vector<long long> out;
-        out.reserve(static_cast<std::size_t>(block_count_) * static_cast<std::size_t>(MMU_PAGE_WORDS));
-        std::vector<long long> block;
+        out.reserve(static_cast<std::size_t>(block_count_) *
+                    static_cast<std::size_t>(MMU_PAGE_WORDS));
         for (int index = 0; index < block_count_; ++index) {
-            (void)readBlock(index, block);
+            const std::vector<long long> block = materializeBlock(index);
             out.insert(out.end(), block.begin(), block.end());
         }
         return out;
@@ -1634,26 +1805,62 @@ public:
             }
             if (!isZeroBlock(payload)) blocks_[block] = std::move(payload);
         }
+        read_cache_.clear();
         return true;
+    }
+
+    [[nodiscard]] bool flushBackingFile() {
+        if (backing_path_.empty()) {
+            pending_blocks_.clear();
+            return true;
+        }
+        if (pending_blocks_.empty()) return true;
+        return appendPendingRecords();
     }
 
     [[nodiscard]] bool compactBackingFile(bool force = true) {
         if (backing_path_.empty()) return true;
-        if (!force && !shouldCompactBacking()) return true;
+        if (!force && !shouldCompactBacking()) return flushBackingFile();
         return rewriteCompactBacking();
     }
 
 private:
     int block_count_ = 1;
     std::unordered_map<int, std::vector<long long>> blocks_;
+    mutable std::unordered_map<int, std::vector<long long>> read_cache_;
+    std::unordered_map<int, std::vector<long long>> pending_blocks_;
     std::string backing_path_;
     int compact_record_count_ = 0;
+    mutable VMBlockDeviceStats stats_;
 
     [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& data) {
         for (long long value : data) {
             if (value != 0) return false;
         }
         return true;
+    }
+
+    [[nodiscard]] std::vector<long long> materializeBlock(int index) const {
+        std::vector<long long> out(MMU_PAGE_WORDS, 0);
+        const auto found = blocks_.find(index);
+        if (found != blocks_.end()) out = found->second;
+        return out;
+    }
+
+    void cacheBlock(int index, const std::vector<long long>& data) const {
+        if (index < 0 || index >= block_count_) return;
+        if (read_cache_.find(index) == read_cache_.end() &&
+            read_cache_.size() >= kReadCacheMaxBlocks) {
+            read_cache_.erase(read_cache_.begin());
+        }
+        read_cache_[index] = data;
+    }
+
+    void prefetchReadAhead(int index) const {
+        if (index < 0 || index >= block_count_) return;
+        if (read_cache_.find(index) != read_cache_.end()) return;
+        cacheBlock(index, materializeBlock(index));
+        ++stats_.read_ahead;
     }
 
     void applyBlock(int index, const std::vector<long long>& data) {
@@ -1672,27 +1879,31 @@ private:
             std::max<long long>(kCompactionMinRecords,
                                 live_records * kCompactionRecordMultiplier +
                                     kCompactionSlackRecords);
-        return static_cast<long long>(compact_record_count_) > threshold;
+        return static_cast<long long>(compact_record_count_) +
+                   static_cast<long long>(pending_blocks_.size()) > threshold;
     }
 
     [[nodiscard]] bool writeCompactBackingTo(const std::filesystem::path& path,
                                              const std::vector<int>& indices) const {
-        std::ofstream file(path, std::ios::binary | std::ios::trunc);
-        if (!file.good()) return false;
-        const long long magic = kSparseDiskMagic;
-        const int count = static_cast<int>(indices.size());
-        file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        for (int index : indices) {
-            const auto found = blocks_.find(index);
-            if (found == blocks_.end()) continue;
-            file.write(reinterpret_cast<const char*>(&index), sizeof(index));
-            for (long long word : found->second) {
-                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+        {
+            std::ofstream file(path, std::ios::binary | std::ios::trunc);
+            if (!file.good()) return false;
+            const long long magic = kSparseDiskMagic;
+            const int count = static_cast<int>(indices.size());
+            file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+            file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+            for (int index : indices) {
+                const auto found = blocks_.find(index);
+                if (found == blocks_.end()) continue;
+                file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+                for (long long word : found->second) {
+                    file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+                }
             }
+            file.flush();
+            if (!file.good()) return false;
         }
-        file.flush();
-        return static_cast<bool>(file);
+        return detail::syncFileToStableStorage(path);
     }
 
     [[nodiscard]] bool rewriteCompactBacking() {
@@ -1724,8 +1935,11 @@ private:
             std::filesystem::remove(temp, cleanup_ec);
             if (ec) return false;
         }
+        if (!detail::syncFileToStableStorage(target)) return false;
 
         compact_record_count_ = static_cast<int>(indices.size());
+        pending_blocks_.clear();
+        ++stats_.compactions;
         return true;
     }
 
@@ -1733,14 +1947,21 @@ private:
         if (backing_path_.empty()) return true;
         std::ifstream file(backing_path_, std::ios::binary);
         if (!file.good()) return initializeCompactBacking();
+        std::error_code size_ec;
+        const std::uintmax_t file_size = std::filesystem::file_size(backing_path_, size_ec);
+        if (size_ec || file_size < kSparseDiskHeaderBytes) return false;
         long long magic = 0;
         int count = 0;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         file.read(reinterpret_cast<char*>(&count), sizeof(count));
         if (!file.good() || magic != kSparseDiskMagic || count < 0) return false;
         blocks_.clear();
-        compact_record_count_ = count;
-        for (int i = 0; i < count; ++i) {
+        const int max_records =
+            static_cast<int>((file_size - kSparseDiskHeaderBytes) / kSparseDiskRecordBytes);
+        const int records_to_read = std::min(count, max_records);
+        const bool needs_repair = count > max_records;
+        compact_record_count_ = records_to_read;
+        for (int i = 0; i < records_to_read; ++i) {
             int index = -1;
             std::vector<long long> payload(MMU_PAGE_WORDS, 0);
             file.read(reinterpret_cast<char*>(&index), sizeof(index));
@@ -1757,47 +1978,79 @@ private:
                 }
             }
         }
+        if (needs_repair) return rewriteCompactBacking();
         return true;
     }
 
     [[nodiscard]] bool initializeCompactBacking() {
         if (backing_path_.empty()) return true;
-        std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
-        if (!file.good()) return false;
-        const long long magic = kSparseDiskMagic;
-        const int count = 0;
-        file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-        file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        file.flush();
-        compact_record_count_ = 0;
-        return static_cast<bool>(file);
-    }
-
-    [[nodiscard]] bool appendCompactRecord(int index, const std::vector<long long>& payload) {
-        if (backing_path_.empty()) return true;
-        std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file.good()) {
-            if (!initializeCompactBacking()) return false;
-            file.open(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+        {
+            std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
+            if (!file.good()) return false;
+            const long long magic = kSparseDiskMagic;
+            const int count = 0;
+            file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+            file.write(reinterpret_cast<const char*>(&count), sizeof(count));
+            file.flush();
             if (!file.good()) return false;
         }
+        compact_record_count_ = 0;
+        return detail::syncFileToStableStorage(backing_path_);
+    }
 
-        file.seekp(0, std::ios::end);
-        file.write(reinterpret_cast<const char*>(&index), sizeof(index));
-        for (long long word : payload) {
-            file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+    [[nodiscard]] bool appendPendingRecords() {
+        if (backing_path_.empty() || pending_blocks_.empty()) return true;
+
+        std::vector<int> indices;
+        indices.reserve(pending_blocks_.size());
+        for (const auto& block : pending_blocks_) indices.push_back(block.first);
+        std::sort(indices.begin(), indices.end());
+
+        {
+            std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+            if (!file.good()) {
+                if (!initializeCompactBacking()) return false;
+                file.open(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+                if (!file.good()) return false;
+            }
+
+            file.seekp(0, std::ios::end);
+            for (int index : indices) {
+                const std::vector<long long>& payload = pending_blocks_.at(index);
+                file.write(reinterpret_cast<const char*>(&index), sizeof(index));
+                for (long long word : payload) {
+                    file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+                }
+            }
+            file.flush();
+            if (!file.good()) return false;
         }
-        if (!file.good()) return false;
+        if (!detail::syncFileToStableStorage(backing_path_)) return false;
 
-        ++compact_record_count_;
-        file.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
-        file.write(reinterpret_cast<const char*>(&compact_record_count_),
-                   sizeof(compact_record_count_));
-        file.flush();
-        return static_cast<bool>(file);
+        const int new_count = compact_record_count_ + static_cast<int>(indices.size());
+        {
+            std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
+            if (!file.good()) return false;
+            file.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
+            file.write(reinterpret_cast<const char*>(&new_count), sizeof(new_count));
+            file.flush();
+            if (!file.good()) return false;
+        }
+        if (!detail::syncFileToStableStorage(backing_path_)) return false;
+
+        compact_record_count_ = new_count;
+        stats_.dirty_flushes += static_cast<long long>(indices.size());
+        ++stats_.flushes;
+        pending_blocks_.clear();
+        return true;
     }
 
     static constexpr long long kSparseDiskMagic = 0x54524954535031LL; // "TRITSP1"
+    static constexpr std::uintmax_t kSparseDiskHeaderBytes =
+        static_cast<std::uintmax_t>(sizeof(long long) + sizeof(int));
+    static constexpr std::uintmax_t kSparseDiskRecordBytes =
+        static_cast<std::uintmax_t>(sizeof(int) + sizeof(long long) * MMU_PAGE_WORDS);
+    static constexpr std::size_t kReadCacheMaxBlocks = 128;
     static constexpr int kCompactionMinRecords = 128;
     static constexpr int kCompactionSlackRecords = 32;
     static constexpr int kCompactionRecordMultiplier = 4;
@@ -1832,6 +2085,31 @@ enum class VMDecodedOp : uint8_t {
     Store,
 };
 
+enum class VMExecutionBackend : uint8_t {
+    Interpreter,
+    CachedBlockInterpreter,
+    TraceJit,
+};
+
+enum class VMTraceJitOp : uint8_t {
+    Unsupported,
+    Nop,
+    Mov,
+    MovH,
+    Copy,
+    Add,
+    Sub,
+    Mul,
+    Neg,
+    Abs,
+    Load,
+    Store,
+    Jmp,
+    Brn,
+    Brz,
+    Brp,
+};
+
 struct VMDecodedInstruction {
     int pc = 0;
     TritWord27 raw{};
@@ -1851,6 +2129,23 @@ struct VMBasicBlock {
     int start_pc = 0;
     std::uint64_t imem_generation = 0;
     std::vector<VMDecodedInstruction> instructions;
+};
+
+struct VMTraceJitInstruction {
+    int pc = 0;
+    TritWord27 raw{};
+    InstructionWord word{};
+    VMTraceJitOp op = VMTraceJitOp::Unsupported;
+    TernaryMode mode = TernaryMode::T40;
+    int branch_target = -1;
+    int branch_target_index = -1;
+    bool ends_trace = false;
+};
+
+struct VMTraceJitTrace {
+    int start_pc = 0;
+    std::uint64_t imem_generation = 0;
+    std::vector<VMTraceJitInstruction> instructions;
 };
 
 struct VMBlockCacheStats {
@@ -1878,6 +2173,28 @@ struct VMBlockCacheStats {
         return blocks_built == 0
             ? 0.0
             : static_cast<double>(total_block_length) / static_cast<double>(blocks_built);
+    }
+};
+
+struct VMTraceJitStats {
+    long long hot_pc_samples = 0;
+    long long compilation_attempts = 0;
+    long long traces_built = 0;
+    long long traces_executed = 0;
+    long long instructions_executed = 0;
+    long long interpreter_bailouts = 0;
+    long long unsupported_fallbacks = 0;
+    long long invalidations = 0;
+
+    void reset() {
+        hot_pc_samples = 0;
+        compilation_attempts = 0;
+        traces_built = 0;
+        traces_executed = 0;
+        instructions_executed = 0;
+        interpreter_bailouts = 0;
+        unsupported_fallbacks = 0;
+        invalidations = 0;
     }
 };
 
@@ -2003,11 +2320,18 @@ struct VMState {
     int                      active_core = 0;
     std::vector<std::deque<int>> core_run_queues;
     std::deque<int>          global_run_queue;
+    VMExecutionBackend       execution_backend = VMExecutionBackend::CachedBlockInterpreter;
     bool                     block_cache_enabled = true;
     VMBlockCacheStats        block_cache_stats;
     std::uint64_t            block_cache_observed_generation = 0;
     std::unordered_map<int, VMDecodedCacheEntry> decoded_instruction_cache;
     std::unordered_map<int, VMBasicBlock> basic_block_cache;
+    int                      trace_jit_hot_threshold = 8;
+    VMTraceJitStats          trace_jit_stats;
+    std::uint64_t            trace_jit_observed_generation = 0;
+    std::unordered_map<int, long long> hot_pc_counts;
+    std::unordered_map<int, VMTraceJitTrace> trace_jit_cache;
+    std::unordered_set<int>  trace_jit_unsupported_pcs;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -2334,8 +2658,28 @@ struct VMState {
         return block_device.compactBackingFile(force);
     }
 
+    [[nodiscard]] bool flushBlockBackingFile() {
+        return block_device.flushBackingFile();
+    }
+
     [[nodiscard]] std::size_t allocatedDiskBlocks() const {
         return block_device.allocatedBlocks();
+    }
+
+    [[nodiscard]] std::size_t pendingDiskWrites() const {
+        return block_device.pendingWriteCount();
+    }
+
+    [[nodiscard]] int sparseDiskRecordCount() const {
+        return block_device.backingRecordCount();
+    }
+
+    [[nodiscard]] VMBlockDeviceStats blockDeviceStats() const {
+        return block_device.stats();
+    }
+
+    void resetBlockDeviceStats() const {
+        block_device.resetStats();
     }
 
     // Clear both memories (set all words to zero / NOP).
@@ -2360,6 +2704,33 @@ struct VMState {
         if (had_entries) ++block_cache_stats.invalidations;
     }
 
+    void invalidateTraceJit() {
+        const bool had_entries =
+            !hot_pc_counts.empty() || !trace_jit_cache.empty() ||
+            !trace_jit_unsupported_pcs.empty();
+        hot_pc_counts.clear();
+        trace_jit_cache.clear();
+        trace_jit_unsupported_pcs.clear();
+        trace_jit_observed_generation = imem.generation();
+        if (had_entries) ++trace_jit_stats.invalidations;
+    }
+
+    void setExecutionBackend(VMExecutionBackend backend) {
+        execution_backend = backend;
+        if (backend == VMExecutionBackend::Interpreter) {
+            invalidateBlockCache();
+            invalidateTraceJit();
+        }
+    }
+
+    [[nodiscard]] bool traceJitEnabled() const {
+        return execution_backend == VMExecutionBackend::TraceJit;
+    }
+
+    void setTraceJitHotThreshold(int threshold) {
+        trace_jit_hot_threshold = std::max(1, threshold);
+    }
+
     void setBlockCacheEnabled(bool enabled) {
         block_cache_enabled = enabled;
         if (!enabled) invalidateBlockCache();
@@ -2368,6 +2739,11 @@ struct VMState {
     void resetBlockCacheStats() {
         block_cache_stats.reset();
         decode_instructions_count = 0;
+    }
+
+    void resetTraceJitStats() {
+        trace_jit_stats.reset();
+        hot_pc_counts.clear();
     }
 
     [[nodiscard]] double averageBlockCacheLength() const {
@@ -2412,6 +2788,8 @@ struct VMState {
         decode_instructions_count = 0;
         invalidateBlockCache();
         block_cache_stats.reset();
+        invalidateTraceJit();
+        trace_jit_stats.reset();
         timer_reload = 0;
         timer_counter = 0;
         timer_enable = false;
@@ -2542,6 +2920,17 @@ struct VMState {
     }
 
     void executeBlockCommand(long long cmd) {
+        if (cmd < 0) {
+            block_status = 0;
+            return;
+        }
+        if (cmd == 4) {
+            block_status = block_device.flushBackingFile() ? 1 : -1;
+            if (block_status == 1) {
+                block_dirty.assign(block_dirty.size(), false);
+            }
+            return;
+        }
         const int index = static_cast<int>(block_index);
         const int addr = static_cast<int>(block_addr);
         if (index < 0 || index >= block_device.blockCount() || addr < 0) {
@@ -2603,8 +2992,6 @@ struct VMState {
                 }
             }
             block_status = 1;
-        } else if (cmd < 0) {
-            block_status = 0;
         } else {
             block_status = -1;
         }

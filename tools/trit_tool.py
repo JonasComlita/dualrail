@@ -27,6 +27,11 @@ BOOT_MAGIC = 0x31544F4F424F5354
 BOOT_LEGACY_FORMAT_VERSION = 1
 BOOT_FORMAT_VERSION = 2
 MMU_PAGE_WORDS = 27
+SPARSE_DISK_MAGIC = 0x54524954535031
+SPARSE_DISK_HEADER = struct.Struct("<qi")
+SPARSE_DISK_RECORD_HEADER = struct.Struct("<i")
+SPARSE_DISK_WORD = struct.Struct("<q")
+SPARSE_DISK_RECORD_SIZE = SPARSE_DISK_RECORD_HEADER.size + MMU_PAGE_WORDS * SPARSE_DISK_WORD.size
 MANIFEST_FILES = [
     "ROADMAP_STATUS.json",
     "TEST_MANIFEST.json",
@@ -355,6 +360,132 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
     return result
 
 
+def inspect_sparse_disk(path: Path) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "path": str(path),
+        "ok": False,
+        "issues": [],
+        "format": "tdisk",
+    }
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        result["issues"].append("disk image is missing")
+        return result
+
+    result["file_size"] = len(raw)
+    if len(raw) < SPARSE_DISK_HEADER.size:
+        result["issues"].append("sparse disk header is truncated")
+        return result
+
+    magic, declared_records = SPARSE_DISK_HEADER.unpack_from(raw, 0)
+    result["header"] = {
+        "magic": magic,
+        "declared_records": declared_records,
+    }
+    if magic != SPARSE_DISK_MAGIC:
+        result["issues"].append("sparse disk magic is invalid")
+        return result
+    if declared_records < 0:
+        result["issues"].append("sparse disk record count is negative")
+        return result
+
+    available_records = max(0, (len(raw) - SPARSE_DISK_HEADER.size) // SPARSE_DISK_RECORD_SIZE)
+    records_to_read = min(declared_records, available_records)
+    recoverable_tail = declared_records > available_records
+    blocks: dict[int, list[int]] = {}
+    offset = SPARSE_DISK_HEADER.size
+    for _ in range(records_to_read):
+        index = SPARSE_DISK_RECORD_HEADER.unpack_from(raw, offset)[0]
+        offset += SPARSE_DISK_RECORD_HEADER.size
+        words = []
+        for _word in range(MMU_PAGE_WORDS):
+            words.append(SPARSE_DISK_WORD.unpack_from(raw, offset)[0])
+            offset += SPARSE_DISK_WORD.size
+        if index >= 0:
+            if any(word != 0 for word in words):
+                blocks[index] = words
+            else:
+                blocks.pop(index, None)
+
+    ignored_tail_bytes = max(0, len(raw) - offset)
+    result.update(
+        {
+            "ok": True,
+            "declared_records": declared_records,
+            "readable_records": records_to_read,
+            "available_records": available_records,
+            "recoverable_tail": recoverable_tail,
+            "ignored_tail_bytes": ignored_tail_bytes,
+            "live_blocks": len(blocks),
+            "blocks": blocks,
+        }
+    )
+    return result
+
+
+def write_sparse_disk(path: Path, blocks: dict[int, list[int]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as handle:
+        live_indices = sorted(index for index, words in blocks.items() if any(word != 0 for word in words))
+        handle.write(SPARSE_DISK_HEADER.pack(SPARSE_DISK_MAGIC, len(live_indices)))
+        for index in live_indices:
+            words = blocks[index]
+            if len(words) != MMU_PAGE_WORDS:
+                raise ValueError(f"block {index} has {len(words)} words, expected {MMU_PAGE_WORDS}")
+            handle.write(SPARSE_DISK_RECORD_HEADER.pack(index))
+            for word in words:
+                handle.write(SPARSE_DISK_WORD.pack(int(word)))
+
+
+def compact_sparse_disk(source: Path, output: Path | None = None) -> dict[str, Any]:
+    inspected = inspect_sparse_disk(source)
+    result: dict[str, Any] = {
+        "source": str(source),
+        "output": str(output or source),
+        "ok": False,
+        "before": {
+            "file_size": inspected.get("file_size", 0),
+            "declared_records": inspected.get("declared_records", 0),
+            "readable_records": inspected.get("readable_records", 0),
+            "live_blocks": inspected.get("live_blocks", 0),
+            "recoverable_tail": inspected.get("recoverable_tail", False),
+        },
+        "after": {},
+        "issues": list(inspected.get("issues", [])),
+    }
+    if not inspected.get("ok"):
+        return result
+
+    target = output or source
+    temp = target.with_name(target.name + ".compact")
+    blocks = inspected["blocks"]
+    try:
+        write_sparse_disk(temp, blocks)
+        if target == source:
+            os.replace(temp, target)
+        else:
+            os.replace(temp, target)
+        after = inspect_sparse_disk(target)
+        result["after"] = {
+            "file_size": after.get("file_size", 0),
+            "declared_records": after.get("declared_records", 0),
+            "readable_records": after.get("readable_records", 0),
+            "live_blocks": after.get("live_blocks", 0),
+            "recoverable_tail": after.get("recoverable_tail", False),
+        }
+        result["ok"] = bool(after.get("ok")) and after.get("live_blocks") == inspected.get("live_blocks")
+    except OSError as exc:
+        result["issues"].append(str(exc))
+    finally:
+        try:
+            if temp.exists():
+                temp.unlink()
+        except OSError:
+            pass
+    return result
+
+
 def text_status(label: str, ok: bool, detail: str = "") -> None:
     prefix = "ok" if ok else "warn"
     suffix = f" - {detail}" if detail else ""
@@ -605,6 +736,35 @@ def cmd_inspect_image(args: argparse.Namespace) -> int:
         for app in inspected["apps"]:
             print(f"- {app['path']} entry={app['entry_pc']} text_pages={app['text_pages']}")
     return 0 if inspected["ok"] else 1
+
+
+def cmd_compact_disk(args: argparse.Namespace) -> int:
+    source = Path(args.disk_image).resolve()
+    output = Path(args.output).resolve() if args.output else None
+    result = compact_sparse_disk(source, output)
+    if args.json:
+        print_json(result)
+    elif result["ok"]:
+        before = result["before"]
+        after = result["after"]
+        print(f"disk: {result['source']}")
+        print(f"output: {result['output']}")
+        print(
+            "records: "
+            f"{before.get('readable_records', 0)} -> {after.get('readable_records', 0)} "
+            f"live_blocks={after.get('live_blocks', 0)}"
+        )
+        print(
+            "bytes: "
+            f"{before.get('file_size', 0)} -> {after.get('file_size', 0)}"
+        )
+        if before.get("recoverable_tail"):
+            print("recovered: ignored a truncated append tail")
+    else:
+        print(f"disk: {result['source']}", file=sys.stderr)
+        for issue in result["issues"]:
+            print(f"[warn] {issue}", file=sys.stderr)
+    return 0 if result["ok"] else 1
 
 
 def cmd_build_image(args: argparse.Namespace) -> int:
@@ -900,6 +1060,12 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("image")
     inspect.add_argument("--json", action="store_true")
     inspect.set_defaults(func=cmd_inspect_image)
+
+    compact_disk = sub.add_parser("compact-disk", help="compact a sparse .tdisk append-record image")
+    compact_disk.add_argument("disk_image")
+    compact_disk.add_argument("--output", default=None, help="write compacted image to a new path")
+    compact_disk.add_argument("--json", action="store_true")
+    compact_disk.set_defaults(func=cmd_compact_disk)
 
     build_image = sub.add_parser("build-image", help="build a boot image with build_tos_image")
     add_build_dir(build_image)

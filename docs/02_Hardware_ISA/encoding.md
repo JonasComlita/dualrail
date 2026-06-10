@@ -1,89 +1,148 @@
-# Instruction Encoding & Layout
+# ISA Instruction Word Encoding
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_isa.h` |
+Source of truth: `ternary_isa.h` — `TritWord27`, field constants, `InstructionWord::decode()`.
 
 ---
 
-## 📐 The 27-Trit Word
-All instructions in the Trit-Stack are fixed-width **27-trit words**. This symmetry simplifies the fetch-decode pipeline and allows for a single-cycle instruction fetch on hardware.
+## Instruction Container: `TritWord27`
 
-### The Format Discriminant (`trit[26]`)
-The most significant trit (MST) determines the instruction layout:
+Every instruction is a 27-trit word stored in a `uint64_t` using **2 bits per trit** (Scheme B encoding):
 
-| Value | Format | Purpose |
-| :--- | :--- | :--- |
-| **+1** | **R-Type** | Register-register operations (Arithmetic, Logic, SIMD). |
-| ** 0** | **I-Type** | Immediate operations (MOV, LOAD, STORE). |
-| **-1** | **B-Type** | Control flow (JMP, BRN, CALL). |
+```
+Bits [63:54] — always zero (padding)
+Bits [53: 0] — 27 trits × 2 bits each
 
----
+Bit pair encoding:
+  0b00 → trit −1 (T_NEG)
+  0b01 → trit  0 (T_ZER)
+  0b10 → trit +1 (T_POS)
+  0b11 → INVALID  → TRAP_ILLEGAL_OP on decode
+```
 
-## 🛠️ Format Layouts
-
-### 1. R-Type (Register-Register)
-Used for operations where both operands are in registers.
-
-| Field | Trits | Position | Purpose |
-| :--- | :--- | :--- | :--- |
-| **FMT** | 1 | `[26]` | Set to `+1`. |
-| **OPCODE** | 4 | `[25:22]` | The instruction identifier. |
-| **Rd** | 3 | `[21:19]` | Destination Register (r0–r26). |
-| **Rs1** | 3 | `[18:16]` | Source Register 1. |
-| **Rs2** | 3 | `[15:13]` | Source Register 2. |
-| **FUNC** | 3 | `[12:10]` | Width Selector (T1, T5, T40, etc). |
-| **PAD** | 10 | `[9:0]` | Reserved for future extension. |
-
-### 2. I-Type (Immediate)
-Used for constants and memory access with offsets.
-
-| Field | Trits | Position | Purpose |
-| :--- | :--- | :--- | :--- |
-| **FMT** | 1 | `[26]` | Set to `0`. |
-| **OPCODE** | 4 | `[25:22]` | The instruction identifier. |
-| **Rd** | 3 | `[21:19]` | Destination Register. |
-| **Rs1** | 3 | `[18:16]` | Source Register (Base address). |
-| **IMM16** | 16 | `[15:0]` | **Signed** 16-trit immediate value. |
-
-*Range: ±21,523,360 (Covers full 50-trit memory space).*
-
-### 3. B-Type (Control Flow)
-Used for PC-relative branches and jumps.
-
-| Field | Trits | Position | Purpose |
-| :--- | :--- | :--- | :--- |
-| **FMT** | 1 | `[26]` | Set to `-1`. |
-| **OPCODE** | 4 | `[25:22]` | The instruction identifier. |
-| **Rs** | 3 | `[21:19]` | Source Register (Condition check). |
-| **OFF19** | 19 | `[18:0]` | **Signed** 19-trit PC-relative offset. |
-
-*Range: ±581,130,733 instructions.*
+Trit `i` occupies bits `[2i+1 : 2i]`. Trit 0 = LST (least significant). Trit 26 = MST (format discriminant).
 
 ---
 
-## 🧬 Special Layouts
+## Format Discriminant (trit[26])
 
-### TSEL (Ternary Select)
-The `TSEL` instruction uses an extended R-type layout (R5) to fit 5 register indices:
-
-| Field | Trits | Position |
-| :--- | :--- | :--- |
-| **Rd** | 3 | `[21:19]` |
-| **rCond** | 3 | `[18:16]` |
-| **rNeg** | 3 | `[15:13]` |
-| **rZero** | 3 | `[12:10]` |
-| **rPos** | 3 | `[9:7]` |
+| trit[26] | Format | Use case |
+|----------|--------|----------|
+| `+1`     | **R-type** | Register-register arithmetic, logic, CSR |
+| ` 0`     | **I-type** | Immediate load, memory access with offset |
+| `−1`     | **B-type** | Branches, jumps, calls |
 
 ---
 
-## 🛡️ Field Encoding Rules
-Register indices (0–26) are stored using a **Bias of 13**.
+## R-Type Layout (trit[26] = +1)
 
-**Formula**: `Stored = Index - 13`
-*   **r0** (Zero) $\rightarrow$ `-13` (`- - -`)
-*   **r13** $\rightarrow$ `0` (`0 0 0`)
-*   **r26** $\rightarrow$ `+13` (`+ + +`)
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:0]
+ fmt  opcode     Rd       Rs1      Rs2      func     pad(10)
+  1      4        3        3        3        3         10
+```
 
-> [!IMPORTANT]
-> This bias ensures that the "Neutral" register field (all zeros) points to the center of the register file (r13), preventing accidental overwrites of `r0` during malformed instruction decode.
+Extended **R4-type** (TWCMP, TCLAMP):
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:7]  [6:0]
+ fmt  opcode     Rd       Rs1      Rs2      Rs3      func   rsv(7)
+```
+
+Extended **R5-type** (TSEL, VSEL):
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:7]   [6:0]
+ fmt  opcode     Rd      rCond    rNeg     rZero    rPos    rsv(7)
+```
+For VSEL, the width suffix is encoded in the reserved field [2:0].
+
+---
+
+## I-Type Layout (trit[26] = 0)
+
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:0]
+ fmt  opcode     Rd       Rs1     imm16 (signed, 16 trits)
+  1      4        3        3        16
+```
+
+**Vector memory overlay** (VLOAD/VSTORE):
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:0]
+ fmt  opcode  vRd/vSrc  rBase    func     imm13
+```
+
+**Immediate range:** ±21,523,360 (±(3^16−1)/2)
+
+---
+
+## B-Type Layout (trit[26] = −1)
+
+```
+[26]  [25:22]  [21:19]  [18:0]
+ fmt  opcode     Rs     offset19 (signed, 19 trits)
+  1      4        3        19
+```
+
+**offset19 range:** ±581,130,733 (±(3^19−1)/2)
+
+`STORE` note: The `Rd` field position is reused for the source register. STORE writes to `mem[Rs1 + imm16]` using the data in the register named in the `Rd` field position.
+
+---
+
+## Field Extraction
+
+All field constants use the pattern `(lsb, width)`:
+
+| Constant | LSB | Width | Meaning |
+|----------|-----|-------|---------|
+| `FIELD_FMT_LSB/W`   | 26 | 1 | Format discriminant |
+| `FIELD_OP_LSB/W`    | 22 | 4 | Opcode |
+| `FIELD_RD_LSB/W`    | 19 | 3 | Destination register |
+| `FIELD_RS1_LSB/W`   | 16 | 3 | Source register 1 |
+| `FIELD_RS2_LSB/W`   | 13 | 3 | Source register 2 |
+| `FIELD_FUNC_LSB/W`  | 10 | 3 | Function select |
+| `FIELD_IMM16_LSB/W` |  0 | 16 | 16-trit immediate |
+| `FIELD_OFF19_LSB/W` |  0 | 19 | 19-trit branch offset |
+| `FIELD_BRS_LSB/W`   | 19 | 3  | Branch source register |
+
+---
+
+## Opcode Encoding
+
+The 4-trit opcode field is read as an **unsigned base-3 integer**:
+
+```
+rawOp = (trit[22] + 1) * 1
+      + (trit[23] + 1) * 3
+      + (trit[24] + 1) * 9
+      + (trit[25] + 1) * 27
+```
+
+Valid range: 0–79 (opcode 80+ → `TRAP_ILLEGAL_OP`).
+
+---
+
+## Register Field Encoding
+
+A 3-trit register field maps indices 0–26 to balanced range −13..+13:
+```
+stored_balanced_value = register_index − REG_FIELD_OFFSET
+                      = register_index − 13
+```
+
+Example: `r13` → stored as 0 (T_ZER), `r0` → stored as −13, `r26` → stored as +13.
+
+---
+
+## Immediates Are Always Signed
+
+All immediates use balanced ternary — there is no unsigned immediate format. Zero-padding is sign-extension. Implemented via `decodeSigned()` in `ternary_isa.h`.
+
+---
+
+## Atomic Ordering (FENCE func field)
+
+| func value | Ordering |
+|------------|---------|
+| `FUNC_ORDER_RELAXED` (= FUNC_DEFAULT − 1) | Relaxed |
+| `FUNC_ORDER_ACQ_REL` (= FUNC_DEFAULT + 0) | Acquire-Release |
+| `FUNC_ORDER_SEQ_CST` (= FUNC_DEFAULT + 1) | Sequentially Consistent |
