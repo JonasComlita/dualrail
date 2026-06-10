@@ -101,6 +101,85 @@ void testVmWidths() {
     }
 
     {
+        auto program = assembleOrThrow(R"(
+            mov r1, 0
+            mov r2, 1
+            mov r3, 6
+        loop:
+            add r1, r1, r2
+            sub r3, r3, r2
+            brp r3, loop
+            halt
+        )");
+
+        VMState cached(32, 128);
+        expect(loadAndReset(cached, program), "block-cache loop program loads");
+        auto cachedResult = sandbox::vm::run(cached, 64);
+        expect(cachedResult.halted(), "block-cache loop halts");
+        expect(sandbox::vm::ops::toLong(cached.regfile.read(R1)) == 6,
+               "cached loop preserves arithmetic result");
+        expect(cached.block_cache_stats.hits > 0, "block cache records hits");
+        expect(cached.block_cache_stats.misses > 0, "block cache records misses");
+        expect(cached.block_cache_stats.instructions_executed > 0,
+               "block cache executes straight-line instructions");
+        expect(cached.averageBlockCacheLength() > 1.0,
+               "block cache reports average block length");
+
+        VMState uncached(32, 128);
+        expect(loadAndReset(uncached, program), "uncached loop program loads");
+        uncached.setBlockCacheEnabled(false);
+        auto uncachedResult = sandbox::vm::run(uncached, 64);
+        expect(uncachedResult.halted(), "uncached loop halts");
+        expect(sandbox::vm::ops::toLong(uncached.regfile.read(R1)) == 6,
+               "uncached loop preserves arithmetic result");
+        expect(uncached.block_cache_stats.hits == 0 &&
+                   uncached.block_cache_stats.misses == 0 &&
+                   uncached.block_cache_stats.instructions_executed == 0,
+               "block cache disable flag bypasses cache counters");
+        expect(uncached.decode_instructions_count == uncachedResult.steps,
+               "uncached run decodes once per step");
+        expect(cached.decode_instructions_count < uncached.decode_instructions_count,
+               "cached run reduces VM decode count");
+
+        const auto oldGeneration = cached.imem.generation();
+        expect(cached.imem.write(0, program[0]) == MemFaultCode::OK,
+               "IMEM write succeeds after cached run");
+        expect(cached.imem.generation() != oldGeneration,
+               "IMEM write bumps cache generation");
+        syncBlockCacheGeneration(cached);
+        expect(cached.basic_block_cache.empty() && cached.decoded_instruction_cache.empty(),
+               "IMEM write lazily invalidates decoded/block caches");
+
+        const auto loadGeneration = cached.imem.generation();
+        expect(cached.imem.loadProgram(program), "IMEM loadProgram succeeds after cache invalidation");
+        expect(cached.imem.generation() != loadGeneration,
+               "IMEM loadProgram bumps cache generation");
+
+        const auto resetGeneration = cached.imem.generation();
+        cached.imem.reset();
+        expect(cached.imem.generation() != resetGeneration,
+               "IMEM reset bumps cache generation");
+    }
+
+    {
+        VMState vm(16, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 1
+            mov r2, 2
+            mov r3, 3
+            halt
+        )");
+        expect(loadAndReset(vm, program), "block-cache step-limit program loads");
+        auto result = sandbox::vm::run(vm, 2);
+        expect(result.timeout() && result.steps == 2 && vm.pc == 2,
+               "block cache honors max step limit inside a block");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 1 &&
+                   sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 2 &&
+                   sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 0,
+               "partial cached block commits only executed instructions");
+    }
+
+    {
         VMState vm(32, 64);
         auto program = assembleOrThrow(R"(
             mov.t5  r1, -5

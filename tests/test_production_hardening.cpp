@@ -146,6 +146,69 @@ void testMemoryPressureAndProfilerHooks() {
     expect(counters.steps == 4 && counters.syscalls == 2 && counters.halts == 1,
            "profiler hooks count steps, syscalls, and halt");
     expect(profiled.syscall_buffer == "A\n", "profiled syscalls still execute normally");
+
+    auto loopProgram = vm::assembler::assemble(R"(
+        .text
+        start:
+            mov r1, 65
+            syscall 22
+            mov r4, 3
+            mov r5, 1
+        loop:
+            sub r4, r4, r5
+            brp r4, loop
+            syscall 2
+            halt
+    )");
+    expect(loopProgram.success, "execution profile loop program assembles");
+    vm::VMState loopVm(64, 512);
+    expect(loopVm.imem.loadProgram(loopProgram.program), "execution profile loop program loads");
+    loopVm.setCoreCurrentProcess(0, 42);
+    vm::VMExecutionProfile execProfile;
+    vm::VMHooks profileHooks = vm::makeProfilerHooks(execProfile);
+    result = vm::run(loopVm, 64, &profileHooks);
+    expect(result.halted(), "execution profile loop program halts");
+    expect(execProfile.total_instructions == 12, "execution profile counts every executed instruction");
+    expect(execProfile.opcodeCount(sandbox::isa::Opcode::SYSCALL) == 2,
+           "execution profile counts syscalls per opcode");
+    expect(execProfile.pcCount(4) == 3 && execProfile.pcCount(5) == 3,
+           "execution profile records hot PCs");
+    const vm::BranchProfileCounts branch =
+        execProfile.branchCounts(5, sandbox::isa::Opcode::BRP, 4);
+    expect(branch.taken == 2 && branch.fallthrough == 1,
+           "execution profile records branch taken and fallthrough counts");
+    expect(execProfile.syscallCount(22, 0, 42) == 1 && execProfile.syscallCount(2, 0, 42) == 1,
+           "execution profile records syscall id and process id");
+    const std::string json = execProfile.toJson(20);
+    expect(json == execProfile.toJson(20), "execution profile JSON output is deterministic");
+    expect(json.find("\"top_pcs\"") != std::string::npos &&
+               json.find("\"top_branches\"") != std::string::npos &&
+               json.find("\"top_syscalls\"") != std::string::npos,
+           "execution profile JSON reports hot PCs, branches, and syscalls");
+    const std::string text = execProfile.toText(20);
+    expect(text.find("hot PCs") != std::string::npos &&
+               text.find("hot branches") != std::string::npos &&
+               text.find("hot syscalls") != std::string::npos,
+           "execution profile text report names hot sections");
+
+    auto trapProgram = vm::assembler::assemble(R"(
+        .text
+        start:
+            syscall 99
+            halt
+    )");
+    expect(trapProgram.success, "execution profile trap program assembles");
+    vm::VMState trapVm(64, 512);
+    expect(trapVm.imem.loadProgram(trapProgram.program), "execution profile trap program loads");
+    trapVm.setCoreCurrentProcess(0, 7);
+    vm::VMExecutionProfile trapProfile;
+    vm::VMHooks trapHooks = vm::makeProfilerHooks(trapProfile);
+    result = vm::run(trapVm, 8, &trapHooks);
+    expect(result.trapped(), "execution profile trap program traps");
+    expect(trapProfile.syscallCount(99, vm::OS_CAUSE_ILLEGAL_INSTRUCTION, 7) == 1,
+           "execution profile records trapping syscall cause");
+    expect(trapProfile.trapCount(99, vm::OS_CAUSE_ILLEGAL_INSTRUCTION, 7) == 1,
+           "execution profile records trap cause and process id");
 }
 
 void testIsolationCapabilitiesAndSyscallFuzzing() {

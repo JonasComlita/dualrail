@@ -5,8 +5,8 @@ Run TernaryOS.exe to boot the bundled Ternary OS image.
 
 Included files:
 - TernaryOS.exe: SDL2 desktop host
-- ternary-os.tboot: immutable boot image
-- ternary-os.tdisk: writable sparse disk seed
+- ternary-os.tboot: immutable boot image and section manifest
+- ternary-os.tdisk: initialized writable sparse disk
 - SDL2.dll and MinGW runtime DLLs required by the executable
 - diagnostics/: default location for exported diagnostic bundles
 

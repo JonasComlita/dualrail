@@ -64,8 +64,15 @@ void testBootImageValidation() {
            "boot image reader accepts valid image");
     expect(readback.program.size() == image.program.size(),
            "boot image round-trip preserves text segment");
+    expect(readback.manifest.format_version == sandbox::host::TOS_BOOT_FORMAT_VERSION,
+           "boot image writer emits current format version");
     expect(readback.manifest.profile_name == "compact",
            "boot image round-trip preserves profile");
+    expect(!readback.manifest.sections.empty() &&
+               readback.manifest.sections[0].kind == "kernel",
+           "boot image round-trip preserves section metadata");
+    expect(readback.rootfs_words.empty(),
+           "current boot image format does not embed mutable rootfs seed");
 
     {
         std::fstream tamper(path, std::ios::binary | std::ios::in | std::ios::out);
@@ -183,6 +190,68 @@ void testRuntimeGraphicsResetAndDiagnostics() {
            "reset returns VM to cold text mode before guest runs");
 }
 
+void testRuntimeSeparateDiskRequiredAndPreserved() {
+    std::cout << "[4] Runtime boots from separate mutable sparse disk\n";
+
+    sandbox::host::TosBootImage image = assembleImage(R"(
+        .text
+        boot:
+            mov r1, 0
+            csrw block_index, r1
+            mov r1, 300
+            csrw block_addr, r1
+            mov r1, 1
+            csrw block_cmd, r1
+            mov r2, 300
+            load r3, r2, 0
+            mov r4, 60000
+            store r3, r4, 0
+            mov r3, 89
+            store r3, r2, 0
+            mov r1, 0
+            csrw block_index, r1
+            mov r1, 300
+            csrw block_addr, r1
+            mov r1, 2
+            csrw block_cmd, r1
+            halt
+    )");
+    image.rootfs_words.clear();
+
+    const std::string disk_path = buildPath("host_runtime_separate_disk.tdisk");
+    std::filesystem::remove(disk_path);
+
+    sandbox::host::TosRuntimeConfig config;
+    config.disk_path = disk_path;
+    config.profile_name = "compact";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    expect(!runtime.loadImage(image, &error) &&
+               error.find("disk image is required") != std::string::npos,
+           "runtime rejects missing separate disk for rootfs-less boot image");
+
+    std::vector<long long> seed(sandbox::vm::MMU_PAGE_WORDS * 2, 0);
+    seed[0] = 90;
+    expect(sandbox::host::writeSparseDiskFile(disk_path, seed, true, &error),
+           "test writes initialized sparse disk artifact");
+    expect(runtime.loadImage(image, &error),
+           "runtime loads rootfs-less boot image with companion .tdisk");
+
+    auto result = runtime.runForSteps(128);
+    expect(result.halted(), "first separate-disk boot halts");
+    sandbox::host::TosFramebufferSnapshot framebuffer = runtime.readFramebuffer();
+    expect(!framebuffer.glyphs.empty() && framebuffer.glyphs[0] == 'Z',
+           "first boot reads initialized .tdisk state");
+
+    expect(runtime.reset(&error), "runtime reboots against the same mutable .tdisk");
+    result = runtime.runForSteps(128);
+    expect(result.halted(), "second separate-disk boot halts");
+    framebuffer = runtime.readFramebuffer();
+    expect(!framebuffer.glyphs.empty() && framebuffer.glyphs[0] == 'Y',
+           "reboot preserves modified .tdisk state");
+}
+
 } // namespace
 
 int main() {
@@ -191,6 +260,7 @@ int main() {
     testBootImageValidation();
     testRuntimeTextFramebufferAndInput();
     testRuntimeGraphicsResetAndDiagnostics();
+    testRuntimeSeparateDiskRequiredAndPreserved();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " host runtime failure(s)\n";

@@ -921,7 +921,7 @@ struct TernaryInstructionMemory {
     }
 
     TernaryInstructionMemory(const TernaryInstructionMemory& other)
-        : allocator(other.allocator), sparse_(other.sparse_) {
+        : allocator(other.allocator), sparse_(other.sparse_), generation_(other.generation_) {
         allocate(other.capacity, other.sparse_ ? MemoryBacking::Sparse : MemoryBacking::Dense);
         try {
             if (!sparse_ && capacity > 0) std::copy(other.words, other.words + capacity, words);
@@ -944,7 +944,8 @@ struct TernaryInstructionMemory {
           capacity(other.capacity),
           allocator(other.allocator),
           sparse_(other.sparse_),
-          sparse_pages_(std::move(other.sparse_pages_)) {
+          sparse_pages_(std::move(other.sparse_pages_)),
+          generation_(other.generation_) {
         invalidateSparseCache();
         other.words = nullptr;
         other.capacity = 0;
@@ -976,6 +977,7 @@ struct TernaryInstructionMemory {
         std::swap(allocator, other.allocator);
         std::swap(sparse_, other.sparse_);
         std::swap(sparse_pages_, other.sparse_pages_);
+        std::swap(generation_, other.generation_);
         invalidateSparseCache();
         other.invalidateSparseCache();
     }
@@ -1001,6 +1003,7 @@ struct TernaryInstructionMemory {
         invalidateSparseCache();
         capacity = 0;
         sparse_ = false;
+        bumpGeneration();
     }
 
     void reset() {
@@ -1010,6 +1013,7 @@ struct TernaryInstructionMemory {
         } else if (capacity > 0) {
             std::fill(words, words + capacity, TritWord27{});
         }
+        bumpGeneration();
     }
 
     void resize(int new_size, MemoryBacking backing = MemoryBacking::Auto) {
@@ -1048,6 +1052,7 @@ struct TernaryInstructionMemory {
         }
         if (!sparse_) {
             words[addr] = iw;
+            bumpGeneration();
             return MemFaultCode::OK;
         }
         const int page_index = pageIndex(addr);
@@ -1056,6 +1061,7 @@ struct TernaryInstructionMemory {
         page[static_cast<std::size_t>(pageOffset(addr))] = iw;
         cached_sparse_page_index_ = page_index;
         cached_sparse_page_ = &page;
+        bumpGeneration();
         return MemFaultCode::OK;
     }
 
@@ -1080,12 +1086,14 @@ struct TernaryInstructionMemory {
     [[nodiscard]] int size() const { return capacity; }
     [[nodiscard]] bool isSparse() const { return sparse_; }
     [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
+    [[nodiscard]] std::uint64_t generation() const { return generation_; }
 
 private:
     bool sparse_ = false;
     std::unordered_map<int, std::vector<TritWord27>> sparse_pages_;
     mutable int cached_sparse_page_index_ = -1;
     mutable const std::vector<TritWord27>* cached_sparse_page_ = nullptr;
+    std::uint64_t generation_ = 1;
 
     [[nodiscard]] static int pageIndex(int addr) { return addr / SPARSE_VM_PAGE_WORDS; }
     [[nodiscard]] static int pageOffset(int addr) { return addr % SPARSE_VM_PAGE_WORDS; }
@@ -1093,6 +1101,11 @@ private:
     void invalidateSparseCache() const {
         cached_sparse_page_index_ = -1;
         cached_sparse_page_ = nullptr;
+    }
+
+    void bumpGeneration() {
+        ++generation_;
+        if (generation_ == 0) generation_ = 1;
     }
 };
 
@@ -1790,6 +1803,84 @@ private:
     static constexpr int kCompactionRecordMultiplier = 4;
 };
 
+enum class VMDecodedOp : uint8_t {
+    Unsupported = 0,
+    Nop,
+    Mov,
+    MovH,
+    Copy,
+    Swap,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Sqrt,
+    Neg,
+    Abs,
+    TCmp,
+    TMin,
+    TMax,
+    TInv,
+    TLAdd,
+    TLSub,
+    TLAnd,
+    TLOr,
+    TLNeg,
+    TSel,
+    Cvt,
+    Load,
+    Store,
+};
+
+struct VMDecodedInstruction {
+    int pc = 0;
+    TritWord27 raw{};
+    InstructionWord word{};
+    VMDecodedOp op = VMDecodedOp::Unsupported;
+    TernaryMode mode = TernaryMode::T40;
+    bool supported = false;
+    bool block_boundary = false;
+};
+
+struct VMDecodedCacheEntry {
+    std::uint64_t imem_generation = 0;
+    VMDecodedInstruction decoded{};
+};
+
+struct VMBasicBlock {
+    int start_pc = 0;
+    std::uint64_t imem_generation = 0;
+    std::vector<VMDecodedInstruction> instructions;
+};
+
+struct VMBlockCacheStats {
+    long long hits = 0;
+    long long misses = 0;
+    long long blocks_built = 0;
+    long long instructions_executed = 0;
+    long long decoded_instructions = 0;
+    long long fallback_steps = 0;
+    long long invalidations = 0;
+    long long total_block_length = 0;
+
+    void reset() {
+        hits = 0;
+        misses = 0;
+        blocks_built = 0;
+        instructions_executed = 0;
+        decoded_instructions = 0;
+        fallback_steps = 0;
+        invalidations = 0;
+        total_block_length = 0;
+    }
+
+    [[nodiscard]] double averageBlockLength() const {
+        return blocks_built == 0
+            ? 0.0
+            : static_cast<double>(total_block_length) / static_cast<double>(blocks_built);
+    }
+};
+
 struct VMCoreState {
     TernaryRegisterFile regfile;
     int pc = 0;
@@ -1868,6 +1959,7 @@ struct VMState {
     int                      scratch = 0;
     long long                cycle_count = 0;
     long long                branch_instructions_count = 0;
+    long long                decode_instructions_count = 0;
     long long                timer_reload = 0;
     long long                timer_counter = 0;
     bool                     timer_enable = false;
@@ -1911,6 +2003,11 @@ struct VMState {
     int                      active_core = 0;
     std::vector<std::deque<int>> core_run_queues;
     std::deque<int>          global_run_queue;
+    bool                     block_cache_enabled = true;
+    VMBlockCacheStats        block_cache_stats;
+    std::uint64_t            block_cache_observed_generation = 0;
+    std::unordered_map<int, VMDecodedCacheEntry> decoded_instruction_cache;
+    std::unordered_map<int, VMBasicBlock> basic_block_cache;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -2245,12 +2342,36 @@ struct VMState {
     void clearMemory() {
         imem.reset();
         dmem.reset();
+        invalidateBlockCache();
     }
 
     // Full cold reset: register file, PC, status, and both memories.
     void coldReset() {
         reset();
         clearMemory();
+    }
+
+    void invalidateBlockCache() {
+        const bool had_entries =
+            !decoded_instruction_cache.empty() || !basic_block_cache.empty();
+        decoded_instruction_cache.clear();
+        basic_block_cache.clear();
+        block_cache_observed_generation = imem.generation();
+        if (had_entries) ++block_cache_stats.invalidations;
+    }
+
+    void setBlockCacheEnabled(bool enabled) {
+        block_cache_enabled = enabled;
+        if (!enabled) invalidateBlockCache();
+    }
+
+    void resetBlockCacheStats() {
+        block_cache_stats.reset();
+        decode_instructions_count = 0;
+    }
+
+    [[nodiscard]] double averageBlockCacheLength() const {
+        return block_cache_stats.averageBlockLength();
     }
 
     bool growDataMemoryPreservingStack(int min_size) {
@@ -2288,6 +2409,9 @@ struct VMState {
         scratch = 0;
         cycle_count = 0;
         branch_instructions_count = 0;
+        decode_instructions_count = 0;
+        invalidateBlockCache();
+        block_cache_stats.reset();
         timer_reload = 0;
         timer_counter = 0;
         timer_enable = false;

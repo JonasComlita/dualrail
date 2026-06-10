@@ -84,6 +84,21 @@ int alignUp(int value, int alignment) {
     return remainder == 0 ? value : value + alignment - remainder;
 }
 
+int pagesForWords(int words) {
+    return words <= 0 ? 0 : (words + sandbox::vm::MMU_PAGE_WORDS - 1) /
+                             sandbox::vm::MMU_PAGE_WORDS;
+}
+
+std::string defaultDiskPathForBoot(const std::string& boot_path) {
+    const std::size_t slash = boot_path.find_last_of("/\\");
+    const std::size_t dot = boot_path.find_last_of('.');
+    if (dot != std::string::npos &&
+        (slash == std::string::npos || dot > slash)) {
+        return boot_path.substr(0, dot) + ".tdisk";
+    }
+    return boot_path + ".tdisk";
+}
+
 std::string buildBootExecAssembly(const std::string& path) {
     std::ostringstream boot;
     boot << ".text\n";
@@ -290,7 +305,7 @@ int main(int argc, char** argv) {
 
     if (argc > 4) return usage(argv[0]);
     const std::string boot_path = argc >= 2 ? argv[1] : "build/ternary-os.tboot";
-    const std::string disk_path = argc >= 3 ? argv[2] : "";
+    const std::string disk_path = argc >= 3 ? argv[2] : defaultDiskPathForBoot(boot_path);
     const std::string image_version = argc >= 4 ? argv[3] : "dev";
 
     constexpr int kGuiStackWords = 1024;
@@ -429,9 +444,31 @@ int main(int argc, char** argv) {
     manifest.boot_entry = 0;
     auto boot_label = assembled.labels.find("boot");
     if (boot_label != assembled.labels.end()) manifest.boot_entry = boot_label->second;
+    manifest.sections.push_back({
+        "kernel",
+        "/kernel",
+        "kernel",
+        0,
+        manifest.boot_entry,
+        static_cast<int>(assembled.program.size()),
+        pagesForWords(static_cast<int>(assembled.program.size())),
+        sandbox::host::TOS_IMAGE_SECTION_EXECUTABLE |
+            sandbox::host::TOS_IMAGE_SECTION_KERNEL,
+    });
     for (std::size_t i = 0; i < apps.size(); ++i) {
         const BundledApp& app = apps[i];
         const auto& header = linked_apps[i].executable_header;
+        manifest.sections.push_back({
+            app.id,
+            app.guest_path,
+            "app",
+            app.text_ppn * sandbox::vm::MMU_PAGE_WORDS,
+            header.entry_virtual_pc,
+            static_cast<int>(linked_apps[i].assembled.program.size()),
+            header.text_pages,
+            sandbox::host::TOS_IMAGE_SECTION_EXECUTABLE |
+                sandbox::host::TOS_IMAGE_SECTION_APP,
+        });
         manifest.apps.push_back({
             app.id,
             app.guest_path,
@@ -443,15 +480,16 @@ int main(int argc, char** argv) {
         });
     }
 
+    std::vector<long long> rootfs_image = rootfs.image();
     sandbox::host::TosBootImage image =
-        sandbox::host::bootImageFromAssembly(assembled, manifest, rootfs.image());
+        sandbox::host::bootImageFromAssembly(assembled, manifest);
     std::string error;
     if (!sandbox::host::writeBootImageFile(boot_path, image, &error)) {
         std::cerr << error << "\n";
         return EXIT_FAILURE;
     }
     if (!disk_path.empty() &&
-        !sandbox::host::writeSparseDiskFile(disk_path, image.rootfs_words, true, &error)) {
+        !sandbox::host::writeSparseDiskFile(disk_path, rootfs_image, true, &error)) {
         std::cerr << error << "\n";
         return EXIT_FAILURE;
     }

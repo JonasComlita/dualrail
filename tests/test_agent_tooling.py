@@ -18,6 +18,12 @@ def run_tool(*args):
     )
 
 
+def function_body(source, name):
+    start = source.index(f"def {name}")
+    end = source.find("\ndef ", start + 1)
+    return source[start:] if end < 0 else source[start:end]
+
+
 def test_doctor_json_and_manifests():
     completed = run_tool("doctor", "--json", "--no-commands")
     report = json.loads(completed.stdout)
@@ -45,8 +51,25 @@ def test_boot_image_inspector_when_release_image_exists():
     assert inspected["ok"], inspected
     assert inspected["segments"]["program_words"] > 0
     assert inspected["apps"]
+    if inspected["format_version"] >= 2:
+        assert inspected["sections"]
+        assert inspected["segments"]["rootfs_words"] == 0
+
+
+def test_product_runtime_does_not_compile_sources():
+    for name in ["run_tos_sdl.cpp", "ternary_host_runtime.h"]:
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "ternary_compiler" not in text
+        assert "compileSource" not in text
+        assert "kernel.trit" not in text
+
+    tool_source = (REPO / "tools" / "trit_tool.py").read_text(encoding="utf-8")
+    cmd_run = function_body(tool_source, "cmd_run")
+    assert "build_tos_image" not in cmd_run
+    assert "compile" not in cmd_run
 
 
 if __name__ == "__main__":
     test_doctor_json_and_manifests()
     test_boot_image_inspector_when_release_image_exists()
+    test_product_runtime_does_not_compile_sources()

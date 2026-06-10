@@ -1114,3 +1114,138 @@ Major goals:
 - FPGA-friendly trit full-adder, lane ALU, accumulator, and `vmac.t1` modules.
 - ASIC-oriented decode/execute mapping.
 - Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.
+
+## Possible Features in the Future:
+
+**Kernel should enforce invariants. User-space/system services should analyze, narrate, learn, and advise.**
+
+If you put too much intelligence directly into the kernel, the trusted core becomes enormous and brittle. But as **debug tooling, agent tooling, replay systems, policy daemons, and optional security modes**, several of these are excellent.
+
+**Best Ideas To Actually Build Soon**
+
+1. **Narrative Kernel**
+This is the most immediately useful for your project. Not necessarily natural language in-kernel, but structured event logs that can be rendered as a human/agent-readable story.
+
+This directly supports your goal of agents improving the OS with little input from you.
+
+Build as:
+- syscall trace
+- process genealogy
+- file/window/IPC events
+- crash reports
+- causal “last writer” metadata where available
+- `trit-export-diagnostics`
+
+This should be high priority.
+
+2. **Causal Provenance Tracking**
+Very strong idea. It fits your ternary model beautifully: trusted / unknown / untrusted.
+
+But I’d start coarse:
+- debug/profile builds only
+- page-level or buffer-level tags first
+- syscall boundary tainting
+- user input, disk, network, IPC origins
+
+Do not start with one tag per word everywhere. That is expensive and could swamp the VM.
+
+3. **Reversible Kernel / Time Travel**
+Also excellent, but implement it first in the **host VM/runtime**, not inside the guest kernel.
+
+You already have:
+- WAL
+- sparse disk
+- VM state
+- deterministic execution potential
+
+So the first version should be:
+- VM snapshot
+- replay trace
+- restore checkpoint
+- crash rewind
+- compare before/after state
+
+Later, the guest kernel can expose checkpoint syscalls.
+
+4. **Forgetful Kernel**
+This is surprisingly practical. `sys_forget(addr, len, policy)` is a real security feature.
+
+Start with:
+- secure zeroing
+- page scrub on free
+- discard crash-sensitive buffers
+- mark secret memory as non-dumpable
+- clear diagnostic redaction rules
+
+This belongs in production hardening.
+
+5. **Immune System**
+Useful, but should be advisory/sandboxing first, not automatic killing.
+
+Build as:
+- anomaly detector service
+- syscall profile per app
+- “this app is doing unusual things” dialog
+- sandbox mode
+- policy logs
+
+This could become a signature feature, especially paired with narrative diagnostics.
+
+**Interesting But Should Stay User-Space First**
+
+- **Metabolic process model**
+Great as a scheduler metrics dashboard and quota advisor. Dangerous as primary scheduler policy because “value produced” is gameable.
+
+- **Gradient descent scheduler**
+Research-grade. Build an offline scheduler advisor first. Let it recommend policy changes, do not let it mutate kernel scheduling policy live.
+
+- **Declarative kernel / `sys_want`**
+Beautiful idea, but too broad. Start as a user-space resource broker or async IO API, not a replacement for normal syscalls.
+
+- **Osmotic networking**
+This is basically kernel-assisted pub/sub or dataflow. Very aligned with the other ternary streaming/dataflow project. I’d build it as a message/dataflow service, not implicit kernel magic.
+
+- **Temporal syscalls**
+Useful pieces are scheduled jobs, snapshots, historical queries, and replay. “Committed future syscalls” is dangerous unless very constrained.
+
+**Mostly Moonshots**
+
+- **Topological memory protection**
+Fascinating, especially with pointer-state types, but not near-term. Start with debug heap invariants and typed pointer transition checks.
+
+- **Process genetics**
+Fun research idea, but probably too chaotic for an OS people depend on.
+
+- **Dreaming processes**
+There is a practical version: background/low-fidelity mode, approximate services, stale-cache reads. But don’t make “approximate syscalls” a general kernel contract yet.
+
+- **Counterfactual kernel**
+Conceptually awesome. Practically, this should be an offline replay/simulation tool built from traces. Let agents ask “what if?” against recorded runs.
+
+**My Takeaway**
+
+The best path is not “make the kernel magical.” It is:
+
+```text
+trace everything
+snapshot/replay everything
+tag trust boundaries
+export diagnostics
+let agents analyze and propose fixes
+keep enforcement small and explicit
+```
+
+If I were adding this to the roadmap, I’d create a new track called something like:
+
+**Agent-Operable Observability And Replay**
+
+With these first deliverables:
+- structured event log
+- crash bundle
+- replay trace
+- VM checkpoint/restore
+- provenance tags at syscall boundaries
+- `doctor`, `trace`, `replay`, `crashctl`
+- narrative report generator
+
+That is the sweet spot: wild enough to make Ternary OS feel genuinely new, but grounded enough to build.

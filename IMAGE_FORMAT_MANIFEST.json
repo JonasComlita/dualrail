@@ -5,7 +5,10 @@
   "formats": {
     "tboot": {
       "magic_hex": "0x31544f4f424f5354",
-      "format_version": 1,
+      "format_version": 2,
+      "legacy_read_versions": [
+        1
+      ],
       "endianness": "little",
       "header": [
         {
@@ -29,17 +32,28 @@
         "framebuffer_height:int32",
         "profile_name:string",
         "image_version:string",
+        "sections:TosImageSection[]",
         "apps:TosAppManifestEntry[]",
         "program:TritWord27[]",
-        "data_words:int64[]",
-        "rootfs_words:int64[]"
+        "data_words:int64[]"
+      ],
+      "section_fields": [
+        "name:string",
+        "path:string",
+        "kind:string",
+        "load_address:int32",
+        "entry_pc:int32",
+        "word_count:int32",
+        "page_count:int32",
+        "flags:int32"
       ],
       "validation": [
         "program segment is non-empty",
         "boot_entry is inside program segment",
         "profile_name is minimum or compact",
         "framebuffer dimensions are positive",
-        "rootfs_words length is a multiple of 27"
+        "section table includes kernel and bundled app metadata",
+        "mutable root filesystem seed is emitted as a separate .tdisk artifact"
       ]
     },
     "tdisk": {

@@ -72,6 +72,10 @@ const BUFFER_CLOCK_HAND_ADDR: t40 = 3032;
 const KERNEL_TICK_ADDR: t40 = 3033;
 const INPUT_LAST_MOUSE_X_ADDR: t40 = 3034;
 const INPUT_LAST_MOUSE_Y_ADDR: t40 = 3035;
+const METRIC_TLB_HITS_ADDR: t40 = 3036;
+const METRIC_TLB_MISSES_ADDR: t40 = 3037;
+const METRIC_SPAN_CACHE_HITS_ADDR: t40 = 3038;
+const METRIC_SLOW_PATH_FAULTS_ADDR: t40 = 3039;
 
 const PROC_PARENT_PID_BASE: t40 = 130000;
 const PROC_EXIT_STATUS_BASE: t40 = 130100;
@@ -431,6 +435,22 @@ const CACHE_VALUE: t40 = 1;
 const CACHE_VERSION: t40 = 2;
 const CACHE_VALID: t40 = 3;
 
+const TRANSLATION_CACHE_WORDS: t40 = 13;
+const TRANSLATION_CACHE_BASE: t40 = 673000;
+const TC_TLB_VALID: t40 = 0;
+const TC_TLB_VPN: t40 = 1;
+const TC_TLB_PPN: t40 = 2;
+const TC_TLB_FLAGS: t40 = 3;
+const TC_TLB_PTE_WORD: t40 = 4;
+const TC_TLB_PTBR: t40 = 5;
+const TC_SPAN_VALID: t40 = 6;
+const TC_SPAN_START: t40 = 7;
+const TC_SPAN_END: t40 = 8;
+const TC_SPAN_WRITE: t40 = 9;
+const TC_SPAN_VPN: t40 = 10;
+const TC_SPAN_PTE_WORD: t40 = 11;
+const TC_SPAN_PTBR: t40 = 12;
+
 const EXEC_IMAGE_WORDS: t40 = 128;
 const EXEC_IMAGE_BASE: t40 = 651000;
 const EXEC_HEADER_WORDS: t40 = 9;
@@ -517,6 +537,11 @@ fn kload(addr: t40) -> t40 {
 fn kstore(addr: t40, value: t40) -> t40 {
     unsafe { store(addr, value); }
     return value;
+}
+
+fn metric_inc(addr: t40) -> t40 {
+    kstore(addr, kload(addr) + 1);
+    return kload(addr);
 }
 
 fn kacq(addr: t40) -> t40 {
@@ -1127,6 +1152,7 @@ fn window_get_buffer(pid: t40, window_id: t40) -> t40 {
             kstore(ctx + TASK_CONTEXT_DMEM_PAGES, required_pages);
         }
     }
+    translation_cache_invalidate(process_slot);
     return window_user_addr(slot);
 }
 
@@ -1177,16 +1203,8 @@ fn window_read_event(pid: t40, window_id: t40, out_addr: t40) -> t40 {
     }
     var read_pos: t40 = kload(row + WIN_EVENT_READ);
     var ev: t40 = window_event_addr(slot, read_pos);
-    if user_store_word(pid, out_addr + EVENT_KIND, kload(ev + EVENT_KIND)) < 0 {
-        return ERR_BAD_PTR;
-    }
-    if user_store_word(pid, out_addr + EVENT_X_OR_KEY, kload(ev + EVENT_X_OR_KEY)) < 0 {
-        return ERR_BAD_PTR;
-    }
-    if user_store_word(pid, out_addr + EVENT_Y, kload(ev + EVENT_Y)) < 0 {
-        return ERR_BAD_PTR;
-    }
-    if user_store_word(pid, out_addr + EVENT_MODIFIERS, kload(ev + EVENT_MODIFIERS)) < 0 {
+    var copied: t40 = user_copy_from_kernel_validated(pid, out_addr, ev, WINDOW_EVENT_WORDS);
+    if copied < 0 {
         return ERR_BAD_PTR;
     }
     kstore(row + WIN_EVENT_READ, kwrap_inc(read_pos, WINDOW_EVENT_CAPACITY));
@@ -2228,6 +2246,7 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     log_commit(txid);
     kstore(row + PROC_VERSION, kload(row + PROC_VERSION) + 1);
     kstore(DESIRED_PROCESS_BASE + slot, 1);
+    translation_cache_invalidate(slot);
     return pid;
 }
 
@@ -2274,6 +2293,7 @@ fn process_set_caps(slot: t40, caps: t40) -> t40 {
         return ERR_INVALID;
     }
     kstore(PROC_CAPS_BASE + slot, caps);
+    translation_cache_invalidate(slot);
     return caps;
 }
 
@@ -3074,6 +3094,7 @@ fn process_release_memory(process_slot: t40) -> t40 {
     kclear(exec_image_addr(process_slot), EXEC_IMAGE_WORDS);
     kclear(heap, PROCESS_HEAP_WORDS);
     process_cache_invalidate(process_slot);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -3117,6 +3138,7 @@ fn process_reap_slot(process_slot: t40) -> t40 {
     kstore(PROC_SIGNAL_PENDING_BASE + process_slot, 0);
     kstore(PROC_CLEANED_BASE + process_slot, 0);
     kstore(PROC_CAPS_BASE + process_slot, 0);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -3346,6 +3368,11 @@ fn pte_entry_addr(process_slot: t40, vpn: t40) -> t40 {
 
 fn pte_table_init() -> t40 {
     kclear(PROCESS_CACHE_BASE, PROCESS_MAX * PROCESS_CACHE_WORDS);
+    kclear(TRANSLATION_CACHE_BASE, PROCESS_MAX * TRANSLATION_CACHE_WORDS);
+    kstore(METRIC_TLB_HITS_ADDR, 0);
+    kstore(METRIC_TLB_MISSES_ADDR, 0);
+    kstore(METRIC_SPAN_CACHE_HITS_ADDR, 0);
+    kstore(METRIC_SLOW_PATH_FAULTS_ADDR, 0);
     return 1;
 }
 
@@ -3369,6 +3396,7 @@ fn pte_map(process_slot: t40, vpn: t40, ppn: t40, flags: t40) -> t40 {
     kstore(row + PTE_FLAGS, flags);
     kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
     kstore(row + PTE_NAMESPACE, ns);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -3378,6 +3406,7 @@ fn pte_mark_fault(process_slot: t40, vpn: t40) -> t40 {
     kstore(row + PTE_PPN, 0);
     kstore(row + PTE_FLAGS, 0);
     kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -3447,6 +3476,8 @@ fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
                 kstore(dst_row + PTE_FLAGS, PTE_FLAG_COW);
                 kstore(dst_row + PTE_VERSION, kload(dst_row + PTE_VERSION) + 1);
                 kstore(dst_row + PTE_NAMESPACE, ns);
+                translation_cache_invalidate(parent_slot);
+                translation_cache_invalidate(child_slot);
             }
         }
         vpn = vpn + 1;
@@ -3470,6 +3501,7 @@ fn cow_fault_resolve(process_slot: t40, vpn: t40, new_ppn: t40) -> t40 {
     kstore(row + PTE_PPN, new_ppn);
     kstore(row + PTE_FLAGS, 0);
     kstore(row + PTE_VERSION, kload(row + PTE_VERSION) + 1);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -3501,6 +3533,155 @@ fn process_cache_invalidate(process_slot: t40) -> t40 {
     var row: t40 = process_cache_addr(process_slot);
     kstore(row + CACHE_VALID, 0);
     unsafe { fence(0); }
+    return 1;
+}
+
+fn translation_cache_addr(process_slot: t40) -> t40 {
+    return TRANSLATION_CACHE_BASE + process_slot * TRANSLATION_CACHE_WORDS;
+}
+
+fn translation_cache_invalidate(process_slot: t40) -> t40 {
+    if process_slot < 0 {
+        return ERR_INVALID;
+    }
+    if process_slot - PROCESS_MAX >= 0 {
+        return ERR_INVALID;
+    }
+    var row: t40 = translation_cache_addr(process_slot);
+    kstore(row + TC_TLB_VALID, 0);
+    kstore(row + TC_SPAN_VALID, 0);
+    unsafe { fence(0); }
+    return 1;
+}
+
+fn hw_pte_flags(word: t40) -> t40 {
+    var remaining: t40 = word;
+    while remaining - 59049 >= 0 {
+        remaining = remaining - 59049;
+    }
+    while remaining - 6561 >= 0 {
+        remaining = remaining - 6561;
+    }
+    while remaining - 243 >= 0 {
+        remaining = remaining - 243;
+    }
+    return remaining;
+}
+
+fn hw_pte_flag(flags: t40, place: t40) -> t40 {
+    var window: t40 = flags;
+    var next_place: t40 = place * 3;
+    while window - next_place >= 0 {
+        window = window - next_place;
+    }
+    if window - place >= 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn hw_pte_allows(flags: t40, write: t40) -> t40 {
+    if hw_pte_flag(flags, 1) <= 0 {
+        return 0;
+    }
+    if hw_pte_flag(flags, 3) <= 0 {
+        return 0;
+    }
+    if write > 0 {
+        return hw_pte_flag(flags, 27);
+    }
+    return hw_pte_flag(flags, 9);
+}
+
+fn translation_tlb_lookup(process_slot: t40, ptbr: t40, vpn: t40, write: t40) -> t40 {
+    var row: t40 = translation_cache_addr(process_slot);
+    if kload(row + TC_TLB_VALID) <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    if kload(row + TC_TLB_VPN) - vpn != 0 {
+        return ERR_NOT_FOUND;
+    }
+    if kload(row + TC_TLB_PTBR) - ptbr != 0 {
+        return ERR_NOT_FOUND;
+    }
+    var pte_word: t40 = kload(ptbr + vpn);
+    if pte_word - kload(row + TC_TLB_PTE_WORD) != 0 {
+        translation_cache_invalidate(process_slot);
+        return ERR_NOT_FOUND;
+    }
+    if hw_pte_allows(kload(row + TC_TLB_FLAGS), write) <= 0 {
+        return ERR_NOT_FOUND;
+    }
+    metric_inc(METRIC_TLB_HITS_ADDR);
+    return kload(row + TC_TLB_PPN);
+}
+
+fn translation_tlb_store(process_slot: t40, ptbr: t40, vpn: t40, pte_word: t40, flags: t40) -> t40 {
+    var row: t40 = translation_cache_addr(process_slot);
+    kstore(row + TC_TLB_VPN, vpn);
+    kstore(row + TC_TLB_PPN, hw_pte_phys_base(pte_word));
+    kstore(row + TC_TLB_FLAGS, flags);
+    kstore(row + TC_TLB_PTE_WORD, pte_word);
+    kstore(row + TC_TLB_PTBR, ptbr);
+    kstore(row + TC_TLB_VALID, 1);
+    return 1;
+}
+
+fn translation_span_lookup(process_slot: t40, ptbr: t40, addr: t40, count_words: t40, write: t40) -> t40 {
+    var row: t40 = translation_cache_addr(process_slot);
+    if kload(row + TC_SPAN_VALID) <= 0 {
+        return 0;
+    }
+    if kload(row + TC_SPAN_WRITE) - write != 0 {
+        return 0;
+    }
+    if addr - kload(row + TC_SPAN_START) < 0 {
+        return 0;
+    }
+    if addr + count_words - kload(row + TC_SPAN_END) > 0 {
+        return 0;
+    }
+    if ptbr > 0 {
+        if kload(row + TC_SPAN_PTBR) - ptbr != 0 {
+            return 0;
+        }
+        var vpn: t40 = kload(row + TC_SPAN_VPN);
+        if (addr / MMU_PAGE_WORDS) - vpn != 0 {
+            return 0;
+        }
+        var last_addr: t40 = addr + count_words - 1;
+        if (last_addr / MMU_PAGE_WORDS) - vpn != 0 {
+            return 0;
+        }
+        if kload(ptbr + vpn) - kload(row + TC_SPAN_PTE_WORD) != 0 {
+            translation_cache_invalidate(process_slot);
+            return 0;
+        }
+    }
+    metric_inc(METRIC_SPAN_CACHE_HITS_ADDR);
+    return 1;
+}
+
+fn translation_span_store(process_slot: t40, ptbr: t40, addr: t40, count_words: t40, write: t40) -> t40 {
+    var row: t40 = translation_cache_addr(process_slot);
+    var vpn: t40 = -1;
+    var pte_word: t40 = 0;
+    if ptbr > 0 {
+        vpn = addr / MMU_PAGE_WORDS;
+        var last_addr: t40 = addr + count_words - 1;
+        if (last_addr / MMU_PAGE_WORDS) - vpn != 0 {
+            kstore(row + TC_SPAN_VALID, 0);
+            return 1;
+        }
+        pte_word = kload(ptbr + vpn);
+    }
+    kstore(row + TC_SPAN_START, addr);
+    kstore(row + TC_SPAN_END, addr + count_words);
+    kstore(row + TC_SPAN_WRITE, write);
+    kstore(row + TC_SPAN_VPN, vpn);
+    kstore(row + TC_SPAN_PTE_WORD, pte_word);
+    kstore(row + TC_SPAN_PTBR, ptbr);
+    kstore(row + TC_SPAN_VALID, 1);
     return 1;
 }
 
@@ -3573,6 +3754,14 @@ fn user_translate_dmem_addr(pid: t40, addr: t40, write: t40) -> t40 {
     if slot < 0 {
         return slot;
     }
+    return user_translate_slot_dmem_addr(slot, addr, write);
+}
+
+fn user_translate_slot_dmem_addr(slot: t40, addr: t40, write: t40) -> t40 {
+    if addr < 0 {
+        metric_inc(METRIC_SLOW_PATH_FAULTS_ADDR);
+        return ERR_BAD_PTR;
+    }
     var ctx: t40 = kload(process_addr(slot) + PROC_CONTEXT);
     if ctx <= 0 {
         return addr;
@@ -3590,13 +3779,26 @@ fn user_translate_dmem_addr(pid: t40, addr: t40, write: t40) -> t40 {
     var pages: t40 = kload(ctx + TASK_CONTEXT_DMEM_PAGES);
     var vpn: t40 = addr / MMU_PAGE_WORDS;
     if vpn - pages >= 0 {
-        return ERR_BAD_PTR;
-    }
-    var pte_word: t40 = kload(ptbr + vpn);
-    if pte_word <= 0 {
+        metric_inc(METRIC_SLOW_PATH_FAULTS_ADDR);
         return ERR_BAD_PTR;
     }
     var offset: t40 = user_page_offset(addr);
+    var cached_phys_base: t40 = translation_tlb_lookup(slot, ptbr, vpn, write);
+    if cached_phys_base >= 0 {
+        return cached_phys_base + offset;
+    }
+    metric_inc(METRIC_TLB_MISSES_ADDR);
+    var pte_word: t40 = kload(ptbr + vpn);
+    if pte_word <= 0 {
+        metric_inc(METRIC_SLOW_PATH_FAULTS_ADDR);
+        return ERR_BAD_PTR;
+    }
+    var flags: t40 = hw_pte_flags(pte_word);
+    if hw_pte_allows(flags, write) <= 0 {
+        metric_inc(METRIC_SLOW_PATH_FAULTS_ADDR);
+        return ERR_BAD_PTR;
+    }
+    translation_tlb_store(slot, ptbr, vpn, pte_word, flags);
     var phys: t40 = hw_pte_phys_base(pte_word) + offset;
     return phys;
 }
@@ -3608,16 +3810,50 @@ fn user_validate_span(pid: t40, addr: t40, count_words: t40, write: t40) -> t40 
     if count_words == 0 {
         return 1;
     }
-    if user_has_dmem_mmu(pid) <= 0 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
         return validate_user_span(addr, count_words, write);
     }
-    var i: t40 = 0;
-    while count_words - i > 0 {
-        if user_translate_dmem_addr(pid, addr + i, write) < 0 {
+    var ctx: t40 = kload(process_addr(slot) + PROC_CONTEXT);
+    var ptbr: t40 = 0;
+    var has_mmu: t40 = 0;
+    if ctx > 0 {
+        ptbr = kload(ctx + TASK_CONTEXT_DMEM_PTBR);
+        if ptbr > 0 {
+            if ptbr - HW_PT_BASE >= 0 {
+                if ptbr - (HW_PT_BASE + PROCESS_MAX * HW_PT_WORDS) < 0 {
+                    has_mmu = 1;
+                }
+            }
+        }
+    }
+    if has_mmu <= 0 {
+        if translation_span_lookup(slot, 0, addr, count_words, write) > 0 {
+            return 1;
+        }
+        var direct_ok: t40 = validate_user_span(addr, count_words, write);
+        if direct_ok > 0 {
+            translation_span_store(slot, 0, addr, count_words, write);
+        }
+        return direct_ok;
+    }
+    if translation_span_lookup(slot, ptbr, addr, count_words, write) > 0 {
+        return 1;
+    }
+    var remaining: t40 = count_words;
+    var cursor: t40 = addr;
+    while remaining > 0 {
+        if user_translate_slot_dmem_addr(slot, cursor, write) < 0 {
             return 0;
         }
-        i = i + 1;
+        var page_left: t40 = MMU_PAGE_WORDS - user_page_offset(cursor);
+        if page_left - remaining > 0 {
+            page_left = remaining;
+        }
+        cursor = cursor + page_left;
+        remaining = remaining - page_left;
     }
+    translation_span_store(slot, ptbr, addr, count_words, write);
     return 1;
 }
 
@@ -3638,21 +3874,88 @@ fn user_store_word(pid: t40, addr: t40, value: t40) -> t40 {
     return 1;
 }
 
+fn user_copy_from_kernel_validated(pid: t40, dst_addr: t40, src_addr: t40, count_words: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var remaining: t40 = count_words;
+    var copied: t40 = 0;
+    while remaining > 0 {
+        var dst_phys: t40 = user_translate_slot_dmem_addr(slot, dst_addr + copied, 1);
+        if dst_phys < 0 {
+            return dst_phys;
+        }
+        var chunk: t40 = MMU_PAGE_WORDS - user_page_offset(dst_addr + copied);
+        if chunk - remaining > 0 {
+            chunk = remaining;
+        }
+        var i: t40 = 0;
+        while chunk - i > 0 {
+            kstore(dst_phys + i, kload(src_addr + copied + i));
+            i = i + 1;
+        }
+        copied = copied + chunk;
+        remaining = remaining - chunk;
+    }
+    return copied;
+}
+
+fn user_copy_to_kernel_validated(pid: t40, src_addr: t40, dst_addr: t40, count_words: t40) -> t40 {
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    var remaining: t40 = count_words;
+    var copied: t40 = 0;
+    while remaining > 0 {
+        var src_phys: t40 = user_translate_slot_dmem_addr(slot, src_addr + copied, 0);
+        if src_phys < 0 {
+            return src_phys;
+        }
+        var chunk: t40 = MMU_PAGE_WORDS - user_page_offset(src_addr + copied);
+        if chunk - remaining > 0 {
+            chunk = remaining;
+        }
+        var i: t40 = 0;
+        while chunk - i > 0 {
+            kstore(dst_addr + copied + i, kload(src_phys + i));
+            i = i + 1;
+        }
+        copied = copied + chunk;
+        remaining = remaining - chunk;
+    }
+    return copied;
+}
+
 fn user_copy_cstring_to_kernel(pid: t40, src_addr: t40, dst_addr: t40, max_words: t40) -> t40 {
     if max_words <= 0 {
         return ERR_BAD_PTR;
     }
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return ERR_BAD_PTR;
+    }
     var i: t40 = 0;
     while max_words - i > 0 {
-        if user_validate_span(pid, src_addr + i, 1, 0) <= 0 {
+        var src_phys: t40 = user_translate_slot_dmem_addr(slot, src_addr + i, 0);
+        if src_phys < 0 {
             return ERR_BAD_PTR;
         }
-        var word: t40 = user_load_word(pid, src_addr + i);
-        kstore(dst_addr + i, word);
-        if word == 0 {
-            return i + 1;
+        var chunk: t40 = MMU_PAGE_WORDS - user_page_offset(src_addr + i);
+        if chunk - (max_words - i) > 0 {
+            chunk = max_words - i;
         }
-        i = i + 1;
+        var j: t40 = 0;
+        while chunk - j > 0 {
+            var word: t40 = kload(src_phys + j);
+            kstore(dst_addr + i + j, word);
+            if word == 0 {
+                return i + j + 1;
+            }
+            j = j + 1;
+        }
+        i = i + chunk;
     }
     kstore(dst_addr + max_words - 1, 0);
     return ERR_BAD_PTR;
@@ -4633,14 +4936,10 @@ fn vfs_read(pid: t40, fd: t40, dst_addr: t40, count_words: t40) -> t40 {
         if buffer_slot < 0 {
             return buffer_slot;
         }
-        var j: t40 = 0;
-        while chunk - j > 0 {
-            var stored: t40 = user_store_word(pid, dst_addr + i + j, kload(data + in_extent + j));
-            if stored < 0 {
-                buffer_unpin(buffer_slot);
-                return stored;
-            }
-            j = j + 1;
+        var copied: t40 = user_copy_from_kernel_validated(pid, dst_addr + i, data + in_extent, chunk);
+        if copied < 0 {
+            buffer_unpin(buffer_slot);
+            return copied;
         }
         buffer_unpin(buffer_slot);
         i = i + chunk;
@@ -4720,6 +5019,10 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
     if user_validate_span(pid, src_addr, count_words, 0) <= 0 {
         return ERR_BAD_PTR;
     }
+    var process_slot: t40 = process_find_pid(pid);
+    if process_slot < 0 {
+        return ERR_BAD_PTR;
+    }
     var fdrow: t40 = fd_addr(fd);
     var mode: t40 = kload(fdrow + FD_FLAGS);
     if mode == 0 {
@@ -4766,14 +5069,22 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
         var txid: t40 = log_begin();
         var j: t40 = 0;
         while chunk - j > 0 {
-            var dst: t40 = data + in_extent + j;
-            var src_phys: t40 = user_translate_dmem_addr(pid, src_addr + i + j, 0);
+            var src_phys: t40 = user_translate_slot_dmem_addr(process_slot, src_addr + i + j, 0);
             if src_phys < 0 {
                 buffer_unpin(buffer_slot);
                 return src_phys;
             }
-            log_write(txid, dst, kload(dst), kload(src_phys));
-            j = j + 1;
+            var copy_chunk: t40 = MMU_PAGE_WORDS - user_page_offset(src_addr + i + j);
+            if copy_chunk - (chunk - j) > 0 {
+                copy_chunk = chunk - j;
+            }
+            var copy_i: t40 = 0;
+            while copy_chunk - copy_i > 0 {
+                var dst: t40 = data + in_extent + j + copy_i;
+                log_write(txid, dst, kload(dst), kload(src_phys + copy_i));
+                copy_i = copy_i + 1;
+            }
+            j = j + copy_chunk;
         }
         var chunk_end: t40 = logical_word + chunk;
         if chunk_end - old_size > 0 {
@@ -4999,6 +5310,7 @@ fn exec_encode_pte(ppn: t40, user: t40, readable: t40, writable: t40, executable
 
 fn exec_clear_hw_page_tables(process_slot: t40) -> t40 {
     kclear(exec_hw_imem_ptbr(process_slot), HW_PT_WORDS);
+    translation_cache_invalidate(process_slot);
     return 1;
 }
 
@@ -5196,6 +5508,7 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
             vram_vpn = vram_vpn + 1;
         }
     }
+    translation_cache_invalidate(process_slot);
     return text_pages + data_pages;
 }
 
@@ -5230,6 +5543,7 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
     kstore(heap + PROC_HEAP_MAPPED_PAGES, data_pages);
     kstore(CURRENT_CONTEXT_ADDR, ctx);
     kstore(CURRENT_PID_ADDR, kload(row + PROC_PID));
+    translation_cache_invalidate(process_slot);
     return ctx;
 }
 
@@ -5249,6 +5563,7 @@ fn process_map_heap_pages(process_slot: t40, required_pages: t40) -> t40 {
         mapped = mapped + 1;
     }
     kstore(heap + PROC_HEAP_MAPPED_PAGES, mapped);
+    translation_cache_invalidate(process_slot);
     return mapped;
 }
 
@@ -5280,6 +5595,7 @@ fn process_brk(pid: t40, new_break: t40) -> t40 {
         }
     }
     process_cache_invalidate(slot);
+    translation_cache_invalidate(slot);
     return new_break;
 }
 

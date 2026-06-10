@@ -47,10 +47,13 @@
 #include "ternary_simd.h"
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <functional>
 #include <limits>
+#include <map>
 #include <string>
 #include <sstream>
+#include <tuple>
 
 namespace sandbox {
 namespace vm {
@@ -826,8 +829,89 @@ inline void writeVectorScatter(
 //   TRAPPED  — fault occurred; PC unchanged; trap_reg written.
 //
 // Calling step() on a HALTED or TRAPPED VMState is a no-op (returns status).
-inline VMStatus step(VMState& vm) {
+struct VMExecutionRecord {
+    bool attempted = false;
+    bool has_instruction = false;
+    bool malformed = false;
+    int pc = -1;
+    int physical_pc = -1;
+    int final_pc = -1;
+    std::uint64_t raw_bits = 0;
+    InstructionWord instruction;
+    VMStatus before_status = VMStatus::RUNNING;
+    VMStatus after_status = VMStatus::RUNNING;
+    PrivilegeMode before_privilege = PrivilegeMode::Kernel;
+    PrivilegeMode after_privilege = PrivilegeMode::Kernel;
+    int process_id = -1;
+    bool branch_observed = false;
+    bool branch_conditional = false;
+    bool branch_taken = false;
+    int branch_target = -1;
+    bool trap_observed = false;
+    TrapCode trap_code = TrapCode::TRAP_ILLEGAL_OP;
+    int trap_cause = 0;
+    int syscall_id = -1;
+};
+
+[[nodiscard]] inline int currentProcessForProfile(const VMState& vm) {
+    if (vm.coreCount() <= 0) return -1;
+    const int core = std::max(0, std::min(vm.active_core, vm.coreCount() - 1));
+    return vm.coreState(core).current_process;
+}
+
+inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
+    if (record) *record = VMExecutionRecord{};
     if (!vm.isRunning()) return vm.status;
+
+    if (record) {
+        record->attempted = true;
+        record->pc = vm.pc;
+        record->final_pc = vm.pc;
+        record->before_status = vm.status;
+        record->before_privilege = vm.privilege;
+        record->after_status = vm.status;
+        record->after_privilege = vm.privilege;
+        record->process_id = currentProcessForProfile(vm);
+    }
+
+    struct RecordFinalizer {
+        VMState& vm;
+        VMExecutionRecord* record;
+
+        ~RecordFinalizer() {
+            if (!record || !record->attempted) return;
+            record->after_status = vm.status;
+            record->after_privilege = vm.privilege;
+            record->final_pc = vm.pc;
+            if (record->has_instruction &&
+                record->instruction.opcode == Opcode::SYSCALL &&
+                record->syscall_id < 0) {
+                record->syscall_id = record->instruction.imm;
+            }
+            if (vm.isTrapped()) {
+                record->trap_observed = true;
+                record->trap_code = decodeTrap(vm.trap_reg);
+            } else if (record->has_instruction &&
+                       record->instruction.opcode == Opcode::SYSCALL &&
+                       record->before_privilege == PrivilegeMode::User &&
+                       vm.privilege == PrivilegeMode::Kernel &&
+                       vm.epc == record->pc) {
+                record->trap_observed = true;
+                record->trap_code = TrapCode::TRAP_ILLEGAL_OP;
+                record->trap_cause = OS_CAUSE_SYSCALL;
+            } else if (record->before_privilege != PrivilegeMode::Kernel &&
+                       vm.privilege == PrivilegeMode::Kernel &&
+                       vm.epc == record->pc) {
+                record->trap_observed = true;
+                record->trap_code = decodeTrap(vm.trap_reg);
+                record->trap_cause = vm.cause;
+            }
+            if (record->trap_observed && record->trap_cause == 0) {
+                record->trap_cause =
+                    vm.cause != 0 ? vm.cause : VMState::osCauseForTrap(record->trap_code);
+            }
+        }
+    } record_finalizer{vm, record};
 
     // -----------------------------------------------------------------
     // FETCH
@@ -843,11 +927,22 @@ inline VMStatus step(VMState& vm) {
         vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_FETCH_FAULT, vm.pc);
         return vm.status;
     }
+    if (record) {
+        record->physical_pc = physical_pc;
+        record->raw_bits = raw.bits;
+    }
 
     // -----------------------------------------------------------------
     // DECODE
     // -----------------------------------------------------------------
+    ++vm.decode_instructions_count;
     InstructionWord iw = InstructionWord::decode(raw);
+    if (record) {
+        record->has_instruction = true;
+        record->malformed = iw.malformed;
+        record->instruction = iw;
+        if (iw.opcode == Opcode::SYSCALL) record->syscall_id = iw.imm;
+    }
     if (iw.malformed || iw.opcode == Opcode::RESERVED) {
         vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_ILLEGAL_INSTRUCTION, vm.pc);
         return vm.status;
@@ -859,6 +954,14 @@ inline VMStatus step(VMState& vm) {
     // the instruction completed normally and pc_next holds the new PC.
     // -----------------------------------------------------------------
     int pc_next = vm.pc + 1;  // default: advance by one word
+
+    auto noteBranch = [&](int target, bool taken, bool conditional) {
+        if (!record) return;
+        record->branch_observed = true;
+        record->branch_target = target;
+        record->branch_taken = taken;
+        record->branch_conditional = conditional;
+    };
 
     auto decodeWidth = [&]() -> std::pair<bool, TernaryMode> {
         TernaryMode mode = TernaryMode::T40;
@@ -974,6 +1077,7 @@ inline VMStatus step(VMState& vm) {
                                  vm.pc);
                 return vm.status;
             }
+            noteBranch(vm.epc, true, false);
             vm.recordCycle(true);
             return vm.status;
         }
@@ -1630,6 +1734,7 @@ inline VMStatus step(VMState& vm) {
         case Opcode::JMP: {
             // B-type: PC ← PC + offset19 (unconditional)
             pc_next = vm.pc + iw.offset;
+            noteBranch(pc_next, true, false);
             break;
         }
 
@@ -1643,6 +1748,7 @@ inline VMStatus step(VMState& vm) {
             if (trit0 == T_NEG) {
                 pc_next = vm.pc + iw.offset;
             }
+            noteBranch(vm.pc + iw.offset, trit0 == T_NEG, true);
             break;
         }
 
@@ -1652,6 +1758,7 @@ inline VMStatus step(VMState& vm) {
             if (trit0 == T_ZER) {
                 pc_next = vm.pc + iw.offset;
             }
+            noteBranch(vm.pc + iw.offset, trit0 == T_ZER, true);
             break;
         }
 
@@ -1661,6 +1768,7 @@ inline VMStatus step(VMState& vm) {
             if (trit0 == T_POS) {
                 pc_next = vm.pc + iw.offset;
             }
+            noteBranch(vm.pc + iw.offset, trit0 == T_POS, true);
             break;
         }
 
@@ -1668,6 +1776,7 @@ inline VMStatus step(VMState& vm) {
             // B-type: r25 (LR) ← PC + 1; PC ← PC + offset19
             vm.regfile.writeLR(sandbox::vm::ops::fromLong(vm.pc + 1));
             pc_next = vm.pc + iw.offset;
+            noteBranch(pc_next, true, false);
             break;
         }
 
@@ -1675,10 +1784,12 @@ inline VMStatus step(VMState& vm) {
             // R-type (no operands): PC ← r25 (LR)
             int ret_addr = exec::pcFromValue(vm.regfile.readLR());
             if (!vm.validateControlTarget(ret_addr)) {
+                noteBranch(ret_addr, false, false);
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
             pc_next = ret_addr;
+            noteBranch(pc_next, true, false);
             break;
         }
         // ----- Phase 2 Extensions -----------------------------------
@@ -1739,11 +1850,13 @@ inline VMStatus step(VMState& vm) {
             }
             int dest = exec::pcFromValue(target);
             if (!vm.validateControlTarget(dest)) {
+                noteBranch(dest, false, false);
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
             vm.regfile.writeLR(sandbox::vm::ops::fromLong(vm.pc + 1));
             pc_next = dest;
+            noteBranch(pc_next, true, false);
             break;
         }
 
@@ -1755,10 +1868,12 @@ inline VMStatus step(VMState& vm) {
             }
             int dest = exec::pcFromValue(target);
             if (!vm.validateControlTarget(dest)) {
+                noteBranch(dest, false, false);
                 vm.trap(TrapCode::TRAP_MEM_FAULT);
                 return vm.status;
             }
             pc_next = dest;
+            noteBranch(pc_next, true, false);
             break;
         }
 
@@ -2037,10 +2152,342 @@ inline VMStatus step(VMState& vm) {
 
 struct VMHooks {
     using Hook = std::function<void(const VMState&, int pc_before)>;
+    using InstructionHook = std::function<void(const VMState&, const VMExecutionRecord&)>;
 
+    InstructionHook onInstruction;
     Hook onStep;
     Hook onTrap;
     Hook onHalt;
+};
+
+struct BranchProfileKey {
+    int pc = -1;
+    int opcode = -1;
+    int target = -1;
+
+    [[nodiscard]] bool operator<(const BranchProfileKey& other) const {
+        return std::tie(pc, opcode, target) <
+               std::tie(other.pc, other.opcode, other.target);
+    }
+};
+
+struct BranchProfileCounts {
+    std::uint64_t taken = 0;
+    std::uint64_t fallthrough = 0;
+
+    [[nodiscard]] std::uint64_t total() const { return taken + fallthrough; }
+};
+
+struct TrapProfileKey {
+    int syscall_id = -1;
+    int trap_cause = 0;
+    int process_id = -1;
+
+    [[nodiscard]] bool operator<(const TrapProfileKey& other) const {
+        return std::tie(syscall_id, trap_cause, process_id) <
+               std::tie(other.syscall_id, other.trap_cause, other.process_id);
+    }
+};
+
+class VMExecutionProfile {
+public:
+    static constexpr int kNoProcessOverride = std::numeric_limits<int>::min();
+
+    std::uint64_t total_instructions = 0;
+    std::map<int, std::uint64_t> opcode_counts;
+    std::map<int, std::uint64_t> pc_counts;
+    std::map<int, int> pc_opcodes;
+    std::map<BranchProfileKey, BranchProfileCounts> branches;
+    std::map<TrapProfileKey, std::uint64_t> syscalls;
+    std::map<TrapProfileKey, std::uint64_t> traps;
+
+    void record(const VMExecutionRecord& execution, int process_id_override = kNoProcessOverride) {
+        if (!execution.attempted) return;
+        const int process_id =
+            process_id_override == kNoProcessOverride ? execution.process_id : process_id_override;
+        ++total_instructions;
+        ++pc_counts[execution.pc];
+        if (execution.has_instruction) {
+            const int opcode = opcodeId(execution.instruction.opcode);
+            ++opcode_counts[opcode];
+            pc_opcodes.emplace(execution.pc, opcode);
+            if (execution.branch_observed) {
+                BranchProfileCounts& counts =
+                    branches[BranchProfileKey{execution.pc, opcode, execution.branch_target}];
+                if (!execution.branch_conditional || execution.branch_taken) ++counts.taken;
+                else ++counts.fallthrough;
+            }
+            if (execution.instruction.opcode == Opcode::SYSCALL) {
+                const int cause = execution.trap_observed ? execution.trap_cause : 0;
+                ++syscalls[TrapProfileKey{execution.syscall_id, cause, process_id}];
+            }
+        }
+        if (execution.trap_observed) {
+            ++traps[TrapProfileKey{execution.syscall_id, execution.trap_cause, process_id}];
+        }
+    }
+
+    [[nodiscard]] std::uint64_t opcodeCount(Opcode opcode) const {
+        auto it = opcode_counts.find(opcodeId(opcode));
+        return it == opcode_counts.end() ? 0 : it->second;
+    }
+
+    [[nodiscard]] std::uint64_t pcCount(int pc) const {
+        auto it = pc_counts.find(pc);
+        return it == pc_counts.end() ? 0 : it->second;
+    }
+
+    [[nodiscard]] BranchProfileCounts branchCounts(int pc, Opcode opcode, int target) const {
+        auto it = branches.find(BranchProfileKey{pc, opcodeId(opcode), target});
+        return it == branches.end() ? BranchProfileCounts{} : it->second;
+    }
+
+    [[nodiscard]] std::uint64_t syscallCount(int syscall_id, int trap_cause, int process_id) const {
+        auto it = syscalls.find(TrapProfileKey{syscall_id, trap_cause, process_id});
+        return it == syscalls.end() ? 0 : it->second;
+    }
+
+    [[nodiscard]] std::uint64_t trapCount(int syscall_id, int trap_cause, int process_id) const {
+        auto it = traps.find(TrapProfileKey{syscall_id, trap_cause, process_id});
+        return it == traps.end() ? 0 : it->second;
+    }
+
+    [[nodiscard]] std::string toJson(int top_limit = 20) const {
+        std::ostringstream out;
+        writeJson(out, top_limit);
+        return out.str();
+    }
+
+    [[nodiscard]] std::string toText(int top_limit = 20) const {
+        std::ostringstream out;
+        writeText(out, top_limit);
+        return out.str();
+    }
+
+    void writeJson(std::ostream& out, int top_limit = 20) const {
+        out << "{\n";
+        out << "  \"format_version\": 1,\n";
+        out << "  \"total_instructions\": " << total_instructions << ",\n";
+        out << "  \"opcodes\": [\n";
+        const auto opcode_rows = topOpcodeRows(static_cast<int>(opcode_counts.size()));
+        for (std::size_t i = 0; i < opcode_rows.size(); ++i) {
+            const auto& row = opcode_rows[i];
+            out << "    {\"opcode\": " << row.opcode
+                << ", \"name\": " << jsonString(opcodeName(row.opcode))
+                << ", \"count\": " << row.count << "}";
+            if (i + 1 < opcode_rows.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ],\n";
+        out << "  \"top_pcs\": [\n";
+        const auto pc_rows = topPcRows(top_limit);
+        for (std::size_t i = 0; i < pc_rows.size(); ++i) {
+            const auto& row = pc_rows[i];
+            out << "    {\"pc\": " << row.pc
+                << ", \"opcode\": " << row.opcode
+                << ", \"name\": " << jsonString(opcodeName(row.opcode))
+                << ", \"count\": " << row.count << "}";
+            if (i + 1 < pc_rows.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ],\n";
+        out << "  \"top_branches\": [\n";
+        const auto branch_rows = topBranchRows(top_limit);
+        for (std::size_t i = 0; i < branch_rows.size(); ++i) {
+            const auto& row = branch_rows[i];
+            out << "    {\"pc\": " << row.key.pc
+                << ", \"opcode\": " << row.key.opcode
+                << ", \"name\": " << jsonString(opcodeName(row.key.opcode))
+                << ", \"target\": " << row.key.target
+                << ", \"taken\": " << row.counts.taken
+                << ", \"fallthrough\": " << row.counts.fallthrough
+                << ", \"total\": " << row.counts.total() << "}";
+            if (i + 1 < branch_rows.size()) out << ",";
+            out << "\n";
+        }
+        out << "  ],\n";
+        out << "  \"top_syscalls\": [\n";
+        const auto syscall_rows = topTrapRows(syscalls, top_limit);
+        writeTrapRowsJson(out, syscall_rows);
+        out << "  ],\n";
+        out << "  \"top_traps\": [\n";
+        const auto trap_rows = topTrapRows(traps, top_limit);
+        writeTrapRowsJson(out, trap_rows);
+        out << "  ]\n";
+        out << "}\n";
+    }
+
+    void writeText(std::ostream& out, int top_limit = 20) const {
+        out << "Trit VM execution profile\n";
+        out << "total_instructions: " << total_instructions << "\n";
+        out << "\nhot opcodes:\n";
+        for (const auto& row : topOpcodeRows(top_limit)) {
+            out << "  " << std::setw(10) << row.count << " "
+                << std::setw(3) << row.opcode << " " << opcodeName(row.opcode) << "\n";
+        }
+        out << "\nhot PCs:\n";
+        for (const auto& row : topPcRows(top_limit)) {
+            out << "  " << std::setw(10) << row.count << " pc="
+                << row.pc << " " << opcodeName(row.opcode) << "\n";
+        }
+        out << "\nhot branches:\n";
+        for (const auto& row : topBranchRows(top_limit)) {
+            out << "  " << std::setw(10) << row.counts.total()
+                << " pc=" << row.key.pc
+                << " op=" << opcodeName(row.key.opcode)
+                << " target=" << row.key.target
+                << " taken=" << row.counts.taken
+                << " fallthrough=" << row.counts.fallthrough << "\n";
+        }
+        out << "\nhot syscalls:\n";
+        for (const auto& row : topTrapRows(syscalls, top_limit)) {
+            out << "  " << std::setw(10) << row.count
+                << " syscall=" << row.key.syscall_id
+                << " cause=" << row.key.trap_cause
+                << " pid=" << row.key.process_id << "\n";
+        }
+        out << "\nhot traps:\n";
+        for (const auto& row : topTrapRows(traps, top_limit)) {
+            out << "  " << std::setw(10) << row.count
+                << " syscall=" << row.key.syscall_id
+                << " cause=" << row.key.trap_cause
+                << " pid=" << row.key.process_id << "\n";
+        }
+    }
+
+private:
+    struct CountRow {
+        int key = -1;
+        std::uint64_t count = 0;
+    };
+
+    struct OpcodeRow {
+        int opcode = -1;
+        std::uint64_t count = 0;
+    };
+
+    struct PcRow {
+        int pc = -1;
+        int opcode = -1;
+        std::uint64_t count = 0;
+    };
+
+    struct BranchRow {
+        BranchProfileKey key;
+        BranchProfileCounts counts;
+    };
+
+    struct TrapRow {
+        TrapProfileKey key;
+        std::uint64_t count = 0;
+    };
+
+    [[nodiscard]] static int opcodeId(Opcode opcode) {
+        return static_cast<int>(static_cast<std::uint8_t>(opcode));
+    }
+
+    [[nodiscard]] static std::string opcodeName(int opcode) {
+        if (opcode < 0 || opcode > 80) return "UNKNOWN";
+        return opcodeToString(static_cast<Opcode>(opcode));
+    }
+
+    [[nodiscard]] static std::string jsonString(const std::string& value) {
+        std::ostringstream out;
+        out << '"';
+        for (unsigned char ch : value) {
+            switch (ch) {
+                case '"': out << "\\\""; break;
+                case '\\': out << "\\\\"; break;
+                case '\n': out << "\\n"; break;
+                case '\r': out << "\\r"; break;
+                case '\t': out << "\\t"; break;
+                default:
+                    if (ch < 0x20) {
+                        out << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                            << static_cast<int>(ch) << std::dec << std::setfill(' ');
+                    } else {
+                        out << static_cast<char>(ch);
+                    }
+                    break;
+            }
+        }
+        out << '"';
+        return out.str();
+    }
+
+    [[nodiscard]] static bool countDescThenKey(const CountRow& lhs, const CountRow& rhs) {
+        if (lhs.count != rhs.count) return lhs.count > rhs.count;
+        return lhs.key < rhs.key;
+    }
+
+    [[nodiscard]] std::vector<OpcodeRow> topOpcodeRows(int limit) const {
+        std::vector<CountRow> rows;
+        for (const auto& [opcode, count] : opcode_counts) rows.push_back(CountRow{opcode, count});
+        std::sort(rows.begin(), rows.end(), countDescThenKey);
+        if (limit >= 0 && static_cast<int>(rows.size()) > limit) {
+            rows.resize(static_cast<std::size_t>(limit));
+        }
+        std::vector<OpcodeRow> out;
+        out.reserve(rows.size());
+        for (const CountRow& row : rows) out.push_back(OpcodeRow{row.key, row.count});
+        return out;
+    }
+
+    [[nodiscard]] std::vector<PcRow> topPcRows(int limit) const {
+        std::vector<CountRow> rows;
+        for (const auto& [pc, count] : pc_counts) rows.push_back(CountRow{pc, count});
+        std::sort(rows.begin(), rows.end(), countDescThenKey);
+        if (limit >= 0 && static_cast<int>(rows.size()) > limit) {
+            rows.resize(static_cast<std::size_t>(limit));
+        }
+        std::vector<PcRow> out;
+        out.reserve(rows.size());
+        for (const CountRow& row : rows) {
+            auto opcode = pc_opcodes.find(row.key);
+            out.push_back(PcRow{row.key, opcode == pc_opcodes.end() ? -1 : opcode->second, row.count});
+        }
+        return out;
+    }
+
+    [[nodiscard]] std::vector<BranchRow> topBranchRows(int limit) const {
+        std::vector<BranchRow> rows;
+        for (const auto& [key, counts] : branches) rows.push_back(BranchRow{key, counts});
+        std::sort(rows.begin(), rows.end(), [](const BranchRow& lhs, const BranchRow& rhs) {
+            if (lhs.counts.total() != rhs.counts.total()) return lhs.counts.total() > rhs.counts.total();
+            return lhs.key < rhs.key;
+        });
+        if (limit >= 0 && static_cast<int>(rows.size()) > limit) {
+            rows.resize(static_cast<std::size_t>(limit));
+        }
+        return rows;
+    }
+
+    [[nodiscard]] static std::vector<TrapRow> topTrapRows(
+        const std::map<TrapProfileKey, std::uint64_t>& source,
+        int limit) {
+        std::vector<TrapRow> rows;
+        for (const auto& [key, count] : source) rows.push_back(TrapRow{key, count});
+        std::sort(rows.begin(), rows.end(), [](const TrapRow& lhs, const TrapRow& rhs) {
+            if (lhs.count != rhs.count) return lhs.count > rhs.count;
+            return lhs.key < rhs.key;
+        });
+        if (limit >= 0 && static_cast<int>(rows.size()) > limit) {
+            rows.resize(static_cast<std::size_t>(limit));
+        }
+        return rows;
+    }
+
+    static void writeTrapRowsJson(std::ostream& out, const std::vector<TrapRow>& rows) {
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            const auto& row = rows[i];
+            out << "    {\"syscall_id\": " << row.key.syscall_id
+                << ", \"trap_cause\": " << row.key.trap_cause
+                << ", \"process_id\": " << row.key.process_id
+                << ", \"count\": " << row.count << "}";
+            if (i + 1 < rows.size()) out << ",";
+            out << "\n";
+        }
+    }
 };
 
 struct PerformanceCounters {
@@ -2053,25 +2500,34 @@ struct PerformanceCounters {
 
 [[nodiscard]] inline VMHooks makeProfilerHooks(PerformanceCounters& counters) {
     VMHooks hooks;
-    hooks.onStep = [&counters](const VMState& vm, int pc_before) {
+    hooks.onInstruction = [&counters](const VMState&, const VMExecutionRecord& execution) {
         ++counters.steps;
-        auto [raw, fault] = vm.imem.fetch(pc_before);
-        if (fault != MemFaultCode::OK) return;
-        const InstructionWord iw = InstructionWord::decode(raw);
-        if (iw.opcode == Opcode::SYSCALL) {
+        if (execution.has_instruction && execution.instruction.opcode == Opcode::SYSCALL) {
             ++counters.syscalls;
-        } else if (iw.opcode == Opcode::BRN || iw.opcode == Opcode::BRZ ||
-                   iw.opcode == Opcode::BRP || iw.opcode == Opcode::JMP ||
-                   iw.opcode == Opcode::CALL || iw.opcode == Opcode::RET) {
+        }
+        if (execution.branch_observed) {
             ++counters.branches;
         }
+        if (execution.trap_observed) {
+            ++counters.traps;
+        }
+        if (execution.after_status == VMStatus::HALTED) {
+            ++counters.halts;
+        }
     };
-    hooks.onTrap = [&counters](const VMState&, int) {
-        ++counters.traps;
-    };
-    hooks.onHalt = [&counters](const VMState&, int) {
-        ++counters.halts;
-    };
+    return hooks;
+}
+
+[[nodiscard]] inline VMHooks makeProfilerHooks(
+    VMExecutionProfile& profile,
+    std::function<int(const VMState&)> process_id_provider = {}) {
+    VMHooks hooks;
+    hooks.onInstruction =
+        [&profile, process_id_provider](const VMState& vm, const VMExecutionRecord& execution) {
+            const int process_id =
+                process_id_provider ? process_id_provider(vm) : execution.process_id;
+            profile.record(execution, process_id);
+        };
     return hooks;
 }
 
@@ -2082,8 +2538,10 @@ inline VMStatus step(VMState& vm, const VMHooks& hooks) {
 
     const int pc_before = vm.pc;
     const VMStatus before = vm.status;
-    const VMStatus after = step(vm);
+    VMExecutionRecord execution;
+    const VMStatus after = step(vm, &execution);
 
+    if (hooks.onInstruction) hooks.onInstruction(vm, execution);
     if (hooks.onStep) hooks.onStep(vm, pc_before);
     if (before == VMStatus::RUNNING && after == VMStatus::TRAPPED && hooks.onTrap) {
         hooks.onTrap(vm, pc_before);
@@ -2093,6 +2551,473 @@ inline VMStatus step(VMState& vm, const VMHooks& hooks) {
     }
 
     return after;
+}
+
+static constexpr int VM_BLOCK_CACHE_MAX_LENGTH = 64;
+
+inline void syncBlockCacheGeneration(VMState& vm) {
+    const std::uint64_t generation = vm.imem.generation();
+    if (vm.block_cache_observed_generation == generation) return;
+    const bool had_entries =
+        !vm.decoded_instruction_cache.empty() || !vm.basic_block_cache.empty();
+    vm.decoded_instruction_cache.clear();
+    vm.basic_block_cache.clear();
+    vm.block_cache_observed_generation = generation;
+    if (had_entries) ++vm.block_cache_stats.invalidations;
+}
+
+[[nodiscard]] inline bool blockCacheFastPathAvailable(const VMState& vm) {
+    return vm.block_cache_enabled &&
+           vm.isRunning() &&
+           vm.privilege == PrivilegeMode::Kernel;
+}
+
+[[nodiscard]] inline bool isCachedBlockBoundary(const InstructionWord& iw) {
+    if (iw.malformed || iw.opcode == Opcode::RESERVED) return true;
+    switch (iw.opcode) {
+        case Opcode::HALT:
+        case Opcode::JMP:
+        case Opcode::BRN:
+        case Opcode::BRZ:
+        case Opcode::BRP:
+        case Opcode::CALL:
+        case Opcode::RET:
+        case Opcode::CALLR:
+        case Opcode::JMPR:
+        case Opcode::SYSCALL:
+        case Opcode::CSRR:
+        case Opcode::CSRW:
+        case Opcode::CSRRW:
+        case Opcode::ERET:
+        case Opcode::FENCE:
+        case Opcode::TLDR:
+        case Opcode::TSTR:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline void classifyCachedInstruction(VMDecodedInstruction& decoded) {
+    InstructionWord& iw = decoded.word;
+    decoded.block_boundary = isCachedBlockBoundary(iw);
+    if (decoded.block_boundary) return;
+
+    switch (iw.opcode) {
+        case Opcode::NOP:
+            decoded.op = VMDecodedOp::Nop;
+            decoded.supported = true;
+            return;
+        case Opcode::MOV:
+            decoded.op = VMDecodedOp::Mov;
+            decoded.supported = true;
+            return;
+        case Opcode::MOVH:
+            decoded.op = VMDecodedOp::MovH;
+            decoded.supported = true;
+            return;
+        case Opcode::COPY:
+            decoded.op = VMDecodedOp::Copy;
+            decoded.supported = true;
+            return;
+        case Opcode::SWAP:
+            decoded.op = VMDecodedOp::Swap;
+            decoded.supported = true;
+            return;
+        case Opcode::ADD:
+        case Opcode::SUB:
+        case Opcode::MUL:
+        case Opcode::DIV:
+        case Opcode::SQRT:
+        case Opcode::NEG:
+        case Opcode::ABS:
+        case Opcode::TCMP:
+        case Opcode::TMIN:
+        case Opcode::TMAX:
+        case Opcode::TINV:
+            if (!exec::numericModeFromFunc(iw.func, decoded.mode)) return;
+            decoded.supported = true;
+            switch (iw.opcode) {
+                case Opcode::ADD: decoded.op = VMDecodedOp::Add; return;
+                case Opcode::SUB: decoded.op = VMDecodedOp::Sub; return;
+                case Opcode::MUL: decoded.op = VMDecodedOp::Mul; return;
+                case Opcode::DIV: decoded.op = VMDecodedOp::Div; return;
+                case Opcode::SQRT: decoded.op = VMDecodedOp::Sqrt; return;
+                case Opcode::NEG: decoded.op = VMDecodedOp::Neg; return;
+                case Opcode::ABS: decoded.op = VMDecodedOp::Abs; return;
+                case Opcode::TCMP: decoded.op = VMDecodedOp::TCmp; return;
+                case Opcode::TMIN: decoded.op = VMDecodedOp::TMin; return;
+                case Opcode::TMAX: decoded.op = VMDecodedOp::TMax; return;
+                case Opcode::TINV: decoded.op = VMDecodedOp::TInv; return;
+                default: return;
+            }
+        case Opcode::TLADD:
+        case Opcode::TLSUB:
+        case Opcode::TLAND:
+        case Opcode::TLOR:
+        case Opcode::TLNEG:
+            if (!exec::laneModeFromFunc(iw.func, decoded.mode)) return;
+            decoded.supported = true;
+            switch (iw.opcode) {
+                case Opcode::TLADD: decoded.op = VMDecodedOp::TLAdd; return;
+                case Opcode::TLSUB: decoded.op = VMDecodedOp::TLSub; return;
+                case Opcode::TLAND: decoded.op = VMDecodedOp::TLAnd; return;
+                case Opcode::TLOR: decoded.op = VMDecodedOp::TLOr; return;
+                case Opcode::TLNEG: decoded.op = VMDecodedOp::TLNeg; return;
+                default: return;
+            }
+        case Opcode::TSEL:
+            decoded.op = VMDecodedOp::TSel;
+            decoded.supported = true;
+            return;
+        case Opcode::CVT:
+            if (!exec::modeFromFunc(iw.func, decoded.mode)) return;
+            decoded.op = VMDecodedOp::Cvt;
+            decoded.supported = true;
+            return;
+        case Opcode::LOAD:
+            decoded.op = VMDecodedOp::Load;
+            decoded.supported = true;
+            return;
+        case Opcode::STORE:
+            decoded.op = VMDecodedOp::Store;
+            decoded.supported = true;
+            return;
+        default:
+            return;
+    }
+}
+
+[[nodiscard]] inline bool decodeInstructionForCache(
+    VMState& vm, int pc, VMDecodedInstruction& out) {
+
+    const std::uint64_t generation = vm.imem.generation();
+    auto cached = vm.decoded_instruction_cache.find(pc);
+    if (cached != vm.decoded_instruction_cache.end() &&
+        cached->second.imem_generation == generation) {
+        out = cached->second.decoded;
+        return true;
+    }
+
+    int physical_pc = pc;
+    int routed_cause = OS_CAUSE_FETCH_FAULT;
+    if (!vm.translateFetchAddress(pc, physical_pc, routed_cause)) {
+        return false;
+    }
+
+    auto [raw, fetch_fc] = vm.imem.fetch(physical_pc);
+    if (fetch_fc != MemFaultCode::OK) {
+        return false;
+    }
+
+    ++vm.decode_instructions_count;
+    ++vm.block_cache_stats.decoded_instructions;
+
+    VMDecodedInstruction decoded;
+    decoded.pc = pc;
+    decoded.raw = raw;
+    decoded.word = InstructionWord::decode(raw);
+    classifyCachedInstruction(decoded);
+
+    vm.decoded_instruction_cache[pc] = VMDecodedCacheEntry{generation, decoded};
+    out = decoded;
+    return true;
+}
+
+[[nodiscard]] inline VMBasicBlock* findOrBuildCachedBlock(VMState& vm, int start_pc) {
+    syncBlockCacheGeneration(vm);
+    const std::uint64_t generation = vm.imem.generation();
+
+    auto cached = vm.basic_block_cache.find(start_pc);
+    if (cached != vm.basic_block_cache.end() &&
+        cached->second.imem_generation == generation) {
+        ++vm.block_cache_stats.hits;
+        return &cached->second;
+    }
+
+    ++vm.block_cache_stats.misses;
+    VMBasicBlock block;
+    block.start_pc = start_pc;
+    block.imem_generation = generation;
+
+    int pc = start_pc;
+    for (int i = 0; i < VM_BLOCK_CACHE_MAX_LENGTH; ++i, ++pc) {
+        VMDecodedInstruction decoded;
+        if (!decodeInstructionForCache(vm, pc, decoded)) break;
+        if (decoded.block_boundary || !decoded.supported) break;
+        block.instructions.push_back(decoded);
+    }
+
+    if (!block.instructions.empty()) {
+        ++vm.block_cache_stats.blocks_built;
+        vm.block_cache_stats.total_block_length +=
+            static_cast<long long>(block.instructions.size());
+    }
+
+    auto inserted = vm.basic_block_cache.emplace(start_pc, std::move(block));
+    return &inserted.first->second;
+}
+
+[[nodiscard]] inline bool cachedWriteChecked(
+    VMState& vm, uint8_t rd, TernaryValue value) {
+
+    if (value.isInvalid()) {
+        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        return false;
+    }
+    vm.regfile.write(rd, value);
+    return true;
+}
+
+inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& decoded) {
+    const InstructionWord& iw = decoded.word;
+    const int pc_next = decoded.pc + 1;
+    vm.pc = decoded.pc;
+
+    switch (decoded.op) {
+        case VMDecodedOp::Nop:
+            break;
+
+        case VMDecodedOp::Mov:
+            vm.regfile.write(iw.rd, ops::fromLong(iw.imm));
+            break;
+
+        case VMDecodedOp::MovH: {
+            TernaryValue current = vm.regfile.read(iw.rd);
+            LongTriple currentLT = current.toLongTriple();
+            auto trits = currentLT.unpack();
+            int immVal = iw.imm;
+            for (int i = 16; i < 32; ++i) {
+                int r = (immVal + 1) % 3;
+                if (r < 0) r += 3;
+                int8_t trit = static_cast<int8_t>(r - 1);
+                trits[i] = trit;
+                immVal = (immVal - trit) / 3;
+            }
+            for (int i = 32; i < 50; ++i) trits[i] = 0;
+            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
+            break;
+        }
+
+        case VMDecodedOp::Copy:
+            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            break;
+
+        case VMDecodedOp::Swap: {
+            TernaryValue a = vm.regfile.read(iw.rd);
+            TernaryValue b = vm.regfile.read(iw.rs1);
+            vm.regfile.write(iw.rd, b);
+            vm.regfile.write(iw.rs1, a);
+            break;
+        }
+
+        case VMDecodedOp::Add:
+            if (!cachedWriteChecked(vm, iw.rd, exec::addValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::Sub:
+            if (!cachedWriteChecked(vm, iw.rd, exec::subtractValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::Mul:
+            if (!cachedWriteChecked(vm, iw.rd, exec::multiplyValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::Div: {
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            if (b.isZero()) {
+                vm.trapWithCause(TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, vm.pc);
+                return;
+            }
+            if (!cachedWriteChecked(vm, iw.rd, exec::divideValue(
+                    vm.regfile.read(iw.rs1), b, decoded.mode))) return;
+            break;
+        }
+
+        case VMDecodedOp::Sqrt: {
+            TernaryValue t = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
+            if (exec::signValue(t, decoded.mode) == T_NEG) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            if (!cachedWriteChecked(vm, iw.rd, exec::sqrtValue(t, decoded.mode))) return;
+            break;
+        }
+
+        case VMDecodedOp::Neg:
+            if (!cachedWriteChecked(vm, iw.rd, exec::negateValue(
+                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::Abs:
+            if (!cachedWriteChecked(vm, iw.rd, exec::absValue(
+                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::TCmp: {
+            int8_t cmp = exec::compareValue(
+                vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode);
+            vm.regfile.write(iw.rd, makeTritResult(cmp));
+            break;
+        }
+
+        case VMDecodedOp::TMin: {
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            if (!cachedWriteChecked(
+                    vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_POS ? b : a)) return;
+            break;
+        }
+
+        case VMDecodedOp::TMax: {
+            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
+            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            if (!cachedWriteChecked(
+                    vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_NEG ? b : a)) return;
+            break;
+        }
+
+        case VMDecodedOp::TInv:
+            if (!cachedWriteChecked(vm, iw.rd, exec::negateValue(
+                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+            break;
+
+        case VMDecodedOp::TLAdd:
+        case VMDecodedOp::TLSub:
+        case VMDecodedOp::TLAnd:
+        case VMDecodedOp::TLOr: {
+            exec::LaneOp op = exec::LaneOp::Add;
+            if (decoded.op == VMDecodedOp::TLSub) op = exec::LaneOp::Sub;
+            else if (decoded.op == VMDecodedOp::TLAnd) op = exec::LaneOp::And;
+            else if (decoded.op == VMDecodedOp::TLOr) op = exec::LaneOp::Or;
+            if (!cachedWriteChecked(vm, iw.rd, exec::laneBinaryValue(
+                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode, op))) return;
+            break;
+        }
+
+        case VMDecodedOp::TLNeg:
+            if (!cachedWriteChecked(vm, iw.rd, exec::laneUnaryValue(
+                    vm.regfile.read(iw.rs1), decoded.mode, exec::LaneOp::Neg))) return;
+            break;
+
+        case VMDecodedOp::TSel: {
+            const int8_t cond = readTrit0(vm.regfile.read(iw.rcond));
+            const uint8_t src = cond < 0 ? iw.rneg : (cond > 0 ? iw.rpos : iw.rzero);
+            vm.regfile.write(iw.rd, vm.regfile.read(src));
+            break;
+        }
+
+        case VMDecodedOp::Cvt: {
+            TernaryValue source = vm.regfile.read(iw.rs1);
+            if (isWidthFunc(iw.rs2)) {
+                TernaryMode sourceMode = TernaryMode::T40;
+                if (!exec::modeFromFunc(iw.rs2, sourceMode)) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return;
+                }
+                if ((isNumericMode(sourceMode) && !isNumericMode(source.mode)) ||
+                    (isLaneMode(sourceMode) && !isLaneMode(source.mode))) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return;
+                }
+                source = convertValue(source, sourceMode);
+                if (source.isInvalid()) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return;
+                }
+            } else if (iw.rs2 != R0_ZERO || isLaneMode(decoded.mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            if (!cachedWriteChecked(vm, iw.rd, convertValue(source, decoded.mode))) return;
+            break;
+        }
+
+        case VMDecodedOp::Load: {
+            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            long long base = ops::toLong(vm.regfile.read(iw.rs1));
+            int addr = static_cast<int>(base + iw.imm);
+            int physical_addr = addr;
+            int cause = OS_CAUSE_LOAD_FAULT;
+            if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return;
+            }
+            auto [val, fc] = vm.dmem.load(physical_addr);
+            if (fc != MemFaultCode::OK) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
+                return;
+            }
+            vm.regfile.write(iw.rd, val);
+            break;
+        }
+
+        case VMDecodedOp::Store: {
+            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            long long base = ops::toLong(vm.regfile.read(iw.rs1));
+            int addr = static_cast<int>(base + iw.imm);
+            int physical_addr = addr;
+            int cause = OS_CAUSE_STORE_FAULT;
+            if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
+                return;
+            }
+            MemFaultCode fc = vm.dmem.store(physical_addr, vm.regfile.read(iw.rs_store));
+            if (fc != MemFaultCode::OK) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
+                return;
+            }
+            vm.noteStoreForReservation(physical_addr);
+            break;
+        }
+
+        case VMDecodedOp::Unsupported:
+        default:
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return;
+    }
+
+    if (vm.isRunning()) {
+        vm.completeInstruction(pc_next);
+    }
+}
+
+inline int executeCachedBlock(VMState& vm, int max_instructions) {
+    if (!blockCacheFastPathAvailable(vm) || max_instructions == 0) return 0;
+
+    VMBasicBlock* block = findOrBuildCachedBlock(vm, vm.pc);
+    if (block == nullptr || block->instructions.empty()) return 0;
+
+    int executed = 0;
+    const std::uint64_t generation = block->imem_generation;
+    for (const VMDecodedInstruction& decoded : block->instructions) {
+        if (max_instructions >= 0 && executed >= max_instructions) break;
+        if (!vm.isRunning()) break;
+        if (vm.imem.generation() != generation) {
+            syncBlockCacheGeneration(vm);
+            break;
+        }
+        if (vm.pc != decoded.pc) break;
+
+        const int expected_next = decoded.pc + 1;
+        executeCachedInstruction(vm, decoded);
+        ++executed;
+        ++vm.block_cache_stats.instructions_executed;
+
+        if (!vm.isRunning()) break;
+        if (vm.pc != expected_next) break;
+    }
+
+    return executed;
 }
 
 inline VMStatus stepCore(VMState& vm, int core_id) {
@@ -2169,9 +3094,20 @@ inline RunResult run(VMState& vm, int max_steps = 1000000,
     int steps = 0;
     while (vm.isRunning()) {
         if (max_steps >= 0 && steps >= max_steps) break;
+        if (!hooks && blockCacheFastPathAvailable(vm)) {
+            const int remaining = max_steps < 0
+                ? std::numeric_limits<int>::max()
+                : max_steps - steps;
+            const int cached_steps = executeCachedBlock(vm, remaining);
+            if (cached_steps > 0) {
+                steps += cached_steps;
+                continue;
+            }
+        }
         if (hooks) step(vm, *hooks);
         else step(vm);
         ++steps;
+        ++vm.block_cache_stats.fallback_steps;
     }
 
     RunResult r;

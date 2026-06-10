@@ -24,7 +24,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = Path(__file__).resolve().parent
 BOOT_MAGIC = 0x31544F4F424F5354
-BOOT_FORMAT_VERSION = 1
+BOOT_LEGACY_FORMAT_VERSION = 1
+BOOT_FORMAT_VERSION = 2
 MMU_PAGE_WORDS = 27
 MANIFEST_FILES = [
     "ROADMAP_STATUS.json",
@@ -272,6 +273,22 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
         framebuffer_height = reader.i32()
         profile_name = reader.string()
         image_version = reader.string()
+        sections = []
+        if version == BOOT_FORMAT_VERSION:
+            section_count = reader.u32()
+            for _ in range(section_count):
+                sections.append(
+                    {
+                        "name": reader.string(),
+                        "path": reader.string(),
+                        "kind": reader.string(),
+                        "load_address": reader.i32(),
+                        "entry_pc": reader.i32(),
+                        "word_count": reader.i32(),
+                        "page_count": reader.i32(),
+                        "flags": reader.i32(),
+                    }
+                )
         app_count = reader.u32()
         apps = []
         for _ in range(app_count):
@@ -290,7 +307,7 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
         reader.skip_words(program_words, 8)
         data_words = reader.u32()
         reader.skip_words(data_words, 8)
-        rootfs_words = reader.u32()
+        rootfs_words = reader.u32() if version == BOOT_LEGACY_FORMAT_VERSION else 0
         rootfs_nonzero_words = 0
         rootfs_nonzero_blocks: set[int] = set()
         for index in range(rootfs_words):
@@ -300,15 +317,18 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
                 rootfs_nonzero_blocks.add(index // MMU_PAGE_WORDS)
         if reader.offset != len(payload):
             result["issues"].append("boot image has trailing payload bytes")
-        if version != BOOT_FORMAT_VERSION:
+        if version not in {BOOT_LEGACY_FORMAT_VERSION, BOOT_FORMAT_VERSION}:
             result["issues"].append(f"unsupported boot image format version {version}")
         if boot_entry < 0 or boot_entry >= program_words:
             result["issues"].append("boot entry is outside text segment")
         if rootfs_words % MMU_PAGE_WORDS != 0:
             result["issues"].append("rootfs seed is not block aligned")
+        if version == BOOT_FORMAT_VERSION and not sections:
+            result["issues"].append("boot image section table is empty")
         result.update(
             {
                 "format_version": version,
+                "legacy_format": version == BOOT_LEGACY_FORMAT_VERSION,
                 "image": {
                     "version": image_version,
                     "profile": profile_name,
@@ -324,6 +344,7 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
                     "rootfs_nonzero_words": rootfs_nonzero_words,
                     "rootfs_nonzero_blocks": len(rootfs_nonzero_blocks),
                 },
+                "sections": sections,
                 "apps": apps,
             }
         )
@@ -561,7 +582,10 @@ def cmd_inspect_image(args: argparse.Namespace) -> int:
         image = inspected["image"]
         segments = inspected["segments"]
         print(f"image: {inspected['path']}")
-        print(f"version: {image['version']} profile: {image['profile']}")
+        print(
+            f"format: {inspected['format_version']} "
+            f"version: {image['version']} profile: {image['profile']}"
+        )
         print(f"boot_entry: {image['boot_entry']}")
         print(
             "segments: "
@@ -570,6 +594,13 @@ def cmd_inspect_image(args: argparse.Namespace) -> int:
             f"rootfs_blocks={segments['rootfs_blocks']} "
             f"nonzero_blocks={segments['rootfs_nonzero_blocks']}"
         )
+        if inspected.get("sections"):
+            print("sections:")
+            for section in inspected["sections"]:
+                print(
+                    f"- {section['kind']} {section['name']} {section['path']} "
+                    f"entry={section['entry_pc']} words={section['word_count']}"
+                )
         print("apps:")
         for app in inspected["apps"]:
             print(f"- {app['path']} entry={app['entry_pc']} text_pages={app['text_pages']}")
@@ -694,6 +725,123 @@ def cmd_run(args: argparse.Namespace) -> int:
     return int(result["returncode"])
 
 
+def profile_harness_binary(build_dir: Path) -> Path:
+    name = "trit_profile_tos.exe" if platform.system().lower().startswith("windows") else "trit_profile_tos"
+    return build_dir / name
+
+
+def build_profile_harness(build_dir: Path) -> int:
+    source = TOOLS_DIR / "trit_profile_tos.cpp"
+    binary = profile_harness_binary(build_dir)
+    build_dir.mkdir(parents=True, exist_ok=True)
+    deps = [
+        source,
+        REPO_ROOT / "ternary_host_runtime.h",
+        REPO_ROOT / "ternary_vm.h",
+        REPO_ROOT / "ternary_vm_state.h",
+        REPO_ROOT / "ternary_isa.h",
+        REPO_ROOT / "ternary_asm.h",
+    ]
+    if binary.exists() and all(dep.exists() for dep in deps):
+        newest_dep = max(dep.stat().st_mtime for dep in deps)
+        if binary.stat().st_mtime >= newest_dep:
+            return 0
+    cache = parse_cmake_cache(build_dir)
+    compiler = cache.get("CMAKE_CXX_COMPILER") or shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
+    if not compiler:
+        print("could not find a C++ compiler for profile harness", file=sys.stderr)
+        return 127
+
+    compiler_name = Path(compiler).name.lower()
+    if compiler_name.startswith("cl"):
+        cmd = [
+            compiler,
+            "/nologo",
+            "/std:c++17",
+            "/EHsc",
+            "/DNOMINMAX",
+            "/DTERNARY_IGNORE_LONG_DOUBLE_ASSERT",
+            f"/I{REPO_ROOT}",
+            str(source),
+            f"/Fe:{binary}",
+        ]
+    else:
+        cmd = [
+            compiler,
+            "-std=c++17",
+            "-O2",
+            "-DNOMINMAX",
+            "-DTERNARY_IGNORE_LONG_DOUBLE_ASSERT",
+            "-I",
+            str(REPO_ROOT),
+            str(source),
+            "-o",
+            str(binary),
+        ]
+    result = run_command(cmd, cwd=REPO_ROOT, capture=True)
+    if result["returncode"] != 0:
+        if result["stdout"].strip():
+            print(result["stdout"], file=sys.stderr)
+        if result["stderr"].strip():
+            print(result["stderr"], file=sys.stderr)
+    return int(result["returncode"])
+
+
+def default_boot_image(build_dir: Path, requested: str | None) -> Path:
+    if requested:
+        return Path(requested).resolve()
+    release_boot = (REPO_ROOT / "build" / "release" / "TernaryOS" / "ternary-os.tboot").resolve()
+    fallback_boot = (build_dir / "ternary-os.tboot").resolve()
+    return release_boot if release_boot.exists() else fallback_boot
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    build_dir = default_build_dir(args.build_dir)
+    if not args.no_build:
+        rc = build_profile_harness(build_dir)
+        if rc != 0:
+            return rc
+
+    harness = profile_harness_binary(build_dir)
+    if not harness.exists():
+        print(f"could not find profile harness in {build_dir}", file=sys.stderr)
+        return 127
+
+    boot_image = default_boot_image(build_dir, args.boot_image)
+    if args.workload == "os" and not boot_image.exists():
+        print(f"boot image is missing: {boot_image}", file=sys.stderr)
+        return 2
+
+    cmd = [
+        str(harness),
+        "--workload",
+        args.workload,
+        "--steps",
+        str(args.steps),
+        "--top",
+        str(args.top),
+        "--format",
+        args.format,
+    ]
+    if args.output:
+        cmd.extend(["--output", args.output])
+    if args.profile:
+        cmd.extend(["--profile", args.profile])
+    if args.disk_image:
+        cmd.extend(["--disk", str(Path(args.disk_image).resolve())])
+    if args.workload == "os":
+        cmd.append(str(boot_image))
+
+    result = run_command(cmd, cwd=REPO_ROOT, capture=True, timeout=args.timeout)
+    if result["stdout"] and not args.output:
+        print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+    if result["stderr"].strip():
+        print(result["stderr"], file=sys.stderr)
+    if args.output and result["returncode"] == 0:
+        print(f"wrote {args.output}")
+    return int(result["returncode"])
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     args.suites = ["benchmark"]
     args.all = False
@@ -780,6 +928,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--frames", type=int, default=120)
     run.add_argument("--export-diagnostics", default=None)
     run.set_defaults(func=cmd_run)
+
+    profile = sub.add_parser("profile", help="boot a Ternary OS image and emit a deterministic VM profile")
+    add_build_dir(profile)
+    profile.add_argument("boot_image", nargs="?", default=None)
+    profile.add_argument("--disk-image", default=None, help="optional mutable disk backing; omitted uses the image rootfs in memory")
+    profile.add_argument("--steps", type=int, default=200000)
+    profile.add_argument("--top", type=int, default=20)
+    profile.add_argument("--format", choices=["text", "json"], default="text")
+    profile.add_argument("--workload", choices=["os", "syscall-probe"], default="os")
+    profile.add_argument("--output", default=None)
+    profile.add_argument("--profile", choices=["minimum", "compact"], default=None)
+    profile.add_argument("--timeout", type=int, default=120)
+    profile.add_argument("--no-build", action="store_true", help="reuse an existing profile harness executable")
+    profile.set_defaults(func=cmd_profile)
 
     replay = sub.add_parser("replay", help="placeholder for future deterministic replay")
     replay.add_argument("trace", nargs="?")
