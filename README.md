@@ -1033,7 +1033,8 @@ Retired Phase 9 track mapping:
 
 ## Phase 10: Ternary OS Distribution, Host Runtime, and Bootstrapping
 
-Status: planned.
+Status: in progress for Path A desktop distribution; Path B UEFI/live USB
+bootstrapping remains planned.
 
 Goal: turn the completed native Ternary OS milestone into something ordinary
 users can launch, install, reboot, inspect, and recover. Because commodity
@@ -1042,7 +1043,26 @@ distribution path is a desktop host runtime around the VM. The second path is a
 bare-metal UEFI host runtime that boots directly on standard x86-64 machines
 and runs the ternary VM without Windows, Linux, or macOS underneath.
 
-Major goals:
+### Path A: Desktop Host Runtime
+
+Path A is the current distribution track. It packages the existing
+`run_gui_console`/VM path into a polished desktop app: prebuilt Ternary OS boot
+images, framebuffer presentation, keyboard/mouse input, sparse `.tdisk`
+mounting, app launcher handoff, diagnostics, and a Windows-first host runtime.
+This track is the shippable path for ordinary users on binary hardware.
+
+Completed implementation work in this track:
+
+- Profiling foundation for VM/kernel/app hot-path discovery.
+- Prebuilt boot images and no compile-at-launch product path.
+- VM decode cache and basic block cache.
+- Guest TLB and memory fast paths.
+- Compiler branch reduction, including branch-free `TSEL` opportunities.
+- Graphics dirty rendering for framebuffer/texture updates.
+- Disk/cache optimization for sparse disk and persistence behavior.
+- Optional trace JIT implemented behind a fallback-safe execution backend.
+
+Path A goals:
 
 - Define immutable boot/package images (`.tboot` or `.tiso`) with manifest,
   ABI/profile metadata, kernel image, application images, root filesystem seed,
@@ -1056,6 +1076,16 @@ Major goals:
   display, keyboard/mouse routing, audio hooks, sparse disk mounting, pause,
   reset, logs, and deterministic crash bundles.
 - Package the desktop runtime for Windows first, then Linux and macOS.
+
+### Path B: UEFI / Live USB Host Runtime
+
+Path B remains future work. It is the bare-metal binary-host runtime: UEFI
+loads the same Ternary OS image format and runs the ternary VM directly on
+x86-64 hardware without Windows, Linux, or macOS underneath. It is still
+emulation on binary hardware, not native ternary execution.
+
+Path B goals:
+
 - Prototype a UEFI bare-metal host runtime using GOP framebuffer output,
   FAT-loaded boot images, input/timer/storage bridges, and the ternary VM
   execution loop.
@@ -1066,12 +1096,17 @@ Major goals:
 
 Phase 10 completion criteria:
 
+Path A is complete when:
+
 - A release image builder emits versioned `.tboot/.tiso` and `.tdisk`
   artifacts from source.
 - The desktop host runtime can boot the release image, persist user state,
   restore the mutable disk, and export a diagnostic bundle after guest crash.
 - Windows installer packaging is automated; Linux/macOS packaging has at least
   reproducible developer builds.
+
+Path B is complete when:
+
 - UEFI prototype boots from removable media to a visible Ternary OS framebuffer
   and can load the same release image format.
 - Live USB creation is documented and tested on at least one development
@@ -1249,3 +1284,162 @@ With these first deliverables:
 - narrative report generator
 
 That is the sweet spot: wild enough to make Ternary OS feel genuinely new, but grounded enough to build.
+
+### How should we think about other versions of the os? Ie for mobile devices or a headless version?
+
+This is a fundamentally important architectural question to answer correctly now, before the codebase grows further. The wrong answer — separate forks — is how you create a maintenance nightmare. The right answer is already partially encoded in the current design.
+
+---
+
+## The Right Mental Model: One Kernel, Multiple Profiles
+
+The kernel doesn't change between targets. What changes is:
+1. **Which subsystems are initialized at boot**
+2. **Which HAL layer is underneath**
+3. **Which apps are bundled into the `.tboot` image**
+
+The `.tboot`/`.tdisk` image format already gives you the right primitive for this — different images bundle different apps and can signal different boot profiles to the kernel. The kernel reads its own capabilities at init time and initializes accordingly.
+
+---
+
+## The Natural Separation Points Already in the Code
+
+The kernel has a clean layered structure that falls apart into profile-sized pieces:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ALWAYS PRESENT — Profile 0 (Core)                       │
+│                                                          │
+│  Bootstrap allocator     Buffer pool + WAL               │
+│  Scheduler + processes   VFS + namespaces                │
+│  IPC channels            Relational store (attr_store)   │
+│  Syscalls 1–24           Net layer (optional init)       │
+└──────────────────────────────────────────────────────────┘
+         ↕ initialized only for graphics profiles
+┌──────────────────────────────────────────────────────────┐
+│  CONDITIONAL — Graphics Subsystem                        │
+│                                                          │
+│  Framebuffer init/flip   Window table (8 windows)        │
+│  Compositor blit loop    GPU CSR commands                │
+│  Syscalls 25–35          Window event rings              │
+└──────────────────────────────────────────────────────────┘
+         ↕ different implementations per HAL target
+┌──────────────────────────────────────────────────────────┐
+│  HAL LAYER — Target-specific                             │
+│                                                          │
+│  Mouse vs. touch CSR     Display orientation             │
+│  Power management CSRs   Audio output CSRs               │
+│  Storage interface       Network interface               │
+└──────────────────────────────────────────────────────────┘
+```
+
+The `KERNEL_BOOTED_ADDR` already exists as a boot-time state flag. Adding `KERNEL_PROFILE_ADDR` next to it at `3033` costs one word and gives you the entire profile system:
+
+```
+KERNEL_PROFILE_DESKTOP  = 1    (current behavior)
+KERNEL_PROFILE_SERVER   = 0    (headless — don't init window/FB subsystem)
+KERNEL_PROFILE_MOBILE   = -1   (touch input, portrait FB, power CSRs)
+```
+
+Three-valued. It's already the right type.
+
+---
+
+## Each Target Variant
+
+### Headless / Server Profile
+
+**What changes:** `kernel_init()` skips `framebuffer_init`, `window_table_init`, and `window_compositor_loop`. The `~200 words` of window table and FB state stay zeroed. The kernel binary is identical.
+
+**What you get for free:**
+- Full VFS + namespace isolation → container-like isolation without Docker
+- WAL + MVCC + `attr_store` → this IS etcd, natively in the kernel
+- `rel_reconcile_count()` → Kubernetes-style desired-state reconciliation built in
+- IPC channels → service mesh without a sidecar
+- 8 namespaces → 8 isolated tenants on one machine
+
+**The killer use case:** A ternary server OS where every service is a process in its own namespace, with desired state tracked in `attr_store` and reconciled continuously by the kernel scheduler. No Kubernetes. No etcd. No Docker. The OS primitives are already those things.
+
+**SDK difference:** `os_sdk.trit` without the graphics wrappers. A `os_sdk_server.trit` that exposes net, VFS, IPC, and process syscalls only.
+
+---
+
+### Mobile Profile
+
+**What changes:**
+
+| Desktop | Mobile |
+|---|---|
+| `mouse_x/y/btn` CSR | `touch_x/y/pressure` CSR (different hardware register) |
+| Landscape framebuffer (320×180 or wider) | Portrait framebuffer (180×320) |
+| No power management | `PROC_SLEEPING` actually matters — wake on touch |
+| Persistent login session | Lock screen + biometric gate |
+| Mouse cursor sprite | Touch feedback overlay (no cursor) |
+| Window Z-order (overlapping) | Window stack (full-screen, card model) |
+
+**What stays identical:** everything underneath the HAL. VFS, IPC, process model, WAL, networking, scheduler — unchanged. Mobile apps import `os_sdk_mobile.trit` instead of `os_sdk.trit`; the syscall IDs are the same.
+
+**The ternary advantages that are uniquely mobile:**
+- The opponent-trit pixel format (from `processing_media.md`) is ideal for OLED — the zero trit draws no power in a dual-rail implementation. Dark mode on a ternary OLED is literally half the power consumption, not a software approximation.
+- The three-state Class-D audio amplifier means true silence draws zero power, no idle hiss, no switching noise. On a device designed to go quiet for hours between interactions, this is significant.
+- The binaural opponent-trit audio format was designed for headphone use. Channel swap, mono collapse, and spatial inversion are single instructions — relevant for spatial audio and ANC in earbuds.
+- `TINV` as a full-framebuffer dark-mode operation: one pass, no arithmetic. Night mode toggle is O(n) with the smallest constant possible.
+
+---
+
+### Embedded / IoT Profile
+
+**What changes:** Even `kernel_init()` is optional. At this scale, you might not want a kernel at all — just the ternary runtime, `ternary_stream.trit`, `ternary_audio_dsp.trit`, and direct CSR access.
+
+**The layering:**
+
+```
+Bare metal TASM            → smallest possible (bootloader.tasm exists in OS3/)
+Minimal kernel (scheduler + VFS only)  → no graphics, no IPC, no net
+Full server profile        → add net and IPC
+Full desktop profile       → add graphics
+```
+
+`OS3/minimal_kernel_bringup.tasm` already exists as a 34KB TASM file — the embedded target is already partially mapped out.
+
+---
+
+## Implementation Strategy
+
+The cleanest way to handle this without forking:
+
+**Step 1: Add `KERNEL_PROFILE_ADDR` constant (one line)**
+```
+const KERNEL_PROFILE_ADDR: t40 = 3033;
+```
+
+**Step 2: Gate subsystem init on profile**
+```
+fn kernel_init() -> t40 {
+    ...
+    var profile: t40 = kload(KERNEL_PROFILE_ADDR);
+    if profile > 0 {   // desktop or mobile (positive)
+        framebuffer_init(320, 180);
+        window_table_init();
+    }
+    ...
+}
+```
+
+**Step 3: Different `.tboot` images per target**
+- `ternary-os-desktop.tboot` — bundles desktop.trit, calculator, paint, tasks, shell
+- `ternary-os-server.tboot` — bundles shell only, no GUI apps, profile=0
+- `ternary-os-mobile.tboot` — bundles mobile launcher, camera, audio apps, profile=-1
+
+**Step 4: HAL abstraction in `kernel/hal.trit`**
+The HAL is already separated. Mobile HAL adds `touch_x`, `touch_y`, `touch_pressure`, `power_state` CSR names. Desktop HAL has `mouse_x`, `mouse_y`, `mouse_btn`. Both compile to CSR reads of different register addresses. The kernel doesn't know which it's running on — it asks the HAL.
+
+---
+
+## What This Looks Like Strategically
+
+The TRIT OS is actually unusually well-positioned for this because the hard work of OS differentiation — namespace isolation, process model, IPC, storage — is identical across targets. The only things that vary are the HAL (which CSRs exist) and the app set (which processes boot).
+
+Compare to Android, which is Linux with a completely different userspace, different IPC (Binder vs. POSIX sockets), a different process model (Activities vs. processes), and a different graphics stack (SurfaceFlinger vs. X11/Wayland). They share a kernel but almost nothing else. Every Android-specific primitive is a retrofit onto something Linux wasn't designed for.
+
+The ternary OS's process model, IPC, and namespace isolation work the same whether you're running a desktop, a server, or a phone. The opponent-trit media stack (audio, video, color) was designed for what mobile actually needs — low power, binaural audio, opponent color — not retrofitted from a desktop stack. That means the mobile version isn't a port. It's a profile.

@@ -5,7 +5,7 @@
     {
       "id": "isa.encoding_contract",
       "layer": "01_isa",
-      "status": "scaffolded",
+      "status": "expanded",
       "old_refs": ["tests/test_isa_asm.cpp", "tests/test_vm_widths.cpp"],
       "required_new_coverage": [
         "opcode encodings",
@@ -13,13 +13,27 @@
         "immediate decoding",
         "branch target encoding",
         "CSR names",
-        "invalid instruction rejection"
+        "invalid instruction rejection",
+        "Phase 4 vector plumbing fields",
+        "vector reduction fields"
+      ],
+      "new_tests": [
+        "isa.encoding.rtype_width_fields",
+        "isa.encoding.immediate_signed_fields",
+        "isa.branch.brp_brn_brz_offsets",
+        "isa.csr.name_resolution",
+        "isa.encoding.r4_r5_layouts",
+        "isa.vector.vector_memory_overlay",
+        "isa.atomic.memory_order_fields",
+        "isa.encoding.invalid_instruction_rejection",
+        "isa.vector.phase4_plumbing_fields",
+        "isa.vector.reduction_fields"
       ]
     },
     {
       "id": "vm.execution_contract",
       "layer": "02_vm",
-      "status": "scaffolded",
+      "status": "expanded",
       "old_refs": ["tests/test_kernel.cpp", "tests/test_multiwidth_vm_main.cpp", "tests/test_vm_widths.cpp"],
       "required_new_coverage": [
         "numeric widths",
@@ -29,20 +43,72 @@
         "CSR reads/writes",
         "MMU translation",
         "sparse memory",
-        "multicore stepping"
+        "multicore stepping",
+        "timer IRQ routing",
+        "trace JIT equivalence",
+        "vector runtime plumbing",
+        "vector reductions",
+        "per-core state snapshots"
+      ],
+      "new_tests": [
+        "vm.arithmetic.width_sanity",
+        "vm.memory.load_store_tags",
+        "vm.trap.eret_div_zero_route",
+        "vm.csr.scratch_csrrw_roundtrip",
+        "vm.mmu.zero_pte_faults",
+        "vm.memory.sparse_high_address_access",
+        "vm.vector.divide_lane_faults",
+        "vm.vector.wrong_tag_lane_faults",
+        "vm.vector.pack_unpack_swap_runtime",
+        "vm.vector.permute_blend_runtime",
+        "vm.vector.gather_scatter_lane_faults",
+        "vm.vector.reduction_runtime",
+        "vm.cache.block_cache_invalidation",
+        "vm.jit.syscall_fallback",
+        "vm.jit.arithmetic_loop_equivalence",
+        "vm.jit.load_store_equivalence",
+        "vm.jit.direct_branch_equivalence",
+        "vm.jit.memory_bailout_trap",
+        "vm.timer.irq_routes_and_resumes",
+        "vm.timer.pending_defers_across_critical_section",
+        "vm.multicore.independent_register_files",
+        "vm.multicore.run_queue_balancing",
+        "vm.multicore.mmu_csr_state_isolation",
+        "vm.multicore.vector_state_isolation",
+        "vm.multicore.device_state_isolation",
+        "vm.mmu.read_only_store_protection"
       ]
     },
     {
       "id": "assembler.golden_contract",
       "layer": "03_assembler",
-      "status": "scaffolded",
+      "status": "expanded",
       "old_refs": ["tests/test_isa_asm.cpp", "tests/test_tcl_asm.cpp"],
       "required_new_coverage": [
         "labels",
         "directives",
         "forward/backward branches",
         "malformed assembly diagnostics",
-        "exact emitted words"
+        "exact emitted words",
+        "Phase 4 vector plumbing exact words",
+        "vector reduction exact words",
+        "native TCL assembler parity"
+      ],
+      "new_tests": [
+        "assembler.labels.forward_backward_branches",
+        "assembler.directives.org_word_layout",
+        "assembler.csr.exact_encoding",
+        "assembler.diagnostics.malformed_input",
+        "assembler.vector.exact_encoding",
+        "assembler.atomic.memory_order_encoding",
+        "assembler.diagnostics.suffix_register_rejection",
+        "assembler.vector.phase4_plumbing_exact_encoding",
+        "assembler.vector.reduction_exact_encoding",
+        "assembler.diagnostics.phase4_vector_rejection",
+        "assembler.tcl.scalar_branch_loop_parity",
+        "assembler.tcl.typed_suffix_mov_parity",
+        "assembler.tcl.calls_memory_comments_parity",
+        "assembler.tcl.three_way_branch_parity"
       ]
     },
     {

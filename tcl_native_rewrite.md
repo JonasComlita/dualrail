@@ -608,10 +608,34 @@ Required work:
 
 ## Phase G — Distribution, Host Runtime, and Bootstrapping
 
+Status: in progress for Path A desktop distribution. Path B UEFI/live USB
+bootstrapping remains planned.
+
 Phase G packages the completed native OS into bootable, distributable artifacts.
 This phase is not a new guest OS feature phase. It defines the boundary between
 the ternary guest world and the binary host world: image formats, host runtime
 contracts, release packaging, and the first bare-metal UEFI host runtime.
+
+Phase G is split into two tracks:
+
+* **Path A — Desktop Host Runtime:** package the `run_gui_console`/VM path into
+  a polished binary-host desktop app with prebuilt boot images, framebuffer
+  presentation, sparse `.tdisk` mounting, app launcher handoff, diagnostics,
+  and Windows-first packaging. This is the active shippable path.
+* **Path B — UEFI / Live USB Host Runtime:** boot a binary-host ternary VM from
+  firmware using GOP framebuffer output and FAT-loaded release images. This
+  remains future work and is still emulation on binary hardware.
+
+Completed Path A implementation work includes:
+
+* profiling foundation for VM/kernel/app hot-path discovery;
+* prebuilt boot images and no compile-at-launch product path;
+* VM decode cache and basic block cache;
+* guest TLB and memory fast paths;
+* compiler branch reduction, including `TSEL` branch-elimination targets;
+* graphics dirty rendering for framebuffer/texture updates;
+* disk/cache optimization for sparse disk and persistence behavior;
+* optional trace JIT implemented behind a fallback-safe execution backend.
 
 ### G1. Boot and Disk Image ABI
 
@@ -652,6 +676,25 @@ runtime features:
 
 This is the first distribution target because it can ship on ordinary Windows,
 Linux, and macOS systems without replacing the host boot chain.
+
+Completed Path A optimization passes:
+
+* execution profiles are collected before major optimization passes;
+* prebuilt release images boot by default instead of compiling guest `.trit`
+  sources at startup;
+* decoded instructions and basic blocks are cached while preserving interpreter
+  fallback behavior;
+* guest address translations and validated syscall spans are cached with
+  precise invalidation on page-table, `exec`, `fork`, COW, and privilege
+  changes;
+* guest branches are reduced through compiler if-conversion and `TSEL` where
+  arms are side-effect-free and cheap;
+* host framebuffer textures update from dirty regions instead of repainting the
+  entire display when possible;
+* sparse disk/cache writes are batched without weakening WAL or `fsync`
+  durability;
+* trace JIT remains optional and fallback-safe while matching interpreter
+  behavior on golden programs.
 
 ### G4. Desktop Installer Packaging
 

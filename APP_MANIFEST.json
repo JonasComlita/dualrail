@@ -473,7 +473,7 @@
     "apps/os_sdk.trit",
     "apps/libwidget.trit",
     "kernel.trit",
-    "OS3/native_kernel_trap_stub.tasm"
+    "native_kernel_trap_stub.tasm"
   ],
   "validation": {
     "build_target": "build_tos_image",
@@ -487,6 +487,11 @@
       "test_consumer_shell_productization",
       "test_host_runtime",
       "test_agent_tooling"
-    ]
+    ],
+    "knowledge_checks": [
+      "python tools/trit_tool.py knowledge status --json",
+      "python tools/trit_tool.py knowledge graph --no-archive --json"
+    ],
+    "notes": "Obsidian and Graphify outputs are advisory navigation layers; build_tos_image.cpp and bundled source files remain authoritative."
   }
 }

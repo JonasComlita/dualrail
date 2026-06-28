@@ -1,0 +1,258 @@
+{
+  "edges": [
+    {
+      "fromNode": "home",
+      "fromSide": "right",
+      "id": "home_to_index",
+      "label": "navigation",
+      "toNode": "index",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "home",
+      "fromSide": "right",
+      "id": "home_to_status",
+      "label": "health",
+      "toNode": "status",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "index",
+      "fromSide": "right",
+      "id": "index_to_quick_ref",
+      "label": "cheatsheets",
+      "toNode": "quick_ref",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "index",
+      "fromSide": "right",
+      "id": "index_to_logic",
+      "label": "layer 0",
+      "toNode": "logic",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "logic",
+      "fromSide": "right",
+      "id": "logic_to_isa",
+      "label": "encodes",
+      "toNode": "isa",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "isa",
+      "fromSide": "right",
+      "id": "isa_to_vm",
+      "label": "executes",
+      "toNode": "vm",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "vm",
+      "fromSide": "right",
+      "id": "vm_to_abi",
+      "label": "calls",
+      "toNode": "abi",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "abi",
+      "fromSide": "right",
+      "id": "abi_to_compiler",
+      "label": "targets",
+      "toNode": "compiler",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "compiler",
+      "fromSide": "right",
+      "id": "compiler_to_language",
+      "label": "fronts",
+      "toNode": "language",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "language",
+      "fromSide": "right",
+      "id": "language_to_kernel",
+      "label": "boots",
+      "toNode": "kernel",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "kernel",
+      "fromSide": "right",
+      "id": "kernel_to_apps",
+      "label": "serves",
+      "toNode": "apps",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "apps",
+      "fromSide": "right",
+      "id": "apps_to_host",
+      "label": "bundles",
+      "toNode": "host",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "status",
+      "fromSide": "right",
+      "id": "status_to_graphify",
+      "label": "analysis",
+      "toNode": "graphify",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "graphify",
+      "fromSide": "right",
+      "id": "graphify_to_index",
+      "label": "reports",
+      "toNode": "index",
+      "toSide": "left"
+    }
+  ],
+  "nodes": [
+    {
+      "color": "1",
+      "file": "README.md",
+      "height": 240,
+      "id": "home",
+      "type": "file",
+      "width": 360,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "color": "2",
+      "file": "INDEX.md",
+      "height": 240,
+      "id": "index",
+      "type": "file",
+      "width": 360,
+      "x": 440,
+      "y": 0
+    },
+    {
+      "color": "3",
+      "file": "STATUS.md",
+      "height": 240,
+      "id": "status",
+      "type": "file",
+      "width": 360,
+      "x": 880,
+      "y": 0
+    },
+    {
+      "color": "4",
+      "file": "00_Quick_Ref/opcode_table.md",
+      "height": 210,
+      "id": "quick_ref",
+      "type": "file",
+      "width": 320,
+      "x": 0,
+      "y": 340
+    },
+    {
+      "color": "5",
+      "file": "01_Logic_Level/gates.md",
+      "height": 210,
+      "id": "logic",
+      "type": "file",
+      "width": 320,
+      "x": 380,
+      "y": 340
+    },
+    {
+      "color": "6",
+      "file": "02_Hardware_ISA/encoding.md",
+      "height": 210,
+      "id": "isa",
+      "type": "file",
+      "width": 320,
+      "x": 760,
+      "y": 340
+    },
+    {
+      "color": "1",
+      "file": "03_Execution_Engine/vm_state.md",
+      "height": 210,
+      "id": "vm",
+      "type": "file",
+      "width": 320,
+      "x": 1140,
+      "y": 340
+    },
+    {
+      "color": "2",
+      "file": "04_Binary_Contract/abi_spec.md",
+      "height": 210,
+      "id": "abi",
+      "type": "file",
+      "width": 320,
+      "x": 0,
+      "y": 650
+    },
+    {
+      "color": "3",
+      "file": "05_Compiler_Infra/ternary_ir.md",
+      "height": 210,
+      "id": "compiler",
+      "type": "file",
+      "width": 320,
+      "x": 380,
+      "y": 650
+    },
+    {
+      "color": "4",
+      "file": "06_Language/tcl_language.md",
+      "height": 210,
+      "id": "language",
+      "type": "file",
+      "width": 320,
+      "x": 760,
+      "y": 650
+    },
+    {
+      "color": "5",
+      "file": "07_OS_Substrate/kernel_overview.md",
+      "height": 210,
+      "id": "kernel",
+      "type": "file",
+      "width": 320,
+      "x": 1140,
+      "y": 650
+    },
+    {
+      "color": "6",
+      "file": "08_Applications/app_sdk.md",
+      "height": 210,
+      "id": "apps",
+      "type": "file",
+      "width": 320,
+      "x": 380,
+      "y": 960
+    },
+    {
+      "color": "1",
+      "file": "09_Host_Runtime/build_and_test.md",
+      "height": 210,
+      "id": "host",
+      "type": "file",
+      "width": 320,
+      "x": 760,
+      "y": 960
+    },
+    {
+      "color": "2",
+      "file": "_graphify/README.md",
+      "height": 210,
+      "id": "graphify",
+      "type": "file",
+      "width": 320,
+      "x": 1140,
+      "y": 960
+    }
+  ]
+}

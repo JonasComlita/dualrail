@@ -8,6 +8,11 @@
     "vm_public_constants": "ternary_vm_state.h",
     "app_sdk": "apps/os_sdk.trit"
   },
+  "knowledge_tools": {
+    "validate": "python tools/trit_tool.py knowledge status --json",
+    "graph": "python tools/trit_tool.py knowledge graph --no-archive --json",
+    "notes": "Graphify output is advisory; syscall IDs and ABI details in this manifest and source files remain authoritative."
+  },
   "calling_convention": {
     "service_id": "CSR syscall_id",
     "arguments": [

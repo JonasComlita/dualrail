@@ -1,50 +1,179 @@
 {
   "schema": "trit.tests_next.status.v1",
-  "suite_state": "scaffolded",
+  "suite_state": "scaffolded_with_native_tcl_and_multicore_snapshot_slice",
   "authoritative_suite": "tests/",
   "new_suite": "tests_next/",
-  "last_updated": "2026-06-10",
-  "current_focus": "Create focused clean-room coverage while preserving old regression memory.",
+  "last_updated": "2026-06-28",
+  "current_focus": "Expanded clean-room focused coverage for ISA/assembler golden behavior, native TCL assembler parity, vector runtime behavior, trace-JIT equivalence, timer IRQs, multicore execution, and per-core state snapshots while keeping historical tests authoritative and surfacing optimization opportunities.",
   "completed_setup": [
     "directory map",
     "agent handoff guide",
     "coverage matrix skeleton",
     "acceptance gate skeleton",
     "test case template",
-    "manifest validator"
+    "manifest validator",
+    "shared C++ harness with assertions, temp workspaces, golden helpers, and deterministic seed helper",
+    "test case registry manifest",
+    "CMake targets next_isa_encoding, next_assembler_goldens, next_assembler_tcl_parity, next_vm_core, and tests_next_fast"
+  ],
+  "completed_tasks": [
+    "bootstrap.define_harness",
+    "bootstrap.port_isa_assembler_goldens.first_slice",
+    "bootstrap.port_vm_core.first_slice",
+    "bootstrap.port_isa_assembler_remaining.vector_atomic_invalid_slice",
+    "bootstrap.port_vm_core_remaining.vector_cache_jit_mmu_slice",
+    "bootstrap.port_isa_assembler_remaining.phase4_vector_plumbing",
+    "bootstrap.port_vm_core_remaining.trace_jit_equivalence",
+    "bootstrap.port_vm_core_remaining.timer_multicore",
+    "bootstrap.port_vm_core_remaining.vector_runtime_plumbing",
+    "bootstrap.port_isa_assembler_remaining.native_tcl_parity",
+    "bootstrap.port_vm_core_remaining.core_state_snapshot"
+  ],
+  "completed_tests": [
+    "isa.encoding.rtype_width_fields",
+    "isa.encoding.immediate_signed_fields",
+    "isa.branch.brp_brn_brz_offsets",
+    "isa.csr.name_resolution",
+    "isa.encoding.r4_r5_layouts",
+    "isa.vector.vector_memory_overlay",
+    "isa.atomic.memory_order_fields",
+    "isa.encoding.invalid_instruction_rejection",
+    "assembler.labels.forward_backward_branches",
+    "assembler.directives.org_word_layout",
+    "assembler.csr.exact_encoding",
+    "assembler.diagnostics.malformed_input",
+    "assembler.vector.exact_encoding",
+    "assembler.atomic.memory_order_encoding",
+    "assembler.diagnostics.suffix_register_rejection",
+    "vm.arithmetic.width_sanity",
+    "vm.memory.load_store_tags",
+    "vm.trap.eret_div_zero_route",
+    "vm.csr.scratch_csrrw_roundtrip",
+    "vm.mmu.zero_pte_faults",
+    "vm.memory.sparse_high_address_access",
+    "vm.vector.divide_lane_faults",
+    "vm.vector.wrong_tag_lane_faults",
+    "vm.vector.pack_unpack_swap_runtime",
+    "vm.vector.permute_blend_runtime",
+    "vm.vector.gather_scatter_lane_faults",
+    "vm.vector.reduction_runtime",
+    "vm.cache.block_cache_invalidation",
+    "vm.jit.syscall_fallback",
+    "vm.mmu.read_only_store_protection",
+    "isa.vector.phase4_plumbing_fields",
+    "isa.vector.reduction_fields",
+    "assembler.vector.phase4_plumbing_exact_encoding",
+    "assembler.vector.reduction_exact_encoding",
+    "assembler.diagnostics.phase4_vector_rejection",
+    "assembler.tcl.scalar_branch_loop_parity",
+    "assembler.tcl.typed_suffix_mov_parity",
+    "assembler.tcl.calls_memory_comments_parity",
+    "assembler.tcl.three_way_branch_parity",
+    "vm.jit.arithmetic_loop_equivalence",
+    "vm.jit.load_store_equivalence",
+    "vm.jit.direct_branch_equivalence",
+    "vm.jit.memory_bailout_trap",
+    "vm.timer.irq_routes_and_resumes",
+    "vm.timer.pending_defers_across_critical_section",
+    "vm.multicore.independent_register_files",
+    "vm.multicore.run_queue_balancing",
+    "vm.multicore.mmu_csr_state_isolation",
+    "vm.multicore.vector_state_isolation",
+    "vm.multicore.device_state_isolation"
+  ],
+  "ported_claims": [
+    "isa.encoding_contract",
+    "assembler.golden_contract",
+    "vm.execution_contract"
+  ],
+  "expanded_claims": [
+    "isa.encoding_contract",
+    "assembler.golden_contract",
+    "vm.execution_contract"
+  ],
+  "improvement_signals": [
+    {
+      "id": "tests_next.optimization_philosophy",
+      "status": "recorded",
+      "summary": "tests_next/README.md, AGENTS.md, and INDEX.md now direct future agents to record optimization and improvement opportunities when deterministic tests expose them."
+    },
+    {
+      "id": "vm.vector.optimization_guardrails",
+      "status": "observed",
+      "summary": "Vector runtime tests now pin lane-mode conversions, VPERMUTE/VBLEND selection, indexed memory side effects, reductions, and lane-local fault masks so future vector optimizations can be compared safely."
+    },
+    {
+      "id": "assembler.tcl.harness_compile_cost",
+      "status": "observed",
+      "summary": "Native TCL assembler parity tests compile and run the TCL harness per fixture; future harness caching could reduce tests_next_fast time once parity behavior remains pinned."
+    },
+    {
+      "id": "vm.multicore.state_copy_guardrails",
+      "status": "observed",
+      "summary": "Per-core snapshot tests now pin MMU CSR, vector lane/fault, accumulator, syscall, console, GPU, and block-device staging state so scheduler or core-state optimizations can be validated safely."
+    }
   ],
   "next_tasks": [
     {
-      "id": "bootstrap.port_isa_assembler_goldens",
-      "area": "01_isa,03_assembler",
+      "id": "bootstrap.port_compiler_pipeline.first_slice",
+      "area": "04_compiler",
       "status": "ready",
-      "summary": "Port old ISA and assembler checks into small golden tests with one behavior per file or case."
+      "summary": "Add the first focused compiler pipeline tests so ci_fast can cover lexer/parser/typechecker/codegen surfaces."
     },
     {
-      "id": "bootstrap.port_vm_core",
-      "area": "02_vm",
-      "status": "ready",
-      "summary": "Split VM arithmetic, trap, CSR, MMU, and sparse memory coverage into focused tests."
-    },
-    {
-      "id": "bootstrap.define_harness",
-      "area": "00_harness",
-      "status": "ready",
-      "summary": "Create shared assertions, golden file loading, temp workspace helpers, and deterministic seed helpers."
+      "id": "bootstrap.add_grouped_ci_fast_gate",
+      "area": "00_harness,01_isa,02_vm,03_assembler,04_compiler",
+      "status": "waiting_on_compiler_focused_tests",
+      "summary": "Once compiler focused tests exist, turn the first four layers into a meaningful ci_fast grouped gate."
     },
     {
       "id": "bootstrap.port_phase_d_os",
       "area": "07_kernel,08_filesystem_vfs,09_process_ipc_scheduler",
       "status": "ready",
       "summary": "Break current Phase D and OS platform tests into focused kernel, VFS, process, IPC, and recovery tests."
-    },
-    {
-      "id": "bootstrap.gui_golden_plan",
-      "area": "11_graphics_gui",
-      "status": "ready",
-      "summary": "Define framebuffer snapshot format and golden comparison tolerance for text, primitives, compositor, widgets, and desktop."
     }
   ],
   "blocked": [],
-  "last_commands": []
+  "last_commands": [
+    {
+      "command": "Get-Content tests_next\\manifests\\status.json; Get-Content tests\\test_tcl_asm.cpp; Get-Content tcl_asm.trit",
+      "result": "passed; refreshed native TCL assembler parity context"
+    },
+    {
+      "command": "python .\\tests_next\\tools\\validate_manifests.py",
+      "result": "passed before edits; 43 test cases registered"
+    },
+    {
+      "command": "cmake --build build --target next_assembler_tcl_parity --config Debug; .\\build\\next_assembler_tcl_parity.exe",
+      "result": "passed; 4 native TCL assembler parity cases green"
+    },
+    {
+      "command": "python .\\tests_next\\tools\\validate_manifests.py",
+      "result": "passed after manifest updates; 47 test cases registered"
+    },
+    {
+      "command": "cmake --build build --target next_vm_core --config Debug; .\\build\\next_vm_core.exe",
+      "result": "passed; per-core MMU CSR, vector, and device state isolation cases green"
+    },
+    {
+      "command": "python .\\tests_next\\tools\\validate_manifests.py",
+      "result": "passed after multicore snapshot updates; 50 test cases registered"
+    },
+    {
+      "command": "cmake --build build --target tests_next_fast --config Debug",
+      "result": "passed; 50 focused tests green including native TCL parity and multicore snapshots"
+    },
+    {
+      "command": "cmake --build build --target test_tcl_asm --config Debug; .\\build\\test_tcl_asm.exe",
+      "result": "passed; historical native TCL assembler witness green"
+    },
+    {
+      "command": "cmake --build build --target test_scaling_profile_compact --config Debug; .\\build\\test_scaling_profile_compact.exe",
+      "result": "passed; historical multicore/scaling witness green"
+    },
+    {
+      "command": "tools\\trit-test.ps1 smoke",
+      "result": "passed; test_host_runtime and test_production_hardening green"
+    }
+  ]
 }

@@ -370,7 +370,7 @@ int main(int argc, char** argv) {
     };
 
     const std::string kernel = readTextFile("kernel.trit");
-    const std::string trap = readTextFile("OS3/native_kernel_trap_stub.tasm");
+    const std::string trap = readTextFile("native_kernel_trap_stub.tasm");
     if (kernel.empty() || trap.empty()) {
         std::cerr << "failed to read kernel.trit or native trap stub\n";
         return EXIT_FAILURE;

@@ -1071,7 +1071,7 @@ void testOsSubstrate() {
 
     {
         std::cerr << "DEBUG: OS sub-test 15 - bringup" << std::endl;
-        const std::string source = readTextFile("OS3/minimal_kernel_bringup.tasm");
+        const std::string source = readTextFile("minimal_kernel_bringup.tasm");
         expect(!source.empty(), "minimal kernel bring-up artifact is readable");
         auto assembled = assemble(source);
         expect(assembled.success, "minimal kernel bring-up artifact assembles");

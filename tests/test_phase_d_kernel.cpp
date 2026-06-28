@@ -755,7 +755,7 @@ void testPhaseDKernelEndToEnd() {
     expect(compiled.success, "kernel.trit plus driver compiles");
     expect(contains(compiled.assembly, "tldr.+1"), "scheduler/VFS paths use acquire loads");
     expect(contains(compiled.assembly, "tstr.+1"), "scheduler/VFS paths use release CAS stores");
-    const std::string trap_stub = readTextFile("OS3/native_kernel_trap_stub.tasm");
+    const std::string trap_stub = readTextFile("native_kernel_trap_stub.tasm");
     expect(contains(trap_stub, "call kernel_dispatch"), "D1 trap stub enters compiled kernel_dispatch");
     if (compiled.success && !trap_stub.empty()) {
         auto assembled_stub = sandbox::vm::assembler::assemble(trap_stub + "\n" + compiled.assembly);
@@ -768,7 +768,7 @@ void testPhaseDKernelEndToEnd() {
         expect(assembled_stub.success, "D1 trap stub assembles with compiled kernel.trit output");
     }
 
-    const std::string boot = readTextFile("OS3/native_kernel_boot.tasm");
+    const std::string boot = readTextFile("native_kernel_boot.tasm");
     expect(contains(boot, "call kernel_init"), "native boot prelude initializes compiled kernel");
     expect(contains(boot, "syscall 16"), "native boot prelude exercises D8 syscall dispatch");
     if (compiled.success && !trap_stub.empty() && !boot.empty()) {

@@ -5,10 +5,21 @@
 ```powershell
 tools/trit-doctor.ps1
 tools/trit-test.ps1 smoke
+python tools/trit_tool.py knowledge status
 tools/trit-export-diagnostics.ps1 --output build/agent-diagnostics
 ```
 
 Start with `build/agent-diagnostics/agent_diagnostics.json`. If a runtime smoke run was possible, also inspect `build/agent-diagnostics/runtime/`.
+
+If the failure involves unfamiliar source relationships, refresh the optional
+code graph:
+
+```powershell
+python tools/trit_tool.py knowledge graph --no-archive
+```
+
+The graph is advisory. Use it to find likely callers, wrappers, and related
+docs, then confirm against source files, manifests, and tests.
 
 ## Diagnostic Bundle Contract
 
@@ -30,7 +41,14 @@ The host runtime exports:
 - Runtime trap: export diagnostics and inspect `crash_report.txt`, `vm_state.txt`, and `process_table.json`.
 - App launch failure: inspect `APP_MANIFEST.json`, image apps from `trit-inspect-image`, and process handoff tests.
 - Filesystem or persistence failure: focus `test_os_platform`, `test_production_hardening`, `test_process_handoff`, and `.tdisk` existence/size.
+- Documentation or agent tooling failure: run `python tools/trit_tool.py knowledge status --json`, `python tools/trit_tool.py knowledge setup --check --json`, and `ctest --test-dir build -R test_agent_tooling --output-on-failure`.
+- `.trit` symbol navigation issue: build `trit_ast_dump`, rerun `python tools/trit_tool.py knowledge graph --no-archive --json`, and inspect `graphify-out/trit-symbols.json`.
 
 ## Current Trace Limits
 
 Per-syscall event tracing and deterministic replay are seeded as tool commands but not implemented as real trace engines yet. See `KNOWN_GAPS.md`.
+
+Graphify currently augments `.trit` sources with compiler-AST-derived files,
+functions, constants, structs, imports, syscall nodes, and direct call edges. It
+does not replace semantic compiler tests, syscall trace capture, or runtime
+diagnostics.

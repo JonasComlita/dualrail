@@ -12,3 +12,7 @@ build_sycl/
 treatcode/node_modules/
 node_modules/
 scratch/
+graphify-out/
+docs/_graphify/runs/
+docs/.obsidian/workspace*.json
+docs/.trash/

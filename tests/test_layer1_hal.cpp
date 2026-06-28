@@ -116,9 +116,9 @@ void testLayer1HalEndToEnd() {
     }
     expect(compiled.success, "hal.trit plus driver compiles");
 
-    const std::string bootloader = readTextFile("OS3/bootloader.tasm");
+    const std::string bootloader = readTextFile("bootloader.tasm");
     expect(!bootloader.empty(), "bootloader.tasm is present");
-    const std::string trap_stub = readTextFile("OS3/native_kernel_trap_stub.tasm");
+    const std::string trap_stub = readTextFile("native_kernel_trap_stub.tasm");
     expect(!trap_stub.empty(), "native_kernel_trap_stub.tasm is present");
 
     if (compiled.success && !bootloader.empty() && !trap_stub.empty()) {

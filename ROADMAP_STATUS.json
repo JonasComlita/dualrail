@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "agent-tooling-pass",
+  "updated_by": "knowledge-tooling-pass",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -61,18 +61,25 @@
     },
     {
       "id": "agent-operable-surface",
-      "status": "seeded",
-      "summary": "Host tools, manifests, debugging docs, and diagnostic bundle contracts now exist for recursive agent loops.",
+      "status": "in_progress",
+      "summary": "Host tools, manifests, debugging docs, diagnostic bundle contracts, Obsidian vault validation, and Graphify-backed knowledge graph tooling now exist for recursive agent loops.",
       "evidence": [
         "AGENTS.md",
         "TEST_MANIFEST.json",
         "tools/trit_tool.py",
-        "test_agent_tooling"
+        "test_agent_tooling",
+        "docs/trit-stack.canvas",
+        "docs/AGENTS.md",
+        "tools/trit_tool.py knowledge status",
+        "tools/trit_tool.py knowledge graph",
+        "trit_ast_dump"
       ],
       "open_items": [
         "Promote replay/fuzz from placeholder to real trace/fuzz engines",
         "Add guest /bin/doctor and /bin/test commands",
-        "Teach diagnostics to capture full syscall traces"
+        "Teach diagnostics to capture full syscall traces",
+        "Keep Obsidian vault links and canvas current as docs evolve",
+        "Broaden Graphify/Trit graph augmentation beyond files, functions, constants, structs, imports, syscalls, and direct call edges"
       ]
     }
   ]

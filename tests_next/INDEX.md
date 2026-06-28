@@ -8,6 +8,13 @@ The new suite is scaffolded but intentionally not authoritative yet. The
 historical `tests/` tree remains authoritative until `tests_next` reaches
 coverage parity.
 
+## Improvement Lens
+
+Use `tests_next` to identify safe improvements as coverage grows. Differential
+tests, fault-locality tests, cache/JIT counters, queue-depth checks, and focused
+benchmarks should make optimization candidates visible without turning fast
+correctness gates into flaky timing tests.
+
 ## First Porting Targets
 
 1. ISA and assembler golden encoding tests.
@@ -27,4 +34,7 @@ coverage parity.
 - compositor input routing and close events;
 - text rendering boundaries and missing glyphs;
 - `.tboot/.tdisk` corruption and version mismatch;
-- branch/profile/JIT backend equivalence once those features land.
+- branch/profile/JIT backend equivalence once those features land;
+- optimization signals that need follow-up, such as redundant decode work,
+  avoidable lane conversions, excessive state copying, or unstable cache
+  invalidation boundaries.

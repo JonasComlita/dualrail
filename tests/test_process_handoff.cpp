@@ -297,7 +297,7 @@ void testDesktopLaunchesMappedCalculator() {
     using namespace sandbox::compiler;
 
     const std::string kernel = readTextFile("kernel.trit");
-    const std::string trap = readTextFile("OS3/native_kernel_trap_stub.tasm");
+    const std::string trap = readTextFile("native_kernel_trap_stub.tasm");
     expect(!kernel.empty(), "kernel source is present");
     expect(!trap.empty(), "native trap stub is present");
 
@@ -461,7 +461,7 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     using namespace sandbox::compiler;
 
     const std::string kernel = readTextFile("kernel.trit");
-    const std::string trap = readTextFile("OS3/native_kernel_trap_stub.tasm");
+    const std::string trap = readTextFile("native_kernel_trap_stub.tasm");
     expect(!kernel.empty(), "kernel source is present for window probe");
     expect(!trap.empty(), "native trap stub is present for window probe");
 

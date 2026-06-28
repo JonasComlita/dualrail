@@ -8,6 +8,26 @@ The purpose of this tree is to let agents continue each other's verification
 work without rediscovering the system every time. Every new test should be
 small, named, categorized, and recorded in the manifests.
 
+## Improvement Signals
+
+`tests_next/` is also a discovery tool. Focused tests should reveal where the
+system can be simplified, hardened, or optimized, not just whether it passes.
+When a test exposes an improvement opportunity, record it in `status.json`
+rather than burying it in chat history.
+
+Useful signals include:
+
+- repeated decode, allocation, or translation work that a cache could avoid;
+- interpreter/cached/JIT paths that can be compared for equivalent results;
+- lane-local vector behavior that can be optimized without changing fault
+  masks or neighboring lanes;
+- syscall, VFS, or kernel failure paths that do extra work before failing;
+- stable counters such as steps, cache hits, trace builds, queue depths, image
+  sizes, or allocation counts.
+
+Correctness remains the gate. Performance or improvement notes are advisory
+until they are backed by deterministic tests or benchmarks.
+
 ## Operating Rules
 
 1. Prefer many focused tests over monolithic files.

@@ -23,11 +23,14 @@ else()
     message(WARNING "glslc not found. Cannot compile shaders.")
 endif()
 
-# Define shaders
-set(SHADERS 
-    qwen3.627b_weights/shaders/matmul_int8.comp
-    qwen3.627b_weights/shaders/geglu.comp
-)
+# Define shaders when optional Qwen assets are present.
+set(SHADERS "")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights/shaders/matmul_int8.comp")
+    list(APPEND SHADERS qwen3.627b_weights/shaders/matmul_int8.comp)
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights/shaders/geglu.comp")
+    list(APPEND SHADERS qwen3.627b_weights/shaders/geglu.comp)
+endif()
 set(SPV_FILES "")
 foreach(SHADER ${SHADERS})
     get_filename_component(SHADER_NAME ${SHADER} NAME)
@@ -73,7 +76,6 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
-add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
 add_executable(build_tos_image build_tos_image.cpp)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -81,10 +83,15 @@ target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBL
 target_compile_features(run_bitnet PUBLIC cxx_std_17)
 target_compile_definitions(run_bitnet PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
-target_compile_features(run_qwen PUBLIC cxx_std_17)
-target_compile_definitions(run_qwen PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
-target_link_libraries(run_qwen PRIVATE Vulkan::Vulkan)
-add_dependencies(run_qwen compile_shaders)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights/run_qwen.cpp")
+    add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
+    target_compile_features(run_qwen PUBLIC cxx_std_17)
+    target_compile_definitions(run_qwen PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+    target_link_libraries(run_qwen PRIVATE Vulkan::Vulkan)
+    add_dependencies(run_qwen compile_shaders)
+else()
+    message(STATUS "Qwen runner source not found; run_qwen target will not be built")
+endif()
 
 target_compile_features(build_tos_image PUBLIC cxx_std_17)
 target_compile_definitions(build_tos_image PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -266,6 +273,10 @@ add_executable(tritc tritc.cpp)
 target_compile_features(tritc PUBLIC cxx_std_17)
 target_compile_definitions(tritc PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(trit_ast_dump tools/trit_ast_dump.cpp)
+target_compile_features(trit_ast_dump PUBLIC cxx_std_17)
+target_compile_definitions(trit_ast_dump PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmark_architecture.cpp")
     add_executable(benchmark_architecture benchmark_architecture.cpp)
     target_compile_features(benchmark_architecture PUBLIC cxx_std_17)
@@ -288,7 +299,50 @@ add_executable(test_tcl_asm tests/test_tcl_asm.cpp)
 target_compile_features(test_tcl_asm PUBLIC cxx_std_17)
 target_compile_definitions(test_tcl_asm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
-add_executable(test_all_apps scratch/test_all_apps.cpp)
+add_executable(next_isa_encoding tests_next/01_isa/next_isa_encoding.cpp)
+target_compile_features(next_isa_encoding PUBLIC cxx_std_17)
+target_compile_definitions(next_isa_encoding PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_assembler_goldens tests_next/03_assembler/next_assembler_goldens.cpp)
+target_compile_features(next_assembler_goldens PUBLIC cxx_std_17)
+target_compile_definitions(next_assembler_goldens PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_assembler_tcl_parity tests_next/03_assembler/next_assembler_tcl_parity.cpp)
+target_compile_features(next_assembler_tcl_parity PUBLIC cxx_std_17)
+target_compile_definitions(next_assembler_tcl_parity PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_vm_core tests_next/02_vm/next_vm_core.cpp)
+target_compile_features(next_vm_core PUBLIC cxx_std_17)
+target_compile_definitions(next_vm_core PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_custom_target(tests_next_fast
+    COMMAND $<TARGET_FILE:next_isa_encoding>
+    COMMAND $<TARGET_FILE:next_assembler_goldens>
+    COMMAND $<TARGET_FILE:next_assembler_tcl_parity>
+    COMMAND $<TARGET_FILE:next_vm_core>
+    DEPENDS
+        next_isa_encoding
+        next_assembler_goldens
+        next_assembler_tcl_parity
+        next_vm_core
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
+add_test(NAME next_isa_encoding
+         COMMAND next_isa_encoding
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_assembler_goldens
+         COMMAND next_assembler_goldens
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_assembler_tcl_parity
+         COMMAND next_assembler_tcl_parity
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_vm_core
+         COMMAND next_vm_core
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(test_all_apps tests/test_all_apps.cpp)
 target_compile_features(test_all_apps PUBLIC cxx_std_17)
 target_compile_definitions(test_all_apps PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 

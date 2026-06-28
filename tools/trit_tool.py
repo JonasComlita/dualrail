@@ -9,20 +9,30 @@ stable command names documented in AGENTS.md.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import subprocess
 import sys
 import time
+from urllib.parse import unquote
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = Path(__file__).resolve().parent
+DOCS_DIR = REPO_ROOT / "docs"
+OBSIDIAN_DIR = DOCS_DIR / ".obsidian"
+OBSIDIAN_CANVAS = DOCS_DIR / "trit-stack.canvas"
+GRAPHIFY_OUT_DIR = REPO_ROOT / "graphify-out"
+GRAPHIFY_ARCHIVE_DIR = DOCS_DIR / "_graphify"
+TRIT_AST_DUMP_TARGET = "trit_ast_dump"
 BOOT_MAGIC = 0x31544F4F424F5354
 BOOT_LEGACY_FORMAT_VERSION = 1
 BOOT_FORMAT_VERSION = 2
@@ -38,6 +48,36 @@ MANIFEST_FILES = [
     "SYSCALL_MANIFEST.json",
     "IMAGE_FORMAT_MANIFEST.json",
     "APP_MANIFEST.json",
+]
+OBSIDIAN_REQUIRED_FILES = [
+    "README.md",
+    "INDEX.md",
+    "STATUS.md",
+    "AGENTS.md",
+    ".obsidian/app.json",
+    ".obsidian/core-plugins.json",
+    ".obsidian/community-plugins.json",
+    "trit-stack.canvas",
+    "_graphify/README.md",
+]
+OBSIDIAN_APP_CONFIG = {
+    "alwaysUpdateLinks": True,
+    "attachmentFolderPath": "_attachments",
+    "newFileLocation": "current",
+    "promptDelete": False,
+    "showInlineTitle": True,
+}
+OBSIDIAN_CORE_PLUGINS = [
+    "file-explorer",
+    "global-search",
+    "switcher",
+    "graph",
+    "backlink",
+    "canvas",
+    "outgoing-link",
+    "tag-pane",
+    "page-preview",
+    "properties",
 ]
 
 
@@ -490,6 +530,1243 @@ def text_status(label: str, ok: bool, detail: str = "") -> None:
     prefix = "ok" if ok else "warn"
     suffix = f" - {detail}" if detail else ""
     print(f"[{prefix}] {label}{suffix}")
+
+
+def canonical_json(data: Any) -> str:
+    return json.dumps(data, indent=2, sort_keys=True) + "\n"
+
+
+def write_text_if_changed(path: Path, text: str) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.read_text(encoding="utf-8") == text:
+        return False
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
+def obsidian_agents_text() -> str:
+    return """# Docs Vault Agent Guide
+
+Open `docs/` as the Obsidian vault for Trit.
+
+## Authority
+
+- Root manifests, source files, and tests remain authoritative.
+- Pages in this vault are curated navigation and explanation.
+- Generated Graphify artifacts are advisory and must not override source code,
+  manifests, or failing tests.
+
+## Workflow
+
+1. Start at `README.md`, then follow `INDEX.md` and `STATUS.md`.
+2. Use `python ../tools/trit_tool.py knowledge status` to validate the vault.
+3. Use `python ../tools/trit_tool.py knowledge canvas` after changing the docs map.
+4. Use `python ../tools/trit_tool.py knowledge graph` only when Graphify is installed
+   and a structural code report would help.
+5. Keep manually written docs concise and source-linked; put generated Graphify
+   runs under `_graphify/runs/`.
+
+## Obsidian Conventions
+
+- Prefer stable Markdown links for repo portability.
+- Use wikilinks sparingly for important concepts that benefit from graph view.
+- Keep `trit-stack.canvas` as the high-level navigation canvas.
+- Do not commit Obsidian workspace layout files.
+"""
+
+
+def graphify_readme_text() -> str:
+    return """# Graphify Runs
+
+This directory documents optional Graphify integration.
+
+Graphify output is generated analysis, not a source of truth. The default raw
+output directory is the repo-root `graphify-out/`, which is ignored by git.
+Archived report snapshots may be written under `_graphify/runs/` by:
+
+```powershell
+python ..\\tools\\trit_tool.py knowledge graph
+```
+
+If Graphify is not installed, the command exits with guidance and leaves the
+repo unchanged.
+
+By default, `.graphifyignore` keeps Markdown, images, and the Obsidian vault out
+of Graphify so extraction can run without an LLM API key. Obsidian remains the
+docs/wiki layer; Graphify is the code graph layer.
+
+Graphify does not natively parse `.trit` sources yet. Trit's `knowledge graph`
+command therefore runs Graphify first, then augments `graphify-out/graph.json`
+with a deterministic Trit adapter that extracts `.trit` file, function,
+constant, syscall, and call edges. When the CMake `trit_ast_dump` target is
+available, the adapter uses the compiler parser's `ModuleAst`; otherwise it
+falls back to a lightweight text scan.
+"""
+
+
+def graphify_ignore_text() -> str:
+    return """# Trit Graphify inputs
+.git/
+.obsidian/
+docs/
+docs/.obsidian/
+build/
+build_fresh/
+build_cuda/
+build_sycl/
+graphify-out/
+docs/_graphify/runs/
+docs/.trash/
+treatcode/node_modules/
+node_modules/
+scratch/
+bitnet_weights/converted_t40/
+bitnet_weights/model/
+qwen3.627b_weights/converted_qwen/
+qwen3.627b_weights/raw/
+*.exe
+*.img
+*.tboot
+*.tdisk
+*.md
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.html
+*.txt
+*.canvas
+CMakeLists.txt
+"""
+
+
+def obsidian_file_specs() -> dict[Path, str]:
+    return {
+        OBSIDIAN_DIR / "app.json": canonical_json(OBSIDIAN_APP_CONFIG),
+        OBSIDIAN_DIR / "core-plugins.json": canonical_json(OBSIDIAN_CORE_PLUGINS),
+        OBSIDIAN_DIR / "community-plugins.json": canonical_json([]),
+        DOCS_DIR / "AGENTS.md": obsidian_agents_text(),
+        GRAPHIFY_ARCHIVE_DIR / "README.md": graphify_readme_text(),
+        REPO_ROOT / ".graphifyignore": graphify_ignore_text(),
+        OBSIDIAN_CANVAS: canonical_json(build_obsidian_canvas()),
+    }
+
+
+def build_obsidian_canvas() -> dict[str, Any]:
+    node_specs = [
+        ("home", "README.md", 0, 0, 360, 240, "1"),
+        ("index", "INDEX.md", 440, 0, 360, 240, "2"),
+        ("status", "STATUS.md", 880, 0, 360, 240, "3"),
+        ("quick_ref", "00_Quick_Ref/opcode_table.md", 0, 340, 320, 210, "4"),
+        ("logic", "01_Logic_Level/gates.md", 380, 340, 320, 210, "5"),
+        ("isa", "02_Hardware_ISA/encoding.md", 760, 340, 320, 210, "6"),
+        ("vm", "03_Execution_Engine/vm_state.md", 1140, 340, 320, 210, "1"),
+        ("abi", "04_Binary_Contract/abi_spec.md", 0, 650, 320, 210, "2"),
+        ("compiler", "05_Compiler_Infra/ternary_ir.md", 380, 650, 320, 210, "3"),
+        ("language", "06_Language/tcl_language.md", 760, 650, 320, 210, "4"),
+        ("kernel", "07_OS_Substrate/kernel_overview.md", 1140, 650, 320, 210, "5"),
+        ("apps", "08_Applications/app_sdk.md", 380, 960, 320, 210, "6"),
+        ("host", "09_Host_Runtime/build_and_test.md", 760, 960, 320, 210, "1"),
+        ("graphify", "_graphify/README.md", 1140, 960, 320, 210, "2"),
+    ]
+    edge_specs = [
+        ("home", "index", "navigation"),
+        ("home", "status", "health"),
+        ("index", "quick_ref", "cheatsheets"),
+        ("index", "logic", "layer 0"),
+        ("logic", "isa", "encodes"),
+        ("isa", "vm", "executes"),
+        ("vm", "abi", "calls"),
+        ("abi", "compiler", "targets"),
+        ("compiler", "language", "fronts"),
+        ("language", "kernel", "boots"),
+        ("kernel", "apps", "serves"),
+        ("apps", "host", "bundles"),
+        ("status", "graphify", "analysis"),
+        ("graphify", "index", "reports"),
+    ]
+    return {
+        "nodes": [
+            {
+                "id": node_id,
+                "type": "file",
+                "file": file_name,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "color": color,
+            }
+            for node_id, file_name, x, y, width, height, color in node_specs
+        ],
+        "edges": [
+            {
+                "id": f"{from_node}_to_{to_node}",
+                "fromNode": from_node,
+                "fromSide": "right",
+                "toNode": to_node,
+                "toSide": "left",
+                "label": label,
+            }
+            for from_node, to_node, label in edge_specs
+        ],
+    }
+
+
+def read_json_file_any(path: Path) -> tuple[Any | None, str | None]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle), None
+    except FileNotFoundError:
+        return None, "file is missing"
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON at line {exc.lineno}: {exc.msg}"
+
+
+def docs_markdown_files() -> list[Path]:
+    if not DOCS_DIR.exists():
+        return []
+    return sorted(
+        path
+        for path in DOCS_DIR.rglob("*.md")
+        if ".obsidian" not in path.parts and ".trash" not in path.parts
+    )
+
+
+def is_external_doc_link(target: str) -> bool:
+    lowered = target.lower()
+    return (
+        "://" in target
+        or lowered.startswith("mailto:")
+        or lowered.startswith("tel:")
+        or lowered.startswith("obsidian:")
+    )
+
+
+def markdown_link_target(raw: str) -> str:
+    target = raw.strip()
+    if " " in target and target.split()[0].lower().endswith(".md"):
+        target = target.split()[0]
+    target = target.split("#", 1)[0].strip()
+    return unquote(target)
+
+
+def check_docs_markdown_links() -> list[dict[str, str]]:
+    broken: list[dict[str, str]] = []
+    files = docs_markdown_files()
+    stem_index: dict[str, list[Path]] = {}
+    for path in files:
+        stem_index.setdefault(path.stem.lower(), []).append(path)
+
+    markdown_re = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+    wikilink_re = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in markdown_re.finditer(text):
+            target = markdown_link_target(match.group(1))
+            if not target or target.startswith("#") or is_external_doc_link(target):
+                continue
+            if not target.lower().endswith(".md"):
+                continue
+            resolved = (path.parent / target).resolve()
+            if not resolved.exists():
+                broken.append({"file": rel(path), "target": target, "kind": "markdown"})
+        for match in wikilink_re.finditer(text):
+            target = markdown_link_target(match.group(1))
+            if not target or is_external_doc_link(target):
+                continue
+            if "/" in target or "\\" in target:
+                candidate = (DOCS_DIR / target).with_suffix(".md") if not target.endswith(".md") else (DOCS_DIR / target)
+                if not candidate.exists():
+                    broken.append({"file": rel(path), "target": target, "kind": "wikilink"})
+            elif target.lower() not in stem_index:
+                broken.append({"file": rel(path), "target": target, "kind": "wikilink"})
+    return broken
+
+
+def canvas_status() -> dict[str, Any]:
+    data, error = read_json_file_any(OBSIDIAN_CANVAS)
+    if error:
+        return {"ok": False, "error": error}
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "canvas JSON must be an object"}
+    nodes = data.get("nodes")
+    edges = data.get("edges")
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return {"ok": False, "error": "canvas must contain node and edge arrays"}
+    node_ids = {node.get("id") for node in nodes if isinstance(node, dict)}
+    missing_files = []
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("type") != "file":
+            continue
+        file_name = node.get("file")
+        if isinstance(file_name, str) and not (DOCS_DIR / file_name).exists():
+            missing_files.append(file_name)
+    broken_edges = []
+    for edge in edges:
+        if not isinstance(edge, dict):
+            broken_edges.append("<non-object edge>")
+            continue
+        if edge.get("fromNode") not in node_ids or edge.get("toNode") not in node_ids:
+            broken_edges.append(str(edge.get("id", "<unnamed edge>")))
+    return {
+        "ok": not missing_files and not broken_edges,
+        "nodes": len(nodes),
+        "edges": len(edges),
+        "missing_files": missing_files,
+        "broken_edges": broken_edges,
+    }
+
+
+def find_tool_executable(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    suffixes = [".exe", ".cmd", ".bat", ""]
+    candidate_dirs = [
+        Path.home() / ".local" / "bin",
+        Path.home() / "AppData" / "Roaming" / "Python" / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts",
+    ]
+    for directory in candidate_dirs:
+        for suffix in suffixes:
+            candidate = directory / f"{name}{suffix}"
+            if candidate.exists():
+                return str(candidate)
+    return None
+
+
+TRIT_FUNCTION_RE = re.compile(r"^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([A-Za-z0-9_\[\]<>:]+))?")
+TRIT_CONST_RE = re.compile(r"^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=;]+)")
+TRIT_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+TRIT_SKIP_CALLS = {
+    "if",
+    "while",
+    "match",
+    "return",
+    "unsafe",
+    "fn",
+    "const",
+    "var",
+}
+
+
+def graph_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").lower()
+    if not slug:
+        return "unnamed"
+    if slug[0].isdigit():
+        return "n_" + slug
+    return slug
+
+
+def trit_file_node_id(path: Path) -> str:
+    rel_path = rel(path.with_suffix(""))
+    return "trit_" + graph_slug(rel_path)
+
+
+def trit_symbol_node_id(path: Path, name: str, kind: str) -> str:
+    return f"{trit_file_node_id(path)}_{graph_slug(kind)}_{graph_slug(name)}"
+
+
+def trit_source_files() -> list[Path]:
+    excluded = {
+        ".git",
+        ".obsidian",
+        ".trash",
+        "build",
+        "build_fresh",
+        "build_cuda",
+        "build_sycl",
+        "graphify-out",
+        "node_modules",
+    }
+    out = []
+    for path in REPO_ROOT.rglob("*.trit"):
+        parts = set(path.relative_to(REPO_ROOT).parts)
+        if excluded.intersection(parts):
+            continue
+        out.append(path)
+    return sorted(out)
+
+
+def strip_trit_comment(line: str) -> str:
+    return line.split("//", 1)[0]
+
+
+def extract_trit_graph_regex() -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    symbol_by_name: dict[str, list[str]] = {}
+    functions: dict[str, dict[str, Any]] = {}
+    pending_calls: list[dict[str, Any]] = []
+    files = trit_source_files()
+
+    def add_node(node: dict[str, Any]) -> None:
+        nodes.append(node)
+
+    def add_edge(edge: dict[str, Any]) -> None:
+        edges.append(edge)
+
+    for path in files:
+        rel_path = rel(path)
+        file_id = trit_file_node_id(path)
+        add_node(
+            {
+                "id": file_id,
+                "label": path.name,
+                "file_type": "code",
+                "source_file": rel_path,
+                "source_location": "L1",
+                "_origin": "trit-adapter",
+            }
+        )
+        active_function: dict[str, Any] | None = None
+        brace_depth = 0
+        for line_no, raw_line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            clean = strip_trit_comment(raw_line)
+            fn_match = TRIT_FUNCTION_RE.match(clean)
+            const_match = TRIT_CONST_RE.match(clean)
+            if fn_match:
+                name = fn_match.group(1)
+                params = fn_match.group(2).strip()
+                return_type = (fn_match.group(3) or "").strip()
+                node_id = trit_symbol_node_id(path, name, "fn")
+                node = {
+                    "id": node_id,
+                    "label": f"{name}()",
+                    "file_type": "code",
+                    "source_file": rel_path,
+                    "source_location": f"L{line_no}",
+                    "_origin": "trit-adapter",
+                    "kind": "trit_function",
+                    "signature": clean.strip().rstrip("{").strip(),
+                    "parameters": params,
+                    "return_type": return_type,
+                }
+                add_node(node)
+                add_edge(
+                    {
+                        "source": file_id,
+                        "target": node_id,
+                        "relation": "contains",
+                        "confidence": "EXTRACTED",
+                        "source_file": rel_path,
+                        "source_location": f"L{line_no}",
+                        "weight": 1.0,
+                        "context": "trit_function",
+                    }
+                )
+                symbol_by_name.setdefault(name, []).append(node_id)
+                functions[node_id] = {"name": name, "file": rel_path}
+                active_function = {"id": node_id, "name": name}
+                brace_depth = clean.count("{") - clean.count("}")
+            elif const_match:
+                name = const_match.group(1)
+                value_type = const_match.group(2).strip()
+                node_id = trit_symbol_node_id(path, name, "const")
+                add_node(
+                    {
+                        "id": node_id,
+                        "label": name,
+                        "file_type": "code",
+                        "source_file": rel_path,
+                        "source_location": f"L{line_no}",
+                        "_origin": "trit-adapter",
+                        "kind": "trit_const",
+                        "value_type": value_type,
+                    }
+                )
+                add_edge(
+                    {
+                        "source": file_id,
+                        "target": node_id,
+                        "relation": "contains",
+                        "confidence": "EXTRACTED",
+                        "source_file": rel_path,
+                        "source_location": f"L{line_no}",
+                        "weight": 1.0,
+                        "context": "trit_const",
+                    }
+                )
+                symbol_by_name.setdefault(name, []).append(node_id)
+
+            if active_function is not None:
+                for call_match in TRIT_CALL_RE.finditer(clean):
+                    call_name = call_match.group(1)
+                    if call_name in TRIT_SKIP_CALLS or call_name == active_function["name"]:
+                        continue
+                    pending_calls.append(
+                        {
+                            "source": active_function["id"],
+                            "name": call_name,
+                            "source_file": rel_path,
+                            "source_location": f"L{line_no}",
+                        }
+                    )
+                brace_depth += clean.count("{") - clean.count("}") if not fn_match else 0
+                if brace_depth <= 0 and "}" in clean:
+                    active_function = None
+                    brace_depth = 0
+
+    external_nodes: dict[str, dict[str, Any]] = {}
+    seen_edges: set[tuple[str, str, str, str]] = set()
+    for call in pending_calls:
+        targets = symbol_by_name.get(call["name"], [])
+        if not targets and call["name"].startswith("sys_"):
+            target = "trit_external_" + graph_slug(call["name"])
+            external_nodes.setdefault(
+                target,
+                {
+                    "id": target,
+                    "label": f"{call['name']}()",
+                    "file_type": "code",
+                    "source_file": "",
+                    "source_location": "",
+                    "_origin": "trit-adapter",
+                    "kind": "trit_external_syscall",
+                },
+            )
+            targets = [target]
+        for target in targets:
+            key = (call["source"], target, call["source_file"], call["source_location"])
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            add_edge(
+                {
+                    "source": call["source"],
+                    "target": target,
+                    "relation": "calls",
+                    "confidence": "EXTRACTED",
+                    "source_file": call["source_file"],
+                    "source_location": call["source_location"],
+                    "weight": 1.0,
+                    "context": "trit_call",
+                }
+            )
+
+    nodes.extend(external_nodes.values())
+    return {
+        "extractor": "regex",
+        "nodes": nodes,
+        "edges": edges,
+        "files": len(files),
+        "functions": sum(1 for node in nodes if node.get("kind") == "trit_function"),
+        "constants": sum(1 for node in nodes if node.get("kind") == "trit_const"),
+        "external_syscalls": len(external_nodes),
+        "call_edges": sum(1 for edge in edges if edge.get("relation") == "calls"),
+    }
+
+
+def find_trit_ast_dump(build_dir: Path | None = None) -> Path | None:
+    return find_executable(build_dir or default_build_dir(), TRIT_AST_DUMP_TARGET)
+
+
+def ensure_trit_ast_dump(build_dir: Path | None = None) -> tuple[Path | None, dict[str, Any]]:
+    build_dir = build_dir or default_build_dir()
+    existing = find_trit_ast_dump(build_dir)
+    if existing:
+        return existing, {"available": True, "built": False, "path": str(existing)}
+    if not (build_dir / "CMakeCache.txt").exists() or not shutil.which("cmake"):
+        return None, {"available": False, "built": False, "path": None}
+
+    result = run_command(
+        ["cmake", "--build", str(build_dir), "--target", TRIT_AST_DUMP_TARGET],
+        cwd=REPO_ROOT,
+        capture=True,
+        timeout=180,
+    )
+    built = find_trit_ast_dump(build_dir)
+    status = {
+        "available": built is not None,
+        "built": built is not None,
+        "path": str(built) if built else None,
+        "build": result,
+    }
+    return built, status
+
+
+def load_trit_ast_modules(files: list[Path]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    dumper, status = ensure_trit_ast_dump()
+    if not dumper:
+        return None, status
+    command = [str(dumper), *[rel(path) for path in files]]
+    result = run_command(command, cwd=REPO_ROOT, capture=True, timeout=180)
+    status = {
+        **status,
+        "dump": {
+            "command": result["command"],
+            "cwd": result["cwd"],
+            "returncode": result["returncode"],
+            "stderr": result["stderr"][:4000],
+            "duration_seconds": result["duration_seconds"],
+            "stdout_bytes": len(result["stdout"].encode("utf-8", errors="replace")),
+        },
+    }
+    if result["returncode"] != 0:
+        status["available"] = False
+        return None, status
+    try:
+        data = json.loads(result["stdout"])
+    except json.JSONDecodeError as exc:
+        status["available"] = False
+        status["error"] = f"invalid AST JSON at line {exc.lineno}: {exc.msg}"
+        return None, status
+    if not isinstance(data, dict) or data.get("schema") != "trit-ast-v1":
+        status["available"] = False
+        status["error"] = "AST dump did not use schema trit-ast-v1"
+        return None, status
+    return data, status
+
+
+def ast_source_path(source_file: str) -> Path:
+    path = Path(source_file)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def ast_line(span: Any) -> int:
+    if isinstance(span, dict):
+        try:
+            return max(1, int(span.get("line", 1)))
+        except (TypeError, ValueError):
+            return 1
+    return 1
+
+
+def ast_source_location(span: Any) -> str:
+    return f"L{ast_line(span)}"
+
+
+def ast_signature(fn: dict[str, Any]) -> str:
+    width_params = fn.get("width_params", [])
+    width = ""
+    if isinstance(width_params, list) and width_params:
+        width = "<" + ", ".join(f"{param}: TritWidth" for param in width_params if isinstance(param, str)) + ">"
+    params = fn.get("params", [])
+    rendered_params = []
+    if isinstance(params, list):
+        for param in params:
+            if not isinstance(param, dict):
+                continue
+            rendered_params.append(f"{param.get('name', '?')}: {param.get('type', 'unknown')}")
+    return_type = str(fn.get("return_type", "void"))
+    return f"fn {fn.get('name', '?')}{width}({', '.join(rendered_params)}) -> {return_type}"
+
+
+def extract_trit_graph_from_ast(ast_data: dict[str, Any], files: list[Path]) -> dict[str, Any]:
+    nodes_by_id: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, Any]] = []
+    symbol_by_name: dict[str, list[str]] = {}
+    pending_calls: list[dict[str, Any]] = []
+    modules = ast_data.get("modules", [])
+    if not isinstance(modules, list):
+        modules = []
+
+    def add_node(node: dict[str, Any]) -> None:
+        node.setdefault("_origin", "trit-adapter")
+        node.setdefault("extractor", "ast")
+        nodes_by_id.setdefault(node["id"], node)
+
+    def add_edge(edge: dict[str, Any]) -> None:
+        edges.append(edge)
+
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        source_file = str(module.get("source_file", ""))
+        path = ast_source_path(source_file)
+        rel_path = rel(path)
+        file_id = trit_file_node_id(path)
+        add_node(
+            {
+                "id": file_id,
+                "label": path.name,
+                "file_type": "code",
+                "source_file": rel_path,
+                "source_location": "L1",
+                "kind": "trit_file",
+            }
+        )
+
+        for imported in module.get("imports", []):
+            if not isinstance(imported, dict):
+                continue
+            name = str(imported.get("name", ""))
+            if not name:
+                continue
+            node_id = "trit_import_" + graph_slug(name)
+            add_node(
+                {
+                    "id": node_id,
+                    "label": name,
+                    "file_type": "code",
+                    "source_file": "",
+                    "source_location": "",
+                    "kind": "trit_import",
+                }
+            )
+            add_edge(
+                {
+                    "source": file_id,
+                    "target": node_id,
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                    "source_file": rel_path,
+                    "source_location": ast_source_location(imported.get("span")),
+                    "weight": 1.0,
+                    "context": "trit_import",
+                }
+            )
+
+        for struct in module.get("structs", []):
+            if not isinstance(struct, dict):
+                continue
+            name = str(struct.get("name", ""))
+            if not name:
+                continue
+            node_id = trit_symbol_node_id(path, name, "struct")
+            add_node(
+                {
+                    "id": node_id,
+                    "label": name,
+                    "file_type": "code",
+                    "source_file": rel_path,
+                    "source_location": ast_source_location(struct.get("span")),
+                    "kind": "trit_struct",
+                    "fields": struct.get("fields", []),
+                }
+            )
+            add_edge(
+                {
+                    "source": file_id,
+                    "target": node_id,
+                    "relation": "contains",
+                    "confidence": "EXTRACTED",
+                    "source_file": rel_path,
+                    "source_location": ast_source_location(struct.get("span")),
+                    "weight": 1.0,
+                    "context": "trit_struct",
+                }
+            )
+
+        for const in module.get("consts", []):
+            if not isinstance(const, dict):
+                continue
+            name = str(const.get("name", ""))
+            if not name:
+                continue
+            node_id = trit_symbol_node_id(path, name, "const")
+            add_node(
+                {
+                    "id": node_id,
+                    "label": name,
+                    "file_type": "code",
+                    "source_file": rel_path,
+                    "source_location": ast_source_location(const.get("span")),
+                    "kind": "trit_const",
+                    "value_type": const.get("type", ""),
+                    "scope": "file",
+                }
+            )
+            add_edge(
+                {
+                    "source": file_id,
+                    "target": node_id,
+                    "relation": "contains",
+                    "confidence": "EXTRACTED",
+                    "source_file": rel_path,
+                    "source_location": ast_source_location(const.get("span")),
+                    "weight": 1.0,
+                    "context": "trit_const",
+                }
+            )
+
+        for fn in module.get("functions", []):
+            if not isinstance(fn, dict):
+                continue
+            name = str(fn.get("name", ""))
+            if not name:
+                continue
+            node_id = trit_symbol_node_id(path, name, "fn")
+            source_location = ast_source_location(fn.get("span"))
+            add_node(
+                {
+                    "id": node_id,
+                    "label": f"{name}()",
+                    "file_type": "code",
+                    "source_file": rel_path,
+                    "source_location": source_location,
+                    "kind": "trit_function",
+                    "signature": ast_signature(fn),
+                    "parameters": fn.get("params", []),
+                    "return_type": fn.get("return_type", ""),
+                    "width_params": fn.get("width_params", []),
+                }
+            )
+            add_edge(
+                {
+                    "source": file_id,
+                    "target": node_id,
+                    "relation": "contains",
+                    "confidence": "EXTRACTED",
+                    "source_file": rel_path,
+                    "source_location": source_location,
+                    "weight": 1.0,
+                    "context": "trit_function",
+                }
+            )
+            symbol_by_name.setdefault(name, []).append(node_id)
+
+            for local_const in fn.get("local_consts", []):
+                if not isinstance(local_const, dict):
+                    continue
+                const_name = str(local_const.get("name", ""))
+                if not const_name:
+                    continue
+                const_line = ast_line(local_const.get("span"))
+                const_id = trit_symbol_node_id(path, f"{name}_{const_name}_L{const_line}", "const")
+                add_node(
+                    {
+                        "id": const_id,
+                        "label": const_name,
+                        "file_type": "code",
+                        "source_file": rel_path,
+                        "source_location": f"L{const_line}",
+                        "kind": "trit_const",
+                        "value_type": local_const.get("type", ""),
+                        "scope": name,
+                    }
+                )
+                add_edge(
+                    {
+                        "source": node_id,
+                        "target": const_id,
+                        "relation": "contains",
+                        "confidence": "EXTRACTED",
+                        "source_file": rel_path,
+                        "source_location": f"L{const_line}",
+                        "weight": 1.0,
+                        "context": "trit_const",
+                    }
+                )
+
+            for call in fn.get("calls", []):
+                if not isinstance(call, dict):
+                    continue
+                call_name = str(call.get("name", ""))
+                if not call_name or call_name == name:
+                    continue
+                pending_calls.append(
+                    {
+                        "source": node_id,
+                        "name": call_name,
+                        "source_file": rel_path,
+                        "source_location": ast_source_location(call.get("span")),
+                    }
+                )
+
+    external_nodes: dict[str, dict[str, Any]] = {}
+    seen_edges: set[tuple[str, str, str, str]] = set()
+    for call in pending_calls:
+        targets = symbol_by_name.get(call["name"], [])
+        if not targets and call["name"].startswith("sys_"):
+            target = "trit_external_" + graph_slug(call["name"])
+            external_nodes.setdefault(
+                target,
+                {
+                    "id": target,
+                    "label": f"{call['name']}()",
+                    "file_type": "code",
+                    "source_file": "",
+                    "source_location": "",
+                    "_origin": "trit-adapter",
+                    "extractor": "ast",
+                    "kind": "trit_external_syscall",
+                },
+            )
+            targets = [target]
+        for target in targets:
+            key = (call["source"], target, call["source_file"], call["source_location"])
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            add_edge(
+                {
+                    "source": call["source"],
+                    "target": target,
+                    "relation": "calls",
+                    "confidence": "EXTRACTED",
+                    "source_file": call["source_file"],
+                    "source_location": call["source_location"],
+                    "weight": 1.0,
+                    "context": "trit_call",
+                }
+            )
+
+    for node in external_nodes.values():
+        add_node(node)
+
+    diagnostics = [
+        diagnostic
+        for module in modules
+        if isinstance(module, dict)
+        for diagnostic in module.get("diagnostics", [])
+        if isinstance(diagnostic, dict)
+    ]
+    nodes = list(nodes_by_id.values())
+    return {
+        "extractor": "ast",
+        "nodes": nodes,
+        "edges": edges,
+        "files": len(files),
+        "modules": len(modules),
+        "functions": sum(1 for node in nodes if node.get("kind") == "trit_function"),
+        "constants": sum(1 for node in nodes if node.get("kind") == "trit_const"),
+        "structs": sum(1 for node in nodes if node.get("kind") == "trit_struct"),
+        "imports": sum(1 for edge in edges if edge.get("relation") == "imports"),
+        "external_syscalls": len(external_nodes),
+        "call_edges": sum(1 for edge in edges if edge.get("relation") == "calls"),
+        "parse_diagnostics": len(diagnostics),
+        "parse_errors": sum(1 for diagnostic in diagnostics if diagnostic.get("severity") == "error"),
+    }
+
+
+def extract_trit_graph(prefer_ast: bool = True) -> dict[str, Any]:
+    files = trit_source_files()
+    ast_status: dict[str, Any] = {"available": False}
+    if prefer_ast:
+        ast_data, ast_status = load_trit_ast_modules(files)
+        if ast_data:
+            graph = extract_trit_graph_from_ast(ast_data, files)
+            graph["ast_dump"] = ast_status
+            if graph["functions"] > 0:
+                return graph
+    graph = extract_trit_graph_regex()
+    graph["ast_dump"] = ast_status
+    return graph
+
+
+def augment_graph_with_trit(graph_path: Path) -> dict[str, Any]:
+    graph_path.parent.mkdir(parents=True, exist_ok=True)
+    if graph_path.exists():
+        graph, error = read_json_file_any(graph_path)
+        if error:
+            raise RuntimeError(f"{rel(graph_path)}: {error}")
+        if not isinstance(graph, dict):
+            raise RuntimeError(f"{rel(graph_path)}: graph must be a JSON object")
+    else:
+        graph = {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0}
+
+    graph["nodes"] = [
+        node for node in graph.get("nodes", [])
+        if not (isinstance(node, dict) and node.get("_origin") == "trit-adapter")
+    ]
+    edge_keys = [key for key in ("edges", "links") if isinstance(graph.get(key), list)]
+    if not edge_keys:
+        graph["edges"] = []
+        edge_keys = ["edges"]
+    for key in edge_keys:
+        graph[key] = [
+            edge for edge in graph.get(key, [])
+            if not (
+                isinstance(edge, dict)
+                and edge.get("confidence") == "EXTRACTED"
+                and str(edge.get("context", "")).startswith("trit_")
+            )
+        ]
+    edge_key = "links" if "links" in graph else "edges"
+    graph.setdefault("hyperedges", [])
+    graph.setdefault("input_tokens", 0)
+    graph.setdefault("output_tokens", 0)
+
+    trit_graph = extract_trit_graph()
+    existing_node_ids = {node.get("id") for node in graph["nodes"] if isinstance(node, dict)}
+    added_nodes = []
+    for node in trit_graph["nodes"]:
+        if node["id"] in existing_node_ids:
+            continue
+        existing_node_ids.add(node["id"])
+        added_nodes.append(node)
+    graph["nodes"].extend(added_nodes)
+
+    existing_edges = {
+        (
+            edge.get("source"),
+            edge.get("target"),
+            edge.get("relation"),
+            edge.get("source_file"),
+            edge.get("source_location"),
+            edge.get("context"),
+        )
+        for edge in graph.get(edge_key, [])
+        if isinstance(edge, dict)
+    }
+    added_edges = []
+    for edge in trit_graph["edges"]:
+        key = (
+            edge.get("source"),
+            edge.get("target"),
+            edge.get("relation"),
+            edge.get("source_file"),
+            edge.get("source_location"),
+            edge.get("context"),
+        )
+        if key in existing_edges:
+            continue
+        existing_edges.add(key)
+        added_edges.append(edge)
+    graph[edge_key].extend(added_edges)
+    graph_path.write_text(canonical_json(graph), encoding="utf-8")
+
+    summary = {
+        "ok": True,
+        "graph": str(graph_path),
+        "extractor": trit_graph.get("extractor", "unknown"),
+        "files": trit_graph["files"],
+        "edge_key": edge_key,
+        "nodes_added": len(added_nodes),
+        "edges_added": len(added_edges),
+        "functions": trit_graph["functions"],
+        "constants": trit_graph["constants"],
+        "structs": trit_graph.get("structs", 0),
+        "imports": trit_graph.get("imports", 0),
+        "external_syscalls": trit_graph["external_syscalls"],
+        "call_edges": trit_graph["call_edges"],
+        "parse_diagnostics": trit_graph.get("parse_diagnostics", 0),
+        "parse_errors": trit_graph.get("parse_errors", 0),
+        "ast_dump": trit_graph.get("ast_dump", {}),
+    }
+    (graph_path.parent / "trit-symbols.json").write_text(canonical_json(summary), encoding="utf-8")
+    return summary
+
+
+def knowledge_status_report() -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+    required = []
+    for name in OBSIDIAN_REQUIRED_FILES:
+        path = DOCS_DIR / name
+        exists = path.exists()
+        required.append({"path": rel(path), "exists": exists})
+        if not exists:
+            issues.append({"severity": "error", "message": f"missing {rel(path)}"})
+
+    graphify_ignore = REPO_ROOT / ".graphifyignore"
+    if not graphify_ignore.exists():
+        issues.append({"severity": "error", "message": "missing .graphifyignore"})
+
+    link_issues = check_docs_markdown_links()
+    for item in link_issues:
+        issues.append(
+            {
+                "severity": "error",
+                "message": f"{item['file']} has broken {item['kind']} link to {item['target']}",
+            }
+        )
+
+    canvas = canvas_status()
+    if not canvas.get("ok", False):
+        issues.append({"severity": "error", "message": f"canvas invalid: {canvas.get('error', canvas)}"})
+
+    graphify_path = find_tool_executable("graphify")
+    if not graphify_path:
+        warnings.append({"severity": "warning", "message": "graphify CLI is not installed; knowledge graph runs are optional"})
+
+    report = {
+        "ok": not issues,
+        "docs_dir": str(DOCS_DIR),
+        "obsidian": {
+            "vault": str(DOCS_DIR),
+            "config_dir": str(OBSIDIAN_DIR),
+            "required_files": required,
+            "canvas": canvas,
+        },
+        "graphify": {
+            "cli": graphify_path,
+            "ignore": str(graphify_ignore),
+            "output_dir": str(GRAPHIFY_OUT_DIR),
+            "archive_dir": str(GRAPHIFY_ARCHIVE_DIR / "runs"),
+        },
+        "markdown": {
+            "files": len(docs_markdown_files()),
+            "broken_links": link_issues,
+        },
+        "issues": issues,
+        "warnings": warnings,
+    }
+    return report
+
+
+def setup_status_report() -> dict[str, Any]:
+    mismatches = []
+    for path, expected in obsidian_file_specs().items():
+        if not path.exists():
+            mismatches.append({"path": rel(path), "state": "missing"})
+        elif path.read_text(encoding="utf-8") != expected:
+            actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            expected_hash = hashlib.sha256(expected.encode("utf-8")).hexdigest()
+            mismatches.append(
+                {
+                    "path": rel(path),
+                    "state": "outdated",
+                    "actual_sha256": actual_hash,
+                    "expected_sha256": expected_hash,
+                }
+            )
+    return {"ok": not mismatches, "mismatches": mismatches}
+
+
+def cmd_knowledge_setup(args: argparse.Namespace) -> int:
+    if args.check:
+        report = setup_status_report()
+        if args.json:
+            print_json(report)
+        elif report["ok"]:
+            print("knowledge setup is current")
+        else:
+            print("knowledge setup is not current")
+            for mismatch in report["mismatches"]:
+                print(f"- {mismatch['path']}: {mismatch['state']}")
+        return 0 if report["ok"] else 1
+
+    changed = []
+    for path, expected in obsidian_file_specs().items():
+        if write_text_if_changed(path, expected):
+            changed.append(rel(path))
+    report = {"ok": True, "changed": changed}
+    if args.json:
+        print_json(report)
+    else:
+        if changed:
+            print("updated knowledge integration files:")
+            for path in changed:
+                print(f"- {path}")
+        else:
+            print("knowledge integration files are already current")
+    return 0
+
+
+def cmd_knowledge_status(args: argparse.Namespace) -> int:
+    report = knowledge_status_report()
+    if args.json:
+        print_json(report)
+    else:
+        print("Trit knowledge status")
+        text_status("docs vault", DOCS_DIR.exists(), str(DOCS_DIR))
+        text_status("Obsidian config", OBSIDIAN_DIR.exists(), str(OBSIDIAN_DIR))
+        text_status("canvas", bool(report["obsidian"]["canvas"].get("ok")), str(OBSIDIAN_CANVAS))
+        text_status("Markdown links", not report["markdown"]["broken_links"], f"{report['markdown']['files']} files")
+        graphify_cli = report["graphify"]["cli"]
+        text_status("Graphify CLI", bool(graphify_cli), graphify_cli or "optional")
+        if report["issues"]:
+            print("\nIssues:")
+            for issue in report["issues"]:
+                print(f"- {issue['message']}")
+        if report["warnings"]:
+            print("\nWarnings:")
+            for warning in report["warnings"]:
+                print(f"- {warning['message']}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_knowledge_canvas(args: argparse.Namespace) -> int:
+    expected = canonical_json(build_obsidian_canvas())
+    if args.check:
+        ok = OBSIDIAN_CANVAS.exists() and OBSIDIAN_CANVAS.read_text(encoding="utf-8") == expected
+        report = {"ok": ok, "path": str(OBSIDIAN_CANVAS)}
+        if args.json:
+            print_json(report)
+        else:
+            print("canvas is current" if ok else "canvas is not current")
+        return 0 if ok else 1
+    changed = write_text_if_changed(OBSIDIAN_CANVAS, expected)
+    if args.json:
+        print_json({"ok": True, "path": str(OBSIDIAN_CANVAS), "changed": changed})
+    else:
+        print(("updated " if changed else "current ") + rel(OBSIDIAN_CANVAS))
+    return 0
+
+
+def current_git_short_sha() -> str:
+    result = run_command(["git", "rev-parse", "--short", "HEAD"], capture=True, timeout=10)
+    if result["returncode"] == 0 and result["stdout"].strip():
+        return result["stdout"].strip()
+    return "nogit"
+
+
+def archive_graphify_artifacts(command_result: dict[str, Any]) -> dict[str, Any]:
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_dir = GRAPHIFY_ARCHIVE_DIR / "runs" / f"{stamp}-{current_git_short_sha()}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+    if GRAPHIFY_OUT_DIR.exists():
+        candidates = [
+            path
+            for path in GRAPHIFY_OUT_DIR.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".md", ".json", ".jsonl", ".txt"}
+            and "cache" not in path.relative_to(GRAPHIFY_OUT_DIR).parts
+        ]
+        for path in candidates[:40]:
+            relative = path.relative_to(GRAPHIFY_OUT_DIR)
+            target = run_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            copied.append(rel(target))
+    summary = {
+        "created_at": stamp,
+        "command": command_result.get("command", []),
+        "returncode": command_result.get("returncode"),
+        "graphify_out": str(GRAPHIFY_OUT_DIR),
+        "copied": copied,
+    }
+    (run_dir / "run.json").write_text(canonical_json(summary), encoding="utf-8")
+    return {"run_dir": str(run_dir), "copied": copied}
+
+
+def cmd_knowledge_graph(args: argparse.Namespace) -> int:
+    graphify = find_tool_executable("graphify")
+    command = [graphify or "graphify", "update", ".", "--force", "--no-cluster"]
+    if args.dry_run:
+        report = {
+            "ok": bool(graphify),
+            "command": command,
+            "cwd": str(REPO_ROOT),
+            "graphify": graphify,
+            "trit_adapter": not args.no_trit,
+        }
+        if args.json:
+            print_json(report)
+        else:
+            print(" ".join(command))
+        return 0 if graphify else 2
+    if not graphify:
+        print("graphify CLI is not installed. Install Graphify, then rerun `python tools/trit_tool.py knowledge graph`.", file=sys.stderr)
+        return 2
+    result = run_command(command, cwd=REPO_ROOT, capture=True, timeout=args.timeout)
+    if result["stdout"].strip():
+        print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+    if result["stderr"].strip():
+        print(result["stderr"], file=sys.stderr)
+    archive = None
+    trit = None
+    if result["returncode"] == 0 and not args.no_trit:
+        trit = augment_graph_with_trit(GRAPHIFY_OUT_DIR / "graph.json")
+        print(
+            f"augmented Graphify graph with Trit sources via {trit['extractor']}: "
+            f"{trit['files']} files, {trit['functions']} functions, "
+            f"{trit['constants']} constants, {trit['call_edges']} call edges"
+        )
+    if result["returncode"] == 0 and not args.no_archive:
+        archive = archive_graphify_artifacts(result)
+        print(f"archived Graphify artifacts to {archive['run_dir']}")
+    if args.json:
+        print_json({"ok": result["returncode"] == 0, "run": result, "trit": trit, "archive": archive})
+    return int(result["returncode"])
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -1116,6 +2393,31 @@ def build_parser() -> argparse.ArgumentParser:
     fuzz = sub.add_parser("fuzz", help="run the current fuzz stand-in")
     add_test_options(fuzz)
     fuzz.set_defaults(func=cmd_fuzz)
+
+    knowledge = sub.add_parser("knowledge", help="manage Obsidian and Graphify knowledge artifacts")
+    knowledge_sub = knowledge.add_subparsers(dest="knowledge_command", required=True)
+
+    knowledge_setup = knowledge_sub.add_parser("setup", help="write Obsidian/Graphify integration files")
+    knowledge_setup.add_argument("--check", action="store_true", help="verify integration files without writing")
+    knowledge_setup.add_argument("--json", action="store_true", help="emit JSON report")
+    knowledge_setup.set_defaults(func=cmd_knowledge_setup)
+
+    knowledge_status = knowledge_sub.add_parser("status", help="validate the docs vault and optional graph integration")
+    knowledge_status.add_argument("--json", action="store_true", help="emit JSON report")
+    knowledge_status.set_defaults(func=cmd_knowledge_status)
+
+    knowledge_canvas = knowledge_sub.add_parser("canvas", help="generate the Obsidian JSON Canvas map")
+    knowledge_canvas.add_argument("--check", action="store_true", help="verify canvas without writing")
+    knowledge_canvas.add_argument("--json", action="store_true", help="emit JSON report")
+    knowledge_canvas.set_defaults(func=cmd_knowledge_canvas)
+
+    knowledge_graph = knowledge_sub.add_parser("graph", help="run Graphify and optionally archive its reports")
+    knowledge_graph.add_argument("--dry-run", action="store_true", help="print the Graphify command without running it")
+    knowledge_graph.add_argument("--no-archive", action="store_true", help="do not archive Graphify output under docs/_graphify/runs")
+    knowledge_graph.add_argument("--no-trit", action="store_true", help="skip the Trit .trit graph augmentation pass")
+    knowledge_graph.add_argument("--timeout", type=int, default=600, help="Graphify timeout in seconds")
+    knowledge_graph.add_argument("--json", action="store_true", help="emit JSON report")
+    knowledge_graph.set_defaults(func=cmd_knowledge_graph)
 
     return parser
 

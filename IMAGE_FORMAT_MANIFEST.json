@@ -80,6 +80,8 @@
     "build": "tools/trit-build-image.ps1",
     "inspect": "tools/trit-inspect-image.ps1",
     "compact": "tools/trit-compact-disk.ps1",
-    "diagnostics": "tools/trit-export-diagnostics.ps1"
+    "diagnostics": "tools/trit-export-diagnostics.ps1",
+    "knowledge_status": "python tools/trit_tool.py knowledge status --json",
+    "knowledge_graph": "python tools/trit_tool.py knowledge graph --no-archive --json"
   }
 }

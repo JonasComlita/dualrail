@@ -1,43 +1,157 @@
-# Vector & AI Engine
+# Vector Engine
 
-| Status | Last Updated | Related Code |
-| :--- | :--- | :--- |
-| ✅ **Stable** | 2026-05-15 | `ternary_vm_state.h`, `ternary_vm.h` |
+Source of truth: `ternary_isa.h`, `ternary_vm_state.h`, `ternary_vm.h`, `ternary_simd.h`, and `tests/test_vm_widths.cpp`.
 
 ---
 
-## 🚀 SIMD Architecture
-The Trit-Stack features a native vector engine optimized for parallel ternary processing.
+## State Model
 
-### 1. Vector Register File
-*   **Count**: 8 vector registers (v0–v7).
-*   **Lanes**: The default vector length (`VL`) is **27 trits**.
-*   **Storage**: Each lane in a vector register is a `TernaryValue` (positional base-3).
+The VM owns one vector file:
 
-### 2. Lane Width Selection
-Vector instructions use the same width-prefixing as scalar instructions (e.g., `.l1`, `.l5`, `.l40`).
-*   **L1 Mode**: Optimized for BitNet weight/activation pairs.
-*   **L5 Mode**: Optimized for signal processing and 8-bit equivalent tryte-math.
-*   **Logical Consistency**: Regardless of the width, each lane is backed by a full `TernaryValue` container.
+| Field | Meaning |
+|-------|---------|
+| `VECTOR_REGISTER_COUNT` | 8 architectural vector registers: `v0`..`v7` |
+| `VMState::vector_length` | Active lane count, default `DEFAULT_VECTOR_LENGTH = 27` |
+| `VMState::vregfile` | Array of `TernaryVectorRegister` objects |
+| `TernaryVectorRegister::lane` | `std::vector<TernaryValue>` payload, one tagged value per lane |
+| `VMState::vector_faults` | Per-lane fault mask and trap class |
 
----
-
-## 🔋 The AI Accumulator (`rA`)
-The `rA` register is the destination for high-throughput AI kernels.
-
-*   **Format**: Full 50-trit `LongTriple`.
-*   **The VDOT/VACT Cycle**:
-    1.  `VDOT.l1 v1, v2`: Parallel multiply of lanes in `v1`, `v2`, summed into `rA`.
-    2.  `VACT r1, rA`: Applies the ternary activation function to `rA` and moves the result to scalar `r1`.
-*   **Precision**: With 50 trits of headroom, the machine can accumulate $3^{50}$ individual trit products without a single bit of overflow error.
+`prepareVectorOp()` runs at the start of vector instructions. It resizes vector registers and fault arrays to the current `vector_length`, then clears prior vector faults. This means vector fault state describes the most recent vector instruction, not a cumulative history.
 
 ---
 
-## 🛡️ Vector Fault Tracking
-The Trit-Stack implements **Per-Lane Fault Tracking**. If a vector instruction fails (e.g., a division by zero in lane 7), the VM does not just trap; it records the fault in the `VectorFaultState`.
+## Widths And Tags
 
-*   **`vector_faults.fault_valid[i]`**: Set to `1` if lane `i` failed.
-*   **`vector_faults.fault_class[i]`**: Stores the specific `TrapCode` for that lane.
+Most vector numeric instructions decode the same numeric width suffix as scalar arithmetic:
 
-> [!TIP]
-> This allows high-reliability OS kernels to "mask out" faulty hardware lanes or handle software exceptions on a per-element basis without stalling the entire vector pipeline.
+```text
+.t1 .t5 .t10 .t20 .t40 .t50
+```
+
+Each lane stores a tagged `TernaryValue`, so operations validate both the requested width and the source lane tag. A lane tagged `L20` is not accepted as a `.t20` numeric lane unless the instruction explicitly performs a conversion.
+
+Predicate lanes use `L1`. `VCMP` writes `L1` predicates, and `VSEL` / `VBLEND` read `L1` predicates.
+
+---
+
+## Opcode Groups
+
+### Elementwise Numeric
+
+| Opcode | Behavior |
+|--------|----------|
+| `VADD` | `vd[lane] = va[lane] + vb[lane]` |
+| `VSUB` | `vd[lane] = va[lane] - vb[lane]` |
+| `VNEG` | `vd[lane] = -vs[lane]` |
+| `VMUL` | `vd[lane] = va[lane] * vb[lane]` |
+| `VDIV` | `vd[lane] = va[lane] / vb[lane]`; zero divisor records a lane `TRAP_DIV_ZERO` |
+| `VCMP` | Writes an `L1` predicate lane: -1, 0, or +1 |
+
+`VADD`, `VSUB`, `VNEG`, and `VCMP` try a batch SIMD path for `.t1` and `.t5` when `vector_length <= 512` and all input lanes convert cleanly. Other widths, failed batch validation, `VMUL`, and `VDIV` use the scalar per-lane fallback.
+
+### Selection
+
+| Opcode | Behavior |
+|--------|----------|
+| `VSEL` | Three-way select from `vneg`, `vzero`, `vpos` using `L1` predicate lanes |
+| `VBLEND` | Same dispatcher behavior as `VSEL`; assembler syntax is the blend/plumbing form |
+
+The condition vector must contain `L1` lanes. The three source arms must exactly match the requested numeric mode.
+
+### Broadcast And Length
+
+| Opcode | Behavior |
+|--------|----------|
+| `VBCAST` | Converts one scalar register to the requested numeric width and writes every lane |
+| `VLEN` | Writes the current `vector_length` to a scalar destination register |
+
+`VBCAST` treats a lane-family scalar source as a structural error and traps the VM.
+
+### Contiguous Memory
+
+| Opcode | Address pattern |
+|--------|-----------------|
+| `VLOAD` | `vd[lane] = DMEM[base + imm13 + lane]` |
+| `VSTORE` | `DMEM[base + imm13 + lane] = vs[lane]` |
+
+The vector-memory I-type overlay stores the vector register in the `rd` field, the scalar base register in `rs1`, the width in the vector-memory `func` field, and a signed 13-trit immediate.
+
+Loaded values are converted to the suffix type before entering the vector register. Stored lanes are converted to the suffix type before writing DMEM.
+
+### Accumulator And T1 AI
+
+| Opcode | Behavior |
+|--------|----------|
+| `VDOT.t1 rd, va, vb` | Computes a dot product over `L1` trit lanes and writes the scalar destination as a `LongTriple` value |
+| `VMAC.t1 va, vb` | Computes the same dot product and adds it into `VMState::accumulator` using `T40` accumulator arithmetic |
+| `VACT.t1 vd, vs` | Writes `L1` sign predicates for numeric source lanes |
+
+`VDOT` and `VMAC` require `FUNC_T1`, but their vector inputs are `L1` predicate/trit lanes. Invalid input lanes set lane faults and are skipped for the dot sum.
+
+### Conversion And Plumbing
+
+| Opcode | Behavior |
+|--------|----------|
+| `VPACK` | Converts each numeric lane from source width to target width |
+| `VUNPACK` | Same conversion machinery, opposite source/target spelling |
+| `VPERMUTE` | Uses an index vector to select lanes from another vector |
+| `VSWAP` | Swaps whole vector register payloads |
+
+`VPACK` and `VUNPACK` are width conversions in the VM. They do not bit-pack multiple lanes into one scalar word.
+
+### Indexed Memory
+
+| Opcode | Address pattern |
+|--------|-----------------|
+| `VGATHER` | `vd[lane] = DMEM[base + index[lane]]` |
+| `VSCATTER` | `DMEM[base + index[lane]] = vs[lane]` |
+
+The base is a scalar numeric register. The index vector lanes must be numeric. Bad index lanes or physical out-of-range addresses set lane faults. In user mode, address-translation failure routes through the VM trap path because page-table faults are architectural traps, not merely lane-local soft errors.
+
+### Reductions
+
+| Opcode | Behavior |
+|--------|----------|
+| `VSUM` | Reduces all lanes by addition and writes scalar `rd` |
+| `VHMIN` | Writes the minimum lane to scalar `rd` |
+| `VHMAX` | Writes the maximum lane to scalar `rd` |
+
+Reduction input lanes must convert to the requested numeric width. Conversion failure traps the VM rather than producing a partial scalar reduction.
+
+---
+
+## Fault Model
+
+Vector instructions use two different fault paths.
+
+Lane-local faults:
+
+- Set `vector_faults.fault_valid[lane] = 1`.
+- Store the trap class in `vector_faults.fault_class[lane]`.
+- Usually write a typed zero to the destination lane.
+- Do not set `VMStatus::TRAPPED`; execution continues to the next instruction.
+
+Structural faults:
+
+- Invalid vector register number.
+- Invalid width suffix.
+- Scalar base/source register with the wrong family.
+- Invalid reduction input where a scalar result cannot be safely completed.
+
+Structural faults call `vm.trap()` or `vm.trapWithCause()` and stop normal execution.
+
+---
+
+## Test Coverage
+
+`tests/test_vm_widths.cpp` covers:
+
+- `VLEN` default length and vector fault reset sizing.
+- Elementwise `.t20` and `.t5` vector arithmetic.
+- `VCMP` predicate output and three-arm `VSEL`.
+- Contiguous `VLOAD`/`VSTORE` conversion.
+- Lane-local `VDIV`, wrong-tag, and memory faults.
+- Structural `VBCAST` trap behavior.
+- Accumulator operations, `VDOT`, `VMAC`, and `VACT`.
+- `VPACK`, `VUNPACK`, `VPERMUTE`, `VBLEND`, `VSWAP`.
+- `VGATHER` and `VSCATTER` with an out-of-range lane-local fault.

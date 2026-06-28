@@ -13,6 +13,10 @@ This file is the first stop for any agent working in `tests_next/`.
 - Prefer deterministic tests. If randomness is needed, record the seed.
 - A feature is considered covered only when it has a focused test, a grouped
   subsystem path, and at least one integration path if it crosses layers.
+- Tests may also reveal optimization or simplification opportunities. Keep
+  those observations tied to deterministic evidence such as counters,
+  differential runs, fault masks, allocation behavior, or stable timings, and
+  record follow-up work in `manifests/status.json`.
 
 ## Test ID Format
 
@@ -54,6 +58,7 @@ Before ending work, update `manifests/status.json`:
 
 - add completed test IDs;
 - move newly discovered gaps into `next_tasks`;
+- record optimization or improvement opportunities discovered by the tests;
 - record blockers with enough detail for another agent to continue;
 - record the exact commands that were run.
 

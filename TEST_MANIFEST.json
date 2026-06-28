@@ -71,6 +71,20 @@
       ]
     },
     {
+      "name": "agent_tooling",
+      "description": "Python/CTest checks for repo automation, manifests, Obsidian vault validation, and Graphify/Trit graph augmentation helpers.",
+      "targets": [],
+      "ctest_tests": [
+        "test_agent_tooling"
+      ],
+      "runner": "ctest",
+      "commands": [
+        "ctest --test-dir build -R test_agent_tooling --output-on-failure",
+        "python tools/trit_tool.py knowledge status --json",
+        "python tools/trit_tool.py knowledge setup --check --json"
+      ]
+    },
+    {
       "name": "benchmark",
       "description": "Performance-oriented benchmark regression harness.",
       "targets": [
