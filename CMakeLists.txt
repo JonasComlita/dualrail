@@ -311,20 +311,70 @@ add_executable(next_assembler_tcl_parity tests_next/03_assembler/next_assembler_
 target_compile_features(next_assembler_tcl_parity PUBLIC cxx_std_17)
 target_compile_definitions(next_assembler_tcl_parity PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_compiler_pipeline tests_next/04_compiler/next_compiler_pipeline.cpp)
+target_compile_features(next_compiler_pipeline PUBLIC cxx_std_17)
+target_compile_definitions(next_compiler_pipeline PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_compiler_native_ulib tests_next/04_compiler/next_compiler_native_ulib.cpp)
+target_compile_features(next_compiler_native_ulib PUBLIC cxx_std_17)
+target_compile_definitions(next_compiler_native_ulib PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_compiler_phase_c5_pred tests_next/04_compiler/next_compiler_phase_c5_pred.cpp)
+target_compile_features(next_compiler_phase_c5_pred PUBLIC cxx_std_17)
+target_compile_definitions(next_compiler_phase_c5_pred PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_vm_core tests_next/02_vm/next_vm_core.cpp)
 target_compile_features(next_vm_core PUBLIC cxx_std_17)
 target_compile_definitions(next_vm_core PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_kernel_native_os tests_next/07_kernel/next_kernel_native_os.cpp)
+target_compile_features(next_kernel_native_os PUBLIC cxx_std_17)
+target_compile_definitions(next_kernel_native_os PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_vfs_persistence tests_next/08_filesystem_vfs/next_vfs_persistence.cpp)
+target_compile_features(next_vfs_persistence PUBLIC cxx_std_17)
+target_compile_definitions(next_vfs_persistence PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_process_ipc_scheduler tests_next/09_process_ipc_scheduler/next_process_ipc_scheduler.cpp)
+target_compile_features(next_process_ipc_scheduler PUBLIC cxx_std_17)
+target_compile_definitions(next_process_ipc_scheduler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_custom_target(tests_next_fast
     COMMAND $<TARGET_FILE:next_isa_encoding>
     COMMAND $<TARGET_FILE:next_assembler_goldens>
     COMMAND $<TARGET_FILE:next_assembler_tcl_parity>
     COMMAND $<TARGET_FILE:next_vm_core>
+    COMMAND $<TARGET_FILE:next_compiler_pipeline>
     DEPENDS
         next_isa_encoding
         next_assembler_goldens
         next_assembler_tcl_parity
         next_vm_core
+        next_compiler_pipeline
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
+add_custom_target(tests_next_compiler_full
+    COMMAND $<TARGET_FILE:next_compiler_pipeline>
+    COMMAND $<TARGET_FILE:next_compiler_native_ulib>
+    COMMAND $<TARGET_FILE:next_compiler_phase_c5_pred>
+    DEPENDS
+        next_compiler_pipeline
+        next_compiler_native_ulib
+        next_compiler_phase_c5_pred
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
+add_custom_target(tests_next_phase_d
+    COMMAND $<TARGET_FILE:next_kernel_native_os>
+    COMMAND $<TARGET_FILE:next_vfs_persistence>
+    COMMAND $<TARGET_FILE:next_process_ipc_scheduler>
+    DEPENDS
+        next_kernel_native_os
+        next_vfs_persistence
+        next_process_ipc_scheduler
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
 )
@@ -340,6 +390,24 @@ add_test(NAME next_assembler_tcl_parity
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_vm_core
          COMMAND next_vm_core
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_compiler_pipeline
+         COMMAND next_compiler_pipeline
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_compiler_native_ulib
+         COMMAND next_compiler_native_ulib
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_compiler_phase_c5_pred
+         COMMAND next_compiler_phase_c5_pred
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_kernel_native_os
+         COMMAND next_kernel_native_os
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_vfs_persistence
+         COMMAND next_vfs_persistence
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_process_ipc_scheduler
+         COMMAND next_process_ipc_scheduler
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(test_all_apps tests/test_all_apps.cpp)

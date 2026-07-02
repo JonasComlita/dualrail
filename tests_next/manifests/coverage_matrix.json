@@ -114,7 +114,7 @@
     {
       "id": "compiler.pipeline_contract",
       "layer": "04_compiler",
-      "status": "scaffolded",
+      "status": "expanded",
       "old_refs": ["tests/test_phase7_compiler.cpp", "tests/test_phase_c5_pred.cpp"],
       "required_new_coverage": [
         "lexer",
@@ -126,6 +126,41 @@
         "codegen",
         "linking",
         "diagnostics"
+      ],
+      "new_tests": [
+        "compiler.frontend.lexer_parser_roundtrip",
+        "compiler.match.pure_tsel_lowering",
+        "compiler.match.side_effect_branch_lowering",
+        "compiler.runtime.tuple_swap_syscall_runtime",
+        "compiler.control.call_while_execution",
+        "compiler.diagnostics.type_safety_rejections",
+        "compiler.diagnostics.unsafe_intrinsics_gate",
+        "compiler.ir.verifier_allocator_contract",
+        "compiler.link.duplicate_dead_strip",
+        "compiler.types.layout_hm_rules",
+        "compiler.aggregate.struct_array_runtime",
+        "compiler.constants.folded_runtime",
+        "compiler.generics.width_parametric_runtime",
+        "compiler.ownership.move_auto_drop",
+        "compiler.optimizer.stats_spills_coalesce",
+        "compiler.concurrency.atomic_order_runtime",
+        "compiler.codegen.register_allocation_runtime",
+        "compiler.ulib.raw_heap_autodrop_runtime",
+        "compiler.native_parser.guard_acceptance",
+        "compiler.native_parser.invalid_guard_diagnostic",
+        "compiler.ulib.vec_sort_runtime",
+        "compiler.ulib.split_buffer_runtime",
+        "compiler.control.if_else_chain_runtime",
+        "compiler.syscall.write_char_buffering",
+        "compiler.match.wildcard_fallback",
+        "compiler.pointer.valid_arm_promotion",
+        "compiler.phase_c5.bootstrap_arithmetic_o0_o1",
+        "compiler.phase_c5.bootstrap_recursion_o0_o1",
+        "compiler.phase_c5.bootstrap_struct_array_o0_o1",
+        "compiler.phase_c5.bootstrap_atomic_word_o0_o1",
+        "compiler.phase_c5.bootstrap_pointer_state_o0_o1",
+        "compiler.phase_c5.ulib_mini_print_string_o0_o1",
+        "compiler.phase_c5.ulib_mini_vector_o0_o1"
       ]
     },
     {
@@ -160,7 +195,7 @@
     {
       "id": "kernel.native_os_contract",
       "layer": "07_kernel",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_production_hardening.cpp"],
       "required_new_coverage": [
         "trap entry",
@@ -170,12 +205,17 @@
         "signals and process control",
         "capabilities",
         "cleanup on crash/kill"
+      ],
+      "new_tests": [
+        "kernel.syscall.file_heap_facade",
+        "kernel.exec.image_metadata_install",
+        "kernel.security.capability_cleanup"
       ]
     },
     {
       "id": "vfs.persistence_contract",
       "layer": "08_filesystem_vfs",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_os_platform.cpp", "tests/test_process_handoff.cpp"],
       "required_new_coverage": [
         "format/mount",
@@ -187,12 +227,17 @@
         "crash before/after commit",
         "large extents",
         "disk-backed executable loading"
+      ],
+      "new_tests": [
+        "vfs.block_device.csr_persistence",
+        "vfs.tinyfs.format_mount_readdir_stat",
+        "vfs.tinyfs.large_extent_reboot"
       ]
     },
     {
       "id": "process.ipc.scheduler_contract",
       "layer": "09_process_ipc_scheduler",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_os_platform.cpp"],
       "required_new_coverage": [
         "fork/exec",
@@ -202,6 +247,12 @@
         "blocking IPC",
         "event waits",
         "scheduler fairness"
+      ],
+      "new_tests": [
+        "process.fork.copy_isolation_waitpid",
+        "process.exec.image_handoff",
+        "process.ipc.capability_gated_delivery",
+        "process.scheduler.signal_cleanup"
       ]
     },
     {
