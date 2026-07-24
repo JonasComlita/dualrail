@@ -181,7 +181,7 @@
     {
       "id": "runtime.ulib_sdk_contract",
       "layer": "06_runtime_ulib",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_malloc_micro.cpp", "tests/test_native_apps.cpp"],
       "required_new_coverage": [
         "string helpers",
@@ -190,12 +190,20 @@
         "syscall wrappers",
         "app SDK wrappers",
         "error conventions"
+      ],
+      "new_tests": [
+        "runtime.sbrk.standalone_heap_contract",
+        "runtime.ulib.allocator_free_list_reuse",
+        "runtime.ulib.format_parse_helpers",
+        "runtime.sdk.file_ipc_wrappers",
+        "runtime.sdk.gui_process_wrappers",
+        "runtime.widget.dead_strip_behavior"
       ]
     },
     {
       "id": "kernel.native_os_contract",
       "layer": "07_kernel",
-      "status": "ported",
+      "status": "expanded",
       "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_production_hardening.cpp"],
       "required_new_coverage": [
         "trap entry",
@@ -209,13 +217,15 @@
       "new_tests": [
         "kernel.syscall.file_heap_facade",
         "kernel.exec.image_metadata_install",
-        "kernel.security.capability_cleanup"
+        "kernel.security.capability_cleanup",
+        "kernel.native.acquire_release_trap_stub",
+        "kernel.native.boot_trap_dispatch_resume"
       ]
     },
     {
       "id": "vfs.persistence_contract",
       "layer": "08_filesystem_vfs",
-      "status": "ported",
+      "status": "expanded",
       "old_refs": ["tests/test_os_platform.cpp", "tests/test_process_handoff.cpp"],
       "required_new_coverage": [
         "format/mount",
@@ -231,13 +241,19 @@
       "new_tests": [
         "vfs.block_device.csr_persistence",
         "vfs.tinyfs.format_mount_readdir_stat",
-        "vfs.tinyfs.large_extent_reboot"
+        "vfs.tinyfs.large_extent_reboot",
+        "vfs.tinyfs.chained_indirect_extent_reboot",
+        "vfs.recovery.journal_phase_matrix",
+        "vfs.recovery.corrupt_superblock_boot",
+        "vfs.executable.disk_image_reboot_exec",
+        "apps.shell.indirect_cli_executable_handoff",
+        "apps.shell.gui_sized_executable_handoff"
       ]
     },
     {
       "id": "process.ipc.scheduler_contract",
       "layer": "09_process_ipc_scheduler",
-      "status": "ported",
+      "status": "expanded",
       "old_refs": ["tests/test_phase_d_kernel.cpp", "tests/test_os_platform.cpp"],
       "required_new_coverage": [
         "fork/exec",
@@ -252,13 +268,17 @@
         "process.fork.copy_isolation_waitpid",
         "process.exec.image_handoff",
         "process.ipc.capability_gated_delivery",
-        "process.scheduler.signal_cleanup"
+        "process.scheduler.signal_cleanup",
+        "process.native.scheduler_futex_ipc_waits",
+        "process.native.process_control_cleanup",
+        "apps.shell.indirect_cli_executable_handoff",
+        "apps.shell.gui_sized_executable_handoff"
       ]
     },
     {
       "id": "drivers.hal_contract",
       "layer": "10_drivers_hal",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_layer1_hal.cpp", "tests/test_os_platform.cpp"],
       "required_new_coverage": [
         "device tree",
@@ -268,12 +288,18 @@
         "input",
         "console",
         "network/audio placeholders"
+      ],
+      "new_tests": [
+        "drivers.hal.device_tree_validation",
+        "drivers.hal.vm_device_csr_io",
+        "drivers.hal.block_csr_boundaries",
+        "drivers.hal.trit_dtb_framebuffer_runtime"
       ]
     },
     {
       "id": "gui.six_layer_contract",
       "layer": "11_graphics_gui",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_native_apps.cpp", "tests/test_process_handoff.cpp", "tests/test_production_layers.cpp"],
       "required_new_coverage": [
         "framebuffer",
@@ -283,12 +309,21 @@
         "widgets",
         "desktop shell",
         "golden framebuffer snapshots"
+      ],
+      "new_tests": [
+        "gui.framebuffer.text_input_snapshot",
+        "gui.framebuffer.graphics_palette_snapshot",
+        "gui.compositor.z_order_dirty_resize",
+        "gui.input.focus_close_key_events",
+        "gui.widget.dirty_text_redraw_runtime",
+        "apps.bundle.remaining_gui_draw_contracts",
+        "full_system.release.paint_launch_graphics_canvas"
       ]
     },
     {
       "id": "apps.consumer_bundle_contract",
       "layer": "12_apps",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_native_apps.cpp", "tests/test_consumer_shell_productization.cpp"],
       "required_new_coverage": [
         "desktop",
@@ -299,12 +334,27 @@
         "calculator",
         "paint",
         "text editor once added"
+      ],
+      "new_tests": [
+        "apps.manifest.registry_release_contract",
+        "apps.bundle.fd_zero_open_guards",
+        "apps.bundle.gui_marker_smoke",
+        "apps.bundle.cli_service_alias_link_options",
+        "apps.bundle.disk_backed_calculator_exec",
+        "apps.shell.consumer_lifecycle_persistence",
+        "apps.shell.indirect_cli_executable_handoff",
+        "apps.shell.gui_sized_executable_handoff",
+        "apps.bundle.remaining_gui_marker_smoke",
+        "apps.bundle.remaining_gui_draw_contracts",
+        "apps.shell.launch_failure_cleanup",
+        "apps.shell.taskbar_dialog_controls",
+        "apps.shell.custom_registry_capabilities"
       ]
     },
     {
       "id": "distribution.image_contract",
       "layer": "13_distribution_images",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_host_runtime.cpp", "TEST_MANIFEST.json"],
       "required_new_coverage": [
         ".tboot/.tiso manifest",
@@ -312,12 +362,16 @@
         "release image builder",
         "boot without source files",
         "diagnostic export"
+      ],
+      "new_tests": [
+        "vfs.executable.disk_image_reboot_exec",
+        "distribution.release.signed_package_image"
       ]
     },
     {
       "id": "security.hardening_contract",
       "layer": "14_security_hardening",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_production_hardening.cpp"],
       "required_new_coverage": [
         "bad pointers",
@@ -325,6 +379,10 @@
         "signed package validation",
         "crash cleanup",
         "syscall fuzz boundaries"
+      ],
+      "new_tests": [
+        "vfs.recovery.corrupt_superblock_boot",
+        "distribution.release.signed_package_image"
       ]
     },
     {
@@ -359,16 +417,33 @@
     {
       "id": "full_system.release_contract",
       "layer": "17_full_system",
-      "status": "scaffolded",
+      "status": "ported",
       "old_refs": ["tests/test_consumer_shell_productization.cpp", "tests/test_process_handoff.cpp"],
       "required_new_coverage": [
         "boot",
         "login/desktop",
         "launch apps",
         "write file",
-        "reboot",
+        "guest-command cold reboot with volatile-state reset and disk preservation",
         "readback",
         "crash diagnostics"
+      ],
+      "new_tests": [
+        "full_system.release.artifact_manifest",
+        "full_system.release.disk_root_metadata",
+        "full_system.release.rootfs_registry_decoding",
+        "full_system.release.cli_command_descriptors",
+        "full_system.release.runtime_diagnostics",
+        "full_system.release.interactive_framebuffer",
+        "full_system.release.login_desktop_app_launch",
+        "full_system.release.task_manager_launch_screen",
+        "full_system.release.paint_launch_graphics_canvas",
+        "full_system.release.file_manager_launch_screen",
+        "full_system.release.settings_launch_screen",
+        "full_system.release.settings_persistence_readback",
+        "full_system.release.terminal_launch_reset_diagnostics",
+        "full_system.release.terminal_shell_reboot_command",
+        "full_system.release.terminal_shell_crash_diagnostics"
       ]
     }
   ]

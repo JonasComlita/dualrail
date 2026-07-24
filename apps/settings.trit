@@ -9,15 +9,15 @@
 //   word 3: gpu_mode   (0=text, 1=graphics)
 
 // ----- Memory layout -----
-const CFG_ADDR:       t40 = 20000; // config buffer (4 words)
-const CFG_VOLUME:     t40 = 20000;
-const CFG_BEEP:       t40 = 20001;
-const CFG_BRIGHTNESS: t40 = 20002;
-const CFG_GPU_MODE:   t40 = 20003;
+const CFG_ADDR:       t40 = 10000; // config buffer (4 words)
+const CFG_VOLUME:     t40 = 10000;
+const CFG_BEEP:       t40 = 10001;
+const CFG_BRIGHTNESS: t40 = 10002;
+const CFG_GPU_MODE:   t40 = 10003;
 
-const PATH_ADDR:      t40 = 20100; // /etc/os3.cfg string
-const PASS_ADDR:      t40 = 20200; // new-password input buffer (16 chars)
-const EVENT_ADDR:     t40 = 20300; // event scratch
+const PATH_ADDR:      t40 = 10020; // /etc/os3.cfg string
+const PASS_ADDR:      t40 = 10050; // new-password input buffer (16 chars)
+const EVENT_ADDR:     t40 = 10080; // event scratch
 
 // ----- Tab indices -----
 const TAB_DISPLAY: t40 = 0;
@@ -97,16 +97,21 @@ fn seed_etc_path(addr: t40) -> t40 {
 }
 
 // Load settings from /etc/os3.cfg. Returns 1 on success, 0 if not found (uses defaults).
+fn cfg_defaults() -> t40 {
+    unsafe {
+        store(CFG_VOLUME, 7);
+        store(CFG_BEEP, 1);
+        store(CFG_BRIGHTNESS, 8);
+        store(CFG_GPU_MODE, 0);
+    }
+    return 1;
+}
+
 fn cfg_load() -> t40 {
-    var fd: t40 = os_open(PATH_ADDR, 2); // O_RDONLY=2
-    if fd <= 0 {
+    var fd: t40 = os_open(PATH_ADDR, 0); // read-only, path must exist
+    if fd < 0 {
         // File doesn't exist yet — write defaults
-        unsafe {
-            store(CFG_VOLUME, 7);
-            store(CFG_BEEP, 1);
-            store(CFG_BRIGHTNESS, 8);
-            store(CFG_GPU_MODE, 0);
-        }
+        cfg_defaults();
         return 0;
     }
     var n: t40 = os_read(fd, CFG_ADDR, 4);
@@ -135,13 +140,13 @@ fn cfg_load() -> t40 {
 // Save settings to /etc/os3.cfg. Creates /etc dir if needed.
 fn cfg_save() -> t40 {
     // Ensure /etc exists
-    var etc_path: t40 = 20150;
+    var etc_path: t40 = 10120;
     seed_etc_path(etc_path);
     os_mkdir(etc_path);
 
     // Open/create config file for writing
     var fd: t40 = os_open(PATH_ADDR, 3); // O_WRONLY|O_CREAT
-    if fd <= 0 {
+    if fd < 0 {
         return 0;
     }
     os_write(fd, CFG_ADDR, 4);
@@ -565,9 +570,7 @@ fn main() -> t40 {
 
     os_gpu_mode(0);
     seed_cfg_path();
-
-    // Load persisted settings
-    cfg_load();
+    cfg_defaults();
 
     var done:         t40 = 0;
     var active_tab:   t40 = TAB_DISPLAY;
@@ -590,6 +593,12 @@ fn main() -> t40 {
 
     os_clear_text(0);
     draw_header();
+    draw_tab_bar(active_tab);
+    draw_tab_display();
+    draw_footer();
+
+    // Paint defaults first so slow config I/O never leaves launch visually blank.
+    cfg_load();
     draw_tab_bar(active_tab);
     draw_tab_display();
     draw_footer();

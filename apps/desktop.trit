@@ -11,6 +11,12 @@ const DESKTOP_PAINT_PID: t40 = 103;
 const DESKTOP_FILES_PID: t40 = 104;
 const DESKTOP_SETTINGS_PID: t40 = 105;
 const DESKTOP_TERMINAL_PID: t40 = 106;
+const DESKTOP_PROCINFO_ADDR: t40 = 12100;
+const DESKTOP_PROCINFO_STATE: t40 = 1;
+const DESKTOP_PROC_RUNNABLE: t40 = 1;
+const DESKTOP_PROC_RUNNING: t40 = 2;
+const DESKTOP_PROC_BLOCKED: t40 = 3;
+const DESKTOP_PROC_SLEEPING: t40 = 4;
 
 fn desktop_title() -> t40 {
     os_text_cell(0, 0, 84, 11); // 'T'
@@ -175,6 +181,23 @@ fn desktop_seed_terminal_path(addr: t40) -> t40 {
 
 fn desktop_launch_child(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {
     return os_spawn_app(path_addr, child_slot, child_pid);
+}
+
+fn desktop_child_accepts_input(child_pid: t40, info_addr: t40) -> t40 {
+    if child_pid <= 0 {
+        return 0;
+    }
+    var proc_words: t40 = os_getproc(child_pid, info_addr);
+    if proc_words <= 0 {
+        return 0;
+    }
+    var state: t40 = 0;
+    unsafe { state = load(info_addr + DESKTOP_PROCINFO_STATE); }
+    if state - DESKTOP_PROC_RUNNABLE == 0 { return 1; }
+    if state - DESKTOP_PROC_RUNNING == 0 { return 1; }
+    if state - DESKTOP_PROC_BLOCKED == 0 { return 1; }
+    if state - DESKTOP_PROC_SLEEPING == 0 { return 1; }
+    return 0;
 }
 
 fn desktop_launch_hotkey(key: t40) -> t40 {
@@ -872,6 +895,8 @@ fn main() -> t40 {
     var btn: t40 = 0;
     var k: t40 = 0;
     var immediate_key: t40 = 0;
+    var active_child_pid: t40 = 0;
+    var child_owns_input: t40 = 0;
 
     unsafe { in_kernel = csr_read(scratch); }
     
@@ -912,23 +937,29 @@ fn main() -> t40 {
 
     while 1 - done > 0 {
         k = 0;
-        immediate_key = os_read_key();
-        if immediate_key >= 0 {
-            k = immediate_key;
+        child_owns_input = desktop_child_accepts_input(active_child_pid, DESKTOP_PROCINFO_ADDR);
+        if child_owns_input > 0 {
+            os_sleep_ms(1);
         } else {
-            event_status = os_wait_event(-1, event_addr, 0);
-            if event_status > 0 {
-                event_kind = os_event_kind(event_addr);
-                if event_kind - OS_EVENT_KIND_MOUSE == 0 {
-                    mx = os_event_x_or_key(event_addr);
-                    my = os_event_y(event_addr);
-                    btn = os_event_modifiers(event_addr);
-                }
-                if event_kind - OS_EVENT_KIND_KEY == 0 {
-                    k = os_event_x_or_key(event_addr);
-                }
-                if event_kind - OS_EVENT_KIND_CLOSE == 0 {
-                    k = 55;
+            active_child_pid = 0;
+            immediate_key = os_read_key();
+            if immediate_key >= 0 {
+                k = immediate_key;
+            } else {
+                event_status = os_wait_event(-1, event_addr, 0);
+                if event_status > 0 {
+                    event_kind = os_event_kind(event_addr);
+                    if event_kind - OS_EVENT_KIND_MOUSE == 0 {
+                        mx = os_event_x_or_key(event_addr);
+                        my = os_event_y(event_addr);
+                        btn = os_event_modifiers(event_addr);
+                    }
+                    if event_kind - OS_EVENT_KIND_KEY == 0 {
+                        k = os_event_x_or_key(event_addr);
+                    }
+                    if event_kind - OS_EVENT_KIND_CLOSE == 0 {
+                        k = 55;
+                    }
                 }
             }
         }
@@ -994,36 +1025,42 @@ fn main() -> t40 {
             var path_addr: t40 = desktop_seed_calculator_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
             desktop_draw_launch_status(1, res);
+            if res > 0 { active_child_pid = DESKTOP_CALC_PID; }
         }
         if click - 2 == 0 {
             desktop_draw_launch_status(2, 999);
             var path_addr: t40 = desktop_seed_task_manager_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
             desktop_draw_launch_status(2, res);
+            if res > 0 { active_child_pid = DESKTOP_TASK_PID; }
         }
         if click - 3 == 0 {
             desktop_draw_launch_status(3, 999);
             var path_addr: t40 = desktop_seed_paint_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
             desktop_draw_launch_status(3, res);
+            if res > 0 { active_child_pid = DESKTOP_PAINT_PID; }
         }
         if click - 4 == 0 {
             desktop_draw_launch_status(4, 999);
             var path_addr: t40 = desktop_seed_file_manager_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
             desktop_draw_launch_status(4, res);
+            if res > 0 { active_child_pid = DESKTOP_FILES_PID; }
         }
         if click - 5 == 0 {
             desktop_draw_launch_status(5, 999);
             var path_addr: t40 = desktop_seed_settings_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
             desktop_draw_launch_status(5, res);
+            if res > 0 { active_child_pid = DESKTOP_SETTINGS_PID; }
         }
         if click - 6 == 0 {
             desktop_draw_launch_status(6, 999);
             var path_addr: t40 = desktop_seed_terminal_path(10000);
             var res: t40 = desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
             desktop_draw_launch_status(6, res);
+            if res > 0 { active_child_pid = DESKTOP_TERMINAL_PID; }
         }
         if click - 7 == 0 {
             unsafe { store(62000, 0); } // Clear logged in flag

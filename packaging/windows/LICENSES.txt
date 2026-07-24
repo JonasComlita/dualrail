@@ -1,0 +1,14 @@
+Ternary OS staged runtime license notes
+======================================
+
+This development package is assembled from this repository plus runtime
+libraries copied from the local toolchain environment.
+
+Bundled runtime libraries may include:
+- SDL2.dll from SDL2.
+- libgcc_s_seh-1.dll, libstdc++-6.dll, and libwinpthread-1.dll from the
+  MinGW/MSYS2 toolchain.
+
+Consult the upstream SDL2 and MinGW/MSYS2 project license texts for the copied
+runtime DLLs. This file is a packaging note, not a replacement for those
+upstream license terms.

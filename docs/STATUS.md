@@ -12,7 +12,9 @@
 | Compiler + Runtime | `compiler-runtime` | ✅ **Verified** | test_phase7_compiler, test_tcl_asm, test_malloc_micro, test_layer1_hal |
 | Kernel + VFS + Process | `kernel-vfs-process` | ⚠️ **In Progress** | test_os_platform, test_phase_d_kernel, test_process_handoff, test_production_layers, test_production_hardening |
 | Desktop + Host Runtime | `desktop-host-runtime` | ⚠️ **In Progress** | test_host_runtime, stage_tos_release, smoke_tos_release |
-| Agent-Operable Surface | `agent-operable-surface` | 🌱 **Seeded** | AGENTS.md, TEST_MANIFEST.json, trit_tool.py, test_agent_tooling |
+| Agent-Operable Surface | `agent-operable-surface` | ⚠️ **In Progress** | AGENTS.md, TEST_MANIFEST.json, trit_tool.py, test_agent_tooling, docs/trit-stack.canvas |
+| System Benchmarks | `system-benchmarks` | 🧭 **Planned** | docs/10_Benchmarks/system_benchmark_plan.md, TEST_MANIFEST.json system_benchmarks |
+| Ternary Symbolic Encodings | `ternary-symbolic-encodings` | 🧭 **Planned** | docs/04_Binary_Contract/symbolic_encodings.md |
 
 ---
 
@@ -110,3 +112,5 @@ See `KNOWN_GAPS.md` for the full list. Top items:
 5. Crash/power-loss VFS + WAL recovery scenarios
 6. Framebuffer PNG export
 7. App golden output/snapshot tests
+8. Doom-class and BitNet 1.58B-class OS benchmark harnesses
+9. Ternary-native symbolic encodings for text and compact value dumps

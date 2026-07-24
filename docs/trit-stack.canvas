@@ -59,6 +59,22 @@
     {
       "fromNode": "abi",
       "fromSide": "right",
+      "id": "abi_to_symbols",
+      "label": "encodes",
+      "toNode": "symbols",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "symbols",
+      "fromSide": "right",
+      "id": "symbols_to_compiler",
+      "label": "literals",
+      "toNode": "compiler",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "abi",
+      "fromSide": "right",
       "id": "abi_to_compiler",
       "label": "targets",
       "toNode": "compiler",
@@ -110,6 +126,22 @@
       "id": "graphify_to_index",
       "label": "reports",
       "toNode": "index",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "host",
+      "fromSide": "right",
+      "id": "host_to_benchmarks",
+      "label": "measures",
+      "toNode": "benchmarks",
+      "toSide": "left"
+    },
+    {
+      "fromNode": "benchmarks",
+      "fromSide": "right",
+      "id": "benchmarks_to_status",
+      "label": "gates",
+      "toNode": "status",
       "toSide": "left"
     }
   ],
@@ -196,6 +228,16 @@
     },
     {
       "color": "3",
+      "file": "04_Binary_Contract/symbolic_encodings.md",
+      "height": 210,
+      "id": "symbols",
+      "type": "file",
+      "width": 320,
+      "x": 0,
+      "y": 960
+    },
+    {
+      "color": "3",
       "file": "05_Compiler_Infra/ternary_ir.md",
       "height": 210,
       "id": "compiler",
@@ -253,6 +295,16 @@
       "width": 320,
       "x": 1140,
       "y": 960
+    },
+    {
+      "color": "3",
+      "file": "10_Benchmarks/system_benchmark_plan.md",
+      "height": 210,
+      "id": "benchmarks",
+      "type": "file",
+      "width": 320,
+      "x": 760,
+      "y": 1270
     }
   ]
 }

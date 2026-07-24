@@ -283,6 +283,7 @@ struct AssemblyResult {
     if (s == "block_status") return CSR_BLOCK_STATUS;
     if (s == "block_count") return CSR_BLOCK_COUNT;
     if (s == "block_words") return CSR_BLOCK_WORDS;
+    if (s == "power_control") return CSR_POWER_CONTROL;
 
     if (s.empty()) return -1;
     for (char c : s) {

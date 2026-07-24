@@ -883,7 +883,8 @@ void testSharedStatusAndCompilerWrappers() {
            runtime::sys_futex_wait == SYSCALL_FUTEX_WAIT &&
            runtime::sys_wait_event == SYSCALL_WAIT_EVENT &&
            runtime::sys_sleep_ms == SYSCALL_SLEEP_MS &&
-           runtime::sys_app_spawn == SYSCALL_APP_SPAWN,
+           runtime::sys_app_spawn == SYSCALL_APP_SPAWN &&
+           runtime::sys_reboot == sandbox::vm::SYSCALL_REBOOT,
            "compiler runtime exports OS syscall ids");
     expect(sandbox::vm::SYSCALL_OPEN == SYSCALL_OPEN &&
            sandbox::vm::SYSCALL_FORK == SYSCALL_FORK &&
@@ -893,7 +894,8 @@ void testSharedStatusAndCompilerWrappers() {
            sandbox::vm::SYSCALL_GETPROC == SYSCALL_GETPROC &&
            sandbox::vm::SYSCALL_FUTEX_WAKE == SYSCALL_FUTEX_WAKE &&
            sandbox::vm::SYSCALL_IPC_RECV_BLOCKING == SYSCALL_IPC_RECV_BLOCKING &&
-           sandbox::vm::SYSCALL_APP_SPAWN == SYSCALL_APP_SPAWN,
+           sandbox::vm::SYSCALL_APP_SPAWN == SYSCALL_APP_SPAWN &&
+           sandbox::vm::SYSCALL_REBOOT == 58,
            "VM ABI constants reserve OS syscall ids");
 
     const std::string src = R"(
@@ -907,9 +909,10 @@ void testSharedStatusAndCompilerWrappers() {
           let info = sys_getproc(1, 10000);
           let slept = sys_sleep_ms(1);
           let spawned = sys_app_spawn(0, 1, 101);
+          let rebooted = sys_reboot();
           let woken = sys_futex_wake(10000, 1);
           let evented = sys_wait_event(-1, 10000, 1);
-          return grown + child + status + synced + killed + resumed + info + slept + spawned + woken + evented;
+          return grown + child + status + synced + killed + resumed + info + slept + spawned + rebooted + woken + evented;
         }
     )";
     CompileResult compiled = compileSource("os_wrappers.trit", src);
@@ -928,6 +931,7 @@ void testSharedStatusAndCompilerWrappers() {
     expect(contains(compiled.assembly, "syscall 55"), "sys_wait_event lowers to syscall 55");
     expect(contains(compiled.assembly, "syscall 56"), "sys_sleep_ms lowers to syscall 56");
     expect(contains(compiled.assembly, "syscall 57"), "sys_app_spawn lowers to syscall 57");
+    expect(contains(compiled.assembly, "syscall 58"), "sys_reboot lowers to syscall 58");
 }
 
 } // namespace

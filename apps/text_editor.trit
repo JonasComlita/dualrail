@@ -45,7 +45,7 @@ fn te_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
 
 fn te_load_note() -> t40 {
     var fd: t40 = os_open(TE_PATH, 2);
-    if fd <= 0 {
+    if fd < 0 {
         unsafe { store(TE_BUF, 0); }
         return 0;
     }
@@ -59,7 +59,7 @@ fn te_load_note() -> t40 {
 
 fn te_save_note(len: t40) -> t40 {
     var fd: t40 = os_open(TE_PATH, 3);
-    if fd <= 0 { return 0; }
+    if fd < 0 { return 0; }
     var wrote: t40 = os_write(fd, TE_BUF, len);
     os_fsync(fd);
     os_close(fd);

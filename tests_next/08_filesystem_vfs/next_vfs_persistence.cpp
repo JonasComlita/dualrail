@@ -150,6 +150,49 @@ void tinyFsLargeExtentReboot(TestContext& ctx) {
     ctx.check(out == large, "large file words persist across reboot");
 }
 
+void tinyFsChainedIndirectExtentReboot(TestContext& ctx) {
+    BlockDevice device(192);
+    TinyFileSystem fs;
+    ctx.check(fs.format(device).ok(), "chained extent filesystem formats");
+    ctx.check(fs.mount(device).ok(), "chained extent filesystem mounts");
+    ctx.check(fs.createFile("/huge", InodeKind::File).ok(),
+              "huge file inode creates");
+
+    const int old_one_index_capacity_words =
+        (DIRECT_BLOCKS + BLOCK_WORDS) * BLOCK_WORDS;
+    std::vector<long long> huge(
+        static_cast<std::size_t>(old_one_index_capacity_words + 5 * BLOCK_WORDS + 3),
+        0);
+    for (std::size_t i = 0; i < huge.size(); ++i) {
+        huge[i] = static_cast<long long>((i * 37) % 19683 - 9841);
+    }
+    ctx.check(static_cast<int>(huge.size()) > old_one_index_capacity_words,
+              "huge fixture exceeds the old one-indirect-block capacity");
+    ctx.check(fs.writeFile("/huge", huge).ok(),
+              "huge file crossing chained indirect blocks writes");
+    FileStat stat;
+    ctx.check(fs.stat("/huge", stat).ok(), "huge file stat succeeds");
+    ctx.check(stat.direct_blocks == DIRECT_BLOCKS && stat.indirect_block >= 0,
+              "huge file allocates direct blocks and an indirect chain");
+    ctx.check(fs.checkConsistency().ok(),
+              "huge file filesystem is consistent before reboot");
+    ctx.check(fs.sync().ok(), "huge file fsync succeeds");
+
+    const std::vector<long long> image = device.serialize();
+    BlockDevice rebooted_device(192);
+    ctx.check(rebooted_device.loadSerialized(image).ok(),
+              "chained extent disk image loads into rebooted device");
+    TinyFileSystem rebooted_fs;
+    ctx.check(rebooted_fs.mount(rebooted_device).ok(),
+              "chained extent filesystem remounts after reboot");
+    ctx.check(rebooted_fs.checkConsistency().ok(),
+              "chained extent filesystem is consistent after reboot");
+    std::vector<long long> out;
+    ctx.check(rebooted_fs.readFile("/huge", out).ok(),
+              "huge file reads after reboot");
+    ctx.check(out == huge, "huge file words persist across chained indirect reboot");
+}
+
 } // namespace
 
 int main() {
@@ -161,6 +204,8 @@ int main() {
          tinyFsFormatMountReaddirStat},
         {"vfs.tinyfs.large_extent_reboot", "vfs.persistence_contract",
          tinyFsLargeExtentReboot},
+        {"vfs.tinyfs.chained_indirect_extent_reboot", "vfs.persistence_contract",
+         tinyFsChainedIndirectExtentReboot},
     };
     return tests_next::runCases("next_vfs_persistence", cases);
 }

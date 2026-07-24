@@ -70,6 +70,7 @@ const WINDOW_FOCUS_ID_ADDR: t40 = 3030;
 const INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3031;
 const BUFFER_CLOCK_HAND_ADDR: t40 = 3032;
 const KERNEL_TICK_ADDR: t40 = 3033;
+const KERNEL_TIMER_RELOAD: t40 = 100000;
 const INPUT_LAST_MOUSE_X_ADDR: t40 = 3034;
 const INPUT_LAST_MOUSE_Y_ADDR: t40 = 3035;
 const METRIC_TLB_HITS_ADDR: t40 = 3036;
@@ -77,6 +78,8 @@ const METRIC_TLB_MISSES_ADDR: t40 = 3037;
 const METRIC_SPAN_CACHE_HITS_ADDR: t40 = 3038;
 const METRIC_SLOW_PATH_FAULTS_ADDR: t40 = 3039;
 const METRIC_VFS_LOOKUPS_ADDR: t40 = 3040;
+const KCAUSE_TIMER_IRQ: t40 = -1;
+const KCAUSE_SYSCALL: t40 = 7;
 
 const PROC_PARENT_PID_BASE: t40 = 130000;
 const PROC_EXIT_STATUS_BASE: t40 = 130100;
@@ -406,6 +409,7 @@ const QUOTA_ID: t40 = 0;
 const QUOTA_LIMIT: t40 = 1;
 const QUOTA_USED: t40 = 2;
 const QUOTA_VERSION: t40 = 3;
+const QUOTA_DEFAULT_LIMIT: t40 = 1000000;
 
 const DESIRED_PROCESS_BASE: t40 = 391600;
 const WAIT_CHANNEL_BASE: t40 = 391700;
@@ -1360,12 +1364,18 @@ fn window_poll_input_driver() -> t40 {
     var key_available: t40 = 0;
     unsafe { key_available = csr_read(console_in_ctrl); }
     if key_available > 0 {
-        var key: t40 = 0;
-        unsafe { key = csr_read(console_in); }
-        unsafe { csr_write(console_in_ctrl, 1); }
-        var key_target: t40 = window_route_input(EVENT_KIND_KEY, key, 0, 0);
-        if key_target > 0 {
-            routed = routed + 1;
+        var key_slot: t40 = window_focus_slot();
+        if key_slot < 0 {
+            key_slot = window_top_visible_slot();
+        }
+        if key_slot >= 0 {
+            var key: t40 = 0;
+            unsafe { key = csr_read(console_in); }
+            unsafe { csr_write(console_in_ctrl, 1); }
+            var key_target: t40 = window_route_input(EVENT_KIND_KEY, key, 0, 0);
+            if key_target > 0 {
+                routed = routed + 1;
+            }
         }
     }
     return routed;
@@ -2206,7 +2216,7 @@ fn process_table_init() -> t40 {
     while QUOTA_MAX - i > 0 {
         var q: t40 = quota_addr(i);
         kstore(q + QUOTA_ID, i);
-        kstore(q + QUOTA_LIMIT, 100);
+        kstore(q + QUOTA_LIMIT, QUOTA_DEFAULT_LIMIT);
         kstore(q + QUOTA_USED, 0);
         kstore(q + QUOTA_VERSION, 1);
         i = i + 1;
@@ -2929,12 +2939,37 @@ fn scheduler_pick_next() -> t40 {
     return pid;
 }
 
+fn scheduler_find_runnable_pid() -> t40 {
+    var slot: t40 = 0;
+    while PROCESS_MAX - slot > 0 {
+        var row: t40 = process_addr(slot);
+        if kload(row + PROC_STATE) - PROC_RUNNABLE == 0 {
+            if kload(row + PROC_CONTEXT) > 0 {
+                return kload(row + PROC_PID);
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
 fn kernel_schedule_next() -> t40 {
+    var runnable_pid: t40 = scheduler_find_runnable_pid();
+    if runnable_pid < 0 {
+        while runnable_pid < 0 {
+            // With no user context to run, ERET would resume the blocked
+            // syscall and continually reset the hardware timer. Service the
+            // same waiter/timer work here until a context becomes runnable.
+            kernel_timer_tick();
+            runnable_pid = scheduler_find_runnable_pid();
+        }
+        return scheduler_switch_to_pid(runnable_pid);
+    }
     var pid: t40 = scheduler_pick_next();
     if pid > 0 {
         return scheduler_switch_to_pid(pid);
     }
-    return ERR_NOT_FOUND;
+    return scheduler_switch_to_pid(runnable_pid);
 }
 
 fn quota_set_limit(quota_id: t40, limit: t40) -> t40 {
@@ -6666,6 +6701,17 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         }
         return kernel_set_return(1, spawned, 0);
     }
+    if service - 58 == 0 {
+        var reboot_slot: t40 = process_find_pid(pid);
+        if reboot_slot < 0 {
+            return kernel_set_return(-1, 0, reboot_slot);
+        }
+        if app_caps_allow(kload(PROC_CAPS_BASE + reboot_slot), APP_CAP_SYSTEM) <= 0 {
+            return kernel_set_return(-1, 0, ERR_INVALID);
+        }
+        unsafe { csr_write(power_control, 1); }
+        return kernel_set_return(1, 1, 0);
+    }
     return kernel_set_return(-1, 0, ERR_INVALID);
 }
 
@@ -6675,8 +6721,24 @@ fn kernel_bind_context(context_addr: t40, pid: t40) -> t40 {
     return 1;
 }
 
+fn kernel_crash_current_process(cause_value: t40) -> t40 {
+    var pid: t40 = kload(CURRENT_PID_ADDR);
+    if pid <= 0 {
+        return ERR_INVALID;
+    }
+    var slot: t40 = process_find_pid(pid);
+    if slot < 0 {
+        return slot;
+    }
+    if process_terminal_state(process_state(slot)) > 0 {
+        return ERR_INVALID;
+    }
+    process_finish_exit(slot, cause_value, PROC_CRASHED);
+    return kernel_schedule_next();
+}
+
 fn kernel_dispatch(cause_value: t40) -> t40 {
-    if cause_value - 7 == 0 {
+    if cause_value - KCAUSE_SYSCALL == 0 {
         var service: t40 = 0;
         unsafe { service = csr_read(syscall_id); }
         var ctx: t40 = kload(CURRENT_CONTEXT_ADDR);
@@ -6708,11 +6770,11 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
         kstore(ctx + 20, kload(SYS_DETAIL_ADDR));
         return status;
     }
-    if cause_value - 1 == 0 {
+    if cause_value - KCAUSE_TIMER_IRQ == 0 {
         kernel_timer_tick();
         return kernel_schedule_next();
     }
-    return ERR_INVALID;
+    return kernel_crash_current_process(cause_value);
 }
 
 fn pte_valid_state(pte_word: t40) -> t40 {
@@ -7039,8 +7101,8 @@ fn kernel_init() -> t40 {
     kstore(CURRENT_CONTEXT_ADDR, 0);
     kstore(CURRENT_PID_ADDR, 1);
     kstore(KERNEL_BOOTED_ADDR, 1);
-    unsafe { csr_write(timer_reload, 1000); }
-    unsafe { csr_write(timer_counter, 1000); }
+    unsafe { csr_write(timer_reload, KERNEL_TIMER_RELOAD); }
+    unsafe { csr_write(timer_counter, KERNEL_TIMER_RELOAD); }
     unsafe { csr_write(timer_enable, 1); }
     return 1;
 }

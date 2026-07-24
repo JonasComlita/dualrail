@@ -18,6 +18,8 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add app-level golden output/snapshot tests for desktop, terminal, file manager, and settings.
 - Add performance baselines for boot time, app launch time, frame time, disk IO, and context switches.
 - Expand Graphify/Trit extraction beyond direct AST symbols and call edges, for example syscall ID cross-links, app bundle ownership, image-section producers, and test-to-source coverage.
+- Build the planned Doom-class and BitNet 1.58B-class OS benchmark harnesses described in `docs/10_Benchmarks/`.
+- Formalize and implement ternary-native symbolic encodings, including `TASCII-81`, exact trit literals, compact base-27/base-81 dump notation, and explicit ASCII/UTF-8/hex conversion tests.
 
 ## Lower Priority
 

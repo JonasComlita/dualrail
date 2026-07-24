@@ -1381,6 +1381,7 @@ static constexpr int SYSCALL_IPC_RECV_BLOCKING = 54;
 static constexpr int SYSCALL_WAIT_EVENT       = 55;
 static constexpr int SYSCALL_SLEEP_MS         = 56;
 static constexpr int SYSCALL_APP_SPAWN        = 57;
+static constexpr int SYSCALL_REBOOT           = 58;
 
 static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;
@@ -2304,6 +2305,7 @@ struct VMState {
     long long                block_index = 0;
     long long                block_addr = 0;
     long long                block_status = 0;
+    long long                power_control = 0;
     SparseBlockStorage      block_device = SparseBlockStorage(192);
     SparseDirtyBlocks       block_dirty = SparseDirtyBlocks(192, false);
     int                      user_imem_ptbr = 0;
@@ -2635,6 +2637,7 @@ struct VMState {
         block_index = 0;
         block_addr = 0;
         block_status = 0;
+        power_control = 0;
     }
 
     [[nodiscard]] bool loadBlockImage(const std::vector<long long>& image) {
@@ -2817,6 +2820,7 @@ struct VMState {
         block_index = 0;
         block_addr = 0;
         block_status = 0;
+        power_control = 0;
         user_imem_ptbr = 0;
         user_imem_pages = 0;
         user_dmem_ptbr = 0;
@@ -2913,6 +2917,7 @@ struct VMState {
             case CSR_BLOCK_STATUS: value = block_status; break;
             case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.blockCount()); break;
             case CSR_BLOCK_WORDS: value = MMU_PAGE_WORDS; break;
+            case CSR_POWER_CONTROL: value = power_control; break;
             default: return false;
         }
         out = ops::fromLong(value);
@@ -3238,6 +3243,10 @@ struct VMState {
             case CSR_BLOCK_COUNT:
             case CSR_BLOCK_WORDS:
                 return false;
+            case CSR_POWER_CONTROL:
+                if (value < 0 || value > 1) return false;
+                power_control = value;
+                return true;
             default:
                 return false;
         }

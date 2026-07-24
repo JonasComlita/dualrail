@@ -662,7 +662,8 @@ static constexpr int CSR_BLOCK_CMD      = 43;
 static constexpr int CSR_BLOCK_STATUS   = 44;
 static constexpr int CSR_BLOCK_COUNT    = 45;
 static constexpr int CSR_BLOCK_WORDS    = 46;
-static constexpr int CSR_MAX_ID          = CSR_BLOCK_WORDS;
+static constexpr int CSR_POWER_CONTROL  = 47;
+static constexpr int CSR_MAX_ID          = CSR_POWER_CONTROL;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -717,6 +718,7 @@ static constexpr int CSR_MAX_ID          = CSR_BLOCK_WORDS;
         case CSR_BLOCK_STATUS: return "block_status";
         case CSR_BLOCK_COUNT: return "block_count";
         case CSR_BLOCK_WORDS: return "block_words";
+        case CSR_POWER_CONTROL: return "power_control";
         default: return "unknown";
     }
 }

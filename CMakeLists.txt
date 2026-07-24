@@ -323,6 +323,10 @@ add_executable(next_compiler_phase_c5_pred tests_next/04_compiler/next_compiler_
 target_compile_features(next_compiler_phase_c5_pred PUBLIC cxx_std_17)
 target_compile_definitions(next_compiler_phase_c5_pred PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_runtime_ulib_sdk tests_next/06_runtime_ulib/next_runtime_ulib_sdk.cpp)
+target_compile_features(next_runtime_ulib_sdk PUBLIC cxx_std_17)
+target_compile_definitions(next_runtime_ulib_sdk PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_vm_core tests_next/02_vm/next_vm_core.cpp)
 target_compile_features(next_vm_core PUBLIC cxx_std_17)
 target_compile_definitions(next_vm_core PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -331,13 +335,46 @@ add_executable(next_kernel_native_os tests_next/07_kernel/next_kernel_native_os.
 target_compile_features(next_kernel_native_os PUBLIC cxx_std_17)
 target_compile_definitions(next_kernel_native_os PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_kernel_native_phase_d tests_next/07_kernel/next_kernel_native_phase_d.cpp)
+target_compile_features(next_kernel_native_phase_d PUBLIC cxx_std_17)
+target_compile_definitions(next_kernel_native_phase_d PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_vfs_persistence tests_next/08_filesystem_vfs/next_vfs_persistence.cpp)
 target_compile_features(next_vfs_persistence PUBLIC cxx_std_17)
 target_compile_definitions(next_vfs_persistence PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_vfs_recovery tests_next/08_filesystem_vfs/next_vfs_recovery.cpp)
+target_compile_features(next_vfs_recovery PUBLIC cxx_std_17)
+target_compile_definitions(next_vfs_recovery PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_process_ipc_scheduler tests_next/09_process_ipc_scheduler/next_process_ipc_scheduler.cpp)
 target_compile_features(next_process_ipc_scheduler PUBLIC cxx_std_17)
 target_compile_definitions(next_process_ipc_scheduler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_drivers_hal tests_next/10_drivers_hal/next_drivers_hal.cpp)
+target_compile_features(next_drivers_hal PUBLIC cxx_std_17)
+target_compile_definitions(next_drivers_hal PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_graphics_gui tests_next/11_graphics_gui/next_graphics_gui.cpp)
+target_compile_features(next_graphics_gui PUBLIC cxx_std_17)
+target_compile_definitions(next_graphics_gui PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_apps_consumer_bundle tests_next/12_apps/next_apps_consumer_bundle.cpp)
+target_compile_features(next_apps_consumer_bundle PUBLIC cxx_std_17)
+target_compile_definitions(next_apps_consumer_bundle PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_apps_desktop_shell tests_next/12_apps/next_apps_desktop_shell.cpp)
+target_compile_features(next_apps_desktop_shell PUBLIC cxx_std_17)
+target_compile_definitions(next_apps_desktop_shell PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(next_full_system_release tests_next/17_full_system/next_full_system_release.cpp)
+target_compile_features(next_full_system_release PUBLIC cxx_std_17)
+target_compile_definitions(next_full_system_release
+    PRIVATE
+        TERNARY_IGNORE_LONG_DOUBLE_ASSERT
+        TRIT_BUILD_TOS_IMAGE_PATH=\"$<TARGET_FILE:build_tos_image>\"
+)
+add_dependencies(next_full_system_release build_tos_image)
 
 add_custom_target(tests_next_fast
     COMMAND $<TARGET_FILE:next_isa_encoding>
@@ -367,14 +404,40 @@ add_custom_target(tests_next_compiler_full
     USES_TERMINAL
 )
 
+add_custom_target(tests_next_runtime_ulib
+    COMMAND $<TARGET_FILE:next_runtime_ulib_sdk>
+    DEPENDS next_runtime_ulib_sdk
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
 add_custom_target(tests_next_phase_d
     COMMAND $<TARGET_FILE:next_kernel_native_os>
+    COMMAND $<TARGET_FILE:next_kernel_native_phase_d>
     COMMAND $<TARGET_FILE:next_vfs_persistence>
+    COMMAND $<TARGET_FILE:next_vfs_recovery>
     COMMAND $<TARGET_FILE:next_process_ipc_scheduler>
+    COMMAND $<TARGET_FILE:next_drivers_hal>
+    COMMAND $<TARGET_FILE:next_graphics_gui>
+    COMMAND $<TARGET_FILE:next_apps_consumer_bundle>
+    COMMAND $<TARGET_FILE:next_apps_desktop_shell>
     DEPENDS
         next_kernel_native_os
+        next_kernel_native_phase_d
         next_vfs_persistence
+        next_vfs_recovery
         next_process_ipc_scheduler
+        next_drivers_hal
+        next_graphics_gui
+        next_apps_consumer_bundle
+        next_apps_desktop_shell
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+
+add_custom_target(tests_next_full_system
+    COMMAND $<TARGET_FILE:next_full_system_release>
+    DEPENDS next_full_system_release
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
 )
@@ -400,14 +463,38 @@ add_test(NAME next_compiler_native_ulib
 add_test(NAME next_compiler_phase_c5_pred
          COMMAND next_compiler_phase_c5_pred
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_runtime_ulib_sdk
+         COMMAND next_runtime_ulib_sdk
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_kernel_native_os
          COMMAND next_kernel_native_os
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_kernel_native_phase_d
+         COMMAND next_kernel_native_phase_d
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_vfs_persistence
          COMMAND next_vfs_persistence
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_vfs_recovery
+         COMMAND next_vfs_recovery
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_process_ipc_scheduler
          COMMAND next_process_ipc_scheduler
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_drivers_hal
+         COMMAND next_drivers_hal
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_graphics_gui
+         COMMAND next_graphics_gui
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_apps_consumer_bundle
+         COMMAND next_apps_consumer_bundle
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_apps_desktop_shell
+         COMMAND next_apps_desktop_shell
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_full_system_release
+         COMMAND next_full_system_release
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(test_all_apps tests/test_all_apps.cpp)

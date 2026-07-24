@@ -3,6 +3,7 @@
 #include "ternary_os.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -170,6 +171,13 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
         std::cerr << "link failed for " << app.id << "\n";
         ok = false;
     }
+    const char* dump_dir = std::getenv("TRIT_DUMP_APP_ASM_DIR");
+    if (dump_dir && *dump_dir && linked.success) {
+        std::filesystem::create_directories(dump_dir);
+        std::ofstream out(std::filesystem::path(dump_dir) /
+                          (app.id + ".linked.tasm"));
+        out << linked.assembly;
+    }
     return linked;
 }
 
@@ -269,6 +277,7 @@ bool installEssentialRootFiles(sandbox::os::NativeVfsImageBuilder& rootfs,
     if (!addTextFile(rootfs, "/etc/motd", "Welcome to Ternary OS.\n")) return false;
     if (!addTextFile(rootfs, "/etc/fstab", "disk0 / vfs rw\n")) return false;
     if (!addTextFile(rootfs, "/etc/profile", "PATH=/bin\nHOME=/home/root\n")) return false;
+    if (!rootfs.addFile("/etc/os3.cfg", {7, 1, 8, 0}).ok()) return false;
     if (!rootfs.addFile("/etc/first_run", {0}).ok()) return false;
     if (!addTextFile(rootfs, "/etc/shell_prefs", "accent=green\nscale=1\n")) return false;
     if (!addTextFile(rootfs, "/system/build",
@@ -352,6 +361,7 @@ int main(int argc, char** argv) {
         {"sync", "sync", "sync", "/bin/sync", 0, kCliStackWords, false},
         {"reboot", "reboot", "reboot", "/bin/reboot", 0, kCliStackWords, false},
         {"shutdown", "shutdown", "shutdown", "/bin/shutdown", 0, kCliStackWords, false},
+        {"crash", "crash", "crash", "/bin/crash", 0, kCliStackWords, false},
         {"login", "login", "login", "/bin/login", 0, kCliStackWords, false},
         {"passwd", "passwd", "passwd", "/bin/passwd", 0, kCliStackWords, false},
         {"service_stub", "sessiond", "sessiond", "/bin/sessiond", 0, kCliStackWords, false},

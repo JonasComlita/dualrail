@@ -119,6 +119,8 @@ struct TosRuntimeSnapshot {
     std::size_t pending_disk_writes = 0;
     int sparse_disk_records = 0;
     vm::VMBlockDeviceStats block_device_stats;
+    std::uint64_t boot_generation = 0;
+    std::uint64_t guest_reboot_count = 0;
 };
 
 namespace detail {
@@ -517,12 +519,17 @@ constexpr int kProcRunning = 2;
 constexpr int kProcBlocked = 3;
 constexpr int kProcSleeping = 4;
 constexpr int kProcessBase = 390000;
+constexpr int kQuotaRowWords = 4;
+constexpr int kQuotaBase = 391000;
+constexpr int kQuotaLimit = 1;
+constexpr int kQuotaUsed = 2;
 constexpr int kTaskContextEpc = 0;
 constexpr int kTaskContextStatus = 1;
 constexpr int kTaskContextImemPtbr = 2;
 constexpr int kTaskContextImemPages = 3;
 constexpr int kTaskContextDmemPtbr = 4;
 constexpr int kTaskContextDmemPages = 5;
+constexpr int kTaskContextRegBase = 6;
 constexpr int kTaskContextSp = 31;
 constexpr int kProcParentPidBase = 130000;
 constexpr int kProcExitStatusBase = 130100;
@@ -530,6 +537,19 @@ constexpr int kProcSignalPendingBase = 130200;
 constexpr int kProcCapsBase = 131350;
 constexpr int kWaitKindBase = 138600;
 constexpr int kWaitDeadlineBase = 138700;
+constexpr int kAppMax = 256;
+constexpr int kAppRowWords = 10;
+constexpr int kAppRegistryBase = 665000;
+constexpr int kAppNamespace = 0;
+constexpr int kAppPathHash = 1;
+constexpr int kAppInode = 2;
+constexpr int kAppCaps = 3;
+constexpr int kAppQuota = 4;
+constexpr int kAppTrusted = 5;
+constexpr int kAppVersion = 6;
+constexpr int kAppLaunchCount = 7;
+constexpr int kAppMaxImage = 8;
+constexpr int kAppFlags = 9;
 
 inline bool inputPendingForWaiter(const vm::VMState& machine) {
     if (!machine.console_input.empty()) return true;
@@ -927,6 +947,8 @@ public:
         image_ = std::move(image);
         machine_ = std::move(machine);
         paused_ = config_.start_paused;
+        boot_generation_ = 1;
+        guest_reboot_count_ = 0;
         return true;
     }
 
@@ -942,6 +964,8 @@ public:
         image_ = image;
         machine_ = std::move(machine);
         paused_ = config_.start_paused;
+        boot_generation_ = 1;
+        guest_reboot_count_ = 0;
         return true;
     }
 
@@ -984,13 +1008,7 @@ public:
             detail::setError(error, "runtime has no loaded VM image");
             return false;
         }
-        (void)machine_->compactBlockBackingFile(false);
-        vm::ProductionProfile profile = profileForManifest(image_.manifest);
-        auto machine = std::make_unique<vm::VMState>(profile);
-        if (!loadBootImageIntoVm(*machine, image_, config_.disk_path, error)) return false;
-        machine_ = std::move(machine);
-        paused_ = config_.start_paused;
-        return true;
+        return resetMachineLocked(false, error);
     }
 
     [[nodiscard]] vm::RunResult runForSteps(int steps) {
@@ -998,13 +1016,36 @@ public:
         if (!machine_) {
             return {vm::VMStatus::HALTED, 0, 0, isa::TrapCode::TRAP_ILLEGAL_OP, "VM not loaded"};
         }
-        return vm::run(*machine_, steps);
+        vm::RunResult result = vm::run(*machine_, steps);
+        if (machine_->power_control == 1) {
+            std::string error;
+            if (!resetMachineLocked(true, &error)) {
+                machine_->status = vm::VMStatus::TRAPPED;
+                result.status = vm::VMStatus::TRAPPED;
+                result.description = "guest reboot failed: " + error;
+                return result;
+            }
+            result.status = machine_->status;
+            result.final_pc = machine_->pc;
+            result.description = "guest reboot completed after " +
+                                 std::to_string(result.steps) + " steps";
+        }
+        return result;
     }
 
     [[nodiscard]] vm::VMStatus stepOnce() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return vm::VMStatus::HALTED;
-        return vm::step(*machine_);
+        vm::VMStatus status = vm::step(*machine_);
+        if (machine_->power_control == 1) {
+            std::string error;
+            if (!resetMachineLocked(true, &error)) {
+                machine_->status = vm::VMStatus::TRAPPED;
+                return vm::VMStatus::TRAPPED;
+            }
+            status = machine_->status;
+        }
+        return status;
     }
 
     void pushKeyboardInput(long long word) {
@@ -1072,6 +1113,8 @@ public:
         out.pending_disk_writes = machine_->pendingDiskWrites();
         out.sparse_disk_records = machine_->sparseDiskRecordCount();
         out.block_device_stats = machine_->blockDeviceStats();
+        out.boot_generation = boot_generation_;
+        out.guest_reboot_count = guest_reboot_count_;
         return out;
     }
 
@@ -1100,10 +1143,28 @@ public:
             out << "status=" << vm::vmStatusToString(machine_->status) << "\n";
             out << "cycles=" << machine_->cycle_count << "\n";
             out << "privilege=" << privilegeName(machine_->privilege) << "\n";
+            out << "epc=" << machine_->epc << "\n";
+            out << "scratch=" << machine_->scratch << "\n";
+            out << "sp=" << vm::ops::toLong(machine_->regfile.read(isa::R26_SP)) << "\n";
+            out << "r1=" << vm::ops::toLong(machine_->regfile.read(1)) << "\n";
+            out << "r13=" << vm::ops::toLong(machine_->regfile.read(13)) << "\n";
+            out << "r20=" << vm::ops::toLong(machine_->regfile.read(20)) << "\n";
+            out << "r25=" << vm::ops::toLong(machine_->regfile.read(isa::R25_LR)) << "\n";
+            out << "interrupt_enable=" << (machine_->interrupt_enable ? 1 : 0) << "\n";
+            out << "previous_interrupt_enable="
+                << (machine_->previous_interrupt_enable ? 1 : 0) << "\n";
+            out << "timer_reload=" << machine_->timer_reload << "\n";
+            out << "timer_counter=" << machine_->timer_counter << "\n";
+            out << "timer_enable=" << (machine_->timer_enable ? 1 : 0) << "\n";
+            out << "timer_pending=" << (machine_->timer_pending ? 1 : 0) << "\n";
+            out << "console_input_available=" << machine_->consoleInputAvailable() << "\n";
+            out << "console_input_front=" << machine_->peekConsoleInput() << "\n";
             out << "gpu_mode=" << machine_->gpu_mode << "\n";
             out << "trap=" << vm::ops::toLong(machine_->trap_reg) << "\n";
             out << "cause=" << machine_->cause << "\n";
             out << "disk_path=" << config_.disk_path << "\n";
+            out << "boot_generation=" << boot_generation_ << "\n";
+            out << "guest_reboot_count=" << guest_reboot_count_ << "\n";
             const vm::VMBlockDeviceStats block_stats = machine_->blockDeviceStats();
             out << "disk_allocated_blocks=" << machine_->allocatedDiskBlocks() << "\n";
             out << "disk_pending_writes=" << machine_->pendingDiskWrites() << "\n";
@@ -1161,9 +1222,13 @@ public:
             detail::writeJsonString(out, vm::vmStatusToString(machine_->status));
             out << ",\n";
             out << "    \"cycles\": " << machine_->cycle_count << ",\n";
+            out << "    \"boot_generation\": " << boot_generation_ << ",\n";
+            out << "    \"guest_reboot_count\": " << guest_reboot_count_ << ",\n";
             out << "    \"privilege\": ";
             detail::writeJsonString(out, privilegeName(machine_->privilege));
             out << ",\n";
+            out << "    \"console_input_available\": " << machine_->consoleInputAvailable() << ",\n";
+            out << "    \"console_input_front\": " << machine_->peekConsoleInput() << ",\n";
             out << "    \"gpu_mode\": " << machine_->gpu_mode << ",\n";
             out << "    \"current_pid\": " << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << ",\n";
             out << "    \"syscall_status\": " << detail::dmemWord(*machine_, detail::kSysStatusAddr) << ",\n";
@@ -1260,6 +1325,13 @@ public:
                 const int row = detail::kProcessBase + slot * detail::kProcessRowWords;
                 const long long state = detail::dmemWord(*machine_, row + detail::kProcState);
                 const long long context = detail::dmemWord(*machine_, row + detail::kProcContext);
+                const long long quota_id =
+                    detail::dmemWord(*machine_, row + detail::kProcQuota);
+                const int quota_row =
+                    detail::kQuotaBase + static_cast<int>(quota_id) * detail::kQuotaRowWords;
+                const long long quota_remaining =
+                    detail::dmemWord(*machine_, quota_row + detail::kQuotaLimit) -
+                    detail::dmemWord(*machine_, quota_row + detail::kQuotaUsed);
                 out << "    {\"slot\": " << slot
                     << ", \"pid\": " << detail::dmemWord(*machine_, row + detail::kProcPid)
                     << ", \"namespace\": " << detail::dmemWord(*machine_, row + detail::kProcNamespace)
@@ -1267,7 +1339,8 @@ public:
                     << ", \"state_name\": ";
                 detail::writeJsonString(out, detail::processStateName(state));
                 out << ", \"priority\": " << detail::dmemWord(*machine_, row + detail::kProcPriority)
-                    << ", \"quota\": " << detail::dmemWord(*machine_, row + detail::kProcQuota)
+                    << ", \"quota\": " << quota_id
+                    << ", \"quota_remaining\": " << quota_remaining
                     << ", \"context\": " << context
                     << ", \"context_epc\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextEpc)
                     << ", \"context_status\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextStatus)
@@ -1275,6 +1348,10 @@ public:
                     << ", \"context_imem_pages\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextImemPages)
                     << ", \"context_dmem_ptbr\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextDmemPtbr)
                     << ", \"context_dmem_pages\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextDmemPages)
+                    << ", \"context_r1\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextRegBase)
+                    << ", \"context_r13\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextRegBase + 12)
+                    << ", \"context_r20\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextRegBase + 19)
+                    << ", \"context_r25\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextRegBase + 24)
                     << ", \"context_sp\": " << detail::dmemWord(*machine_, static_cast<int>(context) + detail::kTaskContextSp)
                     << ", \"wait_channel\": " << detail::dmemWord(*machine_, row + detail::kProcWaitChannel)
                     << ", \"version\": " << detail::dmemWord(*machine_, row + detail::kProcVersion)
@@ -1289,6 +1366,48 @@ public:
                 out << "\n";
             }
             out << "  ]\n";
+            out << "}\n";
+        }
+        {
+            std::ofstream out(base / "app_registry.json", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write app_registry.json");
+                return false;
+            }
+            out << "{\n";
+            out << "  \"format_version\": 1,\n";
+            out << "  \"entries\": [\n";
+            bool first = true;
+            for (int slot = 0; slot < detail::kAppMax; ++slot) {
+                const int row = detail::kAppRegistryBase + slot * detail::kAppRowWords;
+                const long long version =
+                    detail::dmemWord(*machine_, row + detail::kAppVersion);
+                if (version <= 0) continue;
+                if (!first) out << ",\n";
+                first = false;
+                out << "    {\"slot\": " << slot
+                    << ", \"namespace\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppNamespace)
+                    << ", \"path_hash\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppPathHash)
+                    << ", \"inode\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppInode)
+                    << ", \"caps\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppCaps)
+                    << ", \"quota\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppQuota)
+                    << ", \"trusted\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppTrusted)
+                    << ", \"version\": " << version
+                    << ", \"launch_count\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppLaunchCount)
+                    << ", \"max_image\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppMaxImage)
+                    << ", \"flags\": "
+                    << detail::dmemWord(*machine_, row + detail::kAppFlags)
+                    << "}";
+            }
+            out << "\n  ]\n";
             out << "}\n";
         }
         {
@@ -1312,11 +1431,36 @@ public:
             out << "cycles=" << machine_->cycle_count << "\n";
             out << "privilege=" << privilegeName(machine_->privilege) << "\n";
             out << "trap=" << vm::ops::toLong(machine_->trap_reg) << "\n";
+            out << "epc=" << machine_->epc << "\n";
             out << "cause=" << machine_->cause << "\n";
+            out << "page_fault_addr=" << machine_->page_fault_addr << "\n";
+            out << "page_fault_access=" << machine_->page_fault_access << "\n";
+            out << "boot_generation=" << boot_generation_ << "\n";
+            out << "guest_reboot_count=" << guest_reboot_count_ << "\n";
             out << "current_pid=" << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << "\n";
             out << "syscall_status=" << detail::dmemWord(*machine_, detail::kSysStatusAddr) << "\n";
             out << "syscall_payload=" << detail::dmemWord(*machine_, detail::kSysPayloadAddr) << "\n";
             out << "syscall_detail=" << detail::dmemWord(*machine_, detail::kSysDetailAddr) << "\n";
+            long long crashed_slot = -1;
+            long long crashed_pid = 0;
+            long long crashed_parent_pid = 0;
+            long long crashed_exit_status = 0;
+            for (int slot = 0; slot < detail::kProcessMax; ++slot) {
+                const int row = detail::kProcessBase + slot * detail::kProcessRowWords;
+                if (detail::dmemWord(*machine_, row + detail::kProcState) == 9) {
+                    crashed_slot = slot;
+                    crashed_pid = detail::dmemWord(*machine_, row + detail::kProcPid);
+                    crashed_parent_pid =
+                        detail::dmemWord(*machine_, detail::kProcParentPidBase + slot);
+                    crashed_exit_status =
+                        detail::dmemWord(*machine_, detail::kProcExitStatusBase + slot);
+                    break;
+                }
+            }
+            out << "crashed_slot=" << crashed_slot << "\n";
+            out << "crashed_pid=" << crashed_pid << "\n";
+            out << "crashed_parent_pid=" << crashed_parent_pid << "\n";
+            out << "crashed_exit_status=" << crashed_exit_status << "\n";
         }
         {
             TosFramebufferSnapshot framebuffer = decodeFramebuffer(*machine_);
@@ -1343,6 +1487,8 @@ private:
     std::thread worker_;
     std::atomic<bool> worker_running_{false};
     std::atomic<bool> paused_{false};
+    std::uint64_t boot_generation_ = 0;
+    std::uint64_t guest_reboot_count_ = 0;
 
     static const char* privilegeName(isa::PrivilegeMode mode) {
         switch (mode) {
@@ -1361,6 +1507,25 @@ private:
     void compactLoadedDiskIfNeeded() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (machine_) (void)machine_->compactBlockBackingFile(false);
+    }
+
+    bool resetMachineLocked(bool guest_reboot, std::string* error) {
+        if (!machine_) {
+            detail::setError(error, "runtime has no loaded VM image");
+            return false;
+        }
+        if (!machine_->compactBlockBackingFile(false)) {
+            detail::setError(error, "failed to flush mutable disk before guest reset");
+            return false;
+        }
+        vm::ProductionProfile profile = profileForManifest(image_.manifest);
+        auto machine = std::make_unique<vm::VMState>(profile);
+        if (!loadBootImageIntoVm(*machine, image_, config_.disk_path, error)) return false;
+        machine_ = std::move(machine);
+        paused_ = config_.start_paused;
+        ++boot_generation_;
+        if (guest_reboot) ++guest_reboot_count_;
+        return true;
     }
 
     void runLoop() {
@@ -1401,6 +1566,14 @@ private:
                         for (long long i = 0; i < chunk && worker_running_; ++i) {
                             const vm::VMStatus status = vm::step(*machine_);
                             ++chunk_steps;
+                            if (machine_->power_control == 1) {
+                                std::string error;
+                                if (!resetMachineLocked(true, &error)) {
+                                    machine_->status = vm::VMStatus::TRAPPED;
+                                }
+                                stopped_or_idle = true;
+                                break;
+                            }
                             if (status == vm::VMStatus::HALTED ||
                                 status == vm::VMStatus::TRAPPED) {
                                 stopped_or_idle = true;

@@ -203,10 +203,11 @@ docs/
 ├── 01_Logic_Level/            # Gate and arithmetic primitives
 ├── 02_Hardware_ISA/           # Instruction encoding and ISA details
 ├── 03_Execution_Engine/       # VM state and dispatch
-├── 04_Binary_Contract/        # ABI and assembler syntax
+├── 04_Binary_Contract/        # ABI, assembler syntax, and symbolic encodings
 ├── 05_Compiler_Infra/         # SSA IR and code generation
 ├── 06_Language/               # TCL language
 ├── 07_OS_Substrate/           # Kernel and syscalls
 ├── 08_Applications/           # App SDK and bundled apps
-└── 09_Host_Runtime/           # Build system, image format, host tools
+├── 09_Host_Runtime/           # Build system, image format, host tools
+└── 10_Benchmarks/             # Doom-class and BitNet-class system benchmarks
 ```

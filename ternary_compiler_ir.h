@@ -240,6 +240,7 @@ static constexpr int sys_ipc_recv_blocking = 54;
 static constexpr int sys_wait_event = 55;
 static constexpr int sys_sleep_ms = 56;
 static constexpr int sys_app_spawn = 57;
+static constexpr int sys_reboot = 58;
 } // namespace runtime
 
 } // namespace compiler

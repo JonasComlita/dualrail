@@ -48,7 +48,7 @@
       "id": "desktop",
       "title": "Desktop",
       "guest_path": "/bin/desktop",
-      "stack_words": 512,
+      "stack_words": 1024,
       "gui_registry": true,
       "launch_role": "init_desktop"
     },
@@ -73,7 +73,7 @@
       "id": "terminal",
       "title": "Terminal",
       "guest_path": "/bin/terminal",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -81,7 +81,7 @@
       "id": "files",
       "title": "Files",
       "guest_path": "/bin/file_manager",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -89,7 +89,7 @@
       "id": "settings",
       "title": "Settings",
       "guest_path": "/bin/settings",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -97,7 +97,7 @@
       "id": "tasks",
       "title": "Tasks",
       "guest_path": "/bin/task_manager",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -121,7 +121,7 @@
       "id": "calculator",
       "title": "Calculator",
       "guest_path": "/bin/calculator",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -129,7 +129,7 @@
       "id": "paint",
       "title": "Paint",
       "guest_path": "/bin/paint",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -137,7 +137,7 @@
       "id": "text_editor",
       "title": "Text Editor",
       "guest_path": "/bin/text_editor",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -153,7 +153,7 @@
       "id": "about",
       "title": "About",
       "guest_path": "/bin/about",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -161,7 +161,7 @@
       "id": "help",
       "title": "Help",
       "guest_path": "/bin/help",
-      "stack_words": 256,
+      "stack_words": 1024,
       "gui_registry": true
     },
     {
@@ -345,6 +345,14 @@
       "id": "shutdown",
       "title": "shutdown",
       "guest_path": "/bin/shutdown",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/crash.trit",
+      "id": "crash",
+      "title": "crash",
+      "guest_path": "/bin/crash",
       "stack_words": 128,
       "gui_registry": false
     },

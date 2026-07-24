@@ -81,6 +81,39 @@
         "Keep Obsidian vault links and canvas current as docs evolve",
         "Broaden Graphify/Trit graph augmentation beyond files, functions, constants, structs, imports, syscalls, and direct call edges"
       ]
+    },
+    {
+      "id": "system-benchmarks",
+      "status": "planned",
+      "summary": "Use Doom-class interactive workloads and BitNet 1.58B-class inference as long-horizon OS capability and performance benchmarks.",
+      "evidence": [
+        "docs/10_Benchmarks/system_benchmark_plan.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md",
+        "TEST_MANIFEST.json system_benchmarks"
+      ],
+      "open_items": [
+        "Define a Doom-compatible app or benchmark harness with framebuffer, input, timer, filesystem, and audio milestones",
+        "Define a BitNet OS inference harness with model packaging, load-time, memory, IO, and tokens-per-second metrics",
+        "Add benchmark_doom_os and benchmark_bitnet_os targets once the harnesses are real",
+        "Record benchmark outputs in machine-readable artifacts suitable for regression tracking",
+        "Keep current production gate separate from long-running manual benchmark gates"
+      ]
+    },
+    {
+      "id": "ternary-symbolic-encodings",
+      "status": "planned",
+      "summary": "Formalize ASCII, UTF-8, and hexadecimal as compatibility encodings while designing ternary-native text and compact numeric notations.",
+      "evidence": [
+        "docs/04_Binary_Contract/symbolic_encodings.md"
+      ],
+      "open_items": [
+        "Specify a fixed TASCII-81 table for basic guest text",
+        "Specify exact trit literal syntax and compact base-27 or base-81 dump notation",
+        "Add conversion APIs in host tools and the app SDK",
+        "Add assembler and TCL parser tests for decimal, hex, ASCII, UTF-8, and future ternary-native literals",
+        "Teach dump tools to print ternary-native notation alongside host hexadecimal"
+      ]
     }
   ]
 }

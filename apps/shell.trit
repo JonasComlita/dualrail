@@ -4,16 +4,18 @@
 // commands: calc, paint, tasks, files, settings, ls, ps, exit, help.
 
 // ── Scratch layout ─────────────────────────────────────────────────
-// 2000 : banner string
-// 2100 : input line buffer (up to 80 chars + null)
-// 2200 : path scratch for exec
-// 2300 : readdir / ps output buffer
+// 10000 : banner string
+// 10100 : input line buffer (up to 80 chars + null)
+// 10200 : path scratch for exec
+// 10300 : readdir / ps output buffer
 // ───────────────────────────────────────────────────────────────────
 
-const SH_BUF:     t40 = 2100;
+const SH_BANNER:  t40 = 10000;
+const SH_BUF:     t40 = 10100;
 const SH_BUF_MAX: t40 = 80;
-const SH_PATH:    t40 = 2200;
-const SH_OUT:     t40 = 2300;
+const SH_PATH:    t40 = 10200;
+const SH_OUT:     t40 = 10300;
+const SH_EVENT:   t40 = 12000;
 
 // ── helpers ────────────────────────────────────────────────────────
 
@@ -54,6 +56,41 @@ fn sh_print_prompt() -> t40 {
     return 1;
 }
 
+fn sh_has_routed_traps() -> t40 {
+    var trap_vector: t40 = 0;
+    unsafe { trap_vector = csr_read(tvec); }
+    if trap_vector > 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn sh_read_key_blocking() -> t40 {
+    var key: t40 = -1;
+    var event_status: t40 = 0;
+    var kind: t40 = 0;
+    var routed_traps: t40 = sh_has_routed_traps();
+    while key < 0 {
+        if routed_traps > 0 {
+            event_status = os_wait_event(-1, SH_EVENT, 1000);
+            if event_status > 0 {
+                unsafe { kind = load(SH_EVENT); }
+                if kind - OS_EVENT_KIND_KEY == 0 {
+                    unsafe { key = load(SH_EVENT + 1); }
+                }
+                if kind - OS_EVENT_KIND_CLOSE == 0 {
+                    key = 27;
+                }
+            } else {
+                key = os_read_key();
+            }
+        } else {
+            key = os_read_key();
+        }
+    }
+    return key;
+}
+
 // Read one line into SH_BUF (echo chars, handle backspace).
 // Returns number of chars read (excluding null terminator).
 fn sh_readline() -> t40 {
@@ -61,9 +98,7 @@ fn sh_readline() -> t40 {
     var done: t40 = 0;
     while 1 - done > 0 {
         var k: t40 = -1;
-        while k < 0 {
-            k = os_read_key();
-        }
+        k = sh_read_key_blocking();
         if k - 13 == 0 {        // Enter
             done = 1;
         } else {
@@ -277,7 +312,7 @@ fn sh_builtin_help() -> t40 {
 // ── main ───────────────────────────────────────────────────────────
 
 fn main() -> t40 {
-    var banner: t40 = sh_seed(2000);
+    var banner: t40 = sh_seed(SH_BANNER);
     sh_puts(banner);
     sh_newline();
 

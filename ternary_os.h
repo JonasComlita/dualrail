@@ -765,6 +765,7 @@ struct Inode {
     int indirect_block = -1;
     std::vector<DirectoryEntry> entries;
     std::vector<long long> data;
+    std::vector<int> indirect_index_blocks;
     std::vector<int> indirect_blocks;
     bool executable = false;
     vm::ExecutableImageHeader exec_header;
@@ -843,17 +844,10 @@ public:
             inode.exec_header.data_pages = static_cast<int>(raw[14]);
             inode.exec_header.stack_words = static_cast<int>(raw[15]);
             inode.indirect_blocks.clear();
+            inode.indirect_index_blocks.clear();
             if (inode.indirect_block >= 0) {
-                std::vector<long long> indirect;
-                if (!device.readBlock(inode.indirect_block, indirect).ok()) {
-                    return StatusResult::error(ERR_INVALID);
-                }
-                for (int w = 0; w < BLOCK_WORDS; ++w) {
-                    if (indirect[static_cast<std::size_t>(w)] >= 0) {
-                        inode.indirect_blocks.push_back(
-                            static_cast<int>(indirect[static_cast<std::size_t>(w)]));
-                    }
-                }
+                StatusResult loaded_indirect = loadIndirectBlockChain(device, inode);
+                if (!loaded_indirect.ok()) return loaded_indirect;
             }
         }
         rebuildFreeBlocksFromInodes();
@@ -1010,8 +1004,16 @@ public:
             for (int block : inode.direct) {
                 checkBlock(block, inode.id, "inode " + std::to_string(inode.id));
             }
-            checkBlock(inode.indirect_block, inode.id,
-                       "inode " + std::to_string(inode.id) + " indirect");
+            const std::vector<int> index_blocks = indirectIndexBlocks(inode);
+            if (index_blocks.empty()) {
+                checkBlock(inode.indirect_block, inode.id,
+                           "inode " + std::to_string(inode.id) + " indirect");
+            } else {
+                for (int block : index_blocks) {
+                    checkBlock(block, inode.id,
+                               "inode " + std::to_string(inode.id) + " indirect index");
+                }
+            }
             for (int block : inode.indirect_blocks) {
                 checkBlock(block, inode.id,
                            "inode " + std::to_string(inode.id) + " indirect data");
@@ -1076,8 +1078,13 @@ public:
         Inode& inode = inodes_[static_cast<std::size_t>(inode_id)];
         if (inode.kind == InodeKind::Directory) return StatusResult::error(ERR_IS_DIR);
         const int needed = (static_cast<int>(words.size()) + BLOCK_WORDS - 1) / BLOCK_WORDS;
-        if (needed > DIRECT_BLOCKS + BLOCK_WORDS) return StatusResult::error(ERR_NO_SPACE);
-        const int required_blocks = needed + (needed > DIRECT_BLOCKS ? 1 : 0);
+        const int indirect_data_blocks = std::max(0, needed - DIRECT_BLOCKS);
+        const int indirect_index_blocks =
+            indirect_data_blocks == 0
+                ? 0
+                : (indirect_data_blocks + indirectDataSlotsPerIndex() - 1) /
+                      indirectDataSlotsPerIndex();
+        const int required_blocks = needed + indirect_index_blocks;
         if (freeBlockCount() + allocatedBlockCount(inode) < required_blocks) {
             return StatusResult::error(ERR_NO_SPACE);
         }
@@ -1089,10 +1096,14 @@ public:
             if (block < 0) return StatusResult::error(ERR_NO_SPACE);
             inode.direct[static_cast<std::size_t>(i)] = block;
         }
-        if (needed > DIRECT_BLOCKS) {
-            inode.indirect_block = allocateBlock();
-            if (inode.indirect_block < 0) return StatusResult::error(ERR_NO_SPACE);
-            for (int i = DIRECT_BLOCKS; i < needed; ++i) {
+        if (indirect_data_blocks > 0) {
+            for (int i = 0; i < indirect_index_blocks; ++i) {
+                int index_block = allocateBlock();
+                if (index_block < 0) return StatusResult::error(ERR_NO_SPACE);
+                if (i == 0) inode.indirect_block = index_block;
+                inode.indirect_index_blocks.push_back(index_block);
+            }
+            for (int i = 0; i < indirect_data_blocks; ++i) {
                 int block = allocateBlock();
                 if (block < 0) return StatusResult::error(ERR_NO_SPACE);
                 inode.indirect_blocks.push_back(block);
@@ -1249,13 +1260,28 @@ public:
         for (const Inode& inode : inodes_) {
             if (inode.kind == InodeKind::Directory) continue;
             if (inode.indirect_block >= 0) {
-                std::vector<long long> indirect(BLOCK_WORDS, -1);
-                for (std::size_t i = 0; i < inode.indirect_blocks.size() &&
-                                        i < static_cast<std::size_t>(BLOCK_WORDS); ++i) {
-                    indirect[i] = inode.indirect_blocks[i];
+                const std::vector<int> index_blocks = indirectIndexBlocks(inode);
+                std::size_t data_pos = 0;
+                for (std::size_t index_pos = 0; index_pos < index_blocks.size(); ++index_pos) {
+                    std::vector<long long> indirect(BLOCK_WORDS, -1);
+                    for (int slot = 0;
+                         slot < indirectDataSlotsPerIndex() &&
+                         data_pos < inode.indirect_blocks.size();
+                         ++slot) {
+                        indirect[static_cast<std::size_t>(slot)] =
+                            inode.indirect_blocks[data_pos++];
+                    }
+                    if (index_pos + 1 < index_blocks.size()) {
+                        indirect[static_cast<std::size_t>(BLOCK_WORDS - 1)] =
+                            encodeIndirectContinuation(index_blocks[index_pos + 1]);
+                    } else if (data_pos < inode.indirect_blocks.size()) {
+                        indirect[static_cast<std::size_t>(BLOCK_WORDS - 1)] =
+                            inode.indirect_blocks[data_pos++];
+                    }
+                    StatusResult wrote =
+                        device_->writeBlock(index_blocks[index_pos], indirect);
+                    if (!wrote.ok()) return wrote;
                 }
-                StatusResult wrote = device_->writeBlock(inode.indirect_block, indirect);
-                if (!wrote.ok()) return wrote;
             }
             std::vector<int> blocks = fileDataBlocks(inode);
             for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -1327,7 +1353,7 @@ private:
         for (int block : inode.direct) {
             if (block >= 0) ++count;
         }
-        if (inode.indirect_block >= 0) ++count;
+        count += static_cast<int>(indirectIndexBlocks(inode).size());
         count += static_cast<int>(inode.indirect_blocks.size());
         return count;
     }
@@ -1353,7 +1379,9 @@ private:
             for (int block : inode.direct) {
                 markBlockAllocated(block);
             }
-            markBlockAllocated(inode.indirect_block);
+            for (int block : indirectIndexBlocks(inode)) {
+                markBlockAllocated(block);
+            }
             for (int block : inode.indirect_blocks) {
                 markBlockAllocated(block);
             }
@@ -1380,15 +1408,17 @@ private:
             }
             block = -1;
         }
-        if (inode.indirect_block >= 0 &&
-            inode.indirect_block < static_cast<int>(free_blocks_.size())) {
-            if (!free_blocks_[static_cast<std::size_t>(inode.indirect_block)]) {
-                free_blocks_[static_cast<std::size_t>(inode.indirect_block)] = true;
-                ++free_block_count_;
-                next_alloc_block_ = std::min(next_alloc_block_, inode.indirect_block);
+        for (int block : indirectIndexBlocks(inode)) {
+            if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
+                if (!free_blocks_[static_cast<std::size_t>(block)]) {
+                    free_blocks_[static_cast<std::size_t>(block)] = true;
+                    ++free_block_count_;
+                    next_alloc_block_ = std::min(next_alloc_block_, block);
+                }
             }
         }
         inode.indirect_block = -1;
+        inode.indirect_index_blocks.clear();
         for (int block : inode.indirect_blocks) {
             if (block >= 0 && block < static_cast<int>(free_blocks_.size())) {
                 if (!free_blocks_[static_cast<std::size_t>(block)]) {
@@ -1399,6 +1429,52 @@ private:
             }
         }
         inode.indirect_blocks.clear();
+    }
+
+    [[nodiscard]] static int indirectDataSlotsPerIndex() {
+        return BLOCK_WORDS - 1;
+    }
+
+    [[nodiscard]] static long long encodeIndirectContinuation(int block) {
+        return -2LL - static_cast<long long>(block);
+    }
+
+    [[nodiscard]] static int decodeIndirectContinuation(long long word) {
+        return word <= -2 ? static_cast<int>(-2 - word) : -1;
+    }
+
+    [[nodiscard]] static std::vector<int> indirectIndexBlocks(const Inode& inode) {
+        if (!inode.indirect_index_blocks.empty()) return inode.indirect_index_blocks;
+        if (inode.indirect_block >= 0) return {inode.indirect_block};
+        return {};
+    }
+
+    [[nodiscard]] StatusResult loadIndirectBlockChain(BlockDevice& device, Inode& inode) {
+        std::set<int> seen;
+        int block = inode.indirect_block;
+        while (block >= 0) {
+            if (block >= device.blockCount() || !seen.insert(block).second) {
+                return StatusResult::error(ERR_INVALID);
+            }
+            inode.indirect_index_blocks.push_back(block);
+            std::vector<long long> indirect;
+            if (!device.readBlock(block, indirect).ok() ||
+                static_cast<int>(indirect.size()) < BLOCK_WORDS) {
+                return StatusResult::error(ERR_INVALID);
+            }
+
+            int next = -1;
+            for (int slot = 0; slot < BLOCK_WORDS; ++slot) {
+                const long long word = indirect[static_cast<std::size_t>(slot)];
+                if (slot == BLOCK_WORDS - 1) {
+                    next = decodeIndirectContinuation(word);
+                    if (next >= 0) break;
+                }
+                if (word >= 0) inode.indirect_blocks.push_back(static_cast<int>(word));
+            }
+            block = next;
+        }
+        return StatusResult::success(static_cast<int>(inode.indirect_blocks.size()));
     }
 
     [[nodiscard]] static std::vector<std::string> splitComponents(const std::string& path) {

@@ -1,10 +1,10 @@
 {
   "schema": "trit.tests_next.status.v1",
-  "suite_state": "scaffolded_with_phase_d_facade_slice",
+  "suite_state": "scaffolded_with_full_system_paint_slice",
   "authoritative_suite": "tests/",
   "new_suite": "tests_next/",
-  "last_updated": "2026-07-02",
-  "current_focus": "Added the first Phase D facade slice for kernel syscalls/process cleanup, VFS persistence, and process/IPC/scheduler lifecycle while deferring native self-hosted compiler work per current scope.",
+  "last_updated": "2026-07-24",
+  "current_focus": "Extended the Phase D lane with full-system release witnesses that build generated .tboot/.tdisk artifacts, validate release manifest and disk metadata, boot them through TosRuntime diagnostics/reset, prove visible boot framebuffer plus queued host input behavior, drive the OS 3 secure login into the desktop launcher, and exercise bundled apps. The Settings persistence witness saves an explicit brightness change to /etc/os3.cfg on the mutable .tdisk and reads it back visibly after reset. The Terminal slice launches through the release desktop, verifies Terminal execs Shell, and proves blocked raw-input wake/delivery. The reboot command now crosses a real privileged power boundary: /bin/reboot invokes sys_reboot 58, the kernel raises power_control after aggregate system-capability authorization, and TosRuntime cold-loads the same release image while preserving the attached mutable disk. The crash slice adds /bin/crash and proves a typed Shell command can fault with a routed divide-by-zero, leave pid 106 inspectable as PROC_CRASHED with exit_status 6, keep the VM running without a guest reboot, and expose durable crashed_* fields in crash_report.txt. The app-bundle/VFS slice extends TinyFS past the old direct-plus-one-indirect-block ceiling with chained indirect index blocks, then proves a real compiled /bin/calculator GUI executable installs through OSKernel, launches through ConsumerShell/sysExec, and still execs after disk-image reboot/remount. The desktop-shell app slice adds deterministic draw-contract checks for About, Help, Text Editor, and Task Manager so those apps are covered beyond marker-only standalone smoke. The latest full-system release slice adds Task Manager, Paint, and File Manager product-path witnesses: desktop hotkey 2 increments the /bin/task_manager app-registry row and paints the visible SYSTEM TASKS dashboard columns, hotkey 3 increments /bin/paint and drives graphics-mode mouse drawing into the raw framebuffer, and hotkey 4 increments the /bin/file_manager row and paints the live root VFS browser.",
   "completed_setup": [
     "directory map",
     "agent handoff guide",
@@ -14,7 +14,7 @@
     "manifest validator",
     "shared C++ harness with assertions, temp workspaces, golden helpers, and deterministic seed helper",
     "test case registry manifest",
-    "CMake targets next_isa_encoding, next_assembler_goldens, next_assembler_tcl_parity, next_vm_core, next_compiler_pipeline, next_compiler_native_ulib, next_compiler_phase_c5_pred, next_kernel_native_os, next_vfs_persistence, next_process_ipc_scheduler, tests_next_fast, tests_next_compiler_full, and tests_next_phase_d"
+    "CMake targets next_isa_encoding, next_assembler_goldens, next_assembler_tcl_parity, next_vm_core, next_compiler_pipeline, next_compiler_native_ulib, next_compiler_phase_c5_pred, next_runtime_ulib_sdk, next_kernel_native_os, next_kernel_native_phase_d, next_vfs_persistence, next_vfs_recovery, next_process_ipc_scheduler, next_drivers_hal, next_graphics_gui, next_apps_consumer_bundle, next_apps_desktop_shell, next_full_system_release, tests_next_fast, tests_next_compiler_full, tests_next_runtime_ulib, tests_next_phase_d, and tests_next_full_system"
   ],
   "completed_tasks": [
     "bootstrap.define_harness",
@@ -34,7 +34,33 @@
     "bootstrap.port_compiler_pipeline.native_ulib_slice",
     "bootstrap.port_compiler_pipeline.edge_cases",
     "bootstrap.port_compiler_pipeline.phase_c5_pred.bootstrap_slice",
-    "bootstrap.port_phase_d_os.facade_first_slice"
+    "bootstrap.port_phase_d_os.facade_first_slice",
+    "bootstrap.port_phase_d_os.native_kernel_synchronization_slice",
+    "bootstrap.port_phase_d_os.native_process_control_cleanup_slice",
+    "bootstrap.port_phase_d_vfs_recovery",
+    "bootstrap.port_runtime_ulib_sdk.first_slice",
+    "bootstrap.port_drivers_hal",
+    "bootstrap.port_graphics_gui.first_slice",
+    "bootstrap.port_apps_consumer_bundle.first_slice",
+    "bootstrap.port_apps_consumer_bundle.remaining_desktop_shell",
+    "bootstrap.port_full_system.release_contract.first_slice",
+    "bootstrap.port_full_system.release_contract.interactive_framebuffer_smoke",
+    "bootstrap.port_full_system.release_contract.login_desktop_app_launch",
+    "bootstrap.port_full_system.release_contract.settings_launch_screen",
+    "bootstrap.port_full_system.release_contract.settings_persistence",
+    "bootstrap.port_apps_consumer_bundle.fd_zero_audit",
+    "bootstrap.port_full_system.release_contract.terminal_reset_diagnostics",
+    "bootstrap.port_full_system.release_contract.rootfs_registry_decoding",
+    "bootstrap.port_full_system.release_contract.cli_command_descriptors",
+    "bootstrap.port_full_system.release_contract.terminal_shell_reboot_command",
+    "bootstrap.port_full_system.release_contract.crash_flow",
+    "bootstrap.port_apps_consumer_bundle.release_remaining.indirect_cli_exec_handoff",
+    "bootstrap.port_phase_d_vfs.chained_indirect_extents",
+    "bootstrap.port_apps_consumer_bundle.release_remaining.gui_sized_exec_handoff",
+    "bootstrap.port_apps_consumer_bundle.release_remaining.remaining_gui_draw_contracts",
+    "bootstrap.port_full_system.release_contract.task_manager_launch_screen",
+    "bootstrap.port_full_system.release_contract.file_manager_launch_screen",
+    "bootstrap.port_full_system.release_contract.paint_launch_graphics_canvas"
   ],
   "completed_tests": [
     "isa.encoding.rtype_width_fields",
@@ -129,22 +155,89 @@
     "process.fork.copy_isolation_waitpid",
     "process.exec.image_handoff",
     "process.ipc.capability_gated_delivery",
-    "process.scheduler.signal_cleanup"
+    "process.scheduler.signal_cleanup",
+    "kernel.native.acquire_release_trap_stub",
+    "kernel.native.boot_trap_dispatch_resume",
+    "process.native.scheduler_futex_ipc_waits",
+    "process.native.process_control_cleanup",
+    "vfs.recovery.journal_phase_matrix",
+    "vfs.recovery.corrupt_superblock_boot",
+    "vfs.executable.disk_image_reboot_exec",
+    "distribution.release.signed_package_image",
+    "runtime.sbrk.standalone_heap_contract",
+    "runtime.ulib.allocator_free_list_reuse",
+    "runtime.ulib.format_parse_helpers",
+    "runtime.sdk.file_ipc_wrappers",
+    "runtime.sdk.gui_process_wrappers",
+    "runtime.widget.dead_strip_behavior",
+    "drivers.hal.device_tree_validation",
+    "drivers.hal.vm_device_csr_io",
+    "drivers.hal.block_csr_boundaries",
+    "drivers.hal.trit_dtb_framebuffer_runtime",
+    "gui.framebuffer.text_input_snapshot",
+    "gui.framebuffer.graphics_palette_snapshot",
+    "gui.compositor.z_order_dirty_resize",
+    "gui.input.focus_close_key_events",
+    "gui.widget.dirty_text_redraw_runtime",
+    "apps.manifest.registry_release_contract",
+    "apps.bundle.fd_zero_open_guards",
+    "apps.bundle.gui_marker_smoke",
+    "apps.bundle.cli_service_alias_link_options",
+    "apps.bundle.disk_backed_calculator_exec",
+    "apps.shell.consumer_lifecycle_persistence",
+    "apps.shell.indirect_cli_executable_handoff",
+    "vfs.tinyfs.chained_indirect_extent_reboot",
+    "apps.shell.gui_sized_executable_handoff",
+    "apps.bundle.remaining_gui_marker_smoke",
+    "apps.bundle.remaining_gui_draw_contracts",
+    "apps.shell.launch_failure_cleanup",
+    "apps.shell.taskbar_dialog_controls",
+    "apps.shell.custom_registry_capabilities",
+    "full_system.release.artifact_manifest",
+    "full_system.release.disk_root_metadata",
+    "full_system.release.rootfs_registry_decoding",
+    "full_system.release.cli_command_descriptors",
+    "full_system.release.runtime_diagnostics",
+    "full_system.release.interactive_framebuffer",
+    "full_system.release.login_desktop_app_launch",
+    "full_system.release.task_manager_launch_screen",
+    "full_system.release.file_manager_launch_screen",
+    "full_system.release.paint_launch_graphics_canvas",
+    "full_system.release.settings_launch_screen",
+    "full_system.release.settings_persistence_readback",
+    "full_system.release.terminal_launch_reset_diagnostics",
+    "full_system.release.terminal_shell_reboot_command",
+    "full_system.release.terminal_shell_crash_diagnostics"
   ],
   "ported_claims": [
     "isa.encoding_contract",
     "assembler.golden_contract",
     "vm.execution_contract",
     "compiler.pipeline_contract",
+    "runtime.ulib_sdk_contract",
     "kernel.native_os_contract",
     "vfs.persistence_contract",
-    "process.ipc.scheduler_contract"
+    "process.ipc.scheduler_contract",
+    "distribution.image_contract",
+    "security.hardening_contract",
+    "drivers.hal_contract",
+    "gui.six_layer_contract",
+    "apps.consumer_bundle_contract",
+    "full_system.release_contract"
   ],
   "expanded_claims": [
     "isa.encoding_contract",
     "assembler.golden_contract",
     "vm.execution_contract",
-    "compiler.pipeline_contract"
+    "compiler.pipeline_contract",
+    "runtime.ulib_sdk_contract",
+    "kernel.native_os_contract",
+    "process.ipc.scheduler_contract",
+    "vfs.persistence_contract",
+    "drivers.hal_contract",
+    "gui.six_layer_contract",
+    "apps.consumer_bundle_contract",
+    "full_system.release_contract"
   ],
   "improvement_signals": [
     {
@@ -191,26 +284,203 @@
       "id": "phase_d.facade_optimization_guardrails",
       "status": "observed",
       "summary": "Phase D facade tests now pin block CSR persistence, TinyFS direct/indirect extents, reboot remounts, process image handoff, capability gates, IPC queue consumption, and kill/wait cleanup so future VFS, scheduler, and kernel-resource optimizations have deterministic behavior checks."
+    },
+    {
+      "id": "phase_d.native_wait_cache_guardrails",
+      "status": "observed",
+      "summary": "The native Phase D wait driver now pins TLB miss/hit and span-cache hit counters around futex validation, plus blocked-to-runnable transitions for futex, sleep, IPC, and wait_event paths, giving future scheduler and translation-cache optimizations concrete correctness boundaries."
+    },
+    {
+      "id": "phase_d.native_process_cleanup_guardrails",
+      "status": "observed",
+      "summary": "The native process-control cleanup driver now pins denied cross-process control, process-capability/self-control paths, fd/window/IPC/wait/PTE cleanup, zombie getproc metadata, orphan handling, and waitpid reaping so future resource-cleanup or process-table optimizations can be checked against deterministic state."
+    },
+    {
+      "id": "phase_d.vfs_recovery_release_guardrails",
+      "status": "observed",
+      "summary": "The VFS recovery slice now pins journal commit boundaries, rescue-root boot recovery, disk-backed executable metadata/payload reboot, signed package sidecars, and release/package manifest markers so future persistence and image-builder optimizations have deterministic failure-mode checks."
+    },
+    {
+      "id": "runtime.ulib_sdk_optimization_guardrails",
+      "status": "observed",
+      "summary": "The runtime/SDK slice now pins sbrk heap-base progression, allocator free-list reuse, parse/string helpers, public SDK syscall lowering, and widget dead-strip/behavior so future runtime, SDK, and app-toolkit optimizations can be checked against focused witnesses."
+    },
+    {
+      "id": "phase_d.drivers_hal_device_guardrails",
+      "status": "observed",
+      "summary": "The drivers/HAL slice now pins device-tree validation diagnostics, console/timer/input/GPU CSR behavior, block CSR read-only/error/flush boundaries, and kernel/hal.trit DTB plus framebuffer descriptor runtime behavior so future driver, HAL, and device-state optimizations have deterministic contract checks."
+    },
+    {
+      "id": "phase_d.gui_rendering_input_guardrails",
+      "status": "observed",
+      "summary": "The graphics/GUI slice now pins host text/graphics framebuffer revision behavior, native compositor dirty clearing, z-order occlusion, resize redraw, close/key/mouse routing, and widget dirty/text redraw paths so future rendering, input, and widget optimizations can be checked against deterministic snapshots and VM-visible state."
+    },
+    {
+      "id": "phase_d.apps_bundle_release_guardrails",
+      "status": "observed",
+      "summary": "The apps/consumer bundle slice now pins APP_MANIFEST-to-release-builder alignment, GUI registry coverage, GUI app marker/framebuffer/GPU outputs, shared CLI/service alias link options, compiled calculator release VFS image installation, and consumer shell boot/login/app/file/crash/preference reboot persistence."
+    },
+    {
+      "id": "phase_d.apps_manifest_stack_drift",
+      "status": "fixed",
+      "summary": "APP_MANIFEST GUI stack_words had drifted from build_tos_image.cpp and test_all_apps release options; GUI entries now record the 1024-word release stack hint and tests enforce that alignment."
+    },
+    {
+      "id": "phase_d.apps_large_exec_fixture_boundary",
+      "status": "fixed",
+      "summary": "apps.shell.indirect_cli_executable_handoff first proved a real compiled /bin/sync image larger than the direct-block TinyFS window could install through OSKernel and launch through ConsumerShell/sysExec. vfs.tinyfs.chained_indirect_extent_reboot and apps.shell.gui_sized_executable_handoff now extend the facade to chained TinyFS indirect index blocks, so a real compiled /bin/calculator GUI executable larger than the old one-indirect-block capacity installs, launches, preserves payload/header metadata, and execs again after disk-image reboot/remount."
+    },
+    {
+      "id": "phase_d.tinyfs_chained_indirect_extents",
+      "status": "fixed",
+      "summary": "TinyFS now chains indirect index blocks by using the final index word as a backward-compatible continuation pointer when needed. The new VFS witness writes beyond the old direct-plus-one-index ceiling, runs consistency checks before and after remount, and proves full payload preservation."
+    },
+    {
+      "id": "phase_d.desktop_shell_guardrails",
+      "status": "observed",
+      "summary": "The desktop shell slice now pins remaining GUI app standalone markers, deterministic draw contracts for About, Help, Text Editor, and Task Manager framebuffer cells, failed-launch child/window cleanup, taskbar ordering, focus handoff, not-responding suspension and force-close behavior, crash dialog/log persistence, and custom registry capability metadata."
+    },
+    {
+      "id": "phase_d.remaining_gui_app_draw_contracts",
+      "status": "observed",
+      "summary": "apps.bundle.remaining_gui_draw_contracts renames each app main inside the test harness and calls real app drawing helpers directly. It verifies About identity/status cells, Help shortcut guidance, Text Editor document/newline/cursor layout, and Task Manager process-state labels, giving future app UI changes a more useful signal than marker-only standalone smoke."
+    },
+    {
+      "id": "phase_d.full_system_release_guardrails",
+      "status": "observed",
+      "summary": "The full-system release slice now builds generated .tboot/.tdisk artifacts, validates manifest and native-VFS metadata, boots through TosRuntime diagnostics, drives login and bundled apps, proves Settings persistence, launches Task Manager, Paint, and File Manager through desktop hotkey/app-registry paths, and exercises Terminal -> Shell -> typed reboot end to end. The reboot witness observes exactly one guest cold-reset generation, the same boot image and mutable disk, cleared cycle/log/process/app state, and a successful second login/desktop boot."
+    },
+    {
+      "id": "phase_d.release_task_manager_action_row_latency",
+      "status": "observed",
+      "summary": "full_system.release.task_manager_launch_screen proves the release desktop hotkey launches /bin/task_manager and paints the visible SYSTEM TASKS dashboard columns. A stronger attempted assertion for the lower KILL/RUN/EXIT action row did not appear within an additional 2M release steps after the title/table became visible, so future Task Manager or os_ps/render-loop work has a focused latency/completeness target."
+    },
+    {
+      "id": "phase_d.release_file_manager_readdir_settle",
+      "status": "observed",
+      "summary": "full_system.release.file_manager_launch_screen initially showed that the File Manager title/footer can become visible before the root os_readdir results have painted. The final witness waits for live / entries such as bin and apps, giving future File Manager, scheduler, and VFS/read-dir optimizations a concrete settle condition instead of accepting title-only launch evidence."
+    },
+    {
+      "id": "phase_d.release_paint_graphics_input_guardrails",
+      "status": "observed",
+      "summary": "full_system.release.paint_launch_graphics_canvas proves the release desktop hotkey launches /bin/paint, switches TosRuntime into Graphics80x60 mode, publishes the yellow plus cursor sprite, routes host mouse input into the app, and mutates the raw graphics framebuffer. This gives future GPU, input, double-buffering, and app-loop optimizations a full-system correctness boundary."
+    },
+    {
+      "id": "phase_d.release_rootfs_registry_decoding",
+      "status": "observed",
+      "summary": "full_system.release.rootfs_registry_decoding expands the generated sparse .tdisk into a 32768-block native VFS image and reads /apps/registry, /system/bin.manifest, and /apps/settings.app through the release native-VFS table layout, so productization metadata is checked as filesystem state rather than raw byte presence. The first attempt exposed that OSKernel::boot still targets the older TinyFileSystem facade, making native-VFS read helpers a useful future consolidation opportunity."
+    },
+    {
+      "id": "phase_d.release_cli_command_descriptors",
+      "status": "observed",
+      "summary": "full_system.release.cli_command_descriptors proves /bin/shell, /bin/sh, /bin/sync, /bin/reboot, /bin/shutdown, and /bin/crash are present as v2 disk-backed executable descriptors with the expected release stack classes, bounded text ranges, and non-empty serialized text. This narrows command-flow gaps to runtime behavior rather than missing release-root command installation."
+    },
+    {
+      "id": "phase_d.release_app_registry_diagnostics",
+      "status": "observed",
+      "summary": "TosRuntime diagnostics now include app_registry.json with active kernel app-registry rows, inode ids, caps, trusted bits, versions, image limits, and launch counters. This makes release app-launch behavior observable without relying on guest.log output."
+    },
+    {
+      "id": "phase_d.release_terminal_reboot_command_launch",
+      "status": "fixed",
+      "summary": "full_system.release.terminal_shell_reboot_command proves the release desktop launches Terminal, Terminal sys_execs /bin/shell, queued input wakes Shell, and typed reboot invokes /bin/reboot and sys_reboot. The VM runtime performs one cold reset, preserves the mutable disk, clears volatile guest state, exports reboot generation counters, and reaches a fresh desktop."
+    },
+    {
+      "id": "phase_d.release_user_trap_crash_recovery",
+      "status": "fixed",
+      "summary": "full_system.release.terminal_shell_crash_diagnostics proves the release desktop launches Terminal, Shell execs /bin/crash, and a routed divide-by-zero user trap becomes PROC_CRASHED pid 106 with exit_status 6 instead of taking down the VM or rebooting. crash_report.txt now includes boot generation, guest reboot count, and durable crashed_pid/crashed_parent_pid/crashed_exit_status fields."
+    },
+    {
+      "id": "vm.timer_deferred_interrupt_counting",
+      "status": "fixed",
+      "summary": "Rerunning tests_next_fast exposed that a pending dirty VM change stopped timer countdown while routed code was in kernel privilege, breaking vm.timer.pending_defers_across_critical_section. recordCycle now counts enabled timers regardless of privilege while still routing only when interrupt_enable permits, restoring deferred timer IRQ behavior."
+    },
+    {
+      "id": "phase_d.empty_run_queue_input_wake",
+      "status": "fixed",
+      "summary": "When Shell blocked in wait_event with every user context asleep or blocked, kernel_schedule_next entered costly tier reconciliation with interrupts disabled and could not reach a timer wake within the release step budget. The scheduler now detects an empty runnable set, services input/window/timeout work through kernel_timer_tick until a context wakes, and switches directly to it; the native Phase D scheduler helper checks and full_system.release.terminal_shell_reboot_command both pass."
+    },
+    {
+      "id": "phase_d.shell_standalone_input_compatibility",
+      "status": "fixed",
+      "summary": "The blocking Shell input conversion initially issued syscall 55 in standalone compiler/VM execution, where routed kernel traps are not installed and extended OS syscalls are unsupported. Shell now detects a nonzero trap vector before using blocking wait_event; release execution remains blocking, while the standalone production-layer witness consumes raw console CSR input and exits."
+    },
+    {
+      "id": "phase_d.release_settings_launch_stall",
+      "status": "fixed",
+      "summary": "A release Settings persistence probe reached the desktop and accepted hotkey 5, then left pid 105 runnable at context_epc 1966 with the desktop still showing 'LAUNCH 5 ...' after roughly 12M additional steps and zero block-device writes. The root cause was Settings using unmapped 20000-series scratch buffers; the app now uses the mapped user scratch range and full_system.release.settings_launch_screen proves the visible launch without claiming release-visible Settings persistence."
+    },
+    {
+      "id": "phase_d.settings_startup_read_only_open",
+      "status": "fixed",
+      "summary": "Settings cfg_load now uses the Phase D sys_open mode 0 read-only contract instead of the create-if-missing mode 2 path, keeping first launch from creating /etc/os3.cfg before an explicit save."
+    },
+    {
+      "id": "phase_d.settings_fd_zero_open",
+      "status": "fixed",
+      "summary": "The release Settings persistence witness exposed cfg_load and cfg_save treating valid fd 0 as failure. Settings now treats only negative sys_open results as errors, and full_system.release.settings_persistence_readback proves /etc/os3.cfg is saved, fsynced, present in sparse disk records, and read back visibly after TosRuntime reset."
+    },
+    {
+      "id": "phase_d.settings_scratch_address_fault",
+      "status": "fixed",
+      "summary": "Settings config, path, password, and event scratch buffers moved from 20000-20300 into the kernel-mapped user scratch window around 10000, resolving the release store-page-fault loop before first paint."
+    },
+    {
+      "id": "phase_d.app_fd_zero_audit",
+      "status": "fixed",
+      "summary": "After the Settings persistence fix, grep found fd <= 0 checks in apps/sync.trit and apps/text_editor.trit. Those apps now treat only negative os_open results as failures, and apps.bundle.fd_zero_open_guards rejects the stale fd <= 0 idiom across bundled app sources."
+    },
+    {
+      "id": "phase_d.release_terminal_guest_log_gap",
+      "status": "observed",
+      "summary": "Attempting to drive Terminal -> shell -> /bin/reboot showed that guest.log remains empty for this release terminal path, so full_system.release.terminal_launch_reset_diagnostics uses process_table.json and crash_report.txt as authoritative diagnostics, and full_system.release.terminal_shell_reboot_command now uses app_registry.json launch counters for command execution evidence."
+    },
+    {
+      "id": "phase_d.release_interaction_step_budget",
+      "status": "observed",
+      "summary": "The release login/app-launch witness needs multi-million-step waits to reach login and launch calculator, giving future boot, scheduler, app-loading, or host-runtime acceleration work a concrete correctness-preserving optimization target."
+    },
+    {
+      "id": "phase_d.release_packaging_docs_gap",
+      "status": "fixed",
+      "summary": "stage_tos_release exposed missing packaging/windows README and license-note inputs; those files now exist and stage_tos_release, smoke_tos_release, package_tos_release, and release image inspection pass."
+    },
+    {
+      "id": "runtime.ulib_itoa_printf_runtime_followup",
+      "status": "observed",
+      "summary": "A broader runtime fixture that executed ulib itoa/printf paths did not halt within the focused step budget, so current coverage keeps those helpers as compile/link witnesses and queues a dedicated runtime investigation instead of mixing it into the parse/string test."
     }
   ],
   "next_tasks": [
     {
-      "id": "bootstrap.port_phase_d_os.native_kernel_slice",
-      "area": "07_kernel,09_process_ipc_scheduler",
+      "id": "bootstrap.port_apps_consumer_bundle.release_remaining",
+      "area": "12_apps",
       "status": "ready",
-      "summary": "Port focused native kernel.trit witnesses from tests/test_phase_d_kernel.cpp for trap dispatch, futex wait/wake, wait_event, scheduler epoch/fairness, process table metadata, and acquire/release lowering."
+      "summary": "Real CLI and GUI-sized executable handoff through OSKernel/ConsumerShell are covered, remaining GUI apps now have deterministic draw-contract checks beyond marker smoke, and the release desktop now launches Task Manager, Paint, and File Manager through hotkey/app-registry/product rendering. Continue with deeper event-loop/runtime behavior for individual apps, richer desktop/compositor handoff evidence, or app close/focus/input flows."
     },
     {
-      "id": "bootstrap.port_phase_d_vfs_recovery",
-      "area": "08_filesystem_vfs,13_distribution_images,14_security_hardening",
+      "id": "bootstrap.port_graphics_gui.remaining_desktop_shell",
+      "area": "11_graphics_gui",
       "status": "ready",
-      "summary": "Add focused WAL replay, boot recovery, corrupt image, package/release-image, and disk-backed executable loading tests without broadening into full-system GUI/app coverage."
+      "summary": "Extend GUI coverage with desktop shell, taskbar/launcher, richer golden framebuffer snapshots, text boundary/missing-glyph cases, and full compositor app handoff evidence."
     },
     {
-      "id": "bootstrap.port_runtime_ulib_sdk",
+      "id": "bootstrap.port_drivers_hal.remaining_placeholders",
+      "area": "10_drivers_hal",
+      "status": "ready",
+      "summary": "Add explicit tests or manifest-backed placeholders for network/audio driver surfaces once their contracts exist, keeping the current HAL claim ported but not complete."
+    },
+    {
+      "id": "bootstrap.port_runtime_ulib_sdk.itoa_printf_runtime_followup",
       "area": "06_runtime_ulib",
       "status": "ready",
-      "summary": "Add focused runtime/SDK tests for malloc/free, formatting/parsing helpers, syscall wrappers, and app SDK conventions before broader app and GUI slices."
+      "summary": "Add a dedicated focused test or production fix for ulib itoa/printf runtime execution, preserving the current compile/link witness if the runtime path remains too broad for this slice."
+    },
+    {
+      "id": "bootstrap.port_runtime_ulib_collections_remaining",
+      "area": "06_runtime_ulib",
+      "status": "ready",
+      "summary": "Add focused runtime/SDK tests for remaining ulib string helpers, parse_args/tokenization, hmap/vector collection helpers, and status/error conventions."
     },
     {
       "id": "bootstrap.port_compiler_pipeline.phase_c5_native_emission",
@@ -223,47 +493,43 @@
   "last_commands": [
     {
       "command": "python .\\tests_next\\tools\\validate_manifests.py",
-      "result": "passed after Phase D manifest updates; 93 test cases registered"
+      "result": "passed after Paint full-system graphics launch manifest updates; 145 test cases registered"
     },
     {
-      "command": "cmake --build build --target tests_next_phase_d --config Debug",
-      "result": "passed; next_kernel_native_os, next_vfs_persistence, and next_process_ipc_scheduler built and ran 10 Phase D facade cases"
+      "command": "cmake --build build --target next_full_system_release --config Debug",
+      "result": "passed; rebuilt the focused full-system release witness binary with full_system.release.paint_launch_graphics_canvas"
     },
     {
-      "command": ".\\build\\next_kernel_native_os.exe",
-      "result": "passed; 3 kernel facade cases green"
+      "command": ".\\build\\next_full_system_release.exe",
+      "result": "passed; 15 full-system release cases green including full_system.release.paint_launch_graphics_canvas"
     },
     {
-      "command": ".\\build\\next_vfs_persistence.exe",
-      "result": "passed; 3 VFS persistence cases green"
+      "command": "cmake --build build --target tests_next_full_system --config Debug",
+      "result": "passed; aggregate full-system target runs next_full_system_release with the new Paint graphics product-path witness"
     },
     {
-      "command": ".\\build\\next_process_ipc_scheduler.exe",
-      "result": "passed; 4 process, IPC, and scheduler lifecycle cases green"
+      "command": "cmake --build build --target test_host_runtime test_process_handoff test_native_apps test_consumer_shell_productization --config Debug",
+      "result": "passed; historical witness binaries were already up to date"
     },
     {
-      "command": "cmake --build build --target next_kernel_native_os --config Debug",
-      "result": "passed; direct target is buildable"
+      "command": ".\\build\\test_host_runtime.exe",
+      "result": "passed; historical host runtime, framebuffer/input, mutable sparse disk, diagnostics, and guest reboot witnesses remain green"
     },
     {
-      "command": "cmake --build build --target next_vfs_persistence --config Debug",
-      "result": "passed; direct target is buildable"
+      "command": ".\\build\\test_process_handoff.exe",
+      "result": "passed; historical desktop/compositor process handoff witnesses remain green"
     },
     {
-      "command": "cmake --build build --target next_process_ipc_scheduler --config Debug",
-      "result": "passed; direct target is buildable"
+      "command": ".\\build\\test_native_apps.exe",
+      "result": "passed; historical native app SDK and Paint graphics witnesses remain green"
     },
     {
-      "command": "cmake --build build --target tests_next_fast --config Debug",
-      "result": "passed; 71 fast focused tests green across ISA, assembler, VM, and compiler"
+      "command": ".\\build\\test_consumer_shell_productization.exe",
+      "result": "passed; historical consumer shell productization witness remains green"
     },
     {
-      "command": "cmake --build build --target test_os_platform --config Debug; .\\build\\test_os_platform.exe",
-      "result": "passed; historical OS platform witness green"
-    },
-    {
-      "command": "cmake --build build --target test_phase_d_kernel --config Debug; .\\build\\test_phase_d_kernel.exe",
-      "result": "passed; historical native Phase D kernel witness green"
+      "command": "tools\\trit-doctor.ps1",
+      "result": "passed; required files, JSON manifests, build directory, and smoke/production binaries are present"
     },
     {
       "command": "tools\\trit-test.ps1 smoke",
@@ -272,6 +538,14 @@
     {
       "command": "tools\\trit-test.ps1 production",
       "result": "passed; production layers, hardening, OS platform, scaling, consumer shell, and host runtime green"
+    },
+    {
+      "command": "tools\\trit-export-diagnostics.ps1",
+      "result": "passed; wrote build\\diagnostics\\latest\\agent_diagnostics.json"
+    },
+    {
+      "command": "python tools\\trit_tool.py knowledge status --json",
+      "result": "passed; docs vault, Obsidian canvas, required files, and Graphify configuration report clean"
     },
     {
       "command": "git diff --check",

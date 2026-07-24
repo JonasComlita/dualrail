@@ -80,6 +80,7 @@ std::vector<AppCase> bundledApps() {
         {"sync", "sync", kCliStackWords},
         {"reboot", "reboot", kCliStackWords},
         {"shutdown", "shutdown", kCliStackWords},
+        {"crash", "crash", kCliStackWords},
         {"login", "login", kCliStackWords},
         {"passwd", "passwd", kCliStackWords},
         {"service_stub", "sessiond", kCliStackWords},

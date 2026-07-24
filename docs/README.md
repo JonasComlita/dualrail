@@ -31,6 +31,7 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 | **11 — Apps/SDK** | GUI apps, shell, SDK library, widget toolkit | `apps/`, `apps/os_sdk.trit`, `apps/libwidget.trit` |
 | **12 — Host runtime** | Image loader, SDL runner, boot image builder | `ternary_host_runtime.h`, `build_tos_image.cpp`, `run_tos_sdl.cpp` |
 | **AI** | BitNet 1.58-bit transformer inference engine | `ternary_transformer_runtime.h` |
+| **Benchmarks** | Long-horizon Doom-class and BitNet-class OS capability tests | `docs/10_Benchmarks/` |
 
 ---
 
@@ -60,6 +61,7 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 ### Binary / ABI Contract
 - **[04_Binary_Contract/abi_spec.md](04_Binary_Contract/abi_spec.md)** — Calling convention
 - **[04_Binary_Contract/asm_syntax.md](04_Binary_Contract/asm_syntax.md)** — Assembler syntax
+- **[04_Binary_Contract/symbolic_encodings.md](04_Binary_Contract/symbolic_encodings.md)** - ASCII, UTF-8, hex, and planned ternary-native symbolic encodings
 
 ### Compiler Infrastructure
 - **[05_Compiler_Infra/ternary_ir.md](05_Compiler_Infra/ternary_ir.md)** — SSA IR nodes
@@ -75,6 +77,11 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 ### Host & Build
 - **[09_Host_Runtime/image_format.md](09_Host_Runtime/image_format.md)** — .tboot/.tdisk formats
 - **[09_Host_Runtime/build_and_test.md](09_Host_Runtime/build_and_test.md)** — Build system and test runner
+
+### System Benchmarks
+- **[10_Benchmarks/system_benchmark_plan.md](10_Benchmarks/system_benchmark_plan.md)** - Doom-class and BitNet-class benchmark plan
+- **[10_Benchmarks/doom.md](10_Benchmarks/doom.md)** - Interactive OS benchmark target
+- **[10_Benchmarks/bitnet.md](10_Benchmarks/bitnet.md)** - Inference and data-movement benchmark target
 
 ---
 
@@ -121,5 +128,6 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 | Kernel + VFS + process | ⚠️ In progress |
 | Desktop + host runtime | ⚠️ In progress |
 | Agent-operable surface | 🌱 Seeded |
+| System benchmarks | Planned |
 
 See `ROADMAP_STATUS.json` for evidence and open items. See `KNOWN_GAPS.md` for actionable work.

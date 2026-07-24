@@ -29,7 +29,7 @@ fn main() -> t40 {
         return 1;
     }
     var fd: t40 = os_open(sync_seed_release(), 2);
-    if fd <= 0 {
+    if fd < 0 {
         os_putc(83); os_putc(89); os_putc(78); os_putc(67); os_putc(32);
         os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_newline();
         return 0;

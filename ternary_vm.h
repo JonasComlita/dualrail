@@ -3013,7 +3013,7 @@ inline int executeCachedBlock(VMState& vm, int max_instructions) {
         ++executed;
         ++vm.block_cache_stats.instructions_executed;
 
-        if (!vm.isRunning()) break;
+        if (!vm.isRunning() || vm.power_control != 0) break;
         if (vm.pc != expected_next) break;
     }
 
@@ -3369,7 +3369,7 @@ inline int executeTraceJitTrace(
     int index = 0;
     ++vm.trace_jit_stats.traces_executed;
 
-    while (vm.isRunning() &&
+    while (vm.isRunning() && vm.power_control == 0 &&
            (max_instructions < 0 || executed < max_instructions) &&
            index >= 0 &&
            index < static_cast<int>(trace.instructions.size())) {
@@ -3394,7 +3394,7 @@ inline int executeTraceJitTrace(
         ++executed;
         ++vm.trace_jit_stats.instructions_executed;
 
-        if (!vm.isRunning() || exit_trace) break;
+        if (!vm.isRunning() || vm.power_control != 0 || exit_trace) break;
         if (next_index < 0 ||
             next_index >= static_cast<int>(trace.instructions.size())) {
             break;
@@ -3502,7 +3502,7 @@ inline RunResult runMultiCore(VMState& vm, int max_steps = 1000000) {
 inline RunResult run(VMState& vm, int max_steps = 1000000,
                      const VMHooks* hooks = nullptr) {
     int steps = 0;
-    while (vm.isRunning()) {
+    while (vm.isRunning() && vm.power_control == 0) {
         if (max_steps >= 0 && steps >= max_steps) break;
         if (!hooks && vm.execution_backend == VMExecutionBackend::TraceJit) {
             const int remaining = max_steps < 0
@@ -3551,6 +3551,10 @@ inline RunResult run(VMState& vm, int max_steps = 1000000,
         }
         r.description = tc + " at PC=" + std::to_string(vm.pc)
                       + " after " + std::to_string(steps) + " steps";
+    } else if (vm.power_control != 0) {
+        r.trap_code = TrapCode::TRAP_ILLEGAL_OP;  // unused
+        r.description = "Power control request at PC=" + std::to_string(vm.pc) +
+                        " after " + std::to_string(steps) + " steps";
     } else {
         r.trap_code   = TrapCode::TRAP_ILLEGAL_OP;  // unused
         r.description = "Step limit reached after "

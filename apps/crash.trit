@@ -1,0 +1,7 @@
+// apps/crash.trit - intentional fault generator for release crash diagnostics.
+
+fn main() -> t40 {
+    var numerator: t40 = 1;
+    var denominator: t40 = 0;
+    return numerator / denominator;
+}

@@ -277,6 +277,87 @@ void testRuntimeSeparateDiskRequiredAndPreserved() {
            "reboot preserves modified .tdisk state");
 }
 
+void testGuestRequestedColdRebootPreservesDisk() {
+    std::cout << "[5] Guest-requested cold reboot boundary and disk preservation\n";
+
+    sandbox::host::TosBootImage image = assembleImage(R"(
+        .text
+        boot:
+            mov r1, 0
+            csrw block_index, r1
+            mov r2, 300
+            csrw block_addr, r2
+            mov r1, 1
+            csrw block_cmd, r1
+            load r3, r2, 0
+            brp r3, second_boot
+            mov r3, 1
+            store r3, r2, 0
+            mov r1, 0
+            csrw block_index, r1
+            csrw block_addr, r2
+            mov r1, 2
+            csrw block_cmd, r1
+            mov r1, 4
+            csrw block_cmd, r1
+            mov r1, 1
+            csrw power_control, r1
+            mov r3, 2
+            store r3, r2, 0
+            mov r1, 2
+            csrw block_cmd, r1
+            halt
+        second_boot:
+            mov r5, 81
+            add r3, r5, r3
+            mov r4, 60000
+            store r3, r4, 0
+            halt
+    )");
+    image.rootfs_words.assign(sandbox::vm::MMU_PAGE_WORDS, 0);
+
+    const std::string disk_path = buildPath("host_runtime_guest_reboot.tdisk");
+    const std::string diag_path = buildPath("host_runtime_guest_reboot_diagnostics");
+    std::filesystem::remove(disk_path);
+    std::filesystem::remove_all(diag_path);
+
+    sandbox::host::TosRuntimeConfig config;
+    config.disk_path = disk_path;
+    config.profile_name = "compact";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    expect(runtime.loadImage(image, &error), "runtime loads guest reboot image");
+    const auto initial = runtime.snapshot();
+    expect(initial.boot_generation == 1 && initial.guest_reboot_count == 0,
+           "fresh runtime starts at boot generation one without guest reboots");
+
+    auto result = runtime.runForSteps(128);
+    expect(!result.trapped(), "guest reboot request completes without a VM trap");
+    const auto rebooted = runtime.snapshot();
+    expect(rebooted.boot_generation == 2 && rebooted.guest_reboot_count == 1,
+           "guest power request creates a new cold-boot generation");
+    expect(rebooted.cycles == 0 && rebooted.pc == image.manifest.boot_entry,
+           "guest reboot replaces volatile VM execution state with the boot image state");
+    expect(rebooted.disk_path == disk_path,
+           "guest reboot keeps the same mutable disk attachment");
+
+    result = runtime.runForSteps(128);
+    expect(result.halted(), "second guest boot observes persisted marker and halts");
+    const sandbox::host::TosFramebufferSnapshot framebuffer = runtime.readFramebuffer();
+    expect(!framebuffer.glyphs.empty() && framebuffer.glyphs[0] == 'R',
+           "second guest boot reads disk state written before reboot");
+
+    expect(runtime.exportDiagnostics(diag_path, &error),
+           "guest reboot exports reset-generation diagnostics");
+    std::ifstream vm_state(diag_path + "/vm_state.txt");
+    const std::string diagnostics((std::istreambuf_iterator<char>(vm_state)),
+                                  std::istreambuf_iterator<char>());
+    expect(diagnostics.find("boot_generation=2") != std::string::npos &&
+               diagnostics.find("guest_reboot_count=1") != std::string::npos,
+           "diagnostics record the completed guest reboot boundary");
+}
+
 } // namespace
 
 int main() {
@@ -286,6 +367,7 @@ int main() {
     testRuntimeTextFramebufferAndInput();
     testRuntimeGraphicsResetAndDiagnostics();
     testRuntimeSeparateDiskRequiredAndPreserved();
+    testGuestRequestedColdRebootPreservesDisk();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " host runtime failure(s)\n";

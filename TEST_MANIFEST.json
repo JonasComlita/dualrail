@@ -94,6 +94,37 @@
       "manual": true
     },
     {
+      "name": "system_benchmarks",
+      "description": "Planned long-running end-to-end OS benchmarks for Doom-class interactivity and BitNet 1.58B-class inference.",
+      "targets": [],
+      "planned_targets": [
+        "benchmark_doom_os",
+        "benchmark_bitnet_os"
+      ],
+      "manual": true,
+      "status": "planned",
+      "docs": [
+        "docs/10_Benchmarks/system_benchmark_plan.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md"
+      ]
+    },
+    {
+      "name": "symbolic_encodings",
+      "description": "Planned tests for ASCII/UTF-8 compatibility, hexadecimal boundaries, and ternary-native symbolic encodings.",
+      "targets": [],
+      "planned_targets": [
+        "test_symbolic_encodings",
+        "test_tascii81",
+        "test_ternary_dump_notation"
+      ],
+      "manual": true,
+      "status": "planned",
+      "docs": [
+        "docs/04_Binary_Contract/symbolic_encodings.md"
+      ]
+    },
+    {
       "name": "accelerators",
       "description": "Optional CUDA and SYCL validation targets when configured.",
       "targets": [

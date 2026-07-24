@@ -665,12 +665,14 @@ def build_obsidian_canvas() -> dict[str, Any]:
         ("isa", "02_Hardware_ISA/encoding.md", 760, 340, 320, 210, "6"),
         ("vm", "03_Execution_Engine/vm_state.md", 1140, 340, 320, 210, "1"),
         ("abi", "04_Binary_Contract/abi_spec.md", 0, 650, 320, 210, "2"),
+        ("symbols", "04_Binary_Contract/symbolic_encodings.md", 0, 960, 320, 210, "3"),
         ("compiler", "05_Compiler_Infra/ternary_ir.md", 380, 650, 320, 210, "3"),
         ("language", "06_Language/tcl_language.md", 760, 650, 320, 210, "4"),
         ("kernel", "07_OS_Substrate/kernel_overview.md", 1140, 650, 320, 210, "5"),
         ("apps", "08_Applications/app_sdk.md", 380, 960, 320, 210, "6"),
         ("host", "09_Host_Runtime/build_and_test.md", 760, 960, 320, 210, "1"),
         ("graphify", "_graphify/README.md", 1140, 960, 320, 210, "2"),
+        ("benchmarks", "10_Benchmarks/system_benchmark_plan.md", 760, 1270, 320, 210, "3"),
     ]
     edge_specs = [
         ("home", "index", "navigation"),
@@ -680,6 +682,8 @@ def build_obsidian_canvas() -> dict[str, Any]:
         ("logic", "isa", "encodes"),
         ("isa", "vm", "executes"),
         ("vm", "abi", "calls"),
+        ("abi", "symbols", "encodes"),
+        ("symbols", "compiler", "literals"),
         ("abi", "compiler", "targets"),
         ("compiler", "language", "fronts"),
         ("language", "kernel", "boots"),
@@ -687,6 +691,8 @@ def build_obsidian_canvas() -> dict[str, Any]:
         ("apps", "host", "bundles"),
         ("status", "graphify", "analysis"),
         ("graphify", "index", "reports"),
+        ("host", "benchmarks", "measures"),
+        ("benchmarks", "status", "gates"),
     ]
     return {
         "nodes": [

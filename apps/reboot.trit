@@ -1,8 +1,8 @@
-// apps/reboot.trit - Reboot request placeholder.
+// apps/reboot.trit - Request a privileged cold guest reboot.
 
 fn main() -> t40 {
     os_putc(82); os_putc(69); os_putc(66); os_putc(79); os_putc(79); os_putc(84);
     os_putc(32); os_putc(82); os_putc(69); os_putc(81); os_putc(85); os_putc(69);
     os_putc(83); os_putc(84); os_newline();
-    return 1;
+    return os_reboot();
 }

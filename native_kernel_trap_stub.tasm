@@ -9,6 +9,8 @@
 native_trap_entry:
     csrrw sp, scratch, sp
     store r1, sp, 6
+    mov r1, 0
+    csrw timer_enable, r1
     store r2, sp, 7
     store r3, sp, 8
     store r4, sp, 9
@@ -71,6 +73,13 @@ native_trap_entry:
     csrw user_dmem_pages, r1
     load r1, sp, 31
     csrw scratch, r1
+    mov r1, 100000
+    csrw timer_reload, r1
+    csrw timer_counter, r1
+    mov r1, 0
+    csrw timer_pending, r1
+    mov r1, 1
+    csrw timer_enable, r1
     load r1, sp, 6
     load r2, sp, 7
     load r3, sp, 8

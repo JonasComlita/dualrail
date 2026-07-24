@@ -316,6 +316,12 @@
       "id": 57,
       "name": "sys_app_spawn",
       "group": "process"
+    },
+    {
+      "id": 58,
+      "name": "sys_reboot",
+      "group": "power",
+      "notes": "Requires APP_CAP_SYSTEM; requests a cold guest VM reset while preserving the attached mutable disk."
     }
   ]
 }
