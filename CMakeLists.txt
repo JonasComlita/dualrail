@@ -90,6 +90,18 @@ add_executable(build_tos_image build_tos_image.cpp)
 add_executable(migrate_tos_artifacts migrate_tos_artifacts.cpp)
 target_compile_features(migrate_tos_artifacts PUBLIC cxx_std_17)
 target_compile_definitions(migrate_tos_artifacts PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_migration_v2 tests/test_migration_v2.cpp)
+target_compile_features(test_migration_v2 PUBLIC cxx_std_17)
+target_compile_definitions(test_migration_v2
+    PRIVATE
+        TERNARY_IGNORE_LONG_DOUBLE_ASSERT
+        TRIT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        TRIT_BUILD_TOS_IMAGE_PATH="$<TARGET_FILE:build_tos_image>"
+        TRIT_MIGRATE_TOS_ARTIFACTS_PATH="$<TARGET_FILE:migrate_tos_artifacts>"
+)
+add_dependencies(test_migration_v2 build_tos_image migrate_tos_artifacts)
+add_test(NAME test_migration_v2 COMMAND test_migration_v2)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
@@ -276,6 +288,7 @@ add_custom_target(production_profile
         test_production_layers
         test_production_hardening
         test_os_platform
+        test_migration_v2
         test_redo_wal_v2
         test_scaling_profile_compact
         test_consumer_shell_productization
@@ -286,6 +299,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_layers>
     COMMAND $<TARGET_FILE:test_production_hardening>
     COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_migration_v2>
     COMMAND $<TARGET_FILE:test_redo_wal_v2>
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>

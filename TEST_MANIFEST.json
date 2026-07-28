@@ -41,6 +41,7 @@
       "targets": [
         "test_multiwidth_vm",
         "test_os_platform",
+        "test_migration_v2",
         "test_redo_wal_v2",
         "test_phase_d_kernel",
         "test_process_handoff",
@@ -59,6 +60,7 @@
         "test_production_hardening",
         "test_os_platform",
         "test_architecture_v2",
+        "test_migration_v2",
         "test_redo_wal_v2",
         "test_scaling_profile_compact",
         "test_consumer_shell_productization",

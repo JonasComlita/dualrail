@@ -1,0 +1,51 @@
+{
+  "schema": "trit.v1.fixture-manifest.v1",
+  "source_commit": "f5b5b3d",
+  "source_tag": "trit-v1-final",
+  "historical_only": true,
+  "runtime_execution_allowed": false,
+  "artifacts": [
+    {
+      "path": "contracts.json",
+      "roles": [
+        "instruction",
+        "executable",
+        "syscall"
+      ]
+    },
+    {
+      "path": "v1-embedded-root.tboot",
+      "format": "tboot-v1",
+      "bytes": 2552043,
+      "sha256": "1419F0792AD69EE878390C56F789451F3690972481F4478DB006CEBEB400B981",
+      "roles": [
+        "boot-image",
+        "embedded-vfs",
+        "offline-migration"
+      ]
+    },
+    {
+      "path": "v1-release.tboot",
+      "format": "tboot-v2",
+      "bytes": 371558,
+      "sha256": "3EF3C5A7F26644691275BB7BBC6D1680F7D929E04BE395673C31F43C538368FB",
+      "roles": [
+        "boot-image",
+        "separate-disk-release",
+        "offline-migration"
+      ]
+    },
+    {
+      "path": "v1-release.tdisk",
+      "format": "tdisk-v1",
+      "bytes": 684872,
+      "sha256": "A73DA25D7BCDD02D3C6A32C330C935A975431095562C27ED41C3B0EC73B6B893",
+      "roles": [
+        "disk-image",
+        "vfs",
+        "wal-recovery-seed",
+        "offline-migration"
+      ]
+    }
+  ]
+}

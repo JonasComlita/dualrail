@@ -154,11 +154,14 @@ const WINDOW_BASE: t40 = 132000;
 const WINDOW_EVENT_BASE: t40 = 134000;
 const WINDOW_EVENT_CAPACITY: t40 = 8;
 const WINDOW_EVENT_WORDS: t40 = 4;
-const WINDOW_BUFFER_BASE: t40 = 8000019;
-const WINDOW_BUFFER_WORDS: t40 = 6912;
-const WINDOW_BUFFER_PAGES: t40 = 256;
+// Each compositor buffer occupies ten aligned v2 base pages.  The previous
+// 6912-word stride and 8000019 base were aligned only to the legacy 27-word
+// page and caused the user mapping to point at the wrong 729-word frame.
+const WINDOW_BUFFER_BASE: t40 = 8000046;
+const WINDOW_BUFFER_WORDS: t40 = 7290;
+const WINDOW_BUFFER_PAGES: t40 = 10;
 const WINDOW_USER_VPN_BASE: t40 = 64;
-const WINDOW_USER_PAGES: t40 = 256;
+const WINDOW_USER_PAGES: t40 = 10;
 const WIN_ACTIVE: t40 = 0;
 const WIN_ID: t40 = 1;
 const WIN_OWNER_PID: t40 = 2;

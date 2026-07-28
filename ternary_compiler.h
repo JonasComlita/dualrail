@@ -277,9 +277,16 @@ namespace compiler {
         result.executable_header.text_pages = std::max(
             1, (result.executable_header_v2.text_words +
                 vm::MMU_PAGE_WORDS - 1) / vm::MMU_PAGE_WORDS);
+        // The transition descriptor still drives the kernel's page-map
+        // allocation.  A v2 stack is part of the process's writable virtual
+        // image even when the executable has no initialized data, so size the
+        // mapping for the larger of initialized data and stack capacity.
+        const int writable_words = std::max(
+            result.executable_header_v2.data_words,
+            result.executable_header_v2.stack_words);
         result.executable_header.data_pages = std::max(
-            1, (result.executable_header_v2.data_words +
-                vm::MMU_PAGE_WORDS - 1) / vm::MMU_PAGE_WORDS);
+            1, (writable_words + vm::MMU_PAGE_WORDS - 1) /
+                   vm::MMU_PAGE_WORDS);
         result.executable_header.stack_words =
             result.executable_header_v2.stack_words;
         result.executable_header.syscall_abi_version =

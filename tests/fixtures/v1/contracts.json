@@ -1,0 +1,33 @@
+{
+  "schema": "trit.v1.contract-golden.v1",
+  "source_commit": "f5b5b3d",
+  "instruction_words": {
+    "add.t40_r3_r1_r2": 9113856332791808,
+    "mov.t40_r5_42": 4540434698556929,
+    "load.t40_r4_sp_minus8": 4944960488297798,
+    "brn_r3_minus5": 581733277062474,
+    "tladd_r3_r1_r2": 10134203123367936
+  },
+  "executable_header": {
+    "words": 9,
+    "magic": 40404,
+    "version": 1,
+    "abi_version": 1,
+    "syscall_abi_version": 1
+  },
+  "syscalls": {
+    "write_int": 1,
+    "newline": 2,
+    "clear": 3,
+    "yield": 4,
+    "sleep_until_tick": 5,
+    "getpid": 7,
+    "open": 12,
+    "read": 14,
+    "write": 15,
+    "exec": 21,
+    "exit": 44,
+    "fsync": 47,
+    "reboot": 58
+  }
+}

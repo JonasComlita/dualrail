@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -91,6 +92,36 @@ def test_product_runtime_does_not_compile_sources():
     assert "compile" not in cmd_run
 
 
+def test_v1_fixture_provenance_and_checksums():
+    fixture_root = REPO / "tests" / "fixtures" / "v1"
+    manifest = json.loads(
+        (fixture_root / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["source_commit"] == "f5b5b3d"
+    assert manifest["source_tag"] == "trit-v1-final"
+    assert manifest["historical_only"]
+    assert not manifest["runtime_execution_allowed"]
+
+    roles = set()
+    for artifact in manifest["artifacts"]:
+        path = fixture_root / artifact["path"]
+        assert path.is_file(), artifact
+        roles.update(artifact.get("roles", []))
+        if "sha256" in artifact:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+            assert digest == artifact["sha256"], artifact
+            assert path.stat().st_size == artifact["bytes"], artifact
+    assert {
+        "instruction",
+        "executable",
+        "syscall",
+        "boot-image",
+        "disk-image",
+        "wal-recovery-seed",
+        "offline-migration",
+    } <= roles
+
+
 def test_knowledge_obsidian_and_graphify_integration():
     completed = run_tool("knowledge", "status", "--json")
     report = json.loads(completed.stdout)
@@ -150,5 +181,6 @@ if __name__ == "__main__":
     test_doctor_json_and_manifests()
     test_boot_image_inspector_when_release_image_exists()
     test_product_runtime_does_not_compile_sources()
+    test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
     test_trit_adapter_augments_graphify_graph()
