@@ -317,7 +317,11 @@
         "gui.input.focus_close_key_events",
         "gui.widget.dirty_text_redraw_runtime",
         "apps.bundle.remaining_gui_draw_contracts",
-        "full_system.release.paint_launch_graphics_canvas"
+        "full_system.release.paint_launch_graphics_canvas",
+        "full_system.release.paint_input_clear_cycle",
+        "full_system.release.paint_exit_desktop_recovery",
+        "full_system.release.file_manager_exit_desktop_recovery",
+        "full_system.release.settings_exit_desktop_recovery"
       ]
     },
     {
@@ -438,8 +442,12 @@
         "full_system.release.login_desktop_app_launch",
         "full_system.release.task_manager_launch_screen",
         "full_system.release.paint_launch_graphics_canvas",
+        "full_system.release.paint_input_clear_cycle",
+        "full_system.release.paint_exit_desktop_recovery",
         "full_system.release.file_manager_launch_screen",
+        "full_system.release.file_manager_exit_desktop_recovery",
         "full_system.release.settings_launch_screen",
+        "full_system.release.settings_exit_desktop_recovery",
         "full_system.release.settings_persistence_readback",
         "full_system.release.terminal_launch_reset_diagnostics",
         "full_system.release.terminal_shell_reboot_command",

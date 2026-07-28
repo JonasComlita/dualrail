@@ -267,7 +267,7 @@ void vmDeviceCsrIo(TestContext& ctx) {
 void vmBlockCsrBoundaries(TestContext& ctx) {
     sandbox::vm::VMState vm(64, 512);
     ctx.equal(csrLong(vm, sandbox::isa::CSR_BLOCK_WORDS),
-              static_cast<long long>(sandbox::vm::MMU_PAGE_WORDS),
+              static_cast<long long>(sandbox::vm::STORAGE_BLOCK_WORDS),
               "block words CSR reports ternary page size");
     ctx.check(csrLong(vm, sandbox::isa::CSR_BLOCK_COUNT) >= 141,
               "block count CSR reports persistent native VFS capacity");
@@ -280,7 +280,7 @@ void vmBlockCsrBoundaries(TestContext& ctx) {
               "block index writes");
     ctx.check(writeCsr(vm, sandbox::isa::CSR_BLOCK_ADDR, 200),
               "block address writes");
-    for (int i = 0; i < sandbox::vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < sandbox::vm::STORAGE_BLOCK_WORDS; ++i) {
         ctx.check(vm.dmem.store(200 + i, sandbox::vm::ops::fromLong(700 + i)) ==
                       sandbox::vm::MemFaultCode::OK,
                   "block payload stores into DMEM");
@@ -349,7 +349,7 @@ void tritHalRuntime(TestContext& ctx) {
     }
 
     sandbox::vm::VMState vm(262144, 1000000);
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               "HAL runtime image loads");
     vm.enqueueConsoleAscii("Z");
     const auto result = sandbox::vm::run(vm, 1000000);

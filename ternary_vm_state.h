@@ -72,6 +72,7 @@
 #include <unistd.h>
 #endif
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <sstream>
@@ -121,7 +122,13 @@ static constexpr int DEFAULT_IMEM_SIZE = 4096;
 // The memory can be resized at construction for large simulations.
 static constexpr int DEFAULT_DMEM_SIZE = 1000000;
 
-static constexpr int MMU_PAGE_WORDS = 27;
+static constexpr int STORAGE_BLOCK_WORDS =
+    architecture::v2::STORAGE_BLOCK_WORDS;
+static constexpr int LEGACY_MMU_PAGE_WORDS = 27;
+static constexpr int MMU_PAGE_WORDS =
+    architecture::v2::BASE_PAGE_WORDS;
+static constexpr int MMU_SUPERPAGE_WORDS =
+    architecture::v2::SUPERPAGE_WORDS;
 static constexpr int OS_CLUSTER_WORDS = 4096;
 static constexpr int SPARSE_VM_PAGE_WORDS = OS_CLUSTER_WORDS;
 static constexpr int SPARSE_MEMORY_DENSE_LIMIT_WORDS = 4 * 1024 * 1024;
@@ -149,7 +156,8 @@ struct ProductionProfile {
             profile.ram_bytes / PRODUCTION_RAM_WORD_BYTES);
         profile.instruction_words = profile.ram_words;
         const std::int64_t block_bytes =
-            static_cast<std::int64_t>(MMU_PAGE_WORDS) * static_cast<std::int64_t>(sizeof(long long));
+            static_cast<std::int64_t>(STORAGE_BLOCK_WORDS) *
+            static_cast<std::int64_t>(sizeof(long long));
         profile.disk_blocks = static_cast<int>((profile.disk_bytes + block_bytes - 1) / block_bytes);
         profile.framebuffer_words = profile.framebuffer_width * profile.framebuffer_height;
         return profile;
@@ -599,28 +607,112 @@ struct TernaryRegisterFile {
     // Registers r0..r26. r0 is hardwired zero — reads always return
     // a tagged zero; writes are silently discarded. All others are
     // general-purpose, initialized to T40 zero on reset.
+    // Every stored word remains T40. view_mode is non-architectural simulator
+    // metadata used to reconstruct the view selected by an instruction.
     std::array<TernaryValue, REG_COUNT> reg;
+    std::array<TernaryMode, REG_COUNT> view_mode;
 
     TernaryRegisterFile() { reset(); }
 
     void reset() {
-        for (auto& r : reg) r = TernaryValue::zero();
+        for (std::size_t index = 0; index < reg.size(); ++index) {
+            reg[index] = TernaryValue::zero(TernaryMode::T40);
+            view_mode[index] = TernaryMode::T40;
+        }
     }
 
     // Read register [idx]. r0 always returns exact zero regardless of
     // any prior attempted write. Out-of-range index returns zero silently.
+    [[nodiscard]] TernaryValue readPhysical(uint8_t idx) const {
+        if (idx == R0_ZERO || idx >= REG_COUNT)
+            return TernaryValue::zero(TernaryMode::T40);
+        return reg[idx];
+    }
+
+    [[nodiscard]] TernaryValue readView(
+            uint8_t idx,
+            TernaryMode view) const {
+        if (idx == R0_ZERO || idx >= REG_COUNT)
+            return TernaryValue::zero(view);
+        if (view == TernaryMode::T50 || view == TernaryMode::L50) {
+            if (idx + 1 >= REG_COUNT)
+                return TernaryValue::invalid(view);
+            const auto low = reg[idx].asTriple().unpack();
+            const auto high = reg[idx + 1].asTriple().unpack();
+            std::array<int8_t, 50> wide{};
+            for (int trit = 0; trit < 40; ++trit)
+                wide[static_cast<std::size_t>(trit)] =
+                    low[static_cast<std::size_t>(trit)];
+            for (int trit = 0; trit < 10; ++trit)
+                wide[static_cast<std::size_t>(40 + trit)] =
+                    high[static_cast<std::size_t>(trit)];
+            TernaryValue numeric = TernaryValue::fromLongTriple(
+                LongTriple::pack(wide));
+            return view == TernaryMode::L50
+                ? numericToLane(numeric, view)
+                : numeric;
+        }
+
+        if (view == TernaryMode::T40) return reg[idx];
+        return convertValue(reg[idx], view);
+    }
+
     [[nodiscard]] TernaryValue read(uint8_t idx) const {
-        if (idx == R0_ZERO)    return TernaryValue::zero();
-        if (idx < REG_COUNT)   return reg[idx];
-        return TernaryValue::zero();  // out-of-range: silent zero
+        if (idx == R0_ZERO || idx >= REG_COUNT)
+            return TernaryValue::zero(TernaryMode::T40);
+        return readView(idx, view_mode[idx]);
     }
 
     // Write register [idx]. Writes to r0 are discarded. Writes to
     // r27 or above are discarded (r27 is the separate trap register).
     void write(uint8_t idx, TernaryValue val) {
         if (idx == R0_ZERO) return;   // hardwired zero
-        if (idx < REG_COUNT) reg[idx] = val;
-        // idx >= REG_COUNT: silently discard
+        if (idx >= REG_COUNT) return;
+
+        invalidatePairTouching(idx);
+        const TernaryMode requested = val.mode;
+        if (requested == TernaryMode::T50 ||
+            requested == TernaryMode::L50) {
+            if (idx + 1 >= REG_COUNT) {
+                reg[idx] = TernaryValue::invalid(TernaryMode::T40);
+                view_mode[idx] = TernaryMode::T40;
+                return;
+            }
+            invalidatePairTouching(static_cast<uint8_t>(idx + 1));
+            TernaryValue numeric = isLaneMode(requested)
+                ? laneToNumeric(val)
+                : val;
+            if (numeric.isInvalid()) {
+                reg[idx] = TernaryValue::invalid(TernaryMode::T40);
+                reg[idx + 1] =
+                    TernaryValue::invalid(TernaryMode::T40);
+            } else {
+                const auto wide = numeric.asLongTripleRaw().unpack();
+                std::array<int8_t, 40> low{};
+                std::array<int8_t, 40> high{};
+                for (int trit = 0; trit < 40; ++trit)
+                    low[static_cast<std::size_t>(trit)] =
+                        wide[static_cast<std::size_t>(trit)];
+                for (int trit = 0; trit < 10; ++trit)
+                    high[static_cast<std::size_t>(trit)] =
+                        wide[static_cast<std::size_t>(40 + trit)];
+                reg[idx] =
+                    TernaryValue::fromTriple(Triple::pack(low));
+                reg[idx + 1] =
+                    TernaryValue::fromTriple(Triple::pack(high));
+            }
+            view_mode[idx] = requested;
+            view_mode[idx + 1] = TernaryMode::T40;
+            return;
+        }
+
+        TernaryValue numeric = isLaneMode(requested)
+            ? laneToNumeric(val)
+            : val;
+        reg[idx] = numeric.isInvalid()
+            ? TernaryValue::invalid(TernaryMode::T40)
+            : convertValue(numeric, TernaryMode::T40);
+        view_mode[idx] = requested;
     }
 
     void write(uint8_t idx, LongTriple val) {
@@ -644,6 +736,25 @@ struct TernaryRegisterFile {
             }
         }
         return oss.str();
+    }
+
+private:
+    void invalidatePairTouching(uint8_t idx) {
+        if (idx < REG_COUNT &&
+            (view_mode[idx] == TernaryMode::T50 ||
+             view_mode[idx] == TernaryMode::L50)) {
+            view_mode[idx] = TernaryMode::T40;
+            if (idx + 1 < REG_COUNT) {
+                reg[idx + 1] =
+                    TernaryValue::zero(TernaryMode::T40);
+                view_mode[idx + 1] = TernaryMode::T40;
+            }
+        }
+        if (idx > 0 &&
+            (view_mode[idx - 1] == TernaryMode::T50 ||
+             view_mode[idx - 1] == TernaryMode::L50)) {
+            view_mode[idx - 1] = TernaryMode::T40;
+        }
     }
 };
 
@@ -1249,6 +1360,7 @@ enum class VMStatus : uint8_t {
     RUNNING  = 0,  // Normal execution. PC will advance on next step.
     HALTED   = 1,  // Clean HALT instruction executed. PC points to HALT word.
     TRAPPED  = 2,  // Fault occurred. trap_reg written. Execution stopped.
+    WAITING  = 3,  // Architectural idle; resumes only after an event.
 };
 
 [[nodiscard]] inline std::string vmStatusToString(VMStatus s) {
@@ -1256,6 +1368,7 @@ enum class VMStatus : uint8_t {
         case VMStatus::RUNNING: return "RUNNING";
         case VMStatus::HALTED:  return "HALTED";
         case VMStatus::TRAPPED: return "TRAPPED";
+        case VMStatus::WAITING: return "WAITING";
         default:                return "UNKNOWN";
     }
 }
@@ -1311,7 +1424,9 @@ namespace ops {
 // SECTION 8b - Single-Level Page Table Helpers
 // =============================================================================
 
-static_assert(MMU_PAGE_WORDS == 27, "hardware pages remain 27 ternary words");
+static_assert(MMU_PAGE_WORDS == 729, "v2 base pages are 729 ternary words");
+static_assert(STORAGE_BLOCK_WORDS == 27,
+              "storage transfer blocks remain 27 ternary words");
 static constexpr int PTE_FLAG_VALID = 0;
 static constexpr int PTE_FLAG_USER = 1;
 static constexpr int PTE_FLAG_READ = 2;
@@ -1472,6 +1587,8 @@ struct ExecutableImageHeader {
     return validateExecutableHeader(out);
 }
 
+#include "executable_header_v2.h"
+
 inline bool initializeTaskContext(
     TernaryMemory& dmem,
     int context_addr,
@@ -1508,6 +1625,10 @@ struct PageTableEntry {
     bool read = false;
     bool write = false;
     bool execute = false;
+    bool global = false;
+    bool accessed = false;
+    bool dirty = false;
+    bool superpage = false;
 };
 
 [[nodiscard]] inline TernaryValue encodePageTableEntry(
@@ -1518,31 +1639,74 @@ struct PageTableEntry {
     bool execute,
     bool present = true) {
 
-    // PTEs are raw storage fields, not numeric T40 values.
-    std::array<int8_t, 40> trits{};
-    trits[PTE_FLAG_VALID] = present ? T_POS : T_NEG;
-    trits[PTE_FLAG_USER] = user ? T_POS : T_NEG;
-    trits[PTE_FLAG_READ] = read ? T_POS : T_NEG;
-    trits[PTE_FLAG_WRITE] = write ? T_POS : T_NEG;
-    trits[PTE_FLAG_EXECUTE] = execute ? T_POS : T_NEG;
-
-    int remaining = ppn;
-    for (int pos = PTE_PPN_SHIFT; pos < 40 && remaining != 0; ++pos) {
-        int rem = remaining % 3;
-        remaining /= 3;
-        if (rem == 2) {
-            rem = -1;
-            ++remaining;
-        }
-        trits[static_cast<std::size_t>(pos)] = static_cast<int8_t>(rem);
-    }
-    if (remaining != 0 || ppn < 0) {
+    // PTE v2 is one canonical numeric T40 word. Flag trits are zero or
+    // positive; zero is the unique non-present encoding.
+    if (!present) return TernaryValue::zero(TernaryMode::T40);
+    if (ppn < 0) {
         return TernaryValue::invalid(TernaryMode::T40);
     }
-    return TernaryValue::fromTriple(Triple::pack(trits));
+    long long flags = 1;
+    if (user) flags += 3;
+    if (read) flags += 9;
+    if (write) flags += 27;
+    if (execute) flags += 81;
+    return ops::fromLong(
+        static_cast<long long>(ppn) * 19683 + flags,
+        TernaryMode::T40);
 }
 
-[[nodiscard]] inline bool decodePageTableEntry(TernaryValue value, PageTableEntry& out) {
+[[nodiscard]] inline TernaryValue encodePageTableEntry(
+    const PageTableEntry& entry) {
+    if (!entry.present) return TernaryValue::zero(TernaryMode::T40);
+    if (entry.ppn < 0 ||
+        (entry.superpage && entry.ppn % 27 != 0)) {
+        return TernaryValue::invalid(TernaryMode::T40);
+    }
+    long long flags = 1;
+    if (entry.user) flags += 3;
+    if (entry.read) flags += 9;
+    if (entry.write) flags += 27;
+    if (entry.execute) flags += 81;
+    if (entry.global) flags += 243;
+    if (entry.accessed) flags += 729;
+    if (entry.dirty) flags += 2187;
+    if (entry.superpage) flags += 6561;
+    return ops::fromLong(
+        static_cast<long long>(entry.ppn) * 19683 + flags,
+        TernaryMode::T40);
+}
+
+[[nodiscard]] inline bool decodePageTableEntryV2(
+        TernaryValue value,
+        PageTableEntry& out) {
+    if (!isNumericMode(value.mode) || value.isInvalid()) return false;
+    const long long packed = ops::toLong(value);
+    if (packed == 0) {
+        out = PageTableEntry{};
+        return true;
+    }
+    if (packed < 0) return false;
+    long long flag_word = packed % 19683;
+    std::array<bool*, 9> fields = {
+        &out.present, &out.user, &out.read, &out.write, &out.execute,
+        &out.global, &out.accessed, &out.dirty, &out.superpage};
+    for (int trit = 0; trit < 9; ++trit) {
+        const int digit = static_cast<int>(flag_word % 3);
+        flag_word /= 3;
+        if (digit == 2) return false;
+        *fields[static_cast<std::size_t>(trit)] = digit == 1;
+    }
+    const long long ppn = packed / 19683;
+    if (ppn < 0 || ppn > std::numeric_limits<int>::max()) return false;
+    out.ppn = static_cast<int>(ppn);
+    if (!out.present || (out.superpage && out.ppn % 27 != 0))
+        return false;
+    return true;
+}
+
+[[nodiscard]] inline bool decodePageTableEntryLegacy(
+        TernaryValue value,
+        PageTableEntry& out) {
     if (!isNumericMode(value.mode) || value.isInvalid()) return false;
     const int8_t valid = readStoredTrit(value, PTE_FLAG_VALID);
     const int8_t user = readStoredTrit(value, PTE_FLAG_USER);
@@ -1555,20 +1719,19 @@ struct PageTableEntry {
         ppn += static_cast<long long>(readStoredTrit(value, pos)) * place;
         place *= 3;
     }
-    if (ppn >= 0 && ppn <= std::numeric_limits<int>::max()) {
+    if (ppn >= 0 && ppn <= std::numeric_limits<int>::max() &&
+        (valid == T_POS || valid == T_NEG)) {
+        out = PageTableEntry{};
         out.ppn = static_cast<int>(ppn);
         out.present = valid == T_POS;
         out.user = user == T_POS;
         out.read = read == T_POS;
         out.write = write == T_POS;
         out.execute = execute == T_POS;
-        if (out.present || valid == T_NEG) return true;
+        return true;
     }
 
-    // Native TCL code cannot construct raw trit-storage PTE words directly, so
-    // the kernel writes a numeric packed form:
-    //   ppn * 3^5 + valid + user*3 + read*9 + write*27 + execute*81.
-    // Zero remains a hard fault/non-present PTE.
+    // Transition-only legacy numeric packed form.
     long long packed = ops::toLong(value);
     if (packed <= 0) return false;
     const long long flag_word = packed % 243;
@@ -1581,6 +1744,23 @@ struct PageTableEntry {
     out.write = ((flag_word / 27) % 3) == 1;
     out.execute = ((flag_word / 81) % 3) == 1;
     return true;
+}
+
+[[nodiscard]] inline bool decodePageTableEntry(
+        TernaryValue value,
+        PageTableEntry& out,
+        IsaEncodingVersion version) {
+    if (version == IsaEncodingVersion::V2)
+        return decodePageTableEntryV2(value, out);
+    if (decodePageTableEntryV2(value, out)) return true;
+    return decodePageTableEntryLegacy(value, out);
+}
+
+[[nodiscard]] inline bool decodePageTableEntry(
+        TernaryValue value,
+        PageTableEntry& out) {
+    if (decodePageTableEntryV2(value, out)) return true;
+    return decodePageTableEntryLegacy(value, out);
 }
 
 // =============================================================================
@@ -1624,21 +1804,25 @@ struct TernaryVectorFile {
 struct VectorFaultState {
     std::vector<uint8_t> fault_valid;
     std::vector<TrapCode> fault_class;
+    int first_failing_lane = -1;
 
     void reset(int length) {
         fault_valid.assign(std::max(0, length), 0);
         fault_class.assign(std::max(0, length), TrapCode::TRAP_MEM_FAULT);
+        first_failing_lane = -1;
     }
 
     void clear() {
         std::fill(fault_valid.begin(), fault_valid.end(), 0);
         std::fill(fault_class.begin(), fault_class.end(), TrapCode::TRAP_MEM_FAULT);
+        first_failing_lane = -1;
     }
 
     void setLane(int lane, TrapCode code) {
         if (lane < 0 || lane >= static_cast<int>(fault_valid.size())) return;
         fault_valid[static_cast<std::size_t>(lane)] = 1;
         fault_class[static_cast<std::size_t>(lane)] = code;
+        if (first_failing_lane < 0) first_failing_lane = lane;
     }
 
     [[nodiscard]] bool any() const {
@@ -1723,11 +1907,13 @@ public:
         read_cache_.clear();
         pending_blocks_.clear();
         compact_record_count_ = 0;
+        backing_generation_ = 0;
+        backing_read_only_ = false;
         stats_.reset();
     }
 
     [[nodiscard]] int blockCount() const { return block_count_; }
-    [[nodiscard]] int blockWords() const { return MMU_PAGE_WORDS; }
+    [[nodiscard]] int blockWords() const { return STORAGE_BLOCK_WORDS; }
     [[nodiscard]] std::size_t allocatedBlocks() const { return blocks_.size(); }
     [[nodiscard]] std::size_t pendingWriteCount() const { return pending_blocks_.size(); }
     [[nodiscard]] int backingRecordCount() const { return compact_record_count_; }
@@ -1740,6 +1926,8 @@ public:
         read_cache_.clear();
         pending_blocks_.clear();
         compact_record_count_ = 0;
+        backing_generation_ = 0;
+        backing_read_only_ = false;
         stats_.reset();
         return loadCompactBacking();
     }
@@ -1771,7 +1959,8 @@ public:
 
     [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= block_count_) return false;
-        if (static_cast<int>(data.size()) != MMU_PAGE_WORDS) return false;
+        if (static_cast<int>(data.size()) != STORAGE_BLOCK_WORDS) return false;
+        if (backing_read_only_) return false;
 
         ++stats_.writes;
         applyBlock(index, data);
@@ -1786,7 +1975,7 @@ public:
     [[nodiscard]] std::vector<long long> serializeDense() const {
         std::vector<long long> out;
         out.reserve(static_cast<std::size_t>(block_count_) *
-                    static_cast<std::size_t>(MMU_PAGE_WORDS));
+                    static_cast<std::size_t>(STORAGE_BLOCK_WORDS));
         for (int index = 0; index < block_count_; ++index) {
             const std::vector<long long> block = materializeBlock(index);
             out.insert(out.end(), block.begin(), block.end());
@@ -1795,14 +1984,18 @@ public:
     }
 
     [[nodiscard]] bool loadSerialized(const std::vector<long long>& image) {
-        if (image.empty() || static_cast<int>(image.size()) % MMU_PAGE_WORDS != 0) return false;
-        const int blocks = static_cast<int>(image.size()) / MMU_PAGE_WORDS;
+        if (image.empty() ||
+            static_cast<int>(image.size()) % STORAGE_BLOCK_WORDS != 0)
+            return false;
+        const int blocks =
+            static_cast<int>(image.size()) / STORAGE_BLOCK_WORDS;
         reset(blocks);
         for (int block = 0; block < blocks; ++block) {
-            std::vector<long long> payload(MMU_PAGE_WORDS, 0);
-            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
+            std::vector<long long> payload(STORAGE_BLOCK_WORDS, 0);
+            for (int word = 0; word < STORAGE_BLOCK_WORDS; ++word) {
                 payload[static_cast<std::size_t>(word)] =
-                    image[static_cast<std::size_t>(block * MMU_PAGE_WORDS + word)];
+                    image[static_cast<std::size_t>(
+                        block * STORAGE_BLOCK_WORDS + word)];
             }
             if (!isZeroBlock(payload)) blocks_[block] = std::move(payload);
         }
@@ -1832,6 +2025,8 @@ private:
     std::unordered_map<int, std::vector<long long>> pending_blocks_;
     std::string backing_path_;
     int compact_record_count_ = 0;
+    std::uint64_t backing_generation_ = 0;
+    bool backing_read_only_ = false;
     mutable VMBlockDeviceStats stats_;
 
     [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& data) {
@@ -1842,7 +2037,7 @@ private:
     }
 
     [[nodiscard]] std::vector<long long> materializeBlock(int index) const {
-        std::vector<long long> out(MMU_PAGE_WORDS, 0);
+        std::vector<long long> out(STORAGE_BLOCK_WORDS, 0);
         const auto found = blocks_.find(index);
         if (found != blocks_.end()) out = found->second;
         return out;
@@ -1884,21 +2079,66 @@ private:
                    static_cast<long long>(pending_blocks_.size()) > threshold;
     }
 
+    static void hashBytes(
+        std::uint64_t& hash,
+        const void* data,
+        std::size_t size) {
+        const auto* bytes = static_cast<const std::uint8_t*>(data);
+        for (std::size_t index = 0; index < size; ++index) {
+            hash ^= bytes[index];
+            hash *= 1099511628211ULL;
+        }
+    }
+
+    [[nodiscard]] static std::uint64_t canonicalRawWord(long long value) {
+        return convertValue(ops::fromLong(value), TernaryMode::T40)
+            .asTriple().data;
+    }
+
+    [[nodiscard]] static bool numericWordFromRaw(
+        std::uint64_t raw,
+        long long& value) {
+        if (raw > 12157665459056928801ULL) return false;
+        value = ops::toLong(TernaryValue::fromTriple(Triple{raw}));
+        return true;
+    }
+
     [[nodiscard]] bool writeCompactBackingTo(const std::filesystem::path& path,
                                              const std::vector<int>& indices) const {
         {
             std::ofstream file(path, std::ios::binary | std::ios::trunc);
             if (!file.good()) return false;
-            const long long magic = kSparseDiskMagic;
+            const std::uint64_t magic = kSparseDiskV2Magic;
+            const std::uint32_t version = kSparseDiskVersion;
+            const std::uint32_t block_words = STORAGE_BLOCK_WORDS;
+            const std::uint64_t generation = backing_generation_ + 1;
             const int count = static_cast<int>(indices.size());
+            std::uint64_t checksum = 1469598103934665603ULL;
+            for (int index : indices) {
+                const auto found = blocks_.find(index);
+                if (found == blocks_.end()) continue;
+                hashBytes(checksum, &index, sizeof(index));
+                for (long long word : found->second) {
+                    const std::uint64_t raw = canonicalRawWord(word);
+                    hashBytes(checksum, &raw, sizeof(raw));
+                }
+            }
             file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+            file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+            file.write(reinterpret_cast<const char*>(&block_words),
+                       sizeof(block_words));
+            file.write(reinterpret_cast<const char*>(&generation),
+                       sizeof(generation));
+            file.write(reinterpret_cast<const char*>(&checksum),
+                       sizeof(checksum));
             file.write(reinterpret_cast<const char*>(&count), sizeof(count));
             for (int index : indices) {
                 const auto found = blocks_.find(index);
                 if (found == blocks_.end()) continue;
                 file.write(reinterpret_cast<const char*>(&index), sizeof(index));
                 for (long long word : found->second) {
-                    file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+                    const std::uint64_t raw = canonicalRawWord(word);
+                    file.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
                 }
             }
             file.flush();
@@ -1939,6 +2179,7 @@ private:
         if (!detail::syncFileToStableStorage(target)) return false;
 
         compact_record_count_ = static_cast<int>(indices.size());
+        ++backing_generation_;
         pending_blocks_.clear();
         ++stats_.compactions;
         return true;
@@ -1950,25 +2191,66 @@ private:
         if (!file.good()) return initializeCompactBacking();
         std::error_code size_ec;
         const std::uintmax_t file_size = std::filesystem::file_size(backing_path_, size_ec);
-        if (size_ec || file_size < kSparseDiskHeaderBytes) return false;
-        long long magic = 0;
-        int count = 0;
+        if (size_ec || file_size < kSparseDiskLegacyHeaderBytes) return false;
+        std::uint64_t magic = 0;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-        file.read(reinterpret_cast<char*>(&count), sizeof(count));
-        if (!file.good() || magic != kSparseDiskMagic || count < 0) return false;
+        if (!file.good()) return false;
+
+        int count = 0;
+        std::uint64_t expected_checksum = 0;
+        std::uintmax_t header_bytes = kSparseDiskLegacyHeaderBytes;
+        std::uintmax_t record_bytes = kSparseDiskLegacyRecordBytes;
+        const bool v2 = magic == kSparseDiskV2Magic;
+        if (v2) {
+            std::uint32_t version = 0;
+            std::uint32_t block_words = 0;
+            file.read(reinterpret_cast<char*>(&version), sizeof(version));
+            file.read(reinterpret_cast<char*>(&block_words), sizeof(block_words));
+            file.read(reinterpret_cast<char*>(&backing_generation_),
+                      sizeof(backing_generation_));
+            file.read(reinterpret_cast<char*>(&expected_checksum),
+                      sizeof(expected_checksum));
+            file.read(reinterpret_cast<char*>(&count), sizeof(count));
+            if (!file.good() || version != kSparseDiskVersion ||
+                block_words != STORAGE_BLOCK_WORDS || count < 0) {
+                return false;
+            }
+            header_bytes = kSparseDiskV2HeaderBytes;
+            record_bytes = kSparseDiskV2RecordBytes;
+        } else if (magic == kSparseDiskLegacyMagic) {
+            file.read(reinterpret_cast<char*>(&count), sizeof(count));
+            if (!file.good() || count < 0) return false;
+            backing_read_only_ = true;
+        } else {
+            return false;
+        }
+
         blocks_.clear();
         const int max_records =
-            static_cast<int>((file_size - kSparseDiskHeaderBytes) / kSparseDiskRecordBytes);
+            static_cast<int>((file_size - header_bytes) / record_bytes);
         const int records_to_read = std::min(count, max_records);
         const bool needs_repair = count > max_records;
         compact_record_count_ = records_to_read;
+        std::uint64_t actual_checksum = 1469598103934665603ULL;
         for (int i = 0; i < records_to_read; ++i) {
             int index = -1;
-            std::vector<long long> payload(MMU_PAGE_WORDS, 0);
+            std::vector<long long> payload(STORAGE_BLOCK_WORDS, 0);
             file.read(reinterpret_cast<char*>(&index), sizeof(index));
-            for (int word = 0; word < MMU_PAGE_WORDS; ++word) {
-                file.read(reinterpret_cast<char*>(&payload[static_cast<std::size_t>(word)]),
-                          sizeof(long long));
+            if (v2) hashBytes(actual_checksum, &index, sizeof(index));
+            for (int word = 0; word < STORAGE_BLOCK_WORDS; ++word) {
+                if (v2) {
+                    std::uint64_t raw = 0;
+                    file.read(reinterpret_cast<char*>(&raw), sizeof(raw));
+                    if (!numericWordFromRaw(
+                            raw, payload[static_cast<std::size_t>(word)])) {
+                        return false;
+                    }
+                    hashBytes(actual_checksum, &raw, sizeof(raw));
+                } else {
+                    file.read(reinterpret_cast<char*>(
+                                  &payload[static_cast<std::size_t>(word)]),
+                              sizeof(long long));
+                }
             }
             if (!file.good()) return false;
             if (index >= 0 && index < block_count_) {
@@ -1979,78 +2261,49 @@ private:
                 }
             }
         }
-        if (needs_repair) return rewriteCompactBacking();
+        if (v2 && actual_checksum != expected_checksum) return false;
+        if (needs_repair) {
+            if (backing_read_only_) return false;
+            return rewriteCompactBacking();
+        }
         return true;
     }
 
     [[nodiscard]] bool initializeCompactBacking() {
         if (backing_path_.empty()) return true;
-        {
-            std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
-            if (!file.good()) return false;
-            const long long magic = kSparseDiskMagic;
-            const int count = 0;
-            file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-            file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-            file.flush();
-            if (!file.good()) return false;
-        }
-        compact_record_count_ = 0;
-        return detail::syncFileToStableStorage(backing_path_);
+        backing_generation_ = 0;
+        backing_read_only_ = false;
+        blocks_.clear();
+        pending_blocks_.clear();
+        return rewriteCompactBacking();
     }
 
     [[nodiscard]] bool appendPendingRecords() {
         if (backing_path_.empty() || pending_blocks_.empty()) return true;
-
-        std::vector<int> indices;
-        indices.reserve(pending_blocks_.size());
-        for (const auto& block : pending_blocks_) indices.push_back(block.first);
-        std::sort(indices.begin(), indices.end());
-
-        {
-            std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
-            if (!file.good()) {
-                if (!initializeCompactBacking()) return false;
-                file.open(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
-                if (!file.good()) return false;
-            }
-
-            file.seekp(0, std::ios::end);
-            for (int index : indices) {
-                const std::vector<long long>& payload = pending_blocks_.at(index);
-                file.write(reinterpret_cast<const char*>(&index), sizeof(index));
-                for (long long word : payload) {
-                    file.write(reinterpret_cast<const char*>(&word), sizeof(word));
-                }
-            }
-            file.flush();
-            if (!file.good()) return false;
-        }
-        if (!detail::syncFileToStableStorage(backing_path_)) return false;
-
-        const int new_count = compact_record_count_ + static_cast<int>(indices.size());
-        {
-            std::fstream file(backing_path_, std::ios::binary | std::ios::in | std::ios::out);
-            if (!file.good()) return false;
-            file.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
-            file.write(reinterpret_cast<const char*>(&new_count), sizeof(new_count));
-            file.flush();
-            if (!file.good()) return false;
-        }
-        if (!detail::syncFileToStableStorage(backing_path_)) return false;
-
-        compact_record_count_ = new_count;
-        stats_.dirty_flushes += static_cast<long long>(indices.size());
-        ++stats_.flushes;
-        pending_blocks_.clear();
-        return true;
+        if (backing_read_only_) return false;
+        // tDisk v2 uses a checksummed generation. Rewriting the compact sparse
+        // image atomically keeps the checksum and generation coherent.
+        return rewriteCompactBacking();
     }
 
-    static constexpr long long kSparseDiskMagic = 0x54524954535031LL; // "TRITSP1"
-    static constexpr std::uintmax_t kSparseDiskHeaderBytes =
+    static constexpr std::uint64_t kSparseDiskLegacyMagic =
+        0x54524954535031ULL; // "TRITSP1"
+    static constexpr std::uint64_t kSparseDiskV2Magic =
+        0x54524954535032ULL; // "TRITSP2"
+    static constexpr std::uint32_t kSparseDiskVersion = 2;
+    static constexpr std::uintmax_t kSparseDiskLegacyHeaderBytes =
         static_cast<std::uintmax_t>(sizeof(long long) + sizeof(int));
-    static constexpr std::uintmax_t kSparseDiskRecordBytes =
-        static_cast<std::uintmax_t>(sizeof(int) + sizeof(long long) * MMU_PAGE_WORDS);
+    static constexpr std::uintmax_t kSparseDiskLegacyRecordBytes =
+        static_cast<std::uintmax_t>(
+            sizeof(int) + sizeof(long long) * STORAGE_BLOCK_WORDS);
+    static constexpr std::uintmax_t kSparseDiskV2HeaderBytes =
+        static_cast<std::uintmax_t>(
+            sizeof(std::uint64_t) + sizeof(std::uint32_t) +
+            sizeof(std::uint32_t) + sizeof(std::uint64_t) +
+            sizeof(std::uint64_t) + sizeof(int));
+    static constexpr std::uintmax_t kSparseDiskV2RecordBytes =
+        static_cast<std::uintmax_t>(
+            sizeof(int) + sizeof(std::uint64_t) * STORAGE_BLOCK_WORDS);
     static constexpr std::size_t kReadCacheMaxBlocks = 128;
     static constexpr int kCompactionMinRecords = 128;
     static constexpr int kCompactionSlackRecords = 32;
@@ -2089,10 +2342,94 @@ enum class VMDecodedOp : uint8_t {
 enum class VMExecutionBackend : uint8_t {
     Interpreter,
     CachedBlockInterpreter,
-    TraceJit,
+    DecodedTraceExecutor,
+    NativeX64Jit,
+    // Transition source alias. This backend decodes and executes cached
+    // traces; it does not emit native host code.
+    TraceJit = DecodedTraceExecutor,
 };
 
-enum class VMTraceJitOp : uint8_t {
+struct VMDecodedTraceCacheKey {
+    int isa_version = 0;
+    std::uint64_t required_features = 0;
+    int asid = 0;
+    int pc = 0;
+    int privilege = 0;
+    bool mmu_enabled = false;
+    int user_imem_base = 0;
+    int user_imem_limit = 0;
+    int user_dmem_base = 0;
+    int user_dmem_limit = 0;
+    int user_imem_ptbr = 0;
+    int user_imem_pages = 0;
+    int user_dmem_ptbr = 0;
+    int user_dmem_pages = 0;
+    std::uint64_t imem_generation = 0;
+    std::uint64_t executable_mapping_generation = 0;
+    std::uint64_t mmu_generation = 0;
+
+    [[nodiscard]] bool operator==(
+        const VMDecodedTraceCacheKey& other) const {
+        return isa_version == other.isa_version &&
+               required_features == other.required_features &&
+               asid == other.asid &&
+               pc == other.pc &&
+               privilege == other.privilege &&
+               mmu_enabled == other.mmu_enabled &&
+               user_imem_base == other.user_imem_base &&
+               user_imem_limit == other.user_imem_limit &&
+               user_dmem_base == other.user_dmem_base &&
+               user_dmem_limit == other.user_dmem_limit &&
+               user_imem_ptbr == other.user_imem_ptbr &&
+               user_imem_pages == other.user_imem_pages &&
+               user_dmem_ptbr == other.user_dmem_ptbr &&
+               user_dmem_pages == other.user_dmem_pages &&
+               imem_generation == other.imem_generation &&
+               executable_mapping_generation ==
+                   other.executable_mapping_generation &&
+               mmu_generation == other.mmu_generation;
+    }
+
+    [[nodiscard]] bool operator!=(
+        const VMDecodedTraceCacheKey& other) const {
+        return !(*this == other);
+    }
+};
+
+struct VMDecodedTraceCacheKeyHash {
+    [[nodiscard]] std::size_t operator()(
+        const VMDecodedTraceCacheKey& key) const noexcept {
+        std::size_t hash = static_cast<std::size_t>(key.isa_version);
+        auto mix = [&](std::uint64_t value) {
+            hash ^= static_cast<std::size_t>(
+                value + 0x9e3779b97f4a7c15ULL +
+                (static_cast<std::uint64_t>(hash) << 6) +
+                (static_cast<std::uint64_t>(hash) >> 2));
+        };
+        mix(key.required_features);
+        mix(static_cast<std::uint64_t>(
+            static_cast<std::uint32_t>(key.asid)));
+        mix(static_cast<std::uint64_t>(
+            static_cast<std::uint32_t>(key.pc)));
+        mix(static_cast<std::uint64_t>(
+            static_cast<std::uint32_t>(key.privilege)));
+        mix(key.mmu_enabled ? 1u : 0u);
+        mix(static_cast<std::uint32_t>(key.user_imem_base));
+        mix(static_cast<std::uint32_t>(key.user_imem_limit));
+        mix(static_cast<std::uint32_t>(key.user_dmem_base));
+        mix(static_cast<std::uint32_t>(key.user_dmem_limit));
+        mix(static_cast<std::uint32_t>(key.user_imem_ptbr));
+        mix(static_cast<std::uint32_t>(key.user_imem_pages));
+        mix(static_cast<std::uint32_t>(key.user_dmem_ptbr));
+        mix(static_cast<std::uint32_t>(key.user_dmem_pages));
+        mix(key.imem_generation);
+        mix(key.executable_mapping_generation);
+        mix(key.mmu_generation);
+        return hash;
+    }
+};
+
+enum class VMMicroOpcode : uint8_t {
     Unsupported,
     Nop,
     Mov,
@@ -2109,6 +2446,36 @@ enum class VMTraceJitOp : uint8_t {
     Brn,
     Brz,
     Brp,
+};
+
+using VMDecodedTraceOp = VMMicroOpcode;
+using VMTraceJitOp = VMMicroOpcode;
+
+enum class VMMicroMemoryEffect : uint8_t {
+    None,
+    Read,
+    Write,
+};
+
+enum VMMicroGuard : std::uint32_t {
+    VM_MICRO_GUARD_NONE = 0,
+    VM_MICRO_GUARD_RS1_NUMERIC = 1u << 0,
+    VM_MICRO_GUARD_RS2_NUMERIC = 1u << 1,
+    VM_MICRO_GUARD_RESULT_VALID = 1u << 2,
+    VM_MICRO_GUARD_ADDRESS_TRANSLATION = 1u << 3,
+    VM_MICRO_GUARD_MEMORY_ACCESS = 1u << 4,
+    VM_MICRO_GUARD_TRACE_GENERATION = 1u << 5,
+};
+
+enum class VMMicroSideExit : uint8_t {
+    None,
+    Unsupported,
+    InvalidOperand,
+    InvalidResult,
+    AddressTranslation,
+    MemoryFault,
+    BranchLeavesTrace,
+    GenerationMismatch,
 };
 
 struct VMDecodedInstruction {
@@ -2132,22 +2499,33 @@ struct VMBasicBlock {
     std::vector<VMDecodedInstruction> instructions;
 };
 
-struct VMTraceJitInstruction {
+struct VMMicroOp {
     int pc = 0;
     TritWord27 raw{};
     InstructionWord word{};
-    VMTraceJitOp op = VMTraceJitOp::Unsupported;
+    VMMicroOpcode op = VMMicroOpcode::Unsupported;
     TernaryMode mode = TernaryMode::T40;
+    VMMicroMemoryEffect memory_effect = VMMicroMemoryEffect::None;
+    std::uint32_t guards = VM_MICRO_GUARD_TRACE_GENERATION;
+    std::vector<VMMicroSideExit> side_exits;
+    bool trap_point = true;
+    int instruction_accounting = 1;
     int branch_target = -1;
     int branch_target_index = -1;
     bool ends_trace = false;
 };
 
-struct VMTraceJitTrace {
+using VMDecodedTraceInstruction = VMMicroOp;
+using VMTraceJitInstruction = VMMicroOp;
+
+struct VMDecodedTrace {
     int start_pc = 0;
     std::uint64_t imem_generation = 0;
-    std::vector<VMTraceJitInstruction> instructions;
+    VMDecodedTraceCacheKey cache_key{};
+    std::vector<VMMicroOp> instructions;
 };
+
+using VMTraceJitTrace = VMDecodedTrace;
 
 struct VMBlockCacheStats {
     long long hits = 0;
@@ -2199,6 +2577,22 @@ struct VMTraceJitStats {
     }
 };
 
+// Accurate v2 stats name for the portable backend. The TraceJit spelling
+// remains source-compatible during the transition release.
+using VMDecodedTraceStats = VMTraceJitStats;
+
+struct VMNativeJitStats {
+    long long compilation_attempts = 0;
+    long long blocks_built = 0;
+    long long blocks_executed = 0;
+    long long instructions_executed = 0;
+    long long portable_side_exits = 0;
+    long long invalidations = 0;
+    long long wx_transitions = 0;
+
+    void reset() { *this = VMNativeJitStats{}; }
+};
+
 struct VMCoreState {
     TernaryRegisterFile regfile;
     int pc = 0;
@@ -2234,6 +2628,7 @@ struct VMCoreState {
     int user_dmem_pages = 0;
     int page_fault_addr = 0;
     int page_fault_access = OS_PAGE_ACCESS_LOAD;
+    int asid = 0;
     long long mouse_x = 0;
     long long mouse_y = 0;
     long long mouse_btn = 0;
@@ -2253,6 +2648,37 @@ struct VMCoreState {
     int current_process = -1;
 };
 
+struct TlbEntry {
+    bool valid = false;
+    bool global = false;
+    int asid = 0;
+    int translation_root = 0;
+    bool instruction_space = false;
+    int vpn = 0;
+    int page_words = MMU_PAGE_WORDS;
+    int ppn = 0;
+    bool user = false;
+    bool read = false;
+    bool write = false;
+    bool execute = false;
+    bool accessed = false;
+    bool dirty = false;
+    std::uint64_t replacement_stamp = 0;
+};
+
+struct VMTlbStats {
+    std::uint64_t instruction_l1_hits = 0;
+    std::uint64_t data_l1_hits = 0;
+    std::uint64_t l2_hits = 0;
+    std::uint64_t misses = 0;
+    std::uint64_t walks = 0;
+    std::uint64_t evictions = 0;
+    std::uint64_t superpage_hits = 0;
+    std::uint64_t shootdowns = 0;
+
+    void reset() { *this = VMTlbStats{}; }
+};
+
 struct VMState {
     TernaryRegisterFile      regfile;   // r0..r26 general-purpose registers
     TernaryInstructionMemory imem;      // Instruction memory (Harvard IMEM)
@@ -2260,6 +2686,17 @@ struct VMState {
     int                      pc = 0;   // Program counter (word-addressed into imem)
     VMStatus                 status = VMStatus::RUNNING;
     TernaryValue             trap_reg;  // r27: written on fault, read-only from ISA
+    IsaEncodingVersion       isa_version = IsaEncodingVersion::V1;
+    std::uint64_t            required_features = 0;
+    std::uint64_t            supported_features =
+        (std::uint64_t{1} <<
+         (architecture::v2::FEATURE_WIDE_T50 + 1)) - 1;
+    int                      asid = 0;
+    std::array<TlbEntry, architecture::v2::ITLB_ENTRIES> instruction_tlb{};
+    std::array<TlbEntry, architecture::v2::DTLB_ENTRIES> data_tlb{};
+    std::array<TlbEntry, architecture::v2::L2_TLB_ENTRIES> unified_l2_tlb{};
+    VMTlbStats               tlb_stats;
+    std::uint64_t            tlb_replacement_clock = 0;
     int                      vector_length = DEFAULT_VECTOR_LENGTH;
     TernaryVectorFile        vregfile;
     VectorFaultState         vector_faults;
@@ -2331,9 +2768,24 @@ struct VMState {
     int                      trace_jit_hot_threshold = 8;
     VMTraceJitStats          trace_jit_stats;
     std::uint64_t            trace_jit_observed_generation = 0;
-    std::unordered_map<int, long long> hot_pc_counts;
-    std::unordered_map<int, VMTraceJitTrace> trace_jit_cache;
-    std::unordered_set<int>  trace_jit_unsupported_pcs;
+    std::uint64_t            executable_mapping_generation = 1;
+    std::uint64_t            mmu_generation = 1;
+    std::unordered_map<
+        VMDecodedTraceCacheKey,
+        long long,
+        VMDecodedTraceCacheKeyHash> hot_pc_counts;
+    std::unordered_map<
+        VMDecodedTraceCacheKey,
+        VMTraceJitTrace,
+        VMDecodedTraceCacheKeyHash> trace_jit_cache;
+    std::unordered_set<
+        VMDecodedTraceCacheKey,
+        VMDecodedTraceCacheKeyHash> trace_jit_unsupported_pcs;
+    VMNativeJitStats         native_x64_jit_stats;
+    std::unordered_map<
+        VMDecodedTraceCacheKey,
+        std::shared_ptr<void>,
+        VMDecodedTraceCacheKeyHash> native_x64_code_cache;
 
     // -------------------------------------------------------------------------
     // Construction
@@ -2506,6 +2958,7 @@ struct VMState {
         core.user_dmem_pages = user_dmem_pages;
         core.page_fault_addr = page_fault_addr;
         core.page_fault_access = page_fault_access;
+        core.asid = asid;
         core.mouse_x = mouse_x;
         core.mouse_y = mouse_y;
         core.mouse_btn = mouse_btn;
@@ -2561,6 +3014,7 @@ struct VMState {
         user_dmem_pages = core.user_dmem_pages;
         page_fault_addr = core.page_fault_addr;
         page_fault_access = core.page_fault_access;
+        asid = core.asid;
         mouse_x = core.mouse_x;
         mouse_y = core.mouse_y;
         mouse_btn = core.mouse_btn;
@@ -2641,10 +3095,12 @@ struct VMState {
     }
 
     [[nodiscard]] bool loadBlockImage(const std::vector<long long>& image) {
-        if (image.empty() || static_cast<int>(image.size()) % MMU_PAGE_WORDS != 0) {
+        if (image.empty() ||
+            static_cast<int>(image.size()) % STORAGE_BLOCK_WORDS != 0) {
             return false;
         }
-        const int blocks = static_cast<int>(image.size()) / MMU_PAGE_WORDS;
+        const int blocks =
+            static_cast<int>(image.size()) / STORAGE_BLOCK_WORDS;
         resetBlockDevice(blocks);
         return block_device.loadSerialized(image);
     }
@@ -2710,12 +3166,17 @@ struct VMState {
     void invalidateTraceJit() {
         const bool had_entries =
             !hot_pc_counts.empty() || !trace_jit_cache.empty() ||
-            !trace_jit_unsupported_pcs.empty();
+            !trace_jit_unsupported_pcs.empty() ||
+            !native_x64_code_cache.empty();
         hot_pc_counts.clear();
         trace_jit_cache.clear();
         trace_jit_unsupported_pcs.clear();
+        native_x64_code_cache.clear();
         trace_jit_observed_generation = imem.generation();
-        if (had_entries) ++trace_jit_stats.invalidations;
+        if (had_entries) {
+            ++trace_jit_stats.invalidations;
+            ++native_x64_jit_stats.invalidations;
+        }
     }
 
     void setExecutionBackend(VMExecutionBackend backend) {
@@ -2726,12 +3187,55 @@ struct VMState {
         }
     }
 
+    [[nodiscard]] bool configureArchitecture(
+        IsaEncodingVersion version,
+        std::uint64_t required) {
+        if (version == IsaEncodingVersion::V1) {
+            if (required != 0) return false;
+        } else {
+            const std::uint64_t base =
+                featureBit(architecture::v2::FEATURE_BASE_V2);
+            if ((required & base) == 0 ||
+                (required & ~supported_features) != 0) {
+                return false;
+            }
+        }
+        isa_version = version;
+        required_features = required;
+        invalidateBlockCache();
+        invalidateTraceJit();
+        return true;
+    }
+
+    void enterWaiting() {
+        status = VMStatus::WAITING;
+    }
+
+    void resumeFromEvent() {
+        if (status == VMStatus::WAITING) {
+            status = VMStatus::RUNNING;
+        }
+
+    }
     [[nodiscard]] bool traceJitEnabled() const {
-        return execution_backend == VMExecutionBackend::TraceJit;
+        return decodedTraceExecutorEnabled();
+    }
+
+    [[nodiscard]] bool decodedTraceExecutorEnabled() const {
+        return execution_backend ==
+               VMExecutionBackend::DecodedTraceExecutor;
+    }
+
+    [[nodiscard]] bool nativeX64JitEnabled() const {
+        return execution_backend == VMExecutionBackend::NativeX64Jit;
     }
 
     void setTraceJitHotThreshold(int threshold) {
         trace_jit_hot_threshold = std::max(1, threshold);
+    }
+
+    void setDecodedTraceHotThreshold(int threshold) {
+        setTraceJitHotThreshold(threshold);
     }
 
     void setBlockCacheEnabled(bool enabled) {
@@ -2747,6 +3251,14 @@ struct VMState {
     void resetTraceJitStats() {
         trace_jit_stats.reset();
         hot_pc_counts.clear();
+    }
+
+    void resetDecodedTraceStats() {
+        resetTraceJitStats();
+    }
+
+    [[nodiscard]] const VMDecodedTraceStats& decodedTraceStats() const {
+        return trace_jit_stats;
     }
 
     [[nodiscard]] double averageBlockCacheLength() const {
@@ -2793,6 +3305,7 @@ struct VMState {
         block_cache_stats.reset();
         invalidateTraceJit();
         trace_jit_stats.reset();
+        native_x64_jit_stats.reset();
         timer_reload = 0;
         timer_counter = 0;
         timer_enable = false;
@@ -2806,6 +3319,10 @@ struct VMState {
         mmu_enable = false;
         mouse_x = 0;
         mouse_y = 0;
+        asid = 0;
+        invalidateAllTlbs(true);
+        tlb_stats.reset();
+        tlb_replacement_clock = 0;
         mouse_btn = 0;
         gpu_x1 = 0;
         gpu_y1 = 0;
@@ -2916,8 +3433,13 @@ struct VMState {
             case CSR_BLOCK_CMD: value = 0; break;
             case CSR_BLOCK_STATUS: value = block_status; break;
             case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.blockCount()); break;
-            case CSR_BLOCK_WORDS: value = MMU_PAGE_WORDS; break;
+            case CSR_BLOCK_WORDS: value = STORAGE_BLOCK_WORDS; break;
             case CSR_POWER_CONTROL: value = power_control; break;
+            case CSR_ISA_VERSION: value = static_cast<int>(isa_version); break;
+            case CSR_ISA_FEATURES: value = featureWordNumeric(supported_features); break;
+            case CSR_MMU_BASE_PAGE_WORDS: value = architecture::v2::BASE_PAGE_WORDS; break;
+            case CSR_MMU_SUPERPAGE_WORDS: value = architecture::v2::SUPERPAGE_WORDS; break;
+            case CSR_ASID: value = asid; break;
             default: return false;
         }
         out = ops::fromLong(value);
@@ -2944,7 +3466,7 @@ struct VMState {
         }
         std::vector<long long> block;
         if (cmd == 1) {
-            if (addr + MMU_PAGE_WORDS > dmem.size()) {
+            if (addr + STORAGE_BLOCK_WORDS > dmem.size()) {
                 block_status = -1;
                 return;
             }
@@ -2952,7 +3474,7 @@ struct VMState {
                 block_status = -1;
                 return;
             }
-            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+            for (int i = 0; i < STORAGE_BLOCK_WORDS; ++i) {
                 if (dmem.store(addr + i, ops::fromLong(block[static_cast<std::size_t>(i)])) !=
                     MemFaultCode::OK) {
                     block_status = -1;
@@ -2961,11 +3483,11 @@ struct VMState {
             }
             block_status = 1;
         } else if (cmd == 2) {
-            if (addr + MMU_PAGE_WORDS > dmem.size()) {
+            if (addr + STORAGE_BLOCK_WORDS > dmem.size()) {
                 block_status = -1;
                 return;
             }
-            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+            for (int i = 0; i < STORAGE_BLOCK_WORDS; ++i) {
                 auto [value, fault] = dmem.load(addr + i);
                 if (fault != MemFaultCode::OK) {
                     block_status = -1;
@@ -2980,7 +3502,7 @@ struct VMState {
             block_dirty.set(index, true);
             block_status = 1;
         } else if (cmd == 3) {
-            if (addr + MMU_PAGE_WORDS > imem.size()) {
+            if (addr + STORAGE_BLOCK_WORDS > imem.size()) {
                 block_status = -1;
                 return;
             }
@@ -2988,7 +3510,7 @@ struct VMState {
                 block_status = -1;
                 return;
             }
-            for (int i = 0; i < MMU_PAGE_WORDS; ++i) {
+            for (int i = 0; i < STORAGE_BLOCK_WORDS; ++i) {
                 TritWord27 word{};
                 word.bits = static_cast<uint64_t>(block[static_cast<std::size_t>(i)]);
                 if (imem.write(addr + i, word) != MemFaultCode::OK) {
@@ -3119,9 +3641,11 @@ struct VMState {
                 return true;
             case CSR_USER_IMEM_BASE:
                 user_imem_base = static_cast<int>(value);
+                ++executable_mapping_generation;
                 return true;
             case CSR_USER_IMEM_LIMIT:
                 user_imem_limit = static_cast<int>(value);
+                ++executable_mapping_generation;
                 return true;
             case CSR_USER_DMEM_BASE:
                 user_dmem_base = static_cast<int>(value);
@@ -3134,22 +3658,35 @@ struct VMState {
                 return true;
             case CSR_MMU_ENABLE:
                 mmu_enable = value != 0;
+                ++mmu_generation;
                 return true;
             case CSR_USER_IMEM_PTBR:
                 if (value < 0) return false;
                 user_imem_ptbr = static_cast<int>(value);
+                ++executable_mapping_generation;
+                ++mmu_generation;
                 return true;
             case CSR_USER_IMEM_PAGES:
                 if (value < 0) return false;
                 user_imem_pages = static_cast<int>(value);
+                ++executable_mapping_generation;
+                ++mmu_generation;
                 return true;
             case CSR_USER_DMEM_PTBR:
                 if (value < 0) return false;
                 user_dmem_ptbr = static_cast<int>(value);
+                ++mmu_generation;
+                if (isa_version == IsaEncodingVersion::V2) {
+                    // The current transition kernel allocates one stable PTBR
+                    // range per process; hardware derives the nine-trit ASID
+                    // from that range while exposing ASID read-only.
+                    setCurrentAsid(static_cast<int>(value % 19683));
+                }
                 return true;
             case CSR_USER_DMEM_PAGES:
                 if (value < 0) return false;
                 user_dmem_pages = static_cast<int>(value);
+                ++mmu_generation;
                 return true;
             case CSR_PAGE_FAULT_ADDR:
                 page_fault_addr = static_cast<int>(value);
@@ -3248,6 +3785,12 @@ struct VMState {
                 power_control = value;
                 return true;
             default:
+            case CSR_ISA_VERSION:
+            case CSR_ISA_FEATURES:
+            case CSR_MMU_BASE_PAGE_WORDS:
+            case CSR_MMU_SUPERPAGE_WORDS:
+            case CSR_ASID:
+                return false;
                 return false;
         }
     }
@@ -3270,6 +3813,111 @@ struct VMState {
 
     [[nodiscard]] bool canStore(int addr) const {
         return canLoad(addr);
+    }
+
+    template <std::size_t EntryCount>
+    static void invalidateTlbArray(
+        std::array<TlbEntry, EntryCount>& entries,
+        bool include_global) {
+        for (auto& entry : entries) {
+            if (include_global || !entry.global) entry.valid = false;
+        }
+    }
+
+    void invalidateAllTlbs(bool include_global = false) {
+        invalidateTlbArray(instruction_tlb, include_global);
+        invalidateTlbArray(data_tlb, include_global);
+        invalidateTlbArray(unified_l2_tlb, include_global);
+        ++mmu_generation;
+    }
+
+    void setCurrentAsid(int next_asid) {
+        if (next_asid < 0 || next_asid >= 19683)
+            throw std::out_of_range("ASID exceeds nine-trit range");
+        // Switching ASIDs retains unrelated entries. Reuse is paired with an
+        // explicit TLBINV by the process/ASID allocator.
+        asid = next_asid;
+    }
+
+    void invalidateTlb(int address, int target_asid, int scope) {
+        auto invalidate = [&](auto& entries) {
+            for (auto& entry : entries) {
+                if (!entry.valid) continue;
+                const bool address_match =
+                    address < 0 ||
+                    address / entry.page_words == entry.vpn;
+                const bool asid_match =
+                    entry.global || target_asid < 0 ||
+                    entry.asid == target_asid;
+                bool remove = false;
+                switch (scope) {
+                    case 0: remove = address_match && asid_match; break;
+                    case 1: remove = asid_match && !entry.global; break;
+                    case 2: remove = address_match; break;
+                    case 3: remove = true; break;
+                    default: break;
+                }
+                if (remove) entry.valid = false;
+            }
+        };
+        invalidate(instruction_tlb);
+        invalidate(data_tlb);
+        invalidate(unified_l2_tlb);
+        ++tlb_stats.shootdowns;
+        ++mmu_generation;
+    }
+
+    template <std::size_t EntryCount>
+    TlbEntry* findTlbEntry(
+        std::array<TlbEntry, EntryCount>& entries,
+        int sets,
+        int ways,
+        int virtual_addr,
+        int page_words,
+        int translation_root,
+        bool instruction_space) {
+        const int vpn = virtual_addr / page_words;
+        const int set = vpn % sets;
+        for (int way = 0; way < ways; ++way) {
+            TlbEntry& entry =
+                entries[static_cast<std::size_t>(set * ways + way)];
+            if (entry.valid && entry.vpn == vpn &&
+                entry.page_words == page_words &&
+                entry.instruction_space == instruction_space &&
+                (entry.global ||
+                 (entry.asid == asid &&
+                  entry.translation_root == translation_root))) {
+                entry.replacement_stamp = ++tlb_replacement_clock;
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    template <std::size_t EntryCount>
+    void insertTlbEntry(
+        std::array<TlbEntry, EntryCount>& entries,
+        int sets,
+        int ways,
+        TlbEntry entry) {
+        const int set = entry.vpn % sets;
+        TlbEntry* victim = nullptr;
+        for (int way = 0; way < ways; ++way) {
+            TlbEntry& candidate =
+                entries[static_cast<std::size_t>(set * ways + way)];
+            if (!candidate.valid) {
+                victim = &candidate;
+                break;
+            }
+            if (victim == nullptr ||
+                candidate.replacement_stamp < victim->replacement_stamp) {
+                victim = &candidate;
+            }
+        }
+        if (victim == nullptr) return;
+        if (victim->valid) ++tlb_stats.evictions;
+        entry.replacement_stamp = ++tlb_replacement_clock;
+        *victim = entry;
     }
 
     void setPageFault(int virtual_addr, int access) {
@@ -3296,30 +3944,134 @@ struct VMState {
             routed_cause = page_fault_cause;
             return false;
         }
-        const int vpn = virtual_addr / MMU_PAGE_WORDS;
-        const int offset = virtual_addr % MMU_PAGE_WORDS;
+        const int base_page_words =
+            isa_version == IsaEncodingVersion::V2
+                ? MMU_PAGE_WORDS
+                : LEGACY_MMU_PAGE_WORDS;
+        const int vpn = virtual_addr / base_page_words;
         if (vpn < 0 || vpn >= page_count) {
             setPageFault(virtual_addr, access);
             routed_cause = page_fault_cause;
             return false;
         }
-        const int pte_addr = ptbr + vpn;
-        if (!dmem.inRange(pte_addr)) {
-            setPageFault(virtual_addr, access);
-            routed_cause = page_fault_cause;
-            return false;
+        auto permissionFault = [&](const TlbEntry& entry) {
+            return !entry.user ||
+                   (need_read && !entry.read) ||
+                   (need_write && !entry.write) ||
+                   (need_execute && !entry.execute);
+        };
+        auto& l1 = need_execute ? instruction_tlb : data_tlb;
+        TlbEntry* cached = nullptr;
+        if (isa_version == IsaEncodingVersion::V2) {
+            cached = findTlbEntry(
+                l1, 9, 3, virtual_addr, MMU_SUPERPAGE_WORDS,
+                ptbr, need_execute);
         }
-        auto [pte_value, pte_fault] = dmem.load(pte_addr);
-        if (pte_fault != MemFaultCode::OK) {
-            setPageFault(virtual_addr, access);
-            routed_cause = page_fault_cause;
-            return false;
+        if (cached == nullptr) {
+            cached = findTlbEntry(
+                l1, 9, 3, virtual_addr, base_page_words,
+                ptbr, need_execute);
         }
+        if (cached != nullptr && need_write && !cached->dirty) {
+            cached->valid = false;
+            cached = nullptr;
+        }
+        if (cached != nullptr) {
+            if (need_execute) ++tlb_stats.instruction_l1_hits;
+            else ++tlb_stats.data_l1_hits;
+            if (cached->page_words == MMU_SUPERPAGE_WORDS)
+                ++tlb_stats.superpage_hits;
+            if (permissionFault(*cached)) {
+                setPageFault(virtual_addr, access);
+                routed_cause = protection_cause;
+                return false;
+            }
+            const long long phys =
+                static_cast<long long>(cached->ppn) * base_page_words +
+                virtual_addr % cached->page_words;
+            if (phys < 0 || phys >= target_capacity) {
+                setPageFault(virtual_addr, access);
+                routed_cause = page_fault_cause;
+                return false;
+            }
+            physical_addr = static_cast<int>(phys);
+            return true;
+        }
+
+        if (isa_version == IsaEncodingVersion::V2) {
+            cached = findTlbEntry(
+                unified_l2_tlb, 27, 9, virtual_addr,
+                MMU_SUPERPAGE_WORDS, ptbr, need_execute);
+        }
+        if (cached == nullptr) {
+            cached = findTlbEntry(
+                unified_l2_tlb, 27, 9, virtual_addr,
+                base_page_words, ptbr, need_execute);
+        }
+        if (cached != nullptr && need_write && !cached->dirty) {
+            cached->valid = false;
+            cached = nullptr;
+        }
+        if (cached != nullptr) {
+            ++tlb_stats.l2_hits;
+            if (cached->page_words == MMU_SUPERPAGE_WORDS)
+                ++tlb_stats.superpage_hits;
+            insertTlbEntry(l1, 9, 3, *cached);
+            if (permissionFault(*cached)) {
+                setPageFault(virtual_addr, access);
+                routed_cause = protection_cause;
+                return false;
+            }
+            const long long phys =
+                static_cast<long long>(cached->ppn) * base_page_words +
+                virtual_addr % cached->page_words;
+            if (phys < 0 || phys >= target_capacity) {
+                setPageFault(virtual_addr, access);
+                routed_cause = page_fault_cause;
+                return false;
+            }
+            physical_addr = static_cast<int>(phys);
+            return true;
+        }
+
+        ++tlb_stats.misses;
+        ++tlb_stats.walks;
+        int pte_vpn = vpn;
+        int pte_addr = ptbr + pte_vpn;
         PageTableEntry pte;
-        if (!decodePageTableEntry(pte_value, pte) || !pte.present) {
-            setPageFault(virtual_addr, access);
-            routed_cause = page_fault_cause;
-            return false;
+        TernaryValue pte_value;
+        bool decoded = false;
+        if (isa_version == IsaEncodingVersion::V2) {
+            const int superpage_base_vpn = (vpn / 27) * 27;
+            const int superpage_pte_addr = ptbr + superpage_base_vpn;
+            if (dmem.inRange(superpage_pte_addr)) {
+                auto [candidate, fault] = dmem.load(superpage_pte_addr);
+                if (fault == MemFaultCode::OK &&
+                    decodePageTableEntryV2(candidate, pte) &&
+                    pte.present && pte.superpage) {
+                    pte_vpn = superpage_base_vpn;
+                    pte_addr = superpage_pte_addr;
+                    pte_value = candidate;
+                    decoded = true;
+                }
+            }
+        }
+        if (!decoded) {
+            pte_addr = ptbr + vpn;
+            if (!dmem.inRange(pte_addr)) {
+                setPageFault(virtual_addr, access);
+                routed_cause = page_fault_cause;
+                return false;
+            }
+            auto [candidate, fault] = dmem.load(pte_addr);
+            if (fault != MemFaultCode::OK ||
+                !decodePageTableEntry(candidate, pte, isa_version) ||
+                !pte.present) {
+                setPageFault(virtual_addr, access);
+                routed_cause = page_fault_cause;
+                return false;
+            }
+            pte_value = candidate;
         }
         if (!pte.user ||
             (need_read && !pte.read) ||
@@ -3329,7 +4081,41 @@ struct VMState {
             routed_cause = protection_cause;
             return false;
         }
-        const long long phys = static_cast<long long>(pte.ppn) * MMU_PAGE_WORDS + offset;
+        if (isa_version == IsaEncodingVersion::V2 &&
+            (!pte.accessed || (need_write && !pte.dirty))) {
+            pte.accessed = true;
+            if (need_write) pte.dirty = true;
+            const TernaryValue updated = encodePageTableEntry(pte);
+            if (updated.isInvalid() ||
+                dmem.store(pte_addr, updated) != MemFaultCode::OK) {
+                setPageFault(virtual_addr, access);
+                routed_cause = page_fault_cause;
+                return false;
+            }
+            pte_value = updated;
+        }
+        (void)pte_value;
+        TlbEntry entry;
+        entry.valid = true;
+        entry.global = pte.global;
+        entry.asid = asid;
+        entry.translation_root = ptbr;
+        entry.instruction_space = need_execute;
+        entry.page_words =
+            pte.superpage ? MMU_SUPERPAGE_WORDS : base_page_words;
+        entry.vpn = virtual_addr / entry.page_words;
+        entry.ppn = pte.ppn;
+        entry.user = pte.user;
+        entry.read = pte.read;
+        entry.write = pte.write;
+        entry.execute = pte.execute;
+        entry.accessed = pte.accessed;
+        entry.dirty = pte.dirty;
+        insertTlbEntry(unified_l2_tlb, 27, 9, entry);
+        insertTlbEntry(l1, 9, 3, entry);
+        const long long phys =
+            static_cast<long long>(pte.ppn) * base_page_words +
+            virtual_addr % entry.page_words;
         if (phys < 0 || phys >= target_capacity) {
             setPageFault(virtual_addr, access);
             routed_cause = page_fault_cause;
@@ -3546,6 +4332,7 @@ struct VMState {
     [[nodiscard]] bool isHalted()   const { return status == VMStatus::HALTED;  }
     [[nodiscard]] bool isTrapped()  const { return status == VMStatus::TRAPPED; }
 
+    [[nodiscard]] bool isWaiting()  const { return status == VMStatus::WAITING; }
     // -------------------------------------------------------------------------
     // Debug dump — human-readable machine state summary.
     // -------------------------------------------------------------------------

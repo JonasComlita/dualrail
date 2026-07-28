@@ -177,10 +177,10 @@ void zeroPteFaults(TestContext& ctx) {
             csrr r6, page_fault_access
             halt
         )");
-        ctx.check(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS),
                   "fetch zero-PTE handler loads");
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -204,15 +204,15 @@ void zeroPteFaults(TestContext& ctx) {
             csrr r6, page_fault_access
             halt
         )");
-        ctx.check(vm.imem.loadProgram(user, MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS),
                   "load zero-PTE user program loads");
-        ctx.check(vm.imem.loadProgram(handler, 3 * MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(handler, 3 * LEGACY_MMU_PAGE_WORDS),
                   "load zero-PTE handler loads");
         ctx.check(vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true)) ==
                       MemFaultCode::OK,
                   "valid user IMEM PTE stores");
         vm.trap_routing_enabled = true;
-        vm.tvec = 3 * MMU_PAGE_WORDS;
+        vm.tvec = 3 * LEGACY_MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -771,19 +771,19 @@ void mmuReadOnlyStoreProtection(TestContext& ctx) {
         csrr r6, page_fault_access
         halt
     )");
-    ctx.check(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "read-only user program loads");
-    ctx.check(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "read-only handler loads");
+    ctx.check(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "read-only user program loads");
+    ctx.check(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "read-only handler loads");
     ctx.check(vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true)) ==
                   MemFaultCode::OK,
               "user IMEM PTE stores");
     ctx.check(vm.dmem.store(4, encodePageTableEntry(2, true, true, false, false)) ==
                   MemFaultCode::OK,
               "read-only DMEM PTE stores");
-    ctx.check(vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33)) ==
+    ctx.check(vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33)) ==
                   MemFaultCode::OK,
               "physical read-only page seed stores");
     vm.trap_routing_enabled = true;
-    vm.tvec = 2 * MMU_PAGE_WORDS;
+    vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
     vm.privilege = PrivilegeMode::User;
     vm.mmu_enable = true;
     vm.user_imem_ptbr = 0;
@@ -799,7 +799,7 @@ void mmuReadOnlyStoreProtection(TestContext& ctx) {
     ctx.equal(regLong(vm, R5), 0LL, "read-only store records virtual address");
     ctx.equal(regLong(vm, R6), static_cast<long long>(OS_PAGE_ACCESS_STORE),
               "read-only store records store access");
-    ctx.equal(loadLong(vm, 2 * MMU_PAGE_WORDS), 33LL,
+    ctx.equal(loadLong(vm, 2 * LEGACY_MMU_PAGE_WORDS), 33LL,
               "read-only store does not mutate physical page");
 }
 

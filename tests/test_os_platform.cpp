@@ -1,4 +1,4 @@
-#include "ternary_os.h"
+﻿#include "ternary_os.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -116,9 +116,10 @@ void testDeviceTreeAndBlockDevice() {
     sandbox::vm::VMState vm(64, 512);
     expect(readCsrLong(vm, sandbox::isa::CSR_BLOCK_COUNT) >= 141,
            "VM block device exposes enough default blocks for native VFS persistence");
-    expect(readCsrLong(vm, sandbox::isa::CSR_BLOCK_WORDS) == sandbox::vm::MMU_PAGE_WORDS,
+    expect(readCsrLong(vm, sandbox::isa::CSR_BLOCK_WORDS) ==
+               sandbox::vm::STORAGE_BLOCK_WORDS,
            "VM block device exposes ternary page-sized blocks");
-    for (int i = 0; i < sandbox::vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < sandbox::vm::STORAGE_BLOCK_WORDS; ++i) {
         expect(vm.dmem.store(200 + i, sandbox::vm::ops::fromLong(500 + i)) ==
                    sandbox::vm::MemFaultCode::OK,
                "VM block write seed stores to DMEM");
@@ -129,7 +130,7 @@ void testDeviceTreeAndBlockDevice() {
     expect(readCsrLong(vm, sandbox::isa::CSR_BLOCK_STATUS) == 1,
            "block write command succeeds");
     expect(vm.block_dirty[3], "block write marks VM block dirty");
-    for (int i = 0; i < sandbox::vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < sandbox::vm::STORAGE_BLOCK_WORDS; ++i) {
         (void)vm.dmem.store(240 + i, sandbox::vm::ops::fromLong(0));
     }
     expect(writeCsrLong(vm, sandbox::isa::CSR_BLOCK_ADDR, 240), "block read addr CSR writes");
@@ -286,6 +287,41 @@ void testSyscallsHeapForkAndExec() {
     expect(exec.ok() && exec.payload == 2, "exec returns new entry pc");
     expect(proc->parent_pid == -1 && proc->exec_header.entry_virtual_pc == 2,
            "exec preserves pid lineage and installs executable header");
+
+    sandbox::vm::ExecutableImageHeader transition_v2;
+    transition_v2.entry_virtual_pc = 0;
+    transition_v2.text_pages = 1;
+    transition_v2.data_pages = 1;
+    transition_v2.stack_words = 27;
+    sandbox::vm::ExecutableImageHeaderV2 header_v2;
+    header_v2.entry_pc = 0;
+    header_v2.text_words = 2;
+    header_v2.data_words = 0;
+    header_v2.stack_words = 27;
+    header_v2.header_checksum =
+        sandbox::vm::executableHeaderV2Checksum(header_v2);
+    expect(kernel.installExecutable(
+               "/bin/v2", {101, 102}, transition_v2, header_v2).ok(),
+           "v2 executable and transition descriptor install together");
+    expect(kernel.sysExec(kPid, "/bin/v2").ok(),
+           "process exec accepts a v2 executable identity");
+    proc = kernel.process(kPid);
+    expect(proc != nullptr &&
+               proc->architecture.executable_version == 2 &&
+               proc->architecture.function_abi_version == 2 &&
+               proc->architecture.syscall_abi_version == 2 &&
+               proc->architecture.isa_version ==
+                   sandbox::isa::IsaEncodingVersion::V2 &&
+               proc->architecture.required_features != 0,
+           "process stores executable, function ABI, syscall ABI, ISA, and features");
+    StatusResult v2_fork = kernel.sysFork(kPid);
+    const Process* v2_child = kernel.process(v2_fork.payload);
+    expect(v2_fork.ok() && v2_child != nullptr &&
+               v2_child->architecture.isa_version ==
+                   sandbox::isa::IsaEncodingVersion::V2 &&
+               v2_child->architecture.required_features ==
+                   proc->architecture.required_features,
+           "fork inherits the complete v2 process architecture identity");
 }
 
 void testDiskBackedSystemStateSurvivesReboot() {
@@ -464,7 +500,7 @@ void testNativeBioReadsRootFilesystemImage() {
     sandbox::vm::VMState vm(4096, 65536);
     expect(vm.loadBlockImage(image), "rootfs image loads into VM block device");
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
                "native BIO rootfs reader loads into VM");
         const auto result = sandbox::vm::run(vm, 1000000);
         expect(result.halted(), "native BIO rootfs reader halts");
@@ -525,7 +561,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
     sandbox::vm::VMState writerVm(sandbox::vm::ProductionProfile::minimum());
     writerVm.resetBlockDevice(8192);
     if (writerLinked.success) {
-        expect(sandbox::vm::loadAndReset(writerVm, writerLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(writerVm, writerLinked.assembled),
                "native VFS persistence writer loads");
         const auto writerResult = sandbox::vm::run(writerVm, 50000000);
         dumpNativeRunIfFailed("vfs-writer", writerResult, writerVm, writerLinked.assembled.labels);
@@ -577,7 +613,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
     sandbox::vm::VMState readerVm(sandbox::vm::ProductionProfile::minimum());
     expect(readerVm.loadBlockImage(diskImage), "native VFS disk image loads into rebooted VM");
     if (readerLinked.success) {
-        expect(sandbox::vm::loadAndReset(readerVm, readerLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(readerVm, readerLinked.assembled),
                "native VFS persistence reader loads");
         const auto readerResult = sandbox::vm::run(readerVm, 50000000);
         dumpNativeRunIfFailed("vfs-reader", readerResult, readerVm, readerLinked.assembled.labels);
@@ -611,6 +647,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
             var payload: t40 = kload(extent_addr(slot) + EXTENT_DATA_ADDR);
             var tx: t40 = log_begin();
             log_write(tx, payload, kload(payload), 99);
+            if wal_sync_to_disk() - 1 != 0 { return -4; }
             return 1;
         }
     )";
@@ -622,7 +659,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
     sandbox::vm::VMState pendingVm(sandbox::vm::ProductionProfile::minimum());
     expect(pendingVm.loadBlockImage(diskImage), "pending WAL writer starts from synced disk");
     if (pendingLinked.success) {
-        expect(sandbox::vm::loadAndReset(pendingVm, pendingLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(pendingVm, pendingLinked.assembled),
                "pending WAL writer loads");
         const auto pendingResult = sandbox::vm::run(pendingVm, 50000000);
         dumpNativeRunIfFailed("pending-wal-writer", pendingResult, pendingVm, pendingLinked.assembled.labels);
@@ -635,7 +672,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(pendingReaderVm.loadBlockImage(pendingVm.blockImage()),
            "pending WAL disk image loads into rebooted VM");
     if (readerLinked.success) {
-        expect(sandbox::vm::loadAndReset(pendingReaderVm, readerLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(pendingReaderVm, readerLinked.assembled),
                "pending WAL recovery reader loads");
         const auto pendingReaderResult = sandbox::vm::run(pendingReaderVm, 50000000);
         dumpNativeRunIfFailed("pending-wal-reader", pendingReaderResult, pendingReaderVm, readerLinked.assembled.labels);
@@ -670,6 +707,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
             var tx: t40 = log_begin();
             log_write(tx, payload, kload(payload), 77);
             if log_commit(tx) <= 0 { return -4; }
+            if wal_sync_to_disk() - 1 != 0 { return -5; }
             return 1;
         }
     )";
@@ -681,13 +719,13 @@ void testNativeKernelVfsMountsDiskBackedState() {
     sandbox::vm::VMState committedVm(sandbox::vm::ProductionProfile::minimum());
     expect(committedVm.loadBlockImage(diskImage), "committed WAL writer starts from synced disk");
     if (committedLinked.success) {
-        expect(sandbox::vm::loadAndReset(committedVm, committedLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(committedVm, committedLinked.assembled),
                "committed WAL writer loads");
         const auto committedResult = sandbox::vm::run(committedVm, 50000000);
         dumpNativeRunIfFailed("committed-wal-writer", committedResult, committedVm, committedLinked.assembled.labels);
         expect(committedResult.halted(), "committed WAL writer halts");
         expect(sandbox::vm::ops::toLong(committedVm.regfile.read(13)) == 1,
-               "committed WAL writer persists committed journal without fsyncing VFS");
+               "committed WAL writer flushes redo without fsyncing VFS");
     }
 
     const std::string committedReader = R"(
@@ -728,7 +766,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
     expect(committedReaderVm.loadBlockImage(committedVm.blockImage()),
            "committed WAL disk image loads into rebooted VM");
     if (committedReaderLinked.success) {
-        expect(sandbox::vm::loadAndReset(committedReaderVm, committedReaderLinked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(committedReaderVm, committedReaderLinked.assembled),
                "committed WAL recovery reader loads");
         const auto committedReaderResult = sandbox::vm::run(committedReaderVm, 50000000);
         dumpNativeRunIfFailed("committed-wal-reader", committedReaderResult, committedReaderVm, committedReaderLinked.assembled.labels);
@@ -847,7 +885,7 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     expect(vm.loadBlockImage(image), "native VFS image loads into VM block device");
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
                "native VFS image boot driver loads");
         const auto result = sandbox::vm::run(vm, 50000000);
         expect(result.halted(), "native VFS image boot driver halts");

@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
 
@@ -64,7 +64,7 @@ bool loadAndRun(TestContext& ctx,
                 int max_steps,
                 const std::string& label) {
     if (!ctx.failures()) {
-        ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+        ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
                   label + " image loads");
     }
     const auto result = sandbox::vm::run(vm, max_steps);

@@ -46,6 +46,7 @@
 #include "ternary_vm_state.h"
 #include "ternary_simd.h"
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <iomanip>
 #include <functional>
@@ -54,6 +55,21 @@
 #include <string>
 #include <sstream>
 #include <tuple>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
+#elif defined(__x86_64__) || defined(__aarch64__)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace sandbox {
 namespace vm {
@@ -659,7 +675,10 @@ inline void writeVectorSelect(
             sum = native_ops::add(sum, native_ops::fromInt(product));
         }
     }
-    return TernaryValue::fromLongTriple(sum);
+    // VDOT.T1 is an architectural T40 scalar result. Returning a tagged T50
+    // here would claim a register pair and let an unrelated write to rd+1
+    // corrupt the dot result.
+    return TernaryValue::fromTriple(native_ops::toT40(sum));
 }
 
 inline void writeVectorActivateT1(VMState& vm, uint8_t vd, uint8_t vs) {
@@ -738,35 +757,61 @@ inline void writeVectorGather(
     }
     const long long base = ops::toLong(baseValue);
     const std::vector<TernaryValue> indices = vm.vregfile.reg[vindex].lane;
+    std::vector<TernaryValue> loaded_lanes(
+        static_cast<std::size_t>(vm.vector_length),
+        TernaryValue::zero(mode));
+    int first_routed_cause = OS_CAUSE_LOAD_FAULT;
     for (int lane = 0; lane < vm.vector_length; ++lane) {
         TernaryValue idx = indices[static_cast<std::size_t>(lane)];
         if (!isNumericMode(idx.mode) || idx.isInvalid()) {
-            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
             continue;
         }
         const long long addrLong = base + ops::toLong(idx);
+        if (addrLong < std::numeric_limits<int>::min() ||
+            addrLong > std::numeric_limits<int>::max()) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+            continue;
+        }
         int physical_addr = static_cast<int>(addrLong);
         int cause = OS_CAUSE_LOAD_FAULT;
         if (vm.privilege != PrivilegeMode::Kernel &&
             !vm.translateLoadAddress(static_cast<int>(addrLong), physical_addr, cause)) {
-            vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
-            return;
+            if (!vm.vector_faults.any()) first_routed_cause = cause;
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+            continue;
         }
         if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
-            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
             continue;
         }
         auto [loaded, fc] = vm.dmem.load(physical_addr);
         if (fc != MemFaultCode::OK) {
-            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
             continue;
         }
         TernaryValue converted;
         if (!convertVectorNumericLane(loaded, mode, converted)) {
-            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
             continue;
         }
-        vm.vregfile.reg[vd].write(lane, converted);
+        loaded_lanes[static_cast<std::size_t>(lane)] = converted;
+    }
+    if (vm.vector_faults.any()) {
+        const int first = vm.vector_faults.first_failing_lane;
+        const TrapCode code =
+            vm.vector_faults.fault_class[static_cast<std::size_t>(first)];
+        vm.trapWithCause(
+            code,
+            code == TrapCode::TRAP_MEM_FAULT
+                ? first_routed_cause
+                : OS_CAUSE_ILLEGAL_INSTRUCTION,
+            vm.pc);
+        return;
+    }
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        vm.vregfile.reg[vd].write(
+            lane, loaded_lanes[static_cast<std::size_t>(lane)]);
     }
 }
 
@@ -785,6 +830,12 @@ inline void writeVectorScatter(
     const long long base = ops::toLong(baseValue);
     const std::vector<TernaryValue> source = vm.vregfile.reg[vs].lane;
     const std::vector<TernaryValue> indices = vm.vregfile.reg[vindex].lane;
+    std::vector<int> physical_addresses(
+        static_cast<std::size_t>(vm.vector_length), -1);
+    std::vector<TernaryValue> stored_lanes(
+        static_cast<std::size_t>(vm.vector_length),
+        TernaryValue::zero(mode));
+    int first_routed_cause = OS_CAUSE_STORE_FAULT;
     for (int lane = 0; lane < vm.vector_length; ++lane) {
         TernaryValue idx = indices[static_cast<std::size_t>(lane)];
         if (!isNumericMode(idx.mode) || idx.isInvalid()) {
@@ -792,12 +843,18 @@ inline void writeVectorScatter(
             continue;
         }
         const long long addrLong = base + ops::toLong(idx);
+        if (addrLong < std::numeric_limits<int>::min() ||
+            addrLong > std::numeric_limits<int>::max()) {
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+            continue;
+        }
         int physical_addr = static_cast<int>(addrLong);
         int cause = OS_CAUSE_STORE_FAULT;
         if (vm.privilege != PrivilegeMode::Kernel &&
             !vm.translateStoreAddress(static_cast<int>(addrLong), physical_addr, cause)) {
-            vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
-            return;
+            if (!vm.vector_faults.any()) first_routed_cause = cause;
+            vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
+            continue;
         }
         if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
             vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
@@ -808,11 +865,36 @@ inline void writeVectorScatter(
             vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
             continue;
         }
-        if (vm.dmem.store(physical_addr, converted) != MemFaultCode::OK) {
+        physical_addresses[static_cast<std::size_t>(lane)] = physical_addr;
+        stored_lanes[static_cast<std::size_t>(lane)] = converted;
+    }
+    if (vm.vector_faults.any()) {
+        const int first = vm.vector_faults.first_failing_lane;
+        const TrapCode code =
+            vm.vector_faults.fault_class[static_cast<std::size_t>(first)];
+        vm.trapWithCause(
+            code,
+            code == TrapCode::TRAP_MEM_FAULT
+                ? first_routed_cause
+                : OS_CAUSE_ILLEGAL_INSTRUCTION,
+            vm.pc);
+        return;
+    }
+    for (int lane = 0; lane < vm.vector_length; ++lane) {
+        const int physical_addr =
+            physical_addresses[static_cast<std::size_t>(lane)];
+        if (vm.dmem.store(
+                physical_addr,
+                stored_lanes[static_cast<std::size_t>(lane)]) !=
+            MemFaultCode::OK) {
             vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
-        } else {
-            vm.noteStoreForReservation(physical_addr);
+            vm.trapWithCause(
+                TrapCode::TRAP_MEM_FAULT,
+                OS_CAUSE_STORE_FAULT,
+                vm.pc);
+            return;
         }
+        vm.noteStoreForReservation(physical_addr);
     }
 }
 
@@ -936,7 +1018,8 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
     // DECODE
     // -----------------------------------------------------------------
     ++vm.decode_instructions_count;
-    InstructionWord iw = InstructionWord::decode(raw);
+    InstructionWord iw =
+        VersionedInstructionCodec::decode(raw, vm.isa_version);
     if (record) {
         record->has_instruction = true;
         record->malformed = iw.malformed;
@@ -1010,6 +1093,56 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             vm.completeTerminalInstruction();
             vm.halt();
             return vm.status;
+
+        case Opcode::WAIT: {
+            const std::uint64_t wait_feature =
+                featureBit(architecture::v2::FEATURE_WAIT);
+            if (vm.isa_version != IsaEncodingVersion::V2 ||
+                (vm.supported_features & wait_feature) == 0) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            vm.completeInstruction(pc_next);
+            if (!vm.timer_pending) vm.enterWaiting();
+            return vm.status;
+        }
+
+        case Opcode::TLBINV: {
+            const std::uint64_t mmu_feature =
+                featureBit(architecture::v2::FEATURE_MMU);
+            if (vm.isa_version != IsaEncodingVersion::V2 ||
+                (vm.supported_features & mmu_feature) == 0 ||
+                vm.privilege != PrivilegeMode::Kernel) {
+                vm.trapWithCause(
+                    TrapCode::TRAP_ILLEGAL_OP,
+                    vm.privilege == PrivilegeMode::Kernel
+                        ? OS_CAUSE_ILLEGAL_INSTRUCTION
+                        : OS_CAUSE_PROTECTION_FAULT,
+                    vm.pc);
+                return vm.status;
+            }
+            const long long address =
+                ops::toLong(vm.regfile.read(iw.rd));
+            const long long target_asid =
+                ops::toLong(vm.regfile.read(iw.rs1));
+            const long long scope =
+                ops::toLong(vm.regfile.read(iw.rs2));
+            if (address < -1 || target_asid < -1 ||
+                target_asid >= 19683 || scope < 0 || scope > 3) {
+                vm.trapWithCause(
+                    TrapCode::TRAP_ILLEGAL_OP,
+                    OS_CAUSE_ILLEGAL_INSTRUCTION,
+                    vm.pc);
+                return vm.status;
+            }
+            vm.invalidateTlb(
+                static_cast<int>(address),
+                static_cast<int>(target_asid),
+                static_cast<int>(scope));
+            break;
+        }
 
         case Opcode::CSRR: {
             TernaryValue value;
@@ -1120,7 +1253,8 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
 
         case Opcode::COPY: {
             // R-type: Rd ← Rs1
-            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
+            vm.regfile.write(iw.rd, vm.regfile.readView(iw.rs1, mode));
             break;
         }
 
@@ -1136,39 +1270,39 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
 
         case Opcode::ADD: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::addValue(vm.regfile.read(iw.rs1),
-                                                    vm.regfile.read(iw.rs2), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::addValue(vm.regfile.readView(iw.rs1, mode),
+                                                    vm.regfile.readView(iw.rs2, mode), mode))) return vm.status;
             break;
         }
 
         case Opcode::SUB: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::subtractValue(vm.regfile.read(iw.rs1),
-                                                         vm.regfile.read(iw.rs2), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::subtractValue(vm.regfile.readView(iw.rs1, mode),
+                                                         vm.regfile.readView(iw.rs2, mode), mode))) return vm.status;
             break;
         }
 
         case Opcode::MUL: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::multiplyValue(vm.regfile.read(iw.rs1),
-                                                         vm.regfile.read(iw.rs2), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::multiplyValue(vm.regfile.readView(iw.rs1, mode),
+                                                         vm.regfile.readView(iw.rs2, mode), mode))) return vm.status;
             break;
         }
 
         case Opcode::DIV: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, mode);
             if (b.isZero()) {
                 vm.trapWithCause(TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, vm.pc);
                 return vm.status;
             }
-            if (!writeChecked(iw.rd, exec::divideValue(vm.regfile.read(iw.rs1), b, mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::divideValue(vm.regfile.readView(iw.rs1, mode), b, mode))) return vm.status;
             break;
         }
 
         case Opcode::SQRT: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue t = convertValue(vm.regfile.read(iw.rs1), mode);
+            TernaryValue t = vm.regfile.readView(iw.rs1, mode);
             if (exec::signValue(t, mode) == T_NEG) {
                 // sqrt of negative: trap as illegal operation.
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
@@ -1180,13 +1314,13 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
 
         case Opcode::NEG: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.readView(iw.rs1, mode), mode))) return vm.status;
             break;
         }
 
         case Opcode::ABS: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::absValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::absValue(vm.regfile.readView(iw.rs1, mode), mode))) return vm.status;
             break;
         }
 
@@ -1199,24 +1333,24 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             //   result == T_NEG (-1):  Rs1 < Rs2
             //   result == T_ZER ( 0):  Rs1 == Rs2
             //   result == T_POS (+1):  Rs1 > Rs2
-            int8_t cmp = exec::compareValue(vm.regfile.read(iw.rs1),
-                                            vm.regfile.read(iw.rs2), mode);
+            int8_t cmp = exec::compareValue(vm.regfile.readView(iw.rs1, mode),
+                                            vm.regfile.readView(iw.rs2, mode), mode);
             vm.regfile.write(iw.rd, makeTritResult(cmp));
             break;
         }
 
         case Opcode::TMIN: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            TernaryValue a = vm.regfile.readView(iw.rs1, mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, mode);
             if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_POS ? b : a)) return vm.status;
             break;
         }
 
         case Opcode::TMAX: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), mode);
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), mode);
+            TernaryValue a = vm.regfile.readView(iw.rs1, mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, mode);
             if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_NEG ? b : a)) return vm.status;
             break;
         }
@@ -1224,7 +1358,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::TINV: {
             // Alias for NEG: trit-flip all mantissa trits. TINV(TINV(x)) == x.
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.read(iw.rs1), mode))) return vm.status;
+            if (!writeChecked(iw.rd, exec::negateValue(vm.regfile.readView(iw.rs1, mode), mode))) return vm.status;
             break;
         }
 
@@ -1238,14 +1372,16 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             else if (iw.opcode == Opcode::TLAND) op = exec::LaneOp::And;
             else if (iw.opcode == Opcode::TLOR) op = exec::LaneOp::Or;
             if (!writeChecked(iw.rd, exec::laneBinaryValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), mode, op))) return vm.status;
+                    vm.regfile.readView(iw.rs1, mode),
+                    vm.regfile.readView(iw.rs2, mode), mode, op))) return vm.status;
             break;
         }
 
         case Opcode::TLNEG: {
             auto [ok, mode] = decodeLaneWidth(); if (!ok) return vm.status;
             if (!writeChecked(iw.rd, exec::laneUnaryValue(
-                    vm.regfile.read(iw.rs1), mode, exec::LaneOp::Neg))) return vm.status;
+                    vm.regfile.readView(iw.rs1, mode),
+                    mode, exec::LaneOp::Neg))) return vm.status;
             break;
         }
 
@@ -1376,32 +1512,63 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             }
             const long long base = ops::toLong(baseReg);
             exec::prepareVectorOp(vm);
+            std::vector<TernaryValue> loaded_lanes(
+                static_cast<std::size_t>(vm.vector_length),
+                TernaryValue::zero(mode));
+            int first_routed_cause = OS_CAUSE_LOAD_FAULT;
             for (int lane = 0; lane < vm.vector_length; ++lane) {
                 const long long addrLong = base + iw.imm + lane;
+                if (addrLong < std::numeric_limits<int>::min() ||
+                    addrLong > std::numeric_limits<int>::max()) {
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
+                    continue;
+                }
                 int physical_addr = static_cast<int>(addrLong);
                 int cause = OS_CAUSE_LOAD_FAULT;
                 if (vm.privilege != PrivilegeMode::Kernel &&
                     !vm.translateLoadAddress(static_cast<int>(addrLong), physical_addr, cause)) {
-                    vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
-                                     cause,
-                                     vm.pc);
-                    return vm.status;
+                    if (!vm.vector_faults.any())
+                        first_routed_cause = cause;
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
+                    continue;
                 }
                 if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
-                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
                     continue;
                 }
                 auto [loaded, fc] = vm.dmem.load(physical_addr);
                 if (fc != MemFaultCode::OK) {
-                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_MEM_FAULT, mode);
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
                     continue;
                 }
                 TernaryValue converted;
                 if (!exec::convertVectorNumericLane(loaded, mode, converted)) {
-                    exec::writeVectorFaultZero(vm, iw.rd, lane, TrapCode::TRAP_ILLEGAL_OP, mode);
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_ILLEGAL_OP);
                     continue;
                 }
-                vm.vregfile.reg[iw.rd].write(lane, converted);
+                loaded_lanes[static_cast<std::size_t>(lane)] = converted;
+            }
+            if (vm.vector_faults.any()) {
+                const int first = vm.vector_faults.first_failing_lane;
+                const TrapCode code = vm.vector_faults.fault_class[
+                    static_cast<std::size_t>(first)];
+                vm.trapWithCause(
+                    code,
+                    code == TrapCode::TRAP_MEM_FAULT
+                        ? first_routed_cause
+                        : OS_CAUSE_ILLEGAL_INSTRUCTION,
+                    vm.pc);
+                return vm.status;
+            }
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                vm.vregfile.reg[iw.rd].write(
+                    lane,
+                    loaded_lanes[static_cast<std::size_t>(lane)]);
             }
             break;
         }
@@ -1420,16 +1587,29 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             }
             const long long base = ops::toLong(baseReg);
             exec::prepareVectorOp(vm);
+            std::vector<int> physical_addresses(
+                static_cast<std::size_t>(vm.vector_length), -1);
+            std::vector<TernaryValue> stored_lanes(
+                static_cast<std::size_t>(vm.vector_length),
+                TernaryValue::zero(mode));
+            int first_routed_cause = OS_CAUSE_STORE_FAULT;
             for (int lane = 0; lane < vm.vector_length; ++lane) {
                 const long long addrLong = base + iw.imm + lane;
+                if (addrLong < std::numeric_limits<int>::min() ||
+                    addrLong > std::numeric_limits<int>::max()) {
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
+                    continue;
+                }
                 int physical_addr = static_cast<int>(addrLong);
                 int cause = OS_CAUSE_STORE_FAULT;
                 if (vm.privilege != PrivilegeMode::Kernel &&
                     !vm.translateStoreAddress(static_cast<int>(addrLong), physical_addr, cause)) {
-                    vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
-                                     cause,
-                                     vm.pc);
-                    return vm.status;
+                    if (!vm.vector_faults.any())
+                        first_routed_cause = cause;
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
+                    continue;
                 }
                 if (physical_addr < 0 || physical_addr >= vm.dmem.size()) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
@@ -1440,12 +1620,38 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                     vm.vector_faults.setLane(lane, TrapCode::TRAP_ILLEGAL_OP);
                     continue;
                 }
-                MemFaultCode fc = vm.dmem.store(physical_addr, converted);
-                if (fc != MemFaultCode::OK) {
-                    vm.vector_faults.setLane(lane, TrapCode::TRAP_MEM_FAULT);
-                } else {
-                    vm.noteStoreForReservation(physical_addr);
+                physical_addresses[static_cast<std::size_t>(lane)] =
+                    physical_addr;
+                stored_lanes[static_cast<std::size_t>(lane)] = converted;
+            }
+            if (vm.vector_faults.any()) {
+                const int first = vm.vector_faults.first_failing_lane;
+                const TrapCode code = vm.vector_faults.fault_class[
+                    static_cast<std::size_t>(first)];
+                vm.trapWithCause(
+                    code,
+                    code == TrapCode::TRAP_MEM_FAULT
+                        ? first_routed_cause
+                        : OS_CAUSE_ILLEGAL_INSTRUCTION,
+                    vm.pc);
+                return vm.status;
+            }
+            for (int lane = 0; lane < vm.vector_length; ++lane) {
+                const int physical_addr =
+                    physical_addresses[static_cast<std::size_t>(lane)];
+                if (vm.dmem.store(
+                        physical_addr,
+                        stored_lanes[static_cast<std::size_t>(lane)]) !=
+                    MemFaultCode::OK) {
+                    vm.vector_faults.setLane(
+                        lane, TrapCode::TRAP_MEM_FAULT);
+                    vm.trapWithCause(
+                        TrapCode::TRAP_MEM_FAULT,
+                        OS_CAUSE_STORE_FAULT,
+                        vm.pc);
+                    return vm.status;
                 }
+                vm.noteStoreForReservation(physical_addr);
             }
             break;
         }
@@ -1650,7 +1856,11 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
                 return vm.status;
             }
-            MemFaultCode fc = vm.dmem.store(physical_addr, vm.regfile.read(iw.rs_store));
+            const TernaryValue store_value =
+                vm.isa_version == IsaEncodingVersion::V2
+                    ? vm.regfile.readPhysical(iw.rs_store)
+                    : vm.regfile.read(iw.rs_store);
+            MemFaultCode fc = vm.dmem.store(physical_addr, store_value);
             if (fc != MemFaultCode::OK) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
                 return vm.status;
@@ -2579,6 +2789,8 @@ inline void syncBlockCacheGeneration(VMState& vm) {
         case Opcode::JMP:
         case Opcode::BRN:
         case Opcode::BRZ:
+        case Opcode::WAIT:
+        case Opcode::TLBINV:
         case Opcode::BRP:
         case Opcode::CALL:
         case Opcode::RET:
@@ -2617,6 +2829,7 @@ inline void classifyCachedInstruction(VMDecodedInstruction& decoded) {
             decoded.supported = true;
             return;
         case Opcode::COPY:
+            if (!exec::numericModeFromFunc(iw.func, decoded.mode)) return;
             decoded.op = VMDecodedOp::Copy;
             decoded.supported = true;
             return;
@@ -2716,7 +2929,8 @@ inline void classifyCachedInstruction(VMDecodedInstruction& decoded) {
     VMDecodedInstruction decoded;
     decoded.pc = pc;
     decoded.raw = raw;
-    decoded.word = InstructionWord::decode(raw);
+    decoded.word =
+        VersionedInstructionCodec::decode(raw, vm.isa_version);
     classifyCachedInstruction(decoded);
 
     vm.decoded_instruction_cache[pc] = VMDecodedCacheEntry{generation, decoded};
@@ -2800,7 +3014,7 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
         }
 
         case VMDecodedOp::Copy:
-            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            vm.regfile.write(iw.rd, vm.regfile.readView(iw.rs1, decoded.mode));
             break;
 
         case VMDecodedOp::Swap: {
@@ -2813,32 +3027,35 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
 
         case VMDecodedOp::Add:
             if (!cachedWriteChecked(vm, iw.rd, exec::addValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode),
+                    vm.regfile.readView(iw.rs2, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::Sub:
             if (!cachedWriteChecked(vm, iw.rd, exec::subtractValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode),
+                    vm.regfile.readView(iw.rs2, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::Mul:
             if (!cachedWriteChecked(vm, iw.rd, exec::multiplyValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode),
+                    vm.regfile.readView(iw.rs2, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::Div: {
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, decoded.mode);
             if (b.isZero()) {
                 vm.trapWithCause(TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, vm.pc);
                 return;
             }
             if (!cachedWriteChecked(vm, iw.rd, exec::divideValue(
-                    vm.regfile.read(iw.rs1), b, decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode), b, decoded.mode))) return;
             break;
         }
 
         case VMDecodedOp::Sqrt: {
-            TernaryValue t = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
+            TernaryValue t = vm.regfile.readView(iw.rs1, decoded.mode);
             if (exec::signValue(t, decoded.mode) == T_NEG) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return;
@@ -2849,32 +3066,33 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
 
         case VMDecodedOp::Neg:
             if (!cachedWriteChecked(vm, iw.rd, exec::negateValue(
-                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::Abs:
             if (!cachedWriteChecked(vm, iw.rd, exec::absValue(
-                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::TCmp: {
             int8_t cmp = exec::compareValue(
-                vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode);
+                vm.regfile.readView(iw.rs1, decoded.mode),
+                vm.regfile.readView(iw.rs2, decoded.mode), decoded.mode);
             vm.regfile.write(iw.rd, makeTritResult(cmp));
             break;
         }
 
         case VMDecodedOp::TMin: {
-            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            TernaryValue a = vm.regfile.readView(iw.rs1, decoded.mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, decoded.mode);
             if (!cachedWriteChecked(
                     vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_POS ? b : a)) return;
             break;
         }
 
         case VMDecodedOp::TMax: {
-            TernaryValue a = convertValue(vm.regfile.read(iw.rs1), decoded.mode);
-            TernaryValue b = convertValue(vm.regfile.read(iw.rs2), decoded.mode);
+            TernaryValue a = vm.regfile.readView(iw.rs1, decoded.mode);
+            TernaryValue b = vm.regfile.readView(iw.rs2, decoded.mode);
             if (!cachedWriteChecked(
                     vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_NEG ? b : a)) return;
             break;
@@ -2882,7 +3100,7 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
 
         case VMDecodedOp::TInv:
             if (!cachedWriteChecked(vm, iw.rd, exec::negateValue(
-                    vm.regfile.read(iw.rs1), decoded.mode))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode), decoded.mode))) return;
             break;
 
         case VMDecodedOp::TLAdd:
@@ -2894,13 +3112,16 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
             else if (decoded.op == VMDecodedOp::TLAnd) op = exec::LaneOp::And;
             else if (decoded.op == VMDecodedOp::TLOr) op = exec::LaneOp::Or;
             if (!cachedWriteChecked(vm, iw.rd, exec::laneBinaryValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), decoded.mode, op))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode),
+                    vm.regfile.readView(iw.rs2, decoded.mode),
+                    decoded.mode, op))) return;
             break;
         }
 
         case VMDecodedOp::TLNeg:
             if (!cachedWriteChecked(vm, iw.rd, exec::laneUnaryValue(
-                    vm.regfile.read(iw.rs1), decoded.mode, exec::LaneOp::Neg))) return;
+                    vm.regfile.readView(iw.rs1, decoded.mode),
+                    decoded.mode, exec::LaneOp::Neg))) return;
             break;
 
         case VMDecodedOp::TSel: {
@@ -2971,7 +3192,11 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, cause, vm.pc);
                 return;
             }
-            MemFaultCode fc = vm.dmem.store(physical_addr, vm.regfile.read(iw.rs_store));
+            const TernaryValue store_value =
+                vm.isa_version == IsaEncodingVersion::V2
+                    ? vm.regfile.readPhysical(iw.rs_store)
+                    : vm.regfile.read(iw.rs_store);
+            MemFaultCode fc = vm.dmem.store(physical_addr, store_value);
             if (fc != MemFaultCode::OK) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
                 return;
@@ -3022,6 +3247,30 @@ inline int executeCachedBlock(VMState& vm, int max_instructions) {
 
 static constexpr int VM_TRACE_JIT_MAX_LENGTH = 64;
 
+[[nodiscard]] inline VMDecodedTraceCacheKey decodedTraceCacheKey(
+    const VMState& vm,
+    int pc) {
+    return {
+        static_cast<int>(vm.isa_version),
+        vm.required_features,
+        vm.asid,
+        pc,
+        static_cast<int>(vm.privilege),
+        vm.mmu_enable,
+        vm.user_imem_base,
+        vm.user_imem_limit,
+        vm.user_dmem_base,
+        vm.user_dmem_limit,
+        vm.user_imem_ptbr,
+        vm.user_imem_pages,
+        vm.user_dmem_ptbr,
+        vm.user_dmem_pages,
+        vm.imem.generation(),
+        vm.executable_mapping_generation,
+        vm.mmu_generation,
+    };
+}
+
 inline void syncTraceJitGeneration(VMState& vm) {
     const std::uint64_t generation = vm.imem.generation();
     if (vm.trace_jit_observed_generation == generation) return;
@@ -3036,14 +3285,9 @@ inline void syncTraceJitGeneration(VMState& vm) {
 }
 
 [[nodiscard]] inline bool traceJitFastPathAvailable(const VMState& vm) {
-    return vm.traceJitEnabled() &&
-           vm.isRunning() &&
-           vm.privilege == PrivilegeMode::Kernel &&
-           !vm.mmu_enable;
-}
-
-[[nodiscard]] inline bool traceJitFlatMemoryAvailable(const VMState& vm) {
-    return vm.privilege == PrivilegeMode::Kernel && !vm.mmu_enable;
+    return (vm.decodedTraceExecutorEnabled() ||
+            vm.nativeX64JitEnabled()) &&
+           vm.isRunning();
 }
 
 inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
@@ -3061,6 +3305,7 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
             emitted.op = VMTraceJitOp::MovH;
             return true;
         case Opcode::COPY:
+            if (!exec::numericModeFromFunc(iw.func, emitted.mode)) return false;
             emitted.op = VMTraceJitOp::Copy;
             return true;
         case Opcode::ADD:
@@ -3108,6 +3353,72 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     }
 }
 
+inline void annotateDecodedMicroOp(VMMicroOp& op) {
+    op.memory_effect = VMMicroMemoryEffect::None;
+    op.guards = VM_MICRO_GUARD_TRACE_GENERATION;
+    op.side_exits.clear();
+    op.trap_point = true;
+    op.instruction_accounting = 1;
+    switch (op.op) {
+        case VMMicroOpcode::Copy:
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            break;
+        case VMMicroOpcode::Add:
+        case VMMicroOpcode::Sub:
+        case VMMicroOpcode::Mul:
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC |
+                         VM_MICRO_GUARD_RS2_NUMERIC |
+                         VM_MICRO_GUARD_RESULT_VALID;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            op.side_exits.push_back(VMMicroSideExit::InvalidResult);
+            break;
+        case VMMicroOpcode::Neg:
+        case VMMicroOpcode::Abs:
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC |
+                         VM_MICRO_GUARD_RESULT_VALID;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            op.side_exits.push_back(VMMicroSideExit::InvalidResult);
+            break;
+        case VMMicroOpcode::Load:
+            op.memory_effect = VMMicroMemoryEffect::Read;
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC |
+                         VM_MICRO_GUARD_ADDRESS_TRANSLATION |
+                         VM_MICRO_GUARD_MEMORY_ACCESS;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            op.side_exits.push_back(VMMicroSideExit::AddressTranslation);
+            op.side_exits.push_back(VMMicroSideExit::MemoryFault);
+            break;
+        case VMMicroOpcode::Store:
+            op.memory_effect = VMMicroMemoryEffect::Write;
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC |
+                         VM_MICRO_GUARD_ADDRESS_TRANSLATION |
+                         VM_MICRO_GUARD_MEMORY_ACCESS;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            op.side_exits.push_back(VMMicroSideExit::AddressTranslation);
+            op.side_exits.push_back(VMMicroSideExit::MemoryFault);
+            break;
+        case VMMicroOpcode::Brn:
+        case VMMicroOpcode::Brz:
+        case VMMicroOpcode::Brp:
+            op.guards |= VM_MICRO_GUARD_RS1_NUMERIC;
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
+            op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
+            break;
+        case VMMicroOpcode::Jmp:
+            op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
+            break;
+        case VMMicroOpcode::Unsupported:
+            op.side_exits.push_back(VMMicroSideExit::Unsupported);
+            break;
+        case VMMicroOpcode::Nop:
+        case VMMicroOpcode::Mov:
+        case VMMicroOpcode::MovH:
+            break;
+    }
+    op.side_exits.push_back(VMMicroSideExit::GenerationMismatch);
+}
+
 [[nodiscard]] inline bool emitTraceJitInstruction(
     VMState& vm, int pc, VMTraceJitInstruction& out) {
 
@@ -3121,8 +3432,10 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     VMTraceJitInstruction emitted;
     emitted.pc = pc;
     emitted.raw = raw;
-    emitted.word = InstructionWord::decode(raw);
+    emitted.word =
+        VersionedInstructionCodec::decode(raw, vm.isa_version);
     if (!classifyTraceJitInstruction(emitted)) return false;
+    annotateDecodedMicroOp(emitted);
 
     out = emitted;
     return true;
@@ -3134,6 +3447,7 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     VMTraceJitTrace trace;
     trace.start_pc = start_pc;
     trace.imem_generation = vm.imem.generation();
+    trace.cache_key = decodedTraceCacheKey(vm, start_pc);
 
     std::unordered_map<int, int> pc_to_index;
     int pc = start_pc;
@@ -3159,13 +3473,14 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     }
 
     if (trace.instructions.empty()) {
-        vm.trace_jit_unsupported_pcs.insert(start_pc);
+        vm.trace_jit_unsupported_pcs.insert(trace.cache_key);
         ++vm.trace_jit_stats.unsupported_fallbacks;
         return nullptr;
     }
 
     ++vm.trace_jit_stats.traces_built;
-    auto inserted = vm.trace_jit_cache.emplace(start_pc, std::move(trace));
+    const VMDecodedTraceCacheKey key = trace.cache_key;
+    auto inserted = vm.trace_jit_cache.emplace(key, std::move(trace));
     return &inserted.first->second;
 }
 
@@ -3184,16 +3499,10 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     return true;
 }
 
-[[nodiscard]] inline bool traceJitBaseAddress(
+[[nodiscard]] inline bool traceJitVirtualAddress(
     VMState& vm,
     const VMTraceJitInstruction& emitted,
     int& out_addr) {
-
-    if (!traceJitFlatMemoryAvailable(vm)) {
-        vm.pc = emitted.pc;
-        ++vm.trace_jit_stats.interpreter_bailouts;
-        return false;
-    }
 
     const InstructionWord& iw = emitted.word;
     const TernaryValue base_value = vm.regfile.read(iw.rs1);
@@ -3212,12 +3521,6 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
     }
 
     out_addr = static_cast<int>(addr_long);
-    if (!vm.dmem.inRange(out_addr)) {
-        vm.pc = emitted.pc;
-        ++vm.trace_jit_stats.interpreter_bailouts;
-        return false;
-    }
-
     return true;
 }
 
@@ -3261,38 +3564,50 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
         }
 
         case VMTraceJitOp::Copy:
-            vm.regfile.write(iw.rd, vm.regfile.read(iw.rs1));
+            vm.regfile.write(iw.rd, vm.regfile.readView(iw.rs1, emitted.mode));
             break;
 
         case VMTraceJitOp::Add:
             if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::addValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+                    vm.regfile.readView(iw.rs1, emitted.mode),
+                    vm.regfile.readView(iw.rs2, emitted.mode), emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::Sub:
             if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::subtractValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+                    vm.regfile.readView(iw.rs1, emitted.mode),
+                    vm.regfile.readView(iw.rs2, emitted.mode), emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::Mul:
             if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::multiplyValue(
-                    vm.regfile.read(iw.rs1), vm.regfile.read(iw.rs2), emitted.mode))) return false;
+                    vm.regfile.readView(iw.rs1, emitted.mode),
+                    vm.regfile.readView(iw.rs2, emitted.mode), emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::Neg:
             if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::negateValue(
-                    vm.regfile.read(iw.rs1), emitted.mode))) return false;
+                    vm.regfile.readView(iw.rs1, emitted.mode), emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::Abs:
             if (!traceJitWriteChecked(vm, emitted, iw.rd, exec::absValue(
-                    vm.regfile.read(iw.rs1), emitted.mode))) return false;
+                    vm.regfile.readView(iw.rs1, emitted.mode), emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::Load: {
-            int addr = 0;
-            if (!traceJitBaseAddress(vm, emitted, addr)) return false;
-            auto [value, fault] = vm.dmem.load(addr);
+            int virtual_addr = 0;
+            if (!traceJitVirtualAddress(vm, emitted, virtual_addr))
+                return false;
+            int physical_addr = 0;
+            int routed_cause = OS_CAUSE_LOAD_FAULT;
+            if (!vm.translateLoadAddress(
+                    virtual_addr, physical_addr, routed_cause)) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            auto [value, fault] = vm.dmem.load(physical_addr);
             if (fault != MemFaultCode::OK) {
                 vm.pc = emitted.pc;
                 ++vm.trace_jit_stats.interpreter_bailouts;
@@ -3303,14 +3618,27 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
         }
 
         case VMTraceJitOp::Store: {
-            int addr = 0;
-            if (!traceJitBaseAddress(vm, emitted, addr)) return false;
-            if (vm.dmem.store(addr, vm.regfile.read(iw.rs_store)) != MemFaultCode::OK) {
+            int virtual_addr = 0;
+            if (!traceJitVirtualAddress(vm, emitted, virtual_addr))
+                return false;
+            int physical_addr = 0;
+            int routed_cause = OS_CAUSE_STORE_FAULT;
+            if (!vm.translateStoreAddress(
+                    virtual_addr, physical_addr, routed_cause)) {
                 vm.pc = emitted.pc;
                 ++vm.trace_jit_stats.interpreter_bailouts;
                 return false;
             }
-            vm.noteStoreForReservation(addr);
+            const TernaryValue store_value =
+                vm.isa_version == IsaEncodingVersion::V2
+                    ? vm.regfile.readPhysical(iw.rs_store)
+                    : vm.regfile.read(iw.rs_store);
+            if (vm.dmem.store(physical_addr, store_value) != MemFaultCode::OK) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            vm.noteStoreForReservation(physical_addr);
             break;
         }
 
@@ -3361,7 +3689,7 @@ inline int executeTraceJitTrace(
 
     if (!traceJitFastPathAvailable(vm) || max_instructions == 0 ||
         trace.instructions.empty() || vm.pc != trace.start_pc ||
-        trace.imem_generation != vm.imem.generation()) {
+        trace.cache_key != decodedTraceCacheKey(vm, trace.start_pc)) {
         return 0;
     }
 
@@ -3375,7 +3703,8 @@ inline int executeTraceJitTrace(
            index < static_cast<int>(trace.instructions.size())) {
 
         if (!traceJitFastPathAvailable(vm) ||
-            trace.imem_generation != vm.imem.generation()) {
+            trace.cache_key !=
+                decodedTraceCacheKey(vm, trace.start_pc)) {
             syncTraceJitGeneration(vm);
             break;
         }
@@ -3411,23 +3740,215 @@ inline int executeTraceJit(VMState& vm, int max_instructions) {
     syncTraceJitGeneration(vm);
     ++vm.trace_jit_stats.hot_pc_samples;
     const int start_pc = vm.pc;
+    const VMDecodedTraceCacheKey key = decodedTraceCacheKey(vm, start_pc);
 
-    auto cached = vm.trace_jit_cache.find(start_pc);
+    auto cached = vm.trace_jit_cache.find(key);
     if (cached != vm.trace_jit_cache.end() &&
-        cached->second.imem_generation == vm.imem.generation()) {
+        cached->second.cache_key == key) {
         return executeTraceJitTrace(vm, cached->second, max_instructions);
     }
 
-    if (vm.trace_jit_unsupported_pcs.find(start_pc) != vm.trace_jit_unsupported_pcs.end()) {
+    if (vm.trace_jit_unsupported_pcs.find(key) !=
+        vm.trace_jit_unsupported_pcs.end()) {
         return 0;
     }
 
-    const long long samples = ++vm.hot_pc_counts[start_pc];
+    const long long samples = ++vm.hot_pc_counts[key];
     if (samples < vm.trace_jit_hot_threshold) return 0;
 
     VMTraceJitTrace* trace = buildTraceJitTrace(vm, start_pc);
     if (trace == nullptr) return 0;
     return executeTraceJitTrace(vm, *trace, max_instructions);
+}
+
+struct VMNativeX64CodeBlock {
+    using EntryPoint = int (*)(VMState*, int);
+
+    void* allocation = nullptr;
+    std::size_t allocation_size = 0;
+    std::size_t code_size = 0;
+    EntryPoint entry = nullptr;
+    bool writable = false;
+    bool executable = false;
+
+    VMNativeX64CodeBlock() = default;
+    VMNativeX64CodeBlock(const VMNativeX64CodeBlock&) = delete;
+    VMNativeX64CodeBlock& operator=(const VMNativeX64CodeBlock&) = delete;
+
+    ~VMNativeX64CodeBlock() {
+        if (!allocation) return;
+#if defined(_WIN32)
+        VirtualFree(allocation, 0, MEM_RELEASE);
+#elif defined(__x86_64__) || defined(__aarch64__)
+        munmap(allocation, allocation_size);
+#endif
+    }
+
+    [[nodiscard]] bool isWriteXorExecute() const {
+        return allocation != nullptr && executable && !writable;
+    }
+};
+
+[[nodiscard]] inline bool nativeX64HostAvailable() {
+#if defined(_M_X64) || defined(__x86_64__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+inline int nativeX64DecodedTraceEntry(
+    VMState* vm,
+    int max_instructions,
+    int start_pc) {
+    if (!vm) return 0;
+    const VMDecodedTraceCacheKey key =
+        decodedTraceCacheKey(*vm, start_pc);
+    const auto trace = vm->trace_jit_cache.find(key);
+    if (trace == vm->trace_jit_cache.end()) return 0;
+    return executeTraceJitTrace(
+        *vm, trace->second, max_instructions);
+}
+
+[[nodiscard]] inline std::shared_ptr<VMNativeX64CodeBlock>
+compileNativeX64TraceThunk(int start_pc) {
+#if !defined(_M_X64) && !defined(__x86_64__)
+    (void)start_pc;
+    return {};
+#else
+    std::vector<std::uint8_t> code;
+    auto byte = [&](std::uint8_t value) { code.push_back(value); };
+    auto u32 = [&](std::uint32_t value) {
+        for (int shift = 0; shift < 32; shift += 8)
+            byte(static_cast<std::uint8_t>(value >> shift));
+    };
+    auto u64 = [&](std::uint64_t value) {
+        for (int shift = 0; shift < 64; shift += 8)
+            byte(static_cast<std::uint8_t>(value >> shift));
+    };
+
+#if defined(_WIN32)
+    // Windows x64: rcx=VMState*, edx=max, r8d=specialized start PC.
+    byte(0x41); byte(0xB8); u32(static_cast<std::uint32_t>(start_pc));
+#else
+    // System V x86-64: rdi=VMState*, esi=max, edx=start PC.
+    byte(0xBA); u32(static_cast<std::uint32_t>(start_pc));
+#endif
+    byte(0x48); byte(0xB8);
+    u64(static_cast<std::uint64_t>(
+        reinterpret_cast<std::uintptr_t>(&nativeX64DecodedTraceEntry)));
+#if defined(_WIN32)
+    // Reserve 32-byte shadow space and align the stack for the helper call.
+    byte(0x48); byte(0x83); byte(0xEC); byte(0x28);
+#else
+    byte(0x48); byte(0x83); byte(0xEC); byte(0x08);
+#endif
+    byte(0xFF); byte(0xD0);
+#if defined(_WIN32)
+    byte(0x48); byte(0x83); byte(0xC4); byte(0x28);
+#else
+    byte(0x48); byte(0x83); byte(0xC4); byte(0x08);
+#endif
+    byte(0xC3);
+
+    auto block = std::make_shared<VMNativeX64CodeBlock>();
+#if defined(_WIN32)
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+    const std::size_t page_size =
+        static_cast<std::size_t>(info.dwPageSize);
+#else
+    const long page_size_long = sysconf(_SC_PAGESIZE);
+    const std::size_t page_size = page_size_long > 0
+        ? static_cast<std::size_t>(page_size_long)
+        : std::size_t{4096};
+#endif
+    block->allocation_size =
+        ((code.size() + page_size - 1) / page_size) * page_size;
+#if defined(_WIN32)
+    block->allocation = VirtualAlloc(
+        nullptr, block->allocation_size,
+        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+    block->allocation = mmap(
+        nullptr, block->allocation_size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (block->allocation == MAP_FAILED) block->allocation = nullptr;
+#endif
+    if (!block->allocation) return {};
+    block->writable = true;
+    std::memcpy(block->allocation, code.data(), code.size());
+    block->code_size = code.size();
+#if defined(_WIN32)
+    DWORD previous = 0;
+    if (!VirtualProtect(
+            block->allocation, block->allocation_size,
+            PAGE_EXECUTE_READ, &previous)) {
+        return {};
+    }
+    FlushInstructionCache(
+        GetCurrentProcess(), block->allocation, block->code_size);
+#else
+    if (mprotect(
+            block->allocation, block->allocation_size,
+            PROT_READ | PROT_EXEC) != 0) {
+        return {};
+    }
+    __builtin___clear_cache(
+        static_cast<char*>(block->allocation),
+        static_cast<char*>(block->allocation) + block->code_size);
+#endif
+    block->writable = false;
+    block->executable = true;
+    block->entry =
+        reinterpret_cast<VMNativeX64CodeBlock::EntryPoint>(
+            block->allocation);
+    return block;
+#endif
+}
+
+inline int executeNativeX64Jit(
+    VMState& vm,
+    int max_instructions) {
+    if (!nativeX64HostAvailable() || !vm.nativeX64JitEnabled() ||
+        !vm.isRunning() || max_instructions == 0) {
+        return 0;
+    }
+    syncTraceJitGeneration(vm);
+    ++vm.trace_jit_stats.hot_pc_samples;
+    const int start_pc = vm.pc;
+    const VMDecodedTraceCacheKey key =
+        decodedTraceCacheKey(vm, start_pc);
+    auto trace = vm.trace_jit_cache.find(key);
+    if (trace == vm.trace_jit_cache.end()) {
+        if (vm.trace_jit_unsupported_pcs.count(key)) return 0;
+        const long long samples = ++vm.hot_pc_counts[key];
+        if (samples < vm.trace_jit_hot_threshold) return 0;
+        if (!buildTraceJitTrace(vm, start_pc)) return 0;
+    }
+
+    auto code = vm.native_x64_code_cache.find(key);
+    std::shared_ptr<VMNativeX64CodeBlock> block;
+    if (code == vm.native_x64_code_cache.end()) {
+        ++vm.native_x64_jit_stats.compilation_attempts;
+        block = compileNativeX64TraceThunk(start_pc);
+        if (!block || !block->isWriteXorExecute()) return 0;
+        vm.native_x64_code_cache.emplace(key, block);
+        ++vm.native_x64_jit_stats.blocks_built;
+        ++vm.native_x64_jit_stats.wx_transitions;
+    } else {
+        block = std::static_pointer_cast<VMNativeX64CodeBlock>(
+            code->second);
+    }
+    const int executed = block->entry(&vm, max_instructions);
+    if (executed > 0) {
+        ++vm.native_x64_jit_stats.blocks_executed;
+        vm.native_x64_jit_stats.instructions_executed += executed;
+    } else {
+        ++vm.native_x64_jit_stats.portable_side_exits;
+    }
+    return executed;
 }
 
 inline VMStatus stepCore(VMState& vm, int core_id) {
@@ -3504,6 +4025,18 @@ inline RunResult run(VMState& vm, int max_steps = 1000000,
     int steps = 0;
     while (vm.isRunning() && vm.power_control == 0) {
         if (max_steps >= 0 && steps >= max_steps) break;
+        if (!hooks &&
+            vm.execution_backend == VMExecutionBackend::NativeX64Jit) {
+            const int remaining = max_steps < 0
+                ? std::numeric_limits<int>::max()
+                : max_steps - steps;
+            const int native_steps =
+                executeNativeX64Jit(vm, remaining);
+            if (native_steps > 0) {
+                steps += native_steps;
+                continue;
+            }
+        }
         if (!hooks && vm.execution_backend == VMExecutionBackend::TraceJit) {
             const int remaining = max_steps < 0
                 ? std::numeric_limits<int>::max()

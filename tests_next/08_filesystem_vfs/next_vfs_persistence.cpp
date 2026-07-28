@@ -38,9 +38,9 @@ void blockDeviceCsrPersistence(TestContext& ctx) {
     ctx.check(readCsrLong(vm, sandbox::isa::CSR_BLOCK_COUNT) >= 141,
               "VM exposes default persistent block count");
     ctx.equal(readCsrLong(vm, sandbox::isa::CSR_BLOCK_WORDS),
-              static_cast<long long>(sandbox::vm::MMU_PAGE_WORDS),
+              static_cast<long long>(sandbox::vm::STORAGE_BLOCK_WORDS),
               "VM block words match ternary page size");
-    for (int i = 0; i < sandbox::vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < sandbox::vm::STORAGE_BLOCK_WORDS; ++i) {
         ctx.check(vm.dmem.store(200 + i, sandbox::vm::ops::fromLong(900 + i)) ==
                       sandbox::vm::MemFaultCode::OK,
                   "VM block write seed stores");
@@ -55,7 +55,7 @@ void blockDeviceCsrPersistence(TestContext& ctx) {
               "block write command succeeds");
     ctx.check(vm.block_dirty[5], "VM block write marks dirty state");
 
-    for (int i = 0; i < sandbox::vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < sandbox::vm::STORAGE_BLOCK_WORDS; ++i) {
         (void)vm.dmem.store(260 + i, sandbox::vm::ops::fromLong(0));
     }
     ctx.check(writeCsrLong(vm, sandbox::isa::CSR_BLOCK_ADDR, 260),

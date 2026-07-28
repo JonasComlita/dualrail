@@ -1,4 +1,4 @@
-#include "test_multiwidth_vm_common.h"
+﻿#include "test_multiwidth_vm_common.h"
 #include "ternary_compiler.h"
 
 #include <iostream>
@@ -116,7 +116,7 @@ std::string runBootstrapCase(const GoldenCase& test_case,
     }
 
     sandbox::vm::VMState vm(test_case.imem_words, test_case.dmem_words);
-    if (!sandbox::vm::loadAndReset(vm, linked.assembled.program)) {
+    if (!sandbox::vm::assembler::loadAndReset(vm, linked.assembled)) {
         expect(false, producer_name + " loads " + test_case.name);
         return {};
     }
@@ -232,7 +232,7 @@ std::string runNativeCompilerCase(const GoldenCase& test_case,
     if (!native_image.success) return {};
 
     sandbox::vm::VMState compiler_vm(262144, 16777216);
-    if (!sandbox::vm::loadAndReset(compiler_vm, native_image.assembled.program)) {
+    if (!sandbox::vm::assembler::loadAndReset(compiler_vm, native_image.assembled)) {
         expect(false, "native compiler image loads for " + test_case.name);
         return {};
     }

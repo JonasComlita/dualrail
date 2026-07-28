@@ -1,4 +1,4 @@
-#include "ternary_compiler.h"
+﻿#include "ternary_compiler.h"
 #include "ternary_vm.h"
 
 #include <cstdlib>
@@ -62,7 +62,7 @@ sandbox::vm::VMState compileRun(
     expect(linked.success, name + " links");
     sandbox::vm::VMState vm(65536, 1000000);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
                name + " image loads");
         if (!console_input.empty()) {
             vm.enqueueConsoleAscii(console_input);

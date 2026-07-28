@@ -146,7 +146,11 @@ The interpreter is sequential at the architectural level:
 - `HALT` and traps leave PC pointing at the terminal or faulting instruction, except routed traps which store the fault PC in `epc` and jump to `tvec`.
 - There is no speculative memory access in the interpreter.
 
-The block cache and trace-JIT paths keep memory generation counters so cached execution can notice relevant memory changes and fall back when needed.
+The block cache and decoded-trace paths keep architecture, mapping, MMU, ASID,
+and memory generation identities so cached execution can notice relevant
+changes and fall back at the precise architectural PC. The experimental
+x86-64 native backend consumes the same micro-op and cache-key contracts; see
+`decoded_trace_and_native_jit.md`.
 
 ---
 

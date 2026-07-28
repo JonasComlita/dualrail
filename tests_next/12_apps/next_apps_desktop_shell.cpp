@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_consumer_shell.h"
 #include "ternary_os.h"
@@ -83,8 +83,9 @@ sandbox::compiler::LinkResult compileBundledApp(TestContext& ctx,
         ctx.fail(id + " link diagnostics:\n" + formatDiagnostics(linked.diagnostics));
         return linked;
     }
-    ctx.equal(linked.executable_header.stack_words, stack_words,
-              id + " executable header preserves stack hint");
+    ctx.equal(linked.executable_header.stack_words,
+              ((stack_words + 8) / 9) * 9,
+              id + " executable header aligns stack hint");
     return linked;
 }
 
@@ -94,7 +95,7 @@ bool runLinkedApp(TestContext& ctx,
                   sandbox::vm::VMState& vm,
                   const std::string& marker) {
     if (!linked.success) return false;
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               id + " image loads");
     const auto result = sandbox::vm::run(vm, 200000);
     if (!result.halted()) {
@@ -144,7 +145,7 @@ bool runAppDrawDriver(TestContext& ctx,
         return false;
     }
 
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               id + " draw image loads");
     const auto result = sandbox::vm::run(vm, 400000);
     if (!result.halted()) {

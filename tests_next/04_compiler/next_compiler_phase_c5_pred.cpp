@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
 
@@ -70,7 +70,7 @@ std::string runBootstrapProducer(TestContext& ctx,
     }
 
     sandbox::vm::VMState vm(test_case.imem_words, test_case.dmem_words);
-    if (!sandbox::vm::loadAndReset(vm, linked.assembled.program)) {
+    if (!sandbox::vm::assembler::loadAndReset(vm, linked.assembled)) {
         ctx.fail(producer_name + " image loads for " + test_case.name);
         return "";
     }

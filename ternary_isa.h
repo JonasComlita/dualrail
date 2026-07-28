@@ -81,6 +81,7 @@
 #include <array>
 #include <string>
 #include <stdexcept>
+#include "generated/architecture_contract.h"
 
 namespace sandbox {
 namespace isa {
@@ -421,10 +422,20 @@ enum class Opcode : uint8_t {
     TLDR     = 78,
     TSTR     = 79,
 
+
+    // v2 semantic operations; these values are not direct wire opcodes.
+    WAIT     = 80,
+    TLBINV   = 81,
+
     // --- Reserved ---
     // Value 80 is reserved for future extension.
     // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
     RESERVED = 255  // Sentinel — never encoded into an instruction word.
+};
+
+enum class IsaEncodingVersion : uint8_t {
+    V1 = 1,
+    V2 = architecture::v2::ISA_VERSION,
 };
 
 static constexpr uint8_t OPCODE_MAX_ASSIGNED = 79;  // TSTR
@@ -663,7 +674,12 @@ static constexpr int CSR_BLOCK_STATUS   = 44;
 static constexpr int CSR_BLOCK_COUNT    = 45;
 static constexpr int CSR_BLOCK_WORDS    = 46;
 static constexpr int CSR_POWER_CONTROL  = 47;
-static constexpr int CSR_MAX_ID          = CSR_POWER_CONTROL;
+static constexpr int CSR_ISA_VERSION    = architecture::v2::CSR_ISA_VERSION;
+static constexpr int CSR_ISA_FEATURES   = architecture::v2::CSR_ISA_FEATURES;
+static constexpr int CSR_MMU_BASE_PAGE_WORDS = architecture::v2::CSR_MMU_BASE_PAGE_WORDS;
+static constexpr int CSR_MMU_SUPERPAGE_WORDS = architecture::v2::CSR_MMU_SUPERPAGE_WORDS;
+static constexpr int CSR_ASID           = architecture::v2::CSR_ASID;
+static constexpr int CSR_MAX_ID         = CSR_ASID;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
     return id >= 0 && id <= CSR_MAX_ID;
@@ -719,9 +735,16 @@ static constexpr int CSR_MAX_ID          = CSR_POWER_CONTROL;
         case CSR_BLOCK_COUNT: return "block_count";
         case CSR_BLOCK_WORDS: return "block_words";
         case CSR_POWER_CONTROL: return "power_control";
+        case CSR_ISA_VERSION: return "isa_version";
+        case CSR_ISA_FEATURES: return "isa_features";
+        case CSR_MMU_BASE_PAGE_WORDS: return "mmu_base_page_words";
+        case CSR_MMU_SUPERPAGE_WORDS: return "mmu_superpage_words";
+        case CSR_ASID: return "asid";
         default: return "unknown";
     }
 }
+
+#include "generated/architecture_isa_v2.h"
 
 // =============================================================================
 // SECTION 8 — Decoded Instruction Word
@@ -997,6 +1020,9 @@ private:
     }
 };
 
+#include "generated/architecture_instruction_codec.h"
+
+#include "architecture_v2_support.h"
 // =============================================================================
 // SECTION 9 — Round-Trip Verification
 // =============================================================================
@@ -1204,12 +1230,13 @@ inline bool verifyRoundTrip() {
         case Opcode::CSRRW:   return "CSRRW";
         case Opcode::TLDR:    return "TLDR";
         case Opcode::TSTR:    return "TSTR";
+        case Opcode::WAIT:    return "WAIT";
+        case Opcode::TLBINV:  return "TLBINV";
         default:            return "???";
     }
 }
 
-[[nodiscard]] inline std::string disassemble(const TritWord27& w) {
-    InstructionWord iw = InstructionWord::decode(w);
+[[nodiscard]] inline std::string disassemble(const InstructionWord& iw) {
     if (iw.malformed) return "<MALFORMED>";
 
     // System instructions that use no operands.
@@ -1217,6 +1244,7 @@ inline bool verifyRoundTrip() {
     if (iw.opcode == Opcode::HALT) return "HALT";
     if (iw.opcode == Opcode::RET)  return "RET";
     if (iw.opcode == Opcode::ERET) return "ERET";
+    if (iw.opcode == Opcode::WAIT) return "WAIT";
 
     std::string mnemonic = opcodeToString(iw.opcode);
     if (iw.opcode == Opcode::CVT && iw.fmt == InstructionFormat::R_TYPE) {
@@ -1419,6 +1447,16 @@ inline bool verifyRoundTrip() {
             s += "<invalid format>";
     }
     return s;
+}
+
+[[nodiscard]] inline std::string disassemble(
+        const TritWord27& word,
+        IsaEncodingVersion version) {
+    return disassemble(VersionedInstructionCodec::decode(word, version));
+}
+
+[[nodiscard]] inline std::string disassemble(const TritWord27& word) {
+    return disassemble(word, IsaEncodingVersion::V1);
 }
 
 } // namespace isa

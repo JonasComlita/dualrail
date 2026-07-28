@@ -122,9 +122,13 @@ bool readSparseDiskRecords(const std::filesystem::path& path,
     records.reserve(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i) {
         SparseDiskRecord record;
-        record.words.assign(static_cast<std::size_t>(sandbox::vm::MMU_PAGE_WORDS), 0);
+        record.words.assign(
+            static_cast<std::size_t>(sandbox::vm::STORAGE_BLOCK_WORDS),
+            0);
         in.read(reinterpret_cast<char*>(&record.block), sizeof(record.block));
-        for (int word = 0; word < sandbox::vm::MMU_PAGE_WORDS; ++word) {
+        for (int word = 0;
+             word < sandbox::vm::STORAGE_BLOCK_WORDS;
+             ++word) {
             in.read(reinterpret_cast<char*>(&record.words[static_cast<std::size_t>(word)]),
                     sizeof(long long));
         }
@@ -148,13 +152,17 @@ std::vector<long long> flattenDiskRecords(const std::vector<SparseDiskRecord>& r
 std::vector<long long> expandDiskRecords(const std::vector<SparseDiskRecord>& records,
                                          int block_count) {
     std::vector<long long> words(
-        static_cast<std::size_t>(block_count * sandbox::vm::MMU_PAGE_WORDS), 0);
+        static_cast<std::size_t>(
+            block_count * sandbox::vm::STORAGE_BLOCK_WORDS),
+        0);
     for (const SparseDiskRecord& record : records) {
         if (record.block < 0 || record.block >= block_count) continue;
         const std::size_t base =
-            static_cast<std::size_t>(record.block * sandbox::vm::MMU_PAGE_WORDS);
+            static_cast<std::size_t>(
+                record.block * sandbox::vm::STORAGE_BLOCK_WORDS);
         const std::size_t count = std::min(
-            record.words.size(), static_cast<std::size_t>(sandbox::vm::MMU_PAGE_WORDS));
+            record.words.size(),
+            static_cast<std::size_t>(sandbox::vm::STORAGE_BLOCK_WORDS));
         std::copy(record.words.begin(), record.words.begin() + count,
                   words.begin() + static_cast<std::vector<long long>::difference_type>(base));
     }
@@ -520,6 +528,9 @@ bool runUntilFramebufferContains(TestContext& ctx,
                                  int chunk_steps,
                                  const std::string& message) {
     int executed = 0;
+    sandbox::host::TosRuntimeSnapshot last_snapshot;
+    sandbox::host::TosFramebufferSnapshot last_framebuffer;
+    std::string last_frame;
     while (executed < max_steps) {
         const int step_count = std::min(chunk_steps, max_steps - executed);
         const auto result = runtime.runForSteps(step_count);
@@ -529,13 +540,23 @@ bool runUntilFramebufferContains(TestContext& ctx,
             return false;
         }
 
-        const std::string frame = framebufferText(runtime.readFramebuffer());
-        if (frame.find(needle) != std::string::npos) return true;
+        last_snapshot = runtime.snapshot();
+        last_framebuffer = runtime.readFramebuffer();
+        last_frame = framebufferText(last_framebuffer);
+        if (last_frame.find(needle) != std::string::npos) return true;
         if (result.steps <= 0) break;
     }
 
     ctx.fail(message + " missing='" + needle + "' after steps=" +
-             std::to_string(executed));
+             std::to_string(executed) +
+             " gpu_mode=" + std::to_string(last_snapshot.gpu_mode) +
+             " framebuffer_mode=" +
+             (last_framebuffer.mode == sandbox::host::TosFramebufferMode::Graphics80x60
+                  ? "graphics"
+                  : "text") +
+             " size=" + std::to_string(last_framebuffer.width) + "x" +
+             std::to_string(last_framebuffer.height) +
+             " frame_tail='" + tailText(last_frame, 900) + "'");
     return false;
 }
 
@@ -738,6 +759,35 @@ bool runUntilGraphicsWordEquals(TestContext& ctx,
                   ? "graphics"
                   : "text") +
              " words=" + std::to_string(raw.words.size()) +
+             " after steps=" + std::to_string(executed));
+    return false;
+}
+
+bool runUntilSpriteAttrEquals(TestContext& ctx,
+                              sandbox::host::TosRuntime& runtime,
+                              long long expected,
+                              int max_steps,
+                              int chunk_steps,
+                              const std::string& message) {
+    int executed = 0;
+    sandbox::host::TosFramebufferSnapshot framebuffer;
+    while (executed < max_steps) {
+        const int step_count = std::min(chunk_steps, max_steps - executed);
+        const auto result = runtime.runForSteps(step_count);
+        executed += result.steps;
+        if (result.trapped()) {
+            ctx.fail(message + " trapped: " + result.description);
+            return false;
+        }
+
+        framebuffer = runtime.readFramebuffer();
+        if (framebuffer.sprite_attr == expected) return true;
+        if (result.steps <= 0) break;
+    }
+
+    ctx.fail(message + " sprite_attr=" +
+             std::to_string(framebuffer.sprite_attr) +
+             " expected=" + std::to_string(expected) +
              " after steps=" + std::to_string(executed));
     return false;
 }
@@ -1491,6 +1541,234 @@ void releasePaintLaunchGraphicsCanvas(TestContext& ctx) {
                  "paint launch remains parented by the desktop");
 }
 
+void releasePaintInputClearCycle(TestContext& ctx) {
+    if (!ensureFixture(ctx)) return;
+    ReleaseFixture& fixture = fixtureRef();
+
+    const std::vector<long long> disk_image =
+        expandDiskRecords(fixture.disk_records, kReleaseDiskBlocks);
+    const NativeVfsView root = decodeNativeVfs(disk_image);
+    ctx.check(root.valid,
+              "release sparse disk expands into a decodable native VFS image");
+    const int paint_inode = nativeLookup(root, "/bin/paint");
+    ctx.check(paint_inode > 0, "release root resolves /bin/paint inode");
+    if (paint_inode <= 0) return;
+
+    sandbox::host::TosRuntimeConfig config;
+    config.boot_image_path = fixture.boot_path.string();
+    config.disk_path = fixture.disk_path.string();
+    config.profile_name = "minimum";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    ctx.check(runtime.loadImage(&error), "runtime loads release image for paint input cycle");
+    if (!error.empty()) ctx.fail("paint input cycle runtime load detail: " + error);
+    if (!driveReleaseLoginToDesktop(ctx, runtime)) return;
+
+    const std::filesystem::path paint_diagnostics =
+        fixture.diagnostics_path / "paint_input_clear_cycle";
+    ctx.check(runtime.exportDiagnostics(paint_diagnostics.string(), &error),
+              "paint input cycle exports baseline diagnostics");
+    if (!error.empty()) ctx.fail("paint input cycle baseline diagnostic detail: " + error);
+    const std::string baseline_registry =
+        tests_next::readText(paint_diagnostics / "app_registry.json");
+    const long long baseline_paint =
+        appLaunchCountForInode(baseline_registry, paint_inode);
+    ctx.check(baseline_paint >= 0,
+              "app registry includes paint descriptor row for input cycle");
+    if (baseline_paint < 0) return;
+
+    runtime.pushKeyboardInput('3');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, paint_diagnostics, paint_inode,
+            baseline_paint + 1, 6500000, 500000,
+            "release desktop hotkey launches Paint before input cycle")) {
+        return;
+    }
+    if (!runUntilPaintGraphicsReady(ctx, runtime, 3500000, 250000,
+                                    "release paint input cycle reaches graphics mode")) {
+        return;
+    }
+
+    runtime.pushKeyboardInput('2');
+    if (!runUntilSpriteAttrEquals(ctx, runtime, 43LL + 10LL * 256LL,
+                                  3500000, 250000,
+                                  "release paint keyboard color hotkey selects green")) {
+        return;
+    }
+
+    constexpr std::size_t kPaintCyclePixel = 16u * 80u + 16u;
+    runtime.updateMouseState(16, 16, 1);
+    if (!runUntilGraphicsWordEquals(ctx, runtime, kPaintCyclePixel, 10,
+                                    3000000, 250000,
+                                    "release paint draws with keyboard-selected green")) {
+        return;
+    }
+
+    runtime.updateMouseState(16, 16, 0);
+    runtime.pushKeyboardInput('c');
+    if (!runUntilGraphicsWordEquals(ctx, runtime, kPaintCyclePixel, 0,
+                                    3500000, 250000,
+                                    "release paint clear hotkey erases the canvas pixel")) {
+        return;
+    }
+
+    const sandbox::host::TosFramebufferSnapshot framebuffer =
+        runtime.readFramebuffer();
+    ctx.check(framebuffer.mode == sandbox::host::TosFramebufferMode::Graphics80x60,
+              "paint input cycle remains in graphics framebuffer mode");
+    ctx.equal(framebuffer.sprite_attr, 43LL + 10LL * 256LL,
+              "paint input cycle preserves selected green cursor sprite");
+
+    ctx.check(runtime.exportDiagnostics(paint_diagnostics.string(), &error),
+              "paint input cycle exports final diagnostics");
+    if (!error.empty()) ctx.fail("paint input cycle final diagnostic detail: " + error);
+    ctx.check(std::filesystem::exists(paint_diagnostics / "framebuffer_snapshot.txt"),
+              "paint input cycle diagnostics include framebuffer snapshot");
+    ctx.check(std::filesystem::exists(paint_diagnostics / "process_table.json"),
+              "paint input cycle diagnostics include process table");
+    const std::string vm_state =
+        tests_next::readText(paint_diagnostics / "vm_state.txt");
+    ctx.contains(vm_state, "gpu_mode=1",
+                 "paint input cycle diagnostics record graphics mode");
+    const std::string process_table =
+        tests_next::readText(paint_diagnostics / "process_table.json");
+    ctx.contains(process_table, "\"pid\": 103",
+                 "paint input cycle diagnostics expose spawned paint pid 103");
+    ctx.contains(process_table, "\"parent_pid\": 1",
+                 "paint input cycle remains parented by the desktop");
+}
+
+void releasePaintExitDesktopRecovery(TestContext& ctx) {
+    if (!ensureFixture(ctx)) return;
+    ReleaseFixture& fixture = fixtureRef();
+
+    const std::vector<long long> disk_image =
+        expandDiskRecords(fixture.disk_records, kReleaseDiskBlocks);
+    const NativeVfsView root = decodeNativeVfs(disk_image);
+    ctx.check(root.valid,
+              "release sparse disk expands into a decodable native VFS image");
+    const int paint_inode = nativeLookup(root, "/bin/paint");
+    ctx.check(paint_inode > 0, "release root resolves /bin/paint inode");
+    const int files_inode = nativeLookup(root, "/bin/file_manager");
+    ctx.check(files_inode > 0, "release root resolves /bin/file_manager inode");
+    if (paint_inode <= 0 || files_inode <= 0) return;
+
+    sandbox::host::TosRuntimeConfig config;
+    config.boot_image_path = fixture.boot_path.string();
+    config.disk_path = fixture.disk_path.string();
+    config.profile_name = "minimum";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    ctx.check(runtime.loadImage(&error), "runtime loads release image for paint exit recovery");
+    if (!error.empty()) ctx.fail("paint exit recovery runtime load detail: " + error);
+    if (!driveReleaseLoginToDesktop(ctx, runtime)) return;
+
+    const std::filesystem::path exit_diagnostics =
+        fixture.diagnostics_path / "paint_exit_desktop_recovery";
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "paint exit recovery exports baseline diagnostics");
+    if (!error.empty()) ctx.fail("paint exit recovery baseline diagnostic detail: " + error);
+    const std::string baseline_registry =
+        tests_next::readText(exit_diagnostics / "app_registry.json");
+    const long long baseline_paint =
+        appLaunchCountForInode(baseline_registry, paint_inode);
+    const long long baseline_files =
+        appLaunchCountForInode(baseline_registry, files_inode);
+    ctx.check(baseline_paint >= 0,
+              "app registry includes paint descriptor row for exit recovery");
+    ctx.check(baseline_files >= 0,
+              "app registry includes file manager descriptor row for exit recovery");
+    if (baseline_paint < 0 || baseline_files < 0) return;
+
+    const sandbox::host::TosRuntimeSnapshot before_launch = runtime.snapshot();
+    runtime.pushKeyboardInput('3');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, paint_inode,
+            baseline_paint + 1, 6500000, 500000,
+            "release desktop hotkey launches Paint before exit recovery")) {
+        return;
+    }
+    if (!runUntilPaintGraphicsReady(ctx, runtime, 3500000, 250000,
+                                    "release paint exit recovery reaches graphics mode")) {
+        return;
+    }
+    ctx.equal(runtime.snapshot().gpu_mode, 1LL,
+              "paint exit recovery starts from graphics mode");
+
+    runtime.pushKeyboardInput('x');
+    if (!runUntilProcessFieldEquals(ctx, runtime, exit_diagnostics, 103,
+                                    "state", 7, 5000000, 250000,
+                                    "release paint exit leaves pid 103 as a zombie")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "OS 3 - DESKTOP",
+                                     3500000, 250000,
+                                     "desktop redraws after Paint exits")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "PAINT",
+                                     3500000, 250000,
+                                     "desktop launcher labels redraw after Paint exits")) {
+        return;
+    }
+
+    const sandbox::host::TosRuntimeSnapshot after_exit = runtime.snapshot();
+    ctx.check(after_exit.cycles > before_launch.cycles,
+              "paint exit recovery advances runtime cycles");
+    ctx.equal(after_exit.gpu_mode, 0LL,
+              "desktop recovery restores text framebuffer mode after Paint exit");
+    const std::string desktop_frame = framebufferText(runtime.readFramebuffer());
+    ctx.contains(desktop_frame, "OS 3 - DESKTOP",
+                 "desktop recovery frame contains the launcher title");
+    ctx.contains(desktop_frame, "PAINT",
+                 "desktop recovery frame redraws launcher app labels");
+
+    runtime.pushKeyboardInput('4');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, files_inode,
+            baseline_files + 1, 6500000, 500000,
+            "desktop accepts File Manager hotkey after Paint exit")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "FILE MANAGER",
+                                     3500000, 250000,
+                                     "File Manager paints after Paint exit recovery")) {
+        return;
+    }
+
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "paint exit recovery exports final diagnostics");
+    if (!error.empty()) ctx.fail("paint exit recovery final diagnostic detail: " + error);
+    ctx.check(std::filesystem::exists(exit_diagnostics / "framebuffer_snapshot.txt"),
+              "paint exit recovery diagnostics include framebuffer snapshot");
+    ctx.check(std::filesystem::exists(exit_diagnostics / "process_table.json"),
+              "paint exit recovery diagnostics include process table");
+    const std::string vm_state =
+        tests_next::readText(exit_diagnostics / "vm_state.txt");
+    ctx.contains(vm_state, "gpu_mode=0",
+                 "paint exit recovery diagnostics record text mode after File Manager launch");
+    const std::string process_table =
+        tests_next::readText(exit_diagnostics / "process_table.json");
+    const std::string paint_process = processObjectForPid(process_table, 103);
+    ctx.check(!paint_process.empty(),
+              "paint exit recovery diagnostics keep exited paint pid inspectable");
+    if (!paint_process.empty()) {
+        ctx.equal(jsonIntValue(paint_process, "state", -1), 7,
+                  "paint exit recovery leaves paint pid as zombie");
+        ctx.equal(jsonIntValue(paint_process, "parent_pid", -1), 1,
+                  "paint exit recovery keeps paint parented by desktop");
+    }
+    const std::string files_process = processObjectForPid(process_table, 104);
+    ctx.check(!files_process.empty(),
+              "paint exit recovery diagnostics expose launched File Manager pid 104");
+    if (!files_process.empty()) {
+        ctx.equal(jsonIntValue(files_process, "parent_pid", -1), 1,
+                  "File Manager after Paint exit remains parented by the desktop");
+    }
+}
+
 void releaseFileManagerLaunchScreen(TestContext& ctx) {
     if (!ensureFixture(ctx)) return;
     ReleaseFixture& fixture = fixtureRef();
@@ -1580,6 +1858,143 @@ void releaseFileManagerLaunchScreen(TestContext& ctx) {
                  "file manager launch remains parented by the desktop");
 }
 
+void releaseFileManagerExitDesktopRecovery(TestContext& ctx) {
+    if (!ensureFixture(ctx)) return;
+    ReleaseFixture& fixture = fixtureRef();
+
+    const std::vector<long long> disk_image =
+        expandDiskRecords(fixture.disk_records, kReleaseDiskBlocks);
+    const NativeVfsView root = decodeNativeVfs(disk_image);
+    ctx.check(root.valid,
+              "release sparse disk expands into a decodable native VFS image");
+    const int files_inode = nativeLookup(root, "/bin/file_manager");
+    ctx.check(files_inode > 0, "release root resolves /bin/file_manager inode");
+    const int settings_inode = nativeLookup(root, "/bin/settings");
+    ctx.check(settings_inode > 0, "release root resolves /bin/settings inode");
+    if (files_inode <= 0 || settings_inode <= 0) return;
+
+    sandbox::host::TosRuntimeConfig config;
+    config.boot_image_path = fixture.boot_path.string();
+    config.disk_path = fixture.disk_path.string();
+    config.profile_name = "minimum";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    ctx.check(runtime.loadImage(&error),
+              "runtime loads release image for file manager exit recovery");
+    if (!error.empty()) ctx.fail("file manager exit recovery runtime load detail: " + error);
+    if (!driveReleaseLoginToDesktop(ctx, runtime)) return;
+
+    const std::filesystem::path exit_diagnostics =
+        fixture.diagnostics_path / "file_manager_exit_desktop_recovery";
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "file manager exit recovery exports baseline diagnostics");
+    if (!error.empty()) {
+        ctx.fail("file manager exit recovery baseline diagnostic detail: " + error);
+    }
+    const std::string baseline_registry =
+        tests_next::readText(exit_diagnostics / "app_registry.json");
+    const long long baseline_files =
+        appLaunchCountForInode(baseline_registry, files_inode);
+    const long long baseline_settings =
+        appLaunchCountForInode(baseline_registry, settings_inode);
+    ctx.check(baseline_files >= 0,
+              "app registry includes file manager descriptor row for exit recovery");
+    ctx.check(baseline_settings >= 0,
+              "app registry includes settings descriptor row for exit recovery");
+    if (baseline_files < 0 || baseline_settings < 0) return;
+
+    const sandbox::host::TosRuntimeSnapshot before_launch = runtime.snapshot();
+    runtime.pushKeyboardInput('4');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, files_inode,
+            baseline_files + 1, 6500000, 500000,
+            "release desktop hotkey launches File Manager before exit recovery")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "FILE MANAGER",
+                                     3500000, 250000,
+                                     "release file manager paints before exit recovery")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "bin",
+                                     5000000, 250000,
+                                     "release file manager lists bin before exit recovery")) {
+        return;
+    }
+
+    runtime.pushKeyboardInput('x');
+    if (!runUntilProcessFieldEquals(ctx, runtime, exit_diagnostics, 104,
+                                    "state", 7, 5000000, 250000,
+                                    "release file manager exit leaves pid 104 as a zombie")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "OS 3 - DESKTOP",
+                                     3500000, 250000,
+                                     "desktop redraws after File Manager exits")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "FILES",
+                                     3500000, 250000,
+                                     "desktop launcher labels redraw after File Manager exits")) {
+        return;
+    }
+
+    const sandbox::host::TosRuntimeSnapshot after_exit = runtime.snapshot();
+    ctx.check(after_exit.cycles > before_launch.cycles,
+              "file manager exit recovery advances runtime cycles");
+    ctx.equal(after_exit.gpu_mode, 0LL,
+              "file manager exit recovery keeps the desktop in text framebuffer mode");
+    const std::string desktop_frame = framebufferText(runtime.readFramebuffer());
+    ctx.contains(desktop_frame, "OS 3 - DESKTOP",
+                 "file manager exit recovery frame contains the launcher title");
+    ctx.contains(desktop_frame, "FILES",
+                 "file manager exit recovery frame redraws launcher app labels");
+
+    runtime.pushKeyboardInput('5');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, settings_inode,
+            baseline_settings + 1, 6500000, 500000,
+            "desktop accepts Settings hotkey after File Manager exit")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "BRIGHTNESS",
+                                     3500000, 250000,
+                                     "Settings paints after File Manager exit recovery")) {
+        return;
+    }
+
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "file manager exit recovery exports final diagnostics");
+    if (!error.empty()) ctx.fail("file manager exit recovery final diagnostic detail: " + error);
+    ctx.check(std::filesystem::exists(exit_diagnostics / "framebuffer_snapshot.txt"),
+              "file manager exit recovery diagnostics include framebuffer snapshot");
+    ctx.check(std::filesystem::exists(exit_diagnostics / "process_table.json"),
+              "file manager exit recovery diagnostics include process table");
+    const std::string vm_state =
+        tests_next::readText(exit_diagnostics / "vm_state.txt");
+    ctx.contains(vm_state, "gpu_mode=0",
+                 "file manager exit recovery diagnostics record text mode");
+    const std::string process_table =
+        tests_next::readText(exit_diagnostics / "process_table.json");
+    const std::string files_process = processObjectForPid(process_table, 104);
+    ctx.check(!files_process.empty(),
+              "file manager exit recovery diagnostics keep exited pid 104 inspectable");
+    if (!files_process.empty()) {
+        ctx.equal(jsonIntValue(files_process, "state", -1), 7,
+                  "file manager exit recovery leaves pid 104 as zombie");
+        ctx.equal(jsonIntValue(files_process, "parent_pid", -1), 1,
+                  "file manager exit recovery keeps file manager parented by desktop");
+    }
+    const std::string settings_process = processObjectForPid(process_table, 105);
+    ctx.check(!settings_process.empty(),
+              "file manager exit recovery diagnostics expose launched Settings pid 105");
+    if (!settings_process.empty()) {
+        ctx.equal(jsonIntValue(settings_process, "parent_pid", -1), 1,
+                  "Settings after File Manager exit remains parented by the desktop");
+    }
+}
+
 void releaseSettingsLaunchScreen(TestContext& ctx) {
     if (!ensureFixture(ctx)) return;
     ReleaseFixture& fixture = fixtureRef();
@@ -1631,6 +2046,136 @@ void releaseSettingsLaunchScreen(TestContext& ctx) {
                  "diagnostics expose spawned settings pid 105");
     ctx.contains(process_table, "\"parent_pid\": 1",
                  "settings launch remains parented by the desktop");
+}
+
+void releaseSettingsExitDesktopRecovery(TestContext& ctx) {
+    if (!ensureFixture(ctx)) return;
+    ReleaseFixture& fixture = fixtureRef();
+
+    const std::vector<long long> disk_image =
+        expandDiskRecords(fixture.disk_records, kReleaseDiskBlocks);
+    const NativeVfsView root = decodeNativeVfs(disk_image);
+    ctx.check(root.valid,
+              "release sparse disk expands into a decodable native VFS image");
+    const int settings_inode = nativeLookup(root, "/bin/settings");
+    ctx.check(settings_inode > 0, "release root resolves /bin/settings inode");
+    const int task_inode = nativeLookup(root, "/bin/task_manager");
+    ctx.check(task_inode > 0, "release root resolves /bin/task_manager inode");
+    if (settings_inode <= 0 || task_inode <= 0) return;
+
+    sandbox::host::TosRuntimeConfig config;
+    config.boot_image_path = fixture.boot_path.string();
+    config.disk_path = fixture.disk_path.string();
+    config.profile_name = "minimum";
+    sandbox::host::TosRuntime runtime(config);
+
+    std::string error;
+    ctx.check(runtime.loadImage(&error),
+              "runtime loads release image for settings exit recovery");
+    if (!error.empty()) ctx.fail("settings exit recovery runtime load detail: " + error);
+    if (!driveReleaseLoginToDesktop(ctx, runtime)) return;
+
+    const std::filesystem::path exit_diagnostics =
+        fixture.diagnostics_path / "settings_exit_desktop_recovery";
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "settings exit recovery exports baseline diagnostics");
+    if (!error.empty()) ctx.fail("settings exit recovery baseline diagnostic detail: " + error);
+    const std::string baseline_registry =
+        tests_next::readText(exit_diagnostics / "app_registry.json");
+    const long long baseline_settings =
+        appLaunchCountForInode(baseline_registry, settings_inode);
+    const long long baseline_task =
+        appLaunchCountForInode(baseline_registry, task_inode);
+    ctx.check(baseline_settings >= 0,
+              "app registry includes settings descriptor row for exit recovery");
+    ctx.check(baseline_task >= 0,
+              "app registry includes task manager descriptor row for exit recovery");
+    if (baseline_settings < 0 || baseline_task < 0) return;
+
+    const sandbox::host::TosRuntimeSnapshot before_launch = runtime.snapshot();
+    runtime.pushKeyboardInput('5');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, settings_inode,
+            baseline_settings + 1, 6500000, 500000,
+            "release desktop hotkey launches Settings before exit recovery")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "BRIGHTNESS",
+                                     3500000, 250000,
+                                     "release settings paints before exit recovery")) {
+        return;
+    }
+
+    runtime.pushKeyboardInput('x');
+    if (!runUntilProcessFieldEquals(ctx, runtime, exit_diagnostics, 105,
+                                    "state", 7, 5000000, 250000,
+                                    "release settings exit leaves pid 105 as a zombie")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "OS 3 - DESKTOP",
+                                     3500000, 250000,
+                                     "desktop redraws after Settings exits")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "SETT",
+                                     3500000, 250000,
+                                     "desktop launcher labels redraw after Settings exits")) {
+        return;
+    }
+
+    const sandbox::host::TosRuntimeSnapshot after_exit = runtime.snapshot();
+    ctx.check(after_exit.cycles > before_launch.cycles,
+              "settings exit recovery advances runtime cycles");
+    ctx.equal(after_exit.gpu_mode, 0LL,
+              "settings exit recovery keeps the desktop in text framebuffer mode");
+    const std::string desktop_frame = framebufferText(runtime.readFramebuffer());
+    ctx.contains(desktop_frame, "OS 3 - DESKTOP",
+                 "settings exit recovery frame contains the launcher title");
+    ctx.contains(desktop_frame, "SETT",
+                 "settings exit recovery frame redraws launcher app labels");
+
+    runtime.pushKeyboardInput('2');
+    if (!runUntilAppLaunchCountAtLeast(
+            ctx, runtime, exit_diagnostics, task_inode,
+            baseline_task + 1, 6500000, 500000,
+            "desktop accepts Task Manager hotkey after Settings exit")) {
+        return;
+    }
+    if (!runUntilFramebufferContains(ctx, runtime, "SYSTEM TASKS",
+                                     3500000, 250000,
+                                     "Task Manager paints after Settings exit recovery")) {
+        return;
+    }
+
+    ctx.check(runtime.exportDiagnostics(exit_diagnostics.string(), &error),
+              "settings exit recovery exports final diagnostics");
+    if (!error.empty()) ctx.fail("settings exit recovery final diagnostic detail: " + error);
+    ctx.check(std::filesystem::exists(exit_diagnostics / "framebuffer_snapshot.txt"),
+              "settings exit recovery diagnostics include framebuffer snapshot");
+    ctx.check(std::filesystem::exists(exit_diagnostics / "process_table.json"),
+              "settings exit recovery diagnostics include process table");
+    const std::string vm_state =
+        tests_next::readText(exit_diagnostics / "vm_state.txt");
+    ctx.contains(vm_state, "gpu_mode=0",
+                 "settings exit recovery diagnostics record text mode");
+    const std::string process_table =
+        tests_next::readText(exit_diagnostics / "process_table.json");
+    const std::string settings_process = processObjectForPid(process_table, 105);
+    ctx.check(!settings_process.empty(),
+              "settings exit recovery diagnostics keep exited pid 105 inspectable");
+    if (!settings_process.empty()) {
+        ctx.equal(jsonIntValue(settings_process, "state", -1), 7,
+                  "settings exit recovery leaves pid 105 as zombie");
+        ctx.equal(jsonIntValue(settings_process, "parent_pid", -1), 1,
+                  "settings exit recovery keeps Settings parented by desktop");
+    }
+    const std::string task_process = processObjectForPid(process_table, 102);
+    ctx.check(!task_process.empty(),
+              "settings exit recovery diagnostics expose launched Task Manager pid 102");
+    if (!task_process.empty()) {
+        ctx.equal(jsonIntValue(task_process, "parent_pid", -1), 1,
+                  "Task Manager after Settings exit remains parented by the desktop");
+    }
 }
 
 void releaseSettingsPersistenceReadback(TestContext& ctx) {
@@ -2080,10 +2625,18 @@ int main() {
          releaseTaskManagerLaunchScreen},
         {"full_system.release.paint_launch_graphics_canvas", "full_system.release_contract",
          releasePaintLaunchGraphicsCanvas},
+        {"full_system.release.paint_input_clear_cycle", "full_system.release_contract",
+         releasePaintInputClearCycle},
+        {"full_system.release.paint_exit_desktop_recovery", "full_system.release_contract",
+         releasePaintExitDesktopRecovery},
         {"full_system.release.file_manager_launch_screen", "full_system.release_contract",
          releaseFileManagerLaunchScreen},
+        {"full_system.release.file_manager_exit_desktop_recovery", "full_system.release_contract",
+         releaseFileManagerExitDesktopRecovery},
         {"full_system.release.settings_launch_screen", "full_system.release_contract",
          releaseSettingsLaunchScreen},
+        {"full_system.release.settings_exit_desktop_recovery", "full_system.release_contract",
+         releaseSettingsExitDesktopRecovery},
         {"full_system.release.settings_persistence_readback", "full_system.release_contract",
          releaseSettingsPersistenceReadback},
         {"full_system.release.terminal_launch_reset_diagnostics", "full_system.release_contract",

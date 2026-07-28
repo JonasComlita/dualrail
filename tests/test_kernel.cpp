@@ -778,7 +778,7 @@ void testOsSubstrate() {
             mov r1, 42
             halt
         )");
-        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU fetch user program loads at physical page");
+        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "MMU fetch user program loads at physical page");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
@@ -798,10 +798,10 @@ void testOsSubstrate() {
             store r1, zero, 0
             halt
         )");
-        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU data user program loads");
+        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "MMU data user program loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.dmem.store(4, encodePageTableEntry(2, true, true, true, false));
-        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(5));
+        vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(5));
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -810,7 +810,7 @@ void testOsSubstrate() {
         vm.user_dmem_pages = 1;
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "MMU translates user load/store");
-        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) == 6,
+        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) == 6,
                "MMU store updates mapped physical data page");
     }
 
@@ -822,10 +822,10 @@ void testOsSubstrate() {
             csrr r6, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "fetch page fault handler loads");
+        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "fetch page fault handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true, false));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -850,13 +850,13 @@ void testOsSubstrate() {
             csrr r6, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "read-only data user program loads");
-        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "read-only data handler loads");
+        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "read-only data user program loads");
+        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "read-only data handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.dmem.store(4, encodePageTableEntry(2, true, true, false, false));
-        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33));
+        vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -878,10 +878,10 @@ void testOsSubstrate() {
             csrr r5, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "NX handler loads");
+        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "NX handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, true, false, false));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * MMU_PAGE_WORDS;
+        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -1018,8 +1018,8 @@ void testOsSubstrate() {
             csrrw sp, scratch, sp
             eret
         )");
-        constexpr int kUserPhys = MMU_PAGE_WORDS;
-        constexpr int kHandlerPhys = 4 * MMU_PAGE_WORDS;
+        constexpr int kUserPhys = LEGACY_MMU_PAGE_WORDS;
+        constexpr int kHandlerPhys = 4 * LEGACY_MMU_PAGE_WORDS;
         constexpr int kTask0Context = 120;
         constexpr int kTask1Context = 152;
         constexpr int kTaskStatus = -1 + 9 + 27; // kernel current, user previous, previous IE set.
@@ -1056,12 +1056,12 @@ void testOsSubstrate() {
 
         auto result = sandbox::vm::run(vm, 900);
         expect(result.timeout() && vm.isRunning(), "two-task timer proof keeps VM running");
-        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) > 0,
+        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) > 0,
                "task 0 physical counter advances");
-        expect(loadPhysLong(vm, 3 * MMU_PAGE_WORDS) > 0,
+        expect(loadPhysLong(vm, 3 * LEGACY_MMU_PAGE_WORDS) > 0,
                "task 1 physical counter advances");
-        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) !=
-                   loadPhysLong(vm, 3 * MMU_PAGE_WORDS),
+        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) !=
+                   loadPhysLong(vm, 3 * LEGACY_MMU_PAGE_WORDS),
                "tasks retain independent physical counters");
         expect(loadPhysLong(vm, kTask0Context + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
                "task 0 saved user stack pointer");
@@ -1083,25 +1083,25 @@ void testOsSubstrate() {
             std::cerr << std::endl;
             expect(assembled.labels.count("boot") && assembled.labels.at("boot") == 0,
                    "minimal kernel boots at PC zero");
-            expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel places shell code on mapped physical page");
-            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 56 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 56 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel places static program A on mapped physical page");
-            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 57 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 57 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel places static program B on mapped physical page");
-            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 58 * MMU_PAGE_WORDS,
+            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 58 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel places idle task code on mapped physical page");
             expect(assembled.data_labels.count("shell_data") &&
-                   assembled.data_labels.at("shell_data") == 16 * MMU_PAGE_WORDS,
+                   assembled.data_labels.at("shell_data") == 16 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel maps shell data page");
             expect(assembled.data_labels.count("prog_a_counter") &&
-                   assembled.data_labels.at("prog_a_counter") == 17 * MMU_PAGE_WORDS,
+                   assembled.data_labels.at("prog_a_counter") == 17 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel maps program A data page");
             expect(assembled.data_labels.count("prog_b_counter") &&
-                   assembled.data_labels.at("prog_b_counter") == 18 * MMU_PAGE_WORDS,
+                   assembled.data_labels.at("prog_b_counter") == 18 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel maps program B data page");
             expect(assembled.data_labels.count("idle_counter") &&
-                   assembled.data_labels.at("idle_counter") == 19 * MMU_PAGE_WORDS,
+                   assembled.data_labels.at("idle_counter") == 19 * LEGACY_MMU_PAGE_WORDS,
                    "minimal kernel maps idle counter page");
             expect(assembled.executable_headers.count("exec_shell") &&
                    assembled.executable_headers.count("exec_prog_a") &&

@@ -35,6 +35,7 @@ def test_doctor_json_and_manifests():
     assert report["checks"]["json_manifests"]
 
     for name in [
+        "ARCHITECTURE_MANIFEST.json",
         "ROADMAP_STATUS.json",
         "TEST_MANIFEST.json",
         "SYSCALL_MANIFEST.json",
@@ -43,6 +44,24 @@ def test_doctor_json_and_manifests():
     ]:
         data = json.loads((REPO / name).read_text(encoding="utf-8"))
         assert data["version"] >= 1
+
+    generated = subprocess.run(
+        [sys.executable, str(REPO / "tools" / "generate_architecture_contract.py"), "--check"],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert generated.returncode == 0, generated.stderr or generated.stdout
+
+    architecture = json.loads(
+        (REPO / "ARCHITECTURE_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    contract = architecture["architecture"]
+    assert contract["instruction_trits"] == 27
+    assert contract["scalar_word_trits"] == 40
+    assert contract["base_page_words"] == 729
+    assert contract["superpage_words"] == 19683
 
 
 def test_boot_image_inspector_when_release_image_exists():

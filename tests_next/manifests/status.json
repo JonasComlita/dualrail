@@ -1,10 +1,10 @@
 {
   "schema": "trit.tests_next.status.v1",
-  "suite_state": "scaffolded_with_full_system_paint_slice",
+  "suite_state": "scaffolded_with_full_system_settings_exit_recovery_slice",
   "authoritative_suite": "tests/",
   "new_suite": "tests_next/",
   "last_updated": "2026-07-24",
-  "current_focus": "Extended the Phase D lane with full-system release witnesses that build generated .tboot/.tdisk artifacts, validate release manifest and disk metadata, boot them through TosRuntime diagnostics/reset, prove visible boot framebuffer plus queued host input behavior, drive the OS 3 secure login into the desktop launcher, and exercise bundled apps. The Settings persistence witness saves an explicit brightness change to /etc/os3.cfg on the mutable .tdisk and reads it back visibly after reset. The Terminal slice launches through the release desktop, verifies Terminal execs Shell, and proves blocked raw-input wake/delivery. The reboot command now crosses a real privileged power boundary: /bin/reboot invokes sys_reboot 58, the kernel raises power_control after aggregate system-capability authorization, and TosRuntime cold-loads the same release image while preserving the attached mutable disk. The crash slice adds /bin/crash and proves a typed Shell command can fault with a routed divide-by-zero, leave pid 106 inspectable as PROC_CRASHED with exit_status 6, keep the VM running without a guest reboot, and expose durable crashed_* fields in crash_report.txt. The app-bundle/VFS slice extends TinyFS past the old direct-plus-one-indirect-block ceiling with chained indirect index blocks, then proves a real compiled /bin/calculator GUI executable installs through OSKernel, launches through ConsumerShell/sysExec, and still execs after disk-image reboot/remount. The desktop-shell app slice adds deterministic draw-contract checks for About, Help, Text Editor, and Task Manager so those apps are covered beyond marker-only standalone smoke. The latest full-system release slice adds Task Manager, Paint, and File Manager product-path witnesses: desktop hotkey 2 increments the /bin/task_manager app-registry row and paints the visible SYSTEM TASKS dashboard columns, hotkey 3 increments /bin/paint and drives graphics-mode mouse drawing into the raw framebuffer, and hotkey 4 increments the /bin/file_manager row and paints the live root VFS browser.",
+  "current_focus": "Extended the Phase D lane with full-system release witnesses that build generated .tboot/.tdisk artifacts, validate release manifest and disk metadata, boot them through TosRuntime diagnostics/reset, prove visible boot framebuffer plus queued host input behavior, drive the OS 3 secure login into the desktop launcher, and exercise bundled apps. The Settings persistence witness saves an explicit brightness change to /etc/os3.cfg on the mutable .tdisk and reads it back visibly after reset. The Terminal slice launches through the release desktop, verifies Terminal execs Shell, and proves blocked raw-input wake/delivery. The reboot command now crosses a real privileged power boundary: /bin/reboot invokes sys_reboot 58, the kernel raises power_control after aggregate system-capability authorization, and TosRuntime cold-loads the same release image while preserving the attached mutable disk. The crash slice adds /bin/crash and proves a typed Shell command can fault with a routed divide-by-zero, leave pid 106 inspectable as PROC_CRASHED with exit_status 6, keep the VM running without a guest reboot, and expose durable crashed_* fields in crash_report.txt. The app-bundle/VFS slice extends TinyFS past the old direct-plus-one-indirect-block ceiling with chained indirect index blocks, then proves a real compiled /bin/calculator GUI executable installs through OSKernel, launches through ConsumerShell/sysExec, and still execs after disk-image reboot/remount. The desktop-shell app slice adds deterministic draw-contract checks for About, Help, Text Editor, and Task Manager so those apps are covered beyond marker-only standalone smoke. The latest full-system release slice adds Task Manager, Paint, File Manager, and Settings product-path witnesses: desktop hotkey 2 increments the /bin/task_manager app-registry row and paints the visible SYSTEM TASKS dashboard columns, hotkey 3 increments /bin/paint, drives graphics-mode mouse drawing into the raw framebuffer, proves keyboard color selection and keyboard clear mutate that canvas deterministically, keyboard x exits Paint into a zombie pid, hotkey 4 increments the /bin/file_manager row, File Manager lists live VFS entries and exits into zombie pid 104, hotkey 5 launches Settings, Settings exits into zombie pid 105, and each exit path proves desktop text-mode launcher redraw plus next-app focus recovery.",
   "completed_setup": [
     "directory map",
     "agent handoff guide",
@@ -60,7 +60,11 @@
     "bootstrap.port_apps_consumer_bundle.release_remaining.remaining_gui_draw_contracts",
     "bootstrap.port_full_system.release_contract.task_manager_launch_screen",
     "bootstrap.port_full_system.release_contract.file_manager_launch_screen",
-    "bootstrap.port_full_system.release_contract.paint_launch_graphics_canvas"
+    "bootstrap.port_full_system.release_contract.paint_launch_graphics_canvas",
+    "bootstrap.port_full_system.release_contract.paint_input_clear_cycle",
+    "bootstrap.port_full_system.release_contract.paint_exit_desktop_recovery",
+    "bootstrap.port_full_system.release_contract.file_manager_exit_desktop_recovery",
+    "bootstrap.port_full_system.release_contract.settings_exit_desktop_recovery"
   ],
   "completed_tests": [
     "isa.encoding.rtype_width_fields",
@@ -202,8 +206,12 @@
     "full_system.release.login_desktop_app_launch",
     "full_system.release.task_manager_launch_screen",
     "full_system.release.file_manager_launch_screen",
+    "full_system.release.file_manager_exit_desktop_recovery",
     "full_system.release.paint_launch_graphics_canvas",
+    "full_system.release.paint_input_clear_cycle",
+    "full_system.release.paint_exit_desktop_recovery",
     "full_system.release.settings_launch_screen",
+    "full_system.release.settings_exit_desktop_recovery",
     "full_system.release.settings_persistence_readback",
     "full_system.release.terminal_launch_reset_diagnostics",
     "full_system.release.terminal_shell_reboot_command",
@@ -363,7 +371,22 @@
     {
       "id": "phase_d.release_paint_graphics_input_guardrails",
       "status": "observed",
-      "summary": "full_system.release.paint_launch_graphics_canvas proves the release desktop hotkey launches /bin/paint, switches TosRuntime into Graphics80x60 mode, publishes the yellow plus cursor sprite, routes host mouse input into the app, and mutates the raw graphics framebuffer. This gives future GPU, input, double-buffering, and app-loop optimizations a full-system correctness boundary."
+      "summary": "full_system.release.paint_launch_graphics_canvas proves the release desktop hotkey launches /bin/paint, switches TosRuntime into Graphics80x60 mode, publishes the yellow plus cursor sprite, routes host mouse input into the app, and mutates the raw graphics framebuffer. full_system.release.paint_input_clear_cycle extends that boundary by proving keyboard color selection changes the sprite/canvas color and keyboard clear erases the probed graphics pixel. Together they give future GPU, input, double-buffering, and app-loop optimizations a full-system correctness boundary."
+    },
+    {
+      "id": "phase_d.release_graphics_app_exit_recovery",
+      "status": "fixed",
+      "summary": "The Paint lifecycle witness exposed that sys_exit could mark a graphics-mode child zombie while kernel_dispatch still returned to the exited context, so the desktop did not get scheduled to restore text mode. The kernel now schedules the next runnable process after successful service 44 exit, and Desktop restores text mode, clears text, redraws HUD/launcher, and resets hover/button state when an active child no longer accepts input. full_system.release.paint_exit_desktop_recovery proves Paint exits to zombie pid 103 and File Manager can launch from the recovered focus path."
+    },
+    {
+      "id": "phase_d.release_text_app_exit_recovery",
+      "status": "observed",
+      "summary": "full_system.release.file_manager_exit_desktop_recovery proves the sys_exit scheduling and desktop child-focus recovery path is not limited to graphics-mode Paint. File Manager exits from its live VFS browser into zombie pid 104, the desktop remains in text framebuffer mode, redraws the launcher, and accepts a Settings hotkey from the recovered focus path, giving future app-loop and scheduler optimizations a text-app lifecycle witness."
+    },
+    {
+      "id": "phase_d.release_settings_exit_recovery",
+      "status": "observed",
+      "summary": "full_system.release.settings_exit_desktop_recovery extends app lifecycle coverage to the stateful Settings app: it launches the display tab, exits by keyboard x into zombie pid 105, keeps the desktop in text framebuffer mode, waits for launcher labels to settle, and launches Task Manager from the recovered focus path. This separates normal close/focus behavior from the existing Settings persistence/readback witness."
     },
     {
       "id": "phase_d.release_rootfs_registry_decoding",
@@ -456,7 +479,7 @@
       "id": "bootstrap.port_apps_consumer_bundle.release_remaining",
       "area": "12_apps",
       "status": "ready",
-      "summary": "Real CLI and GUI-sized executable handoff through OSKernel/ConsumerShell are covered, remaining GUI apps now have deterministic draw-contract checks beyond marker smoke, and the release desktop now launches Task Manager, Paint, and File Manager through hotkey/app-registry/product rendering. Continue with deeper event-loop/runtime behavior for individual apps, richer desktop/compositor handoff evidence, or app close/focus/input flows."
+      "summary": "Real CLI and GUI-sized executable handoff through OSKernel/ConsumerShell are covered, remaining GUI apps now have deterministic draw-contract checks beyond marker smoke, and the release desktop launches Task Manager, Paint, File Manager, and Settings through hotkey/app-registry/product rendering. Paint now has full-system drawing, clear, exit, desktop recovery, and next-app focus evidence; File Manager now has live VFS draw plus text-app exit, desktop recovery, and Settings next-app focus evidence; Settings now has stateful-app exit, desktop recovery, and Task Manager next-app focus evidence. Continue with deeper event-loop/runtime behavior for Task Manager actions, Terminal close/focus behavior, or richer desktop/compositor handoff evidence."
     },
     {
       "id": "bootstrap.port_graphics_gui.remaining_desktop_shell",
@@ -493,27 +516,19 @@
   "last_commands": [
     {
       "command": "python .\\tests_next\\tools\\validate_manifests.py",
-      "result": "passed after Paint full-system graphics launch manifest updates; 145 test cases registered"
+      "result": "passed after Settings exit/desktop-recovery manifest updates; 149 test cases registered"
     },
     {
       "command": "cmake --build build --target next_full_system_release --config Debug",
-      "result": "passed; rebuilt the focused full-system release witness binary with full_system.release.paint_launch_graphics_canvas"
+      "result": "passed; rebuilt the focused full-system release witness binary with full_system.release.settings_exit_desktop_recovery"
     },
     {
       "command": ".\\build\\next_full_system_release.exe",
-      "result": "passed; 15 full-system release cases green including full_system.release.paint_launch_graphics_canvas"
+      "result": "passed; 19 full-system release cases green including full_system.release.settings_exit_desktop_recovery"
     },
     {
       "command": "cmake --build build --target tests_next_full_system --config Debug",
-      "result": "passed; aggregate full-system target runs next_full_system_release with the new Paint graphics product-path witness"
-    },
-    {
-      "command": "cmake --build build --target test_host_runtime test_process_handoff test_native_apps test_consumer_shell_productization --config Debug",
-      "result": "passed; historical witness binaries were already up to date"
-    },
-    {
-      "command": ".\\build\\test_host_runtime.exe",
-      "result": "passed; historical host runtime, framebuffer/input, mutable sparse disk, diagnostics, and guest reboot witnesses remain green"
+      "result": "passed; aggregate full-system target runs next_full_system_release with the new Settings exit/desktop-recovery witness"
     },
     {
       "command": ".\\build\\test_process_handoff.exe",
@@ -521,11 +536,19 @@
     },
     {
       "command": ".\\build\\test_native_apps.exe",
-      "result": "passed; historical native app SDK and Paint graphics witnesses remain green"
+      "result": "passed; historical native app SDK and built-in app witnesses remain green"
     },
     {
       "command": ".\\build\\test_consumer_shell_productization.exe",
       "result": "passed; historical consumer shell productization witness remains green"
+    },
+    {
+      "command": ".\\build\\test_os_platform.exe",
+      "result": "passed; historical OS platform syscall, VFS, and wrapper witnesses remain green"
+    },
+    {
+      "command": ".\\build\\next_kernel_native_phase_d.exe",
+      "result": "passed; native Phase D scheduler/process witnesses remain green"
     },
     {
       "command": "tools\\trit-doctor.ps1",
@@ -550,6 +573,10 @@
     {
       "command": "git diff --check",
       "result": "passed with line-ending warnings only"
+    },
+    {
+      "command": "python .\\tests_next\\tools\\validate_manifests.py",
+      "result": "passed after final status update; 149 test cases registered"
     }
   ]
 }

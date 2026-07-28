@@ -941,6 +941,14 @@ fn main() -> t40 {
         if child_owns_input > 0 {
             os_sleep_ms(1);
         } else {
+            if active_child_pid > 0 {
+                os_gpu_mode(0);
+                os_clear_text(0);
+                desktop_draw_hud();
+                desktop_draw_launcher();
+                hovered = 0;
+                last_btn = 0;
+            }
             active_child_pid = 0;
             immediate_key = os_read_key();
             if immediate_key >= 0 {

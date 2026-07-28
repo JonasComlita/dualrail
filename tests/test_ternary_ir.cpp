@@ -1,4 +1,4 @@
-#include "ternary_ir.h"
+﻿#include "ternary_ir.h"
 #include "ternary_vm.h"
 
 #include <cstdlib>
@@ -45,7 +45,7 @@ bool loadAndRun(
     int maxSteps = 128) {
 
     if (!lowered.success) return false;
-    if (!sandbox::vm::loadAndReset(vm, lowered.assembled.program)) return false;
+    if (!sandbox::vm::assembler::loadAndReset(vm, lowered.assembled)) return false;
     const auto result = sandbox::vm::run(vm, maxSteps);
     return result.halted();
 }
@@ -217,7 +217,8 @@ void testVectorAndAccumulatorOps() {
         expect(vm.imem.loadProgram(lowered.assembled.program, 0), "T1 AI program loads");
         const auto result = sandbox::vm::run(vm, 64);
         expect(result.halted(), "T1 AI program runs");
-        expect(scalarLong(vm, dot) == 1, "vdot result");
+        expect(scalarLong(vm, dot) == 1,
+               "vdot result (got " + std::to_string(scalarLong(vm, dot)) + ")");
         expect(scalarLong(vm, acc) == 1, "vmac accumulator result");
         expect(vectorPredicate(vm, activated, 0) == -1 &&
                vectorPredicate(vm, activated, 1) == 0 &&
@@ -330,7 +331,7 @@ void testPhase2IsaIrOps() {
 
         sandbox::vm::VMState vm(64, 64);
         if (lowered.success) {
-            expect(sandbox::vm::loadAndReset(vm, lowered.assembled.program),
+            expect(sandbox::vm::assembler::loadAndReset(vm, lowered.assembled),
                    "ternary atomic IR program loads");
             vm.dmem.store(5, sandbox::vm::ops::fromLong(7));
             auto result = sandbox::vm::run(vm, 64);

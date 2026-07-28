@@ -1,7 +1,7 @@
 {
-  "version": 1,
-  "schema": "trit.syscall_manifest.v1",
-  "abi": "native-kernel-syscall-abi-v1",
+  "version": 2,
+  "schema": "trit.syscall_manifest.v2",
+  "abi": "native-kernel-syscall-abi-v2",
   "sources": {
     "kernel_dispatch": "kernel.trit",
     "compiler_runtime_ids": "ternary_compiler_ir.h",
@@ -26,6 +26,10 @@
     "return_detail": "r15",
     "blocked_status": 2
   },
+  "compiler_aliases": {
+    "sys_yield": "sys_sleep",
+    "sys_sleep_until_tick": "sys_sleep"
+  },
   "services": [
     {
       "id": 1,
@@ -44,21 +48,22 @@
     },
     {
       "id": 4,
-      "name": "sys_yield",
-      "group": "scheduler",
-      "status": "reserved_or_legacy"
+      "name": "reserved_4",
+      "group": "reserved",
+      "status": "permanently_reserved"
     },
     {
       "id": 5,
-      "name": "sys_sleep_until_tick",
-      "group": "scheduler",
-      "status": "reserved_or_legacy"
+      "name": "reserved_5",
+      "group": "reserved",
+      "status": "permanently_reserved"
     },
     {
       "id": 6,
-      "name": "sys_exit_legacy_exec_desktop",
-      "group": "process",
-      "notes": "Kernel dispatch currently treats service 6 as desktop exec handoff."
+      "name": "reserved_6",
+      "group": "reserved",
+      "status": "permanently_reserved",
+      "notes": "Transition kernel dispatches the legacy desktop exec handoff only when the current process records ISA v1."
     },
     {
       "id": 7,

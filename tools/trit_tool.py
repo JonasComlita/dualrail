@@ -16,6 +16,7 @@ import os
 import platform
 import re
 import shutil
+import statistics
 import struct
 import subprocess
 import sys
@@ -35,14 +36,23 @@ GRAPHIFY_ARCHIVE_DIR = DOCS_DIR / "_graphify"
 TRIT_AST_DUMP_TARGET = "trit_ast_dump"
 BOOT_MAGIC = 0x31544F4F424F5354
 BOOT_LEGACY_FORMAT_VERSION = 1
-BOOT_FORMAT_VERSION = 2
-MMU_PAGE_WORDS = 27
-SPARSE_DISK_MAGIC = 0x54524954535031
-SPARSE_DISK_HEADER = struct.Struct("<qi")
+BOOT_TRANSITION_FORMAT_VERSION = 2
+BOOT_FORMAT_VERSION = 3
+STORAGE_BLOCK_WORDS = 27
+SPARSE_DISK_LEGACY_MAGIC = 0x54524954535031
+SPARSE_DISK_MAGIC = 0x54524954535032
+SPARSE_DISK_VERSION = 2
+SPARSE_DISK_LEGACY_HEADER = struct.Struct("<Qi")
+SPARSE_DISK_HEADER = struct.Struct("<QIIQQi")
 SPARSE_DISK_RECORD_HEADER = struct.Struct("<i")
-SPARSE_DISK_WORD = struct.Struct("<q")
-SPARSE_DISK_RECORD_SIZE = SPARSE_DISK_RECORD_HEADER.size + MMU_PAGE_WORDS * SPARSE_DISK_WORD.size
+SPARSE_DISK_WORD = struct.Struct("<Q")
+SPARSE_DISK_RECORD_SIZE = (
+    SPARSE_DISK_RECORD_HEADER.size +
+    STORAGE_BLOCK_WORDS * SPARSE_DISK_WORD.size
+)
 MANIFEST_FILES = [
+    "ARCHITECTURE_MANIFEST.json",
+    "BENCHMARK_SCHEMA.json",
     "ROADMAP_STATUS.json",
     "TEST_MANIFEST.json",
     "SYSCALL_MANIFEST.json",
@@ -318,8 +328,18 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
         framebuffer_height = reader.i32()
         profile_name = reader.string()
         image_version = reader.string()
+        architecture = {}
+        if version >= BOOT_FORMAT_VERSION:
+            architecture = {
+                "isa_version": reader.i32(),
+                "required_features": reader.u64(),
+                "scalar_word_trits": reader.i32(),
+                "base_page_words": reader.i32(),
+                "function_abi_version": reader.i32(),
+                "syscall_abi_version": reader.i32(),
+            }
         sections = []
-        if version == BOOT_FORMAT_VERSION:
+        if version >= BOOT_TRANSITION_FORMAT_VERSION:
             section_count = reader.u32()
             for _ in range(section_count):
                 sections.append(
@@ -337,17 +357,25 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
         app_count = reader.u32()
         apps = []
         for _ in range(app_count):
-            apps.append(
-                {
-                    "name": reader.string(),
-                    "path": reader.string(),
-                    "text_ppn": reader.i32(),
-                    "entry_pc": reader.i32(),
-                    "text_pages": reader.i32(),
-                    "data_pages": reader.i32(),
-                    "stack_words": reader.i32(),
-                }
-            )
+            app = {
+                "name": reader.string(),
+                "path": reader.string(),
+                "text_ppn": reader.i32(),
+                "entry_pc": reader.i32(),
+                "text_pages": reader.i32(),
+                "data_pages": reader.i32(),
+                "stack_words": reader.i32(),
+            }
+            if version >= BOOT_FORMAT_VERSION:
+                app.update(
+                    {
+                        "isa_version": reader.i32(),
+                        "required_features": reader.u64(),
+                        "function_abi_version": reader.i32(),
+                        "syscall_abi_version": reader.i32(),
+                    }
+                )
+            apps.append(app)
         program_words = reader.u32()
         reader.skip_words(program_words, 8)
         data_words = reader.u32()
@@ -359,16 +387,20 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
             word = reader.i64()
             if word != 0:
                 rootfs_nonzero_words += 1
-                rootfs_nonzero_blocks.add(index // MMU_PAGE_WORDS)
+                rootfs_nonzero_blocks.add(index // STORAGE_BLOCK_WORDS)
         if reader.offset != len(payload):
             result["issues"].append("boot image has trailing payload bytes")
-        if version not in {BOOT_LEGACY_FORMAT_VERSION, BOOT_FORMAT_VERSION}:
+        if version not in {
+            BOOT_LEGACY_FORMAT_VERSION,
+            BOOT_TRANSITION_FORMAT_VERSION,
+            BOOT_FORMAT_VERSION,
+        }:
             result["issues"].append(f"unsupported boot image format version {version}")
         if boot_entry < 0 or boot_entry >= program_words:
             result["issues"].append("boot entry is outside text segment")
-        if rootfs_words % MMU_PAGE_WORDS != 0:
+        if rootfs_words % STORAGE_BLOCK_WORDS != 0:
             result["issues"].append("rootfs seed is not block aligned")
-        if version == BOOT_FORMAT_VERSION and not sections:
+        if version >= BOOT_TRANSITION_FORMAT_VERSION and not sections:
             result["issues"].append("boot image section table is empty")
         result.update(
             {
@@ -385,12 +417,13 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
                     "program_words": program_words,
                     "data_words": data_words,
                     "rootfs_words": rootfs_words,
-                    "rootfs_blocks": rootfs_words // MMU_PAGE_WORDS,
+                    "rootfs_blocks": rootfs_words // STORAGE_BLOCK_WORDS,
                     "rootfs_nonzero_words": rootfs_nonzero_words,
                     "rootfs_nonzero_blocks": len(rootfs_nonzero_blocks),
                 },
                 "sections": sections,
                 "apps": apps,
+                "architecture": architecture,
             }
         )
     except ValueError as exc:
@@ -398,6 +431,28 @@ def inspect_boot_image(path: Path) -> dict[str, Any]:
 
     result["ok"] = len(result["issues"]) == 0
     return result
+
+
+def raw_t40_to_long(raw: int) -> int:
+    """Decode the canonical positional T40 float representation to an integer."""
+    if raw == 0 or raw in {(1 << 64) - 1, (1 << 64) - 2}:
+        return 0
+    if raw > 3**40:
+        raise ValueError(f"invalid raw T40 word 0x{raw:x}")
+    trits: list[int] = []
+    value = raw
+    for _ in range(40):
+        trits.append(value % 3 - 1)
+        value //= 3
+    mantissa = sum(trits[index] * (3**index) for index in range(33))
+    exponent = sum(
+        trits[33 + index] * (3**index) for index in range(7)
+    )
+    shift = exponent - 32
+    if shift >= 0:
+        return mantissa * (3**shift)
+    divisor = 3 ** (-shift)
+    return abs(mantissa) // divisor * (-1 if mantissa < 0 else 1)
 
 
 def inspect_sparse_disk(path: Path) -> dict[str, Any]:
@@ -414,44 +469,98 @@ def inspect_sparse_disk(path: Path) -> dict[str, Any]:
         return result
 
     result["file_size"] = len(raw)
-    if len(raw) < SPARSE_DISK_HEADER.size:
+    if len(raw) < SPARSE_DISK_LEGACY_HEADER.size:
         result["issues"].append("sparse disk header is truncated")
         return result
 
-    magic, declared_records = SPARSE_DISK_HEADER.unpack_from(raw, 0)
-    result["header"] = {
-        "magic": magic,
-        "declared_records": declared_records,
-    }
-    if magic != SPARSE_DISK_MAGIC:
+    magic = struct.unpack_from("<Q", raw, 0)[0]
+    legacy = magic == SPARSE_DISK_LEGACY_MAGIC
+    if legacy:
+        _, declared_records = SPARSE_DISK_LEGACY_HEADER.unpack_from(raw, 0)
+        header_size = SPARSE_DISK_LEGACY_HEADER.size
+        version = 1
+        generation = 0
+        expected_checksum = None
+    elif magic == SPARSE_DISK_MAGIC:
+        if len(raw) < SPARSE_DISK_HEADER.size:
+            result["issues"].append("tDisk v2 header is truncated")
+            return result
+        (
+            _,
+            version,
+            block_words,
+            generation,
+            expected_checksum,
+            declared_records,
+        ) = SPARSE_DISK_HEADER.unpack_from(raw, 0)
+        header_size = SPARSE_DISK_HEADER.size
+        if version != SPARSE_DISK_VERSION:
+            result["issues"].append(
+                f"unsupported sparse disk version {version}"
+            )
+        if block_words != STORAGE_BLOCK_WORDS:
+            result["issues"].append(
+                f"sparse disk block size is {block_words}, expected "
+                f"{STORAGE_BLOCK_WORDS}"
+            )
+    else:
         result["issues"].append("sparse disk magic is invalid")
         return result
+
+    result["header"] = {
+        "magic": magic,
+        "version": version,
+        "block_words": STORAGE_BLOCK_WORDS,
+        "generation": generation,
+        "checksum": expected_checksum,
+        "declared_records": declared_records,
+        "legacy_read_only": legacy,
+    }
     if declared_records < 0:
         result["issues"].append("sparse disk record count is negative")
         return result
+    if result["issues"]:
+        return result
 
-    available_records = max(0, (len(raw) - SPARSE_DISK_HEADER.size) // SPARSE_DISK_RECORD_SIZE)
+    available_records = max(
+        0, (len(raw) - header_size) // SPARSE_DISK_RECORD_SIZE
+    )
     records_to_read = min(declared_records, available_records)
     recoverable_tail = declared_records > available_records
     blocks: dict[int, list[int]] = {}
-    offset = SPARSE_DISK_HEADER.size
+    raw_blocks: dict[int, list[int]] = {}
+    offset = header_size
     for _ in range(records_to_read):
         index = SPARSE_DISK_RECORD_HEADER.unpack_from(raw, offset)[0]
         offset += SPARSE_DISK_RECORD_HEADER.size
         words = []
-        for _word in range(MMU_PAGE_WORDS):
-            words.append(SPARSE_DISK_WORD.unpack_from(raw, offset)[0])
+        raw_words = []
+        for _word in range(STORAGE_BLOCK_WORDS):
+            if legacy:
+                word = struct.unpack_from("<q", raw, offset)[0]
+                words.append(word)
+                raw_words.append(word)
+            else:
+                raw_word = SPARSE_DISK_WORD.unpack_from(raw, offset)[0]
+                raw_words.append(raw_word)
+                words.append(raw_t40_to_long(raw_word))
             offset += SPARSE_DISK_WORD.size
         if index >= 0:
             if any(word != 0 for word in words):
                 blocks[index] = words
+                raw_blocks[index] = raw_words
             else:
                 blocks.pop(index, None)
+                raw_blocks.pop(index, None)
 
     ignored_tail_bytes = max(0, len(raw) - offset)
+    if not legacy and not recoverable_tail:
+        actual_checksum = fnv1a(raw[header_size:offset])
+        if actual_checksum != expected_checksum:
+            result["issues"].append("sparse disk checksum validation failed")
     result.update(
         {
-            "ok": True,
+            "ok": len(result["issues"]) == 0,
             "declared_records": declared_records,
             "readable_records": records_to_read,
             "available_records": available_records,
@@ -459,23 +568,41 @@ def inspect_sparse_disk(path: Path) -> dict[str, Any]:
             "ignored_tail_bytes": ignored_tail_bytes,
             "live_blocks": len(blocks),
             "blocks": blocks,
+            "raw_blocks": raw_blocks,
         }
     )
     return result
 
 
-def write_sparse_disk(path: Path, blocks: dict[int, list[int]]) -> None:
+def write_sparse_disk(path: Path, blocks: dict[int, list[int]],
+                      generation: int = 1) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    live_indices = sorted(
+        index for index, words in blocks.items() if any(word != 0 for word in words)
+    )
+    records = bytearray()
+    for index in live_indices:
+        words = blocks[index]
+        if len(words) != STORAGE_BLOCK_WORDS:
+            raise ValueError(
+                f"block {index} has {len(words)} words, expected "
+                f"{STORAGE_BLOCK_WORDS}"
+            )
+        records.extend(SPARSE_DISK_RECORD_HEADER.pack(index))
+        for word in words:
+            records.extend(SPARSE_DISK_WORD.pack(int(word)))
     with path.open("wb") as handle:
-        live_indices = sorted(index for index, words in blocks.items() if any(word != 0 for word in words))
-        handle.write(SPARSE_DISK_HEADER.pack(SPARSE_DISK_MAGIC, len(live_indices)))
-        for index in live_indices:
-            words = blocks[index]
-            if len(words) != MMU_PAGE_WORDS:
-                raise ValueError(f"block {index} has {len(words)} words, expected {MMU_PAGE_WORDS}")
-            handle.write(SPARSE_DISK_RECORD_HEADER.pack(index))
-            for word in words:
-                handle.write(SPARSE_DISK_WORD.pack(int(word)))
+        handle.write(
+            SPARSE_DISK_HEADER.pack(
+                SPARSE_DISK_MAGIC,
+                SPARSE_DISK_VERSION,
+                STORAGE_BLOCK_WORDS,
+                max(1, generation),
+                fnv1a(records),
+                len(live_indices),
+            )
+        )
+        handle.write(records)
 
 
 def compact_sparse_disk(source: Path, output: Path | None = None) -> dict[str, Any]:
@@ -499,9 +626,13 @@ def compact_sparse_disk(source: Path, output: Path | None = None) -> dict[str, A
 
     target = output or source
     temp = target.with_name(target.name + ".compact")
-    blocks = inspected["blocks"]
+    blocks = inspected["raw_blocks"]
     try:
-        write_sparse_disk(temp, blocks)
+        write_sparse_disk(
+            temp,
+            blocks,
+            inspected.get("header", {}).get("generation", 0) + 1,
+        )
         if target == source:
             os.replace(temp, target)
         else:
@@ -2289,7 +2420,107 @@ def cmd_bench(args: argparse.Namespace) -> int:
     args.suites = ["benchmark"]
     args.all = False
     args.list = False
-    return cmd_test(args)
+    if args.warmups < 0 or args.iterations < 1 or args.max_cv <= 0:
+        print(
+            "bench requires warmups >= 0, iterations >= 1, and max-cv > 0",
+            file=sys.stderr)
+        return 2
+
+    warmup_returncodes: list[int] = []
+    measured_returncodes: list[int] = []
+    samples: list[float] = []
+    original_no_build = args.no_build
+    total_runs = args.warmups + args.iterations
+    for run_index in range(total_runs):
+        started = time.perf_counter()
+        returncode = cmd_test(args)
+        elapsed = time.perf_counter() - started
+        args.no_build = True
+        if run_index < args.warmups:
+            warmup_returncodes.append(returncode)
+        else:
+            measured_returncodes.append(returncode)
+            samples.append(elapsed)
+    args.no_build = original_no_build
+
+    mean = statistics.fmean(samples)
+    deviation = statistics.pstdev(samples)
+    coefficient = deviation / mean if mean > 0 else 0.0
+    git_commit = run_command(
+        ["git", "rev-parse", "HEAD"], capture=True, timeout=10)
+    git_dirty = run_command(
+        ["git", "status", "--porcelain"], capture=True, timeout=10)
+    cache = parse_cmake_cache(default_build_dir(args.build_dir))
+    report = {
+        "schema": "trit.benchmark_result.v1",
+        "captured_at_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "source": {
+            "repository": str(REPO_ROOT),
+            "commit": git_commit["stdout"].strip()
+                if git_commit["returncode"] == 0 else "unknown",
+            "dirty": bool(git_dirty["stdout"].strip()),
+        },
+        "host": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "python": platform.python_version(),
+        },
+        "build": {
+            "directory": str(default_build_dir(args.build_dir)),
+            "profile": cache.get("CMAKE_BUILD_TYPE", "multi-config-or-default"),
+            "compiler": cache.get("CMAKE_CXX_COMPILER", "unknown"),
+        },
+        "workload": {
+            "name": "benchmark-suite",
+            "suite": "benchmark",
+            "targets": ["test_benchmark", "test_execution_backends_benchmark"],
+        },
+        "correctness": {
+            "passed": all(code == 0 for code in
+                          warmup_returncodes + measured_returncodes),
+            "warmup_returncodes": warmup_returncodes,
+            "measured_returncodes": measured_returncodes,
+        },
+        "timing": {
+            "unit": "seconds",
+            "warmups": args.warmups,
+            "iterations": args.iterations,
+            "samples": samples,
+            "median": statistics.median(samples),
+            "mean": mean,
+            "standard_deviation": deviation,
+            "coefficient_of_variation": coefficient,
+            "maximum_accepted_cv": args.max_cv,
+            "stable": coefficient < args.max_cv,
+        },
+        "instruction_mix": {},
+        "memory": {},
+        "tlb": {},
+        "scheduler": {},
+        "wal": {},
+        "disk": {},
+    }
+    output = Path(args.output) if args.output else (
+        default_build_dir(args.build_dir) / "benchmarks" /
+        ("benchmark-" +
+         _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
+         ".json"))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
+    print(f"wrote {output}")
+    if not report["correctness"]["passed"]:
+        return 1
+    if coefficient >= args.max_cv:
+        print(
+            f"benchmark timing rejected: CV {coefficient:.3%} is not "
+            f"below {args.max_cv:.3%}",
+            file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
@@ -2337,6 +2568,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     bench = sub.add_parser("bench", help="run benchmark suite")
     add_test_options(bench)
+    bench.add_argument(
+        "--warmups", type=int, default=2,
+        help="unmeasured warmup iterations (default: 2)")
+    bench.add_argument(
+        "--iterations", type=int, default=7,
+        help="measured iterations (default: 7)")
+    bench.add_argument(
+        "--max-cv", type=float, default=0.03,
+        help="maximum accepted coefficient of variation (default: 0.03)")
+    bench.add_argument(
+        "--output", default=None,
+        help="benchmark JSON destination")
     bench.set_defaults(func=cmd_bench)
 
     inspect = sub.add_parser("inspect-image", help="validate and summarize a .tboot image")

@@ -18,6 +18,11 @@ kernel/hal.trit          Hardware Abstraction Layer: timer, interrupts
 kernel/net.trit          Networking: socket, bind, connect, send, recv
 ```
 
+The active storage contract is documented in
+[[redo_wal_v2|Redo WAL v2]]. The implementation remains consolidated in
+`kernel.trit` until the source split preserves generated architecture
+constants and focused test coverage.
+
 ---
 
 ## Boot Sequence

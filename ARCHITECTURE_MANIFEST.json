@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "schema": "trit.architecture_manifest.v1",
+  "architecture": {
+    "name": "trit-v2",
+    "isa_version": 2,
+    "instruction_trits": 27,
+    "scalar_word_trits": 40,
+    "wide_scalar_trits": 50,
+    "storage_block_words": 27,
+    "base_page_words": 729,
+    "superpage_words": 19683,
+    "asid_trits": 9,
+    "stack_alignment_words": 9
+  },
+  "abi": {
+    "executable_version": 2,
+    "function_abi_version": 2,
+    "syscall_abi_version": 2,
+    "callee_saved": {
+      "first": 1,
+      "last": 12
+    },
+    "function_arguments": {
+      "first": 13,
+      "last": 18
+    },
+    "syscall_arguments": {
+      "first": 13,
+      "last": 16
+    },
+    "caller_saved": {
+      "first": 13,
+      "last": 24
+    },
+    "return_low": 13,
+    "return_high": 14,
+    "syscall_status": 13,
+    "syscall_payload": 14,
+    "syscall_detail": 15,
+    "link_register": 25,
+    "stack_pointer": 26,
+    "reserved_syscalls": [
+      4,
+      5,
+      6
+    ]
+  },
+  "executable_header_v2": {
+    "words": 15,
+    "fields": [
+      "magic",
+      "executable_version",
+      "function_abi_version",
+      "header_words",
+      "isa_version",
+      "required_features",
+      "entry_pc",
+      "text_words",
+      "data_words",
+      "stack_words",
+      "syscall_abi_version",
+      "scalar_word_trits",
+      "base_page_words",
+      "flags",
+      "header_checksum"
+    ]
+  },
+  "isa": {
+    "escape_opcode": 80,
+    "reserved_direct_first": 38,
+    "reserved_direct_last": 79,
+    "direct_opcodes": {
+      "NOP": 0,
+      "HALT": 1,
+      "MOV": 2,
+      "MOVH": 3,
+      "COPY": 4,
+      "ADD": 5,
+      "SUB": 6,
+      "MUL": 7,
+      "DIV": 8,
+      "SQRT": 9,
+      "NEG": 10,
+      "ABS": 11,
+      "TCMP": 12,
+      "TMIN": 13,
+      "TMAX": 14,
+      "LOAD": 16,
+      "STORE": 17,
+      "JMP": 18,
+      "BRN": 19,
+      "CALL": 20,
+      "RET": 21,
+      "CVT": 22,
+      "TSEL": 23,
+      "BRZ": 24,
+      "BRP": 25,
+      "SWAP": 26,
+      "CALLR": 27,
+      "JMPR": 28,
+      "SYSCALL": 29,
+      "FENCE": 30,
+      "CSRR": 31,
+      "CSRW": 32,
+      "ERET": 33,
+      "CSRRW": 34,
+      "TLDR": 35,
+      "TSTR": 36,
+      "WAIT": 37,
+      "EXT": 80
+    },
+    "extension_selectors": {
+      "TLADD": 27,
+      "TLSUB": 28,
+      "TLNEG": 29,
+      "TLAND": 30,
+      "TLOR": 31,
+      "VADD": 32,
+      "VSUB": 33,
+      "VNEG": 34,
+      "VMUL": 35,
+      "VDIV": 36,
+      "VCMP": 37,
+      "VSEL": 38,
+      "VLOAD": 39,
+      "VSTORE": 40,
+      "VBCAST": 41,
+      "VLEN": 42,
+      "ACLR": 43,
+      "ALOAD": 44,
+      "AADD": 45,
+      "ASUB": 46,
+      "AMUL": 47,
+      "ASTORE": 48,
+      "VDOT": 49,
+      "VMAC": 50,
+      "VACT": 51,
+      "VPACK": 52,
+      "VUNPACK": 53,
+      "VPERMUTE": 54,
+      "VBLEND": 55,
+      "VSWAP": 56,
+      "VGATHER": 57,
+      "VSCATTER": 58,
+      "TWCMP": 59,
+      "TMOD": 62,
+      "TLSHIFT": 63,
+      "TRSHIFT": 64,
+      "TMAC": 65,
+      "TCOUNT": 66,
+      "TSCAN": 67,
+      "TCLAMP": 68,
+      "VSUM": 71,
+      "VHMIN": 72,
+      "VHMAX": 73,
+      "TLBINV": 80
+    },
+    "features": {
+      "BASE_V2": 0,
+      "SCALAR_ADVANCED": 1,
+      "LANE": 2,
+      "VECTOR": 3,
+      "ACCUMULATOR_AI": 4,
+      "ATOMICS": 5,
+      "MMU": 6,
+      "WAIT": 7,
+      "WIDE_T50": 8
+    },
+    "csrs": {
+      "ISA_VERSION": 48,
+      "ISA_FEATURES": 49,
+      "MMU_BASE_PAGE_WORDS": 50,
+      "MMU_SUPERPAGE_WORDS": 51,
+      "ASID": 52
+    },
+    "extension_layouts": {
+      "r": {
+        "selector_lsb": 0,
+        "selector_width": 10
+      },
+      "r4": {
+        "selector_lsb": 0,
+        "selector_width": 4
+      },
+      "r5": {
+        "selector_lsb": 0,
+        "selector_width": 4,
+        "func_lsb": 4,
+        "func_width": 3
+      },
+      "immediate": {
+        "immediate_lsb": 0,
+        "immediate_width": 12,
+        "selector_lsb": 12,
+        "selector_width": 4
+      },
+      "vector_memory": {
+        "immediate_lsb": 0,
+        "immediate_width": 9,
+        "selector_lsb": 9,
+        "selector_width": 4,
+        "func_lsb": 13,
+        "func_width": 3
+      },
+      "branch": {
+        "offset_lsb": 0,
+        "offset_width": 15,
+        "selector_lsb": 15,
+        "selector_width": 4
+      }
+    }
+  },
+  "pte_v2": {
+    "ppn_lsb": 9,
+    "ppn_width": 31,
+    "fields": {
+      "PRESENT": 0,
+      "USER": 1,
+      "READ": 2,
+      "WRITE": 3,
+      "EXECUTE": 4,
+      "GLOBAL": 5,
+      "ACCESSED": 6,
+      "DIRTY": 7,
+      "SUPERPAGE": 8
+    }
+  },
+  "tlb": {
+    "l1_instruction_entries": 27,
+    "l1_data_entries": 27,
+    "l1_ways": 3,
+    "l2_entries": 243,
+    "l2_ways": 9
+  },
+  "formats": {
+    "tboot_write_version": 3,
+    "tboot_read_versions": [
+      1,
+      2,
+      3
+    ],
+    "tdisk_write_version": 2,
+    "tdisk_read_versions": [
+      1,
+      2
+    ]
+  },
+  "generation": {
+    "tool": "python tools/generate_architecture_contract.py",
+    "outputs": [
+      "generated/architecture_contract.h",
+      "generated/architecture_contract.trit",
+      "docs/04_Binary_Contract/architecture_v2.md"
+    ]
+  }
+}

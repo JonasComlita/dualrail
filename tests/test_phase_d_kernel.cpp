@@ -1,4 +1,4 @@
-#include "ternary_compiler.h"
+﻿#include "ternary_compiler.h"
 #include "ternary_vm.h"
 
 #include <fstream>
@@ -239,6 +239,8 @@ void testPhaseDKernelEndToEnd() {
             ok = expect_eq(kload(REL_MIGRATION_DONE_ADDR), 1, ok);
             ok = expect_eq(alloc_bootstrap_page(), ERR_INVALID, ok);
 
+            // kernel_init publishes the kernel process slot immediately.
+            ok = expect_eq(tier1_dequeue(), 0, ok);
             macro_stage_thread(9);
             macro_stage_thread(10);
             var epoch: t40 = scheduler_epoch();
@@ -259,8 +261,8 @@ void testPhaseDKernelEndToEnd() {
             ok = expect_eq(macro_publish(), 2, ok);
             var staged_a: t40 = tier1_dequeue();
             var staged_b: t40 = tier1_dequeue();
-            ok = expect_eq(staged_a + staged_b, 3, ok);
-            ok = expect_eq(staged_a * staged_b, 2, ok);
+            ok = expect_eq(staged_a + staged_b, 1, ok);
+            ok = expect_eq(staged_a * staged_b, 0, ok);
             ok = expect_eq(quota_remaining(0), 1, ok);
 
             var futex_addr: t40 = USER_MEM_BASE + 10;
@@ -485,7 +487,7 @@ void testPhaseDKernelEndToEnd() {
             kstore(36001, kload(SYS_PAYLOAD_ADDR));
             kstore(36002, kload(process_heap_addr(2) + PROC_HEAP_BREAK));
             kstore(36003, kload(kload(process_addr(2) + PROC_CONTEXT) + TASK_CONTEXT_DMEM_PAGES));
-            kstore(36004, kload(exec_hw_dmem_ptbr(2) + 2));
+            kstore(36004, kload(exec_hw_dmem_ptbr(2) + 1));
             ok = expect_eq(user_store_word(3, USER_MEM_BASE + 0, 47), 1, ok);
             ok = expect_eq(user_store_word(3, USER_MEM_BASE + 1, 97), 1, ok);
             ok = expect_eq(user_store_word(3, USER_MEM_BASE + 2, 112), 1, ok);
@@ -808,7 +810,7 @@ void testPhaseDKernelEndToEnd() {
     sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     vm.resetBlockDevice(192);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "kernel image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "kernel image loads");
         vm.enqueueConsoleAscii("K");
         const auto result = sandbox::vm::run(vm, 50000000);
         if (!result.halted()) {
@@ -834,10 +836,13 @@ void testPhaseDKernelEndToEnd() {
         }
         expect(regLong(vm, 13) == 1, "Phase D kernel primitives pass VM assertions");
         expect(wordAt(vm, 36000) == 1, "sys_sbrk returns success in the native kernel");
-        expect(wordAt(vm, 36001) == 27, "sys_sbrk returns the old process break");
-        expect(wordAt(vm, 36002) == 57, "sys_sbrk advances the process heap break");
-        expect(wordAt(vm, 36003) == 488, "sys_sbrk preserves sparse user scratch DMEM span");
-        const long long expected_sbrk_pte = (30000 + 2 * 192 + 2) * 243 + 40;
+        expect(wordAt(vm, 36001) == sandbox::vm::MMU_PAGE_WORDS,
+               "sys_sbrk returns the old process break");
+        expect(wordAt(vm, 36002) == sandbox::vm::MMU_PAGE_WORDS + 30,
+               "sys_sbrk advances the process heap break");
+        expect(wordAt(vm, 36003) == 22,
+               "sys_sbrk preserves sparse user scratch DMEM span");
+        const long long expected_sbrk_pte = (1000 + 2 * 192 + 1) * 19683 + 40;
         expect(wordAt(vm, 36004) == expected_sbrk_pte, "sys_sbrk installs the new DMEM PTE");
     }
 }

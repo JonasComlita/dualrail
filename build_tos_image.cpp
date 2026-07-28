@@ -144,17 +144,21 @@ std::string buildBootExecAssembly(const std::string& path) {
 sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     using namespace sandbox::compiler;
 
+    const std::string architecture =
+        readTextFile("generated/architecture_contract.trit");
     const std::string sdk = readTextFile("apps/os_sdk.trit");
     const std::string widget = readTextFile("apps/libwidget.trit");
     const std::string source = readTextFile("apps/" + app.source_name + ".trit");
-    if (sdk.empty() || widget.empty() || source.empty()) {
+    if (architecture.empty() || sdk.empty() || widget.empty() ||
+        source.empty()) {
         std::cerr << "missing source for app " << app.id << "\n";
         ok = false;
         return {};
     }
 
-    CompileResult compiled =
-        compileSource(app.source_name + ".trit", sdk + "\n" + widget + "\n" + source);
+    CompileResult compiled = compileSource(
+        app.source_name + ".trit",
+        architecture + "\n" + sdk + "\n" + widget + "\n" + source);
     if (!compiled.success) {
         std::cerr << "compile failed for " << app.id << ":\n";
         dumpDiagnostics(compiled);
@@ -163,12 +167,18 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     }
 
     LinkOptions options;
-    options.stack_hint_words = app.stack_words;
+    options.stack_hint_words = alignUp(app.stack_words, 9);
     options.standalone_halt_on_exit = false;
     options.dead_strip_functions = true;
     LinkResult linked = linkModules({compiled.object}, options);
     if (!linked.success) {
         std::cerr << "link failed for " << app.id << "\n";
+        for (const auto& diagnostic : linked.diagnostics) {
+            std::cerr << "  " << diagnostic.format() << "\n";
+        }
+        for (const auto& assembly_error : linked.assembled.errors) {
+            std::cerr << "  " << assembly_error.format() << "\n";
+        }
         ok = false;
     }
     const char* dump_dir = std::getenv("TRIT_DUMP_APP_ASM_DIR");
@@ -379,15 +389,20 @@ int main(int argc, char** argv) {
         {"service_stub", "powerd", "powerd", "/bin/powerd", 0, kCliStackWords, false},
     };
 
+    const std::string architecture =
+        readTextFile("generated/architecture_contract.trit");
     const std::string kernel = readTextFile("kernel.trit");
     const std::string trap = readTextFile("native_kernel_trap_stub.tasm");
-    if (kernel.empty() || trap.empty()) {
-        std::cerr << "failed to read kernel.trit or native trap stub\n";
+    if (architecture.empty() || kernel.empty() || trap.empty()) {
+        std::cerr
+            << "failed to read generated architecture contract, kernel, "
+               "or native trap stub\n";
         return EXIT_FAILURE;
     }
 
     using namespace sandbox::compiler;
-    CompileResult compiled_kernel = compileSource("kernel.trit", kernel);
+    CompileResult compiled_kernel =
+        compileSource("kernel.trit", architecture + "\n" + kernel);
     if (!compiled_kernel.success) {
         std::cerr << "kernel compile failed:\n";
         dumpDiagnostics(compiled_kernel);
@@ -402,7 +417,9 @@ int main(int argc, char** argv) {
     }
     if (!ok) return EXIT_FAILURE;
 
-    int next_text_ppn = 8100;
+    // Base-page PPNs: keep the boot kernel below this range while leaving the
+    // first interactive bundles inside the compact profile's IMEM.
+    int next_text_ppn = 250;
     constexpr int kAppTextPpnAlignment = 16;
     constexpr int kAppTextPpnGuardPages = 8;
     for (std::size_t i = 0; i < apps.size(); ++i) {
@@ -423,6 +440,7 @@ int main(int argc, char** argv) {
         if (!rootfs.addExecutableImage(app.guest_path,
                                        linked.assembled.program,
                                        linked.executable_header,
+                                       linked.executable_header_v2,
                                        app.text_ppn).ok()) {
             std::cerr << "failed to install " << app.id << " into root image\n";
             return EXIT_FAILURE;
@@ -436,10 +454,12 @@ int main(int argc, char** argv) {
     (void)rootfs.addFile("/etc/release", asciiWords("Ternary OS " + image_version + "\n"));
 
     const std::string boot_source =
+        ".isa 2\n"
+        ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n" +
         buildBootExecAssembly("/bin/desktop") + "\n" +
         trap + "\n" +
         compiled_kernel.assembly + "\n";
-    auto assembled = sandbox::vm::assembler::assemble(boot_source);
+    auto assembled = sandbox::vm::assembler::assembleV2(boot_source);
     if (!assembled.success) {
         std::cerr << "boot image assembly failed:\n";
         for (const auto& error : assembled.errors) {
@@ -487,6 +507,10 @@ int main(int argc, char** argv) {
             header.text_pages,
             header.data_pages,
             header.stack_words,
+            sandbox::architecture::v2::ISA_VERSION,
+            linked_apps[i].executable_header_v2.required_features,
+            sandbox::architecture::v2::FUNCTION_ABI_VERSION,
+            sandbox::architecture::v2::SYSCALL_ABI_VERSION,
         });
     }
 

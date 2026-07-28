@@ -1,4 +1,4 @@
-#include "test_multiwidth_vm_common.h"
+﻿#include "test_multiwidth_vm_common.h"
 #include "ternary_compiler.h"
 
 #include <cstdlib>
@@ -49,7 +49,7 @@ long long compileAndRunReturn(const std::string& name,
     }
 
     sandbox::vm::VMState vm(imem_words, dmem_words);
-    if (!sandbox::vm::loadAndReset(vm, linked.assembled.program)) {
+    if (!sandbox::vm::assembler::loadAndReset(vm, linked.assembled)) {
         expect(false, name + " loads");
         return -999999;
     }

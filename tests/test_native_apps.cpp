@@ -1,4 +1,4 @@
-#include "ternary_compiler.h"
+﻿#include "ternary_compiler.h"
 #include "ternary_vm.h"
 
 #include <fstream>
@@ -66,7 +66,7 @@ sandbox::vm::VMState compileAndRunApp(
 
     sandbox::vm::VMState vm(65536, 1000000);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
                app_name + " loads into the VM");
         const auto result = sandbox::vm::run(vm, 200000);
         if (!result.halted()) {
@@ -384,7 +384,7 @@ void testWidgetToolkitCompiles() {
     expect(behavior_linked.success, "widget behavior test links");
     sandbox::vm::VMState vm(65536, 1000000);
     if (behavior_linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, behavior_linked.assembled.program),
+        expect(sandbox::vm::assembler::loadAndReset(vm, behavior_linked.assembled),
                "widget behavior test loads");
         const auto result = sandbox::vm::run(vm, 200000);
         if (!result.halted()) {

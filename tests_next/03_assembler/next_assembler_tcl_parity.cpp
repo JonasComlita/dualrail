@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
 
@@ -121,7 +121,7 @@ std::vector<long long> assembleWithNativeTcl(TestContext& ctx,
 
     sandbox::vm::VMState vm(262144, 2097152);
     vm.block_cache_enabled = false;
-    if (!sandbox::vm::loadAndReset(vm, linked.assembled.program)) {
+    if (!sandbox::vm::assembler::loadAndReset(vm, linked.assembled)) {
         ctx.fail("native TCL assembler image loads");
         return {};
     }

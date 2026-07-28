@@ -13,6 +13,7 @@
 #define TERNARY_OS_H
 
 #include "ternary_compiler.h"
+#include "ternary_redo_wal.h"
 #include "ternary_vm.h"
 
 #include <atomic>
@@ -80,7 +81,7 @@ static constexpr int ERR_ACCESS = 13;
 static constexpr int ERR_CORRUPT = 14;
 static constexpr int ERR_SIGNATURE = 15;
 
-static constexpr int BLOCK_WORDS = vm::MMU_PAGE_WORDS;
+static constexpr int BLOCK_WORDS = vm::STORAGE_BLOCK_WORDS;
 static constexpr int FS_MAGIC = 80808;
 static constexpr int FS_VERSION = 1;
 static constexpr int DEFAULT_INODE_COUNT = 32;
@@ -89,7 +90,7 @@ static constexpr int DIRECT_BLOCKS = 6;
 static constexpr int NATIVE_VFS_MAGIC = 60606;
 static constexpr int NATIVE_VFS_VERSION = 1;
 static constexpr int NATIVE_KERNEL_MAGIC = 40404;
-static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 7303;
+static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 8018;
 static constexpr int NATIVE_VFS_MAX_INODES = 2048;
 static constexpr int NATIVE_VFS_MAX_DIRENTS = 4096;
 static constexpr int NATIVE_VFS_MAX_EXTENTS = 4096;
@@ -110,8 +111,9 @@ static constexpr int NATIVE_VFS_DISK_EXTENT_BLOCKS = 911;
 static constexpr int NATIVE_VFS_DISK_DATA_BLOCK = 4859;
 static constexpr int NATIVE_VFS_DISK_DATA_BLOCKS = 2428;
 static constexpr int NATIVE_WAL_DISK_META_BLOCK = 7287;
-static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 7288;
-static constexpr int NATIVE_WAL_DISK_RECORD_BLOCKS = 15;
+static constexpr int NATIVE_WAL_DISK_SUPER_B_BLOCK = 7288;
+static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 7289;
+static constexpr int NATIVE_WAL_DISK_RECORD_BLOCKS = 729;
 static constexpr int NATIVE_VFS_INODE_WORDS = 8;
 static constexpr int NATIVE_VFS_DIRENT_WORDS = 6;
 static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
@@ -769,6 +771,8 @@ struct Inode {
     std::vector<int> indirect_blocks;
     bool executable = false;
     vm::ExecutableImageHeader exec_header;
+    bool executable_v2 = false;
+    vm::ExecutableImageHeaderV2 exec_header_v2;
 
     Inode() {
         direct.fill(-1);
@@ -1184,6 +1188,23 @@ public:
         inode.exec_header = header;
         StatusResult synced = sync();
         return synced.ok() ? StatusResult::success(found.payload) : synced;
+    }
+
+    [[nodiscard]] StatusResult markExecutable(
+        const std::string& path,
+        const vm::ExecutableImageHeader& transition_header,
+        const vm::ExecutableImageHeaderV2& header_v2) {
+
+        if (!vm::validateExecutableHeader(transition_header) ||
+            !vm::validateExecutableHeaderV2(header_v2)) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult marked = markExecutable(path, transition_header);
+        if (!marked.ok()) return marked;
+        Inode& inode = inodes_[static_cast<std::size_t>(marked.payload)];
+        inode.executable_v2 = true;
+        inode.exec_header_v2 = header_v2;
+        return StatusResult::success(marked.payload);
     }
 
     [[nodiscard]] const Inode* inode(int id) const {
@@ -1776,6 +1797,53 @@ public:
                                                  static_cast<int>(program.size())));
     }
 
+    [[nodiscard]] StatusResult addExecutableImage(
+        const std::string& path,
+        const std::vector<isa::TritWord27>& program,
+        const vm::ExecutableImageHeader& transition_header,
+        const vm::ExecutableImageHeaderV2& header_v2,
+        int text_ppn) {
+
+        if (!status_.ok()) return status_;
+        if (!vm::validateExecutableHeader(transition_header) ||
+            !vm::validateExecutableHeaderV2(header_v2) ||
+            text_ppn <= 0 || program.empty() ||
+            static_cast<int>(program.size()) > header_v2.text_words) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        const int blocks =
+            static_cast<int>((program.size() + BLOCK_WORDS - 1) / BLOCK_WORDS);
+        if (next_text_block_ + blocks > device_.blockCount()) {
+            return StatusResult::error(ERR_NO_SPACE);
+        }
+        const int first_text_block = next_text_block_;
+        for (int block = 0; block < blocks; ++block) {
+            std::vector<long long> out(BLOCK_WORDS, 0);
+            for (int word = 0; word < BLOCK_WORDS; ++word) {
+                const int index = block * BLOCK_WORDS + word;
+                if (index < static_cast<int>(program.size())) {
+                    out[static_cast<std::size_t>(word)] =
+                        static_cast<long long>(
+                            program[static_cast<std::size_t>(index)].bits);
+                }
+            }
+            StatusResult wrote =
+                device_.writeBlock(first_text_block + block, out);
+            if (!wrote.ok()) return wrote;
+        }
+        next_text_block_ += blocks;
+        StatusResult inode = createOrLookupFile(path, NATIVE_KIND_EXEC);
+        if (!inode.ok()) return inode;
+        std::vector<long long> descriptor = executableDescriptor(
+            transition_header, text_ppn, first_text_block,
+            static_cast<int>(program.size()));
+        const auto encoded_v2 = vm::encodeExecutableHeaderV2(header_v2);
+        descriptor.reserve(descriptor.size() + encoded_v2.size());
+        for (const auto& word : encoded_v2)
+            descriptor.push_back(vm::ops::toLong(word));
+        return writePayload(inode.payload, descriptor);
+    }
+
     [[nodiscard]] StatusResult addUserRecord(
         const std::string& username,
         long long password_hash,
@@ -1829,7 +1897,7 @@ public:
                            NATIVE_VFS_DISK_DATA_BLOCKS,
                            data_);
         if (!wrote.ok()) return wrote;
-        wrote = writeZeroBlocks(NATIVE_WAL_DISK_META_BLOCK, 1);
+        wrote = writeZeroBlocks(NATIVE_WAL_DISK_META_BLOCK, 2);
         if (!wrote.ok()) return wrote;
         return writeZeroBlocks(NATIVE_WAL_DISK_RECORD_BLOCK,
                                NATIVE_WAL_DISK_RECORD_BLOCKS);
@@ -2266,6 +2334,7 @@ struct Process {
     int heap_limit = 0;
     int fork_return_payload = -1;
     vm::ExecutableImageHeader exec_header;
+    vm::ExecutableArchitectureIdentity architecture;
     std::vector<long long> memory;
     std::map<int, OpenFile> fds;
 };
@@ -2279,6 +2348,11 @@ struct ProcessInfo {
     int capabilities = CAP_ALL;
     int open_fds = 0;
     int memory_words = 0;
+    int executable_version = 1;
+    int function_abi_version = 1;
+    int syscall_abi_version = vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    int isa_version = 1;
+    std::uint64_t required_features = 0;
 };
 
 struct WindowRecord {
@@ -2589,6 +2663,9 @@ public:
         const Inode* inode = fs_.inode(found.payload);
         if (!inode || !inode->executable) return StatusResult::error(ERR_INVALID);
         proc->exec_header = inode->exec_header;
+        proc->architecture = inode->executable_v2
+            ? vm::architectureIdentity(inode->exec_header_v2)
+            : vm::architectureIdentity(inode->exec_header);
         proc->memory = inode->data;
         proc->heap_start = proc->exec_header.data_pages * vm::MMU_PAGE_WORDS;
         proc->heap_break = proc->heap_start;
@@ -2694,7 +2771,12 @@ public:
         out.capabilities = proc->capabilities;
         out.open_fds = static_cast<int>(proc->fds.size());
         out.memory_words = static_cast<int>(proc->memory.size());
-        return StatusResult::success(8);
+        out.executable_version = proc->architecture.executable_version;
+        out.function_abi_version = proc->architecture.function_abi_version;
+        out.syscall_abi_version = proc->architecture.syscall_abi_version;
+        out.isa_version = static_cast<int>(proc->architecture.isa_version);
+        out.required_features = proc->architecture.required_features;
+        return StatusResult::success(13);
     }
 
     [[nodiscard]] StatusResult installExecutable(
@@ -2717,6 +2799,26 @@ public:
         if (!wrote.ok()) return wrote;
         StatusResult marked = fs_.markExecutable(path, header);
         return marked.ok() ? StatusResult::success(static_cast<int>(image.size())) : marked;
+    }
+
+    [[nodiscard]] StatusResult installExecutable(
+        const std::string& path,
+        const std::vector<long long>& image,
+        const vm::ExecutableImageHeader& transition_header,
+        const vm::ExecutableImageHeaderV2& header_v2) {
+
+        if (!vm::validateExecutableHeader(transition_header) ||
+            !vm::validateExecutableHeaderV2(header_v2)) {
+            return StatusResult::error(ERR_INVALID);
+        }
+        StatusResult installed =
+            installExecutable(path, image, transition_header);
+        if (!installed.ok()) return installed;
+        StatusResult marked =
+            fs_.markExecutable(path, transition_header, header_v2);
+        return marked.ok()
+            ? StatusResult::success(static_cast<int>(image.size()))
+            : marked;
     }
 
     [[nodiscard]] StatusResult mallocWords(int pid, int words, UserPtr<long long>& out) {

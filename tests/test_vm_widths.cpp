@@ -182,8 +182,12 @@ void testVmWidths() {
     {
         VMState vm(16, 64);
         expect(vm.execution_backend == VMExecutionBackend::CachedBlockInterpreter,
-               "trace JIT is disabled by default");
-        expect(!vm.traceJitEnabled(), "trace JIT opt-in flag is false by default");
+               "decoded trace executor is disabled by default");
+        expect(!vm.decodedTraceExecutorEnabled(),
+               "decoded trace executor opt-in flag is false by default");
+        expect(VMExecutionBackend::TraceJit ==
+                   VMExecutionBackend::DecodedTraceExecutor,
+               "transition TraceJit backend name aliases decoded trace executor");
     }
 
     {
@@ -250,6 +254,74 @@ void testVmWidths() {
             add r2, r1, r1
             halt
         )"), {}, 32);
+
+        VMState user_interpreter(64, 128);
+        VMState user_trace(64, 128);
+        auto user_program = assembleOrThrow(R"(
+            mov r1, 12
+            mov r2, 9
+            store r2, r1, 0
+            load r3, r1, 0
+            halt
+        )");
+        expect(loadAndReset(user_interpreter, user_program) &&
+                   loadAndReset(user_trace, user_program),
+               "user-mode decoded trace fixture loads");
+        user_interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        user_trace.setExecutionBackend(
+            VMExecutionBackend::DecodedTraceExecutor);
+        user_trace.setDecodedTraceHotThreshold(1);
+        user_interpreter.privilege = PrivilegeMode::User;
+        user_trace.privilege = PrivilegeMode::User;
+        user_interpreter.user_imem_base = user_trace.user_imem_base = 0;
+        user_interpreter.user_imem_limit = user_trace.user_imem_limit = 64;
+        user_interpreter.user_dmem_base = user_trace.user_dmem_base = 0;
+        user_interpreter.user_dmem_limit = user_trace.user_dmem_limit = 128;
+        const auto user_interpreter_result =
+            sandbox::vm::run(user_interpreter, 32);
+        const auto user_trace_result = sandbox::vm::run(user_trace, 32);
+        expect(user_interpreter_result.status == user_trace_result.status &&
+                   user_trace_result.halted(),
+               "decoded trace executor supports guarded user-mode memory");
+        expect(user_interpreter.regfile.read(R3) ==
+                   user_trace.regfile.read(R3),
+               "user-mode decoded trace load matches interpreter");
+        expect(user_trace.decodedTraceStats().instructions_executed > 0,
+               "user-mode fixture executes through decoded trace backend");
+        bool saw_guarded_load = false;
+        bool saw_guarded_store = false;
+        for (const auto& cached_trace : user_trace.trace_jit_cache) {
+            for (const VMMicroOp& micro_op :
+                 cached_trace.second.instructions) {
+                expect(micro_op.trap_point &&
+                           micro_op.instruction_accounting == 1,
+                       "decoded micro-op preserves trap and instruction accounting");
+                if (micro_op.memory_effect == VMMicroMemoryEffect::Read) {
+                    saw_guarded_load =
+                        (micro_op.guards &
+                         VM_MICRO_GUARD_ADDRESS_TRANSLATION) != 0;
+                }
+                if (micro_op.memory_effect == VMMicroMemoryEffect::Write) {
+                    saw_guarded_store =
+                        (micro_op.guards &
+                         VM_MICRO_GUARD_ADDRESS_TRANSLATION) != 0;
+                }
+            }
+        }
+        expect(saw_guarded_load && saw_guarded_store,
+               "micro-op IR declares guarded read/write memory effects");
+
+        const std::size_t first_address_space_cache_size =
+            user_trace.trace_jit_cache.size();
+        user_trace.pc = 0;
+        user_trace.status = VMStatus::RUNNING;
+        user_trace.setCurrentAsid(7);
+        const auto second_asid_result = sandbox::vm::run(user_trace, 32);
+        expect(second_asid_result.halted(),
+               "decoded trace reruns after ASID change");
+        expect(user_trace.trace_jit_cache.size() >
+                   first_address_space_cache_size,
+               "decoded trace cache keys entries by ASID");
     }
 
     {
@@ -270,6 +342,95 @@ void testVmWidths() {
         expect(jit.syscall_buffer == "3", "interpreter handles syscall side effect");
         expect(sandbox::vm::ops::toLong(jit.regfile.read(R2)) == 7,
                "interpreter handles unsupported syscall path");
+    }
+
+    {
+        VMState interpreter(64, 128);
+        VMState native(64, 128);
+        auto program = assembleOrThrow(R"(
+            mov r1, 0
+            mov r2, 1
+            mov r3, 9
+        native_loop:
+            add r1, r1, r2
+            sub r3, r3, r2
+            brp r3, native_loop
+            halt
+        )");
+        expect(loadAndReset(interpreter, program) &&
+                   loadAndReset(native, program),
+               "native x86-64 JIT fixture loads");
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result =
+            sandbox::vm::run(interpreter, 128);
+        const auto native_result = sandbox::vm::run(native, 128);
+        if (nativeX64HostAvailable()) {
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.steps == interpreter_result.steps,
+                   "native x86-64 JIT preserves status and instruction count");
+            expect(native.regfile.read(R1) == interpreter.regfile.read(R1),
+                   "native x86-64 JIT arithmetic matches interpreter");
+            expect(native.native_x64_jit_stats.blocks_built > 0 &&
+                       native.native_x64_jit_stats.blocks_executed > 0,
+                   "native x86-64 JIT builds and executes code blocks");
+            bool all_wx = !native.native_x64_code_cache.empty();
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                all_wx = all_wx && block->isWriteXorExecute();
+            }
+            expect(all_wx,
+                   "native x86-64 JIT code cache is RX and never left W+X");
+
+            std::uint32_t random = 0x51A7u;
+            for (int sample = 0; sample < 27; ++sample) {
+                random = random * 1664525u + 1013904223u;
+                const int a = static_cast<int>(random % 19u) - 9;
+                random = random * 1664525u + 1013904223u;
+                const int b = static_cast<int>(random % 9u) - 4;
+                const std::string source =
+                    "mov r1, " + std::to_string(a) + "\n" +
+                    "mov r2, " + std::to_string(b) + "\n" +
+                    "add r3, r1, r2\n"
+                    "sub r4, r3, r2\n"
+                    "mul r5, r4, r2\n"
+                    "neg r6, r5\n"
+                    "abs r7, r6\n"
+                    "halt\n";
+                const auto randomized_program =
+                    assembleOrThrow(source);
+                VMState oracle(32, 64);
+                VMState generated(32, 64);
+                expect(loadAndReset(oracle, randomized_program) &&
+                           loadAndReset(generated, randomized_program),
+                       "randomized native differential fixture loads");
+                oracle.setExecutionBackend(
+                    VMExecutionBackend::Interpreter);
+                generated.setExecutionBackend(
+                    VMExecutionBackend::NativeX64Jit);
+                generated.setDecodedTraceHotThreshold(1);
+                const auto oracle_result =
+                    sandbox::vm::run(oracle, 32);
+                const auto generated_result =
+                    sandbox::vm::run(generated, 32);
+                expect(oracle_result.status == generated_result.status &&
+                           oracle_result.steps == generated_result.steps,
+                       "randomized native status/step parity");
+                for (int reg = 1; reg <= 7; ++reg) {
+                    expect(oracle.regfile.read(
+                               static_cast<std::uint8_t>(reg)) ==
+                               generated.regfile.read(
+                                   static_cast<std::uint8_t>(reg)),
+                           "randomized native register parity");
+                }
+            }
+        } else {
+            expect(native.native_x64_jit_stats.blocks_built == 0,
+                   "non-x86 hosts keep native backend unavailable");
+        }
     }
 
     {
@@ -426,10 +587,11 @@ pos_path:
             add.t20 r2, r1, r1
             halt
         )");
-        expect(loadAndReset(vm, program), "numeric op with lane input program loads");
+        expect(loadAndReset(vm, program), "numeric view over lane-written register loads");
         auto result = sandbox::vm::run(vm, 32);
-        expect(result.trapped(), "numeric op rejects lane input");
-        expect(result.trap_code == TrapCode::TRAP_ILLEGAL_OP, "numeric op lane trap code");
+        expect(result.halted(), "instruction-selected numeric view is not a register tag");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 14,
+               "numeric view reinterprets the fixed physical scalar word");
     }
 
     {
@@ -768,14 +930,16 @@ pos_path:
         vm.dmem.store(10, TernaryValue::fromT20(native_ops::fromIntT20(10)));
         vm.dmem.store(11, TernaryValue::fromT20(native_ops::fromIntT20(11)));
         auto result = sandbox::vm::run(vm, 16);
-        expect(result.halted(), "VLOAD memory fault program still halts");
-        expect(vectorLong(vm, 0, 0) == 10 && vectorLong(vm, 0, 1) == 11,
-               "VLOAD valid memory lanes load");
-        expect(vectorLong(vm, 0, 2) == 0 && vectorLong(vm, 0, 3) == 0,
-               "VLOAD memory fault lanes typed zero");
+        expect(result.trapped(), "VLOAD faults precisely before commit");
+        expect(vectorLong(vm, 0, 0) == 0 && vectorLong(vm, 0, 1) == 0 &&
+                   vectorLong(vm, 0, 2) == 0 && vectorLong(vm, 0, 3) == 0,
+               "VLOAD fault leaves the entire destination unchanged");
         expect(vm.vector_faults.fault_valid[2] &&
-               vm.vector_faults.fault_class[2] == TrapCode::TRAP_MEM_FAULT,
-               "VLOAD records out-of-range lane fault");
+                   vm.vector_faults.fault_valid[3] &&
+                   vm.vector_faults.first_failing_lane == 2 &&
+                   vm.vector_faults.fault_class[2] ==
+                       TrapCode::TRAP_MEM_FAULT,
+               "VLOAD records the complete fault mask and first lane");
     }
 
     {
@@ -814,7 +978,7 @@ pos_path:
         auto program = assembleOrThrow(R"(
             vdot.t1 r1, v0, v1
             vmac.t1 v0, v1
-            astore.t50 r2
+            astore.t50 r4
             vact.t1 v2, v3
             halt
         )");
@@ -836,7 +1000,7 @@ pos_path:
         expect(result.halted(), "T1 AI program halts");
         expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 1,
                "VDOT.t1 writes T50 dot product to scalar register");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 1,
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(R4)) == 1,
                "VMAC.t1 accumulates T1 dot product into accumulator");
         expect(vectorPredicateTrit(vm, 2, 0) == -1 &&
                vectorPredicateTrit(vm, 2, 1) == 0 &&
@@ -907,16 +1071,20 @@ pos_path:
         vm.dmem.store(12, TernaryValue::fromT5(native_ops::fromIntT5(22)));
         vm.dmem.store(14, TernaryValue::fromT5(native_ops::fromIntT5(33)));
         auto result = sandbox::vm::run(vm, 32);
-        expect(result.halted(), "gather/scatter program halts with lane-local fault");
+        expect(result.trapped(),
+               "scatter faults precisely after successful gather");
         auto [stored0, fc0] = vm.dmem.load(16);
         auto [stored1, fc1] = vm.dmem.load(17);
-        expect(fc0 == MemFaultCode::OK && sandbox::vm::ops::toLong(stored0) == 11,
-               "VGATHER/VSCATTER stores first indexed lane");
-        expect(fc1 == MemFaultCode::OK && sandbox::vm::ops::toLong(stored1) == 22,
-               "VGATHER/VSCATTER stores second indexed lane");
+        expect(fc0 == MemFaultCode::OK &&
+                   sandbox::vm::ops::toLong(stored0) == 0,
+               "faulting VSCATTER writes no earlier lane");
+        expect(fc1 == MemFaultCode::OK &&
+                   sandbox::vm::ops::toLong(stored1) == 0,
+               "faulting VSCATTER writes no lanes");
         expect(vm.vector_faults.fault_valid[2] &&
+               vm.vector_faults.first_failing_lane == 2 &&
                vm.vector_faults.fault_class[2] == TrapCode::TRAP_MEM_FAULT,
-               "VSCATTER records out-of-range indexed lane");
+               "VSCATTER records first out-of-range indexed lane");
     }
 
     {

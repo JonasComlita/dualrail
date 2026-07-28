@@ -58,6 +58,16 @@ add_executable(test_multiwidth_vm
 target_compile_features(test_multiwidth_vm PUBLIC cxx_std_17)
 target_compile_definitions(test_multiwidth_vm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_architecture_v2 tests/test_architecture_v2.cpp)
+target_compile_features(test_architecture_v2 PUBLIC cxx_std_17)
+target_compile_definitions(test_architecture_v2 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_architecture_v2 COMMAND test_architecture_v2)
+
+add_executable(test_redo_wal_v2 tests/test_redo_wal_v2.cpp)
+target_compile_features(test_redo_wal_v2 PUBLIC cxx_std_17)
+target_compile_definitions(test_redo_wal_v2 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_redo_wal_v2 COMMAND test_redo_wal_v2)
+
 add_executable(test_ternary_lanes tests/test_ternary_lanes.cpp)
 target_compile_features(test_ternary_lanes PUBLIC cxx_std_17)
 target_compile_definitions(test_ternary_lanes PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -77,6 +87,9 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
 add_executable(build_tos_image build_tos_image.cpp)
+add_executable(migrate_tos_artifacts migrate_tos_artifacts.cpp)
+target_compile_features(migrate_tos_artifacts PUBLIC cxx_std_17)
+target_compile_definitions(migrate_tos_artifacts PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
@@ -233,6 +246,17 @@ target_compile_definitions(test_host_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+    add_custom_target(generate_architecture_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_architecture_contract.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL
+    )
+    add_test(NAME test_architecture_contract
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_architecture_contract.py
+                     --check
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME test_agent_tooling
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_tooling.py
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -252,6 +276,7 @@ add_custom_target(production_profile
         test_production_layers
         test_production_hardening
         test_os_platform
+        test_redo_wal_v2
         test_scaling_profile_compact
         test_consumer_shell_productization
         test_host_runtime
@@ -261,6 +286,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_layers>
     COMMAND $<TARGET_FILE:test_production_hardening>
     COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_redo_wal_v2>
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>
     COMMAND $<TARGET_FILE:test_host_runtime>
@@ -287,9 +313,9 @@ add_executable(test_benchmark tests/test_benchmark.cpp)
 target_compile_features(test_benchmark PUBLIC cxx_std_17)
 target_compile_definitions(test_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
-add_executable(test_trace_jit_benchmark tests/test_trace_jit_benchmark.cpp)
-target_compile_features(test_trace_jit_benchmark PUBLIC cxx_std_17)
-target_compile_definitions(test_trace_jit_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_executable(test_execution_backends_benchmark tests/test_execution_backends_benchmark.cpp)
+target_compile_features(test_execution_backends_benchmark PUBLIC cxx_std_17)
+target_compile_definitions(test_execution_backends_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_malloc_micro tests/test_malloc_micro.cpp)
 target_compile_features(test_malloc_micro PUBLIC cxx_std_17)

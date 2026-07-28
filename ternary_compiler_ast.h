@@ -139,6 +139,9 @@ struct ModuleAst {
 
 [[nodiscard]] inline int typeSizeWords(const TypeRef& type, const LayoutTable& layouts) {
     switch (type.kind) {
+        case TypeKind::Numeric:
+        case TypeKind::Lane:
+            return type.scalar == ir::Type::T50 ? 2 : 1;
         case TypeKind::Struct: {
             auto it = layouts.find(type.name);
             return it == layouts.end() ? 1 : std::max(1, it->second.size_words);

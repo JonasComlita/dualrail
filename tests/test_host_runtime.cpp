@@ -156,9 +156,10 @@ void testRuntimeGraphicsResetAndDiagnostics() {
             csrw console_out, r1
             halt
     )");
-    image.rootfs_words.assign(sandbox::vm::MMU_PAGE_WORDS * 2, 0);
+    image.rootfs_words.assign(
+        sandbox::vm::STORAGE_BLOCK_WORDS * 2, 0);
     image.rootfs_words[0] = 123;
-    image.rootfs_words[sandbox::vm::MMU_PAGE_WORDS] = 456;
+    image.rootfs_words[sandbox::vm::STORAGE_BLOCK_WORDS] = 456;
 
     const std::string disk_path = buildPath("host_runtime_seed.tdisk");
     const std::string diag_path = buildPath("host_runtime_diagnostics");
@@ -256,7 +257,8 @@ void testRuntimeSeparateDiskRequiredAndPreserved() {
                error.find("disk image is required") != std::string::npos,
            "runtime rejects missing separate disk for rootfs-less boot image");
 
-    std::vector<long long> seed(sandbox::vm::MMU_PAGE_WORDS * 2, 0);
+    std::vector<long long> seed(
+        sandbox::vm::STORAGE_BLOCK_WORDS * 2, 0);
     seed[0] = 90;
     expect(sandbox::host::writeSparseDiskFile(disk_path, seed, true, &error),
            "test writes initialized sparse disk artifact");
@@ -314,7 +316,7 @@ void testGuestRequestedColdRebootPreservesDisk() {
             store r3, r4, 0
             halt
     )");
-    image.rootfs_words.assign(sandbox::vm::MMU_PAGE_WORDS, 0);
+    image.rootfs_words.assign(sandbox::vm::STORAGE_BLOCK_WORDS, 0);
 
     const std::string disk_path = buildPath("host_runtime_guest_reboot.tdisk");
     const std::string diag_path = buildPath("host_runtime_guest_reboot_diagnostics");

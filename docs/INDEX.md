@@ -3,6 +3,9 @@
 Complete index of every file an agent needs to understand the codebase.
 Sorted by architectural layer (bottom-up).
 
+For the executable review sequence, subsystem internals, optimization questions,
+and validation gates, see [`STACK_REVIEW_ORDER.md`](STACK_REVIEW_ORDER.md).
+
 ---
 
 ## Root Directory

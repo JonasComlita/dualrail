@@ -33,6 +33,7 @@ enum class InstrOpcode : uint8_t {
     Sub,
     Mul,
     Div,
+    Tmod,
     Cvt,
     Cmp,
     Tsel,
@@ -43,7 +44,11 @@ enum class InstrOpcode : uint8_t {
     Deref,
     Load,
     Store,
+    SpillLoad,
+    SpillStore,
     Syscall,
+    Wait,
+    TlbInv,
     Fence,
     Tldr,
     Tstr,
@@ -67,6 +72,8 @@ struct Instr {
     std::string symbol;
     Effect effect = Effect::Pure;
     SourceSpan span;
+    std::vector<std::pair<std::string, ValueId>> phi_incoming;
+    bool spill_temporary = false;
 };
 
 enum class TerminatorKind : uint8_t {
@@ -130,6 +137,9 @@ struct AllocationResult {
     std::set<int> caller_saved_live_across_calls;
     int coalesced_moves = 0;
     int interference_edges = 0;
+    int spill_rewrite_rounds = 0;
+    int spill_loads = 0;
+    int spill_stores = 0;
     std::vector<Diagnostic> diagnostics;
 };
 
@@ -164,9 +174,11 @@ struct CompileResult {
 };
 
 struct LinkOptions {
-    int stack_hint_words = 24;
+    int stack_hint_words = architecture::v2::STACK_ALIGNMENT_WORDS * 3;
     int flags = 0;
-    int syscall_abi_version = vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    int isa_version = architecture::v2::ISA_VERSION;
+    std::uint64_t required_features = isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+    int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     bool standalone_halt_on_exit = true;
     bool dead_strip_functions = false;
     std::vector<std::string> dead_strip_roots = {"main"};
@@ -177,6 +189,7 @@ struct LinkResult {
     std::string assembly;
     std::map<std::string, int> symbol_map;
     vm::ExecutableImageHeader executable_header;
+    vm::ExecutableImageHeaderV2 executable_header_v2;
     vm::assembler::AssemblyResult assembled;
     std::vector<Diagnostic> diagnostics;
     int instruction_count = 0;
@@ -188,8 +201,9 @@ namespace runtime {
 static constexpr int sys_write_int = 1;
 static constexpr int sys_newline = 2;
 static constexpr int sys_clear = 3;
-static constexpr int sys_yield = 4;
-static constexpr int sys_sleep_until_tick = 5;
+static constexpr int reserved_4 = 4;
+static constexpr int reserved_5 = 5;
+static constexpr int reserved_6 = 6;
 static constexpr int sys_exit = 44;
 static constexpr int sys_getpid = 7;
 static constexpr int sys_uptime = 8;
@@ -228,6 +242,8 @@ static constexpr int sys_recv = 40;
 static constexpr int sys_mkdir = 41;
 static constexpr int sys_unlink = 42;
 static constexpr int sys_sleep = 45;
+static constexpr int sys_yield = sys_sleep;
+static constexpr int sys_sleep_until_tick = sys_sleep;
 static constexpr int sys_ps = 46;
 static constexpr int sys_fsync = 47;
 static constexpr int sys_kill = 48;

@@ -68,8 +68,8 @@ enum class DiagnosticsMode : uint8_t {
 };
 
 struct CompilerOptions {
-    int target_abi_version = vm::EXEC_ABI_VERSION_V1;
-    int syscall_abi_version = vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    int target_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     OptimizationLevel optimization = OptimizationLevel::Basic;
     DiagnosticsMode diagnostics_mode = DiagnosticsMode::Human;
     bool emit_debug_metadata = false;

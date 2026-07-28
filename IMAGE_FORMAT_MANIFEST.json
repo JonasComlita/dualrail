@@ -1,41 +1,35 @@
 {
-  "version": 1,
-  "schema": "trit.image_format_manifest.v1",
-  "source_of_truth": "ternary_host_runtime.h",
+  "version": 2,
+  "schema": "trit.image_format_manifest.v2",
+  "source_of_truth": "ARCHITECTURE_MANIFEST.json",
   "formats": {
     "tboot": {
       "magic_hex": "0x31544f4f424f5354",
-      "format_version": 2,
-      "legacy_read_versions": [
-        1
-      ],
+      "write_version": 3,
+      "read_versions": [1, 2, 3],
       "endianness": "little",
       "header": [
-        {
-          "name": "magic",
-          "type": "uint64"
-        },
-        {
-          "name": "fnv1a_checksum",
-          "type": "uint64",
-          "covers": "payload"
-        },
-        {
-          "name": "payload_size",
-          "type": "uint64"
-        }
+        {"name": "magic", "type": "uint64"},
+        {"name": "fnv1a_checksum", "type": "uint64", "covers": "payload"},
+        {"name": "payload_size", "type": "uint64"}
       ],
-      "payload": [
+      "payload_v3": [
         "format_version:uint32",
         "boot_entry:int32",
         "framebuffer_width:int32",
         "framebuffer_height:int32",
         "profile_name:string",
         "image_version:string",
+        "isa_version:int32",
+        "required_features:uint64",
+        "scalar_word_trits:int32",
+        "base_page_words:int32",
+        "function_abi_version:int32",
+        "syscall_abi_version:int32",
         "sections:TosImageSection[]",
-        "apps:TosAppManifestEntry[]",
+        "apps:TosAppManifestEntryV3[]",
         "program:TritWord27[]",
-        "data_words:int64[]"
+        "data_words:raw_t40_uint64[]"
       ],
       "section_fields": [
         "name:string",
@@ -47,32 +41,59 @@
         "page_count:int32",
         "flags:int32"
       ],
-      "validation": [
-        "program segment is non-empty",
-        "boot_entry is inside program segment",
-        "profile_name is minimum or compact",
-        "framebuffer dimensions are positive",
-        "section table includes kernel and bundled app metadata",
-        "mutable root filesystem seed is emitted as a separate .tdisk artifact"
+      "app_v3_fields": [
+        "name:string",
+        "path:string",
+        "text_ppn:int32",
+        "entry_pc:int32",
+        "text_pages:int32",
+        "data_pages:int32",
+        "stack_words:int32",
+        "isa_version:int32",
+        "required_features:uint64",
+        "function_abi_version:int32",
+        "syscall_abi_version:int32"
+      ],
+      "transition": [
+        "v1 and v2 containers remain readable for one migration release",
+        "v1 payload data words are converted from signed numeric values",
+        "new writers emit only version 3",
+        "mutable root filesystem state is emitted as a separate tDisk v2 artifact"
       ]
     },
     "tdisk": {
-      "magic_hex": "0x54524954535031",
+      "magic_hex": "0x54524954535032",
+      "write_version": 2,
+      "read_versions": [1, 2],
+      "legacy_magic_hex": "0x54524954535031",
+      "legacy_mount_policy": "read_only",
       "block_words": 27,
       "endianness": "little",
-      "header": [
-        {
-          "name": "magic",
-          "type": "uint64"
-        },
-        {
-          "name": "nonzero_block_count",
-          "type": "int32"
-        }
+      "header_v2": [
+        {"name": "magic", "type": "uint64"},
+        {"name": "version", "type": "uint32"},
+        {"name": "block_words", "type": "uint32"},
+        {"name": "generation", "type": "uint64"},
+        {"name": "fnv1a_checksum", "type": "uint64", "covers": "records"},
+        {"name": "nonzero_block_count", "type": "int32"}
       ],
-      "block_record": [
+      "block_record_v2": [
         "block_index:int32",
-        "words:int64[27]"
+        "words:raw_t40_uint64[27]"
+      ],
+      "native_vfs_layout_v2": [
+        "blocks 0..7286: VFS superblock, metadata, extents, and data",
+        "block 7287: redo WAL superblock A",
+        "block 7288: redo WAL superblock B",
+        "blocks 7289..8017: 729-block redo WAL ring",
+        "blocks 8018 and above: bundled executable text"
+      ],
+      "redo_wal_v2": [
+        "record_words:27",
+        "header_words:12",
+        "after_image_words:15",
+        "record_types:data,commit,checkpoint",
+        "recovery stops at the first invalid or torn record"
       ]
     }
   },

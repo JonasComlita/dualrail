@@ -5,6 +5,7 @@
 #define TERNARY_COMPILER_CODEGEN_H
 
 #include "ternary_compiler_ast.h"
+#include "ternary_compiler_cfg.h"
 #include "ternary_compiler_parser.h"
 
 namespace sandbox {
@@ -637,8 +638,7 @@ private:
 
     [[nodiscard]] static bool isRuntimeName(const std::string& name) {
         return name == "sys_write_int" || name == "sys_newline" ||
-               name == "sys_clear" || name == "sys_yield" ||
-               name == "sys_sleep_until_tick" || name == "sys_exit" ||
+               name == "sys_clear" || name == "sys_exit" ||
                name == "sys_getpid" || name == "sys_uptime" ||
                name == "sys_read_console_word" || name == "sys_spawn_static" ||
                name == "sys_waitpid" || name == "sys_open" ||
@@ -657,7 +657,8 @@ private:
                name == "sys_bind" || name == "sys_connect" ||
                name == "sys_send" || name == "sys_recv" ||
                name == "sys_mkdir" || name == "sys_unlink" ||
-               name == "sys_sleep" || name == "sys_ps" ||
+               name == "sys_sleep" || name == "sys_yield" ||
+               name == "sys_sleep_until_tick" || name == "sys_ps" ||
                name == "sys_fsync" || name == "sys_kill" ||
                name == "sys_suspend" || name == "sys_resume" ||
                name == "sys_getproc" || name == "sys_futex_wait" ||
@@ -669,6 +670,8 @@ private:
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
         return name == "csr_read" || name == "csr_write" ||
+               name == "arch_wait" ||
+               name == "tlbinv" || name == "tmod" ||
                name == "tldr" || name == "tstr" || name == "fence" ||
                name == "load" || name == "store";
     }
@@ -695,6 +698,17 @@ struct LocalInfo {
     bool address_taken = false;
     bool by_pointer = false;
 };
+
+[[nodiscard]] inline bool usesWideT50Pair(const TypeRef& type) {
+    return (type.kind == TypeKind::Numeric || type.kind == TypeKind::Lane) &&
+           type.scalar == ir::Type::T50;
+}
+
+[[nodiscard]] inline std::string scalarMemoryMnemonic(
+        const char* operation,
+        const TypeRef& type) {
+    return std::string(operation) + (usesWideT50Pair(type) ? ".t50" : "");
+}
 
 struct FunctionContext {
     const FunctionAst* ast = nullptr;
@@ -866,6 +880,15 @@ struct LValueCode {
 [[nodiscard]] AllocationResult allocateRegisters(
     const Module& module,
     const CompilerOptions& options = CompilerOptions{});
+[[nodiscard]] AllocationResult allocateRegistersWithSpillRewrite(
+    Module& module,
+    const CompilerOptions& options = CompilerOptions{},
+    int max_rounds = 8);
+[[nodiscard]] std::vector<Diagnostic> verifyModule(const Module& module);
+[[nodiscard]] OptimizerStats optimizeModule(
+    Module& module,
+    OptimizationLevel level,
+    const CompilerOptions& options);
 
 class CompilerImpl {
 public:
@@ -949,6 +972,17 @@ public:
             dry_module.functions.push_back(std::move(dry));
         }
 
+        // Keep allocation keyed to the address IR until target emission is
+        // fully IR-driven.  The optimized copy is exposed and verified now,
+        // but must not silently remove values still consumed by the legacy
+        // target replay.
+        Module optimized_module = dry_module;
+        result.optimizer_stats =
+            optimizeModule(optimized_module, options_.optimization, options_);
+        auto verifier_diagnostics = verifyModule(optimized_module);
+        diagnostics_.insert(diagnostics_.end(),
+                            verifier_diagnostics.begin(),
+                            verifier_diagnostics.end());
         AllocationResult allocation = allocateRegisters(dry_module, options_);
         diagnostics_.insert(diagnostics_.end(),
                             allocation.diagnostics.begin(),
@@ -960,6 +994,8 @@ public:
                                 value_starts[fn.name]);
         }
 
+        result.ssa_module = dry_module;
+        result.optimized_module = optimized_module;
         result.allocation = allocation;
         result.success = diagnostics_.empty();
         result.diagnostics = diagnostics_;
@@ -967,7 +1003,9 @@ public:
         result.object.name = ast_.name;
         result.object.ssa = result.ssa_module;
         result.object.assembly = result.assembly;
-        result.object.metadata["phase"] = "7";
+        result.object.metadata["phase"] = "ir-transition-v2";
+        result.object.metadata["pipeline"] =
+            "typed-ast,address-cfg-ir,verify,optimize,allocate,target-replay";
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -994,6 +1032,8 @@ private:
                 int reg = it->second;
                 if (reg >= 1 && reg <= 12) {
                     used.insert(reg);
+                    if (usesWideT50Pair(instr.type) && reg + 1 <= 12)
+                        used.insert(reg + 1);
                 }
             }
         }
@@ -1019,7 +1059,9 @@ private:
 
         collectLocals(fn, dry_ctx);
         dry_ctx.return_slot_offset = dry_ctx.next_local_offset;
-        dry_ctx.call_arg_slot_base = dry_ctx.return_slot_offset + 1;
+        dry_ctx.call_arg_slot_base =
+            dry_ctx.return_slot_offset +
+            std::max(1, typeSizeWords(fn.return_type, layout_table_));
         dry_ctx.frame_words = align9(std::max(
             1,
             dry_ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas));
@@ -1059,7 +1101,9 @@ private:
         collectLocals(fn, ctx);
         ctx.callee_saved_regs = getCalleeSavedUsed(allocation, allocated_fn);
         ctx.return_slot_offset = ctx.next_local_offset + static_cast<int>(ctx.callee_saved_regs.size());
-        ctx.call_arg_slot_base = ctx.return_slot_offset + 1;
+        ctx.call_arg_slot_base =
+            ctx.return_slot_offset +
+            std::max(1, typeSizeWords(fn.return_type, layout_table_));
         const auto scratch_it = function_call_scratch_areas_.find(fn.name);
         const int scratch_areas = scratch_it == function_call_scratch_areas_.end()
             ? 0
@@ -1183,22 +1227,31 @@ private:
             ctx.raw("    store r" + std::to_string(ctx.callee_saved_regs[i]) + ", sp, " +
                     std::to_string(ctx.next_local_offset + static_cast<int>(i)));
         }
-        const std::size_t reg_params =
-            std::min<std::size_t>(fn.params.size(), kRegisterArgCount);
-        for (std::size_t i = 0; i < reg_params; ++i) {
-            const auto it = ctx.locals.find(fn.params[i].first);
-            if (it != ctx.locals.end()) {
-                ctx.raw("    store r" + std::to_string(13 + static_cast<int>(i)) +
-                        ", sp, " + std::to_string(it->second.offset));
-            }
-        }
-        for (std::size_t i = kRegisterArgCount; i < fn.params.size(); ++i) {
-            const auto it = ctx.locals.find(fn.params[i].first);
-            if (it != ctx.locals.end()) {
+        int argument_register_word = 0;
+        int stack_argument_word = 0;
+        for (const auto& parameter : fn.params) {
+            const auto it = ctx.locals.find(parameter.first);
+            if (it == ctx.locals.end()) continue;
+            const int width = isAggregateType(parameter.second)
+                ? 1
+                : std::max(1, typeSizeWords(parameter.second, layout_table_));
+            if (argument_register_word + width <= kRegisterArgCount) {
+                const int source = 13 + argument_register_word;
+                ctx.raw("    " + scalarMemoryMnemonic("store", parameter.second) +
+                        " r" + std::to_string(source) + ", sp, " +
+                        std::to_string(it->second.offset));
+                argument_register_word += width;
+            } else {
+                const int scratch = width == 2 ? 23 : 24;
                 const int stack_arg_offset =
-                    ctx.frame_words + static_cast<int>(i - kRegisterArgCount);
-                ctx.raw("    load r24, sp, " + std::to_string(stack_arg_offset));
-                ctx.raw("    store r24, sp, " + std::to_string(it->second.offset));
+                    ctx.frame_words + stack_argument_word;
+                ctx.raw("    " + scalarMemoryMnemonic("load", parameter.second) +
+                        " r" + std::to_string(scratch) + ", sp, " +
+                        std::to_string(stack_arg_offset));
+                ctx.raw("    " + scalarMemoryMnemonic("store", parameter.second) +
+                        " r" + std::to_string(scratch) + ", sp, " +
+                        std::to_string(it->second.offset));
+                stack_argument_word += width;
             }
         }
     }
@@ -1312,7 +1365,9 @@ private:
                  " to " + it->second.type.str(), stmt.span);
         }
         emitCvtIfNeeded(code, it->second.type, ctx);
-        ctx.line("store r" + std::to_string(code.reg) + ", sp, " + std::to_string(it->second.offset));
+        ctx.line(scalarMemoryMnemonic("store", it->second.type) +
+                 " r" + std::to_string(code.reg) + ", sp, " +
+                 std::to_string(it->second.offset));
         ctx.value(InstrOpcode::Store, it->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().args = {code.value};
@@ -1363,7 +1418,8 @@ private:
                  " to " + place.type.str(), stmt.span);
         }
         emitCvtIfNeeded(code, place.type, ctx);
-        ctx.line("store r" + std::to_string(code.reg) + ", r" +
+        ctx.line(scalarMemoryMnemonic("store", place.type) +
+                 " r" + std::to_string(code.reg) + ", r" +
                  std::to_string(place.reg) + ", 0");
         ctx.value(InstrOpcode::Store, place.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
@@ -1408,7 +1464,8 @@ private:
                  " to " + ctx.ast->return_type.str(), stmt.span);
             }
             emitCvtIfNeeded(code, ctx.ast->return_type, ctx);
-            ctx.line("store r" + std::to_string(code.reg) + ", sp, " +
+            ctx.line(scalarMemoryMnemonic("store", ctx.ast->return_type) +
+                     " r" + std::to_string(code.reg) + ", sp, " +
                      std::to_string(ctx.return_slot_offset));
             ctx.value(InstrOpcode::Store, ctx.ast->return_type, stmt.span);
             if (ctx.block && !ctx.block->instructions.empty()) {
@@ -1418,7 +1475,8 @@ private:
         }
         emitDropsForReturn(ctx);
         if (stmt.expr) {
-            ctx.line("load r13, sp, " + std::to_string(ctx.return_slot_offset));
+            ctx.line(scalarMemoryMnemonic("load", ctx.ast->return_type) +
+                     " r13, sp, " + std::to_string(ctx.return_slot_offset));
             ctx.value(InstrOpcode::Load, ctx.ast->return_type, stmt.span);
         } else {
             ctx.line("mov.t40 r13, 0");
@@ -1434,21 +1492,42 @@ private:
         ExprCode cond = emitExpr(stmt.expr, TypeRef::trit(), ctx);
         ctx.line("brn r" + std::to_string(cond.reg) + ", " + else_label);
         ctx.line("brz r" + std::to_string(cond.reg) + ", " + else_label);
+        if (ctx.block) {
+            ctx.block->terminator.kind = TerminatorKind::Branch3;
+            ctx.block->terminator.condition = cond.value;
+            ctx.block->terminator.target_neg = else_label;
+            ctx.block->terminator.target_zero = else_label;
+            ctx.block->terminator.target_pos = then_label;
+        }
         ctx.release(cond.reg);
 
+        ctx.ir.blocks.push_back(BasicBlock{then_label, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(then_label + ":");
         ctx.scope_vars.push_back({});
         for (const auto& child : stmt.body) emitStmt(child, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
         ctx.line("jmp " + end_label);
+        if (ctx.block && ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.block->terminator.kind = TerminatorKind::Jump;
+            ctx.block->terminator.target = end_label;
+        }
 
+        ctx.ir.blocks.push_back(BasicBlock{else_label, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(else_label + ":");
         ctx.scope_vars.push_back({});
         for (const auto& child : stmt.else_body) emitStmt(child, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
+        if (ctx.block && ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.block->terminator.kind = TerminatorKind::Jump;
+            ctx.block->terminator.target = end_label;
+        }
 
+        ctx.ir.blocks.push_back(BasicBlock{end_label, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(end_label + ":");
     }
 
@@ -1456,17 +1535,38 @@ private:
         std::string start = ctx.label("while_start");
         std::string body = ctx.label("while_body");
         std::string end = ctx.label("while_end");
+        if (ctx.block && ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.block->terminator.kind = TerminatorKind::Jump;
+            ctx.block->terminator.target = start;
+        }
+        ctx.ir.blocks.push_back(BasicBlock{start, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(start + ":");
         ExprCode cond = emitExpr(stmt.expr, TypeRef::unknown(), ctx);
         ctx.line("brn r" + std::to_string(cond.reg) + ", " + end);
         ctx.line("brz r" + std::to_string(cond.reg) + ", " + end);
+        if (ctx.block) {
+            ctx.block->terminator.kind = TerminatorKind::Branch3;
+            ctx.block->terminator.condition = cond.value;
+            ctx.block->terminator.target_neg = end;
+            ctx.block->terminator.target_zero = end;
+            ctx.block->terminator.target_pos = body;
+        }
         ctx.release(cond.reg);
+        ctx.ir.blocks.push_back(BasicBlock{body, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(body + ":");
         ctx.scope_vars.push_back({});
         for (const auto& child : stmt.body) emitStmt(child, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
         ctx.line("jmp " + start);
+        if (ctx.block && ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.block->terminator.kind = TerminatorKind::Jump;
+            ctx.block->terminator.target = start;
+        }
+        ctx.ir.blocks.push_back(BasicBlock{end, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(end + ":");
     }
 
@@ -1669,11 +1769,13 @@ private:
             targetType = local->second.type;
         }
 
-        if (!isNumericLike(targetType)) return false;
+        if (!isNumericLike(targetType) || usesWideT50Pair(targetType))
+            return false;
 
         ExprCode selected = emitTselValue(plan, cond, targetType, stmt.span, ctx);
         if (plan.kind == MatchTselKind::Return) {
-            ctx.line("store r" + std::to_string(selected.reg) + ", sp, " +
+            ctx.line(scalarMemoryMnemonic("store", targetType) +
+                     " r" + std::to_string(selected.reg) + ", sp, " +
                      std::to_string(ctx.return_slot_offset));
             ctx.value(InstrOpcode::Store, targetType, stmt.span);
             if (ctx.block && !ctx.block->instructions.empty()) {
@@ -1681,7 +1783,8 @@ private:
             }
             ctx.release(selected.reg);
             emitDropsForReturn(ctx);
-            ctx.line("load r13, sp, " + std::to_string(ctx.return_slot_offset));
+            ctx.line(scalarMemoryMnemonic("load", targetType) +
+                     " r13, sp, " + std::to_string(ctx.return_slot_offset));
             ctx.value(InstrOpcode::Load, targetType, stmt.span);
             ctx.line("jmp " + ctx.ast->name + "_return");
             ctx.value(InstrOpcode::Ret, targetType, stmt.span);
@@ -1697,7 +1800,8 @@ private:
         if (!local->second.mutable_binding) {
             diag("cannot assign to immutable binding", stmt.span);
         }
-        ctx.line("store r" + std::to_string(selected.reg) + ", sp, " +
+        ctx.line(scalarMemoryMnemonic("store", targetType) +
+                 " r" + std::to_string(selected.reg) + ", sp, " +
                  std::to_string(local->second.offset));
         ctx.value(InstrOpcode::Store, targetType, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
@@ -1829,22 +1933,30 @@ private:
         }
         int ra = ctx.acquire();
         int rb = ctx.acquire();
-        ctx.line("load r" + std::to_string(ra) + ", sp, " + std::to_string(a->second.offset));
+        ctx.line(scalarMemoryMnemonic("load", a->second.type) +
+                 " r" + std::to_string(ra) + ", sp, " +
+                 std::to_string(a->second.offset));
         ValueId id_a = ctx.value(InstrOpcode::Load, a->second.type, stmt.span, ra);
         
-        ctx.line("load r" + std::to_string(rb) + ", sp, " + std::to_string(b->second.offset));
+        ctx.line(scalarMemoryMnemonic("load", b->second.type) +
+                 " r" + std::to_string(rb) + ", sp, " +
+                 std::to_string(b->second.offset));
         ValueId id_b = ctx.value(InstrOpcode::Load, b->second.type, stmt.span, rb);
         
         ctx.line("swap r" + std::to_string(ra) + ", r" + std::to_string(rb));
         ctx.value(InstrOpcode::Swap, a->second.type, stmt.span);
         
-        ctx.line("store r" + std::to_string(ra) + ", sp, " + std::to_string(a->second.offset));
+        ctx.line(scalarMemoryMnemonic("store", a->second.type) +
+                 " r" + std::to_string(ra) + ", sp, " +
+                 std::to_string(a->second.offset));
         ctx.value(InstrOpcode::Store, a->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().args = {id_b};
         }
         
-        ctx.line("store r" + std::to_string(rb) + ", sp, " + std::to_string(b->second.offset));
+        ctx.line(scalarMemoryMnemonic("store", b->second.type) +
+                 " r" + std::to_string(rb) + ", sp, " +
+                 std::to_string(b->second.offset));
         ctx.value(InstrOpcode::Store, b->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().args = {id_a};
@@ -1928,7 +2040,9 @@ private:
             return ExprCode{addr, it->second.type, true, id};
         }
         int reg = ctx.acquire();
-        ctx.line("load r" + std::to_string(reg) + ", sp, " + std::to_string(it->second.offset));
+        ctx.line(scalarMemoryMnemonic("load", it->second.type) +
+                 " r" + std::to_string(reg) + ", sp, " +
+                 std::to_string(it->second.offset));
         ValueId id = ctx.value(InstrOpcode::Load, it->second.type, expr.span, reg);
         return ExprCode{reg, it->second.type, false, id};
     }
@@ -1967,7 +2081,9 @@ private:
                 return ptr;
             }
             int out = ptr.reg;
-            ctx.line("load r" + std::to_string(out) + ", r" + std::to_string(ptr.reg) + ", 0");
+            ctx.line(scalarMemoryMnemonic("load", elem) +
+                     " r" + std::to_string(out) + ", r" +
+                     std::to_string(ptr.reg) + ", 0");
             ValueId id = ctx.value(InstrOpcode::Deref, elem, expr.span, out);
             return ExprCode{out, elem, false, id};
         }
@@ -2127,7 +2243,9 @@ private:
             return ExprCode{place.reg, place.type, true, place_val};
         }
         int out = ctx.acquire();
-        ctx.line("load r" + std::to_string(out) + ", r" + std::to_string(place.reg) + ", 0");
+        ctx.line(scalarMemoryMnemonic("load", place.type) +
+                 " r" + std::to_string(out) + ", r" +
+                 std::to_string(place.reg) + ", 0");
         ValueId id = ctx.value(InstrOpcode::Load, place.type, span, out);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ValueId place_val = -1;
@@ -2154,7 +2272,8 @@ private:
                  " to " + expected.str(), expr ? expr->span : SourceSpan{});
         }
         emitCvtIfNeeded(code, expected, ctx);
-        ctx.line("store r" + std::to_string(code.reg) + ", r" +
+        ctx.line(scalarMemoryMnemonic("store", expected) +
+                 " r" + std::to_string(code.reg) + ", r" +
                  std::to_string(baseReg) + ", " + std::to_string(offset));
         ctx.value(InstrOpcode::Store, expected, expr ? expr->span : SourceSpan{});
         if (ctx.block && !ctx.block->instructions.empty()) {
@@ -2384,13 +2503,7 @@ private:
         }
         const auto paramIt = ctx.function_params.find(expr.text);
         std::vector<ValueId> arg_values;
-        if (expr.args.size() > kCallArgScratchWords) {
-            diag("function calls support at most " + std::to_string(kCallArgScratchWords) +
-                     " arguments in the bootstrap backend",
-                 expr.span);
-        }
-        const std::size_t argc =
-            std::min<std::size_t>(expr.args.size(), kCallArgScratchWords);
+        const std::size_t argc = expr.args.size();
         const int saved_call_arg_depth = ctx.call_arg_depth;
         if (saved_call_arg_depth >= kCallArgScratchAreas) {
             diag("nested function calls exceed bootstrap call scratch depth", expr.span);
@@ -2403,46 +2516,86 @@ private:
             std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
         ctx.call_arg_depth =
             std::min(saved_call_arg_depth + 1, kCallArgScratchAreas);
+        struct CallArgumentSlot {
+            TypeRef type;
+            int scratch_word = 0;
+            int width = 1;
+            int register_word = -1;
+            int stack_word = -1;
+        };
+        std::vector<CallArgumentSlot> argument_slots;
+        int scratch_word_count = 0;
+        int register_word_count = 0;
+        int stack_word_count = 0;
         for (std::size_t i = 0; i < argc; ++i) {
-            TypeRef expected = TypeRef::numeric(ir::Type::T40);
+            TypeRef argument_type = TypeRef::numeric(ir::Type::T40);
             if (paramIt != ctx.function_params.end() && i < paramIt->second.size()) {
-                expected = paramIt->second[i];
+                argument_type = paramIt->second[i];
             }
-            ExprCode arg = emitExpr(expr.args[i], expected, ctx);
-            if (isAggregateType(expected) && !arg.address) {
+            ExprCode arg = emitExpr(expr.args[i], argument_type, ctx);
+            if (isAggregateType(argument_type) && !arg.address) {
                 diag("aggregate arguments are passed by pointer in v1", expr.args[i]->span);
             }
-            ctx.line("store r" + std::to_string(arg.reg) + ", sp, " +
-                     std::to_string(scratch_base + static_cast<int>(i)));
+            const int width = isAggregateType(argument_type)
+                ? 1
+                : std::max(1, typeSizeWords(argument_type, layout_table_));
+            CallArgumentSlot slot;
+            slot.type = argument_type;
+            slot.scratch_word = scratch_word_count;
+            slot.width = width;
+            if (register_word_count + width <= kRegisterArgCount) {
+                slot.register_word = register_word_count;
+                register_word_count += width;
+            } else {
+                slot.stack_word = stack_word_count;
+                stack_word_count += width;
+            }
+            ctx.line(scalarMemoryMnemonic("store", argument_type) +
+                     " r" + std::to_string(arg.reg) + ", sp, " +
+                     std::to_string(scratch_base + scratch_word_count));
+            scratch_word_count += width;
+            argument_slots.push_back(slot);
             arg_values.push_back(arg.value);
             ctx.release(arg.reg);
         }
+        if (scratch_word_count > kCallArgScratchWords) {
+            diag("function-call arguments require " +
+                     std::to_string(scratch_word_count) +
+                     " scratch words, exceeding the bootstrap limit of " +
+                     std::to_string(kCallArgScratchWords),
+                 expr.span);
+        }
         ctx.call_arg_depth = saved_call_arg_depth;
-        const std::size_t reg_argc = std::min<std::size_t>(argc, kRegisterArgCount);
-        const int stack_argc =
-            argc > kRegisterArgCount ? static_cast<int>(argc - kRegisterArgCount) : 0;
-        if (stack_argc > 0) {
-            ctx.line("mov.t40 r24, " + std::to_string(stack_argc));
+        if (stack_word_count > 0) {
+            ctx.line("mov.t40 r24, " + std::to_string(stack_word_count));
             ctx.line("sub.t40 sp, sp, r24");
         }
-        for (std::size_t i = 0; i < reg_argc; ++i) {
-            ctx.line("load r" + std::to_string(13 + static_cast<int>(i)) +
-                     ", sp, " +
-                     std::to_string(scratch_base + stack_argc + static_cast<int>(i)));
-        }
-        for (int i = 0; i < stack_argc; ++i) {
-            ctx.line("load r24, sp, " +
-                     std::to_string(scratch_base + stack_argc + kRegisterArgCount + i));
-            ctx.line("store r24, sp, " + std::to_string(i));
+        for (const auto& slot : argument_slots) {
+            const int shifted_scratch =
+                scratch_base + stack_word_count + slot.scratch_word;
+            if (slot.register_word >= 0) {
+                ctx.line(scalarMemoryMnemonic("load", slot.type) +
+                         " r" + std::to_string(13 + slot.register_word) +
+                         ", sp, " + std::to_string(shifted_scratch));
+            } else {
+                const int scratch = slot.width == 2 ? 23 : 24;
+                ctx.line(scalarMemoryMnemonic("load", slot.type) +
+                         " r" + std::to_string(scratch) + ", sp, " +
+                         std::to_string(shifted_scratch));
+                ctx.line(scalarMemoryMnemonic("store", slot.type) +
+                         " r" + std::to_string(scratch) + ", sp, " +
+                         std::to_string(slot.stack_word));
+            }
         }
         ctx.line("call " + expr.text);
-        if (stack_argc > 0) {
-            ctx.line("mov.t40 r24, " + std::to_string(stack_argc));
+        if (stack_word_count > 0) {
+            ctx.line("mov.t40 r24, " + std::to_string(stack_word_count));
             ctx.line("add.t40 sp, sp, r24");
         }
         TypeRef ret = retIt->second;
         int out = ctx.acquire();
-        ctx.line("copy r" + std::to_string(out) + ", r13");
+        ctx.line(std::string("copy") + (usesWideT50Pair(ret) ? ".t50" : "") +
+                 " r" + std::to_string(out) + ", r13");
         ValueId id = ctx.value(InstrOpcode::Call, ret, expr.span, out);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().symbol = expr.text;
@@ -2664,6 +2817,82 @@ private:
             return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
         }
 
+        if (expr.text == "arch_wait") {
+            if (!expr.args.empty()) {
+                diag("arch_wait takes no arguments", expr.span);
+            }
+            ctx.line("wait");
+            Instr instr;
+            instr.opcode = InstrOpcode::Wait;
+            instr.type = TypeRef::voidType();
+            instr.effect = Effect::Control;
+            instr.span = expr.span;
+            ctx.block->instructions.push_back(instr);
+            return emitImmediate(
+                0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+        }
+
+        if (expr.text == "tlbinv") {
+            if (expr.args.size() != 3) {
+                diag("tlbinv requires address, ASID, and scope", expr.span);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
+            ExprCode address = emitExpr(
+                expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
+            ExprCode target_asid = emitExpr(
+                expr.args[1], TypeRef::numeric(ir::Type::T40), ctx);
+            ExprCode scope = emitExpr(
+                expr.args[2], TypeRef::numeric(ir::Type::T40), ctx);
+            ctx.line(
+                "tlbinv r" + std::to_string(address.reg) +
+                ", r" + std::to_string(target_asid.reg) +
+                ", r" + std::to_string(scope.reg));
+            Instr instr;
+            instr.opcode = InstrOpcode::TlbInv;
+            instr.type = TypeRef::voidType();
+            instr.effect = Effect::Control;
+            instr.span = expr.span;
+            instr.args = {address.value, target_asid.value, scope.value};
+            ctx.block->instructions.push_back(instr);
+            ctx.release(address.reg);
+            ctx.release(target_asid.reg);
+            ctx.release(scope.reg);
+            return emitImmediate(
+                0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+        }
+
+        if (expr.text == "tmod") {
+            if (expr.args.size() != 2) {
+                diag("tmod requires dividend and divisor", expr.span);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
+            ExprCode dividend = emitExpr(
+                expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
+            ExprCode divisor = emitExpr(
+                expr.args[1], TypeRef::numeric(ir::Type::T40), ctx);
+            ctx.line(
+                "tmod.t40 r" + std::to_string(dividend.reg) +
+                ", r" + std::to_string(dividend.reg) +
+                ", r" + std::to_string(divisor.reg));
+            const ValueId result = ctx.value(
+                InstrOpcode::Tmod,
+                TypeRef::numeric(ir::Type::T40),
+                expr.span,
+                dividend.reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    dividend.value, divisor.value};
+            }
+            ctx.release(divisor.reg);
+            return ExprCode{
+                dividend.reg,
+                TypeRef::numeric(ir::Type::T40),
+                false,
+                result};
+        }
+
         if (expr.text == "fence") {
             int order = isa::ATOMIC_ORDER_ACQ_REL;
             if (!expr.args.empty()) {
@@ -2798,8 +3027,6 @@ private:
         if (name == "sys_write_int") return runtime::sys_write_int;
         if (name == "sys_newline") return runtime::sys_newline;
         if (name == "sys_clear") return runtime::sys_clear;
-        if (name == "sys_yield") return runtime::sys_yield;
-        if (name == "sys_sleep_until_tick") return runtime::sys_sleep_until_tick;
         if (name == "sys_exit") return runtime::sys_exit;
         if (name == "sys_getpid") return runtime::sys_getpid;
         if (name == "sys_uptime") return runtime::sys_uptime;
@@ -2838,6 +3065,9 @@ private:
         if (name == "sys_mkdir") return runtime::sys_mkdir;
         if (name == "sys_unlink") return runtime::sys_unlink;
         if (name == "sys_sleep") return runtime::sys_sleep;
+        if (name == "sys_yield") return runtime::sys_yield;
+        if (name == "sys_sleep_until_tick")
+            return runtime::sys_sleep_until_tick;
         if (name == "sys_ps") return runtime::sys_ps;
         if (name == "sys_fsync") return runtime::sys_fsync;
         if (name == "sys_kill") return runtime::sys_kill;
@@ -2901,6 +3131,8 @@ private:
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {
         return name == "csr_read" || name == "csr_write" ||
+               name == "arch_wait" ||
+               name == "tlbinv" || name == "tmod" ||
                name == "tldr" || name == "tstr" || name == "fence" ||
                name == "load" || name == "store";
     }
@@ -2937,18 +3169,93 @@ private:
                 "function '" + fn.name + "' has no basic blocks", SourceSpan{module.name, 1, 1, 1}});
             continue;
         }
-        std::set<ValueId> defined;
+        const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+        const DominanceInfo dominance = computeDominance(fn, cfg);
+        for (const std::string& target : cfg.invalid_targets) {
+            diagnostics.push_back({DiagnosticSeverity::Error,
+                "unknown CFG target '" + target + "' in function '" +
+                    fn.name + "'",
+                SourceSpan{module.name, 1, 1, 1}});
+        }
+
+        struct Definition {
+            std::string block;
+            int instruction = -1;
+        };
+        std::map<ValueId, Definition> definitions;
+        for (const auto& block : fn.blocks) {
+            for (std::size_t index = 0;
+                 index < block.instructions.size(); ++index) {
+                const Instr& instr = block.instructions[index];
+                if (instr.def < 0) continue;
+                if (definitions.count(instr.def)) {
+                    diagnostics.push_back({DiagnosticSeverity::Error,
+                        "duplicate SSA definition for value " +
+                            std::to_string(instr.def),
+                        instr.span});
+                } else {
+                    definitions[instr.def] = {
+                        block.name, static_cast<int>(index)};
+                }
+            }
+        }
+
+        auto validateUse = [&](ValueId value,
+                               const std::string& use_block,
+                               int use_instruction,
+                               const SourceSpan& span) {
+            if (value < 0) return;
+            const auto found = definitions.find(value);
+            if (found == definitions.end()) {
+                diagnostics.push_back({DiagnosticSeverity::Error,
+                    "use-before-def in function '" + fn.name + "'", span});
+                return;
+            }
+            const Definition& def = found->second;
+            const bool valid =
+                def.block == use_block
+                    ? def.instruction < use_instruction
+                    : dominance.dominates(def.block, use_block);
+            if (!valid) {
+                diagnostics.push_back({DiagnosticSeverity::Error,
+                    "SSA definition does not dominate use in function '" +
+                        fn.name + "'",
+                    span});
+            }
+        };
+
         for (const auto& block : fn.blocks) {
             if (block.terminator.kind == TerminatorKind::None) {
                 diagnostics.push_back({DiagnosticSeverity::Error,
                     "basic block '" + block.name + "' has no terminator",
                     SourceSpan{module.name, 1, 1, 1}});
             }
-            for (const auto& instr : block.instructions) {
-                for (ValueId arg : instr.args) {
-                    if (arg >= 0 && !defined.count(arg)) {
+            for (std::size_t index = 0;
+                 index < block.instructions.size(); ++index) {
+                const Instr& instr = block.instructions[index];
+                if (instr.opcode == InstrOpcode::Phi) {
+                    std::set<std::string> incoming_predecessors;
+                    for (const auto& incoming : instr.phi_incoming) {
+                        incoming_predecessors.insert(incoming.first);
+                        const auto found = definitions.find(incoming.second);
+                        if (found == definitions.end() ||
+                            !dominance.dominates(
+                                found->second.block, incoming.first)) {
+                            diagnostics.push_back({DiagnosticSeverity::Error,
+                                "phi incoming value does not dominate predecessor",
+                                instr.span});
+                        }
+                    }
+                    if (incoming_predecessors !=
+                        cfg.predecessors.at(block.name)) {
                         diagnostics.push_back({DiagnosticSeverity::Error,
-                            "use-before-def in function '" + fn.name + "'", instr.span});
+                            "phi incoming predecessor set does not match CFG",
+                            instr.span});
+                    }
+                } else {
+                    for (ValueId arg : instr.args) {
+                        validateUse(arg, block.name,
+                                    static_cast<int>(index), instr.span);
                     }
                 }
                 if (instr.opcode == InstrOpcode::Csrr ||
@@ -2967,8 +3274,10 @@ private:
                             "invalid memory-order trit in structural IR", instr.span});
                     }
                 }
-                if (instr.def >= 0) defined.insert(instr.def);
             }
+            validateUse(block.terminator.condition, block.name,
+                        static_cast<int>(block.instructions.size()),
+                        SourceSpan{module.name, 1, 1, 1});
         }
     }
     return diagnostics;
@@ -2978,6 +3287,8 @@ private:
     return instr.effect == Effect::Pure &&
            instr.opcode != InstrOpcode::Store &&
            instr.opcode != InstrOpcode::Syscall &&
+           instr.opcode != InstrOpcode::Wait &&
+           instr.opcode != InstrOpcode::TlbInv &&
            instr.opcode != InstrOpcode::Fence &&
            instr.opcode != InstrOpcode::Tldr &&
            instr.opcode != InstrOpcode::Tstr &&
@@ -3010,15 +3321,24 @@ inline void addInterferenceEdge(
     };
     const std::vector<int> calleePreferred = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     const std::vector<int> vectorColors = {0, 1, 2, 3, 4, 5, 6, 7};
+    const std::vector<int> spillTemporaryColors =
+        {13, 14, 15, 16, 17, 18, 24};
 
     std::map<ValueId, TypeRef> valueTypes;
     std::map<ValueId, std::set<ValueId>> graph;
     std::set<std::pair<ValueId, ValueId>> moveEdges;
     std::set<ValueId> liveAcrossCalls;
+    std::set<ValueId> spillTemporaries;
 
     for (const auto& fn : module.functions) {
+        const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+        const BlockLiveness block_liveness =
+            computeBlockLiveness(fn, cfg);
         for (const auto& block : fn.blocks) {
-            std::set<ValueId> live;
+            std::set<ValueId> live =
+                block_liveness.live_out.count(block.name)
+                    ? block_liveness.live_out.at(block.name)
+                    : std::set<ValueId>{};
             if (block.terminator.condition >= 0) live.insert(block.terminator.condition);
             for (auto it = block.instructions.rbegin(); it != block.instructions.rend(); ++it) {
                 const Instr& instr = *it;
@@ -3037,6 +3357,8 @@ inline void addInterferenceEdge(
                 }
                 if (instr.def >= 0) {
                     valueTypes[instr.def] = instr.type;
+                    if (instr.spill_temporary)
+                        spillTemporaries.insert(instr.def);
                     graph[instr.def];
                     for (ValueId value : live) addInterferenceEdge(graph, instr.def, value);
                     live.erase(instr.def);
@@ -3065,10 +3387,30 @@ inline void addInterferenceEdge(
             return a < b;
         });
 
-    auto colorAvailable = [&](ValueId value, int color, const std::map<ValueId, int>& colors) {
+    auto registerWidth = [&](ValueId value) {
+        auto type = valueTypes.find(value);
+        if (type == valueTypes.end()) return 1;
+        return ((type->second.kind == TypeKind::Numeric ||
+                 type->second.kind == TypeKind::Lane) &&
+                type->second.scalar == ir::Type::T50)
+            ? 2
+            : 1;
+    };
+    auto rangesOverlap = [](int lhs, int lhs_width,
+                            int rhs, int rhs_width) {
+        return lhs < rhs + rhs_width && rhs < lhs + lhs_width;
+    };
+    auto colorAvailable = [&](ValueId value, int color,
+                              const std::map<ValueId, int>& colors) {
+        const int width = registerWidth(value);
+        if (width == 2 && color + 1 >= isa::REG_COUNT) return false;
         for (ValueId neighbor : graph[value]) {
             auto it = colors.find(neighbor);
-            if (it != colors.end() && it->second == color) return false;
+            if (it != colors.end() &&
+                rangesOverlap(color, width, it->second,
+                              registerWidth(neighbor))) {
+                return false;
+            }
         }
         return true;
     };
@@ -3079,8 +3421,24 @@ inline void addInterferenceEdge(
         const bool vector = type.kind == TypeKind::Vector;
         std::map<ValueId, int>& colors = vector ? result.vector_registers
                                                 : result.scalar_registers;
-        const std::vector<int>& palette = vector ? vectorColors :
-            (liveAcrossCalls.count(value) ? calleePreferred : scalarColors);
+        const std::vector<int>& base_palette = vector ? vectorColors :
+            (spillTemporaries.count(value) ? spillTemporaryColors :
+             (liveAcrossCalls.count(value) ? calleePreferred : scalarColors));
+        std::vector<int> pair_palette;
+        const std::vector<int>* palette_ptr = &base_palette;
+        if (!vector && registerWidth(value) == 2) {
+            for (int color : base_palette) {
+                if (color + 1 >= isa::REG_COUNT) continue;
+                if (color == 12 || color == 18 || color == 24 ||
+                    color + 1 == 24 ||
+                    color == isa::R25_LR || color == isa::R26_SP) {
+                    continue;
+                }
+                pair_palette.push_back(color);
+            }
+            palette_ptr = &pair_palette;
+        }
+        const std::vector<int>& palette = *palette_ptr;
 
         bool assigned = false;
         for (const auto& move : moveEdges) {
@@ -3122,6 +3480,10 @@ inline void addInterferenceEdge(
     for (const auto& entry : result.scalar_registers) {
         const int reg = entry.second;
         if (reg >= 1 && reg <= 12) result.callee_saved_used.insert(reg);
+        if (registerWidth(entry.first) == 2 &&
+            reg + 1 >= 1 && reg + 1 <= 12) {
+            result.callee_saved_used.insert(reg + 1);
+        }
         if (liveAcrossCalls.count(entry.first) &&
             ((reg >= 19 && reg <= 24) || (reg >= 13 && reg <= 18))) {
             result.caller_saved_live_across_calls.insert(reg);
@@ -3131,6 +3493,216 @@ inline void addInterferenceEdge(
     result.interference_edges /= 2;
     result.success = result.diagnostics.empty();
     return result;
+}
+
+[[nodiscard]] inline AllocationResult allocateRegistersWithSpillRewrite(
+    Module& module,
+    const CompilerOptions& options,
+    int max_rounds) {
+
+    AllocationResult final_result;
+    if (max_rounds < 1) max_rounds = 1;
+    std::map<ValueId, int> all_spill_slots;
+    int total_spills = 0;
+    int total_loads = 0;
+    int total_stores = 0;
+    int next_slot = 0;
+    int next_value = 1;
+    for (const Function& fn : module.functions) {
+        next_value = std::max(next_value, fn.ir_value_ceiling);
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                next_value = std::max(next_value, instr.def + 1);
+                if ((instr.opcode == InstrOpcode::SpillLoad ||
+                     instr.opcode == InstrOpcode::SpillStore) &&
+                    instr.aux >= 0) {
+                    next_slot = std::max(next_slot, instr.aux + 9);
+                }
+            }
+        }
+    }
+
+    for (int round = 0; round < max_rounds; ++round) {
+        AllocationResult allocation =
+            allocateRegisters(module, options);
+        if (!allocation.diagnostics.empty()) {
+            allocation.spill_slots.insert(
+                all_spill_slots.begin(), all_spill_slots.end());
+            allocation.spills = total_spills + allocation.spills;
+            allocation.spill_rewrite_rounds = round;
+            return allocation;
+        }
+        if (allocation.spill_slots.empty()) {
+            allocation.spill_slots = all_spill_slots;
+            allocation.spills = total_spills;
+            allocation.spill_rewrite_rounds = round;
+            allocation.spill_loads = total_loads;
+            allocation.spill_stores = total_stores;
+            allocation.success = true;
+            return allocation;
+        }
+
+        std::map<ValueId, int> current_slots;
+        for (const auto& spill : allocation.spill_slots) {
+            current_slots[spill.first] = next_slot;
+            all_spill_slots[spill.first] = next_slot;
+            next_slot += 9;
+        }
+        total_spills += static_cast<int>(current_slots.size());
+
+        std::map<ValueId, TypeRef> value_types;
+        for (const Function& fn : module.functions) {
+            for (const BasicBlock& block : fn.blocks) {
+                for (const Instr& instr : block.instructions) {
+                    if (instr.def >= 0) value_types[instr.def] = instr.type;
+                }
+            }
+        }
+        auto spillType = [&](ValueId value) {
+            const auto found = value_types.find(value);
+            return found == value_types.end()
+                ? TypeRef::numeric(ir::Type::T40)
+                : found->second;
+        };
+        auto makeLoad = [&](ValueId original,
+                            const SourceSpan& span) {
+            Instr load;
+            load.def = next_value++;
+            load.opcode = InstrOpcode::SpillLoad;
+            load.type = spillType(original);
+            load.aux = current_slots.at(original);
+            load.symbol = "$spill";
+            load.effect = Effect::ReadMem;
+            load.span = span;
+            load.spill_temporary = true;
+            ++total_loads;
+            return load;
+        };
+        auto makeStore = [&](ValueId original,
+                             ValueId source,
+                             const SourceSpan& span) {
+            Instr store;
+            store.opcode = InstrOpcode::SpillStore;
+            store.type = TypeRef::voidType();
+            store.args = {source};
+            store.aux = current_slots.at(original);
+            store.symbol = "$spill";
+            store.effect = Effect::WriteMem;
+            store.span = span;
+            ++total_stores;
+            return store;
+        };
+
+        for (Function& fn : module.functions) {
+            const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+            if (!cfg.invalid_targets.empty()) continue;
+
+            // Phi operands are edge uses. Materialize each spilled incoming
+            // value in its predecessor, once per (predecessor,value) pair.
+            std::map<std::pair<std::string, ValueId>, ValueId> edge_loads;
+            for (BasicBlock& block : fn.blocks) {
+                for (Instr& phi : block.instructions) {
+                    if (phi.opcode != InstrOpcode::Phi) break;
+                    for (auto& incoming : phi.phi_incoming) {
+                        if (!current_slots.count(incoming.second)) continue;
+                        const auto key =
+                            std::make_pair(incoming.first, incoming.second);
+                        auto existing = edge_loads.find(key);
+                        if (existing == edge_loads.end()) {
+                            Instr load =
+                                makeLoad(incoming.second, phi.span);
+                            const ValueId replacement = load.def;
+                            fn.blocks[cfg.index.at(incoming.first)]
+                                .instructions.push_back(std::move(load));
+                            existing = edge_loads.emplace(
+                                key, replacement).first;
+                        }
+                        incoming.second = existing->second;
+                    }
+                }
+            }
+
+            for (BasicBlock& block : fn.blocks) {
+                std::vector<Instr> rewritten;
+                rewritten.reserve(block.instructions.size() * 2);
+                std::vector<Instr> phi_stores;
+                std::size_t index = 0;
+                while (index < block.instructions.size() &&
+                       block.instructions[index].opcode ==
+                           InstrOpcode::Phi) {
+                    Instr phi = std::move(block.instructions[index++]);
+                    if (current_slots.count(phi.def)) {
+                        const ValueId original = phi.def;
+                        phi.def = next_value++;
+                        phi_stores.push_back(
+                            makeStore(original, phi.def, phi.span));
+                    }
+                    rewritten.push_back(std::move(phi));
+                }
+                rewritten.insert(
+                    rewritten.end(),
+                    std::make_move_iterator(phi_stores.begin()),
+                    std::make_move_iterator(phi_stores.end()));
+
+                for (; index < block.instructions.size(); ++index) {
+                    Instr instr =
+                        std::move(block.instructions[index]);
+                    std::map<ValueId, ValueId> loaded_for_instruction;
+                    for (ValueId& argument : instr.args) {
+                        if (!current_slots.count(argument)) continue;
+                        auto loaded =
+                            loaded_for_instruction.find(argument);
+                        if (loaded == loaded_for_instruction.end()) {
+                            Instr load = makeLoad(argument, instr.span);
+                            const ValueId replacement = load.def;
+                            rewritten.push_back(std::move(load));
+                            loaded = loaded_for_instruction.emplace(
+                                argument, replacement).first;
+                        }
+                        argument = loaded->second;
+                    }
+                    if (current_slots.count(instr.def)) {
+                        const ValueId original = instr.def;
+                        instr.def = next_value++;
+                        instr.spill_temporary = true;
+                        const ValueId replacement = instr.def;
+                        rewritten.push_back(std::move(instr));
+                        rewritten.push_back(
+                            makeStore(
+                                original, replacement,
+                                rewritten.back().span));
+                    } else {
+                        rewritten.push_back(std::move(instr));
+                    }
+                }
+                if (current_slots.count(block.terminator.condition)) {
+                    Instr load = makeLoad(
+                        block.terminator.condition, SourceSpan{});
+                    block.terminator.condition = load.def;
+                    rewritten.push_back(std::move(load));
+                }
+                block.instructions = std::move(rewritten);
+            }
+            fn.ir_value_ceiling = next_value;
+        }
+    }
+
+    final_result = allocateRegisters(module, options);
+    const int unresolved_spills = final_result.spills;
+    final_result.spill_slots = all_spill_slots;
+    final_result.spills = total_spills + unresolved_spills;
+    final_result.spill_rewrite_rounds = max_rounds;
+    final_result.spill_loads = total_loads;
+    final_result.spill_stores = total_stores;
+    if (unresolved_spills > 0) {
+        final_result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "spill rewrite did not converge after " +
+                std::to_string(max_rounds) + " rounds",
+            SourceSpan{module.name, 1, 1, 1}});
+        final_result.success = false;
+    }
+    return final_result;
 }
 
 [[nodiscard]] inline std::string instrKey(const Instr& instr) {
@@ -3160,6 +3732,12 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
     if (level == OptimizationLevel::None) return stats;
 
     for (auto& fn : module.functions) {
+        if (options.enable_mem2reg) {
+            const Mem2RegResult promoted = promoteMemoryToSSA(fn);
+            stats.mem2reg_promotions += promoted.promoted_allocas;
+        }
+        const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+        const BlockLiveness liveness = computeBlockLiveness(fn, cfg);
         for (auto& block : fn.blocks) {
             std::map<ValueId, long long> constants;
             for (auto& instr : block.instructions) {
@@ -3240,7 +3818,9 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
                 }
             }
 
-            std::set<ValueId> used;
+            std::set<ValueId> used = liveness.live_out.count(block.name)
+                ? liveness.live_out.at(block.name)
+                : std::set<ValueId>{};
             if (block.terminator.condition >= 0) used.insert(block.terminator.condition);
             for (const auto& instr : block.instructions) {
                 for (ValueId arg : instr.args) if (arg >= 0) used.insert(arg);
@@ -3278,7 +3858,6 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
             }
         }  // for (auto& block : fn.blocks)
     }  // for (auto& fn : module.functions)
-    if (options.enable_mem2reg) stats.mem2reg_promotions = 0;
     return stats;
 }
 

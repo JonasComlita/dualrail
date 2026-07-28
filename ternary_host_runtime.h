@@ -26,8 +26,15 @@ namespace host {
 
 inline constexpr std::uint64_t TOS_BOOT_MAGIC = 0x31544f4f424f5354ULL; // "TSOBOOT1"
 inline constexpr std::uint32_t TOS_BOOT_LEGACY_FORMAT_VERSION = 1;
-inline constexpr std::uint32_t TOS_BOOT_FORMAT_VERSION = 2;
-inline constexpr std::uint64_t TOS_SPARSE_DISK_MAGIC = 0x54524954535031ULL; // "TRITSP1"
+inline constexpr std::uint32_t TOS_BOOT_TRANSITION_FORMAT_VERSION = 2;
+inline constexpr std::uint32_t TOS_BOOT_FORMAT_VERSION =
+    architecture::v2::TBOOT_WRITE_VERSION;
+inline constexpr std::uint64_t TOS_SPARSE_DISK_LEGACY_MAGIC =
+    0x54524954535031ULL; // "TRITSP1"
+inline constexpr std::uint64_t TOS_SPARSE_DISK_MAGIC =
+    0x54524954535032ULL; // "TRITSP2"
+inline constexpr std::uint32_t TOS_SPARSE_DISK_VERSION =
+    architecture::v2::TDISK_WRITE_VERSION;
 inline constexpr int TOS_IMAGE_SECTION_EXECUTABLE = 1 << 0;
 inline constexpr int TOS_IMAGE_SECTION_KERNEL = 1 << 1;
 inline constexpr int TOS_IMAGE_SECTION_APP = 1 << 2;
@@ -40,6 +47,11 @@ struct TosAppManifestEntry {
     int text_pages = 0;
     int data_pages = 0;
     int stack_words = 0;
+    int isa_version = architecture::v2::ISA_VERSION;
+    std::uint64_t required_features =
+        isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
 };
 
 struct TosImageSection {
@@ -60,6 +72,13 @@ struct TosImageManifest {
     int boot_entry = 0;
     int framebuffer_width = 80;
     int framebuffer_height = 60;
+    int isa_version = architecture::v2::ISA_VERSION;
+    std::uint64_t required_features =
+        isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+    int scalar_word_trits = architecture::v2::SCALAR_WORD_TRITS;
+    int base_page_words = architecture::v2::BASE_PAGE_WORDS;
+    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     std::vector<TosImageSection> sections;
     std::vector<TosAppManifestEntry> apps;
 };
@@ -68,6 +87,7 @@ struct TosBootImage {
     TosImageManifest manifest;
     std::vector<isa::TritWord27> program;
     std::vector<long long> data_words;
+    std::vector<std::uint64_t> data_words_raw;
     std::vector<long long> rootfs_words;
 };
 
@@ -178,26 +198,47 @@ inline std::uint64_t fnv1a(const std::vector<std::uint8_t>& data) {
 }
 
 inline bool appendManifestEntry(std::vector<std::uint8_t>& out,
-                                const TosAppManifestEntry& entry) {
+                                const TosAppManifestEntry& entry,
+                                std::uint32_t format_version) {
     if (!appendString(out, entry.name) || !appendString(out, entry.path)) return false;
     appendPod<std::int32_t>(out, entry.text_ppn);
     appendPod<std::int32_t>(out, entry.entry_pc);
     appendPod<std::int32_t>(out, entry.text_pages);
     appendPod<std::int32_t>(out, entry.data_pages);
     appendPod<std::int32_t>(out, entry.stack_words);
+    if (format_version >= 3) {
+        appendPod<std::int32_t>(out, entry.isa_version);
+        appendPod<std::uint64_t>(out, entry.required_features);
+        appendPod<std::int32_t>(out, entry.function_abi_version);
+        appendPod<std::int32_t>(out, entry.syscall_abi_version);
+    }
     return true;
 }
 
 inline bool readManifestEntry(const std::vector<std::uint8_t>& in,
                               std::size_t& offset,
-                              TosAppManifestEntry& entry) {
-    return readString(in, offset, entry.name) &&
-           readString(in, offset, entry.path) &&
-           readPod(in, offset, entry.text_ppn) &&
-           readPod(in, offset, entry.entry_pc) &&
-           readPod(in, offset, entry.text_pages) &&
-           readPod(in, offset, entry.data_pages) &&
-           readPod(in, offset, entry.stack_words);
+                              TosAppManifestEntry& entry,
+                              std::uint32_t format_version) {
+    if (!readString(in, offset, entry.name) ||
+        !readString(in, offset, entry.path) ||
+        !readPod(in, offset, entry.text_ppn) ||
+        !readPod(in, offset, entry.entry_pc) ||
+        !readPod(in, offset, entry.text_pages) ||
+        !readPod(in, offset, entry.data_pages) ||
+        !readPod(in, offset, entry.stack_words)) {
+        return false;
+    }
+    if (format_version >= 3) {
+        return readPod(in, offset, entry.isa_version) &&
+               readPod(in, offset, entry.required_features) &&
+               readPod(in, offset, entry.function_abi_version) &&
+               readPod(in, offset, entry.syscall_abi_version);
+    }
+    entry.isa_version = 1;
+    entry.required_features = 0;
+    entry.function_abi_version = 1;
+    entry.syscall_abi_version = vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    return true;
 }
 
 inline bool appendImageSection(std::vector<std::uint8_t>& out,
@@ -238,6 +279,14 @@ inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
         !appendString(out, image.manifest.image_version)) {
         return {};
     }
+    if (image.manifest.format_version >= 3) {
+        appendPod<std::int32_t>(out, image.manifest.isa_version);
+        appendPod<std::uint64_t>(out, image.manifest.required_features);
+        appendPod<std::int32_t>(out, image.manifest.scalar_word_trits);
+        appendPod<std::int32_t>(out, image.manifest.base_page_words);
+        appendPod<std::int32_t>(out, image.manifest.function_abi_version);
+        appendPod<std::int32_t>(out, image.manifest.syscall_abi_version);
+    }
 
     if (!checkedSize(image.manifest.apps.size()) ||
         !checkedSize(image.manifest.sections.size()) ||
@@ -254,7 +303,8 @@ inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
 
     appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.manifest.apps.size()));
     for (const TosAppManifestEntry& entry : image.manifest.apps) {
-        if (!appendManifestEntry(out, entry)) return {};
+        if (!appendManifestEntry(
+                out, entry, image.manifest.format_version)) return {};
     }
 
     appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.program.size()));
@@ -263,8 +313,19 @@ inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
     }
 
     appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.data_words.size()));
-    for (long long word : image.data_words) {
-        appendPod<std::int64_t>(out, static_cast<std::int64_t>(word));
+    for (std::size_t index = 0; index < image.data_words.size(); ++index) {
+        if (image.manifest.format_version >= 3) {
+            const std::uint64_t raw =
+                index < image.data_words_raw.size()
+                    ? image.data_words_raw[index]
+                    : vm::convertValue(
+                          vm::ops::fromLong(image.data_words[index]),
+                          TernaryMode::T40).asTriple().data;
+            appendPod<std::uint64_t>(out, raw);
+        } else {
+            appendPod<std::int64_t>(
+                out, static_cast<std::int64_t>(image.data_words[index]));
+        }
     }
     return out;
 }
@@ -279,6 +340,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
         return false;
     }
     if (version != TOS_BOOT_LEGACY_FORMAT_VERSION &&
+        version != TOS_BOOT_TRANSITION_FORMAT_VERSION &&
         version != TOS_BOOT_FORMAT_VERSION) {
         setError(error, "unsupported boot image format version " + std::to_string(version));
         return false;
@@ -294,8 +356,29 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
         setError(error, "boot image manifest is truncated");
         return false;
     }
+    if (version >= 3) {
+        if (!readPod(payload, offset, decoded.manifest.isa_version) ||
+            !readPod(payload, offset, decoded.manifest.required_features) ||
+            !readPod(payload, offset, decoded.manifest.scalar_word_trits) ||
+            !readPod(payload, offset, decoded.manifest.base_page_words) ||
+            !readPod(payload, offset,
+                     decoded.manifest.function_abi_version) ||
+            !readPod(payload, offset,
+                     decoded.manifest.syscall_abi_version)) {
+            setError(error, "boot image architecture metadata is truncated");
+            return false;
+        }
+    } else {
+        decoded.manifest.isa_version = 1;
+        decoded.manifest.required_features = 0;
+        decoded.manifest.scalar_word_trits = 50;
+        decoded.manifest.base_page_words = 27;
+        decoded.manifest.function_abi_version = 1;
+        decoded.manifest.syscall_abi_version =
+            vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    }
 
-    if (version == TOS_BOOT_FORMAT_VERSION) {
+    if (version >= TOS_BOOT_TRANSITION_FORMAT_VERSION) {
         std::uint32_t section_count = 0;
         if (!readPod(payload, offset, section_count)) {
             setError(error, "boot image section table is missing");
@@ -320,7 +403,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
     decoded.manifest.apps.reserve(app_count);
     for (std::uint32_t i = 0; i < app_count; ++i) {
         TosAppManifestEntry entry;
-        if (!readManifestEntry(payload, offset, entry)) {
+        if (!readManifestEntry(payload, offset, entry, version)) {
             setError(error, "boot image app registry is truncated");
             return false;
         }
@@ -348,13 +431,27 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
         return false;
     }
     decoded.data_words.assign(data_words, 0);
+    if (version >= 3) decoded.data_words_raw.assign(data_words, 0);
     for (std::uint32_t i = 0; i < data_words; ++i) {
-        std::int64_t word = 0;
-        if (!readPod(payload, offset, word)) {
-            setError(error, "boot image data segment is truncated");
-            return false;
+        if (version >= 3) {
+            std::uint64_t raw = 0;
+            if (!readPod(payload, offset, raw) ||
+                raw > 12157665459056928801ULL) {
+                setError(error, "boot image raw T40 data is invalid or truncated");
+                return false;
+            }
+            decoded.data_words_raw[static_cast<std::size_t>(i)] = raw;
+            decoded.data_words[static_cast<std::size_t>(i)] =
+                vm::ops::toLong(vm::TernaryValue::fromTriple(Triple{raw}));
+        } else {
+            std::int64_t word = 0;
+            if (!readPod(payload, offset, word)) {
+                setError(error, "boot image data segment is truncated");
+                return false;
+            }
+            decoded.data_words[static_cast<std::size_t>(i)] =
+                static_cast<long long>(word);
         }
-        decoded.data_words[static_cast<std::size_t>(i)] = static_cast<long long>(word);
     }
 
     if (version == TOS_BOOT_LEGACY_FORMAT_VERSION) {
@@ -396,8 +493,8 @@ inline bool parentDirectoryExistsOrCreate(const std::string& path, std::string* 
 }
 
 inline bool isZeroBlock(const std::vector<long long>& image, int block) {
-    const int base = block * vm::MMU_PAGE_WORDS;
-    for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+    const int base = block * vm::STORAGE_BLOCK_WORDS;
+    for (int i = 0; i < vm::STORAGE_BLOCK_WORDS; ++i) {
         if (image[static_cast<std::size_t>(base + i)] != 0) return false;
     }
     return true;
@@ -405,10 +502,12 @@ inline bool isZeroBlock(const std::vector<long long>& image, int block) {
 
 inline std::vector<int> nonZeroBlocks(const std::vector<long long>& image) {
     std::vector<int> blocks;
-    if (image.empty() || static_cast<int>(image.size()) % vm::MMU_PAGE_WORDS != 0) {
+    if (image.empty() ||
+        static_cast<int>(image.size()) % vm::STORAGE_BLOCK_WORDS != 0) {
         return blocks;
     }
-    const int block_count = static_cast<int>(image.size()) / vm::MMU_PAGE_WORDS;
+    const int block_count =
+        static_cast<int>(image.size()) / vm::STORAGE_BLOCK_WORDS;
     for (int block = 0; block < block_count; ++block) {
         if (!isZeroBlock(image, block)) blocks.push_back(block);
     }
@@ -579,6 +678,7 @@ inline bool canIdleWithoutStepping(const vm::VMState& machine) {
 
 inline bool validateBootImage(const TosBootImage& image, std::string* error = nullptr) {
     if (image.manifest.format_version != TOS_BOOT_LEGACY_FORMAT_VERSION &&
+        image.manifest.format_version != TOS_BOOT_TRANSITION_FORMAT_VERSION &&
         image.manifest.format_version != TOS_BOOT_FORMAT_VERSION) {
         detail::setError(error, "unsupported boot image format version " +
                                     std::to_string(image.manifest.format_version));
@@ -608,14 +708,47 @@ inline bool validateBootImage(const TosBootImage& image, std::string* error = nu
         return false;
     }
     if (!image.rootfs_words.empty() &&
-        static_cast<int>(image.rootfs_words.size()) % vm::MMU_PAGE_WORDS != 0) {
+        static_cast<int>(image.rootfs_words.size()) %
+                vm::STORAGE_BLOCK_WORDS !=
+            0) {
         detail::setError(error, "boot image root filesystem seed is not block aligned");
         return false;
     }
-    if (image.manifest.format_version == TOS_BOOT_FORMAT_VERSION &&
+    if (image.manifest.format_version >= TOS_BOOT_TRANSITION_FORMAT_VERSION &&
         image.manifest.sections.empty()) {
         detail::setError(error, "boot image has no section table entries");
         return false;
+    }
+    if (image.manifest.format_version >= 3) {
+        const bool legacy_semantic_image =
+            image.manifest.isa_version == 1 &&
+            image.manifest.required_features == 0 &&
+            image.manifest.function_abi_version == 1 &&
+            image.manifest.syscall_abi_version ==
+                vm::EXEC_SYSCALL_ABI_VERSION_V1;
+        const bool v2_image =
+            image.manifest.isa_version == architecture::v2::ISA_VERSION &&
+            image.manifest.scalar_word_trits ==
+                architecture::v2::SCALAR_WORD_TRITS &&
+            image.manifest.base_page_words ==
+                architecture::v2::BASE_PAGE_WORDS &&
+            image.manifest.function_abi_version ==
+                architecture::v2::FUNCTION_ABI_VERSION &&
+            image.manifest.syscall_abi_version ==
+                architecture::v2::SYSCALL_ABI_VERSION &&
+            (image.manifest.required_features &
+             isa::featureBit(architecture::v2::FEATURE_BASE_V2)) != 0;
+        if (!legacy_semantic_image && !v2_image) {
+            detail::setError(
+                error, "boot image v3 architecture metadata is incompatible");
+            return false;
+        }
+        if (!image.data_words_raw.empty() &&
+            image.data_words_raw.size() != image.data_words.size()) {
+            detail::setError(error,
+                "boot image raw T40 data count does not match data words");
+            return false;
+        }
     }
     for (const TosImageSection& section : image.manifest.sections) {
         if (section.name.empty() || section.kind.empty()) {
@@ -712,11 +845,24 @@ inline TosBootImage bootImageFromAssembly(
     TosBootImage image;
     image.manifest = std::move(manifest);
     image.manifest.format_version = TOS_BOOT_FORMAT_VERSION;
+    image.manifest.isa_version =
+        static_cast<int>(assembled.isa_version);
+    image.manifest.required_features = assembled.required_features;
+    if (assembled.isa_version == isa::IsaEncodingVersion::V1) {
+        image.manifest.scalar_word_trits = 50;
+        image.manifest.base_page_words = 27;
+        image.manifest.function_abi_version = 1;
+        image.manifest.syscall_abi_version =
+            vm::EXEC_SYSCALL_ABI_VERSION_V1;
+    }
     image.program = assembled.program;
     image.rootfs_words = rootfs_words;
     image.data_words.reserve(assembled.data.size());
+    image.data_words_raw.reserve(assembled.data.size());
     for (const vm::TernaryValue& value : assembled.data) {
         image.data_words.push_back(vm::ops::toLong(value));
+        image.data_words_raw.push_back(
+            vm::convertValue(value, TernaryMode::T40).asTriple().data);
     }
     if (image.manifest.sections.empty()) {
         image.manifest.sections.push_back({
@@ -752,7 +898,9 @@ inline bool writeSparseDiskFile(const std::string& path,
                                 bool overwrite = false,
                                 std::string* error = nullptr) {
     if (block_image.empty() ||
-        static_cast<int>(block_image.size()) % vm::MMU_PAGE_WORDS != 0) {
+        static_cast<int>(block_image.size()) %
+                vm::STORAGE_BLOCK_WORDS !=
+            0) {
         detail::setError(error, "disk seed image is empty or not block aligned");
         return false;
     }
@@ -760,23 +908,39 @@ inline bool writeSparseDiskFile(const std::string& path,
     if (!detail::parentDirectoryExistsOrCreate(path, error)) return false;
 
     const std::vector<int> blocks = detail::nonZeroBlocks(block_image);
+    std::vector<std::uint8_t> records;
+    for (int block : blocks) {
+        detail::appendPod<std::int32_t>(records, block);
+        const int base = block * vm::STORAGE_BLOCK_WORDS;
+        for (int word = 0; word < vm::STORAGE_BLOCK_WORDS; ++word) {
+            const std::uint64_t raw = vm::convertValue(
+                vm::ops::fromLong(
+                    block_image[static_cast<std::size_t>(base + word)]),
+                TernaryMode::T40).asTriple().data;
+            detail::appendPod<std::uint64_t>(records, raw);
+        }
+    }
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
         detail::setError(error, "failed to open sparse disk for writing: " + path);
         return false;
     }
     const std::uint64_t magic = TOS_SPARSE_DISK_MAGIC;
+    const std::uint32_t version = TOS_SPARSE_DISK_VERSION;
+    const std::uint32_t block_words = vm::STORAGE_BLOCK_WORDS;
+    const std::uint64_t generation = 1;
+    const std::uint64_t checksum = detail::fnv1a(records);
     const int count = static_cast<int>(blocks.size());
     out.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+    out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+    out.write(reinterpret_cast<const char*>(&block_words),
+              sizeof(block_words));
+    out.write(reinterpret_cast<const char*>(&generation),
+              sizeof(generation));
+    out.write(reinterpret_cast<const char*>(&checksum), sizeof(checksum));
     out.write(reinterpret_cast<const char*>(&count), sizeof(count));
-    for (int block : blocks) {
-        out.write(reinterpret_cast<const char*>(&block), sizeof(block));
-        const int base = block * vm::MMU_PAGE_WORDS;
-        for (int word = 0; word < vm::MMU_PAGE_WORDS; ++word) {
-            const long long value = block_image[static_cast<std::size_t>(base + word)];
-            out.write(reinterpret_cast<const char*>(&value), sizeof(value));
-        }
-    }
+    out.write(reinterpret_cast<const char*>(records.data()),
+              static_cast<std::streamsize>(records.size()));
     out.flush();
     if (!out.good()) {
         detail::setError(error, "failed to write sparse disk: " + path);
@@ -800,12 +964,29 @@ inline bool loadBootImageIntoVm(vm::VMState& machine,
     }
 
     machine.coldReset();
+    const auto encoding =
+        image.manifest.isa_version == architecture::v2::ISA_VERSION
+            ? isa::IsaEncodingVersion::V2
+            : isa::IsaEncodingVersion::V1;
+    if (!machine.configureArchitecture(
+            encoding, image.manifest.required_features)) {
+        detail::setError(
+            error, "boot image requires unsupported architecture features");
+        return false;
+    }
     if (!machine.imem.loadProgram(image.program, 0)) {
         detail::setError(error, "failed to load boot image text segment");
         return false;
     }
     for (int i = 0; i < static_cast<int>(image.data_words.size()); ++i) {
-        if (machine.dmem.store(i, vm::ops::fromLong(image.data_words[static_cast<std::size_t>(i)])) !=
+        const vm::TernaryValue data_word =
+            image.manifest.format_version >= 3 &&
+                    i < static_cast<int>(image.data_words_raw.size())
+                ? vm::TernaryValue::fromTriple(
+                      Triple{image.data_words_raw[static_cast<std::size_t>(i)]})
+                : vm::ops::fromLong(
+                      image.data_words[static_cast<std::size_t>(i)]);
+        if (machine.dmem.store(i, data_word) !=
             vm::MemFaultCode::OK) {
             detail::setError(error, "failed to load boot image data segment");
             return false;

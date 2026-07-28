@@ -18,6 +18,7 @@
       "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
       "targets": [
         "test_multiwidth_vm",
+        "test_architecture_v2",
         "test_ternary_ir",
         "test_ternary_lanes",
         "test_native_ops",
@@ -40,6 +41,7 @@
       "targets": [
         "test_multiwidth_vm",
         "test_os_platform",
+        "test_redo_wal_v2",
         "test_phase_d_kernel",
         "test_process_handoff",
         "test_native_apps",
@@ -56,6 +58,8 @@
         "test_production_layers",
         "test_production_hardening",
         "test_os_platform",
+        "test_architecture_v2",
+        "test_redo_wal_v2",
         "test_scaling_profile_compact",
         "test_consumer_shell_productization",
         "test_host_runtime"
@@ -89,7 +93,7 @@
       "description": "Performance-oriented benchmark regression harness.",
       "targets": [
         "test_benchmark",
-        "test_trace_jit_benchmark"
+        "test_execution_backends_benchmark"
       ],
       "manual": true
     },

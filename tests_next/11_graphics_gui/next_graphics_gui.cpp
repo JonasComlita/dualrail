@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_host_runtime.h"
 #include "ternary_vm.h"
@@ -226,7 +226,7 @@ bool runKernelDriver(TestContext& ctx,
 
     sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     vm.resetBlockDevice(192);
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               name + " image loads");
     const auto result = sandbox::vm::run(vm, 50000000);
     if (!result.halted()) {
@@ -434,7 +434,7 @@ void widgetDirtyTextRedrawRuntime(TestContext& ctx) {
     }
 
     sandbox::vm::VMState vm(65536, 1000000);
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               "widget GUI image loads");
     const auto result = sandbox::vm::run(vm, 200000);
     if (!result.halted()) {

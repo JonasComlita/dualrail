@@ -11,6 +11,9 @@ A **vertically integrated, balanced-ternary computing stack** built entirely fro
 
 The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.trit` source files, `.tboot` images, `.tdisk` disks).
 
+For a dependency-ordered, file-by-file review and optimization plan, use
+[`STACK_REVIEW_ORDER.md`](STACK_REVIEW_ORDER.md).
+
 ---
 
 ## Layer Map (Bottom to Top)
@@ -54,6 +57,7 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 - **[02_Hardware_ISA/interrupts.md](02_Hardware_ISA/interrupts.md)** — Traps, CSRs, privilege
 
 ### Execution Engine
+- **[03_Execution_Engine/decoded_trace_and_native_jit.md](03_Execution_Engine/decoded_trace_and_native_jit.md)** — portable micro-ops, cache guards, and gated W^X x86-64 JIT
 - **[03_Execution_Engine/vm_state.md](03_Execution_Engine/vm_state.md)** — VMState structure
 - **[03_Execution_Engine/memory_model.md](03_Execution_Engine/memory_model.md)** — DMEM, FENCE, addressing
 - **[03_Execution_Engine/vector_engine.md](03_Execution_Engine/vector_engine.md)** — Vector registers, VDOT

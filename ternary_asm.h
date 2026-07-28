@@ -119,6 +119,8 @@ namespace assembler {
 
 using namespace isa;
 
+#include "architecture_v2_assembler_types.h"
+
 enum class AssemblySection {
     Text,
     Data
@@ -147,6 +149,9 @@ struct AssemblyResult {
     std::map<std::string, int>    labels;       // text label name -> IMEM word address
     std::map<std::string, int>    data_labels;  // data label name -> DMEM word address
     std::map<std::string, ExecutableImageHeader> executable_headers;
+    std::map<std::string, ExecutableImageHeaderV2> executable_headers_v2;
+    IsaEncodingVersion            isa_version = IsaEncodingVersion::V1;
+    std::uint64_t                 required_features = 0;
 
     // Convenience: check and throw on error.
     [[nodiscard]] const std::vector<TritWord27>& require() const {
@@ -201,6 +206,8 @@ struct AssemblyResult {
 // =============================================================================
 // SECTION 3 — Register Name Parser
 // =============================================================================
+
+#include "architecture_v2_assembler_directives.h"
 
 // Parse a register name token. Returns register index [0..26] or -1 on error.
 [[nodiscard]] inline int parseRegister(const std::string& tok) {
@@ -284,6 +291,11 @@ struct AssemblyResult {
     if (s == "block_count") return CSR_BLOCK_COUNT;
     if (s == "block_words") return CSR_BLOCK_WORDS;
     if (s == "power_control") return CSR_POWER_CONTROL;
+    if (s == "isa_version") return CSR_ISA_VERSION;
+    if (s == "isa_features") return CSR_ISA_FEATURES;
+    if (s == "mmu_base_page_words") return CSR_MMU_BASE_PAGE_WORDS;
+    if (s == "mmu_superpage_words") return CSR_MMU_SUPERPAGE_WORDS;
+    if (s == "asid") return CSR_ASID;
 
     if (s.empty()) return -1;
     for (char c : s) {
@@ -426,7 +438,8 @@ struct MnemonicParts {
            base == "twcmp" || base == "tclamp" || base == "tmod" ||
            base == "tlshift" || base == "trshift" ||
            base == "tmac" || base == "tcount" || base == "tscan" ||
-           base == "cvt" || base == "mov" ||
+           base == "cvt" || base == "mov" || base == "copy" ||
+           base == "load" || base == "store" ||
            base == "tladd" || base == "tlsub" || base == "tlneg" ||
            base == "tland" || base == "tlor" ||
            base == "vadd" || base == "vsub" || base == "vneg" ||
@@ -448,6 +461,10 @@ struct MnemonicParts {
 
 [[nodiscard]] inline int instructionWordCount(const std::string& mnemonic) {
     const auto parts = splitMnemonic(mnemonic);
+    if (parts.has_width && parts.func == FUNC_T50) {
+        if (parts.base == "load") return 3;
+        if (parts.base == "store") return 2;
+    }
     return ((parts.base == "mov" || parts.base == "movh") && parts.has_width && parts.func != FUNC_T40 &&
             parts.suffix_valid && !parts.has_source_width) ? 2 : 1;
 }
@@ -460,6 +477,8 @@ struct MnemonicParts {
     // System
     t["nop"]  = {Opcode::NOP,  F::I_TYPE, 0, false};
     t["halt"] = {Opcode::HALT, F::B_TYPE, 0, false};
+    t["wait"] = {Opcode::WAIT, F::B_TYPE, 0, false};
+    t["tlbinv"] = {Opcode::TLBINV, F::R_TYPE, 3, false};
 
     // Data movement
     t["mov"]  = {Opcode::MOV,  F::I_TYPE, 2, false};  // rd, imm  OR  rd, rs1, imm
@@ -638,6 +657,10 @@ struct SourceLine {
         for (size_t i = 1; i < tokens.size(); ++i)
             sl.operands.push_back(tokens[i]);
 
+        if (sl.mnemonic == ".isa" || sl.mnemonic == ".require") {
+            continue;
+        }
+
         if (sl.mnemonic == ".text" || sl.mnemonic == ".data") {
             if (!sl.label.empty()) {
                 errors.push_back({line_num, "Section directive cannot carry a label"});
@@ -675,8 +698,8 @@ struct SourceLine {
 
         sl.section = current_section;
         if (current_section == AssemblySection::Data) {
-            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" && sl.mnemonic != ".execheader") {
-                errors.push_back({line_num, "Only .word, .pte, and .execheader directives are valid in .data"});
+            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" && sl.mnemonic != ".execheader" && sl.mnemonic != ".execheader2") {
+                errors.push_back({line_num, "Only .word, .pte, .execheader, and .execheader2 directives are valid in .data"});
                 lines.push_back(sl);
                 continue;
             }
@@ -697,13 +720,19 @@ struct SourceLine {
                 lines.push_back(sl);
                 continue;
             }
+            if (sl.mnemonic == ".execheader2" && sl.operands.size() != 7) {
+                errors.push_back({line_num, ".execheader2 requires entry_pc, text_words, data_words, stack_words, required_feature_word, syscall_abi, flags"});
+                lines.push_back(sl);
+                continue;
+            }
             sl.address = data_addr;
             sl.word_count = sl.mnemonic == ".pte" ? 1 :
                             sl.mnemonic == ".execheader" ? EXEC_HEADER_WORDS :
+                            sl.mnemonic == ".execheader2" ? EXEC_V2_HEADER_WORDS :
                             static_cast<int>(sl.operands.size());
             data_addr += sl.word_count;
         } else {
-            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" || sl.mnemonic == ".execheader") {
+            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" || sl.mnemonic == ".execheader" || sl.mnemonic == ".execheader2") {
                 errors.push_back({line_num, sl.mnemonic + " is only valid in .data"});
                 lines.push_back(sl);
                 continue;
@@ -936,6 +965,14 @@ struct LabelMaps {
             program.push_back(TritWord27{});
             continue;
         }
+        if ((parts.base == "load" || parts.base == "store") &&
+            parts.has_width && parts.func != FUNC_T50) {
+            errors.push_back({sl.line_num,
+                "Scalar memory width suffix is only valid for paired .t50 access"});
+            for (int word_index = 0; word_index < sl.word_count; ++word_index)
+                program.push_back(TritWord27{});
+            continue;
+        }
         if (phase2NumericMnemonic && (!parts.has_width || !isNumericWidthFunc(parts.func))) {
             errors.push_back({sl.line_num,
                 "Phase 2 numeric mnemonic '" + parts.base + "' requires a .tN suffix"});
@@ -1023,6 +1060,15 @@ struct LabelMaps {
 
         } else if (mnemonic == "halt") {
             word = InstructionWord::encodeB(Opcode::HALT, 0, 0);
+
+        } else if (mnemonic == "wait") {
+            if (!ops.empty()) {
+                errors.push_back({line, "wait takes no operands"});
+                ok = false;
+            } else {
+                word = InstructionWord::encodeB(Opcode::WAIT, 0, 0);
+            }
+
 
         } else if (mnemonic == "ret") {
             word = InstructionWord::encodeR(Opcode::RET, 0, 0, 0);
@@ -1310,6 +1356,27 @@ struct LabelMaps {
                         word = InstructionWord::encodeI(Opcode::LOAD,
                             static_cast<uint8_t>(rd),
                             static_cast<uint8_t>(rs1), imm);
+                        if (parts.has_width && parts.func == FUNC_T50) {
+                            if (rd + 1 >= REG_COUNT) {
+                                errors.push_back({line,
+                                    "LOAD.t50 destination pair exceeds the register file"});
+                                ok = false;
+                            } else {
+                                program.push_back(word);
+                                program.push_back(InstructionWord::encodeI(
+                                    Opcode::LOAD,
+                                    static_cast<uint8_t>(rd + 1),
+                                    static_cast<uint8_t>(rs1),
+                                    imm + 1));
+                                program.push_back(InstructionWord::encodeR(
+                                    Opcode::COPY,
+                                    static_cast<uint8_t>(rd),
+                                    static_cast<uint8_t>(rd),
+                                    R0_ZERO,
+                                    FUNC_T50));
+                                continue;
+                            }
+                        }
                     } catch (std::out_of_range& e) {
                         errors.push_back({line, std::string(e.what())});
                         ok = false;
@@ -1337,6 +1404,21 @@ struct LabelMaps {
                         word = InstructionWord::encodeS(Opcode::STORE,
                             static_cast<uint8_t>(src),
                             static_cast<uint8_t>(base), imm);
+                        if (parts.has_width && parts.func == FUNC_T50) {
+                            if (src + 1 >= REG_COUNT) {
+                                errors.push_back({line,
+                                    "STORE.t50 source pair exceeds the register file"});
+                                ok = false;
+                            } else {
+                                program.push_back(word);
+                                program.push_back(InstructionWord::encodeS(
+                                    Opcode::STORE,
+                                    static_cast<uint8_t>(src + 1),
+                                    static_cast<uint8_t>(base),
+                                    imm + 1));
+                                continue;
+                            }
+                        }
                     } catch (std::out_of_range& e) {
                         errors.push_back({line, std::string(e.what())});
                         ok = false;
@@ -1870,6 +1952,43 @@ struct LabelMaps {
                 fields[4],
                 fields[5]);
             data.insert(data.end(), header.begin(), header.end());
+        } else if (sl.mnemonic == ".execheader2") {
+            std::array<int, 7> fields{};
+            bool ok = true;
+            for (int index = 0; index < 7; ++index) {
+                auto value = resolveAbsolute(
+                    sl.operands[static_cast<std::size_t>(index)],
+                    sl.line_num);
+                if (!value) {
+                    ok = false;
+                } else {
+                    fields[static_cast<std::size_t>(index)] = value.value();
+                }
+            }
+            ExecutableImageHeaderV2 header;
+            if (ok && !featureMaskFromNumeric(
+                          fields[4], header.required_features)) {
+                errors.push_back({sl.line_num,
+                    ".execheader2 feature word contains a negative trit"});
+                ok = false;
+            }
+            if (ok) {
+                header.entry_pc = fields[0];
+                header.text_words = fields[1];
+                header.data_words = fields[2];
+                header.stack_words = fields[3];
+                header.syscall_abi_version = fields[5];
+                header.flags = fields[6];
+                try {
+                    auto encoded = encodeExecutableHeaderV2(header);
+                    data.insert(data.end(), encoded.begin(), encoded.end());
+                    continue;
+                } catch (const std::exception& error) {
+                    errors.push_back({sl.line_num, error.what()});
+                }
+            }
+            for (int index = 0; index < EXEC_V2_HEADER_WORDS; ++index)
+                data.push_back(TernaryValue::zero());
         } else if (sl.mnemonic == ".pte") {
             auto ppn = resolveAbsolute(sl.operands[0], sl.line_num);
             auto user = requireFlag(sl.operands[1], sl.line_num, "user");
@@ -1932,31 +2051,170 @@ struct LabelMaps {
     return headers;
 }
 
+[[nodiscard]] inline std::map<std::string, ExecutableImageHeaderV2>
+collectExecutableHeadersV2(
+        const std::vector<SourceLine>& lines,
+        const std::vector<TernaryValue>& data,
+        std::vector<AssemblyError>& errors) {
+    std::map<std::string, ExecutableImageHeaderV2> headers;
+    for (const SourceLine& line : lines) {
+        if (line.section != AssemblySection::Data ||
+            line.mnemonic != ".execheader2" || line.address < 0) {
+            continue;
+        }
+        if (line.label.empty()) {
+            errors.push_back(
+                {line.line_num, ".execheader2 requires a label"});
+            continue;
+        }
+        ExecutableImageHeaderV2 header;
+        if (!decodeExecutableHeaderV2(data, line.address, header)) {
+            errors.push_back(
+                {line.line_num, "Invalid executable header v2"});
+            continue;
+        }
+        headers[line.label] = header;
+    }
+    return headers;
+}
+
 // =============================================================================
 // SECTION 7 — Public API: assemble()
 // =============================================================================
 
 // Assemble source text into a TritWord27 program image.
 // Returns an AssemblyResult with success flag, program, errors, and label map.
-[[nodiscard]] inline AssemblyResult assemble(const std::string& source) {
+[[nodiscard]] inline AssemblyResult assemble(
+        const std::string& source,
+        const AssemblyOptions& options) {
     AssemblyResult result;
 
-    // Parse source lines.
+    const ArchitectureDirectives architecture_directives =
+        parseArchitectureDirectives(source, options, result.errors);
+    result.isa_version = architecture_directives.isa;
+    result.required_features = architecture_directives.required_features;
+    if (!result.errors.empty()) return result;
+
     auto lines = parseSources(source, result.errors);
     if (!result.errors.empty()) return result;
 
-    // Pass 1: collect labels.
     LabelMaps labels = buildLabelMaps(lines, result.errors);
     result.labels = labels.text;
     result.data_labels = labels.data;
     if (!result.errors.empty()) return result;
 
-    // Pass 2: encode.
     result.program = encode(lines, result.labels, result.data_labels, result.errors);
+    if (result.errors.empty() &&
+        result.isa_version == IsaEncodingVersion::V2) {
+        for (std::size_t pc = 0; pc < result.program.size(); ++pc) {
+            const SourceLine* origin = nullptr;
+            for (const auto& line : lines) {
+                if (line.section == AssemblySection::Text &&
+                    line.address >= 0 &&
+                    static_cast<int>(pc) >= line.address &&
+                    static_cast<int>(pc) < line.address + line.word_count) {
+                    origin = &line;
+                    break;
+                }
+            }
+            if (origin != nullptr &&
+                splitMnemonic(origin->mnemonic).base == "wait") {
+                const std::uint64_t wait_feature =
+                    featureBit(architecture::v2::FEATURE_WAIT);
+                if ((result.required_features & wait_feature) == 0) {
+                    result.errors.push_back({origin->line_num,
+                        "WAIT requires .require wait"});
+                } else {
+                    result.program[pc] = VersionedInstructionCodec::encodeB(
+                        Opcode::WAIT, R0_ZERO, 0,
+                        IsaEncodingVersion::V2);
+                }
+                continue;
+            }
+            if (origin != nullptr &&
+                splitMnemonic(origin->mnemonic).base == "tlbinv") {
+                const std::uint64_t mmu_feature =
+                    featureBit(architecture::v2::FEATURE_MMU);
+                if ((result.required_features & mmu_feature) == 0) {
+                    result.errors.push_back({origin->line_num,
+                        "TLBINV requires .require mmu"});
+                } else {
+                    const int address =
+                        parseRegister(origin->operands[0]);
+                    const int target_asid =
+                        parseRegister(origin->operands[1]);
+                    const int scope =
+                        parseRegister(origin->operands[2]);
+                    result.program[pc] = VersionedInstructionCodec::encodeR(
+                        Opcode::TLBINV,
+                        static_cast<uint8_t>(address),
+                        static_cast<uint8_t>(target_asid),
+                        static_cast<uint8_t>(scope),
+                        FUNC_DEFAULT,
+                        IsaEncodingVersion::V2);
+                }
+                continue;
+            }
+
+            const InstructionWord decoded = VersionedInstructionCodec::decode(
+                result.program[pc], IsaEncodingVersion::V1);
+            const std::uint64_t missing =
+                requiredV2Features(decoded) & ~result.required_features;
+            if (missing != 0) {
+                int source_line = 0;
+                for (const auto& line : lines) {
+                    if (line.section == AssemblySection::Text &&
+                        line.address >= 0 &&
+                        static_cast<int>(pc) >= line.address &&
+                        static_cast<int>(pc) < line.address + line.word_count) {
+                        source_line = line.line_num;
+                        break;
+                    }
+                }
+                result.errors.push_back({source_line,
+                    "Instruction requires an undeclared ISA v2 feature; "
+                    "add a matching .require directive"});
+                continue;
+            }
+            try {
+                result.program[pc] =
+                    transcodeV1InstructionToV2(result.program[pc]);
+            } catch (const std::exception& error) {
+                result.errors.push_back({0,
+                    std::string("ISA v2 encoding failed: ") + error.what()});
+            }
+        }
+    }
     result.data = encodeData(lines, result.labels, result.data_labels, result.errors);
     result.executable_headers = collectExecutableHeaders(lines, result.data, result.errors);
+    result.executable_headers_v2 =
+        collectExecutableHeadersV2(lines, result.data, result.errors);
+    for (const auto& [label, header] : result.executable_headers_v2) {
+        if (result.isa_version != IsaEncodingVersion::V2) {
+            result.errors.push_back({
+                header.header_addr,
+                ".execheader2 '" + label +
+                    "' requires an ISA v2 assembly unit"});
+        } else if (header.required_features != result.required_features) {
+            result.errors.push_back({
+                header.header_addr,
+                ".execheader2 '" + label +
+                    "' feature word must exactly match the unit's .require "
+                    "feature set"});
+        }
+    }
     result.success = result.errors.empty();
     return result;
+}
+
+// Transition-only compatibility entry point. Existing embedded v1 assembly
+// remains readable for one release; new toolchain callers use strict options.
+[[nodiscard]] inline AssemblyResult assemble(const std::string& source) {
+    return assemble(source, AssemblyOptions{});
+}
+
+[[nodiscard]] inline AssemblyResult assembleV2(const std::string& source) {
+    return assemble(source, AssemblyOptions{IsaEncodingVersion::V2, true});
 }
 
 // Convenience: assemble and throw on any error.
@@ -1973,6 +2231,9 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
     if (static_cast<int>(assembled.data.size()) > vm.dmem.size()) return false;
 
     vm.coldReset();
+    if (!vm.configureArchitecture(
+            assembled.isa_version, assembled.required_features))
+        return false;
     if (!vm.imem.loadProgram(assembled.program, 0)) return false;
     for (int i = 0; i < static_cast<int>(assembled.data.size()); ++i) {
         if (vm.dmem.store(i, assembled.data[static_cast<std::size_t>(i)]) != MemFaultCode::OK) {
@@ -1994,7 +2255,8 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
 
 [[nodiscard]] inline std::string listing(
         const std::vector<TritWord27>& program,
-        const std::map<std::string, int>& labels = {}) {
+        const std::map<std::string, int>& labels,
+        IsaEncodingVersion version) {
 
     // Build reverse label map: address → label name
     std::map<int, std::string> addr_to_label;
@@ -2010,9 +2272,20 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
         }
         // Address and disassembly
         oss << "  [" << std::setw(4) << std::setfill('0') << i << "]  "
-            << disassemble(program[i]) << "\n";
+            << disassemble(program[i], version) << "\n";
     }
     return oss.str();
+}
+
+[[nodiscard]] inline std::string listing(
+        const std::vector<TritWord27>& program,
+        const std::map<std::string, int>& labels = {}) {
+    return listing(program, labels, IsaEncodingVersion::V1);
+}
+
+[[nodiscard]] inline std::string listing(const AssemblyResult& assembled) {
+    return listing(
+        assembled.program, assembled.labels, assembled.isa_version);
 }
 
 // =============================================================================

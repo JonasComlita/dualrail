@@ -9,6 +9,12 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add fuzz harnesses for malformed image files and bad syscall pointers.
 - Add crash/power-loss scenarios for VFS and WAL recovery.
+- Lower supported micro-ops directly to x86-64 instead of the current
+  helper-backed W^X thunk, then satisfy the three-workload wall-time gate before
+  enabling native JIT execution by default.
+- Complete the IR-first compiler transition: frontend stack locals must feed
+  real `mem2reg`, optimized IR must drive target emission, and spills must be
+  rewritten until the interference graph is colorable.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

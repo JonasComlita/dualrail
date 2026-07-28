@@ -1948,6 +1948,34 @@
       "target": "next_full_system_release"
     },
     {
+      "id": "full_system.release.paint_input_clear_cycle",
+      "layer": "17_full_system",
+      "feature": "release_interaction",
+      "kind": "full_system",
+      "source": "expanded",
+      "old_refs": ["apps/desktop.trit", "apps/paint.trit", "apps/os_sdk.trit", "tests/test_native_apps.cpp", "tests/test_process_handoff.cpp"],
+      "proves": ["After release desktop hotkey 3 launches Paint, keyboard hotkey 2 changes the active cursor color to green, mouse input draws color 10 into the raw graphics framebuffer, keyboard c clears that canvas pixel back to zero, Paint remains in Graphics80x60 mode and parented by the desktop, and diagnostics remain exportable"],
+      "gate": "ci_release",
+      "timeout_ms": 300000,
+      "deterministic": true,
+      "claims": ["full_system.release_contract", "gui.six_layer_contract"],
+      "target": "next_full_system_release"
+    },
+    {
+      "id": "full_system.release.paint_exit_desktop_recovery",
+      "layer": "17_full_system",
+      "feature": "release_interaction",
+      "kind": "full_system",
+      "source": "expanded",
+      "old_refs": ["apps/desktop.trit", "apps/paint.trit", "apps/file_manager.trit", "tests/test_native_apps.cpp", "tests/test_process_handoff.cpp"],
+      "proves": ["After release desktop hotkey 3 launches Paint, keyboard x exits the graphics app, pid 103 becomes a zombie, the desktop restores text framebuffer mode and redraws its launcher, and hotkey 4 then launches File Manager from the recovered desktop focus path"],
+      "gate": "ci_release",
+      "timeout_ms": 300000,
+      "deterministic": true,
+      "claims": ["full_system.release_contract", "gui.six_layer_contract"],
+      "target": "next_full_system_release"
+    },
+    {
       "id": "full_system.release.file_manager_launch_screen",
       "layer": "17_full_system",
       "feature": "release_interaction",
@@ -1962,6 +1990,20 @@
       "target": "next_full_system_release"
     },
     {
+      "id": "full_system.release.file_manager_exit_desktop_recovery",
+      "layer": "17_full_system",
+      "feature": "release_interaction",
+      "kind": "full_system",
+      "source": "expanded",
+      "old_refs": ["apps/desktop.trit", "apps/file_manager.trit", "apps/settings.trit", "tests/test_process_handoff.cpp", "tests/test_consumer_shell_productization.cpp"],
+      "proves": ["After release desktop hotkey 4 launches File Manager and the live root VFS browser paints, keyboard x exits the text app, pid 104 becomes a zombie, the desktop stays in text framebuffer mode and redraws its launcher, and hotkey 5 then launches Settings from the recovered desktop focus path"],
+      "gate": "ci_release",
+      "timeout_ms": 300000,
+      "deterministic": true,
+      "claims": ["full_system.release_contract", "gui.six_layer_contract"],
+      "target": "next_full_system_release"
+    },
+    {
       "id": "full_system.release.settings_launch_screen",
       "layer": "17_full_system",
       "feature": "release_interaction",
@@ -1973,6 +2015,20 @@
       "timeout_ms": 300000,
       "deterministic": true,
       "claims": ["full_system.release_contract"],
+      "target": "next_full_system_release"
+    },
+    {
+      "id": "full_system.release.settings_exit_desktop_recovery",
+      "layer": "17_full_system",
+      "feature": "release_interaction",
+      "kind": "full_system",
+      "source": "expanded",
+      "old_refs": ["apps/desktop.trit", "apps/settings.trit", "apps/task_manager.trit", "tests/test_process_handoff.cpp", "tests/test_consumer_shell_productization.cpp"],
+      "proves": ["After release desktop hotkey 5 launches Settings and its display tab paints, keyboard x exits the stateful text app, pid 105 becomes a zombie, the desktop stays in text framebuffer mode and redraws its launcher, and hotkey 2 then launches Task Manager from the recovered desktop focus path"],
+      "gate": "ci_release",
+      "timeout_ms": 300000,
+      "deterministic": true,
+      "claims": ["full_system.release_contract", "gui.six_layer_contract"],
       "target": "next_full_system_release"
     },
     {

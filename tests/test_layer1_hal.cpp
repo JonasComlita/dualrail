@@ -1,4 +1,4 @@
-#include "ternary_compiler.h"
+﻿#include "ternary_compiler.h"
 #include "ternary_vm.h"
 
 #include <fstream>
@@ -157,7 +157,7 @@ void testLayer1HalEndToEnd() {
             expect(linked.success, "hal plus driver links");
             if (linked.success) {
                 sandbox::vm::VMState vm_direct(262144, 1000000);
-                expect(sandbox::vm::loadAndReset(vm_direct, linked.assembled.program), "linked direct image loads");
+                expect(sandbox::vm::assembler::loadAndReset(vm_direct, linked.assembled), "linked direct image loads");
                 
                 // Write the DTB manually so hal_verify_dtb succeeds in direct run
                 vm_direct.dmem.store(2900, sandbox::vm::ops::fromLong(272727));

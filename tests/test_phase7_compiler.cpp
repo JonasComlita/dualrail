@@ -70,16 +70,17 @@ void testCompileAndRunMatchProgram() {
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "linked match executable assembles");
-    const int expected_text_pages = std::max(
-        1, (linked.instruction_count + sandbox::vm::MMU_PAGE_WORDS - 1) /
-               sandbox::vm::MMU_PAGE_WORDS);
-    expect(linked.executable_header.text_pages == expected_text_pages,
-           "linker emits accurate executable text page count");
+    expect(linked.executable_header_v2.text_words ==
+               linked.instruction_count,
+           "linker emits accurate executable text word count");
+    expect(linked.executable_header_v2.isa_version ==
+               sandbox::architecture::v2::ISA_VERSION,
+           "linker emits ISA v2 metadata by default");
     expect(linked.instruction_count > 0, "linker reports instruction count");
 
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "linked image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "linked image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "linked image halts through standalone _start");
         expect(regLong(vm, 13) == 7, "main return value is preserved in r13");
@@ -127,7 +128,7 @@ void testSideEffectfulMatchKeepsBranchLowering() {
     expect(linked.success, "side-effectful match executable assembles");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "side-effectful match image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "side-effectful match image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "side-effectful match image halts");
         expect(regLong(vm, 13) == 0, "side-effectful match returns selected arm value");
@@ -161,7 +162,7 @@ void testRuntimeSyscallWrapperAndTupleSwap() {
     expect(linked.success, "runtime executable links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "runtime image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "runtime image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "runtime image halts");
         expect(vm.syscall_buffer == "22\n", "legacy console oracle sees write/newline");
@@ -199,12 +200,25 @@ void testFunctionCallAndWhileLoop() {
     expect(contains(compiled.assembly, "brn"), "while lowers cold negative exit branch");
     expect(contains(compiled.assembly, "brz"), "while lowers cold zero exit branch");
     expect(!contains(compiled.assembly, "brp"), "while positive path falls through");
+    const auto main_ir = std::find_if(
+        compiled.ssa_module.functions.begin(),
+        compiled.ssa_module.functions.end(),
+        [](const Function& fn) { return fn.name == "main"; });
+    expect(main_ir != compiled.ssa_module.functions.end() &&
+               main_ir->blocks.size() >= 4,
+           "while lowering creates entry, condition, body, and exit IR blocks");
+    if (main_ir != compiled.ssa_module.functions.end()) {
+        const ControlFlowGraph cfg = buildControlFlowGraph(*main_ir);
+        expect(cfg.invalid_targets.empty(), "while IR has closed CFG edges");
+        expect(!computeDominance(*main_ir, cfg).immediate_dominator.empty(),
+               "while IR computes dominators");
+    }
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "function call and while executable links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "call/loop image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "call/loop image loads");
         const auto result = sandbox::vm::run(vm, 512);
         if (!result.halted()) {
             std::cout << "DEBUG: call/loop failed. status=" << static_cast<int>(result.status)
@@ -247,12 +261,25 @@ void testIfElseStatements() {
     expect(compiled.success, "if/else source compiles");
     expect(contains(compiled.assembly, "if_then"), "if lowering emits then label");
     expect(contains(compiled.assembly, "if_else"), "if lowering emits else label");
+    const auto classify_ir = std::find_if(
+        compiled.ssa_module.functions.begin(),
+        compiled.ssa_module.functions.end(),
+        [](const Function& fn) { return fn.name == "classify"; });
+    expect(classify_ir != compiled.ssa_module.functions.end() &&
+               classify_ir->blocks.size() >= 4,
+           "if/else lowering creates structural CFG blocks");
+    if (classify_ir != compiled.ssa_module.functions.end()) {
+        const ControlFlowGraph cfg = buildControlFlowGraph(*classify_ir);
+        expect(cfg.invalid_targets.empty(), "if/else IR has closed CFG edges");
+        expect(!computeDominance(*classify_ir, cfg).frontier.empty(),
+               "if/else IR computes dominance frontiers");
+    }
 
     LinkResult linked = linkModules({compiled.object});
     expect(linked.success, "if/else executable links");
     sandbox::vm::VMState vm(512, 512);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "if/else image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "if/else image loads");
         const auto result = sandbox::vm::run(vm, 1024);
         expect(result.halted(), "if/else image halts");
         expect(regLong(vm, 13) == 60, "if/else chain selects expected branches");
@@ -481,7 +508,7 @@ void testAggregatesEndToEnd() {
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "struct image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "struct image loads");
             const auto result = sandbox::vm::run(vm, 256);
             expect(result.halted(), "struct image halts");
             expect(regLong(vm, 13) == 9, "struct field assignment produces expected result");
@@ -501,7 +528,7 @@ void testAggregatesEndToEnd() {
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "array image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "array image loads");
             const auto result = sandbox::vm::run(vm, 256);
             expect(result.halted(), "array image halts");
             expect(regLong(vm, 13) == 4, "array index assignment produces expected result");
@@ -522,7 +549,7 @@ void testAggregatesEndToEnd() {
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "aggregate param image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "aggregate param image loads");
             const auto result = sandbox::vm::run(vm, 256);
             expect(result.halted(), "aggregate param image halts");
             expect(regLong(vm, 13) == 13, "aggregate parameter is read through pointer");
@@ -599,6 +626,75 @@ void testOptimizerAndGraphColoringDetails() {
     expect(allocation.interference_edges > 0, "allocator builds interference graph");
     expect(allocation.spills > 0, "allocator reports stack spills under pressure");
 
+    Module rewrite_pressure;
+    rewrite_pressure.name = "rewrite_pressure";
+    Function rewrite_fn;
+    rewrite_fn.name = "rewrite";
+    BasicBlock rewrite_block;
+    rewrite_block.name = "entry";
+    for (int i = 0; i < 30; ++i) {
+        Instr constant;
+        constant.def = i + 1;
+        constant.opcode = InstrOpcode::Const;
+        constant.type =
+            TypeRef::numeric(sandbox::ir::Type::T40);
+        constant.imm = i + 1;
+        rewrite_block.instructions.push_back(constant);
+    }
+    ValueId sum = 31;
+    rewrite_block.instructions.push_back(
+        Instr{sum, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1, 2}});
+    for (int value = 3; value <= 30; ++value) {
+        const ValueId next = sum + 1;
+        rewrite_block.instructions.push_back(
+            Instr{next, InstrOpcode::Add,
+                  TypeRef::numeric(sandbox::ir::Type::T40),
+                  {sum, value}});
+        sum = next;
+    }
+    Instr rewrite_sink;
+    rewrite_sink.opcode = InstrOpcode::Call;
+    rewrite_sink.args = {sum};
+    rewrite_sink.symbol = "sink";
+    rewrite_sink.effect = Effect::Control;
+    rewrite_block.instructions.push_back(rewrite_sink);
+    rewrite_block.terminator.kind = TerminatorKind::Return;
+    rewrite_fn.blocks.push_back(rewrite_block);
+    rewrite_fn.ir_value_ceiling = sum + 1;
+    rewrite_pressure.functions.push_back(rewrite_fn);
+
+    AllocationResult rewritten_allocation =
+        allocateRegistersWithSpillRewrite(rewrite_pressure);
+    if (!rewritten_allocation.success) {
+        std::cout << "spill rewrite rounds="
+                  << rewritten_allocation.spill_rewrite_rounds
+                  << " spills=" << rewritten_allocation.spills << "\n";
+        for (const Diagnostic& diagnostic :
+             rewritten_allocation.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(rewritten_allocation.success,
+           "iterative spill rewrite reaches a colorable module");
+    expect(rewritten_allocation.spill_rewrite_rounds > 0 &&
+               rewritten_allocation.spill_loads > 0 &&
+               rewritten_allocation.spill_stores > 0,
+           "spill rewrite materializes stack loads and stores");
+    bool saw_spill_load = false;
+    bool saw_spill_store = false;
+    for (const Instr& instr :
+         rewrite_pressure.functions[0].blocks[0].instructions) {
+        saw_spill_load =
+            saw_spill_load || instr.opcode == InstrOpcode::SpillLoad;
+        saw_spill_store =
+            saw_spill_store || instr.opcode == InstrOpcode::SpillStore;
+    }
+    expect(saw_spill_load && saw_spill_store,
+           "rewritten IR contains explicit spill operations");
+    expect(verifyModule(rewrite_pressure).empty(),
+           "spill-rewritten IR passes SSA verification");
+
     Module moves;
     moves.name = "moves";
     Function mfn;
@@ -612,6 +708,155 @@ void testOptimizerAndGraphColoringDetails() {
     moves.functions.push_back(mfn);
     AllocationResult coalesced = allocateRegisters(moves);
     expect(coalesced.coalesced_moves >= 1, "allocator coalesces non-interfering moves");
+
+    Module mem2reg;
+    mem2reg.name = "mem2reg";
+    Function ssa_fn;
+    ssa_fn.name = "diamond";
+    ssa_fn.ir_value_ceiling = 7;
+    BasicBlock entry;
+    entry.name = "entry";
+    entry.instructions.push_back(
+        Instr{1, InstrOpcode::Alloca,
+              TypeRef::numeric(sandbox::ir::Type::T40)});
+    entry.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 1});
+    entry.instructions.push_back(
+        Instr{-1, InstrOpcode::Store, TypeRef::voidType(), {1, 2}});
+    entry.terminator.kind = TerminatorKind::Branch3;
+    entry.terminator.condition = 2;
+    entry.terminator.target_neg = "left";
+    entry.terminator.target_zero = "right";
+    entry.terminator.target_pos = "right";
+    BasicBlock left;
+    left.name = "left";
+    left.instructions.push_back(
+        Instr{3, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 10});
+    left.instructions.push_back(
+        Instr{-1, InstrOpcode::Store, TypeRef::voidType(), {1, 3}});
+    left.terminator.kind = TerminatorKind::Jump;
+    left.terminator.target = "merge";
+    BasicBlock right;
+    right.name = "right";
+    right.instructions.push_back(
+        Instr{4, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 20});
+    right.instructions.push_back(
+        Instr{-1, InstrOpcode::Store, TypeRef::voidType(), {1, 4}});
+    right.terminator.kind = TerminatorKind::Jump;
+    right.terminator.target = "merge";
+    BasicBlock merge;
+    merge.name = "merge";
+    merge.instructions.push_back(
+        Instr{5, InstrOpcode::Load,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1}});
+    Instr sink;
+    sink.opcode = InstrOpcode::Call;
+    sink.args = {5};
+    sink.symbol = "sink";
+    sink.effect = Effect::Control;
+    merge.instructions.push_back(sink);
+    merge.terminator.kind = TerminatorKind::Return;
+    ssa_fn.blocks = {entry, left, right, merge};
+    mem2reg.functions.push_back(ssa_fn);
+
+    const OptimizerStats mem2reg_stats =
+        optimizeModule(mem2reg, OptimizationLevel::Basic, options);
+    expect(mem2reg_stats.mem2reg_promotions == 1,
+           "mem2reg promotes a proven non-escaping scalar alloca");
+    int phi_count = 0;
+    bool memory_op_survived = false;
+    for (const BasicBlock& ssa_block : mem2reg.functions[0].blocks) {
+        for (const Instr& instr : ssa_block.instructions) {
+            if (instr.opcode == InstrOpcode::Phi) {
+                ++phi_count;
+                expect(instr.phi_incoming.size() == 2,
+                       "mem2reg phi records both predecessor/value pairs");
+            }
+            if (instr.opcode == InstrOpcode::Alloca ||
+                instr.opcode == InstrOpcode::Load ||
+                instr.opcode == InstrOpcode::Store) {
+                memory_op_survived = true;
+            }
+        }
+    }
+    expect(phi_count == 1, "mem2reg inserts one dominance-frontier phi");
+    expect(!memory_op_survived,
+           "mem2reg removes promoted alloca/load/store operations");
+    expect(verifyModule(mem2reg).empty(),
+           "mem2reg output passes SSA dominance verification");
+
+    Module loop_mem2reg;
+    loop_mem2reg.name = "loop_mem2reg";
+    Function loop_fn;
+    loop_fn.name = "loop";
+    loop_fn.ir_value_ceiling = 8;
+    BasicBlock loop_entry;
+    loop_entry.name = "entry";
+    loop_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Alloca,
+              TypeRef::numeric(sandbox::ir::Type::T40)});
+    loop_entry.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 0});
+    loop_entry.instructions.push_back(
+        Instr{-1, InstrOpcode::Store, TypeRef::voidType(), {1, 2}});
+    loop_entry.terminator.kind = TerminatorKind::Jump;
+    loop_entry.terminator.target = "header";
+    BasicBlock loop_header;
+    loop_header.name = "header";
+    loop_header.instructions.push_back(
+        Instr{3, InstrOpcode::Load,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1}});
+    loop_header.terminator.kind = TerminatorKind::Branch3;
+    loop_header.terminator.condition = 3;
+    loop_header.terminator.target_neg = "exit";
+    loop_header.terminator.target_zero = "body";
+    loop_header.terminator.target_pos = "body";
+    BasicBlock loop_body;
+    loop_body.name = "body";
+    loop_body.instructions.push_back(
+        Instr{4, InstrOpcode::Load,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1}});
+    loop_body.instructions.push_back(
+        Instr{5, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, -1});
+    loop_body.instructions.push_back(
+        Instr{6, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {4, 5}});
+    loop_body.instructions.push_back(
+        Instr{-1, InstrOpcode::Store, TypeRef::voidType(), {1, 6}});
+    loop_body.terminator.kind = TerminatorKind::Jump;
+    loop_body.terminator.target = "header";
+    BasicBlock loop_exit;
+    loop_exit.name = "exit";
+    loop_exit.instructions.push_back(
+        Instr{7, InstrOpcode::Load,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1}});
+    Instr loop_sink;
+    loop_sink.opcode = InstrOpcode::Call;
+    loop_sink.args = {7};
+    loop_sink.symbol = "sink";
+    loop_sink.effect = Effect::Control;
+    loop_exit.instructions.push_back(loop_sink);
+    loop_exit.terminator.kind = TerminatorKind::Return;
+    loop_fn.blocks = {
+        loop_entry, loop_header, loop_body, loop_exit};
+    loop_mem2reg.functions.push_back(loop_fn);
+    const OptimizerStats loop_promotions =
+        optimizeModule(
+            loop_mem2reg, OptimizationLevel::Basic, options);
+    expect(loop_promotions.mem2reg_promotions == 1,
+           "mem2reg promotes a loop-carried scalar");
+    const Instr& loop_phi =
+        loop_mem2reg.functions[0].blocks[1].instructions.front();
+    expect(loop_phi.opcode == InstrOpcode::Phi &&
+               loop_phi.phi_incoming.size() == 2,
+           "mem2reg creates entry/backedge loop phi");
+    expect(verifyModule(loop_mem2reg).empty(),
+           "loop-phi SSA passes dominance verification");
 }
 
 void testConcurrencyFeatures() {
@@ -644,7 +889,7 @@ void testConcurrencyFeatures() {
 
         sandbox::vm::VMState vm(256, 4096);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "linked image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "linked image loads");
             const auto result = sandbox::vm::run(vm, 2000);
             if (!result.halted() || regLong(vm, 13) != 6) {
                 std::cout << "VM execution failed! Halted: " << result.halted() 
@@ -655,7 +900,7 @@ void testConcurrencyFeatures() {
                 std::cout << "PC at trap: " << vm.pc << "\n";
                 std::cout << "Assembled instructions:\n";
                 for (size_t i = 0; i < linked.assembled.program.size(); ++i) {
-                    auto iw = sandbox::isa::InstructionWord::decode(linked.assembled.program[i]);
+                    auto iw = sandbox::isa::VersionedInstructionCodec::decode(linked.assembled.program[i], linked.assembled.isa_version);
                     std::cout << "  PC " << i << ": opcode=" << static_cast<int>(iw.opcode)
                               << " (" << sandbox::isa::opcodeToString(iw.opcode) << ")"
                               << ", rd=" << static_cast<int>(iw.rd)
@@ -666,7 +911,7 @@ void testConcurrencyFeatures() {
                               << ", offset=" << iw.offset << "\n";
                 }
                 if (vm.pc >= 0 && vm.pc < (int)linked.assembled.program.size()) {
-                    auto iw = sandbox::isa::InstructionWord::decode(linked.assembled.program[vm.pc]);
+                    auto iw = sandbox::isa::VersionedInstructionCodec::decode(linked.assembled.program[vm.pc], linked.assembled.isa_version);
                     std::cout << "Instruction at PC: opcode=" << static_cast<int>(iw.opcode) 
                               << ", fmt=" << static_cast<int>(iw.fmt) 
                               << ", rd=" << static_cast<int>(iw.rd)
@@ -725,7 +970,7 @@ void testSysWriteChar() {
     expect(linked.success, "sys_write_char links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "sys_write_char image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "sys_write_char image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "sys_write_char image halts");
         expect(vm.syscall_buffer == "AB\n", "console buffer has the correct characters");
@@ -753,7 +998,7 @@ void testMatchWildcard() {
     expect(linked.success, "match wildcard links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "match wildcard image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "match wildcard image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "match wildcard image halts");
         expect(regLong(vm, 13) == 20, "wildcard arm is executed for zero value");
@@ -788,7 +1033,7 @@ void testConstants() {
     expect(linked.success, "constants link");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "constants image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "constants image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "constants image halts");
         expect(regLong(vm, 13) == 11, "constants return correct value");
@@ -826,10 +1071,11 @@ void testParametricWidthFunctions() {
     expect(linked.success, "parametric functions link");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "parametric image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "parametric image loads");
         const auto result = sandbox::vm::run(vm, 256);
         expect(result.halted(), "parametric image halts");
-        expect(regLong(vm, 13) == 30, "parametric functions return correct value");
+        expect(regLong(vm, 13) == 30,
+               "parametric functions return correct value");
     }
 }
 
@@ -868,7 +1114,7 @@ void testWidthParametricFunctionsPhaseA() {
     expect(linked.success, "width-parametric accumulate links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "width-parametric image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "width-parametric image loads");
         const auto result = sandbox::vm::run(vm, 512);
         expect(result.halted(), "width-parametric image halts");
         expect(regLong(vm, 13) == 17, "width-parametric calls return expected value");
@@ -987,7 +1233,7 @@ void testOwnershipAndAutoDropPhaseA() {
         expect(linked.success, "auto-drop program links");
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "auto-drop image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "auto-drop image loads");
             const auto result = sandbox::vm::run(vm, 512);
             expect(result.halted(), "auto-drop image halts");
             expect(regLong(vm, 13) == 7, "auto-drop preserves the explicit return value");
@@ -1033,7 +1279,7 @@ void testRegisterAllocationWiringPhaseA() {
     expect(linked.success, "register allocation wiring program links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "register allocation image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "register allocation image loads");
         const auto result = sandbox::vm::run(vm, 512);
         expect(result.halted(), "register allocation image halts");
         expect(regLong(vm, 13) == 32, "register-colored function returns expected value");
@@ -1113,7 +1359,7 @@ void testUlibOwnershipRawHeapSnippetPhaseA() {
     expect(linked.success, "ulib ownership/raw heap snippet links");
     sandbox::vm::VMState vm(256, 256);
     if (linked.success) {
-        expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "ulib heap snippet image loads");
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "ulib heap snippet image loads");
         const auto result = sandbox::vm::run(vm, 512);
         expect(result.halted(), "ulib heap snippet image halts");
         expect(regLong(vm, 13) == 3, "ulib heap snippet preserves explicit return");
@@ -1203,7 +1449,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(linked.success, "native guard test links");
         sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native guard test VM image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "native guard test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
             expect(result.halted(), "native guard test halts");
             expect(regLong(vm, 13) == 1, "native parser successfully parses if pos block");
@@ -1277,7 +1523,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(linked.success, "native bad guard test links");
         sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "native bad guard test VM image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "native bad guard test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
             expect(result.halted(), "native bad guard test halts");
             expect(regLong(vm, 13) == 1, "native parser flags invalid guard keyword with error code 29");
@@ -1342,7 +1588,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(linked.success, "sort test links");
         sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "sort test VM image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "sort test VM image loads");
             const auto result = sandbox::vm::run(vm, 50000);
             std::cout << "VM SYSCALL BUFFER FOR SORT:\n" << vm.syscall_buffer << "\n";
             expect(result.halted(), "sort test halts");
@@ -1418,7 +1664,7 @@ void testTclTernaryErgonomicsExtensions() {
         expect(linked.success, "split buffer test links");
         sandbox::vm::VMState vm(65536, 1000000);
         if (linked.success) {
-            expect(sandbox::vm::loadAndReset(vm, linked.assembled.program), "split buffer test VM image loads");
+            expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "split buffer test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
             expect(result.halted(), "split buffer test halts");
             expect(regLong(vm, 13) == 1, "SplitBuf push/pop and zero-zone steal operations work correctly");

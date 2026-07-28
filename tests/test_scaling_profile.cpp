@@ -96,7 +96,7 @@ void testSparseFileBackedDisk() {
     vm::ProductionProfile profile = vm::ProductionProfile::minimum();
     vm::VMState writer(profile);
     expect(writer.attachBlockBackingFile(path), "production VM attaches sparse disk image file");
-    for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < vm::STORAGE_BLOCK_WORDS; ++i) {
         expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9000 + i)) == vm::MemFaultCode::OK,
                "disk write seed stores into sparse DMEM");
     }
@@ -111,7 +111,7 @@ void testSparseFileBackedDisk() {
     const long long initialized_size = fileSizeBytes(path);
     expect(writer.pendingDiskWrites() == 1 && writer.sparseDiskRecordCount() == 0,
            "sparse disk buffers first write before a flush barrier");
-    for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+    for (int i = 0; i < vm::STORAGE_BLOCK_WORDS; ++i) {
         expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9100 + i)) == vm::MemFaultCode::OK,
                "disk overwrite seed stores into sparse DMEM");
     }
@@ -130,7 +130,7 @@ void testSparseFileBackedDisk() {
            "sparse disk metrics count writes and dirty block flushes");
     const long long first_flush_size = fileSizeBytes(path);
     const long long compact_record_bytes =
-        static_cast<long long>(sizeof(int) + sizeof(long long) * vm::MMU_PAGE_WORDS);
+        static_cast<long long>(sizeof(int) + sizeof(long long) * vm::STORAGE_BLOCK_WORDS);
     const long long compact_header_bytes =
         static_cast<long long>(sizeof(long long) + sizeof(int));
     expect(first_flush_size == compact_header_bytes + compact_record_bytes,
@@ -139,7 +139,7 @@ void testSparseFileBackedDisk() {
            "sparse disk overwrite keeps one live touched block");
 
     for (int round = 0; round < 4; ++round) {
-        for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+        for (int i = 0; i < vm::STORAGE_BLOCK_WORDS; ++i) {
             expect(writer.dmem.store(2048 + i, vm::ops::fromLong(9200 + round + i)) ==
                        vm::MemFaultCode::OK,
                    "disk compact seed stores into sparse DMEM");
@@ -165,7 +165,7 @@ void testSparseFileBackedDisk() {
            "sparse file-backed disk preserves high block contents");
 
     for (int block = 7; block <= 8; ++block) {
-        for (int i = 0; i < vm::MMU_PAGE_WORDS; ++i) {
+        for (int i = 0; i < vm::STORAGE_BLOCK_WORDS; ++i) {
             expect(writer.dmem.store(2048 + i, vm::ops::fromLong(block * 1000 + i)) ==
                        vm::MemFaultCode::OK,
                    "sequential read-ahead seed stores into sparse DMEM");
@@ -375,7 +375,7 @@ void testNativeKernelProductionConstants() {
     expect(linked.success, "native kernel production constant probe links");
     vm::VMState machine(262144, 1000000);
     if (linked.success) {
-        expect(vm::loadAndReset(machine, linked.assembled.program),
+        expect(vm::assembler::loadAndReset(machine, linked.assembled),
                "native kernel production constant probe loads");
         const vm::RunResult result = vm::run(machine, 1000000);
         expect(result.halted(), "native kernel production constant probe halts");

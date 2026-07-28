@@ -1,4 +1,4 @@
-#include "tests_next/00_harness/next_test_harness.h"
+﻿#include "tests_next/00_harness/next_test_harness.h"
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
 
@@ -71,6 +71,8 @@ std::string nativePhaseDDriver() {
             var ok: t40 = 1;
             ok = expect_eq(kernel_init(), 1, ok);
 
+            // kernel_init publishes the kernel process slot immediately.
+            ok = expect_eq(tier1_dequeue(), 0, ok);
             macro_stage_thread(9);
             macro_stage_thread(10);
             var epoch: t40 = scheduler_epoch();
@@ -97,8 +99,8 @@ std::string nativePhaseDDriver() {
             ok = expect_eq(macro_publish(), 2, ok);
             var staged_a: t40 = tier1_dequeue();
             var staged_b: t40 = tier1_dequeue();
-            ok = expect_eq(staged_a + staged_b, 3, ok);
-            ok = expect_eq(staged_a * staged_b, 2, ok);
+            ok = expect_eq(staged_a + staged_b, 1, ok);
+            ok = expect_eq(staged_a * staged_b, 0, ok);
             ok = expect_eq(quota_remaining(0), 1, ok);
 
             var futex_addr: t40 = USER_MEM_BASE + 10;
@@ -383,7 +385,7 @@ void processControlCleanup(TestContext& ctx) {
 
     sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     vm.resetBlockDevice(192);
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               "native process-control cleanup image loads");
     const auto result = sandbox::vm::run(vm, 50000000);
     if (!result.halted()) {
@@ -421,7 +423,7 @@ void schedulerFutexIpcWaits(TestContext& ctx) {
 
     sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
     vm.resetBlockDevice(192);
-    ctx.check(sandbox::vm::loadAndReset(vm, linked.assembled.program),
+    ctx.check(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
               "native Phase D focused image loads");
     const auto result = sandbox::vm::run(vm, 50000000);
     if (!result.halted()) {

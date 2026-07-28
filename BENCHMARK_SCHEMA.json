@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trit.benchmark_result.v1",
+  "title": "Trit reproducible benchmark result",
+  "type": "object",
+  "required": [
+    "schema",
+    "captured_at_utc",
+    "source",
+    "host",
+    "build",
+    "workload",
+    "correctness",
+    "timing",
+    "instruction_mix",
+    "memory",
+    "tlb",
+    "scheduler",
+    "wal",
+    "disk"
+  ],
+  "properties": {
+    "schema": {
+      "const": "trit.benchmark_result.v1"
+    },
+    "captured_at_utc": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository", "commit", "dirty"],
+      "properties": {
+        "repository": {"type": "string"},
+        "commit": {"type": "string"},
+        "dirty": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "host": {
+      "type": "object",
+      "required": ["system", "release", "machine", "processor", "python"],
+      "additionalProperties": true
+    },
+    "build": {
+      "type": "object",
+      "required": ["directory", "profile"],
+      "additionalProperties": true
+    },
+    "workload": {
+      "type": "object",
+      "required": ["name", "suite"],
+      "additionalProperties": true
+    },
+    "correctness": {
+      "type": "object",
+      "required": ["passed", "warmup_returncodes", "measured_returncodes"],
+      "additionalProperties": true
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "unit",
+        "warmups",
+        "iterations",
+        "samples",
+        "median",
+        "mean",
+        "standard_deviation",
+        "coefficient_of_variation",
+        "maximum_accepted_cv"
+      ],
+      "properties": {
+        "unit": {"const": "seconds"},
+        "warmups": {"type": "integer", "minimum": 0},
+        "iterations": {"type": "integer", "minimum": 1},
+        "samples": {
+          "type": "array",
+          "items": {"type": "number", "minimum": 0}
+        },
+        "median": {"type": "number", "minimum": 0},
+        "mean": {"type": "number", "minimum": 0},
+        "standard_deviation": {"type": "number", "minimum": 0},
+        "coefficient_of_variation": {"type": "number", "minimum": 0},
+        "maximum_accepted_cv": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "instruction_mix": {"type": "object"},
+    "memory": {"type": "object"},
+    "tlb": {"type": "object"},
+    "scheduler": {"type": "object"},
+    "wal": {"type": "object"},
+    "disk": {"type": "object"}
+  },
+  "additionalProperties": true
+}

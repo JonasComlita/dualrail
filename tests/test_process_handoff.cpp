@@ -210,12 +210,18 @@ sandbox::compiler::LinkResult compileApp(
     options.dead_strip_functions = true;
     LinkResult linked = linkModules({compiled.object}, options);
     expect(linked.success, app_name + " links");
+    if (!linked.success) {
+        std::cerr << "LINK FAIL DIAGNOSTICS FOR " << app_name << ":\n";
+        for (const auto& diagnostic : linked.diagnostics)
+            std::cerr << "  " << diagnostic.format() << "\n";
+    }
     if (linked.success) {
         expect(linked.executable_header.text_pages * sandbox::vm::MMU_PAGE_WORDS >=
                    linked.instruction_count,
                app_name + " executable header covers text image");
-        expect(linked.executable_header.stack_words == stack_words,
-               app_name + " executable header carries stack hint");
+        expect(linked.executable_header.stack_words ==
+                   ((stack_words + 8) / 9) * 9,
+               app_name + " executable header aligns its stack hint");
     }
     return linked;
 }
@@ -238,12 +244,26 @@ sandbox::compiler::LinkResult compileInlineApp(
     options.dead_strip_functions = true;
     LinkResult linked = linkModules({compiled.object}, options);
     expect(linked.success, app_name + " links");
+    if (!linked.success) {
+        std::cerr << "LINK FAIL DIAGNOSTICS FOR " << app_name << ":\n";
+        for (const auto& diagnostic : linked.diagnostics)
+            std::cerr << "  " << diagnostic.format() << "\n";
+    }
     return linked;
 }
 
 std::string buildBootExecAssembly(const std::string& path,
                                   bool seed_desktop_login = false) {
     std::ostringstream boot;
+    boot << ".isa 2\n";
+    boot << ".require scalar_advanced\n";
+    boot << ".require lane\n";
+    boot << ".require vector\n";
+    boot << ".require accumulator_ai\n";
+    boot << ".require atomics\n";
+    boot << ".require mmu\n";
+    boot << ".require wait\n";
+    boot << ".require wide_t50\n";
     boot << ".text\n";
     boot << "boot:\n";
     boot << "    mov sp, 16383\n";
@@ -320,11 +340,13 @@ void testDesktopLaunchesMappedCalculator() {
     expect(rootfs.addExecutableImage("/bin/desktop",
                                     desktop.assembled.program,
                                     desktop.executable_header,
+                                    desktop.executable_header_v2,
                                     kDesktopTextPpn).ok(),
            "desktop executable image installs into native disk root");
     expect(rootfs.addExecutableImage("/bin/calculator",
                                     calc.assembled.program,
                                     calc.executable_header,
+                                    calc.executable_header_v2,
                                     kCalcTextPpn).ok(),
            "calculator executable image installs into native disk root");
     std::vector<long long> rootImage = rootfs.image();
@@ -380,6 +402,12 @@ void testDesktopLaunchesMappedCalculator() {
                   << " epc=" << vm.epc
                   << " pf_addr=" << vm.page_fault_addr
                   << " pf_access=" << vm.page_fault_access
+                  << " dmem_ptbr=" << vm.user_dmem_ptbr
+                  << " fault_pte=" << wordAt(
+                         vm,
+                         vm.user_dmem_ptbr +
+                             vm.page_fault_addr /
+                                 sandbox::vm::MMU_PAGE_WORDS)
                   << " syscall=" << vm.syscall_id
                   << " priv=" << static_cast<int>(vm.privilege)
                   << " trap=" << sandbox::vm::ops::toLong(vm.trap_reg)
@@ -513,11 +541,13 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     expect(rootfs.addExecutableImage("/bin/launcher",
                                     launcher.assembled.program,
                                     launcher.executable_header,
+                                    launcher.executable_header_v2,
                                     kLauncherTextPpn).ok(),
            "launcher executable image installs into native disk root");
     expect(rootfs.addExecutableImage("/bin/window_probe",
                                     probe.assembled.program,
                                     probe.executable_header,
+                                    probe.executable_header_v2,
                                     kWindowProbeTextPpn).ok(),
            "window probe executable image installs into native disk root");
     expect(rootfs.addFile("/probe", {80, 82, 79, 66}).ok(),
@@ -556,6 +586,12 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
                   << " syscall=" << vm.syscall_id
                   << " mmu=" << vm.mmu_enable
                   << " dmem_pages=" << vm.user_dmem_pages
+                  << " dmem_ptbr=" << vm.user_dmem_ptbr
+                  << " fault_pte=" << wordAt(
+                         vm,
+                         vm.user_dmem_ptbr +
+                             vm.page_fault_addr /
+                                 sandbox::vm::MMU_PAGE_WORDS)
                   << " buffer='" << vm.syscall_buffer << "'\n";
     }
     expect(result.halted(), "window probe app halts after drawing");
