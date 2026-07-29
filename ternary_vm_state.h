@@ -124,7 +124,6 @@ static constexpr int DEFAULT_DMEM_SIZE = 1000000;
 
 static constexpr int STORAGE_BLOCK_WORDS =
     architecture::v2::STORAGE_BLOCK_WORDS;
-static constexpr int LEGACY_MMU_PAGE_WORDS = 27;
 static constexpr int MMU_PAGE_WORDS =
     architecture::v2::BASE_PAGE_WORDS;
 static constexpr int MMU_SUPERPAGE_WORDS =
@@ -1498,119 +1497,32 @@ static constexpr int SYSCALL_SLEEP_MS         = 56;
 static constexpr int SYSCALL_APP_SPAWN        = 57;
 static constexpr int SYSCALL_REBOOT           = 58;
 
-static constexpr int EXEC_HEADER_WORDS = 9;
 static constexpr int EXEC_MAGIC = 40404;
-static constexpr int EXEC_VERSION_V1 = 1;
-static constexpr int EXEC_ABI_VERSION_V1 = 1;
-static constexpr int EXEC_SYSCALL_ABI_VERSION_V1 = 1;
-
-static constexpr int EXEC_HEADER_MAGIC = 0;
-static constexpr int EXEC_HEADER_VERSION = 1;
-static constexpr int EXEC_HEADER_ABI_VERSION = 2;
-static constexpr int EXEC_HEADER_ENTRY_PC = 3;
-static constexpr int EXEC_HEADER_TEXT_PAGES = 4;
-static constexpr int EXEC_HEADER_DATA_PAGES = 5;
-static constexpr int EXEC_HEADER_STACK_WORDS = 6;
-static constexpr int EXEC_HEADER_SYSCALL_ABI_VERSION = 7;
-static constexpr int EXEC_HEADER_FLAGS = 8;
-
-struct ExecutableImageHeader {
-    int header_addr = -1;
-    int magic = EXEC_MAGIC;
-    int version = EXEC_VERSION_V1;
-    int abi_version = EXEC_ABI_VERSION_V1;
-    int entry_virtual_pc = 0;
-    int text_pages = 0;
-    int data_pages = 0;
-    int stack_words = 0;
-    int syscall_abi_version = EXEC_SYSCALL_ABI_VERSION_V1;
-    int flags = 0;
-};
-
-[[nodiscard]] inline std::vector<TernaryValue> encodeExecutableHeader(
-    int entry_virtual_pc,
-    int text_pages,
-    int data_pages,
-    int stack_words,
-    int syscall_abi_version = EXEC_SYSCALL_ABI_VERSION_V1,
-    int flags = 0,
-    int abi_version = EXEC_ABI_VERSION_V1,
-    int version = EXEC_VERSION_V1) {
-
-    return {
-        ops::fromLong(EXEC_MAGIC),
-        ops::fromLong(version),
-        ops::fromLong(abi_version),
-        ops::fromLong(entry_virtual_pc),
-        ops::fromLong(text_pages),
-        ops::fromLong(data_pages),
-        ops::fromLong(stack_words),
-        ops::fromLong(syscall_abi_version),
-        ops::fromLong(flags),
-    };
-}
-
-[[nodiscard]] inline bool validateExecutableHeader(const ExecutableImageHeader& header) {
-    return header.magic == EXEC_MAGIC &&
-           header.version == EXEC_VERSION_V1 &&
-           header.abi_version == EXEC_ABI_VERSION_V1 &&
-           header.entry_virtual_pc >= 0 &&
-           header.text_pages > 0 &&
-           header.data_pages > 0 &&
-           header.stack_words > 0 &&
-           header.syscall_abi_version == EXEC_SYSCALL_ABI_VERSION_V1;
-}
-
-[[nodiscard]] inline bool decodeExecutableHeader(
-    const std::vector<TernaryValue>& image,
-    int header_addr,
-    ExecutableImageHeader& out) {
-
-    if (header_addr < 0 ||
-        header_addr + EXEC_HEADER_WORDS > static_cast<int>(image.size())) {
-        return false;
-    }
-    for (int i = 0; i < EXEC_HEADER_WORDS; ++i) {
-        const TernaryValue& word = image[static_cast<std::size_t>(header_addr + i)];
-        if (!isNumericMode(word.mode) || word.isInvalid()) return false;
-    }
-    out.header_addr = header_addr;
-    out.magic = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_MAGIC)]));
-    out.version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_VERSION)]));
-    out.abi_version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_ABI_VERSION)]));
-    out.entry_virtual_pc = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_ENTRY_PC)]));
-    out.text_pages = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_TEXT_PAGES)]));
-    out.data_pages = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_DATA_PAGES)]));
-    out.stack_words = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_STACK_WORDS)]));
-    out.syscall_abi_version = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_SYSCALL_ABI_VERSION)]));
-    out.flags = static_cast<int>(ops::toLong(image[static_cast<std::size_t>(header_addr + EXEC_HEADER_FLAGS)]));
-    return validateExecutableHeader(out);
-}
 
 #include "executable_header_v2.h"
 
 inline bool initializeTaskContext(
     TernaryMemory& dmem,
     int context_addr,
-    const ExecutableImageHeader& header,
+    const ExecutableImageHeaderV2& header,
     int imem_ptbr,
     int dmem_ptbr) {
 
-    if (!validateExecutableHeader(header)) return false;
+    if (!validateExecutableHeaderV2(header)) return false;
     if (context_addr < 0 || context_addr + TASK_CONTEXT_WORDS > dmem.size()) return false;
     const int sp = header.stack_words;
     if (dmem.store(context_addr + TASK_CONTEXT_EPC,
-                   ops::fromLong(header.entry_virtual_pc)) != MemFaultCode::OK) return false;
+                   ops::fromLong(header.entry_pc)) != MemFaultCode::OK) return false;
     if (dmem.store(context_addr + TASK_CONTEXT_STATUS,
                    ops::fromLong(35)) != MemFaultCode::OK) return false;
     if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PTBR,
                    ops::fromLong(imem_ptbr)) != MemFaultCode::OK) return false;
     if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PAGES,
-                   ops::fromLong(header.text_pages)) != MemFaultCode::OK) return false;
+                   ops::fromLong(executableTextPages(header))) != MemFaultCode::OK) return false;
     if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PTBR,
                    ops::fromLong(dmem_ptbr)) != MemFaultCode::OK) return false;
     if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PAGES,
-                   ops::fromLong(header.data_pages)) != MemFaultCode::OK) return false;
+                   ops::fromLong(executableDataPages(header))) != MemFaultCode::OK) return false;
     for (int i = TASK_CONTEXT_REG_BASE; i < TASK_CONTEXT_WORDS; ++i) {
         if (dmem.store(context_addr + i, TernaryValue::zero()) != MemFaultCode::OK) return false;
     }
@@ -1704,63 +1616,10 @@ struct PageTableEntry {
     return true;
 }
 
-[[nodiscard]] inline bool decodePageTableEntryLegacy(
-        TernaryValue value,
-        PageTableEntry& out) {
-    if (!isNumericMode(value.mode) || value.isInvalid()) return false;
-    const int8_t valid = readStoredTrit(value, PTE_FLAG_VALID);
-    const int8_t user = readStoredTrit(value, PTE_FLAG_USER);
-    const int8_t read = readStoredTrit(value, PTE_FLAG_READ);
-    const int8_t write = readStoredTrit(value, PTE_FLAG_WRITE);
-    const int8_t execute = readStoredTrit(value, PTE_FLAG_EXECUTE);
-    long long ppn = 0;
-    long long place = 1;
-    for (int pos = PTE_PPN_SHIFT; pos < 40; ++pos) {
-        ppn += static_cast<long long>(readStoredTrit(value, pos)) * place;
-        place *= 3;
-    }
-    if (ppn >= 0 && ppn <= std::numeric_limits<int>::max() &&
-        (valid == T_POS || valid == T_NEG)) {
-        out = PageTableEntry{};
-        out.ppn = static_cast<int>(ppn);
-        out.present = valid == T_POS;
-        out.user = user == T_POS;
-        out.read = read == T_POS;
-        out.write = write == T_POS;
-        out.execute = execute == T_POS;
-        return true;
-    }
-
-    // Transition-only legacy numeric packed form.
-    long long packed = ops::toLong(value);
-    if (packed <= 0) return false;
-    const long long flag_word = packed % 243;
-    const long long packed_ppn = packed / 243;
-    if (packed_ppn < 0 || packed_ppn > std::numeric_limits<int>::max()) return false;
-    out.ppn = static_cast<int>(packed_ppn);
-    out.present = (flag_word % 3) == 1;
-    out.user = ((flag_word / 3) % 3) == 1;
-    out.read = ((flag_word / 9) % 3) == 1;
-    out.write = ((flag_word / 27) % 3) == 1;
-    out.execute = ((flag_word / 81) % 3) == 1;
-    return true;
-}
-
-[[nodiscard]] inline bool decodePageTableEntry(
-        TernaryValue value,
-        PageTableEntry& out,
-        IsaEncodingVersion version) {
-    if (version == IsaEncodingVersion::V2)
-        return decodePageTableEntryV2(value, out);
-    if (decodePageTableEntryV2(value, out)) return true;
-    return decodePageTableEntryLegacy(value, out);
-}
-
 [[nodiscard]] inline bool decodePageTableEntry(
         TernaryValue value,
         PageTableEntry& out) {
-    if (decodePageTableEntryV2(value, out)) return true;
-    return decodePageTableEntryLegacy(value, out);
+    return decodePageTableEntryV2(value, out);
 }
 
 // =============================================================================
@@ -1908,7 +1767,6 @@ public:
         pending_blocks_.clear();
         compact_record_count_ = 0;
         backing_generation_ = 0;
-        backing_read_only_ = false;
         stats_.reset();
     }
 
@@ -1927,7 +1785,6 @@ public:
         pending_blocks_.clear();
         compact_record_count_ = 0;
         backing_generation_ = 0;
-        backing_read_only_ = false;
         stats_.reset();
         return loadCompactBacking();
     }
@@ -1960,7 +1817,6 @@ public:
     [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= block_count_) return false;
         if (static_cast<int>(data.size()) != STORAGE_BLOCK_WORDS) return false;
-        if (backing_read_only_) return false;
 
         ++stats_.writes;
         applyBlock(index, data);
@@ -2026,7 +1882,6 @@ private:
     std::string backing_path_;
     int compact_record_count_ = 0;
     std::uint64_t backing_generation_ = 0;
-    bool backing_read_only_ = false;
     mutable VMBlockDeviceStats stats_;
 
     [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& data) {
@@ -2149,6 +2004,7 @@ private:
 
     [[nodiscard]] bool rewriteCompactBacking() {
         if (backing_path_.empty()) return true;
+        const std::size_t flushed_blocks = pending_blocks_.size();
 
         std::vector<int> indices;
         indices.reserve(blocks_.size());
@@ -2181,6 +2037,11 @@ private:
         compact_record_count_ = static_cast<int>(indices.size());
         ++backing_generation_;
         pending_blocks_.clear();
+        if (flushed_blocks != 0) {
+            stats_.dirty_flushes +=
+                static_cast<long long>(flushed_blocks);
+            ++stats_.flushes;
+        }
         ++stats_.compactions;
         return true;
     }
@@ -2191,17 +2052,16 @@ private:
         if (!file.good()) return initializeCompactBacking();
         std::error_code size_ec;
         const std::uintmax_t file_size = std::filesystem::file_size(backing_path_, size_ec);
-        if (size_ec || file_size < kSparseDiskLegacyHeaderBytes) return false;
+        if (size_ec || file_size < kSparseDiskV2HeaderBytes) return false;
         std::uint64_t magic = 0;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         if (!file.good()) return false;
 
         int count = 0;
         std::uint64_t expected_checksum = 0;
-        std::uintmax_t header_bytes = kSparseDiskLegacyHeaderBytes;
-        std::uintmax_t record_bytes = kSparseDiskLegacyRecordBytes;
-        const bool v2 = magic == kSparseDiskV2Magic;
-        if (v2) {
+        std::uintmax_t header_bytes = kSparseDiskV2HeaderBytes;
+        std::uintmax_t record_bytes = kSparseDiskV2RecordBytes;
+        if (magic == kSparseDiskV2Magic) {
             std::uint32_t version = 0;
             std::uint32_t block_words = 0;
             file.read(reinterpret_cast<char*>(&version), sizeof(version));
@@ -2217,10 +2077,6 @@ private:
             }
             header_bytes = kSparseDiskV2HeaderBytes;
             record_bytes = kSparseDiskV2RecordBytes;
-        } else if (magic == kSparseDiskLegacyMagic) {
-            file.read(reinterpret_cast<char*>(&count), sizeof(count));
-            if (!file.good() || count < 0) return false;
-            backing_read_only_ = true;
         } else {
             return false;
         }
@@ -2236,21 +2092,15 @@ private:
             int index = -1;
             std::vector<long long> payload(STORAGE_BLOCK_WORDS, 0);
             file.read(reinterpret_cast<char*>(&index), sizeof(index));
-            if (v2) hashBytes(actual_checksum, &index, sizeof(index));
+            hashBytes(actual_checksum, &index, sizeof(index));
             for (int word = 0; word < STORAGE_BLOCK_WORDS; ++word) {
-                if (v2) {
-                    std::uint64_t raw = 0;
-                    file.read(reinterpret_cast<char*>(&raw), sizeof(raw));
-                    if (!numericWordFromRaw(
-                            raw, payload[static_cast<std::size_t>(word)])) {
-                        return false;
-                    }
-                    hashBytes(actual_checksum, &raw, sizeof(raw));
-                } else {
-                    file.read(reinterpret_cast<char*>(
-                                  &payload[static_cast<std::size_t>(word)]),
-                              sizeof(long long));
+                std::uint64_t raw = 0;
+                file.read(reinterpret_cast<char*>(&raw), sizeof(raw));
+                if (!numericWordFromRaw(
+                        raw, payload[static_cast<std::size_t>(word)])) {
+                    return false;
                 }
+                hashBytes(actual_checksum, &raw, sizeof(raw));
             }
             if (!file.good()) return false;
             if (index >= 0 && index < block_count_) {
@@ -2261,9 +2111,8 @@ private:
                 }
             }
         }
-        if (v2 && actual_checksum != expected_checksum) return false;
+        if (actual_checksum != expected_checksum) return false;
         if (needs_repair) {
-            if (backing_read_only_) return false;
             return rewriteCompactBacking();
         }
         return true;
@@ -2272,7 +2121,6 @@ private:
     [[nodiscard]] bool initializeCompactBacking() {
         if (backing_path_.empty()) return true;
         backing_generation_ = 0;
-        backing_read_only_ = false;
         blocks_.clear();
         pending_blocks_.clear();
         return rewriteCompactBacking();
@@ -2280,22 +2128,14 @@ private:
 
     [[nodiscard]] bool appendPendingRecords() {
         if (backing_path_.empty() || pending_blocks_.empty()) return true;
-        if (backing_read_only_) return false;
         // tDisk v2 uses a checksummed generation. Rewriting the compact sparse
         // image atomically keeps the checksum and generation coherent.
         return rewriteCompactBacking();
     }
 
-    static constexpr std::uint64_t kSparseDiskLegacyMagic =
-        0x54524954535031ULL; // "TRITSP1"
     static constexpr std::uint64_t kSparseDiskV2Magic =
         0x54524954535032ULL; // "TRITSP2"
     static constexpr std::uint32_t kSparseDiskVersion = 2;
-    static constexpr std::uintmax_t kSparseDiskLegacyHeaderBytes =
-        static_cast<std::uintmax_t>(sizeof(long long) + sizeof(int));
-    static constexpr std::uintmax_t kSparseDiskLegacyRecordBytes =
-        static_cast<std::uintmax_t>(
-            sizeof(int) + sizeof(long long) * STORAGE_BLOCK_WORDS);
     static constexpr std::uintmax_t kSparseDiskV2HeaderBytes =
         static_cast<std::uintmax_t>(
             sizeof(std::uint64_t) + sizeof(std::uint32_t) +
@@ -2350,7 +2190,6 @@ enum class VMExecutionBackend : uint8_t {
 };
 
 struct VMDecodedTraceCacheKey {
-    int isa_version = 0;
     std::uint64_t required_features = 0;
     int asid = 0;
     int pc = 0;
@@ -2370,8 +2209,7 @@ struct VMDecodedTraceCacheKey {
 
     [[nodiscard]] bool operator==(
         const VMDecodedTraceCacheKey& other) const {
-        return isa_version == other.isa_version &&
-               required_features == other.required_features &&
+        return required_features == other.required_features &&
                asid == other.asid &&
                pc == other.pc &&
                privilege == other.privilege &&
@@ -2399,7 +2237,7 @@ struct VMDecodedTraceCacheKey {
 struct VMDecodedTraceCacheKeyHash {
     [[nodiscard]] std::size_t operator()(
         const VMDecodedTraceCacheKey& key) const noexcept {
-        std::size_t hash = static_cast<std::size_t>(key.isa_version);
+        std::size_t hash = 0;
         auto mix = [&](std::uint64_t value) {
             hash ^= static_cast<std::size_t>(
                 value + 0x9e3779b97f4a7c15ULL +
@@ -2686,7 +2524,6 @@ struct VMState {
     int                      pc = 0;   // Program counter (word-addressed into imem)
     VMStatus                 status = VMStatus::RUNNING;
     TernaryValue             trap_reg;  // r27: written on fault, read-only from ISA
-    IsaEncodingVersion       isa_version = IsaEncodingVersion::V1;
     std::uint64_t            required_features = 0;
     std::uint64_t            supported_features =
         (std::uint64_t{1} <<
@@ -3190,17 +3027,13 @@ struct VMState {
     [[nodiscard]] bool configureArchitecture(
         IsaEncodingVersion version,
         std::uint64_t required) {
-        if (version == IsaEncodingVersion::V1) {
-            if (required != 0) return false;
-        } else {
-            const std::uint64_t base =
-                featureBit(architecture::v2::FEATURE_BASE_V2);
-            if ((required & base) == 0 ||
-                (required & ~supported_features) != 0) {
-                return false;
-            }
+        if (version != IsaEncodingVersion::V2) return false;
+        const std::uint64_t base =
+            featureBit(architecture::v2::FEATURE_BASE_V2);
+        if ((required & base) == 0 ||
+            (required & ~supported_features) != 0) {
+            return false;
         }
-        isa_version = version;
         required_features = required;
         invalidateBlockCache();
         invalidateTraceJit();
@@ -3435,7 +3268,9 @@ struct VMState {
             case CSR_BLOCK_COUNT: value = static_cast<long long>(block_device.blockCount()); break;
             case CSR_BLOCK_WORDS: value = STORAGE_BLOCK_WORDS; break;
             case CSR_POWER_CONTROL: value = power_control; break;
-            case CSR_ISA_VERSION: value = static_cast<int>(isa_version); break;
+            case CSR_ISA_VERSION:
+                value = architecture::v2::ISA_VERSION;
+                break;
             case CSR_ISA_FEATURES: value = featureWordNumeric(supported_features); break;
             case CSR_MMU_BASE_PAGE_WORDS: value = architecture::v2::BASE_PAGE_WORDS; break;
             case CSR_MMU_SUPERPAGE_WORDS: value = architecture::v2::SUPERPAGE_WORDS; break;
@@ -3676,12 +3511,7 @@ struct VMState {
                 if (value < 0) return false;
                 user_dmem_ptbr = static_cast<int>(value);
                 ++mmu_generation;
-                if (isa_version == IsaEncodingVersion::V2) {
-                    // The current transition kernel allocates one stable PTBR
-                    // range per process; hardware derives the nine-trit ASID
-                    // from that range while exposing ASID read-only.
-                    setCurrentAsid(static_cast<int>(value % 19683));
-                }
+                setCurrentAsid(static_cast<int>(value % 19683));
                 return true;
             case CSR_USER_DMEM_PAGES:
                 if (value < 0) return false;
@@ -3944,10 +3774,7 @@ struct VMState {
             routed_cause = page_fault_cause;
             return false;
         }
-        const int base_page_words =
-            isa_version == IsaEncodingVersion::V2
-                ? MMU_PAGE_WORDS
-                : LEGACY_MMU_PAGE_WORDS;
+        const int base_page_words = MMU_PAGE_WORDS;
         const int vpn = virtual_addr / base_page_words;
         if (vpn < 0 || vpn >= page_count) {
             setPageFault(virtual_addr, access);
@@ -3962,11 +3789,9 @@ struct VMState {
         };
         auto& l1 = need_execute ? instruction_tlb : data_tlb;
         TlbEntry* cached = nullptr;
-        if (isa_version == IsaEncodingVersion::V2) {
-            cached = findTlbEntry(
-                l1, 9, 3, virtual_addr, MMU_SUPERPAGE_WORDS,
-                ptbr, need_execute);
-        }
+        cached = findTlbEntry(
+            l1, 9, 3, virtual_addr, MMU_SUPERPAGE_WORDS,
+            ptbr, need_execute);
         if (cached == nullptr) {
             cached = findTlbEntry(
                 l1, 9, 3, virtual_addr, base_page_words,
@@ -3998,11 +3823,9 @@ struct VMState {
             return true;
         }
 
-        if (isa_version == IsaEncodingVersion::V2) {
-            cached = findTlbEntry(
-                unified_l2_tlb, 27, 9, virtual_addr,
-                MMU_SUPERPAGE_WORDS, ptbr, need_execute);
-        }
+        cached = findTlbEntry(
+            unified_l2_tlb, 27, 9, virtual_addr,
+            MMU_SUPERPAGE_WORDS, ptbr, need_execute);
         if (cached == nullptr) {
             cached = findTlbEntry(
                 unified_l2_tlb, 27, 9, virtual_addr,
@@ -4041,19 +3864,17 @@ struct VMState {
         PageTableEntry pte;
         TernaryValue pte_value;
         bool decoded = false;
-        if (isa_version == IsaEncodingVersion::V2) {
-            const int superpage_base_vpn = (vpn / 27) * 27;
-            const int superpage_pte_addr = ptbr + superpage_base_vpn;
-            if (dmem.inRange(superpage_pte_addr)) {
-                auto [candidate, fault] = dmem.load(superpage_pte_addr);
-                if (fault == MemFaultCode::OK &&
-                    decodePageTableEntryV2(candidate, pte) &&
-                    pte.present && pte.superpage) {
-                    pte_vpn = superpage_base_vpn;
-                    pte_addr = superpage_pte_addr;
-                    pte_value = candidate;
-                    decoded = true;
-                }
+        const int superpage_base_vpn = (vpn / 27) * 27;
+        const int superpage_pte_addr = ptbr + superpage_base_vpn;
+        if (dmem.inRange(superpage_pte_addr)) {
+            auto [candidate, fault] = dmem.load(superpage_pte_addr);
+            if (fault == MemFaultCode::OK &&
+                decodePageTableEntryV2(candidate, pte) &&
+                pte.present && pte.superpage) {
+                pte_vpn = superpage_base_vpn;
+                pte_addr = superpage_pte_addr;
+                pte_value = candidate;
+                decoded = true;
             }
         }
         if (!decoded) {
@@ -4065,7 +3886,7 @@ struct VMState {
             }
             auto [candidate, fault] = dmem.load(pte_addr);
             if (fault != MemFaultCode::OK ||
-                !decodePageTableEntry(candidate, pte, isa_version) ||
+                !decodePageTableEntryV2(candidate, pte) ||
                 !pte.present) {
                 setPageFault(virtual_addr, access);
                 routed_cause = page_fault_cause;
@@ -4081,8 +3902,7 @@ struct VMState {
             routed_cause = protection_cause;
             return false;
         }
-        if (isa_version == IsaEncodingVersion::V2 &&
-            (!pte.accessed || (need_write && !pte.dirty))) {
+        if (!pte.accessed || (need_write && !pte.dirty)) {
             pte.accessed = true;
             if (need_write) pte.dirty = true;
             const TernaryValue updated = encodePageTableEntry(pte);

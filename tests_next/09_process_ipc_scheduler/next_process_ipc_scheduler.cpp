@@ -59,12 +59,9 @@ void execImageHandoff(TestContext& ctx) {
     ctx.check(kernel.fs().createFile("/bin", InodeKind::Directory).ok(),
               "bin directory creates");
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 7;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 40;
     const std::vector<long long> image = {700, 701, 702};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        7, static_cast<int>(image.size()), 1, 45);
     ctx.check(kernel.installExecutable("/bin/task", image, header).ok(),
               "executable task installs");
 

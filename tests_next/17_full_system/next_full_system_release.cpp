@@ -1131,12 +1131,12 @@ void releaseCliCommandDescriptors(TestContext& ctx) {
               "release sparse disk expands into a decodable native VFS image");
 
     const std::vector<std::pair<std::string, int>> expected_commands = {
-        {"/bin/shell", 256},
-        {"/bin/sh", 256},
-        {"/bin/sync", 128},
-        {"/bin/reboot", 128},
-        {"/bin/shutdown", 128},
-        {"/bin/crash", 128},
+        {"/bin/shell", 261},
+        {"/bin/sh", 261},
+        {"/bin/sync", 135},
+        {"/bin/reboot", 135},
+        {"/bin/shutdown", 135},
+        {"/bin/crash", 135},
     };
     for (const auto& [path, stack_words] : expected_commands) {
         std::vector<long long> descriptor;
@@ -1151,41 +1151,47 @@ void releaseCliCommandDescriptors(TestContext& ctx) {
             sandbox::os::NATIVE_EXEC_DESC_V2_WORDS) {
             continue;
         }
-        ctx.equal(descriptor[sandbox::vm::EXEC_HEADER_MAGIC],
-                  static_cast<long long>(sandbox::vm::EXEC_MAGIC),
-                  path + " descriptor magic matches executable format");
-        ctx.equal(descriptor[sandbox::vm::EXEC_HEADER_VERSION],
-                  static_cast<long long>(sandbox::vm::EXEC_VERSION_V1),
-                  path + " descriptor version is v1");
-        ctx.equal(descriptor[sandbox::vm::EXEC_HEADER_ABI_VERSION],
-                  static_cast<long long>(sandbox::vm::EXEC_ABI_VERSION_V1),
-                  path + " descriptor ABI version is v1");
-        ctx.check(descriptor[sandbox::vm::EXEC_HEADER_ENTRY_PC] >= 0,
+        std::vector<sandbox::vm::TernaryValue> encoded_header;
+        encoded_header.reserve(sandbox::vm::EXEC_V2_HEADER_WORDS);
+        for (int index = 0; index < sandbox::vm::EXEC_V2_HEADER_WORDS; ++index) {
+            encoded_header.push_back(
+                sandbox::vm::ops::fromLong(descriptor[index]));
+        }
+        sandbox::vm::ExecutableImageHeaderV2 header;
+        ctx.check(sandbox::vm::decodeExecutableHeaderV2(
+                      encoded_header, 0, header),
+                  path + " descriptor contains a valid checksummed v2 header");
+        ctx.equal(header.executable_version,
+                  sandbox::architecture::v2::EXECUTABLE_VERSION,
+                  path + " descriptor version is v2");
+        ctx.equal(header.function_abi_version,
+                  sandbox::architecture::v2::FUNCTION_ABI_VERSION,
+                  path + " descriptor function ABI is v2");
+        ctx.check(header.entry_pc >= 0,
                   path + " entry PC is non-negative");
-        ctx.check(descriptor[sandbox::vm::EXEC_HEADER_TEXT_PAGES] > 0,
+        ctx.check(sandbox::vm::executableTextPages(header) > 0,
                   path + " has text pages");
-        ctx.check(descriptor[sandbox::vm::EXEC_HEADER_DATA_PAGES] > 0,
+        ctx.check(sandbox::vm::executableDataPages(header) > 0,
                   path + " has data pages");
-        ctx.equal(descriptor[sandbox::vm::EXEC_HEADER_STACK_WORDS],
-                  static_cast<long long>(stack_words),
-                  path + " preserves the release stack class");
-        ctx.equal(descriptor[sandbox::vm::EXEC_HEADER_SYSCALL_ABI_VERSION],
-                  static_cast<long long>(sandbox::vm::EXEC_SYSCALL_ABI_VERSION_V1),
-                  path + " descriptor syscall ABI version is v1");
+        ctx.equal(header.stack_words,
+                  stack_words,
+                  path + " preserves the aligned release stack class");
+        ctx.equal(header.syscall_abi_version,
+                  sandbox::architecture::v2::SYSCALL_ABI_VERSION,
+                  path + " descriptor syscall ABI version is v2");
 
         const int text_ppn =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_HEADER_WORDS]);
+            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS]);
         const int text_disk_block =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_HEADER_WORDS + 1]);
+            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS + 1]);
         const int text_words =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_HEADER_WORDS + 2]);
-        const int text_pages =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_HEADER_TEXT_PAGES]);
+            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS + 2]);
+        const int text_pages = sandbox::vm::executableTextPages(header);
         ctx.check(text_ppn > 0, path + " descriptor records a text PPN");
         ctx.check(text_disk_block >= sandbox::os::NATIVE_VFS_REQUIRED_BLOCKS,
                   path + " text lives after the native VFS metadata area");
         ctx.check(text_words > 0, path + " descriptor records text word count");
-        ctx.check(text_words <= text_pages * sandbox::os::BLOCK_WORDS,
+        ctx.check(text_words <= text_pages * sandbox::vm::MMU_PAGE_WORDS,
                   path + " text word count fits in declared text pages");
         const int text_blocks =
             (text_words + sandbox::os::BLOCK_WORDS - 1) / sandbox::os::BLOCK_WORDS;

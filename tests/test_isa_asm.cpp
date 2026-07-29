@@ -4,83 +4,96 @@ void testIsaAndAsmWidths() {
     std::cout << "[6] ISA func widths and assembler suffixes\n";
     using namespace sandbox::isa;
     using namespace sandbox::vm::assembler;
+    const auto assembleOrThrow = [](const std::string& source) {
+        return assembleV2TestOrThrow(source);
+    };
+    const auto decodeV2 = [](const TritWord27& word) {
+        return VersionedInstructionCodec::decode(
+            word, IsaEncodingVersion::V2);
+    };
 
     for (uint8_t func : {FUNC_T1, FUNC_T5, FUNC_T10, FUNC_T20, FUNC_T40, FUNC_T50}) {
-        TritWord27 w = InstructionWord::encodeR(Opcode::ADD, R3, R1, R2, func);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = VersionedInstructionCodec::encodeR(
+            Opcode::ADD, R3, R1, R2, func, IsaEncodingVersion::V2);
+        InstructionWord iw = decodeV2(w);
         expect(!iw.malformed, "width func decodes");
         expect(iw.func == func, "width func roundtrip");
     }
 
     for (uint8_t func : {FUNC_L1, FUNC_L5, FUNC_L10, FUNC_L20, FUNC_L40, FUNC_L50}) {
-        TritWord27 w = InstructionWord::encodeR(Opcode::TLADD, R3, R1, R2, func);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = VersionedInstructionCodec::encodeR(
+            Opcode::TLADD, R3, R1, R2, func, IsaEncodingVersion::V2);
+        InstructionWord iw = decodeV2(w);
         expect(!iw.malformed, "lane width func decodes");
         expect(iw.func == func, "lane width func roundtrip");
     }
 
     for (uint8_t op = 27; op <= OPCODE_MAX_ASSIGNED; ++op) {
-        TritWord27 w = InstructionWord::encodeR(static_cast<Opcode>(op), R3, R1, R2);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = VersionedInstructionCodec::encodeR(
+            static_cast<Opcode>(op), R3, R1, R2, FUNC_DEFAULT,
+            IsaEncodingVersion::V2);
+        InstructionWord iw = decodeV2(w);
         expect(!iw.malformed, "Phase 4 opcode decodes");
         expect(iw.opcode == static_cast<Opcode>(op), "Phase 4 opcode roundtrip");
         expect(opcodeToString(iw.opcode) != "???", "Phase 4 opcode has disassembly name");
     }
 
-    auto add = assembleOrThrow("add.t20 r3, r1, r2\nhalt\n");
-    auto iw = InstructionWord::decode(add[0]);
+    auto add = assembleV2TestOrThrow("add.t20 r3, r1, r2\nhalt\n");
+    auto iw = decodeV2(add[0]);
     expect(iw.opcode == Opcode::ADD && iw.func == FUNC_T20, "add.t20 encodes func");
 
-    auto mov = assembleOrThrow("mov.t20 r1, 42\nhalt\n");
+    auto mov = assembleV2TestOrThrow("mov.t20 r1, 42\nhalt\n");
     expect(mov.size() == 3, "mov.t20 lowers to MOV + CVT + HALT");
-    auto cvt = InstructionWord::decode(mov[1]);
+    auto cvt = decodeV2(mov[1]);
     expect(cvt.opcode == Opcode::CVT && cvt.func == FUNC_T20, "mov.t20 emits CVT.t20");
 
     auto bad = assemble("load.t20 r1, r2, 0\n");
     expect(!bad.success, "suffix rejected on LOAD");
 
-    TritWord27 tselWord = InstructionWord::encodeR5(Opcode::TSEL, R6, R3, R1, R2, R4);
-    auto tsel = InstructionWord::decode(tselWord);
+    TritWord27 tselWord = VersionedInstructionCodec::encodeR5(
+        Opcode::TSEL, R6, R3, R1, R2, R4, FUNC_DEFAULT,
+        IsaEncodingVersion::V2);
+    auto tsel = decodeV2(tselWord);
     expect(!tsel.malformed && tsel.opcode == Opcode::TSEL && tsel.r5_layout,
            "TSEL R5 layout decodes");
     expect(tsel.rd == R6 && tsel.rcond == R3 && tsel.rneg == R1 &&
            tsel.rzero == R2 && tsel.rpos == R4,
            "TSEL R5 register fields roundtrip");
 
-    auto tselAsm = assembleOrThrow("tsel r6, r3, r1, r2, r4\nhalt\n");
-    auto tselIw = InstructionWord::decode(tselAsm[0]);
+    auto tselAsm = assembleV2TestOrThrow("tsel r6, r3, r1, r2, r4\nhalt\n");
+    auto tselIw = decodeV2(tselAsm[0]);
     expect(tselIw.opcode == Opcode::TSEL && tselIw.rpos == R4,
            "assembler encodes TSEL");
 
-    auto branchAsm = assembleOrThrow("brz r1, 2\nbrp r2, -1\nhalt\n");
-    auto brz = InstructionWord::decode(branchAsm[0]);
-    auto brp = InstructionWord::decode(branchAsm[1]);
+    auto branchAsm = assembleV2TestOrThrow("brz r1, 2\nbrp r2, -1\nhalt\n");
+    auto brz = decodeV2(branchAsm[0]);
+    auto brp = decodeV2(branchAsm[1]);
     expect(brz.opcode == Opcode::BRZ && brz.rs_branch == R1 && brz.offset == 2,
            "assembler encodes BRZ");
     expect(brp.opcode == Opcode::BRP && brp.rs_branch == R2 && brp.offset == -1,
            "assembler encodes BRP");
 
-    auto swapAsm = assembleOrThrow("swap r1, r2\nhalt\n");
-    auto swap = InstructionWord::decode(swapAsm[0]);
+    auto swapAsm = assembleV2TestOrThrow("swap r1, r2\nhalt\n");
+    auto swap = decodeV2(swapAsm[0]);
     expect(swap.opcode == Opcode::SWAP && swap.rd == R1 && swap.rs1 == R2,
            "assembler encodes SWAP");
 
-    auto cvtPair = assembleOrThrow("cvt.t10.t20 r3, r2\nhalt\n");
-    auto cvtPairIw = InstructionWord::decode(cvtPair[0]);
+    auto cvtPair = assembleV2TestOrThrow("cvt.t10.t20 r3, r2\nhalt\n");
+    auto cvtPairIw = decodeV2(cvtPair[0]);
     expect(cvtPairIw.opcode == Opcode::CVT &&
            cvtPairIw.rs2 == FUNC_T10 && cvtPairIw.func == FUNC_T20,
            "assembler encodes cvt.src.dst");
 
-    auto movLane = assembleOrThrow("mov.l20 r1, 7\nhalt\n");
+    auto movLane = assembleV2TestOrThrow("mov.l20 r1, 7\nhalt\n");
     expect(movLane.size() == 3, "mov.l20 lowers to MOV + CVT + HALT");
-    auto movLaneCvt = InstructionWord::decode(movLane[1]);
+    auto movLaneCvt = decodeV2(movLane[1]);
     expect(movLaneCvt.opcode == Opcode::CVT &&
            movLaneCvt.rs2 == FUNC_T20 && movLaneCvt.func == FUNC_L20,
            "mov.l20 lowers through matching numeric width");
 
-    auto laneAdd = assembleOrThrow("tladd.l20 r3, r1, r2\ntlneg.l20 r4, r3\nhalt\n");
-    auto laneAddIw = InstructionWord::decode(laneAdd[0]);
-    auto laneNegIw = InstructionWord::decode(laneAdd[1]);
+    auto laneAdd = assembleV2TestOrThrow("tladd.l20 r3, r1, r2\ntlneg.l20 r4, r3\nhalt\n");
+    auto laneAddIw = decodeV2(laneAdd[0]);
+    auto laneNegIw = decodeV2(laneAdd[1]);
     expect(laneAddIw.opcode == Opcode::TLADD && laneAddIw.func == FUNC_L20,
            "assembler encodes tladd.l20");
     expect(laneNegIw.opcode == Opcode::TLNEG && laneNegIw.func == FUNC_L20,
@@ -91,8 +104,8 @@ void testIsaAndAsmWidths() {
     expect(!assemble("add.l20 r1, r2, r3\n").success, "lane suffix rejected on numeric ADD");
     expect(!assemble("cvt.t20.l10 r1, r2\n").success, "mismatched numeric-lane CVT rejected");
 
-    auto vlen = assembleOrThrow("vlen r3\nhalt\n");
-    auto vlenIw = InstructionWord::decode(vlen[0]);
+    auto vlen = assembleV2TestOrThrow("vlen r3\nhalt\n");
+    auto vlenIw = decodeV2(vlen[0]);
     expect(vlenIw.opcode == Opcode::VLEN && vlenIw.rd == R3, "assembler encodes VLEN");
     expect(parseVectorRegister("v7") == 7, "vector register parser accepts v7");
     expect(parseVectorRegister("v8") < 0, "vector register parser rejects v8");
@@ -108,19 +121,19 @@ void testIsaAndAsmWidths() {
         vstore.t20 v5, r2, -2
         halt
     )");
-    expect(InstructionWord::decode(vectorOps[0]).opcode == Opcode::VBCAST &&
-           InstructionWord::decode(vectorOps[0]).func == FUNC_T20,
+    expect(decodeV2(vectorOps[0]).opcode == Opcode::VBCAST &&
+           decodeV2(vectorOps[0]).func == FUNC_T20,
            "assembler encodes VBCAST.t20");
-    expect(InstructionWord::decode(vectorOps[1]).opcode == Opcode::VADD &&
-           InstructionWord::decode(vectorOps[1]).rd == 1,
+    expect(decodeV2(vectorOps[1]).opcode == Opcode::VADD &&
+           decodeV2(vectorOps[1]).rd == 1,
            "assembler encodes VADD vector registers");
-    auto vselIw = InstructionWord::decode(vectorOps[4]);
+    auto vselIw = decodeV2(vectorOps[4]);
     expect(vselIw.opcode == Opcode::VSEL && vselIw.r5_layout &&
            vselIw.rd == 4 && vselIw.rcond == 3 && vselIw.rneg == 0 &&
            vselIw.rzero == 1 && vselIw.rpos == 2 && vselIw.func == FUNC_T20,
            "assembler encodes VSEL R5 vector fields");
-    auto vloadIw = InstructionWord::decode(vectorOps[5]);
-    auto vstoreIw = InstructionWord::decode(vectorOps[6]);
+    auto vloadIw = decodeV2(vectorOps[5]);
+    auto vstoreIw = decodeV2(vectorOps[6]);
     expect(vloadIw.opcode == Opcode::VLOAD && vloadIw.rd == 5 &&
            vloadIw.rs1 == R2 && vloadIw.imm == 3 && vloadIw.func == FUNC_T20,
            "assembler encodes VLOAD vector-memory overlay");
@@ -158,16 +171,16 @@ void testIsaAndAsmWidths() {
         vscatter.t20 v2, r1, v0
         halt
     )");
-    expect(InstructionWord::decode(phase4Rest[0]).opcode == Opcode::ACLR,
+    expect(decodeV2(phase4Rest[0]).opcode == Opcode::ACLR,
            "assembler encodes ACLR");
-    expect(InstructionWord::decode(phase4Rest[6]).opcode == Opcode::VDOT &&
-           InstructionWord::decode(phase4Rest[6]).func == FUNC_T1,
+    expect(decodeV2(phase4Rest[6]).opcode == Opcode::VDOT &&
+           decodeV2(phase4Rest[6]).func == FUNC_T1,
            "assembler encodes VDOT.t1");
-    auto vpackIw = InstructionWord::decode(phase4Rest[9]);
+    auto vpackIw = decodeV2(phase4Rest[9]);
     expect(vpackIw.opcode == Opcode::VPACK &&
            vpackIw.rs2 == FUNC_T20 && vpackIw.func == FUNC_T10,
            "assembler encodes VPACK source/dest suffix pair");
-    auto vblendIw = InstructionWord::decode(phase4Rest[12]);
+    auto vblendIw = decodeV2(phase4Rest[12]);
     expect(vblendIw.opcode == Opcode::VBLEND && vblendIw.r5_layout &&
            vblendIw.rcond == 2 && vblendIw.rneg == 3 &&
            vblendIw.rzero == 3 && vblendIw.rpos == 4,
@@ -180,8 +193,10 @@ void testIsaAndAsmWidths() {
     expect(!assemble("vpack.t20 v1, v0\n").success, "VPACK requires source and destination suffixes");
     expect(!assemble("vswap.t20 v0, v1\n").success, "VSWAP rejects width suffix");
 
-    TritWord27 r4Word = InstructionWord::encodeR4(Opcode::TWCMP, R5, R1, R2, R3, FUNC_T20);
-    auto r4Iw = InstructionWord::decode(r4Word);
+    TritWord27 r4Word = VersionedInstructionCodec::encodeR4(
+        Opcode::TWCMP, R5, R1, R2, R3, FUNC_T20,
+        IsaEncodingVersion::V2);
+    auto r4Iw = decodeV2(r4Word);
     expect(!r4Iw.malformed && r4Iw.r4_layout && r4Iw.opcode == Opcode::TWCMP &&
            r4Iw.rd == R5 && r4Iw.rs1 == R1 && r4Iw.rs2 == R2 &&
            r4Iw.rs3 == R3 && r4Iw.func == FUNC_T20,
@@ -205,26 +220,26 @@ void testIsaAndAsmWidths() {
         vhmax.t20   r15, v2
         halt
     )");
-    expect(InstructionWord::decode(phase2[0]).opcode == Opcode::TWCMP &&
-           InstructionWord::decode(phase2[0]).r4_layout &&
-           InstructionWord::decode(phase2[0]).func == FUNC_T20,
+    expect(decodeV2(phase2[0]).opcode == Opcode::TWCMP &&
+           decodeV2(phase2[0]).r4_layout &&
+           decodeV2(phase2[0]).func == FUNC_T20,
            "assembler encodes TWCMP.t20 R4");
-    expect(InstructionWord::decode(phase2[1]).opcode == Opcode::TCLAMP &&
-           InstructionWord::decode(phase2[1]).r4_layout,
+    expect(decodeV2(phase2[1]).opcode == Opcode::TCLAMP &&
+           decodeV2(phase2[1]).r4_layout,
            "assembler encodes TCLAMP.t20 R4");
-    expect(InstructionWord::decode(phase2[2]).opcode == Opcode::TMOD, "assembler encodes TMOD");
-    expect(InstructionWord::decode(phase2[5]).opcode == Opcode::TMAC &&
-           InstructionWord::decode(phase2[5]).rs1 == R1,
+    expect(decodeV2(phase2[2]).opcode == Opcode::TMOD, "assembler encodes TMOD");
+    expect(decodeV2(phase2[5]).opcode == Opcode::TMAC &&
+           decodeV2(phase2[5]).rs1 == R1,
            "assembler encodes TMAC source-only shape");
-    expect(InstructionWord::decode(phase2[8]).opcode == Opcode::CALLR &&
-           InstructionWord::decode(phase2[8]).rs1 == R11,
+    expect(decodeV2(phase2[8]).opcode == Opcode::CALLR &&
+           decodeV2(phase2[8]).rs1 == R11,
            "assembler encodes CALLR register target");
-    expect(InstructionWord::decode(phase2[10]).opcode == Opcode::SYSCALL &&
-           InstructionWord::decode(phase2[10]).imm == 1,
+    expect(decodeV2(phase2[10]).opcode == Opcode::SYSCALL &&
+           decodeV2(phase2[10]).imm == 1,
            "assembler encodes SYSCALL service id");
-    expect(InstructionWord::decode(phase2[12]).opcode == Opcode::VSUM &&
-           InstructionWord::decode(phase2[12]).rd == 13 &&
-           InstructionWord::decode(phase2[12]).rs1 == 0,
+    expect(decodeV2(phase2[12]).opcode == Opcode::VSUM &&
+           decodeV2(phase2[12]).rd == 13 &&
+           decodeV2(phase2[12]).rs1 == 0,
            "assembler encodes VSUM scalar/vector operands");
     expect(disassemble(phase2[0]).find("TWCMP.t20 r4, r1, r2, r3") != std::string::npos,
            "disassembler prints TWCMP R4 shape");
@@ -247,20 +262,20 @@ void testIsaAndAsmWidths() {
         eret
         halt
     )");
-    expect(InstructionWord::decode(phase3[0]).opcode == Opcode::CSRR &&
-           InstructionWord::decode(phase3[0]).rd == R1 &&
-           InstructionWord::decode(phase3[0]).imm == CSR_CAUSE,
+    expect(decodeV2(phase3[0]).opcode == Opcode::CSRR &&
+           decodeV2(phase3[0]).rd == R1 &&
+           decodeV2(phase3[0]).imm == CSR_CAUSE,
            "assembler encodes CSRR rd, csr");
-    expect(InstructionWord::decode(phase3[1]).opcode == Opcode::CSRW &&
-           InstructionWord::decode(phase3[1]).rd == R1 &&
-           InstructionWord::decode(phase3[1]).imm == CSR_TVEC,
+    expect(decodeV2(phase3[1]).opcode == Opcode::CSRW &&
+           decodeV2(phase3[1]).rd == R1 &&
+           decodeV2(phase3[1]).imm == CSR_TVEC,
            "assembler encodes CSRW csr, rs");
-    expect(InstructionWord::decode(phase3[2]).opcode == Opcode::CSRRW &&
-           InstructionWord::decode(phase3[2]).rd == R2 &&
-           InstructionWord::decode(phase3[2]).rs1 == R3 &&
-           InstructionWord::decode(phase3[2]).rs2 == CSR_SCRATCH,
+    expect(decodeV2(phase3[2]).opcode == Opcode::CSRRW &&
+           decodeV2(phase3[2]).rd == R2 &&
+           decodeV2(phase3[2]).rs1 == R3 &&
+           decodeV2(phase3[2]).rs2 == CSR_SCRATCH,
            "assembler encodes CSRRW rd, csr, rs");
-    expect(InstructionWord::decode(phase3[3]).opcode == Opcode::ERET,
+    expect(decodeV2(phase3[3]).opcode == Opcode::ERET,
            "assembler encodes ERET");
     expect(disassemble(phase3[0]).find("CSRR r1, cause") != std::string::npos,
            "disassembler prints CSRR csr name");
@@ -283,10 +298,10 @@ void testIsaAndAsmWidths() {
         fence -1
         halt
     )");
-    auto tldr = InstructionWord::decode(atomics[0]);
-    auto tstr = InstructionWord::decode(atomics[1]);
-    auto fenceSeq = InstructionWord::decode(atomics[2]);
-    auto fenceRelaxed = InstructionWord::decode(atomics[3]);
+    auto tldr = decodeV2(atomics[0]);
+    auto tstr = decodeV2(atomics[1]);
+    auto fenceSeq = decodeV2(atomics[2]);
+    auto fenceRelaxed = decodeV2(atomics[3]);
     expect(tldr.opcode == Opcode::TLDR && tldr.rd == R1 && tldr.rs1 == R2 &&
            tldr.func == FUNC_ORDER_SEQ_CST,
            "assembler encodes TLDR with ternary memory order");

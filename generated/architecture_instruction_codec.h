@@ -6,10 +6,6 @@ struct VersionedInstructionCodec {
         const TritWord27& word,
         IsaEncodingVersion version) {
 
-        if (version == IsaEncodingVersion::V1) {
-            return InstructionWord::decode(word);
-        }
-
         InstructionWord decoded = InstructionWord::decode(word);
         if (decoded.malformed) return decoded;
 
@@ -161,7 +157,6 @@ struct VersionedInstructionCodec {
 
         TritWord27 word =
             InstructionWord::encodeR(opcode, rd, rs1, rs2, func);
-        if (version == IsaEncodingVersion::V1) return word;
         encodeV2Opcode(word, opcode, 0, 10);
         return word;
     }
@@ -178,7 +173,6 @@ struct VersionedInstructionCodec {
         TritWord27 word =
             InstructionWord::encodeR4(
                 opcode, rd, rs1, rs2, rs3, func);
-        if (version == IsaEncodingVersion::V1) return word;
         encodeV2Opcode(word, opcode, 0, 4);
         return word;
     }
@@ -195,7 +189,6 @@ struct VersionedInstructionCodec {
 
         TritWord27 word = InstructionWord::encodeR5(
             opcode, rd, rcond, rneg, rzero, rpos, func);
-        if (version == IsaEncodingVersion::V1) return word;
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
             setRawOpcode(word, direct);
@@ -218,7 +211,6 @@ struct VersionedInstructionCodec {
 
         TritWord27 word =
             InstructionWord::encodeI(opcode, rd, rs1, immediate);
-        if (version == IsaEncodingVersion::V1) return word;
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
             setRawOpcode(word, direct);
@@ -242,7 +234,6 @@ struct VersionedInstructionCodec {
 
         TritWord27 word = InstructionWord::encodeVectorMemory(
             opcode, vector_register, base, immediate, func);
-        if (version == IsaEncodingVersion::V1) return word;
         const int selector = v2ExtensionSelector(opcode);
         if (selector < 0) throwUnsupported(opcode);
         setRawOpcode(word, architecture::v2::ESCAPE_OPCODE);
@@ -260,7 +251,6 @@ struct VersionedInstructionCodec {
 
         TritWord27 word =
             InstructionWord::encodeB(opcode, branch_register, offset);
-        if (version == IsaEncodingVersion::V1) return word;
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
             setRawOpcode(word, direct);

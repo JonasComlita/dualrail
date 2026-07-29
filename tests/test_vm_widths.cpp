@@ -33,6 +33,9 @@ void testVmWidths() {
     using namespace sandbox::isa;
     using namespace sandbox::vm;
     using namespace sandbox::vm::assembler;
+    const auto assembleOrThrow = [](const std::string& source) {
+        return assembleV2TestOrThrow(source);
+    };
 
     {
         CountingAllocator allocator;
@@ -95,7 +98,8 @@ void testVmWidths() {
         expect(loadAndReset(vm, program), "T20 load/store program loads");
         auto result = sandbox::vm::run(vm, 64);
         expect(result.halted(), "T20 load/store program halts");
-        expect(vm.regfile.read(R2).mode == TernaryMode::T20, "LOAD preserves T20 tag");
+        expect(vm.regfile.readPhysical(R2).mode == TernaryMode::T40,
+               "LOAD produces a canonical physical T40 register word");
         expect(vm.regfile.read(R3).mode == TernaryMode::T20, "ADD writes T20 tag");
         expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 84, "T20 arithmetic value");
     }

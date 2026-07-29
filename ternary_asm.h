@@ -27,7 +27,6 @@
 //   - Label names: [A-Za-z_][A-Za-z0-9_]*  (no leading digits)
 //   - .org N advances the current text or data address and pads with zero/NOP.
 //   - .pte ppn,user,read,write,execute[,present] emits one raw T40 PTE word.
-//   - .execheader entry,text_pages,data_pages,stack_words,syscall_abi,flags
 //     emits a fixed Phase 4 executable header and records metadata.
 //
 // REGISTER NAMES:
@@ -148,9 +147,8 @@ struct AssemblyResult {
     std::vector<AssemblyError>    errors;
     std::map<std::string, int>    labels;       // text label name -> IMEM word address
     std::map<std::string, int>    data_labels;  // data label name -> DMEM word address
-    std::map<std::string, ExecutableImageHeader> executable_headers;
     std::map<std::string, ExecutableImageHeaderV2> executable_headers_v2;
-    IsaEncodingVersion            isa_version = IsaEncodingVersion::V1;
+    IsaEncodingVersion            isa_version = IsaEncodingVersion::V2;
     std::uint64_t                 required_features = 0;
 
     // Convenience: check and throw on error.
@@ -698,8 +696,11 @@ struct SourceLine {
 
         sl.section = current_section;
         if (current_section == AssemblySection::Data) {
-            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" && sl.mnemonic != ".execheader" && sl.mnemonic != ".execheader2") {
-                errors.push_back({line_num, "Only .word, .pte, .execheader, and .execheader2 directives are valid in .data"});
+            if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" &&
+                sl.mnemonic != ".execheader2") {
+                errors.push_back({line_num,
+                    "Only .word, .pte, and .execheader2 directives are "
+                    "valid in .data"});
                 lines.push_back(sl);
                 continue;
             }
@@ -715,11 +716,6 @@ struct SourceLine {
                 lines.push_back(sl);
                 continue;
             }
-            if (sl.mnemonic == ".execheader" && sl.operands.size() != 6) {
-                errors.push_back({line_num, ".execheader requires entry_pc, text_pages, data_pages, stack_words, syscall_abi, flags"});
-                lines.push_back(sl);
-                continue;
-            }
             if (sl.mnemonic == ".execheader2" && sl.operands.size() != 7) {
                 errors.push_back({line_num, ".execheader2 requires entry_pc, text_words, data_words, stack_words, required_feature_word, syscall_abi, flags"});
                 lines.push_back(sl);
@@ -727,12 +723,12 @@ struct SourceLine {
             }
             sl.address = data_addr;
             sl.word_count = sl.mnemonic == ".pte" ? 1 :
-                            sl.mnemonic == ".execheader" ? EXEC_HEADER_WORDS :
                             sl.mnemonic == ".execheader2" ? EXEC_V2_HEADER_WORDS :
                             static_cast<int>(sl.operands.size());
             data_addr += sl.word_count;
         } else {
-            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" || sl.mnemonic == ".execheader" || sl.mnemonic == ".execheader2") {
+            if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" ||
+                sl.mnemonic == ".execheader2") {
                 errors.push_back({line_num, sl.mnemonic + " is only valid in .data"});
                 lines.push_back(sl);
                 continue;
@@ -1929,29 +1925,6 @@ struct LabelMaps {
                 auto value = resolveAbsolute(operand, sl.line_num);
                 data.push_back(value ? ops::fromLong(value.value()) : TernaryValue::zero());
             }
-        } else if (sl.mnemonic == ".execheader") {
-            std::array<int, 6> fields{};
-            bool ok = true;
-            for (int i = 0; i < 6; ++i) {
-                auto value = resolveAbsolute(sl.operands[static_cast<std::size_t>(i)], sl.line_num);
-                if (!value) {
-                    ok = false;
-                } else {
-                    fields[static_cast<std::size_t>(i)] = value.value();
-                }
-            }
-            if (!ok) {
-                for (int i = 0; i < EXEC_HEADER_WORDS; ++i) data.push_back(TernaryValue::zero());
-                continue;
-            }
-            auto header = encodeExecutableHeader(
-                fields[0],
-                fields[1],
-                fields[2],
-                fields[3],
-                fields[4],
-                fields[5]);
-            data.insert(data.end(), header.begin(), header.end());
         } else if (sl.mnemonic == ".execheader2") {
             std::array<int, 7> fields{};
             bool ok = true;
@@ -2023,32 +1996,6 @@ struct LabelMaps {
     }
 
     return data;
-}
-
-[[nodiscard]] inline std::map<std::string, ExecutableImageHeader> collectExecutableHeaders(
-        const std::vector<SourceLine>& lines,
-        const std::vector<TernaryValue>& data,
-        std::vector<AssemblyError>& errors) {
-
-    std::map<std::string, ExecutableImageHeader> headers;
-    for (const SourceLine& sl : lines) {
-        if (sl.section != AssemblySection::Data ||
-            sl.mnemonic != ".execheader" ||
-            sl.address < 0) {
-            continue;
-        }
-        if (sl.label.empty()) {
-            errors.push_back({sl.line_num, ".execheader requires a label"});
-            continue;
-        }
-        ExecutableImageHeader header;
-        if (!decodeExecutableHeader(data, sl.address, header)) {
-            errors.push_back({sl.line_num, "Invalid executable header"});
-            continue;
-        }
-        headers[sl.label] = header;
-    }
-    return headers;
 }
 
 [[nodiscard]] inline std::map<std::string, ExecutableImageHeaderV2>
@@ -2156,8 +2103,11 @@ collectExecutableHeadersV2(
                 continue;
             }
 
-            const InstructionWord decoded = VersionedInstructionCodec::decode(
-                result.program[pc], IsaEncodingVersion::V1);
+            // encode() produces a semantic instruction word. Decode that
+            // private intermediate directly, then emit the sole public ISA v2
+            // representation. No v1 executable is produced or accepted here.
+            const InstructionWord decoded =
+                InstructionWord::decode(result.program[pc]);
             const std::uint64_t missing =
                 requiredV2Features(decoded) & ~result.required_features;
             if (missing != 0) {
@@ -2178,7 +2128,7 @@ collectExecutableHeadersV2(
             }
             try {
                 result.program[pc] =
-                    transcodeV1InstructionToV2(result.program[pc]);
+                    encodeSemanticInstructionV2(decoded);
             } catch (const std::exception& error) {
                 result.errors.push_back({0,
                     std::string("ISA v2 encoding failed: ") + error.what()});
@@ -2186,16 +2136,10 @@ collectExecutableHeadersV2(
         }
     }
     result.data = encodeData(lines, result.labels, result.data_labels, result.errors);
-    result.executable_headers = collectExecutableHeaders(lines, result.data, result.errors);
     result.executable_headers_v2 =
         collectExecutableHeadersV2(lines, result.data, result.errors);
     for (const auto& [label, header] : result.executable_headers_v2) {
-        if (result.isa_version != IsaEncodingVersion::V2) {
-            result.errors.push_back({
-                header.header_addr,
-                ".execheader2 '" + label +
-                    "' requires an ISA v2 assembly unit"});
-        } else if (header.required_features != result.required_features) {
+        if (header.required_features != result.required_features) {
             result.errors.push_back({
                 header.header_addr,
                 ".execheader2 '" + label +
@@ -2207,8 +2151,6 @@ collectExecutableHeadersV2(
     return result;
 }
 
-// Transition-only compatibility entry point. Existing embedded v1 assembly
-// remains readable for one release; new toolchain callers use strict options.
 [[nodiscard]] inline AssemblyResult assemble(const std::string& source) {
     return assemble(source, AssemblyOptions{});
 }
@@ -2280,7 +2222,7 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
 [[nodiscard]] inline std::string listing(
         const std::vector<TritWord27>& program,
         const std::map<std::string, int>& labels = {}) {
-    return listing(program, labels, IsaEncodingVersion::V1);
+    return listing(program, labels, IsaEncodingVersion::V2);
 }
 
 [[nodiscard]] inline std::string listing(const AssemblyResult& assembled) {

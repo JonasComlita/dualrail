@@ -18,6 +18,11 @@ namespace {
 using sandbox::host::TosBootImage;
 
 constexpr int kBlockWords = sandbox::vm::STORAGE_BLOCK_WORDS;
+constexpr std::uint32_t kLegacyBootV1 = 1;
+constexpr std::uint32_t kLegacyBootV2 = 2;
+constexpr int kLegacySyscallAbiV1 = 1;
+constexpr std::uint64_t kLegacySparseDiskMagic =
+    0x54524954535031ULL; // "TRITSP1"
 
 struct Options {
     std::filesystem::path legacy_boot;
@@ -43,7 +48,6 @@ struct TemplateExecutable {
     std::string path;
     int source_inode = -1;
     int text_ppn = 0;
-    sandbox::vm::ExecutableImageHeader transition_header;
     sandbox::vm::ExecutableImageHeaderV2 header_v2;
     std::vector<sandbox::isa::TritWord27> program;
 };
@@ -156,6 +160,181 @@ bool replaceValidatedFile(
     return true;
 }
 
+bool readLegacyBootPayload(
+    const std::vector<std::uint8_t>& payload,
+    TosBootImage& image,
+    std::string& error) {
+
+    using sandbox::host::detail::readPod;
+    using sandbox::host::detail::readString;
+
+    std::size_t offset = 0;
+    std::uint32_t version = 0;
+    if (!readPod(payload, offset, version) ||
+        (version != kLegacyBootV1 && version != kLegacyBootV2)) {
+        error = "legacy boot input must be tboot v1 or v2";
+        return false;
+    }
+
+    TosBootImage decoded;
+    decoded.manifest.format_version = version;
+    decoded.manifest.isa_version = 1;
+    decoded.manifest.required_features = 0;
+    decoded.manifest.scalar_word_trits = 50;
+    decoded.manifest.base_page_words = 27;
+    decoded.manifest.function_abi_version = 1;
+    decoded.manifest.syscall_abi_version =
+        kLegacySyscallAbiV1;
+    if (!readPod(payload, offset, decoded.manifest.boot_entry) ||
+        !readPod(payload, offset, decoded.manifest.framebuffer_width) ||
+        !readPod(payload, offset, decoded.manifest.framebuffer_height) ||
+        !readString(payload, offset, decoded.manifest.profile_name) ||
+        !readString(payload, offset, decoded.manifest.image_version)) {
+        error = "legacy boot manifest is truncated";
+        return false;
+    }
+
+    if (version == kLegacyBootV2) {
+        std::uint32_t section_count = 0;
+        if (!readPod(payload, offset, section_count)) {
+            error = "legacy boot section table is missing";
+            return false;
+        }
+        decoded.manifest.sections.reserve(section_count);
+        for (std::uint32_t index = 0; index < section_count; ++index) {
+            sandbox::host::TosImageSection section;
+            if (!readString(payload, offset, section.name) ||
+                !readString(payload, offset, section.path) ||
+                !readString(payload, offset, section.kind) ||
+                !readPod(payload, offset, section.load_address) ||
+                !readPod(payload, offset, section.entry_pc) ||
+                !readPod(payload, offset, section.word_count) ||
+                !readPod(payload, offset, section.page_count) ||
+                !readPod(payload, offset, section.flags)) {
+                error = "legacy boot section table is truncated";
+                return false;
+            }
+            decoded.manifest.sections.push_back(std::move(section));
+        }
+    }
+
+    std::uint32_t app_count = 0;
+    if (!readPod(payload, offset, app_count)) {
+        error = "legacy boot app registry is missing";
+        return false;
+    }
+    decoded.manifest.apps.reserve(app_count);
+    for (std::uint32_t index = 0; index < app_count; ++index) {
+        sandbox::host::TosAppManifestEntry entry;
+        if (!readString(payload, offset, entry.name) ||
+            !readString(payload, offset, entry.path) ||
+            !readPod(payload, offset, entry.text_ppn) ||
+            !readPod(payload, offset, entry.entry_pc) ||
+            !readPod(payload, offset, entry.text_pages) ||
+            !readPod(payload, offset, entry.data_pages) ||
+            !readPod(payload, offset, entry.stack_words)) {
+            error = "legacy boot app registry is truncated";
+            return false;
+        }
+        entry.isa_version = 1;
+        entry.required_features = 0;
+        entry.function_abi_version = 1;
+        entry.syscall_abi_version =
+            kLegacySyscallAbiV1;
+        decoded.manifest.apps.push_back(std::move(entry));
+    }
+
+    std::uint32_t program_words = 0;
+    if (!readPod(payload, offset, program_words)) {
+        error = "legacy boot text segment is missing";
+        return false;
+    }
+    decoded.program.assign(program_words, sandbox::isa::TritWord27{});
+    for (std::uint32_t index = 0; index < program_words; ++index) {
+        if (!readPod(
+                payload, offset,
+                decoded.program[static_cast<std::size_t>(index)].bits)) {
+            error = "legacy boot text segment is truncated";
+            return false;
+        }
+    }
+
+    std::uint32_t data_words = 0;
+    if (!readPod(payload, offset, data_words)) {
+        error = "legacy boot data segment is missing";
+        return false;
+    }
+    decoded.data_words.assign(data_words, 0);
+    for (std::uint32_t index = 0; index < data_words; ++index) {
+        std::int64_t word = 0;
+        if (!readPod(payload, offset, word)) {
+            error = "legacy boot data segment is truncated";
+            return false;
+        }
+        decoded.data_words[static_cast<std::size_t>(index)] =
+            static_cast<long long>(word);
+    }
+
+    if (version == kLegacyBootV1) {
+        std::uint32_t rootfs_words = 0;
+        if (!readPod(payload, offset, rootfs_words)) {
+            error = "legacy boot root filesystem seed is missing";
+            return false;
+        }
+        decoded.rootfs_words.assign(rootfs_words, 0);
+        for (std::uint32_t index = 0; index < rootfs_words; ++index) {
+            std::int64_t word = 0;
+            if (!readPod(payload, offset, word)) {
+                error = "legacy boot root filesystem seed is truncated";
+                return false;
+            }
+            decoded.rootfs_words[static_cast<std::size_t>(index)] =
+                static_cast<long long>(word);
+        }
+    }
+
+    if (offset != payload.size()) {
+        error = "legacy boot has trailing payload bytes";
+        return false;
+    }
+    image = std::move(decoded);
+    return true;
+}
+
+bool readLegacyBootImageFile(
+    const std::filesystem::path& source,
+    TosBootImage& image,
+    std::string& error) {
+
+    std::ifstream file(source, std::ios::binary);
+    if (!file.good()) {
+        error = "failed to open legacy boot image: " + source.string();
+        return false;
+    }
+    std::uint64_t magic = 0;
+    std::uint64_t checksum = 0;
+    std::uint64_t payload_size = 0;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&checksum), sizeof(checksum));
+    file.read(reinterpret_cast<char*>(&payload_size), sizeof(payload_size));
+    if (!file.good() || magic != sandbox::host::TOS_BOOT_MAGIC ||
+        payload_size > (1ULL << 34)) {
+        error = "legacy boot container header is invalid";
+        return false;
+    }
+    std::vector<std::uint8_t> payload(
+        static_cast<std::size_t>(payload_size));
+    file.read(
+        reinterpret_cast<char*>(payload.data()),
+        static_cast<std::streamsize>(payload.size()));
+    if (!file.good() ||
+        sandbox::host::detail::fnv1a(payload) != checksum) {
+        error = "legacy boot payload is truncated or checksum-invalid";
+        return false;
+    }
+    return readLegacyBootPayload(payload, image, error);
+}
+
 bool migrateBoot(
     const std::filesystem::path& legacy_source,
     const std::filesystem::path& v2_template_source,
@@ -164,8 +343,7 @@ bool migrateBoot(
     TosBootImage& migrated,
     std::string& error) {
 
-    if (!sandbox::host::readBootImageFile(
-            legacy_source.string(), legacy, &error)) {
+    if (!readLegacyBootImageFile(legacy_source, legacy, error)) {
         return false;
     }
     if (legacy.manifest.format_version >=
@@ -243,7 +421,7 @@ bool readDiskDense(
     int count = 0;
     bool raw_v2 = false;
     std::uint64_t expected_checksum = 0;
-    if (magic == sandbox::host::TOS_SPARSE_DISK_LEGACY_MAGIC) {
+    if (magic == kLegacySparseDiskMagic) {
         file.read(reinterpret_cast<char*>(&count), sizeof(count));
     } else if (magic == sandbox::host::TOS_SPARSE_DISK_MAGIC) {
         std::uint32_t version = 0;
@@ -583,44 +761,17 @@ bool decodeTemplateExecutable(
 
     if (entry.payload.size() <
         static_cast<std::size_t>(
-            sandbox::vm::EXEC_HEADER_WORDS + 3 +
-            sandbox::vm::EXEC_V2_HEADER_WORDS)) {
+            sandbox::vm::EXEC_V2_HEADER_WORDS + 3)) {
         error = "v2 template executable descriptor is truncated: " +
                 entry.path;
         return false;
     }
-    sandbox::vm::ExecutableImageHeader transition;
-    transition.magic = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_MAGIC]);
-    transition.version = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_VERSION]);
-    transition.abi_version = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_ABI_VERSION]);
-    transition.entry_virtual_pc = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_ENTRY_PC]);
-    transition.text_pages = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_TEXT_PAGES]);
-    transition.data_pages = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_DATA_PAGES]);
-    transition.stack_words = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_STACK_WORDS]);
-    transition.syscall_abi_version = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_SYSCALL_ABI_VERSION]);
-    transition.flags = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_FLAGS]);
-    if (!sandbox::vm::validateExecutableHeader(transition)) {
-        error = "v2 template transition descriptor is invalid: " +
-                entry.path;
-        return false;
-    }
-
     std::vector<sandbox::vm::TernaryValue> encoded_v2;
     encoded_v2.reserve(sandbox::vm::EXEC_V2_HEADER_WORDS);
-    const int v2_base = sandbox::vm::EXEC_HEADER_WORDS + 3;
     for (int index = 0; index < sandbox::vm::EXEC_V2_HEADER_WORDS; ++index) {
         encoded_v2.push_back(
             sandbox::vm::ops::fromLong(
-                entry.payload[static_cast<std::size_t>(v2_base + index)]));
+                entry.payload[static_cast<std::size_t>(index)]));
     }
     sandbox::vm::ExecutableImageHeaderV2 header_v2;
     if (!sandbox::vm::decodeExecutableHeaderV2(
@@ -630,11 +781,11 @@ bool decodeTemplateExecutable(
     }
 
     const int text_ppn = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_WORDS]);
+        entry.payload[sandbox::vm::EXEC_V2_HEADER_WORDS]);
     const int disk_block = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_WORDS + 1]);
+        entry.payload[sandbox::vm::EXEC_V2_HEADER_WORDS + 1]);
     const int text_words = static_cast<int>(
-        entry.payload[sandbox::vm::EXEC_HEADER_WORDS + 2]);
+        entry.payload[sandbox::vm::EXEC_V2_HEADER_WORDS + 2]);
     if (text_ppn <= 0 || disk_block < sandbox::os::NATIVE_VFS_REQUIRED_BLOCKS ||
         text_words <= 0 || text_words != header_v2.text_words) {
         error = "v2 template executable placement is invalid: " + entry.path;
@@ -653,7 +804,6 @@ bool decodeTemplateExecutable(
     executable.path = entry.path;
     executable.source_inode = entry.inode;
     executable.text_ppn = text_ppn;
-    executable.transition_header = transition;
     executable.header_v2 = header_v2;
     executable.program.reserve(static_cast<std::size_t>(text_words));
     for (int index = 0; index < text_words; ++index) {
@@ -773,7 +923,6 @@ bool rebuildMigratedDisk(
         const auto added = builder.addExecutableImage(
             executable.path,
             executable.program,
-            executable.transition_header,
             executable.header_v2,
             executable.text_ppn);
         if (!added.ok()) {

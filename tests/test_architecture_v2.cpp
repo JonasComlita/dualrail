@@ -39,10 +39,6 @@ void testDirectMap() {
         VersionedInstructionCodec::decode(word, IsaEncodingVersion::V2),
         Opcode::CALLR, 13, R1, R2);
 
-    const auto legacy = VersionedInstructionCodec::decode(
-        word, IsaEncodingVersion::V1);
-    require(legacy.opcode == Opcode::TLADD,
-            "the transition decoder must preserve v1 wire semantics");
 }
 
 void testTinvLowering() {
@@ -185,10 +181,12 @@ void testAssemblerDirectivesAndFeatures() {
     const auto legacy = assembler::assemble(
         ".isa 1\nadd r1, r2, r3\n",
         assembler::AssemblyOptions{IsaEncodingVersion::V2, true});
-    require(legacy.success &&
-                InstructionWord::decode(legacy.program.front()).opcode ==
-                Opcode::ADD,
-            "explicit ISA v1 must retain the legacy wire encoding");
+    require(!legacy.success,
+            "the production assembler must reject explicit ISA v1");
+    require(!legacy.errors.empty() &&
+                legacy.errors.front().message.find("Only .isa 2") !=
+                    std::string::npos,
+            "ISA v1 rejection must direct users to offline migration");
 }
 
 void testVmVersionDiscoveryAndWaiting() {
@@ -199,9 +197,6 @@ void testVmVersionDiscoveryAndWaiting() {
     sandbox::vm::VMState vm(64, 64);
     require(assembler::loadAndReset(vm, assembled),
             "VM must accept supported v2 feature requirements");
-    require(vm.isa_version == IsaEncodingVersion::V2,
-            "loader must install process ISA version");
-
     sandbox::vm::TernaryValue csr;
     require(vm.readCSR(CSR_ISA_VERSION, csr) &&
                 sandbox::vm::ops::toLong(csr) == 2,

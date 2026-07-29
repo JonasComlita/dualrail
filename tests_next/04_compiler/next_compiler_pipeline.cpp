@@ -133,7 +133,9 @@ void pureMatchTselLowering(TestContext& ctx) {
     const int expected_text_pages = std::max(
         1, (linked.instruction_count + sandbox::vm::MMU_PAGE_WORDS - 1) /
                sandbox::vm::MMU_PAGE_WORDS);
-    ctx.equal(linked.executable_header.text_pages, expected_text_pages,
+    ctx.equal(
+        sandbox::vm::executableTextPages(linked.executable_header_v2),
+        expected_text_pages,
               "linker reports exact text pages");
 
     sandbox::vm::VMState vm(256, 256);

@@ -434,7 +434,6 @@ enum class Opcode : uint8_t {
 };
 
 enum class IsaEncodingVersion : uint8_t {
-    V1 = 1,
     V2 = architecture::v2::ISA_VERSION,
 };
 
@@ -1456,7 +1455,7 @@ inline bool verifyRoundTrip() {
 }
 
 [[nodiscard]] inline std::string disassemble(const TritWord27& word) {
-    return disassemble(word, IsaEncodingVersion::V1);
+    return disassemble(word, IsaEncodingVersion::V2);
 }
 
 } // namespace isa

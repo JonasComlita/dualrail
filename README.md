@@ -579,7 +579,7 @@ Current integration note:
 - **Isolation Acceptance**: The VM test suite now switches between two user tasks sharing the same virtual PC/data address while mapping their counters through different physical DMEM pages.
 
 #### Track 6.7: Minimal Kernel Bring-Up (Implemented)
-- **Bootable Assembly Artifact**: Added `OS3/minimal_kernel_bringup.tasm`, a single assembly image that boots at PC `0`, installs `TVEC`, configures user page tables, enables the MMU and timer, and enters user mode with `ERET`.
+- **Historical Bootable Assembly Artifact**: The v1 `minimal_kernel_bringup.tasm` proof is frozen at Git tag `trit-v1-final`; it was retired from the v2 production tree because it hard-coded 27-word MMU pages.
 - **Assembler Kernel Support**: Added `.org` for physical text/data placement and `.pte` for raw T40 page-table entries, so kernel images can carry page tables and task contexts without C++ host patching.
 - **Kernel Acceptance Test**: The VM now runs the artifact as a boot image and verifies timer-driven switching between two user tasks with separate physical counters.
 
@@ -623,9 +623,9 @@ Current integration note:
 - **Kernel Authoring Ergonomics**: The kernel artifact now uses shared queue, wakeup, and syscall paths instead of fixed two-task toggles.
 
 #### Track 6.15: Self-Describing Binary Loader and Object ABI Seed (Implemented)
-- **Executable Header v1**: Added fixed executable headers with magic/version, ABI version, entry virtual PC, text/data page counts, stack hint, syscall ABI version, and flags.
-- **Assembler Metadata**: `.execheader` emits header words and records executable metadata in `AssemblyResult`.
-- **Static Loader**: Added loader helpers that validate executable metadata and initialize task contexts/page-table bindings.
+- **Historical v1 Seed**: The original executable header and `.execheader` directive are reproducible from Git tag `trit-v1-final` but are not accepted by the v2 toolchain or runtime.
+- **Authoritative v2 Metadata**: `.execheader2` emits a checksummed 15-word v2 header containing ISA/features, exact text/data word counts, stack alignment, scalar width, page size, and function/syscall ABI versions.
+- **Static Loader**: Loader helpers validate v2 metadata and initialize task contexts/page-table bindings; older artifacts require the offline migrator.
 - **Compiler Pipeline Boundary**: Phase 4 now owns the executable/runtime/ABI/metadata/assembler contract layers named in `OS3/compiler_pipeline.md`.
 
 #### Track 6.16: Process Creation and Lifecycle Syscalls v1 (Implemented)

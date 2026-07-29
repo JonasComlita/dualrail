@@ -122,7 +122,10 @@ void testLayer1HalEndToEnd() {
     expect(!trap_stub.empty(), "native_kernel_trap_stub.tasm is present");
 
     if (compiled.success && !bootloader.empty() && !trap_stub.empty()) {
-        auto boot_image = sandbox::vm::assembler::assemble(bootloader + "\n" + trap_stub + "\n" + compiled.assembly);
+        auto boot_image = sandbox::vm::assembler::assemble(
+            ".isa 2\n"
+            ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n" +
+            bootloader + "\n" + trap_stub + "\n" + compiled.assembly);
         if (!boot_image.success) {
             for (const auto& error : boot_image.errors) {
                 std::cerr << "BOOTLOADER ASSEMBLY ERROR line " << error.line

@@ -62,16 +62,15 @@
                     {line_number, "Only one .isa directive is allowed"});
                 continue;
             }
-            if (tokens.size() != 2 ||
-                (tokens[1] != "1" && tokens[1] != "2")) {
+            if (tokens.size() != 2 || tokens[1] != "2") {
                 errors.push_back(
-                    {line_number, ".isa requires exactly 1 or 2"});
+                    {line_number,
+                     "Only .isa 2 is supported; migrate v1 source and "
+                     "artifacts with the offline migration tools"});
                 continue;
             }
             directives.has_isa = true;
-            directives.isa = tokens[1] == "2"
-                ? IsaEncodingVersion::V2
-                : IsaEncodingVersion::V1;
+            directives.isa = IsaEncodingVersion::V2;
             continue;
         }
 
@@ -94,16 +93,9 @@
 
     if (options.require_isa_directive && !directives.has_isa) {
         errors.push_back(
-            {0, "Source must begin with an explicit .isa 1 or .isa 2"});
+            {0, "Source must begin with an explicit .isa 2"});
     }
-    if (directives.isa == IsaEncodingVersion::V1 &&
-        directives.required_features != 0) {
-        errors.push_back(
-            {0, ".require feature declarations are only valid for ISA v2"});
-    }
-    if (directives.isa == IsaEncodingVersion::V2) {
-        directives.required_features |=
-            featureBit(architecture::v2::FEATURE_BASE_V2);
-    }
+    directives.required_features |=
+        featureBit(architecture::v2::FEATURE_BASE_V2);
     return directives;
 }

@@ -97,14 +97,11 @@
     return features;
 }
 
-[[nodiscard]] inline TritWord27 transcodeV1InstructionToV2(
-    const TritWord27& word) {
-    const InstructionWord decoded =
-        VersionedInstructionCodec::decode(
-            word, IsaEncodingVersion::V1);
+[[nodiscard]] inline TritWord27 encodeSemanticInstructionV2(
+    const InstructionWord& decoded) {
     if (decoded.malformed || decoded.opcode == Opcode::RESERVED) {
         throw std::invalid_argument(
-            "cannot transcode malformed or reserved v1 instruction");
+            "cannot encode malformed or reserved ISA v2 instruction");
     }
 
     if (decoded.r5_layout) {

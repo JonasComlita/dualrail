@@ -13,6 +13,14 @@ using namespace sandbox::isa;
 using namespace sandbox::vm;
 using namespace sandbox::vm::assembler;
 
+std::vector<TritWord27> assembleOrThrow(const std::string& source) {
+    static constexpr const char* kTestProfile =
+        ".isa 2\n"
+        ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n";
+    return sandbox::vm::assembler::assembleOrThrow(
+        std::string{kTestProfile} + source);
+}
+
 long long regLong(const VMState& vm, uint8_t reg) {
     return sandbox::vm::ops::toLong(vm.regfile.read(reg));
 }
@@ -114,7 +122,8 @@ void loadStoreTags(TestContext& ctx) {
     ctx.check(loadAndReset(vm, program), "load/store program loads");
     const RunResult result = run(vm, 64);
     ctx.check(result.halted(), "load/store program halts");
-    ctx.check(vm.regfile.read(R2).mode == TernaryMode::T20, "LOAD preserves T20 tag");
+    ctx.check(vm.regfile.readPhysical(R2).mode == TernaryMode::T40,
+              "LOAD produces a canonical physical T40 register word");
     ctx.check(vm.regfile.read(R3).mode == TernaryMode::T20, "ADD writes T20 tag");
     ctx.equal(regLong(vm, R3), 84LL, "loaded value participates in arithmetic");
 }
@@ -170,17 +179,17 @@ void scratchCsrrwRoundtrip(TestContext& ctx) {
 
 void zeroPteFaults(TestContext& ctx) {
     {
-        VMState vm(96, 96);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         const auto handler = assembleOrThrow(R"(
             csrr r4, cause
             csrr r5, page_fault_addr
             csrr r6, page_fault_access
             halt
         )");
-        ctx.check(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS),
                   "fetch zero-PTE handler loads");
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -196,7 +205,7 @@ void zeroPteFaults(TestContext& ctx) {
     }
 
     {
-        VMState vm(128, 128);
+        VMState vm(5 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         const auto user = assembleOrThrow("load r1, zero, 0\nhalt\n");
         const auto handler = assembleOrThrow(R"(
             csrr r4, cause
@@ -204,15 +213,15 @@ void zeroPteFaults(TestContext& ctx) {
             csrr r6, page_fault_access
             halt
         )");
-        ctx.check(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(user, MMU_PAGE_WORDS),
                   "load zero-PTE user program loads");
-        ctx.check(vm.imem.loadProgram(handler, 3 * LEGACY_MMU_PAGE_WORDS),
+        ctx.check(vm.imem.loadProgram(handler, 3 * MMU_PAGE_WORDS),
                   "load zero-PTE handler loads");
         ctx.check(vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true)) ==
                       MemFaultCode::OK,
                   "valid user IMEM PTE stores");
         vm.trap_routing_enabled = true;
-        vm.tvec = 3 * LEGACY_MMU_PAGE_WORDS;
+        vm.tvec = 3 * MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -388,14 +397,19 @@ void vectorGatherScatterLaneFaults(TestContext& ctx) {
               "gather seed 2 stores");
 
     const RunResult result = run(vm, 32);
-    ctx.check(result.halted(), "vector gather/scatter program halts with lane-local fault");
-    ctx.equal(loadLong(vm, 16), 11LL, "VSCATTER stores lane 0 gathered value");
-    ctx.equal(loadLong(vm, 17), 22LL, "VSCATTER stores lane 1 gathered value");
+    ctx.check(result.trapped(),
+              "VSCATTER traps after preflight finds an invalid lane");
+    ctx.equal(loadLong(vm, 16), 0LL,
+              "VSCATTER fault leaves lane 0 destination unchanged");
+    ctx.equal(loadLong(vm, 17), 0LL,
+              "VSCATTER fault leaves lane 1 destination unchanged");
     ctx.check(!vm.vector_faults.fault_valid[0], "VSCATTER lane 0 remains clean");
     ctx.check(!vm.vector_faults.fault_valid[1], "VSCATTER lane 1 remains clean");
     ctx.check(vm.vector_faults.fault_valid[2], "VSCATTER records out-of-range lane");
     ctx.check(vm.vector_faults.fault_class[2] == TrapCode::TRAP_MEM_FAULT,
               "VSCATTER out-of-range lane records memory fault");
+    ctx.equal(vm.vector_faults.first_failing_lane, 2,
+              "VSCATTER records the first failing lane");
 }
 
 void vectorReductionRuntime(TestContext& ctx) {
@@ -759,7 +773,7 @@ void multicoreDeviceStateIsolation(TestContext& ctx) {
 }
 
 void mmuReadOnlyStoreProtection(TestContext& ctx) {
-    VMState vm(96, 128);
+    VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
     const auto user = assembleOrThrow(R"(
         load r1, zero, 0
         store r1, zero, 0
@@ -771,19 +785,19 @@ void mmuReadOnlyStoreProtection(TestContext& ctx) {
         csrr r6, page_fault_access
         halt
     )");
-    ctx.check(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "read-only user program loads");
-    ctx.check(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "read-only handler loads");
+    ctx.check(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "read-only user program loads");
+    ctx.check(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "read-only handler loads");
     ctx.check(vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true)) ==
                   MemFaultCode::OK,
               "user IMEM PTE stores");
     ctx.check(vm.dmem.store(4, encodePageTableEntry(2, true, true, false, false)) ==
                   MemFaultCode::OK,
               "read-only DMEM PTE stores");
-    ctx.check(vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33)) ==
+    ctx.check(vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33)) ==
                   MemFaultCode::OK,
               "physical read-only page seed stores");
     vm.trap_routing_enabled = true;
-    vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
+    vm.tvec = 2 * MMU_PAGE_WORDS;
     vm.privilege = PrivilegeMode::User;
     vm.mmu_enable = true;
     vm.user_imem_ptbr = 0;
@@ -799,7 +813,7 @@ void mmuReadOnlyStoreProtection(TestContext& ctx) {
     ctx.equal(regLong(vm, R5), 0LL, "read-only store records virtual address");
     ctx.equal(regLong(vm, R6), static_cast<long long>(OS_PAGE_ACCESS_STORE),
               "read-only store records store access");
-    ctx.equal(loadLong(vm, 2 * LEGACY_MMU_PAGE_WORDS), 33LL,
+    ctx.equal(loadLong(vm, 2 * MMU_PAGE_WORDS), 33LL,
               "read-only store does not mutate physical page");
 }
 

@@ -74,6 +74,18 @@ inline long long loadPhysLong(sandbox::vm::VMState& vm, int addr) {
     return sandbox::vm::ops::toLong(value);
 }
 
+// Most multiwidth tests exercise the complete optional-instruction portfolio.
+// Keep their source snippets concise while still testing the strict v2
+// declaration contract used by production assembly.
+inline std::vector<sandbox::isa::TritWord27> assembleV2TestOrThrow(
+        const std::string& source) {
+    static constexpr const char* kTestProfile =
+        ".isa 2\n"
+        ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n";
+    return sandbox::vm::assembler::assembleOrThrow(
+        std::string{kTestProfile} + source);
+}
+
 inline int8_t vectorPredicateTrit(const sandbox::vm::VMState& vm, int vreg, int lane) {
     return vm.vregfile.reg[static_cast<std::size_t>(vreg)].read(lane).asL1().tritAt(0);
 }

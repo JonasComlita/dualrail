@@ -48,12 +48,10 @@ void testFilesystemCheckerAndBootRecovery() {
     expect(kernel.fs().createFile("/bin", InodeKind::Directory).ok(),
            "bin directory creates");
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 2;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 32;
-    expect(kernel.installExecutable("/bin/init", {900, 901, 902}, header).ok(),
+    const std::vector<long long> init_image = {900, 901, 902};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        2, static_cast<int>(init_image.size()), 1, 36);
+    expect(kernel.installExecutable("/bin/init", init_image, header).ok(),
            "executable installs with metadata before fsck");
 
     expectFsckOk(kernel.checkFilesystemConsistency(),
@@ -285,12 +283,9 @@ void testSignedPackagesAndReleaseImageBuilder() {
     std::cout << "[5] Signed package/update format and release image builder\n";
     using namespace sandbox::os;
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 3;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 64;
     const std::vector<long long> app = {700, 701, 702, 703};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        3, static_cast<int>(app.size()), 1, 63);
     const std::string secret = "production-signing-key";
     SignedExecutableMetadata metadata =
         signExecutableMetadata(app, header, "trit-release", secret);

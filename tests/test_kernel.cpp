@@ -6,6 +6,9 @@ void testPhase35Infrastructure() {
     using namespace sandbox::isa;
     using namespace sandbox::vm;
     using namespace sandbox::vm::assembler;
+    const auto assembleOrThrow = [](const std::string& source) {
+        return assembleV2TestOrThrow(source);
+    };
 
     {
         auto assembled = assemble(R"(
@@ -121,26 +124,28 @@ void testPhase35Infrastructure() {
 
     {
         auto image = assemble(R"(
+            .isa 2
             .text
         entry:
             halt
             .data
-        app: .execheader 0, 1, 1, 24, 1, 0
+        app: .execheader2 0, 1, 0, 27, 1, 2, 0
         )");
         expect(image.success, "assembler accepts executable header directive");
         if (image.success) {
             expect(image.data_labels.count("app") && image.data_labels.at("app") == 0,
-                   ".execheader defines a data label");
-            expect(image.data.size() == EXEC_HEADER_WORDS,
-                   ".execheader emits fixed-size header words");
-            expect(image.executable_headers.count("app"),
-                   ".execheader records executable metadata");
-            const ExecutableImageHeader header = image.executable_headers.at("app");
-            expect(header.entry_virtual_pc == 0 &&
-                   header.text_pages == 1 &&
-                   header.data_pages == 1 &&
-                   header.stack_words == 24 &&
-                   header.syscall_abi_version == EXEC_SYSCALL_ABI_VERSION_V1,
+                   ".execheader2 defines a data label");
+            expect(image.data.size() == EXEC_V2_HEADER_WORDS,
+                   ".execheader2 emits fixed-size header words");
+            expect(image.executable_headers_v2.count("app"),
+                   ".execheader2 records executable metadata");
+            const ExecutableImageHeaderV2 header =
+                image.executable_headers_v2.at("app");
+            expect(header.entry_pc == 0 &&
+                   header.text_words == 1 &&
+                   header.data_words == 0 &&
+                   header.stack_words == 27 &&
+                   header.syscall_abi_version == 2,
                    "executable metadata decodes header fields");
             VMState vm(64, 64);
             expect(initializeTaskContext(vm.dmem, 8, header, 1, 2),
@@ -148,16 +153,19 @@ void testPhase35Infrastructure() {
             expect(loadPhysLong(vm, 8 + TASK_CONTEXT_EPC) == 0 &&
                    loadPhysLong(vm, 8 + TASK_CONTEXT_IMEM_PTBR) == 1 &&
                    loadPhysLong(vm, 8 + TASK_CONTEXT_DMEM_PTBR) == 2 &&
-                   loadPhysLong(vm, 8 + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
+                   loadPhysLong(vm, 8 + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 27,
                    "loader helper writes context PC, page tables, and SP");
         }
 
-        expect(!assemble(".data\nbad: .execheader 0, 0, 1, 24, 1, 0\n").success,
-               ".execheader rejects invalid text page count");
-        expect(!assemble(".execheader 0, 1, 1, 24, 1, 0\n").success,
-               ".execheader outside .data is rejected");
-        expect(!assemble(".data\n.execheader 0, 1, 1, 24, 1, 0\n").success,
-               ".execheader requires a label");
+        expect(!assemble(
+                    ".isa 2\n.data\nbad: .execheader2 0, 0, 0, 27, 1, 2, 0\n").success,
+               ".execheader2 rejects an empty text image");
+        expect(!assemble(
+                    ".isa 2\n.execheader2 0, 1, 0, 27, 1, 2, 0\n").success,
+               ".execheader2 outside .data is rejected");
+        expect(!assemble(
+                    ".isa 2\n.data\n.execheader2 0, 1, 0, 27, 1, 2, 0\n").success,
+               ".execheader2 requires a label");
     }
 
     {
@@ -258,6 +266,9 @@ void testOsSubstrate() {
     using namespace sandbox::isa;
     using namespace sandbox::vm;
     using namespace sandbox::vm::assembler;
+    const auto assembleOrThrow = [](const std::string& source) {
+        return assembleV2TestOrThrow(source);
+    };
 
     auto asLong = [](const VMState& vm, int reg) {
         return sandbox::vm::ops::toLong(vm.regfile.read(static_cast<uint8_t>(reg)));
@@ -473,7 +484,7 @@ void testOsSubstrate() {
     }
 
     {
-        VMState vm(96, 96);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto assembled = assemble(R"(
             mov r1, handler
             csrw tvec, r1
@@ -773,12 +784,12 @@ void testOsSubstrate() {
 
     {
         std::cerr << "DEBUG: OS sub-test 15" << std::endl;
-        VMState vm(96, 96);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto user = assembleOrThrow(R"(
             mov r1, 42
             halt
         )");
-        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "MMU fetch user program loads at physical page");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU fetch user program loads at physical page");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
@@ -790,7 +801,7 @@ void testOsSubstrate() {
     }
 
     {
-        VMState vm(96, 128);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto user = assembleOrThrow(R"(
             load r1, zero, 0
             mov r2, 1
@@ -798,10 +809,10 @@ void testOsSubstrate() {
             store r1, zero, 0
             halt
         )");
-        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "MMU data user program loads");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "MMU data user program loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.dmem.store(4, encodePageTableEntry(2, true, true, true, false));
-        vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(5));
+        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(5));
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -810,22 +821,22 @@ void testOsSubstrate() {
         vm.user_dmem_pages = 1;
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "MMU translates user load/store");
-        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) == 6,
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) == 6,
                "MMU store updates mapped physical data page");
     }
 
     {
-        VMState vm(96, 96);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto handler = assembleOrThrow(R"(
             csrr r4, cause
             csrr r5, page_fault_addr
             csrr r6, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "fetch page fault handler loads");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "fetch page fault handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true, false));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -838,7 +849,7 @@ void testOsSubstrate() {
     }
 
     {
-        VMState vm(96, 128);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto user = assembleOrThrow(R"(
             load r1, zero, 0
             store r1, zero, 0
@@ -850,13 +861,13 @@ void testOsSubstrate() {
             csrr r6, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(user, LEGACY_MMU_PAGE_WORDS), "read-only data user program loads");
-        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "read-only data handler loads");
+        expect(vm.imem.loadProgram(user, MMU_PAGE_WORDS), "read-only data user program loads");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "read-only data handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, false, false, true));
         vm.dmem.store(4, encodePageTableEntry(2, true, true, false, false));
-        vm.dmem.store(2 * LEGACY_MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33));
+        vm.dmem.store(2 * MMU_PAGE_WORDS, sandbox::vm::ops::fromLong(33));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -872,16 +883,16 @@ void testOsSubstrate() {
     }
 
     {
-        VMState vm(96, 96);
+        VMState vm(4 * MMU_PAGE_WORDS, 4 * MMU_PAGE_WORDS);
         auto handler = assembleOrThrow(R"(
             csrr r4, cause
             csrr r5, page_fault_access
             halt
         )");
-        expect(vm.imem.loadProgram(handler, 2 * LEGACY_MMU_PAGE_WORDS), "NX handler loads");
+        expect(vm.imem.loadProgram(handler, 2 * MMU_PAGE_WORDS), "NX handler loads");
         vm.dmem.store(0, encodePageTableEntry(1, true, true, false, false));
         vm.trap_routing_enabled = true;
-        vm.tvec = 2 * LEGACY_MMU_PAGE_WORDS;
+        vm.tvec = 2 * MMU_PAGE_WORDS;
         vm.privilege = PrivilegeMode::User;
         vm.mmu_enable = true;
         vm.user_imem_ptbr = 0;
@@ -910,7 +921,7 @@ void testOsSubstrate() {
     }
 
     {
-        VMState vm(320, 224);
+        VMState vm(6 * MMU_PAGE_WORDS, 5 * MMU_PAGE_WORDS);
         auto user = assembleOrThrow(R"(
         loop:
             load r1, zero, 0
@@ -1018,8 +1029,8 @@ void testOsSubstrate() {
             csrrw sp, scratch, sp
             eret
         )");
-        constexpr int kUserPhys = LEGACY_MMU_PAGE_WORDS;
-        constexpr int kHandlerPhys = 4 * LEGACY_MMU_PAGE_WORDS;
+        constexpr int kUserPhys = MMU_PAGE_WORDS;
+        constexpr int kHandlerPhys = 4 * MMU_PAGE_WORDS;
         constexpr int kTask0Context = 120;
         constexpr int kTask1Context = 152;
         constexpr int kTaskStatus = -1 + 9 + 27; // kernel current, user previous, previous IE set.
@@ -1056,12 +1067,12 @@ void testOsSubstrate() {
 
         auto result = sandbox::vm::run(vm, 900);
         expect(result.timeout() && vm.isRunning(), "two-task timer proof keeps VM running");
-        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) > 0,
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) > 0,
                "task 0 physical counter advances");
-        expect(loadPhysLong(vm, 3 * LEGACY_MMU_PAGE_WORDS) > 0,
+        expect(loadPhysLong(vm, 3 * MMU_PAGE_WORDS) > 0,
                "task 1 physical counter advances");
-        expect(loadPhysLong(vm, 2 * LEGACY_MMU_PAGE_WORDS) !=
-                   loadPhysLong(vm, 3 * LEGACY_MMU_PAGE_WORDS),
+        expect(loadPhysLong(vm, 2 * MMU_PAGE_WORDS) !=
+                   loadPhysLong(vm, 3 * MMU_PAGE_WORDS),
                "tasks retain independent physical counters");
         expect(loadPhysLong(vm, kTask0Context + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
                "task 0 saved user stack pointer");
@@ -1069,294 +1080,9 @@ void testOsSubstrate() {
                "task 1 saved user stack pointer");
     }
 
-    {
-        std::cerr << "DEBUG: OS sub-test 15 - bringup" << std::endl;
-        const std::string source = readTextFile("minimal_kernel_bringup.tasm");
-        expect(!source.empty(), "minimal kernel bring-up artifact is readable");
-        auto assembled = assemble(source);
-        expect(assembled.success, "minimal kernel bring-up artifact assembles");
-        if (assembled.success) {
-            std::cerr << "DEBUG: executable_headers keys:";
-            for (auto const& [key, val] : assembled.executable_headers) std::cerr << " " << key;
-            std::cerr << "\nDEBUG: data_labels keys:";
-            for (auto const& [key, val] : assembled.data_labels) std::cerr << " " << key;
-            std::cerr << std::endl;
-            expect(assembled.labels.count("boot") && assembled.labels.at("boot") == 0,
-                   "minimal kernel boots at PC zero");
-            expect(assembled.labels.count("shell_loop") && assembled.labels.at("shell_loop") == 50 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel places shell code on mapped physical page");
-            expect(assembled.labels.count("prog_a") && assembled.labels.at("prog_a") == 56 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel places static program A on mapped physical page");
-            expect(assembled.labels.count("prog_b") && assembled.labels.at("prog_b") == 57 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel places static program B on mapped physical page");
-            expect(assembled.labels.count("idle_loop") && assembled.labels.at("idle_loop") == 58 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel places idle task code on mapped physical page");
-            expect(assembled.data_labels.count("shell_data") &&
-                   assembled.data_labels.at("shell_data") == 16 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel maps shell data page");
-            expect(assembled.data_labels.count("prog_a_counter") &&
-                   assembled.data_labels.at("prog_a_counter") == 17 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel maps program A data page");
-            expect(assembled.data_labels.count("prog_b_counter") &&
-                   assembled.data_labels.at("prog_b_counter") == 18 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel maps program B data page");
-            expect(assembled.data_labels.count("idle_counter") &&
-                   assembled.data_labels.at("idle_counter") == 19 * LEGACY_MMU_PAGE_WORDS,
-                   "minimal kernel maps idle counter page");
-            expect(assembled.executable_headers.count("exec_shell") &&
-                   assembled.executable_headers.count("exec_prog_a") &&
-                   assembled.executable_headers.count("exec_prog_b"),
-                   "minimal kernel defines executable image metadata");
-            expect(assembled.executable_headers.at("exec_shell").text_pages == 6,
-                   "minimal kernel maps expanded Trit OS shell text");
-            expect(assembled.data_labels.count("proc_count") &&
-                   assembled.data_labels.count("user_proc_count") &&
-                   assembled.data_labels.count("idle_proc") &&
-                   assembled.data_labels.count("current_proc") &&
-                   assembled.data_labels.count("ready_head") &&
-                   assembled.data_labels.count("ready_tail") &&
-                   assembled.data_labels.count("proc_table"),
-                   "minimal kernel defines process table metadata");
-            expect(assembled.data_labels.count("proc_state") &&
-                   assembled.data_labels.count("proc_parent_pid") &&
-                   assembled.data_labels.count("proc_exit_status") &&
-                   assembled.data_labels.count("proc_ticks") &&
-                   assembled.data_labels.count("proc_quantum_remaining") &&
-                   assembled.data_labels.count("proc_preemptions") &&
-                   assembled.data_labels.count("proc_wakeup_tick") &&
-                   assembled.data_labels.count("proc_wait_channel") &&
-                   assembled.data_labels.count("proc_wait_target") &&
-                   assembled.data_labels.count("proc_ready_next") &&
-                   assembled.data_labels.count("proc_wait_next") &&
-                   assembled.data_labels.count("proc_yields") &&
-                   assembled.data_labels.count("proc_sleeps") &&
-                   assembled.data_labels.count("proc_exits") &&
-                   assembled.data_labels.count("proc_spawns") &&
-                   assembled.data_labels.count("proc_waits") &&
-                   assembled.data_labels.count("proc_read_blocks") &&
-                   assembled.data_labels.count("proc_input_reads"),
-                   "minimal kernel defines scheduler lifecycle metadata");
-            expect(assembled.data_labels.count("proc_heap_start") &&
-                   assembled.data_labels.count("proc_heap_break") &&
-                   assembled.data_labels.count("proc_heap_limit") &&
-                   assembled.data_labels.count("proc_forks") &&
-                   assembled.data_labels.count("proc_execs") &&
-                   assembled.data_labels.count("os_fd_open") &&
-                   assembled.data_labels.count("os_file_size") &&
-                   assembled.data_labels.count("spare_data"),
-                   "minimal kernel defines Trit OS syscall metadata");
-
-            VMState vm(2048, 768);
-            expect(loadAndReset(vm, assembled), "minimal kernel image loads");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_count")) == 5,
-                   "minimal kernel process table declares four user slots plus idle");
-            expect(loadPhysLong(vm, assembled.data_labels.at("user_proc_count")) == 4,
-                   "minimal kernel process table declares four user slots");
-            expect(loadPhysLong(vm, assembled.data_labels.at("idle_proc")) == 4,
-                   "minimal kernel records idle process index");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_table")) ==
-                       assembled.data_labels.at("ctx_shell") &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 1) ==
-                       assembled.data_labels.at("ctx_a") &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 2) ==
-                       assembled.data_labels.at("ctx_b") &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_table") + 4) ==
-                       assembled.data_labels.at("idle_ctx"),
-                   "minimal kernel process table points at task and idle contexts");
-            auto result = sandbox::vm::run(vm, 1000);
-            expect(result.timeout() && vm.isRunning(),
-                   "minimal kernel idles while shell blocks for input");
-            expect(vm.trap_routing_enabled && vm.mmu_enable,
-                   "minimal kernel boot enabled routed traps and MMU");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_state")) == PROC_STATE_BLOCKED &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_wait_channel")) == PROC_WAIT_CONSOLE_INPUT,
-                   "shell blocks on console input without polling");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_read_blocks")) > 0,
-                   "console input wait is accounted");
-            expect(loadPhysLong(vm, assembled.data_labels.at("idle_counter")) > 0,
-                   "idle task runs while shell waits for input");
-
-            vm.enqueueConsoleAscii("awbu x");
-            result = sandbox::vm::run(vm, 20000);
-            expect(result.timeout() && vm.isRunning(),
-                   "minimal kernel services image keeps running under timer preemption");
-            expect(loadPhysLong(vm, assembled.data_labels.at("current_proc")) >= 0 &&
-                   loadPhysLong(vm, assembled.data_labels.at("current_proc")) <
-                       loadPhysLong(vm, assembled.data_labels.at("proc_count")),
-                   "minimal kernel scheduler keeps current process index in range");
-            expect(loadPhysLong(vm, assembled.data_labels.at("prog_a_counter")) == 1,
-                   "spawned program A runs once and exits");
-            expect(loadPhysLong(vm, assembled.data_labels.at("prog_b_counter")) == 1,
-                   "spawned program B runs once and exits");
-            expect(loadPhysLong(vm, assembled.data_labels.at("shell_data")) == 3,
-                   "shell records last spawned child PID");
-            expect(loadPhysLong(vm, assembled.data_labels.at("shell_data") + 1) == 11,
-                   "waitpid returns program A exit status to shell memory");
-            expect(!vm.syscall_buffer.empty() &&
-                   vm.syscall_buffer.find("2\n") != std::string::npos &&
-                   vm.syscall_buffer.find("11\n") != std::string::npos &&
-                   vm.syscall_buffer.find("3\n") != std::string::npos,
-                   "shell prints spawn and wait results through console CSR");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_shell") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved shell user stack pointer");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_a") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved program A user stack pointer");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ctx_b") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved program B user stack pointer");
-            expect(loadPhysLong(vm, assembled.data_labels.at("idle_ctx") + TASK_CONTEXT_REG_BASE + R26_SP - 1) == 24,
-                   "minimal kernel saved idle user stack pointer");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_spawns")) == 2,
-                   "spawn syscall accounts shell-created children");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_waits")) == 1,
-                   "waitpid blocking path is accounted");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_input_reads")) >= 5,
-                   "console input reads are accounted");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_exits")) == 1 &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_exits") + 1) == 1 &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_exits") + 2) == 1,
-                   "exit syscall accounts shell and children");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_state")) == PROC_STATE_EXITED &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_state") + 1) == PROC_STATE_FREE &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_state") + 2) == PROC_STATE_EXITED,
-                   "waited child is freed and un-waited child remains exited");
-            expect(loadPhysLong(vm, assembled.data_labels.at("ready_head")) == -1 &&
-                   loadPhysLong(vm, assembled.data_labels.at("ready_tail")) == -1,
-                   "ready queue drains when only idle remains runnable");
-            expect(loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining")) <= PROC_DEFAULT_QUANTUM &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining") + 1) <= PROC_DEFAULT_QUANTUM &&
-                   loadPhysLong(vm, assembled.data_labels.at("proc_quantum_remaining") + 4) <= PROC_DEFAULT_QUANTUM,
-                   "minimal kernel tracks per-process quantum remaining");
-
-            std::cerr << "DEBUG: OS sub-test 15 - spawn exhaustion" << std::endl;
-            VMState exhaustedVm(2048, 768);
-            expect(loadAndReset(exhaustedVm, assembled), "spawn exhaustion image loads");
-            exhaustedVm.enqueueConsoleAscii("aa x");
-            auto exhaustedResult = sandbox::vm::run(exhaustedVm, 20000);
-            expect(exhaustedResult.timeout() && exhaustedVm.isRunning(),
-                   "kernel keeps running through spawn exhaustion");
-            expect(exhaustedVm.syscall_buffer.find("-1\n") != std::string::npos,
-                   "spawn returns -1 when the static slot is not free");
-            expect(loadPhysLong(exhaustedVm, assembled.data_labels.at("proc_spawns")) == 1,
-                   "failed spawn is not counted as a created process");
-
-            std::cerr << "DEBUG: OS sub-test 15 - char syscall" << std::endl;
-            VMState charVm(2048, 768);
-            expect(loadAndReset(charVm, assembled), "Trit OS char syscall image loads");
-            charVm.enqueueConsoleAscii("c x");
-            auto charResult = sandbox::vm::run(charVm, 12000);
-            expect(charResult.timeout() && charVm.isRunning(),
-                   "kernel keeps running after sys_write_char probe");
-            expect(charVm.syscall_buffer.find("K\n") != std::string::npos,
-                   "minimal kernel routes sys_write_char through character console mode");
-
-            std::cerr << "DEBUG: OS sub-test 15 - syscall probe" << std::endl;
-            VMState osVm(2048, 768);
-            expect(loadAndReset(osVm, assembled), "Trit OS syscall probe image loads");
-            osVm.enqueueConsoleAscii("p x");
-            auto osResult = sandbox::vm::run(osVm, 30000);
-            expect(osResult.timeout() && osVm.isRunning(),
-                   "kernel keeps running after Trit OS file and heap syscalls");
-            const int shellBase = assembled.data_labels.at("shell_data");
-            expect(loadPhysLong(osVm, shellBase + 2) == 1 &&
-                   loadPhysLong(osVm, shellBase + 3) == 3 &&
-                   loadPhysLong(osVm, shellBase + 4) == 0,
-                   "open syscall returns T1 success, fd payload, and clear detail");
-            expect(loadPhysLong(osVm, shellBase + 5) == 1 &&
-                   loadPhysLong(osVm, shellBase + 6) == 1,
-                   "read syscall returns success and word count");
-            expect(loadPhysLong(osVm, shellBase + 24) == 101,
-                   "read syscall copies file data into the shell user buffer");
-            expect(loadPhysLong(osVm, shellBase + 8) == 1 &&
-                   loadPhysLong(osVm, shellBase + 9) == 2,
-                   "write syscall returns success and written word count");
-            expect(loadPhysLong(osVm, assembled.data_labels.at("os_file_words") + 3) == 404 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_file_words") + 4) == 505,
-                   "write syscall copies shell user buffer words into the kernel file image");
-            expect(loadPhysLong(osVm, shellBase + 11) == 1 &&
-                   loadPhysLong(osVm, shellBase + 12) == 5,
-                   "stat syscall reports updated file size");
-            expect(loadPhysLong(osVm, shellBase + 14) == 1 &&
-                   loadPhysLong(osVm, shellBase + 15) == 2,
-                   "readdir syscall reports directory entry count");
-            expect(loadPhysLong(osVm, shellBase + 25) == 47 &&
-                   loadPhysLong(osVm, shellBase + 26) == 102,
-                   "readdir syscall copies directory words into the shell user buffer");
-            expect(loadPhysLong(osVm, shellBase + 17) == 1 &&
-                   loadPhysLong(osVm, shellBase + 18) == 7,
-                   "sbrk syscall grows the shell heap break");
-            expect(loadPhysLong(osVm, shellBase + 20) == -1 &&
-                   loadPhysLong(osVm, shellBase + 22) == 3,
-                   "brk syscall rejects out-of-range heap break");
-            expect(loadPhysLong(osVm, shellBase + 23) == 1,
-                   "close syscall returns success");
-            expect(loadPhysLong(osVm, assembled.data_labels.at("os_open_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_read_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_write_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_stat_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_readdir_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_close_count")) == 1 &&
-                   loadPhysLong(osVm, assembled.data_labels.at("os_sbrk_count")) == 1,
-                   "kernel accounts Trit OS routed file and heap syscalls");
-
-            std::cerr << "DEBUG: OS sub-test 15 - bad path" << std::endl;
-            VMState badPathVm(2048, 768);
-            expect(loadAndReset(badPathVm, assembled), "Trit OS bad path image loads");
-            badPathVm.enqueueConsoleAscii("n x");
-            auto badPathResult = sandbox::vm::run(badPathVm, 12000);
-            expect(badPathResult.timeout() && badPathVm.isRunning(),
-                   "kernel keeps running after bad path open");
-            expect(loadPhysLong(badPathVm, shellBase + 24) == -1 &&
-                   loadPhysLong(badPathVm, shellBase + 25) == 0 &&
-                   loadPhysLong(badPathVm, shellBase + 26) == 1,
-                   "open syscall rejects missing user path with T1 error detail");
-            expect(loadPhysLong(badPathVm, assembled.data_labels.at("os_open_count")) == 0,
-                   "failed open is not counted as an opened file");
-
-            std::cerr << "DEBUG: OS sub-test 15 - bad ptr" << std::endl;
-            VMState badPtrVm(2048, 768);
-            expect(loadAndReset(badPtrVm, assembled), "Trit OS bad pointer image loads");
-            badPtrVm.enqueueConsoleAscii("v x");
-            auto badPtrResult = sandbox::vm::run(badPtrVm, 12000);
-            expect(badPtrResult.timeout() && badPtrVm.isRunning(),
-                   "kernel keeps running after bad pointer open");
-            expect(loadPhysLong(badPtrVm, shellBase + 24) == -1 &&
-                   loadPhysLong(badPtrVm, shellBase + 25) == 0 &&
-                   loadPhysLong(badPtrVm, shellBase + 26) == 5,
-                   "open syscall rejects invalid user pointer span with T1 error detail");
-
-            std::cerr << "DEBUG: OS sub-test 15 - fork" << std::endl;
-            VMState forkVm(2048, 768);
-            expect(loadAndReset(forkVm, assembled), "Trit OS fork image loads");
-            forkVm.enqueueConsoleAscii("f");
-            auto forkResult = sandbox::vm::run(forkVm, 12000);
-            expect(forkResult.timeout() && forkVm.isRunning(),
-                   "kernel keeps running after routed fork syscall");
-            expect(loadPhysLong(forkVm, shellBase + 24) == 1 &&
-                   loadPhysLong(forkVm, shellBase + 25) == 4 &&
-                   loadPhysLong(forkVm, shellBase + 26) == 0,
-                   "fork parent sees success and child pid payload");
-            expect(loadPhysLong(forkVm, assembled.data_labels.at("proc_parent_pid") + 3) == 1 &&
-                   loadPhysLong(forkVm, assembled.data_labels.at("proc_state") + 3) != PROC_STATE_FREE &&
-                   loadPhysLong(forkVm, assembled.data_labels.at("proc_forks")) == 1,
-                   "fork populates spare process metadata and accounting");
-            expect(loadPhysLong(forkVm, assembled.data_labels.at("spare_data") + 24) == 1 &&
-                   loadPhysLong(forkVm, assembled.data_labels.at("spare_data") + 25) == 0,
-                   "fork child sees zero payload in copied user memory");
-
-            std::cerr << "DEBUG: OS sub-test 15 - exec" << std::endl;
-            VMState execVm(2048, 768);
-            expect(loadAndReset(execVm, assembled), "Trit OS exec image loads");
-            execVm.enqueueConsoleAscii("e");
-            auto execResult = sandbox::vm::run(execVm, 20000);
-            expect(execResult.timeout() && execVm.isRunning(),
-                   "kernel keeps running after routed exec syscall");
-            expect(loadPhysLong(execVm, assembled.data_labels.at("prog_b_counter")) == 1,
-                   "exec replaces shell image with executable program B");
-            expect(loadPhysLong(execVm, assembled.data_labels.at("proc_execs")) == 1 &&
-                   loadPhysLong(execVm, assembled.data_labels.at("proc_exit_status")) == 22,
-                   "exec accounting is recorded and executed image exits with status");
-        }
-    }
+    // Retired with the v2 clean cutover. The 27-word-page bring-up remains
+    // reproducible from tag trit-v1-final and its golden fixtures; it is not
+    // part of the production runtime or regression matrix.
 
     {
         VMState vm(32, 64);
@@ -1381,6 +1107,9 @@ void testTernaryAtomicsAndLockAbi() {
     using namespace sandbox::isa;
     using namespace sandbox::vm;
     using namespace sandbox::vm::assembler;
+    const auto assembleOrThrow = [](const std::string& source) {
+        return assembleV2TestOrThrow(source);
+    };
 
     auto asLong = [](const VMState& vm, int reg) {
         return sandbox::vm::ops::toLong(vm.regfile.read(static_cast<uint8_t>(reg)));

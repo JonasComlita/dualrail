@@ -172,16 +172,32 @@ void testPhaseDKernelEndToEnd() {
         }
 
         fn seed_exec_desc(addr: t40, text_ppn: t40, text_pages: t40, data_pages: t40, stack_words: t40) -> t40 {
-            kstore(addr + EXEC_HEADER_MAGIC, EXEC_MAGIC);
-            kstore(addr + EXEC_HEADER_VERSION, EXEC_VERSION_V1);
-            kstore(addr + EXEC_HEADER_ABI_VERSION, EXEC_ABI_VERSION_V1);
-            kstore(addr + EXEC_HEADER_ENTRY_PC, 0);
-            kstore(addr + EXEC_HEADER_TEXT_PAGES, text_pages);
-            kstore(addr + EXEC_HEADER_DATA_PAGES, data_pages);
-            kstore(addr + EXEC_HEADER_STACK_WORDS, stack_words);
-            kstore(addr + EXEC_HEADER_SYSCALL_ABI_VERSION, EXEC_SYSCALL_ABI_VERSION_V1);
-            kstore(addr + EXEC_HEADER_FLAGS, 0);
+            var text_words: t40 = text_pages * MMU_PAGE_WORDS;
+            var data_words: t40 = data_pages * MMU_PAGE_WORDS;
+            kstore(addr + EXEC_V2_MAGIC_INDEX, EXEC_MAGIC);
+            kstore(addr + EXEC_V2_VERSION_INDEX, EXEC_V2_VERSION);
+            kstore(addr + EXEC_V2_FUNCTION_ABI_INDEX, EXEC_V2_FUNCTION_ABI);
+            kstore(addr + EXEC_V2_HEADER_SIZE_INDEX, EXEC_V2_HEADER_WORDS);
+            kstore(addr + EXEC_V2_ISA_INDEX, EXEC_V2_ISA);
+            kstore(addr + EXEC_V2_FEATURES_INDEX, 1);
+            kstore(addr + EXEC_V2_ENTRY_PC_INDEX, 0);
+            kstore(addr + EXEC_V2_TEXT_WORDS_INDEX, text_words);
+            kstore(addr + EXEC_V2_DATA_WORDS_INDEX, data_words);
+            kstore(addr + EXEC_V2_STACK_WORDS_INDEX, stack_words);
+            kstore(addr + EXEC_V2_SYSCALL_ABI_INDEX, EXEC_V2_SYSCALL_ABI);
+            kstore(addr + EXEC_V2_SCALAR_WIDTH_INDEX, EXEC_V2_SCALAR_TRITS);
+            kstore(addr + EXEC_V2_BASE_PAGE_INDEX, EXEC_V2_BASE_PAGE_WORDS);
+            kstore(addr + EXEC_V2_FLAGS_INDEX, 0);
+            var checksum: t40 = 0;
+            var word: t40 = 0;
+            while EXEC_V2_CHECKSUM_INDEX - word > 0 {
+                checksum = checksum + kload(addr + word);
+                word = word + 1;
+            }
+            kstore(addr + EXEC_V2_CHECKSUM_INDEX, 0 - checksum);
             kstore(addr + EXEC_DESC_TEXT_PPN, text_ppn);
+            kstore(addr + EXEC_DESC_TEXT_DISK_BLOCK, 1);
+            kstore(addr + EXEC_DESC_TEXT_WORDS, text_words);
             return EXEC_DESC_WORDS;
         }
 
@@ -760,7 +776,10 @@ void testPhaseDKernelEndToEnd() {
     const std::string trap_stub = readTextFile("native_kernel_trap_stub.tasm");
     expect(contains(trap_stub, "call kernel_dispatch"), "D1 trap stub enters compiled kernel_dispatch");
     if (compiled.success && !trap_stub.empty()) {
-        auto assembled_stub = sandbox::vm::assembler::assemble(trap_stub + "\n" + compiled.assembly);
+        auto assembled_stub = sandbox::vm::assembler::assemble(
+            ".isa 2\n"
+            ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n" +
+            trap_stub + "\n" + compiled.assembly);
         if (!assembled_stub.success) {
             for (const auto& error : assembled_stub.errors) {
                 std::cerr << "D1 STUB ASSEMBLY ERROR line " << error.line
@@ -774,7 +793,10 @@ void testPhaseDKernelEndToEnd() {
     expect(contains(boot, "call kernel_init"), "native boot prelude initializes compiled kernel");
     expect(contains(boot, "syscall 16"), "native boot prelude exercises D8 syscall dispatch");
     if (compiled.success && !trap_stub.empty() && !boot.empty()) {
-        auto boot_image = sandbox::vm::assembler::assemble(boot + "\n" + trap_stub + "\n" + compiled.assembly);
+        auto boot_image = sandbox::vm::assembler::assemble(
+            ".isa 2\n"
+            ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n" +
+            boot + "\n" + trap_stub + "\n" + compiled.assembly);
         if (!boot_image.success) {
             for (const auto& error : boot_image.errors) {
                 std::cerr << "NATIVE BOOT ASSEMBLY ERROR line " << error.line
@@ -833,6 +855,11 @@ void testPhaseDKernelEndToEnd() {
                       << " actual=" << sandbox::vm::ops::toLong(actual)
                       << " expected=" << sandbox::vm::ops::toLong(expected)
                       << " index=" << sandbox::vm::ops::toLong(index) << "\n";
+            std::cout << "DEBUG: sbrk status=" << wordAt(vm, 36000)
+                      << " old=" << wordAt(vm, 36001)
+                      << " break=" << wordAt(vm, 36002)
+                      << " pages=" << wordAt(vm, 36003)
+                      << " pte=" << wordAt(vm, 36004) << "\n";
         }
         expect(regLong(vm, 13) == 1, "Phase D kernel primitives pass VM assertions");
         expect(wordAt(vm, 36000) == 1, "sys_sbrk returns success in the native kernel");

@@ -119,7 +119,8 @@ Compiled TCL programs produce an `ObjectModule` containing:
 | `function_order` | Ordered function list for linking |
 | `function_refs` | Cross-function reference graph (for dead-stripping) |
 
-The linker (`LinkResult`) assembles all modules into a single `ExecutableImageHeader` + `AssemblyResult` ready for the VM.
+The linker (`LinkResult`) assembles all modules into a single
+`ExecutableImageHeaderV2` plus `AssemblyResult` ready for the v2 VM.
 
 ---
 
@@ -128,10 +129,16 @@ The linker (`LinkResult`) assembles all modules into a single `ExecutableImageHe
 After linking, the final image contains:
 
 ```
-ExecutableImageHeader:
+ExecutableImageHeaderV2:
+  executable_version, function_abi_version, syscall_abi_version
+  isa_version, required_features
   boot_entry    — PC value at start (default: address of "main")
   text_words    — instruction count
   data_words    — static data word count
 ```
 
-This maps to the `.tboot` payload's `boot_entry` + `program[]` + `data_words[]` fields.
+The header also records exact text/data words, stack words, scalar width,
+base-page size, flags, and a checksum. The production linker, assembler,
+loader, VM, kernel, and image builders accept only v2. v1 executable and
+live-storage compatibility is intentionally absent; the standalone offline
+migrator converts preserved inputs from `trit-v1-final`.

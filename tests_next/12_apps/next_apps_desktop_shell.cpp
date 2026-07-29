@@ -83,7 +83,7 @@ sandbox::compiler::LinkResult compileBundledApp(TestContext& ctx,
         ctx.fail(id + " link diagnostics:\n" + formatDiagnostics(linked.diagnostics));
         return linked;
     }
-    ctx.equal(linked.executable_header.stack_words,
+    ctx.equal(linked.executable_header_v2.stack_words,
               ((stack_words + 8) / 9) * 9,
               id + " executable header aligns stack hint");
     return linked;
@@ -161,13 +161,8 @@ bool runAppDrawDriver(TestContext& ctx,
     return sandbox::vm::ops::toLong(vm.regfile.read(13)) == 123;
 }
 
-sandbox::vm::ExecutableImageHeader dummyHeader() {
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 4;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 64;
-    return header;
+sandbox::vm::ExecutableImageHeaderV2 dummyHeader() {
+    return sandbox::vm::makeExecutableHeaderV2(4, 4, 1, 63);
 }
 
 bool installAppExecutable(TestContext& ctx,

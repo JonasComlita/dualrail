@@ -57,15 +57,25 @@ bool writeFile(const std::string& path, const std::string& data) {
 }
 
 struct TritFileHeader {
-    char magic[4] = {'T', 'X', 'E', '3'};
-    uint32_t version = 1;
+    char magic[4] = {'T', 'X', 'E', '4'};
+    uint32_t version = 2;
     uint32_t endianness = 0x12345678;
+    uint32_t header_size = 0;
+    uint32_t isa_version = sandbox::architecture::v2::ISA_VERSION;
+    uint64_t required_features = 0;
     uint32_t instruction_count = 0;
     uint32_t data_count = 0;
     uint32_t stack_words = 0;
     uint32_t entry_pc = 0;
-    uint32_t abi_version = 0;
-    uint32_t reserved[4] = {0, 0, 0, 0};
+    uint32_t abi_version =
+        sandbox::architecture::v2::FUNCTION_ABI_VERSION;
+    uint32_t syscall_abi_version =
+        sandbox::architecture::v2::SYSCALL_ABI_VERSION;
+    uint32_t scalar_word_trits =
+        sandbox::architecture::v2::SCALAR_WORD_TRITS;
+    uint32_t base_page_words =
+        sandbox::architecture::v2::BASE_PAGE_WORDS;
+    uint32_t flags = 0;
 };
 
 bool writeBinaryFile(const std::string& path, const sandbox::compiler::LinkResult& linked) {
@@ -73,11 +83,17 @@ bool writeBinaryFile(const std::string& path, const sandbox::compiler::LinkResul
     if (!out.good()) return false;
     
     TritFileHeader header;
+    header.header_size = sizeof(TritFileHeader);
     header.instruction_count = static_cast<uint32_t>(linked.assembled.program.size());
     header.data_count = static_cast<uint32_t>(linked.assembled.data.size());
-    header.stack_words = static_cast<uint32_t>(linked.executable_header.stack_words);
-    header.entry_pc = static_cast<uint32_t>(linked.executable_header.entry_virtual_pc);
-    header.abi_version = static_cast<uint32_t>(linked.executable_header.abi_version);
+    header.required_features =
+        linked.executable_header_v2.required_features;
+    header.stack_words = static_cast<uint32_t>(
+        linked.executable_header_v2.stack_words);
+    header.entry_pc = static_cast<uint32_t>(
+        linked.executable_header_v2.entry_pc);
+    header.flags =
+        static_cast<uint32_t>(linked.executable_header_v2.flags);
     
     out.write(reinterpret_cast<const char*>(&header), sizeof(header));
     
@@ -101,8 +117,28 @@ bool readBinaryFile(const std::string& path, std::vector<sandbox::isa::TritWord2
     in.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!in.good()) return false;
     
-    if (header.magic[0] != 'T' || header.magic[1] != 'X' || header.magic[2] != 'E' || header.magic[3] != '3') {
-        std::cerr << "Error: Invalid executable magic in " << path << "\n";
+    const bool v2_header =
+        header.magic[0] == 'T' && header.magic[1] == 'X' &&
+        header.magic[2] == 'E' && header.magic[3] == '4' &&
+        header.version == 2 &&
+        header.header_size == sizeof(TritFileHeader) &&
+        header.isa_version == sandbox::architecture::v2::ISA_VERSION &&
+        header.abi_version ==
+            sandbox::architecture::v2::FUNCTION_ABI_VERSION &&
+        header.syscall_abi_version ==
+            sandbox::architecture::v2::SYSCALL_ABI_VERSION &&
+        header.scalar_word_trits ==
+            sandbox::architecture::v2::SCALAR_WORD_TRITS &&
+        header.base_page_words ==
+            sandbox::architecture::v2::BASE_PAGE_WORDS &&
+        (header.required_features &
+         sandbox::isa::featureBit(
+             sandbox::architecture::v2::FEATURE_BASE_V2)) != 0;
+    if (!v2_header) {
+        std::cerr
+            << "Error: executable is not TXE4/ISA v2; rebuild source or "
+               "use the offline artifact migrator: "
+            << path << "\n";
         return false;
     }
     
@@ -124,6 +160,11 @@ bool loadAndResetBinary(sandbox::vm::VMState& vm, const std::vector<sandbox::isa
     if (static_cast<int>(data.size()) > vm.dmem.size()) return false;
 
     vm.coldReset();
+    if (!vm.configureArchitecture(
+            sandbox::isa::IsaEncodingVersion::V2,
+            header.required_features)) {
+        return false;
+    }
     if (!vm.imem.loadProgram(program, 0)) return false;
     for (int i = 0; i < static_cast<int>(data.size()); ++i) {
         if (vm.dmem.store(i, data[static_cast<std::size_t>(i)]) != sandbox::vm::MemFaultCode::OK) {
@@ -137,6 +178,7 @@ bool loadAndResetBinary(sandbox::vm::VMState& vm, const std::vector<sandbox::isa
     vm.standalone_heap_break =
         std::max<long long>(vm.standalone_heap_break,
                             static_cast<long long>(data.size()) + 16);
+    vm.pc = static_cast<int>(header.entry_pc);
     return true;
 }
 
@@ -494,8 +536,14 @@ int main(int argc, char** argv) {
         linked.data_words = static_cast<int>(linked.assembled.data.size());
         linked.instruction_count = linked.text_words;
         
-        if (!linked.assembled.executable_headers.empty()) {
-            linked.executable_header = linked.assembled.executable_headers.begin()->second;
+        if (!linked.assembled.executable_headers_v2.empty()) {
+            linked.executable_header_v2 =
+                linked.assembled.executable_headers_v2.begin()->second;
+        } else {
+            std::cerr
+                << "Error: raw assembly executable output requires a "
+                   "validated .execheader2\n";
+            return 1;
         }
 
         if (!linked.success) {
@@ -532,7 +580,9 @@ int main(int argc, char** argv) {
             std::cout << "  Output Executable Image:  " << output_path << "\n";
             std::cout << "  Total Instruction Words:  " << linked.text_words << "\n";
             std::cout << "  Static Data Memory Words: " << linked.data_words << "\n";
-            std::cout << "  Emitted ABI Version:      " << linked.executable_header.abi_version << "\n";
+            std::cout << "  Emitted ABI Version:      "
+                      << linked.executable_header_v2.function_abi_version
+                      << "\n";
             return 0;
         }
 
@@ -694,7 +744,9 @@ int main(int argc, char** argv) {
         std::cout << "  Output Executable Image:  " << output_path << "\n";
         std::cout << "  Total Instruction Words:  " << linked.text_words << "\n";
         std::cout << "  Static Data Memory Words: " << linked.data_words << "\n";
-        std::cout << "  Emitted ABI Version:      " << linked.executable_header.abi_version << "\n";
+        std::cout << "  Emitted ABI Version:      "
+                  << linked.executable_header_v2.function_abi_version
+                  << "\n";
         return 0;
     }
 

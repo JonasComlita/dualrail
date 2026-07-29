@@ -498,28 +498,12 @@ const TC_SPAN_PTBR: t40 = 12;
 
 const EXEC_IMAGE_WORDS: t40 = 128;
 const EXEC_IMAGE_BASE: t40 = 651000;
-const EXEC_HEADER_WORDS: t40 = 9;
 const EXEC_MAGIC: t40 = 40404;
-const EXEC_VERSION_V1: t40 = 1;
-const EXEC_ABI_VERSION_V1: t40 = 1;
-const EXEC_SYSCALL_ABI_VERSION_V1: t40 = 1;
-const EXEC_HEADER_MAGIC: t40 = 0;
-const EXEC_HEADER_VERSION: t40 = 1;
-const EXEC_HEADER_ABI_VERSION: t40 = 2;
-const EXEC_HEADER_ENTRY_PC: t40 = 3;
-const EXEC_HEADER_TEXT_PAGES: t40 = 4;
-const EXEC_HEADER_DATA_PAGES: t40 = 5;
-const EXEC_HEADER_STACK_WORDS: t40 = 6;
-const EXEC_HEADER_SYSCALL_ABI_VERSION: t40 = 7;
-const EXEC_HEADER_FLAGS: t40 = 8;
-const EXEC_DESC_TEXT_PPN: t40 = 9;
-const EXEC_DESC_WORDS: t40 = 10;
-const EXEC_DESC_TEXT_DISK_BLOCK: t40 = 10;
-const EXEC_DESC_TEXT_WORDS: t40 = 11;
-const EXEC_DESC_V2_WORDS: t40 = 12;
-const EXEC_DESC_ARCH_HEADER: t40 = 12;
 const EXEC_V2_HEADER_WORDS: t40 = 15;
-const EXEC_DESC_V3_WORDS: t40 = 27;
+const EXEC_DESC_TEXT_PPN: t40 = 15;
+const EXEC_DESC_TEXT_DISK_BLOCK: t40 = 16;
+const EXEC_DESC_TEXT_WORDS: t40 = 17;
+const EXEC_DESC_WORDS: t40 = 18;
 const EXEC_V2_VERSION: t40 = 2;
 const EXEC_V2_FUNCTION_ABI: t40 = 2;
 const EXEC_V2_ISA: t40 = 2;
@@ -2487,13 +2471,13 @@ fn process_arch_addr(slot: t40) -> t40 {
     return PROCESS_ARCH_BASE + slot * PROCESS_ARCH_WORDS;
 }
 
-fn process_arch_set_legacy(slot: t40) -> t40 {
+fn process_arch_set_v2(slot: t40) -> t40 {
     var arch: t40 = process_arch_addr(slot);
-    kstore(arch + PROC_ARCH_EXEC_VERSION, 1);
-    kstore(arch + PROC_ARCH_FUNCTION_ABI, 1);
-    kstore(arch + PROC_ARCH_SYSCALL_ABI, 1);
-    kstore(arch + PROC_ARCH_ISA, 1);
-    kstore(arch + PROC_ARCH_FEATURES, 0);
+    kstore(arch + PROC_ARCH_EXEC_VERSION, EXEC_V2_VERSION);
+    kstore(arch + PROC_ARCH_FUNCTION_ABI, EXEC_V2_FUNCTION_ABI);
+    kstore(arch + PROC_ARCH_SYSCALL_ABI, EXEC_V2_SYSCALL_ABI);
+    kstore(arch + PROC_ARCH_ISA, EXEC_V2_ISA);
+    kstore(arch + PROC_ARCH_FEATURES, 1);
     kstore(arch + PROC_ARCH_FLAGS, 0);
     return 1;
 }
@@ -2507,13 +2491,6 @@ fn process_arch_copy(dst_slot: t40, src_slot: t40) -> t40 {
         word = word + 1;
     }
     return 1;
-}
-
-fn process_isa_version(slot: t40) -> t40 {
-    if slot < 0 {
-        return 1;
-    }
-    return kload(process_arch_addr(slot) + PROC_ARCH_ISA);
 }
 
 fn quota_addr(slot: t40) -> t40 {
@@ -2574,7 +2551,7 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     kstore(PROC_SIGNAL_PENDING_BASE + slot, 0);
     kstore(PROC_CLEANED_BASE + slot, 0);
     kstore(PROC_CAPS_BASE + slot, 0);
-    process_arch_set_legacy(slot);
+    process_arch_set_v2(slot);
     var heap: t40 = process_heap_addr(slot);
     kstore(heap + PROC_HEAP_START, MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_BREAK, MMU_PAGE_WORDS);
@@ -5890,11 +5867,22 @@ fn exec_clear_hw_page_tables(process_slot: t40) -> t40 {
     return 1;
 }
 
+fn exec_pages_for_words(words: t40) -> t40 {
+    if words <= 0 { return 0; }
+    var pages: t40 = 0;
+    var remaining: t40 = words;
+    while remaining > 0 {
+        pages = pages + 1;
+        remaining = remaining - MMU_PAGE_WORDS;
+    }
+    return pages;
+}
+
 fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
-    if size_words - EXEC_DESC_V3_WORDS < 0 {
+    if size_words - EXEC_DESC_WORDS < 0 {
         return 0;
     }
-    var header: t40 = image_addr + EXEC_DESC_ARCH_HEADER;
+    var header: t40 = image_addr;
     if kload(header + EXEC_V2_MAGIC_INDEX) - EXEC_MAGIC != 0 {
         return 0;
     }
@@ -5952,9 +5940,9 @@ fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
 
 fn exec_install_architecture(process_slot: t40, image_addr: t40, size_words: t40) -> t40 {
     if exec_v2_header_valid(image_addr, size_words) <= 0 {
-        return process_arch_set_legacy(process_slot);
+        return ERR_INVALID;
     }
-    var header: t40 = image_addr + EXEC_DESC_ARCH_HEADER;
+    var header: t40 = image_addr;
     var arch: t40 = process_arch_addr(process_slot);
     kstore(arch + PROC_ARCH_EXEC_VERSION,
            kload(header + EXEC_V2_VERSION_INDEX));
@@ -5975,65 +5963,47 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if size_words - EXEC_DESC_WORDS < 0 {
         return 0;
     }
-    if kload(image_addr + EXEC_HEADER_MAGIC) - EXEC_MAGIC != 0 {
+    if exec_v2_header_valid(image_addr, size_words) <= 0 {
         return 0;
     }
-    if kload(image_addr + EXEC_HEADER_VERSION) - EXEC_VERSION_V1 != 0 {
-        return 0;
-    }
-    if kload(image_addr + EXEC_HEADER_ABI_VERSION) - EXEC_ABI_VERSION_V1 != 0 {
-        return 0;
-    }
-    if kload(image_addr + EXEC_HEADER_ENTRY_PC) < 0 {
-        return 0;
-    }
-    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
+    var text_words: t40 = kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX);
+    var text_pages: t40 = exec_pages_for_words(text_words);
     if text_pages <= 0 {
         return 0;
     }
     if text_pages - HW_PT_MAX_PAGES > 0 {
         return 0;
     }
-    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+    }
+    var data_pages: t40 = exec_pages_for_words(writable_words);
+    if data_pages <= 0 {
+        data_pages = 1;
+    }
     if data_pages <= 0 {
         return 0;
     }
     if data_pages - PROCESS_DATA_PAGES_MAX > 0 {
         return 0;
     }
-    if kload(image_addr + EXEC_HEADER_STACK_WORDS) <= 0 {
-        return 0;
-    }
-    if kload(image_addr + EXEC_HEADER_SYSCALL_ABI_VERSION) - EXEC_SYSCALL_ABI_VERSION_V1 != 0 {
-        return 0;
-    }
     if kload(image_addr + EXEC_DESC_TEXT_PPN) <= 0 {
         return 0;
     }
-    if size_words - EXEC_DESC_V2_WORDS >= 0 {
-        var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
-        var text_words: t40 = kload(image_addr + EXEC_DESC_TEXT_WORDS);
-        if disk_block <= 0 {
-            return 0;
-        }
-        if text_words <= 0 {
-            return 0;
-        }
-        if text_words - (text_pages * MMU_PAGE_WORDS) > 0 {
-            return 0;
-        }
+    var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
+    if disk_block <= 0 {
+        return 0;
     }
-    if size_words - EXEC_DESC_V3_WORDS >= 0 {
-        if exec_v2_header_valid(image_addr, size_words) <= 0 {
-            return 0;
-        }
+    if kload(image_addr + EXEC_DESC_TEXT_WORDS) - text_words != 0 {
+        return 0;
     }
     return 1;
 }
 
 fn exec_load_text_image(image_addr: t40, size_words: t40) -> t40 {
-    if size_words - EXEC_DESC_V2_WORDS < 0 {
-        return 1;
+    if size_words - EXEC_DESC_WORDS < 0 {
+        return ERR_INVALID;
     }
     var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
     var text_words: t40 = kload(image_addr + EXEC_DESC_TEXT_WORDS);
@@ -6043,7 +6013,7 @@ fn exec_load_text_image(image_addr: t40, size_words: t40) -> t40 {
     if text_words <= 0 {
         return ERR_INVALID;
     }
-    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
+    var text_pages: t40 = exec_pages_for_words(text_words);
     if text_words - (text_pages * MMU_PAGE_WORDS) > 0 {
         return ERR_INVALID;
     }
@@ -6139,8 +6109,14 @@ fn is_gui_app(path_addr: t40) -> t40 {
 }
 
 fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
-    var text_pages: t40 = kload(image_addr + EXEC_HEADER_TEXT_PAGES);
-    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    var text_pages: t40 =
+        exec_pages_for_words(kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX));
+    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+    }
+    var data_pages: t40 = exec_pages_for_words(writable_words);
+    if data_pages <= 0 { data_pages = 1; }
     var text_ppn: t40 = kload(image_addr + EXEC_DESC_TEXT_PPN);
     var data_ppn: t40 = exec_process_dmem_ppn(process_slot);
     exec_clear_hw_page_tables(process_slot);
@@ -6183,16 +6159,23 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
 fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
     var row: t40 = process_addr(process_slot);
     var ctx: t40 = kload(row + PROC_CONTEXT);
-    var data_pages: t40 = kload(image_addr + EXEC_HEADER_DATA_PAGES);
+    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+    }
+    var data_pages: t40 = exec_pages_for_words(writable_words);
+    if data_pages <= 0 { data_pages = 1; }
     if ctx <= 0 {
         ctx = process_default_context_addr(process_slot);
         kstore(row + PROC_CONTEXT, ctx);
     }
     kclear(ctx, TASK_CONTEXT_WORDS);
-    kstore(ctx + TASK_CONTEXT_EPC, kload(image_addr + EXEC_HEADER_ENTRY_PC));
+    kstore(ctx + TASK_CONTEXT_EPC, kload(image_addr + EXEC_V2_ENTRY_PC_INDEX));
     kstore(ctx + TASK_CONTEXT_STATUS, TASK_STATUS_USER_RESUME);
     kstore(ctx + TASK_CONTEXT_IMEM_PTBR, exec_hw_imem_ptbr(process_slot));
-    kstore(ctx + TASK_CONTEXT_IMEM_PAGES, kload(image_addr + EXEC_HEADER_TEXT_PAGES));
+    kstore(
+        ctx + TASK_CONTEXT_IMEM_PAGES,
+        exec_pages_for_words(kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX)));
     kstore(ctx + TASK_CONTEXT_DMEM_PTBR, exec_hw_dmem_ptbr(process_slot));
     var dmem_pages: t40 = data_pages;
     if dmem_pages - (USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES) < 0 {
@@ -6202,7 +6185,7 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
         dmem_pages = 86;
     }
     kstore(ctx + TASK_CONTEXT_DMEM_PAGES, dmem_pages);
-    kstore(ctx + TASK_CONTEXT_SP, kload(image_addr + EXEC_HEADER_STACK_WORDS));
+    kstore(ctx + TASK_CONTEXT_SP, kload(image_addr + EXEC_V2_STACK_WORDS_INDEX));
     var heap: t40 = process_heap_addr(process_slot);
     var heap_start: t40 = data_pages * MMU_PAGE_WORDS;
     kstore(heap + PROC_HEAP_START, heap_start);
@@ -6249,7 +6232,7 @@ fn process_brk(pid: t40, new_break: t40) -> t40 {
     if new_break - heap_limit > 0 {
         return ERR_NO_SPACE;
     }
-    var required_pages: t40 = (new_break + MMU_PAGE_WORDS - 1) / MMU_PAGE_WORDS;
+    var required_pages: t40 = exec_pages_for_words(new_break);
     var mapped: t40 = process_map_heap_pages(slot, required_pages);
     if mapped < 0 {
         return mapped;
@@ -7278,13 +7261,8 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
         var arg2: t40 = kload(ctx + 20);
         var arg3: t40 = kload(ctx + 21);
         var status: t40 = ERR_INVALID;
-        var process_slot: t40 = process_find_pid(pid);
         if service - 6 == 0 {
-            if process_isa_version(process_slot) - 1 == 0 {
-                status = kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
-            } else {
-                status = kernel_set_return(ERR_INVALID, 0, 6);
-            }
+            status = kernel_set_return(ERR_INVALID, 0, 6);
         } else {
             status = kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
         }
@@ -7299,11 +7277,6 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
             return status;
         }
         if status > 0 {
-            if service - 6 == 0 {
-                if kload(SYS_PAYLOAD_ADDR) > 0 {
-                    return status;
-                }
-            }
             if service - 21 == 0 {
                 if kload(SYS_PAYLOAD_ADDR) > 0 {
                     return status;

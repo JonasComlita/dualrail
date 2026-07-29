@@ -201,7 +201,7 @@ sandbox::compiler::LinkResult compileBundledApp(TestContext& ctx,
         return linked;
     }
     ctx.check(!linked.assembled.program.empty(), id + " emits executable text");
-    ctx.equal(linked.executable_header.stack_words,
+    ctx.equal(linked.executable_header_v2.stack_words,
               ((stack_words + 8) / 9) * 9,
               id + " executable header aligns release stack hint");
     return linked;
@@ -388,7 +388,9 @@ void cliServiceAliasLinkOptions(TestContext& ctx) {
         const auto linked =
             compileBundledApp(ctx, source_name, id, expected_stack.at(id), false);
         if (!linked.success) continue;
-        ctx.check(linked.executable_header.text_pages * sandbox::vm::MMU_PAGE_WORDS >=
+        ctx.check(sandbox::vm::executableTextPages(
+                      linked.executable_header_v2) *
+                          sandbox::vm::MMU_PAGE_WORDS >=
                       linked.instruction_count,
                   id + " executable header covers emitted text");
     }
@@ -407,7 +409,7 @@ void diskBackedCalculatorExec(TestContext& ctx) {
     ctx.check(rootfs.installBaseLayout().ok(), "release root layout installs");
     ctx.check(rootfs.addExecutableImage("/bin/calculator",
                                         linked.assembled.program,
-                                        linked.executable_header,
+                                        linked.executable_header_v2,
                                         kCalculatorTextPpn).ok(),
               "compiled calculator installs into the release disk image");
     const std::vector<long long> disk = rootfs.image();
@@ -427,20 +429,16 @@ void diskBackedCalculatorExec(TestContext& ctx) {
                   "calculator text last word is written to the native disk image");
     }
 
-    const std::vector<long long> descriptor = {
-        sandbox::vm::EXEC_MAGIC,
-        linked.executable_header.version,
-        linked.executable_header.abi_version,
-        linked.executable_header.entry_virtual_pc,
-        linked.executable_header.text_pages,
-        linked.executable_header.data_pages,
-        linked.executable_header.stack_words,
-        linked.executable_header.syscall_abi_version,
-        linked.executable_header.flags,
-        kCalculatorTextPpn,
-        NATIVE_VFS_REQUIRED_BLOCKS,
-        static_cast<long long>(image.size()),
-    };
+    std::vector<long long> descriptor;
+    const auto encoded_header = sandbox::vm::encodeExecutableHeaderV2(
+        linked.executable_header_v2);
+    descriptor.reserve(sandbox::os::NATIVE_EXEC_DESC_V2_WORDS);
+    for (const auto& word : encoded_header) {
+        descriptor.push_back(sandbox::vm::ops::toLong(word));
+    }
+    descriptor.push_back(kCalculatorTextPpn);
+    descriptor.push_back(NATIVE_VFS_REQUIRED_BLOCKS);
+    descriptor.push_back(static_cast<long long>(image.size()));
     ctx.check(containsSequence(disk, descriptor),
               "native disk image stores calculator executable metadata and text block");
 }
@@ -453,12 +451,9 @@ bool directoryContains(const std::vector<DirectoryEntry>& entries, const std::st
 }
 
 void installDummyConsumerApps(TestContext& ctx, OSKernel& kernel) {
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 4;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 64;
     const std::vector<long long> image = {900, 901, 902, 903};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        4, static_cast<int>(image.size()), 1, 63);
     for (const ConsumerAppEntry& app : ConsumerShell::defaultApps()) {
         ctx.check(kernel.installExecutable(app.path, image, header).ok(),
                   "consumer app executable installs: " + app.path);
@@ -569,7 +564,7 @@ void consumerShellIndirectCliExecutableHandoff(TestContext& ctx) {
               "compiled sync image crosses the direct-block fixture boundary");
     ctx.check(kernel.installExecutable("/bin/sync",
                                        image,
-                                       linked.executable_header).ok(),
+                                       linked.executable_header_v2).ok(),
               "compiled sync executable installs through OSKernel facade");
 
     FileStat sync_stat;
@@ -609,12 +604,16 @@ void consumerShellIndirectCliExecutableHandoff(TestContext& ctx) {
     ctx.equal(proc->memory[static_cast<std::size_t>(DIRECT_BLOCKS * BLOCK_WORDS)],
               image[static_cast<std::size_t>(DIRECT_BLOCKS * BLOCK_WORDS)],
               "sysExec preserves words beyond the direct-block boundary");
-    ctx.equal(proc->exec_header.stack_words, linked.executable_header.stack_words,
+    ctx.equal(proc->exec_header.stack_words,
+              linked.executable_header_v2.stack_words,
               "sysExec preserves the executable stack hint");
-    ctx.equal(proc->exec_header.text_pages, linked.executable_header.text_pages,
+    ctx.equal(proc->exec_header.text_words,
+              linked.executable_header_v2.text_words,
               "sysExec preserves text page metadata");
     ctx.equal(proc->heap_start,
-              linked.executable_header.data_pages * sandbox::vm::MMU_PAGE_WORDS,
+              sandbox::vm::executableDataPages(
+                  linked.executable_header_v2) *
+                  sandbox::vm::MMU_PAGE_WORDS,
               "sysExec initializes heap start from executable data pages");
 
     ProcessInfo info;
@@ -649,7 +648,7 @@ void consumerShellGuiSizedExecutableHandoff(TestContext& ctx) {
               "compiled calculator exceeds the old one-indirect-block capacity");
     ctx.check(kernel.installExecutable("/bin/calculator",
                                        image,
-                                       linked.executable_header).ok(),
+                                       linked.executable_header_v2).ok(),
               "compiled calculator executable installs through OSKernel facade");
 
     FileStat calc_stat;
@@ -696,12 +695,16 @@ void consumerShellGuiSizedExecutableHandoff(TestContext& ctx) {
     ctx.equal(proc->memory[old_one_index_capacity_words],
               image[old_one_index_capacity_words],
               "sysExec preserves words beyond the old one-indirect-block capacity");
-    ctx.equal(proc->exec_header.stack_words, linked.executable_header.stack_words,
+    ctx.equal(proc->exec_header.stack_words,
+              linked.executable_header_v2.stack_words,
               "sysExec preserves the calculator stack hint");
-    ctx.equal(proc->exec_header.text_pages, linked.executable_header.text_pages,
+    ctx.equal(proc->exec_header.text_words,
+              linked.executable_header_v2.text_words,
               "sysExec preserves calculator text page metadata");
     ctx.equal(proc->heap_start,
-              linked.executable_header.data_pages * sandbox::vm::MMU_PAGE_WORDS,
+              sandbox::vm::executableDataPages(
+                  linked.executable_header_v2) *
+                  sandbox::vm::MMU_PAGE_WORDS,
               "sysExec initializes calculator heap start from executable data pages");
     ctx.check(kernel.checkProcessIsolation().ok(),
               "GUI executable launch keeps process/window ownership consistent");
@@ -726,7 +729,7 @@ void consumerShellGuiSizedExecutableHandoff(TestContext& ctx) {
               image[old_one_index_capacity_words],
               "rebooted sysExec preserves words beyond the old storage ceiling");
     ctx.equal(rebooted_proc->exec_header.stack_words,
-              linked.executable_header.stack_words,
+              linked.executable_header_v2.stack_words,
               "rebooted sysExec preserves executable metadata");
 }
 

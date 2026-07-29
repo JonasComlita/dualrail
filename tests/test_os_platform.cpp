@@ -275,24 +275,21 @@ void testSyscallsHeapForkAndExec() {
     expect(kernel.fs().createFile("/bin", InodeKind::Directory).ok(), "bin directory creates");
     expect(kernel.fs().createFile("/bin/app", InodeKind::Executable, true).ok(),
            "exec file creates");
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 2;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 24;
+    sandbox::vm::ExecutableImageHeaderV2 header;
+    header.entry_pc = 2;
+    header.text_words = 2;
+    header.data_words = 0;
+    header.stack_words = 27;
+    header.header_checksum =
+        sandbox::vm::executableHeaderV2Checksum(header);
     expect(kernel.fs().writeFile("/bin/app", {99, 100}).ok(), "exec file payload writes");
     expect(kernel.fs().markExecutable("/bin/app", header).ok(), "executable metadata attaches");
     StatusResult exec = kernel.sysExec(kPid, "/bin/app");
     proc = kernel.process(kPid);
     expect(exec.ok() && exec.payload == 2, "exec returns new entry pc");
-    expect(proc->parent_pid == -1 && proc->exec_header.entry_virtual_pc == 2,
+    expect(proc->parent_pid == -1 && proc->exec_header.entry_pc == 2,
            "exec preserves pid lineage and installs executable header");
 
-    sandbox::vm::ExecutableImageHeader transition_v2;
-    transition_v2.entry_virtual_pc = 0;
-    transition_v2.text_pages = 1;
-    transition_v2.data_pages = 1;
-    transition_v2.stack_words = 27;
     sandbox::vm::ExecutableImageHeaderV2 header_v2;
     header_v2.entry_pc = 0;
     header_v2.text_words = 2;
@@ -301,8 +298,8 @@ void testSyscallsHeapForkAndExec() {
     header_v2.header_checksum =
         sandbox::vm::executableHeaderV2Checksum(header_v2);
     expect(kernel.installExecutable(
-               "/bin/v2", {101, 102}, transition_v2, header_v2).ok(),
-           "v2 executable and transition descriptor install together");
+               "/bin/v2", {101, 102}, header_v2).ok(),
+           "v2 executable installs with its authoritative header");
     expect(kernel.sysExec(kPid, "/bin/v2").ok(),
            "process exec accepts a v2 executable identity");
     proc = kernel.process(kPid);
@@ -343,11 +340,13 @@ void testDiskBackedSystemStateSurvivesReboot() {
            "large file spanning indirect blocks writes");
 
     expect(kernel.fs().createFile("/bin", InodeKind::Directory).ok(), "bin directory creates");
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 7;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 32;
+    sandbox::vm::ExecutableImageHeaderV2 header;
+    header.entry_pc = 7;
+    header.text_words = 3;
+    header.data_words = 0;
+    header.stack_words = 36;
+    header.header_checksum =
+        sandbox::vm::executableHeaderV2Checksum(header);
     std::vector<long long> app = {9001, 9002, 9003};
     expect(kernel.installExecutable("/bin/app", app, header).ok(),
            "executable image installs into root filesystem");
@@ -370,7 +369,7 @@ void testDiskBackedSystemStateSurvivesReboot() {
 
     expect(rebooted.sysExec(1, "/bin/app").ok(), "installed executable execs after reboot");
     const Process* proc = rebooted.process(1);
-    expect(proc != nullptr && proc->exec_header.entry_virtual_pc == 7,
+    expect(proc != nullptr && proc->exec_header.entry_pc == 7,
            "exec metadata survives disk image reboot");
     expect(proc != nullptr && proc->memory == app, "exec payload survives disk image reboot");
 
@@ -397,11 +396,13 @@ void testRootFilesystemImageBuilder() {
     expect(builder.status().ok(), "root filesystem builder formats a disk image");
     expect(builder.installBaseLayout().ok(), "base filesystem layout installs");
 
-    sandbox::vm::ExecutableImageHeader calcHeader;
-    calcHeader.entry_virtual_pc = 12;
-    calcHeader.text_pages = 2;
-    calcHeader.data_pages = 1;
-    calcHeader.stack_words = 64;
+    sandbox::vm::ExecutableImageHeaderV2 calcHeader;
+    calcHeader.entry_pc = 12;
+    calcHeader.text_words = 4;
+    calcHeader.data_words = 0;
+    calcHeader.stack_words = 72;
+    calcHeader.header_checksum =
+        sandbox::vm::executableHeaderV2Checksum(calcHeader);
     std::vector<long long> calcImage = {700, 701, 702, 703};
     expect(builder.addExecutable("/bin/calculator", calcImage, calcHeader).ok(),
            "calculator executable installs into image");
@@ -448,7 +449,7 @@ void testRootFilesystemImageBuilder() {
     expect(kernel.sysExec(1, "/bin/calculator").ok(),
            "app installed by image builder execs after boot");
     const Process* proc = kernel.process(1);
-    expect(proc != nullptr && proc->exec_header.entry_virtual_pc == 12,
+    expect(proc != nullptr && proc->exec_header.entry_pc == 12,
            "image-built executable metadata is available to exec");
     expect(proc != nullptr && proc->memory == calcImage,
            "image-built executable payload is available to exec");
@@ -479,7 +480,7 @@ void testNativeBioReadsRootFilesystemImage() {
             if bio_load(3000) - 80808 != 0 {
                 return -4;
             }
-            if bio_load(3001) - 1 != 0 {
+            if bio_load(3001) - 2 != 0 {
                 return -5;
             }
             if bio_load(3002) - 27 != 0 {
@@ -788,11 +789,6 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     expect(builder.addFile("/etc/motd", {84, 82, 73, 84}).ok(),
            "native VFS image carries configuration payload");
 
-    sandbox::vm::ExecutableImageHeader appHeader;
-    appHeader.entry_virtual_pc = 0;
-    appHeader.text_pages = 1;
-    appHeader.data_pages = 1;
-    appHeader.stack_words = 64;
     constexpr int kDiskAppTextPpn = 720;
     auto appAssembly = sandbox::vm::assembler::assemble(R"(
         .text
@@ -801,6 +797,13 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
             halt
     )");
     expect(appAssembly.success, "disk app text image assembles");
+    sandbox::vm::ExecutableImageHeaderV2 appHeader;
+    appHeader.entry_pc = 0;
+    appHeader.text_words = static_cast<int>(appAssembly.program.size());
+    appHeader.data_words = 0;
+    appHeader.stack_words = 72;
+    appHeader.header_checksum =
+        sandbox::vm::executableHeaderV2Checksum(appHeader);
     expect(builder.addExecutableImage("/bin/disk_app",
                                       appAssembly.program,
                                       appHeader,
@@ -861,7 +864,7 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
             if kload(dst + 3) - 84 != 0 { return -7; }
             vfs_close(1, fd);
             var lookup_before: t40 = kload(METRIC_VFS_LOOKUPS_ADDR);
-            if app_launch(1, app_path, 0) - EXEC_DESC_V2_WORDS != 0 { return -9; }
+            if app_launch(1, app_path, 0) - EXEC_DESC_WORDS != 0 { return -9; }
             var lookup_after: t40 = kload(METRIC_VFS_LOOKUPS_ADDR);
             if lookup_after - lookup_before > 1 { return -14; }
             if kload(exec_hw_imem_ptbr(0)) - exec_encode_pte(720, 1, 0, 0, 1) != 0 { return -10; }

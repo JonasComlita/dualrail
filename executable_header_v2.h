@@ -1,6 +1,6 @@
 #pragma once
 
-// Included by ternary_vm_state.h after the legacy executable-header codec.
+// Authoritative ISA v2 executable-header codec.
 
 static constexpr int EXEC_V2_HEADER_WORDS =
     architecture::v2::EXECUTABLE_HEADER_WORDS;
@@ -42,18 +42,32 @@ struct ExecutableImageHeaderV2 {
     long long header_checksum = 0;
 };
 
-struct ExecutableArchitectureIdentity {
-    int executable_version = 1;
-    int function_abi_version = 1;
-    int syscall_abi_version = EXEC_SYSCALL_ABI_VERSION_V1;
-    IsaEncodingVersion isa_version = IsaEncodingVersion::V1;
-    std::uint64_t required_features = 0;
-};
-
-[[nodiscard]] inline ExecutableArchitectureIdentity
-architectureIdentity(const ExecutableImageHeader&) {
-    return {};
+[[nodiscard]] inline int executableTextPages(
+    const ExecutableImageHeaderV2& header) {
+    return std::max(
+        1,
+        (header.text_words + architecture::v2::BASE_PAGE_WORDS - 1) /
+            architecture::v2::BASE_PAGE_WORDS);
 }
+
+[[nodiscard]] inline int executableDataPages(
+    const ExecutableImageHeaderV2& header) {
+    const int writable_words =
+        std::max(header.data_words, header.stack_words);
+    return std::max(
+        1,
+        (writable_words + architecture::v2::BASE_PAGE_WORDS - 1) /
+            architecture::v2::BASE_PAGE_WORDS);
+}
+
+struct ExecutableArchitectureIdentity {
+    int executable_version = architecture::v2::EXECUTABLE_VERSION;
+    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
+    IsaEncodingVersion isa_version = IsaEncodingVersion::V2;
+    std::uint64_t required_features =
+        featureBit(architecture::v2::FEATURE_BASE_V2);
+};
 
 [[nodiscard]] inline ExecutableArchitectureIdentity architectureIdentity(
     const ExecutableImageHeaderV2& header) {
@@ -98,6 +112,25 @@ architectureIdentity(const ExecutableImageHeader&) {
              header.scalar_word_trits +
              header.base_page_words +
              header.flags);
+}
+
+[[nodiscard]] inline ExecutableImageHeaderV2 makeExecutableHeaderV2(
+    int entry_pc,
+    int text_words,
+    int data_words = 0,
+    int stack_words = architecture::v2::STACK_ALIGNMENT_WORDS,
+    std::uint64_t required_features =
+        featureBit(architecture::v2::FEATURE_BASE_V2),
+    int flags = 0) {
+    ExecutableImageHeaderV2 header;
+    header.entry_pc = entry_pc;
+    header.text_words = text_words;
+    header.data_words = data_words;
+    header.stack_words = stack_words;
+    header.required_features = required_features;
+    header.flags = flags;
+    header.header_checksum = executableHeaderV2Checksum(header);
+    return header;
 }
 
 [[nodiscard]] inline bool validateExecutableHeaderV2(

@@ -788,7 +788,7 @@ struct SmartCardInitResult {
     SelfTestResult self_test;
     bool           mmu_configured = false;
     int            crypto_page_inode = -1;
-    vm::ExecutableImageHeader exec_header;
+    vm::ExecutableImageHeaderV2 exec_header;
 };
 
 [[nodiscard]] inline SmartCardInitResult smartCardInit(vm::VMState& kernel_vm) {

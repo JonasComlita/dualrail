@@ -1019,7 +1019,8 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
     // -----------------------------------------------------------------
     ++vm.decode_instructions_count;
     InstructionWord iw =
-        VersionedInstructionCodec::decode(raw, vm.isa_version);
+        VersionedInstructionCodec::decode(
+            raw, IsaEncodingVersion::V2);
     if (record) {
         record->has_instruction = true;
         record->malformed = iw.malformed;
@@ -1097,8 +1098,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::WAIT: {
             const std::uint64_t wait_feature =
                 featureBit(architecture::v2::FEATURE_WAIT);
-            if (vm.isa_version != IsaEncodingVersion::V2 ||
-                (vm.supported_features & wait_feature) == 0) {
+            if ((vm.supported_features & wait_feature) == 0) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
                                  OS_CAUSE_ILLEGAL_INSTRUCTION,
                                  vm.pc);
@@ -1112,8 +1112,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::TLBINV: {
             const std::uint64_t mmu_feature =
                 featureBit(architecture::v2::FEATURE_MMU);
-            if (vm.isa_version != IsaEncodingVersion::V2 ||
-                (vm.supported_features & mmu_feature) == 0 ||
+            if ((vm.supported_features & mmu_feature) == 0 ||
                 vm.privilege != PrivilegeMode::Kernel) {
                 vm.trapWithCause(
                     TrapCode::TRAP_ILLEGAL_OP,
@@ -1857,9 +1856,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 return vm.status;
             }
             const TernaryValue store_value =
-                vm.isa_version == IsaEncodingVersion::V2
-                    ? vm.regfile.readPhysical(iw.rs_store)
-                    : vm.regfile.read(iw.rs_store);
+                vm.regfile.readPhysical(iw.rs_store);
             MemFaultCode fc = vm.dmem.store(physical_addr, store_value);
             if (fc != MemFaultCode::OK) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
@@ -2930,7 +2927,8 @@ inline void classifyCachedInstruction(VMDecodedInstruction& decoded) {
     decoded.pc = pc;
     decoded.raw = raw;
     decoded.word =
-        VersionedInstructionCodec::decode(raw, vm.isa_version);
+        VersionedInstructionCodec::decode(
+            raw, IsaEncodingVersion::V2);
     classifyCachedInstruction(decoded);
 
     vm.decoded_instruction_cache[pc] = VMDecodedCacheEntry{generation, decoded};
@@ -3193,9 +3191,7 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
                 return;
             }
             const TernaryValue store_value =
-                vm.isa_version == IsaEncodingVersion::V2
-                    ? vm.regfile.readPhysical(iw.rs_store)
-                    : vm.regfile.read(iw.rs_store);
+                vm.regfile.readPhysical(iw.rs_store);
             MemFaultCode fc = vm.dmem.store(physical_addr, store_value);
             if (fc != MemFaultCode::OK) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_STORE_FAULT, vm.pc);
@@ -3251,7 +3247,6 @@ static constexpr int VM_TRACE_JIT_MAX_LENGTH = 64;
     const VMState& vm,
     int pc) {
     return {
-        static_cast<int>(vm.isa_version),
         vm.required_features,
         vm.asid,
         pc,
@@ -3433,7 +3428,8 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
     emitted.pc = pc;
     emitted.raw = raw;
     emitted.word =
-        VersionedInstructionCodec::decode(raw, vm.isa_version);
+        VersionedInstructionCodec::decode(
+            raw, IsaEncodingVersion::V2);
     if (!classifyTraceJitInstruction(emitted)) return false;
     annotateDecodedMicroOp(emitted);
 
@@ -3630,9 +3626,7 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
                 return false;
             }
             const TernaryValue store_value =
-                vm.isa_version == IsaEncodingVersion::V2
-                    ? vm.regfile.readPhysical(iw.rs_store)
-                    : vm.regfile.read(iw.rs_store);
+                vm.regfile.readPhysical(iw.rs_store);
             if (vm.dmem.store(physical_addr, store_value) != MemFaultCode::OK) {
                 vm.pc = emitted.pc;
                 ++vm.trace_jit_stats.interpreter_bailouts;

@@ -61,12 +61,10 @@ void bootRecoveryCorruptSuperblock(TestContext& ctx) {
     ctx.check(kernel.fs().createFile("/bin", InodeKind::Directory).ok(),
               "bin directory creates");
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 2;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 32;
-    ctx.check(kernel.installExecutable("/bin/init", {900, 901, 902}, header).ok(),
+    const std::vector<long long> init_image = {900, 901, 902};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        2, static_cast<int>(init_image.size()), 1, 36);
+    ctx.check(kernel.installExecutable("/bin/init", init_image, header).ok(),
               "executable installs before fsck");
     ctx.check(kernel.checkFilesystemConsistency().ok(),
               "filesystem checker accepts clean image");
@@ -100,12 +98,9 @@ void diskImageExecutableReboot(TestContext& ctx) {
     ctx.check(kernel.fs().createFile("/bin", InodeKind::Directory).ok(),
               "bin directory creates");
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 7;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 32;
     const std::vector<long long> app = {9001, 9002, 9003};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        7, static_cast<int>(app.size()), 1, 36);
     ctx.check(kernel.installExecutable("/bin/app", app, header).ok(),
               "executable image installs into root filesystem");
     ctx.check(kernel.shutdownSync().ok(), "kernel syncs before reboot");
@@ -120,9 +115,9 @@ void diskImageExecutableReboot(TestContext& ctx) {
 
     const StatusResult exec = rebooted.sysExec(1, "/bin/app");
     const Process* proc = rebooted.process(1);
-    ctx.check(exec.ok() && exec.payload == header.entry_virtual_pc,
+    ctx.check(exec.ok() && exec.payload == header.entry_pc,
               "installed executable execs after reboot");
-    ctx.check(proc != nullptr && proc->exec_header.entry_virtual_pc == 7,
+    ctx.check(proc != nullptr && proc->exec_header.entry_pc == 7,
               "exec metadata survives disk image reboot");
     ctx.check(proc != nullptr && proc->memory == app,
               "exec payload survives disk image reboot");
@@ -142,12 +137,9 @@ void diskImageExecutableReboot(TestContext& ctx) {
 }
 
 void signedPackageReleaseImage(TestContext& ctx) {
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 3;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 64;
     const std::vector<long long> app = {700, 701, 702, 703};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        3, static_cast<int>(app.size()), 1, 63);
     const std::string secret = "production-signing-key";
     const SignedExecutableMetadata metadata =
         signExecutableMetadata(app, header, "trit-release", secret);

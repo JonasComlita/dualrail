@@ -124,17 +124,20 @@ void testSparseFileBackedDisk() {
            "coalesced sparse disk write does not append before flush");
     expect(writer.flushBlockBackingFile(), "sparse disk flush persists pending block records");
     expect(writer.pendingDiskWrites() == 0 && writer.sparseDiskRecordCount() == 1,
-           "sparse disk flush drains pending writes into one append record");
+           "sparse disk flush publishes one live checksummed v2 record");
     vm::VMBlockDeviceStats stats = writer.blockDeviceStats();
     expect(stats.writes == 2 && stats.dirty_flushes == 1,
            "sparse disk metrics count writes and dirty block flushes");
     const long long first_flush_size = fileSizeBytes(path);
     const long long compact_record_bytes =
-        static_cast<long long>(sizeof(int) + sizeof(long long) * vm::STORAGE_BLOCK_WORDS);
+        static_cast<long long>(
+            sizeof(int) + sizeof(std::uint64_t) * vm::STORAGE_BLOCK_WORDS);
     const long long compact_header_bytes =
-        static_cast<long long>(sizeof(long long) + sizeof(int));
+        static_cast<long long>(
+            sizeof(std::uint64_t) + 2 * sizeof(std::uint32_t) +
+            2 * sizeof(std::uint64_t) + sizeof(int));
     expect(first_flush_size == compact_header_bytes + compact_record_bytes,
-           "sparse disk flush appends one coalesced touched-block record");
+           "sparse disk flush atomically writes one coalesced tDisk v2 record");
     expect(writer.allocatedDiskBlocks() == 1,
            "sparse disk overwrite keeps one live touched block");
 
@@ -148,12 +151,12 @@ void testSparseFileBackedDisk() {
                "sparse disk repeated append write accepts");
         expect(writer.flushBlockBackingFile(), "sparse disk repeated append write flushes");
     }
-    expect(writer.sparseDiskRecordCount() == 5,
-           "sparse disk append log records flushed overwrites before compaction");
+    expect(writer.sparseDiskRecordCount() == 1,
+           "tDisk v2 rewrites one live record instead of accumulating stale overwrites");
     expect(writer.compactBlockBackingFile(), "sparse disk backing file compacts live records");
     const long long compacted_size = fileSizeBytes(path);
     expect(compacted_size == compact_header_bytes + compact_record_bytes,
-           "sparse disk compaction rewrites one live block record");
+           "sparse disk compaction preserves one live checksummed block record");
 
     vm::VMState reader(profile);
     expect(reader.attachBlockBackingFile(path), "rebooted VM attaches sparse disk image file");
@@ -200,20 +203,17 @@ void testSparseFileBackedDisk() {
            "sparse disk block cache metrics record sequential read-ahead hit");
 
     {
-        std::fstream crash(path, std::ios::binary | std::ios::in | std::ios::out);
-        expect(crash.good(), "sparse disk crash simulator opens backing file");
-        int declared_records = static_cast<int>(writer.sparseDiskRecordCount()) + 1;
-        crash.seekp(static_cast<std::streamoff>(sizeof(long long)), std::ios::beg);
-        crash.write(reinterpret_cast<const char*>(&declared_records), sizeof(declared_records));
-        crash.seekp(0, std::ios::end);
-        const int partial_index = 9;
-        const long long partial_word = 123456;
-        crash.write(reinterpret_cast<const char*>(&partial_index), sizeof(partial_index));
-        crash.write(reinterpret_cast<const char*>(&partial_word), sizeof(partial_word));
+        const std::string interrupted_temp = path + ".compact";
+        std::ofstream crash(interrupted_temp, std::ios::binary | std::ios::trunc);
+        expect(crash.good(), "sparse disk crash simulator creates interrupted temp image");
+        const std::uint64_t partial_magic = 0x54524954535032ULL;
+        crash.write(reinterpret_cast<const char*>(&partial_magic),
+                    sizeof(partial_magic));
+        crash.flush();
     }
     vm::VMState recovered(profile);
     expect(recovered.attachBlockBackingFile(path),
-           "sparse disk attach recovers from a truncated append record");
+           "sparse disk attach ignores an interrupted unpublished replacement");
     expect(writeCsrLong(recovered, sandbox::isa::CSR_BLOCK_INDEX, 7),
            "recovered sparse disk block index writes");
     expect(writeCsrLong(recovered, sandbox::isa::CSR_BLOCK_ADDR, 5200),
@@ -223,8 +223,9 @@ void testSparseFileBackedDisk() {
     auto [recoveredWord, recoveredFault] = recovered.dmem.load(5200 + 26);
     expect(recoveredFault == vm::MemFaultCode::OK &&
                vm::ops::toLong(recoveredWord) == 7026,
-           "sparse disk recovery preserves last complete flushed block contents");
+           "sparse disk recovery preserves the last atomically published generation");
 
+    std::remove((path + ".compact").c_str());
     std::remove(path.c_str());
 }
 

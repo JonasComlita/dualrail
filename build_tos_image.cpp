@@ -425,7 +425,10 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < apps.size(); ++i) {
         next_text_ppn = alignUp(next_text_ppn, kAppTextPpnAlignment);
         apps[i].text_ppn = next_text_ppn;
-        next_text_ppn += linked_apps[i].executable_header.text_pages + kAppTextPpnGuardPages;
+        next_text_ppn +=
+            sandbox::vm::executableTextPages(
+                linked_apps[i].executable_header_v2) +
+            kAppTextPpnGuardPages;
     }
 
     sandbox::os::NativeVfsImageBuilder rootfs(32768);
@@ -439,7 +442,6 @@ int main(int argc, char** argv) {
         const LinkResult& linked = linked_apps[i];
         if (!rootfs.addExecutableImage(app.guest_path,
                                        linked.assembled.program,
-                                       linked.executable_header,
                                        linked.executable_header_v2,
                                        app.text_ppn).ok()) {
             std::cerr << "failed to install " << app.id << " into root image\n";
@@ -487,15 +489,15 @@ int main(int argc, char** argv) {
     });
     for (std::size_t i = 0; i < apps.size(); ++i) {
         const BundledApp& app = apps[i];
-        const auto& header = linked_apps[i].executable_header;
+        const auto& header = linked_apps[i].executable_header_v2;
         manifest.sections.push_back({
             app.id,
             app.guest_path,
             "app",
             app.text_ppn * sandbox::vm::MMU_PAGE_WORDS,
-            header.entry_virtual_pc,
+            header.entry_pc,
             static_cast<int>(linked_apps[i].assembled.program.size()),
-            header.text_pages,
+            sandbox::vm::executableTextPages(header),
             sandbox::host::TOS_IMAGE_SECTION_EXECUTABLE |
                 sandbox::host::TOS_IMAGE_SECTION_APP,
         });
@@ -503,9 +505,9 @@ int main(int argc, char** argv) {
             app.id,
             app.guest_path,
             app.text_ppn,
-            header.entry_virtual_pc,
-            header.text_pages,
-            header.data_pages,
+            header.entry_pc,
+            sandbox::vm::executableTextPages(header),
+            sandbox::vm::executableDataPages(header),
             header.stack_words,
             sandbox::architecture::v2::ISA_VERSION,
             linked_apps[i].executable_header_v2.required_features,

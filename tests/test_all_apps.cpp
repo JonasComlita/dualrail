@@ -132,7 +132,7 @@ void testBundledAppsCompileAndLink() {
         expect(linked.success, std::string(app.id) + " links with release options");
         if (!linked.success) continue;
         expect(!linked.assembled.program.empty(), std::string(app.id) + " emits text words");
-        expect(linked.executable_header.stack_words ==
+        expect(linked.executable_header_v2.stack_words ==
                    ((app.stack_words + 8) / 9) * 9,
                std::string(app.id) +
                    " aligns its release stack hint to nine words");

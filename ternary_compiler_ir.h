@@ -176,7 +176,6 @@ struct CompileResult {
 struct LinkOptions {
     int stack_hint_words = architecture::v2::STACK_ALIGNMENT_WORDS * 3;
     int flags = 0;
-    int isa_version = architecture::v2::ISA_VERSION;
     std::uint64_t required_features = isa::featureBit(architecture::v2::FEATURE_BASE_V2);
     int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     bool standalone_halt_on_exit = true;
@@ -188,7 +187,6 @@ struct LinkResult {
     bool success = false;
     std::string assembly;
     std::map<std::string, int> symbol_map;
-    vm::ExecutableImageHeader executable_header;
     vm::ExecutableImageHeaderV2 executable_header_v2;
     vm::assembler::AssemblyResult assembled;
     std::vector<Diagnostic> diagnostics;

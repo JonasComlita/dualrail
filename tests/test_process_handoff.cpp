@@ -216,10 +216,12 @@ sandbox::compiler::LinkResult compileApp(
             std::cerr << "  " << diagnostic.format() << "\n";
     }
     if (linked.success) {
-        expect(linked.executable_header.text_pages * sandbox::vm::MMU_PAGE_WORDS >=
+        expect(sandbox::vm::executableTextPages(
+                   linked.executable_header_v2) *
+                       sandbox::vm::MMU_PAGE_WORDS >=
                    linked.instruction_count,
                app_name + " executable header covers text image");
-        expect(linked.executable_header.stack_words ==
+        expect(linked.executable_header_v2.stack_words ==
                    ((stack_words + 8) / 9) * 9,
                app_name + " executable header aligns its stack hint");
     }
@@ -331,21 +333,21 @@ void testDesktopLaunchesMappedCalculator() {
     LinkResult desktop = compileApp("desktop", 1024);
     LinkResult calc = compileApp("calculator", 1024);
     if (!compiled_kernel.success || !desktop.success || !calc.success) return;
-    expect(desktop.executable_header.text_pages <= kHwPtMaxPages,
+    expect(sandbox::vm::executableTextPages(
+               desktop.executable_header_v2) <= kHwPtMaxPages,
            "dead-stripped desktop image fits the current IMEM page-table contract");
-    expect(calc.executable_header.text_pages <= kHwPtMaxPages,
+    expect(sandbox::vm::executableTextPages(
+               calc.executable_header_v2) <= kHwPtMaxPages,
            "dead-stripped calculator image fits the current IMEM page-table contract");
     sandbox::os::NativeVfsImageBuilder rootfs(16384);
     expect(rootfs.installBaseLayout().ok(), "calculator rootfs base layout installs");
     expect(rootfs.addExecutableImage("/bin/desktop",
                                     desktop.assembled.program,
-                                    desktop.executable_header,
                                     desktop.executable_header_v2,
                                     kDesktopTextPpn).ok(),
            "desktop executable image installs into native disk root");
     expect(rootfs.addExecutableImage("/bin/calculator",
                                     calc.assembled.program,
-                                    calc.executable_header,
                                     calc.executable_header_v2,
                                     kCalcTextPpn).ok(),
            "calculator executable image installs into native disk root");
@@ -534,19 +536,18 @@ void testWindowProbeRunsThroughMappedWindowBuffer() {
     )";
     LinkResult launcher = compileInlineApp("window_probe_launcher", launcher_source, 128);
     if (!compiled_kernel.success || !probe.success || !launcher.success) return;
-    expect(launcher.executable_header.text_pages <= kHwPtMaxPages,
+    expect(sandbox::vm::executableTextPages(
+               launcher.executable_header_v2) <= kHwPtMaxPages,
            "dead-stripped launcher image fits the current IMEM page-table contract");
     sandbox::os::NativeVfsImageBuilder rootfs(16384);
     expect(rootfs.installBaseLayout().ok(), "window probe rootfs base layout installs");
     expect(rootfs.addExecutableImage("/bin/launcher",
                                     launcher.assembled.program,
-                                    launcher.executable_header,
                                     launcher.executable_header_v2,
                                     kLauncherTextPpn).ok(),
            "launcher executable image installs into native disk root");
     expect(rootfs.addExecutableImage("/bin/window_probe",
                                     probe.assembled.program,
-                                    probe.executable_header,
                                     probe.executable_header_v2,
                                     kWindowProbeTextPpn).ok(),
            "window probe executable image installs into native disk root");

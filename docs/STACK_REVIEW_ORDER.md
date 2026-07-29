@@ -371,11 +371,14 @@ DSP, and keeping SDK wrappers thin enough for compiler inlining.
 
 Read:
 
-1. `minimal_kernel_bringup.tasm`
-2. `bootloader.tasm`
-3. `native_kernel_boot.tasm`
-4. `native_kernel_trap_stub.tasm`
+1. `bootloader.tasm`
+2. `native_kernel_boot.tasm`
+3. `native_kernel_trap_stub.tasm`
+4. `kernel.trit`
 5. `docs/03_Execution_Engine/binary_loader.md`
+
+The retired v1 `minimal_kernel_bringup.tasm` is available at Git tag
+`trit-v1-final` for historical reproduction, not as a v2 runtime input.
 
 Review reset state, image validation, memory map, stack setup, CSR programming,
 privilege transition, trap frames, register preservation, BSS/data setup,

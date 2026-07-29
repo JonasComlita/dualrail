@@ -66,26 +66,25 @@ void execInstallsImageMetadata(TestContext& ctx) {
     ctx.check(kernel.fs().createFile("/bin", InodeKind::Directory).ok(),
               "bin directory creates");
 
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 5;
-    header.text_pages = 1;
-    header.data_pages = 2;
-    header.stack_words = 32;
     const std::vector<long long> image = {90, 91, 92, 93};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        5, static_cast<int>(image.size()),
+        2 * sandbox::vm::MMU_PAGE_WORDS, 36);
     ctx.check(kernel.installExecutable("/bin/app", image, header).ok(),
               "executable installs through kernel helper");
 
     const StatusResult exec = kernel.sysExec(kParentPid, "/bin/app");
     Process* proc = kernel.process(kParentPid);
-    ctx.check(exec.ok() && exec.payload == header.entry_virtual_pc,
+    ctx.check(exec.ok() && exec.payload == header.entry_pc,
               "exec returns executable entry point");
     ctx.check(proc != nullptr, "exec leaves process alive");
     if (!proc) return;
     ctx.check(proc->memory == image, "exec loads executable words into process memory");
-    ctx.equal(proc->exec_header.entry_virtual_pc, header.entry_virtual_pc,
+    ctx.equal(proc->exec_header.entry_pc, header.entry_pc,
               "exec header entry pc is installed");
     ctx.equal(proc->heap_start,
-              header.data_pages * sandbox::vm::MMU_PAGE_WORDS,
+              sandbox::vm::executableDataPages(header) *
+                  sandbox::vm::MMU_PAGE_WORDS,
               "exec resets heap start from image metadata");
     ctx.equal(proc->heap_break, proc->heap_start, "exec resets heap break");
     ctx.check(proc->heap_limit > proc->heap_break, "exec establishes heap limit");

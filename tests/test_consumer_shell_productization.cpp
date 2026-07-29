@@ -26,12 +26,9 @@ bool directoryContains(
 }
 
 void installDummyApps(sandbox::os::OSKernel& kernel) {
-    sandbox::vm::ExecutableImageHeader header;
-    header.entry_virtual_pc = 4;
-    header.text_pages = 1;
-    header.data_pages = 1;
-    header.stack_words = 64;
     const std::vector<long long> image = {900, 901, 902, 903};
+    const auto header = sandbox::vm::makeExecutableHeaderV2(
+        4, static_cast<int>(image.size()), 1, 63);
     for (const sandbox::os::ConsumerAppEntry& app :
          sandbox::os::ConsumerShell::defaultApps()) {
         expect(kernel.installExecutable(app.path, image, header).ok(),

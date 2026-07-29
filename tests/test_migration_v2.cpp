@@ -71,14 +71,15 @@ void testTemplateMigration() {
         return;
     }
 
-    sandbox::host::TosBootImage legacy;
     sandbox::host::TosBootImage v2_template;
     sandbox::host::TosBootImage migrated;
     std::string error;
     expect(
-        sandbox::host::readBootImageFile(
-            legacy_boot.string(), legacy, &error),
-        "legacy fixture remains readable by offline transition code");
+        !sandbox::host::readBootImageFile(
+            legacy_boot.string(), migrated, &error) &&
+            error.find("migrate_tos_artifacts") != std::string::npos,
+        "production runtime rejects legacy boot with migration guidance");
+    error.clear();
     expect(
         sandbox::host::readBootImageFile(
             template_boot.string(), v2_template, &error),
@@ -98,9 +99,6 @@ void testTemplateMigration() {
     expect(
         migrated.program == v2_template.program,
         "migrated boot text comes exactly from the v2 template");
-    expect(
-        migrated.program != legacy.program,
-        "legacy instruction text is not relabeled as v2");
 
     sandbox::host::TosRuntimeConfig config;
     config.boot_image_path = migrated_boot.string();
