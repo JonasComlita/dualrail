@@ -17,14 +17,14 @@ agent environments.
 
 ## Benchmark Suite Contract
 
-`TEST_MANIFEST.json` reserves the manual `system_benchmarks` suite with planned
-targets:
+`TEST_MANIFEST.json` exposes the manual `system_benchmarks` suite with runnable
+deterministic targets:
 
 - `benchmark_doom_os`
 - `benchmark_bitnet_os`
 
-Do not add these targets to the suite until they are real CMake targets with
-machine-readable output.
+Both targets are real CMake executables and emit
+`trit.benchmark_result.v1` JSON under `build/benchmarks/` by default.
 
 ## Required Artifact Shape
 

@@ -18,13 +18,16 @@ timers, asset loading, memory allocation, and diagnostics.
 
 ## Milestones
 
-1. Add a small Doom-like benchmark app that renders deterministic frames from
-   packaged assets.
-2. Record time-to-first-frame, average frame time, p95 frame time, frame count,
-   input event latency, asset load time, and memory high-water mark.
+1. **Implemented:** `benchmark_doom_os` runs a small Doom-like kernel workload
+   that loads a deterministic WAD-like file through VFS, renders 27 frames,
+   routes fixed input, advances timer ticks, and checks a frozen frame hash.
+2. **Implemented baseline:** emit machine-readable compile/run time, dynamic
+   instructions, frame/timer/input counts, VFS words, memory high-water mark,
+   and correctness hashes.
 3. Port or adapt a minimal Doom renderer/game loop.
 4. Package shareware-compatible or test WAD assets into `.tdisk`.
-5. Add `benchmark_doom_os` as a manual CMake target once it emits stable JSON.
+5. **Implemented:** the manual CMake/manifest target emits
+   `build/benchmarks/doom-os.json`.
 
 ## Correctness Checks
 

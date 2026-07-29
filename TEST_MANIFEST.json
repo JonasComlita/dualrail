@@ -101,14 +101,13 @@
     },
     {
       "name": "system_benchmarks",
-      "description": "Planned long-running end-to-end OS benchmarks for Doom-class interactivity and BitNet 1.58B-class inference.",
-      "targets": [],
-      "planned_targets": [
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "targets": [
         "benchmark_doom_os",
         "benchmark_bitnet_os"
       ],
       "manual": true,
-      "status": "planned",
+      "status": "active",
       "docs": [
         "docs/10_Benchmarks/system_benchmark_plan.md",
         "docs/10_Benchmarks/doom.md",

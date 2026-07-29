@@ -84,19 +84,20 @@
     },
     {
       "id": "system-benchmarks",
-      "status": "planned",
-      "summary": "Use Doom-class interactive workloads and BitNet 1.58B-class inference as long-horizon OS capability and performance benchmarks.",
+      "status": "implemented",
+      "summary": "Use deterministic Doom-class interactive and BitNet-style inference workloads as OS capability and performance baselines before importing full external assets.",
       "evidence": [
         "docs/10_Benchmarks/system_benchmark_plan.md",
         "docs/10_Benchmarks/doom.md",
         "docs/10_Benchmarks/bitnet.md",
-        "TEST_MANIFEST.json system_benchmarks"
+        "TEST_MANIFEST.json system_benchmarks",
+        "benchmarks/benchmark_doom_os.cpp",
+        "benchmarks/benchmark_bitnet_os.cpp"
       ],
       "open_items": [
-        "Define a Doom-compatible app or benchmark harness with framebuffer, input, timer, filesystem, and audio milestones",
-        "Define a BitNet OS inference harness with model packaging, load-time, memory, IO, and tokens-per-second metrics",
-        "Add benchmark_doom_os and benchmark_bitnet_os targets once the harnesses are real",
-        "Record benchmark outputs in machine-readable artifacts suitable for regression tracking",
+        "Import or adapt a minimal Doom renderer and redistributable WAD assets",
+        "Scale the BitNet workload from the deterministic 27x27 model to sliced and then full model shards",
+        "Capture seven-iteration archived baselines on controlled hosts before enforcing timing regressions",
         "Keep current production gate separate from long-running manual benchmark gates"
       ]
     },

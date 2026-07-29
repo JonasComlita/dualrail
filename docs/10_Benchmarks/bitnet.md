@@ -18,13 +18,16 @@ stable, and report useful performance telemetry.
 ## Milestones
 
 1. Keep the host BitNet runner as the reference result.
-2. Define a small deterministic inference workload using a tiny model or a
-   sliced layer.
-3. Package model shards and prompt data into OS-visible files.
-4. Add a guest-visible runner or hosted OS benchmark path.
-5. Record model load time, first-token latency, tokens per second, memory
-   high-water mark, disk throughput, and accelerator/kernel counters.
-6. Add `benchmark_bitnet_os` as a manual CMake target once it emits stable JSON.
+2. **Implemented:** `benchmark_bitnet_os` uses a deterministic 27x27 ternary
+   model and a frozen 27-token output checksum.
+3. **Implemented:** package the model in the OS VFS, reboot, and validate exact
+   readback before inference.
+4. **Implemented baseline:** hosted OS packaging plus a v2 VM vector-kernel
+   portfolio and allocation-pressure probe.
+5. **Implemented baseline:** record package/load/kernel times, vector dynamic
+   instructions, tokens per second, high-water words, disk words, and checksums.
+6. **Implemented:** the manual CMake/manifest target emits
+   `build/benchmarks/bitnet-os.json`.
 
 ## Correctness Checks
 

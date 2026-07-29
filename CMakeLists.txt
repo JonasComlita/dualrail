@@ -86,6 +86,8 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
+add_executable(benchmark_doom_os benchmarks/benchmark_doom_os.cpp)
+add_executable(benchmark_bitnet_os benchmarks/benchmark_bitnet_os.cpp)
 add_executable(build_tos_image build_tos_image.cpp)
 add_executable(migrate_tos_artifacts migrate_tos_artifacts.cpp)
 target_compile_features(migrate_tos_artifacts PUBLIC cxx_std_17)
@@ -107,6 +109,10 @@ target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBL
 
 target_compile_features(run_bitnet PUBLIC cxx_std_17)
 target_compile_definitions(run_bitnet PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+target_compile_features(benchmark_doom_os PUBLIC cxx_std_17)
+target_compile_definitions(benchmark_doom_os PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+target_compile_features(benchmark_bitnet_os PUBLIC cxx_std_17)
+target_compile_definitions(benchmark_bitnet_os PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/qwen3.627b_weights/run_qwen.cpp")
     add_executable(run_qwen qwen3.627b_weights/run_qwen.cpp)
