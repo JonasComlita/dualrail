@@ -857,6 +857,64 @@ void testOptimizerAndGraphColoringDetails() {
            "mem2reg creates entry/backedge loop phi");
     expect(verifyModule(loop_mem2reg).empty(),
            "loop-phi SSA passes dominance verification");
+
+    {
+        const std::string source = R"(
+            fn main() -> t40 {
+              var value: t40 = 1;
+              let before: t40 = value;
+              value = 2;
+              let after: t40 = value;
+              return before + after;
+            }
+        )";
+        CompileResult compiled =
+            compileSource("source_mem2reg.trit", source);
+        expect(compiled.success,
+               "source-level scalar CFG compiles through SSA admission");
+        expect(!compiled.optimized_module.functions.empty() &&
+                   compiled.optimized_module.functions[0].cfg_complete,
+               "verified source CFG is admitted to global SSA passes");
+        expect(compiled.optimizer_stats.mem2reg_promotions >= 3,
+               "source locals are promoted by real mem2reg");
+        bool scalar_stack_op = false;
+        bool return_has_value = false;
+        for (const BasicBlock& source_block :
+             compiled.optimized_module.functions[0].blocks) {
+            for (const Instr& instr : source_block.instructions) {
+                scalar_stack_op =
+                    scalar_stack_op ||
+                    instr.opcode == InstrOpcode::Alloca ||
+                    instr.opcode == InstrOpcode::Load ||
+                    instr.opcode == InstrOpcode::Store;
+                if (instr.opcode == InstrOpcode::Ret)
+                    return_has_value =
+                        instr.args.size() == 1 &&
+                        instr.args.front() >= 0;
+            }
+        }
+        expect(!scalar_stack_op,
+               "optimized source IR contains no promoted stack operations");
+        expect(return_has_value,
+               "source return value is explicit in structural IR");
+        expect(verifyModule(compiled.optimized_module).empty(),
+               "optimized source-level SSA passes dominance verification");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source-level mem2reg differential program links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source-level mem2reg differential image loads");
+            const auto run = sandbox::vm::run(vm, 512);
+            expect(run.halted(),
+                   "source-level mem2reg differential image halts");
+            expect(regLong(vm, 13) == 3,
+                   "optimized-IR source retains AST replay semantics");
+        }
+    }
 }
 
 void testConcurrencyFeatures() {

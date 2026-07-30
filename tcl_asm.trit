@@ -25,7 +25,6 @@ const TCL_ASM_OP_ABS: t40 = 11;
 const TCL_ASM_OP_TCMP: t40 = 12;
 const TCL_ASM_OP_TMIN: t40 = 13;
 const TCL_ASM_OP_TMAX: t40 = 14;
-const TCL_ASM_OP_TINV: t40 = 15;
 const TCL_ASM_OP_LOAD: t40 = 16;
 const TCL_ASM_OP_STORE: t40 = 17;
 const TCL_ASM_OP_JMP: t40 = 18;
@@ -35,7 +34,7 @@ const TCL_ASM_OP_RET: t40 = 21;
 const TCL_ASM_OP_CVT: t40 = 22;
 const TCL_ASM_OP_BRZ: t40 = 24;
 const TCL_ASM_OP_BRP: t40 = 25;
-const TCL_ASM_OP_SYSCALL: t40 = 69;
+const TCL_ASM_OP_SYSCALL: t40 = 29;
 
 const TCL_ASM_REG_FIELD_OFFSET: t40 = 13;
 const TCL_ASM_FUNC_T1: t40 = 8;
@@ -359,6 +358,18 @@ fn tcl_asm_tok_eq7(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t
     match tcl_asm_lower(tcl_asm_tok_char(src, tok, 6)) - c6 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
 }
 
+fn tcl_asm_tok_eq8(src: t40, tok: t40, c0: t40, c1: t40, c2: t40, c3: t40, c4: t40, c5: t40, c6: t40, c7: t40) -> t40 {
+    match tcl_asm_tok_len(tok) - 8 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 0)) - c0 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 1)) - c1 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 2)) - c2 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 3)) - c3 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 4)) - c4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 5)) - c5 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 6)) - c6 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_tok_char(src, tok, 7)) - c7 { zero => { return 1; } pos => { return 0; } neg => { return 0; } }
+}
+
 fn tcl_asm_mnemonic_base_len(src: t40, tok: t40) -> t40 {
     var len: t40 = tcl_asm_tok_len(tok);
     var i: t40 = 0;
@@ -495,6 +506,14 @@ fn tcl_asm_is_data_directive(src: t40, tok: t40) -> t40 {
     return tcl_asm_tok_eq5(src, tok, 46, 100, 97, 116, 97);
 }
 
+fn tcl_asm_is_isa_directive(src: t40, tok: t40) -> t40 {
+    return tcl_asm_tok_eq4(src, tok, 46, 105, 115, 97);
+}
+
+fn tcl_asm_is_require_directive(src: t40, tok: t40) -> t40 {
+    return tcl_asm_tok_eq8(src, tok, 46, 114, 101, 113, 117, 105, 114, 101);
+}
+
 fn tcl_asm_mnemonic_code(src: t40, tok: t40) -> t40 {
     match tcl_asm_mnemonic_base_eq3(src, tok, 110, 111, 112) { pos => { return TCL_ASM_OP_NOP; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq4(src, tok, 104, 97, 108, 116) { pos => { return TCL_ASM_OP_HALT; } zero => {} neg => {} }
@@ -511,7 +530,7 @@ fn tcl_asm_mnemonic_code(src: t40, tok: t40) -> t40 {
     match tcl_asm_mnemonic_base_eq4(src, tok, 116, 99, 109, 112) { pos => { return TCL_ASM_OP_TCMP; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq4(src, tok, 116, 109, 105, 110) { pos => { return TCL_ASM_OP_TMIN; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq4(src, tok, 116, 109, 97, 120) { pos => { return TCL_ASM_OP_TMAX; } zero => {} neg => {} }
-    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 105, 110, 118) { pos => { return TCL_ASM_OP_TINV; } zero => {} neg => {} }
+    match tcl_asm_mnemonic_base_eq4(src, tok, 116, 105, 110, 118) { pos => { return TCL_ASM_OP_NEG; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq4(src, tok, 108, 111, 97, 100) { pos => { return TCL_ASM_OP_LOAD; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq5(src, tok, 115, 116, 111, 114, 101) { pos => { return TCL_ASM_OP_STORE; } zero => {} neg => {} }
     match tcl_asm_mnemonic_base_eq3(src, tok, 106, 109, 112) { pos => { return TCL_ASM_OP_JMP; } zero => {} neg => {} }
@@ -884,9 +903,21 @@ fn tcl_asm_first_pass(src: t40, len: t40, labels: t40) -> t40 {
                                 match tcl_asm_is_data_directive(src, mnemonic) {
                                     pos => { section = 1; }
                                     zero => {
-                                        match section {
-                                            zero => { pc = pc + tcl_asm_instruction_word_count(src, mnemonic); }
+                                        match tcl_asm_is_isa_directive(src, mnemonic) {
                                             pos => {}
+                                            zero => {
+                                                match tcl_asm_is_require_directive(src, mnemonic) {
+                                                    pos => {}
+                                                    zero => {
+                                                        match section {
+                                                            zero => { pc = pc + tcl_asm_instruction_word_count(src, mnemonic); }
+                                                            pos => {}
+                                                            neg => {}
+                                                        }
+                                                    }
+                                                    neg => {}
+                                                }
+                                            }
                                             neg => {}
                                         }
                                     }
@@ -1146,7 +1177,6 @@ fn tcl_asm_emit_instr(src: t40, len: t40, labels: t40, line_idx: t40, pc: t40, m
     match (op - TCL_ASM_OP_SQRT) { zero => { rtype2 = 1; } pos => {} neg => {} }
     match (op - TCL_ASM_OP_NEG) { zero => { rtype2 = 1; } pos => {} neg => {} }
     match (op - TCL_ASM_OP_ABS) { zero => { rtype2 = 1; } pos => {} neg => {} }
-    match (op - TCL_ASM_OP_TINV) { zero => { rtype2 = 1; } pos => {} neg => {} }
     match rtype2 {
         pos => {
             tcl_asm_get_operand(src, len, cursor, tok0);
@@ -1183,21 +1213,33 @@ fn tcl_asm_assemble_to_words(src: t40, len: t40) -> t40 {
         status = tcl_asm_line_mnemonic(src, len, idx, first, mnemonic);
         match status - 2 {
             zero => {
-                match tcl_asm_is_text_directive(src, mnemonic) {
-                    pos => { section = 0; }
-                    zero => {
-                        match tcl_asm_is_data_directive(src, mnemonic) {
-                            pos => { section = 1; }
+                        match tcl_asm_is_text_directive(src, mnemonic) {
+                            pos => { section = 0; }
                             zero => {
-                                match section {
+                                match tcl_asm_is_data_directive(src, mnemonic) {
+                                    pos => { section = 1; }
                                     zero => {
-                                        tcl_asm_emit_instr(src, len, labels, idx, pc, mnemonic, out);
-                                        pc = pc + tcl_asm_instruction_word_count(src, mnemonic);
+                                        match tcl_asm_is_isa_directive(src, mnemonic) {
+                                            pos => {}
+                                            zero => {
+                                                match tcl_asm_is_require_directive(src, mnemonic) {
+                                                    pos => {}
+                                                    zero => {
+                                                        match section {
+                                                            zero => {
+                                                                tcl_asm_emit_instr(src, len, labels, idx, pc, mnemonic, out);
+                                                                pc = pc + tcl_asm_instruction_word_count(src, mnemonic);
+                                                            }
+                                                            pos => {}
+                                                            neg => {}
+                                                        }
+                                                    }
+                                                    neg => {}
+                                                }
+                                            }
+                                            neg => {}
+                                        }
                                     }
-                                    pos => {}
-                                    neg => {}
-                                }
-                            }
                             neg => {}
                         }
                     }

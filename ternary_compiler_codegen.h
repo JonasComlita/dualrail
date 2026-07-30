@@ -697,6 +697,7 @@ struct LocalInfo {
     bool mutable_binding = false;
     bool address_taken = false;
     bool by_pointer = false;
+    ValueId ir_address = -1;
 };
 
 [[nodiscard]] inline bool usesWideT50Pair(const TypeRef& type) {
@@ -856,6 +857,41 @@ struct FunctionContext {
             instr.def = id;
             instr.opcode = op;
             instr.type = std::move(type);
+            switch (op) {
+                case InstrOpcode::Load:
+                case InstrOpcode::SpillLoad:
+                case InstrOpcode::Deref:
+                    instr.effect = Effect::ReadMem;
+                    break;
+                case InstrOpcode::Store:
+                case InstrOpcode::SpillStore:
+                case InstrOpcode::Swap:
+                    instr.effect = Effect::WriteMem;
+                    break;
+                case InstrOpcode::Syscall:
+                    instr.effect = Effect::Syscall;
+                    break;
+                case InstrOpcode::Tldr:
+                case InstrOpcode::Tstr:
+                case InstrOpcode::Fence:
+                    instr.effect = Effect::Atomic;
+                    break;
+                case InstrOpcode::Csrr:
+                case InstrOpcode::Csrw:
+                case InstrOpcode::Csrrw:
+                case InstrOpcode::TlbInv:
+                    instr.effect = Effect::CSR;
+                    break;
+                case InstrOpcode::Wait:
+                case InstrOpcode::Call:
+                case InstrOpcode::CallR:
+                case InstrOpcode::Ret:
+                    instr.effect = Effect::Control;
+                    break;
+                default:
+                    instr.effect = Effect::Pure;
+                    break;
+            }
             instr.span = span;
             block->instructions.push_back(std::move(instr));
         }
@@ -976,9 +1012,65 @@ public:
         // fully IR-driven.  The optimized copy is exposed and verified now,
         // but must not silently remove values still consumed by the legacy
         // target replay.
-        Module optimized_module = dry_module;
-        result.optimizer_stats =
-            optimizeModule(optimized_module, options_.optimization, options_);
+        Module optimized_module;
+        optimized_module.name = dry_module.name;
+        auto accumulateOptimizerStats = [](
+            OptimizerStats& destination,
+            const OptimizerStats& source) {
+            destination.mem2reg_promotions += source.mem2reg_promotions;
+            destination.sccp_constants += source.sccp_constants;
+            destination.constant_folds += source.constant_folds;
+            destination.copy_props += source.copy_props;
+            destination.strength_reductions += source.strength_reductions;
+            destination.gvn_hits += source.gvn_hits;
+            destination.cse_hits += source.cse_hits;
+            destination.dead_instrs += source.dead_instrs;
+            destination.branch_simplifications +=
+                source.branch_simplifications;
+            destination.licm_hoists += source.licm_hoists;
+            destination.induction_simplifications +=
+                source.induction_simplifications;
+            destination.swaps += source.swaps;
+        };
+        int ssa_admitted_functions = 0;
+        int cfg_fallback_functions = 0;
+        for (const Function& source_function : dry_module.functions) {
+            Module candidate;
+            candidate.name = dry_module.name;
+            candidate.functions.push_back(source_function);
+            OptimizerStats candidate_stats = optimizeModule(
+                candidate, options_.optimization, options_);
+            const auto candidate_diagnostics = verifyModule(candidate);
+            if (candidate_diagnostics.empty()) {
+                if (candidate.functions.front().cfg_complete)
+                    ++ssa_admitted_functions;
+                optimized_module.functions.push_back(
+                    std::move(candidate.functions.front()));
+                accumulateOptimizerStats(
+                    result.optimizer_stats, candidate_stats);
+                continue;
+            }
+
+            // A structurally incomplete frontend CFG must not enter mem2reg or
+            // global SSA transforms. Keep it explicit and run only the
+            // conservative block-local portfolio until its builder is fixed.
+            Module fallback;
+            fallback.name = dry_module.name;
+            fallback.functions.push_back(source_function);
+            fallback.functions.front().cfg_complete = false;
+            const OptimizerStats fallback_stats = optimizeModule(
+                fallback, options_.optimization, options_);
+            const auto fallback_diagnostics = verifyModule(fallback);
+            diagnostics_.insert(
+                diagnostics_.end(),
+                fallback_diagnostics.begin(),
+                fallback_diagnostics.end());
+            optimized_module.functions.push_back(
+                std::move(fallback.functions.front()));
+            accumulateOptimizerStats(
+                result.optimizer_stats, fallback_stats);
+            ++cfg_fallback_functions;
+        }
         auto verifier_diagnostics = verifyModule(optimized_module);
         diagnostics_.insert(diagnostics_.end(),
                             verifier_diagnostics.begin(),
@@ -1006,6 +1098,10 @@ public:
         result.object.metadata["phase"] = "ir-transition-v2";
         result.object.metadata["pipeline"] =
             "typed-ast,address-cfg-ir,verify,optimize,allocate,target-replay";
+        result.object.metadata["ssa.admitted_functions"] =
+            std::to_string(ssa_admitted_functions);
+        result.object.metadata["ssa.cfg_fallback_functions"] =
+            std::to_string(cfg_fallback_functions);
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -1044,6 +1140,7 @@ private:
         FunctionContext dry_ctx;
         dry_ctx.ast = &fn;
         dry_ctx.ir.name = fn.name;
+        dry_ctx.ir.cfg_complete = true;
         dry_ctx.ir.params = fn.params;
         dry_ctx.ir.return_type = fn.return_type;
         dry_ctx.ir.blocks.push_back(BasicBlock{fn.name + "_entry", {}, {}});
@@ -1058,6 +1155,7 @@ private:
         dry_ctx.next_value = start_value;
 
         collectLocals(fn, dry_ctx);
+        materializeLocalAllocas(dry_ctx);
         dry_ctx.return_slot_offset = dry_ctx.next_local_offset;
         dry_ctx.call_arg_slot_base =
             dry_ctx.return_slot_offset +
@@ -1067,12 +1165,22 @@ private:
             dry_ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas));
         emitFunctionPrologue(fn, dry_ctx);
         dry_ctx.scope_vars.push_back({});
-        for (const auto& stmt : fn.body) emitStmt(stmt, dry_ctx);
+        emitStatements(fn.body, dry_ctx);
         emitDefaultReturn(dry_ctx);
         dry_ctx.scope_vars.pop_back();
 
         function_call_scratch_areas_[fn.name] = dry_ctx.max_call_arg_depth;
         dry_ctx.ir.ir_value_ceiling = dry_ctx.next_value;
+        // Admit a frontend function to SSA transforms only when the address
+        // CFG already satisfies the same dominance contract required after
+        // mem2reg. Complex legacy constructs remain visible as incomplete
+        // instead of weakening verification or risking a miscompile.
+        Module cfg_probe;
+        cfg_probe.name = ast_.name;
+        cfg_probe.functions.push_back(dry_ctx.ir);
+        if (!verifyModule(cfg_probe).empty()) {
+            dry_ctx.ir.cfg_complete = false;
+        }
         return dry_ctx.ir;
     }
 
@@ -1099,6 +1207,7 @@ private:
         ctx.next_value = start_value;
 
         collectLocals(fn, ctx);
+        materializeLocalAllocas(ctx);
         ctx.callee_saved_regs = getCalleeSavedUsed(allocation, allocated_fn);
         ctx.return_slot_offset = ctx.next_local_offset + static_cast<int>(ctx.callee_saved_regs.size());
         ctx.call_arg_slot_base =
@@ -1112,7 +1221,7 @@ private:
             align9(std::max(1, ctx.call_arg_slot_base + kCallArgScratchWords * scratch_areas));
         emitFunctionPrologue(fn, ctx);
         ctx.scope_vars.push_back({});
-        for (const auto& stmt : fn.body) emitStmt(stmt, ctx);
+        emitStatements(fn.body, ctx);
         emitDefaultReturn(ctx);
         ctx.scope_vars.pop_back();
 
@@ -1190,6 +1299,50 @@ private:
             }
             collectLocalsIn(stmt.body, ctx);
             for (const auto& arm : stmt.arms) collectLocalsIn(arm.body, ctx);
+        }
+    }
+
+    void materializeLocalAllocas(FunctionContext& ctx) {
+        for (auto& [name, local] : ctx.locals) {
+            Instr alloca;
+            alloca.def = ctx.next_value++;
+            alloca.opcode = InstrOpcode::Alloca;
+            alloca.type = local.type;
+            alloca.imm = local.offset;
+            alloca.aux = local.size_words;
+            alloca.symbol = name;
+            alloca.effect = Effect::Pure;
+            alloca.span = ctx.ast ? ctx.ast->span : SourceSpan{};
+            local.ir_address = alloca.def;
+            if (ctx.block) {
+                ctx.block->instructions.push_back(std::move(alloca));
+            }
+        }
+        if (!ctx.ast || !ctx.block) return;
+        int argument_word = 0;
+        for (const auto& parameter : ctx.ast->params) {
+            const auto local = ctx.locals.find(parameter.first);
+            if (local == ctx.locals.end()) continue;
+            Instr param;
+            param.def = ctx.next_value++;
+            param.opcode = InstrOpcode::Param;
+            param.type = parameter.second;
+            param.aux = argument_word;
+            param.symbol = parameter.first;
+            param.effect = Effect::Pure;
+            param.span = ctx.ast->span;
+            ctx.block->instructions.push_back(param);
+
+            Instr store;
+            store.def = -1;
+            store.opcode = InstrOpcode::Store;
+            store.type = parameter.second;
+            store.args = {local->second.ir_address, param.def};
+            store.effect = Effect::WriteMem;
+            store.span = ctx.ast->span;
+            ctx.block->instructions.push_back(std::move(store));
+            argument_word += std::max(
+                1, typeSizeWords(parameter.second, layout_table_));
         }
     }
 
@@ -1271,16 +1424,32 @@ private:
     }
 
     void emitDefaultReturn(FunctionContext& ctx) {
-        bool has_ret = false;
-        if (ctx.block && !ctx.block->instructions.empty()) {
-            if (ctx.block->instructions.back().opcode == InstrOpcode::Ret) {
-                has_ret = true;
-            }
-        }
+        const bool has_ret =
+            ctx.block &&
+            ctx.block->terminator.kind == TerminatorKind::Return;
         if (!has_ret) {
             emitDropsForReturn(ctx);
             ctx.raw("    mov." + std::string(ir::suffix(ctx.ast->return_type.scalar)) + " r13, 0");
             ctx.raw("    jmp " + ctx.ast->name + "_return");
+            Instr zero;
+            zero.def = ctx.next_value++;
+            zero.opcode = InstrOpcode::Const;
+            zero.type = ctx.ast->return_type;
+            zero.imm = 0;
+            zero.effect = Effect::Pure;
+            zero.span = ctx.ast->span;
+            const ValueId zero_value = zero.def;
+            ctx.block->instructions.push_back(std::move(zero));
+
+            Instr ret;
+            ret.def = -1;
+            ret.opcode = InstrOpcode::Ret;
+            ret.type = ctx.ast->return_type;
+            ret.args = {zero_value};
+            ret.effect = Effect::Control;
+            ret.span = ctx.ast->span;
+            ctx.block->instructions.push_back(std::move(ret));
+            ctx.block->terminator.kind = TerminatorKind::Return;
         }
         emitEpilogue(ctx);
     }
@@ -1321,7 +1490,7 @@ private:
                 const bool old = ctx.unsafe_allowed;
                 ctx.unsafe_allowed = true;
                 ctx.scope_vars.push_back({});
-                for (const auto& child : stmt.body) emitStmt(child, ctx);
+                emitStatements(stmt.body, ctx);
                 emitDrops(ctx.scope_vars.back(), ctx);
                 ctx.scope_vars.pop_back();
                 ctx.unsafe_allowed = old;
@@ -1339,6 +1508,18 @@ private:
                 }
                 break;
             }
+        }
+    }
+
+    void emitStatements(
+        const std::vector<Stmt>& statements,
+        FunctionContext& ctx) {
+        for (const Stmt& statement : statements) {
+            if (ctx.block &&
+                ctx.block->terminator.kind != TerminatorKind::None) {
+                break;
+            }
+            emitStmt(statement, ctx);
         }
     }
 
@@ -1370,7 +1551,8 @@ private:
                  std::to_string(it->second.offset));
         ctx.value(InstrOpcode::Store, it->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
-            ctx.block->instructions.back().args = {code.value};
+            ctx.block->instructions.back().args = {
+                it->second.ir_address, code.value};
         }
         ctx.release(code.reg);
     }
@@ -1424,9 +1606,17 @@ private:
         ctx.value(InstrOpcode::Store, place.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ValueId addr_val = -1;
-            auto it_addr = ctx.reg_to_value.find(place.reg);
-            if (it_addr != ctx.reg_to_value.end()) {
-                addr_val = it_addr->second;
+            if (target && target->kind == ExprKind::Name) {
+                const auto local = ctx.locals.find(target->text);
+                if (local != ctx.locals.end()) {
+                    addr_val = local->second.ir_address;
+                }
+            }
+            if (addr_val < 0) {
+                auto it_addr = ctx.reg_to_value.find(place.reg);
+                if (it_addr != ctx.reg_to_value.end()) {
+                    addr_val = it_addr->second;
+                }
             }
             ctx.block->instructions.back().args = {addr_val, code.value};
         }
@@ -1457,6 +1647,7 @@ private:
     }
 
     void emitReturn(const Stmt& stmt, FunctionContext& ctx) {
+        ValueId return_value = -1;
         if (stmt.expr) {
             ExprCode code = emitExpr(stmt.expr, ctx.ast->return_type, ctx);
             if (!canWiden(code.type, ctx.ast->return_type)) {
@@ -1467,22 +1658,28 @@ private:
             ctx.line(scalarMemoryMnemonic("store", ctx.ast->return_type) +
                      " r" + std::to_string(code.reg) + ", sp, " +
                      std::to_string(ctx.return_slot_offset));
-            ctx.value(InstrOpcode::Store, ctx.ast->return_type, stmt.span);
-            if (ctx.block && !ctx.block->instructions.empty()) {
-                ctx.block->instructions.back().args = {code.value};
-            }
+            return_value = code.value;
             ctx.release(code.reg);
         }
         emitDropsForReturn(ctx);
         if (stmt.expr) {
             ctx.line(scalarMemoryMnemonic("load", ctx.ast->return_type) +
                      " r13, sp, " + std::to_string(ctx.return_slot_offset));
-            ctx.value(InstrOpcode::Load, ctx.ast->return_type, stmt.span);
         } else {
             ctx.line("mov.t40 r13, 0");
         }
         ctx.line("jmp " + ctx.ast->name + "_return");
-        ctx.value(InstrOpcode::Ret, ctx.ast->return_type, stmt.span);
+        Instr ret;
+        ret.def = -1;
+        ret.opcode = InstrOpcode::Ret;
+        ret.type = ctx.ast->return_type;
+        if (return_value >= 0) ret.args = {return_value};
+        ret.effect = Effect::Control;
+        ret.span = stmt.span;
+        if (ctx.block) ctx.block->instructions.push_back(std::move(ret));
+        if (ctx.block) {
+            ctx.block->terminator.kind = TerminatorKind::Return;
+        }
     }
 
     void emitIf(const Stmt& stmt, FunctionContext& ctx) {
@@ -1505,7 +1702,7 @@ private:
         ctx.block = &ctx.ir.blocks.back();
         ctx.raw(then_label + ":");
         ctx.scope_vars.push_back({});
-        for (const auto& child : stmt.body) emitStmt(child, ctx);
+        emitStatements(stmt.body, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
         ctx.line("jmp " + end_label);
@@ -1518,7 +1715,7 @@ private:
         ctx.block = &ctx.ir.blocks.back();
         ctx.raw(else_label + ":");
         ctx.scope_vars.push_back({});
-        for (const auto& child : stmt.else_body) emitStmt(child, ctx);
+        emitStatements(stmt.else_body, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
         if (ctx.block && ctx.block->terminator.kind == TerminatorKind::None) {
@@ -1557,7 +1754,7 @@ private:
         ctx.block = &ctx.ir.blocks.back();
         ctx.raw(body + ":");
         ctx.scope_vars.push_back({});
-        for (const auto& child : stmt.body) emitStmt(child, ctx);
+        emitStatements(stmt.body, ctx);
         emitDrops(ctx.scope_vars.back(), ctx);
         ctx.scope_vars.pop_back();
         ctx.line("jmp " + start);
@@ -1777,17 +1974,24 @@ private:
             ctx.line(scalarMemoryMnemonic("store", targetType) +
                      " r" + std::to_string(selected.reg) + ", sp, " +
                      std::to_string(ctx.return_slot_offset));
-            ctx.value(InstrOpcode::Store, targetType, stmt.span);
-            if (ctx.block && !ctx.block->instructions.empty()) {
-                ctx.block->instructions.back().args = {selected.value};
-            }
+            const ValueId return_value = selected.value;
             ctx.release(selected.reg);
             emitDropsForReturn(ctx);
             ctx.line(scalarMemoryMnemonic("load", targetType) +
                      " r13, sp, " + std::to_string(ctx.return_slot_offset));
-            ctx.value(InstrOpcode::Load, targetType, stmt.span);
             ctx.line("jmp " + ctx.ast->name + "_return");
-            ctx.value(InstrOpcode::Ret, targetType, stmt.span);
+            Instr ret;
+            ret.def = -1;
+            ret.opcode = InstrOpcode::Ret;
+            ret.type = targetType;
+            ret.args = {return_value};
+            ret.effect = Effect::Control;
+            ret.span = stmt.span;
+            if (ctx.block)
+                ctx.block->instructions.push_back(std::move(ret));
+            if (ctx.block) {
+                ctx.block->terminator.kind = TerminatorKind::Return;
+            }
             return true;
         }
 
@@ -1805,7 +2009,8 @@ private:
                  std::to_string(local->second.offset));
         ctx.value(InstrOpcode::Store, targetType, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
-            ctx.block->instructions.back().args = {selected.value};
+            ctx.block->instructions.back().args = {
+                local->second.ir_address, selected.value};
         }
         ctx.release(selected.reg);
         return true;
@@ -1858,7 +2063,6 @@ private:
             ctx.release(cond.reg);
             return;
         }
-
         std::string neg = ctx.label("match_" + negName);
         std::string zero = ctx.label("match_" + zeroName);
         std::string pos = ctx.label("match_" + posName);
@@ -1866,11 +2070,20 @@ private:
 
         ctx.line("brn r" + std::to_string(cond.reg) + ", " + neg);
         ctx.line("brz r" + std::to_string(cond.reg) + ", " + zero);
+        if (ctx.block) {
+            ctx.block->terminator.kind = TerminatorKind::Branch3;
+            ctx.block->terminator.condition = cond.value;
+            ctx.block->terminator.target_neg = neg;
+            ctx.block->terminator.target_zero = zero;
+            ctx.block->terminator.target_pos = pos;
+        }
 
         emitArm(posName, pos, end, stmt, cond, ctx);
         emitArm(negName, neg, end, stmt, cond, ctx);
         emitArm(zeroName, zero, end, stmt, cond, ctx);
         ctx.release(cond.reg);
+        ctx.ir.blocks.push_back(BasicBlock{end, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(end + ":");
     }
 
@@ -1881,6 +2094,8 @@ private:
         const Stmt& stmt,
         const ExprCode& cond,
         FunctionContext& ctx) {
+        ctx.ir.blocks.push_back(BasicBlock{label, {}, {}});
+        ctx.block = &ctx.ir.blocks.back();
         ctx.raw(label + ":");
         const MatchArm* matchArm = nullptr;
         for (const auto& arm : stmt.arms) {
@@ -1910,15 +2125,22 @@ private:
                 ctx.line("store r" + std::to_string(cond.reg) + ", sp, " + std::to_string(ctx.locals[matchArm->binding].offset));
                 ctx.value(InstrOpcode::Store, bindingType, stmt.span);
                 if (ctx.block && !ctx.block->instructions.empty()) {
-                    ctx.block->instructions.back().args = {cond.value};
+                    ctx.block->instructions.back().args = {
+                        ctx.locals[matchArm->binding].ir_address,
+                        cond.value};
                 }
                 ctx.scope_vars.back().push_back(matchArm->binding);
             }
-            for (const auto& child : matchArm->body) emitStmt(child, ctx);
+            emitStatements(matchArm->body, ctx);
             emitDrops(ctx.scope_vars.back(), ctx);
             ctx.scope_vars.pop_back();
         }
         ctx.line("jmp " + end);
+        if (ctx.block &&
+            ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.block->terminator.kind = TerminatorKind::Jump;
+            ctx.block->terminator.target = end;
+        }
     }
 
     void emitTupleSwap(const Stmt& stmt, FunctionContext& ctx) {
@@ -1937,11 +2159,19 @@ private:
                  " r" + std::to_string(ra) + ", sp, " +
                  std::to_string(a->second.offset));
         ValueId id_a = ctx.value(InstrOpcode::Load, a->second.type, stmt.span, ra);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                a->second.ir_address};
+        }
         
         ctx.line(scalarMemoryMnemonic("load", b->second.type) +
                  " r" + std::to_string(rb) + ", sp, " +
                  std::to_string(b->second.offset));
         ValueId id_b = ctx.value(InstrOpcode::Load, b->second.type, stmt.span, rb);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                b->second.ir_address};
+        }
         
         ctx.line("swap r" + std::to_string(ra) + ", r" + std::to_string(rb));
         ctx.value(InstrOpcode::Swap, a->second.type, stmt.span);
@@ -1951,7 +2181,8 @@ private:
                  std::to_string(a->second.offset));
         ctx.value(InstrOpcode::Store, a->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
-            ctx.block->instructions.back().args = {id_b};
+            ctx.block->instructions.back().args = {
+                a->second.ir_address, id_b};
         }
         
         ctx.line(scalarMemoryMnemonic("store", b->second.type) +
@@ -1959,7 +2190,8 @@ private:
                  std::to_string(b->second.offset));
         ctx.value(InstrOpcode::Store, b->second.type, stmt.span);
         if (ctx.block && !ctx.block->instructions.empty()) {
-            ctx.block->instructions.back().args = {id_a};
+            ctx.block->instructions.back().args = {
+                b->second.ir_address, id_a};
         }
         
         ctx.release(ra);
@@ -2044,6 +2276,10 @@ private:
                  " r" + std::to_string(reg) + ", sp, " +
                  std::to_string(it->second.offset));
         ValueId id = ctx.value(InstrOpcode::Load, it->second.type, expr.span, reg);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                it->second.ir_address};
+        }
         return ExprCode{reg, it->second.type, false, id};
     }
 
@@ -3208,14 +3444,16 @@ private:
             const auto found = definitions.find(value);
             if (found == definitions.end()) {
                 diagnostics.push_back({DiagnosticSeverity::Error,
-                    "use-before-def in function '" + fn.name + "'", span});
+                    "use-before-def for value " + std::to_string(value) +
+                    " in function '" + fn.name + "'", span});
                 return;
             }
             const Definition& def = found->second;
             const bool valid =
-                def.block == use_block
+                !fn.cfg_complete ||
+                (def.block == use_block
                     ? def.instruction < use_instruction
-                    : dominance.dominates(def.block, use_block);
+                    : dominance.dominates(def.block, use_block));
             if (!valid) {
                 diagnostics.push_back({DiagnosticSeverity::Error,
                     "SSA definition does not dominate use in function '" +
@@ -3225,7 +3463,8 @@ private:
         };
 
         for (const auto& block : fn.blocks) {
-            if (block.terminator.kind == TerminatorKind::None) {
+            if (fn.cfg_complete &&
+                block.terminator.kind == TerminatorKind::None) {
                 diagnostics.push_back({DiagnosticSeverity::Error,
                     "basic block '" + block.name + "' has no terminator",
                     SourceSpan{module.name, 1, 1, 1}});
@@ -3239,14 +3478,16 @@ private:
                         incoming_predecessors.insert(incoming.first);
                         const auto found = definitions.find(incoming.second);
                         if (found == definitions.end() ||
+                            (fn.cfg_complete &&
                             !dominance.dominates(
-                                found->second.block, incoming.first)) {
+                                found->second.block, incoming.first))) {
                             diagnostics.push_back({DiagnosticSeverity::Error,
                                 "phi incoming value does not dominate predecessor",
                                 instr.span});
                         }
                     }
-                    if (incoming_predecessors !=
+                    if (fn.cfg_complete &&
+                        incoming_predecessors !=
                         cfg.predecessors.at(block.name)) {
                         diagnostics.push_back({DiagnosticSeverity::Error,
                             "phi incoming predecessor set does not match CFG",
@@ -3285,6 +3526,7 @@ private:
 
 [[nodiscard]] inline bool isPureInstruction(const Instr& instr) {
     return instr.effect == Effect::Pure &&
+           instr.opcode != InstrOpcode::Alloca &&
            instr.opcode != InstrOpcode::Store &&
            instr.opcode != InstrOpcode::Syscall &&
            instr.opcode != InstrOpcode::Wait &&
@@ -3298,6 +3540,31 @@ private:
            instr.opcode != InstrOpcode::Call &&
            instr.opcode != InstrOpcode::CallR &&
            instr.opcode != InstrOpcode::Ret;
+}
+
+[[nodiscard]] inline bool isSpeculatableInstruction(
+    const Instr& instr) {
+    if (!isPureInstruction(instr)) return false;
+    switch (instr.opcode) {
+        case InstrOpcode::Param:
+        case InstrOpcode::Const:
+        case InstrOpcode::Copy:
+        case InstrOpcode::Add:
+        case InstrOpcode::Sub:
+        case InstrOpcode::Mul:
+        case InstrOpcode::Cvt:
+        case InstrOpcode::Cmp:
+        case InstrOpcode::Tsel:
+        case InstrOpcode::FieldAddr:
+        case InstrOpcode::IndexAddr:
+        case InstrOpcode::AddrOf:
+            return true;
+        default:
+            // Division, remainder, pointer dereference, and target-specific
+            // operations may trap and cannot be moved to paths that did not
+            // execute them in the source CFG.
+            return false;
+    }
 }
 
 inline void addInterferenceEdge(
@@ -3377,16 +3644,6 @@ inline void addInterferenceEdge(
         }
     }
 
-    std::vector<ValueId> values;
-    for (const auto& entry : valueTypes) values.push_back(entry.first);
-    std::sort(values.begin(), values.end(),
-        [&](ValueId a, ValueId b) {
-            const std::size_t da = graph[a].size();
-            const std::size_t db = graph[b].size();
-            if (da != db) return da > db;
-            return a < b;
-        });
-
     auto registerWidth = [&](ValueId value) {
         auto type = valueTypes.find(value);
         if (type == valueTypes.end()) return 1;
@@ -3396,6 +3653,128 @@ inline void addInterferenceEdge(
             ? 2
             : 1;
     };
+    auto sameRegisterClass = [&](ValueId lhs, ValueId rhs) {
+        return (valueTypes[lhs].kind == TypeKind::Vector) ==
+               (valueTypes[rhs].kind == TypeKind::Vector);
+    };
+    auto effectiveColorCount = [&](ValueId value) {
+        if (valueTypes[value].kind == TypeKind::Vector)
+            return static_cast<int>(vectorColors.size());
+        if (spillTemporaries.count(value))
+            return static_cast<int>(spillTemporaryColors.size());
+        if (liveAcrossCalls.count(value))
+            return static_cast<int>(calleePreferred.size());
+        if (registerWidth(value) == 2) return 8;
+        return static_cast<int>(scalarColors.size());
+    };
+
+    // Loop-weighted use counts drive spill selection. A use in a natural loop
+    // is deliberately more expensive than one on a cold straight-line path.
+    std::map<ValueId, long long> spill_cost;
+    for (const auto& fn : module.functions) {
+        const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+        const DominanceInfo dominance = computeDominance(fn, cfg);
+        std::map<std::string, int> loop_depth;
+        for (const std::string& block : cfg.order) loop_depth[block] = 0;
+        for (const std::string& latch : cfg.order) {
+            for (const std::string& header : cfg.successors.at(latch)) {
+                if (!dominance.dominates(header, latch)) continue;
+                std::set<std::string> loop{header, latch};
+                std::vector<std::string> work{latch};
+                while (!work.empty()) {
+                    const std::string current = work.back();
+                    work.pop_back();
+                    for (const std::string& pred :
+                         cfg.predecessors.at(current)) {
+                        if (loop.insert(pred).second && pred != header)
+                            work.push_back(pred);
+                    }
+                }
+                for (const std::string& member : loop)
+                    ++loop_depth[member];
+            }
+        }
+        for (const BasicBlock& block : fn.blocks) {
+            long long weight = 1;
+            for (int depth = 0;
+                 depth < std::min(3, loop_depth[block.name]); ++depth) {
+                weight *= 10;
+            }
+            for (const Instr& instr : block.instructions) {
+                if (instr.def >= 0) spill_cost[instr.def] += weight;
+                for (ValueId arg : instr.args)
+                    if (arg >= 0) spill_cost[arg] += weight;
+                for (const auto& incoming : instr.phi_incoming)
+                    if (incoming.second >= 0)
+                        spill_cost[incoming.second] += weight;
+            }
+            if (block.terminator.condition >= 0)
+                spill_cost[block.terminator.condition] += weight;
+        }
+    }
+
+    std::set<ValueId> move_related;
+    for (const auto& move : moveEdges) {
+        move_related.insert(move.first);
+        move_related.insert(move.second);
+    }
+    std::set<ValueId> remaining;
+    for (const auto& entry : valueTypes) remaining.insert(entry.first);
+    std::vector<ValueId> simplify_stack;
+    simplify_stack.reserve(remaining.size());
+    auto remainingDegree = [&](ValueId value) {
+        int degree = 0;
+        for (ValueId neighbor : graph[value]) {
+            if (remaining.count(neighbor) &&
+                sameRegisterClass(value, neighbor)) {
+                ++degree;
+            }
+        }
+        return degree;
+    };
+    while (!remaining.empty()) {
+        ValueId selected = -1;
+        for (ValueId value : remaining) {
+            if (!move_related.count(value) &&
+                remainingDegree(value) < effectiveColorCount(value)) {
+                selected = value;
+                break;
+            }
+        }
+        if (selected < 0) {
+            for (ValueId value : remaining) {
+                if (remainingDegree(value) <
+                    effectiveColorCount(value)) {
+                    selected = value;
+                    ++result.freeze_steps;
+                    move_related.erase(value);
+                    break;
+                }
+            }
+        }
+        if (selected < 0) {
+            // Minimize weighted cost per current interference edge.
+            long double best_score =
+                std::numeric_limits<long double>::max();
+            for (ValueId value : remaining) {
+                const int degree = std::max(1, remainingDegree(value));
+                const long double score =
+                    static_cast<long double>(
+                        std::max<long long>(1, spill_cost[value])) /
+                    static_cast<long double>(degree);
+                if (score < best_score) {
+                    best_score = score;
+                    selected = value;
+                }
+            }
+            ++result.spill_candidates;
+        }
+        simplify_stack.push_back(selected);
+        remaining.erase(selected);
+        ++result.simplify_steps;
+    }
+    std::vector<ValueId> values(
+        simplify_stack.rbegin(), simplify_stack.rend());
     auto rangesOverlap = [](int lhs, int lhs_width,
                             int rhs, int rhs_width) {
         return lhs < rhs + rhs_width && rhs < lhs + lhs_width;
@@ -3723,6 +4102,301 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
     return value;
 }
 
+[[nodiscard]] inline bool evaluateSsaConstant(
+    const Instr& instr,
+    const std::map<ValueId, long long>& constants,
+    long long& value) {
+    auto argument = [&](std::size_t index, long long& out) {
+        if (index >= instr.args.size()) return false;
+        const auto found = constants.find(instr.args[index]);
+        if (found == constants.end()) return false;
+        out = found->second;
+        return true;
+    };
+    if (instr.opcode == InstrOpcode::Const) {
+        value = instr.imm;
+        return true;
+    }
+    if (instr.opcode == InstrOpcode::Copy) {
+        return argument(0, value);
+    }
+    if (instr.opcode == InstrOpcode::Phi) {
+        bool first = true;
+        long long common = 0;
+        for (const auto& incoming : instr.phi_incoming) {
+            const auto found = constants.find(incoming.second);
+            if (found == constants.end()) return false;
+            if (first) {
+                common = found->second;
+                first = false;
+            } else if (common != found->second) {
+                return false;
+            }
+        }
+        if (first) return false;
+        value = common;
+        return true;
+    }
+    long long lhs = 0;
+    long long rhs = 0;
+    if (instr.opcode == InstrOpcode::Cmp &&
+        argument(0, lhs) && argument(1, rhs)) {
+        value = lhs < rhs ? -1 : (lhs > rhs ? 1 : 0);
+        return true;
+    }
+    if (instr.opcode == InstrOpcode::Tsel &&
+        instr.args.size() == 4 && argument(0, lhs)) {
+        const std::size_t selected = lhs < 0 ? 1 : (lhs > 0 ? 3 : 2);
+        if (instr.args[selected] < 0) {
+            value = 0;
+            return true;
+        }
+        const auto found = constants.find(instr.args[selected]);
+        if (found == constants.end()) return false;
+        value = found->second;
+        return true;
+    }
+    if (!argument(0, lhs) || !argument(1, rhs)) return false;
+    switch (instr.opcode) {
+        case InstrOpcode::Add: value = lhs + rhs; return true;
+        case InstrOpcode::Sub: value = lhs - rhs; return true;
+        case InstrOpcode::Mul: value = lhs * rhs; return true;
+        case InstrOpcode::Div:
+            if (rhs == 0) return false;
+            value = lhs / rhs;
+            return true;
+        case InstrOpcode::Tmod:
+            if (rhs == 0) return false;
+            value = lhs % rhs;
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline void rewriteAsConstant(Instr& instr, long long value) {
+    instr.opcode = InstrOpcode::Const;
+    instr.args.clear();
+    instr.phi_incoming.clear();
+    instr.imm = value;
+    instr.effect = Effect::Pure;
+}
+
+inline int runSparseConditionalConstantPropagation(Function& fn) {
+    std::map<ValueId, long long> constants;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.def < 0) continue;
+                long long value = 0;
+                if (!evaluateSsaConstant(instr, constants, value)) continue;
+                const auto found = constants.find(instr.def);
+                if (found == constants.end() || found->second != value) {
+                    constants[instr.def] = value;
+                    changed = true;
+                }
+            }
+        }
+    }
+    int rewritten = 0;
+    for (BasicBlock& block : fn.blocks) {
+        for (Instr& instr : block.instructions) {
+            if (instr.def < 0 || instr.opcode == InstrOpcode::Const) continue;
+            const auto found = constants.find(instr.def);
+            if (found == constants.end() || !isPureInstruction(instr)) continue;
+            rewriteAsConstant(instr, found->second);
+            ++rewritten;
+        }
+        if (block.terminator.kind == TerminatorKind::Branch3) {
+            const auto found = constants.find(block.terminator.condition);
+            if (found != constants.end()) {
+                block.terminator.kind = TerminatorKind::Jump;
+                block.terminator.target =
+                    found->second < 0 ? block.terminator.target_neg :
+                    found->second > 0 ? block.terminator.target_pos :
+                                          block.terminator.target_zero;
+            }
+        }
+    }
+    return rewritten;
+}
+
+inline int runGlobalCopyPropagation(Function& fn) {
+    std::map<ValueId, ValueId> copies;
+    for (const BasicBlock& block : fn.blocks) {
+        for (const Instr& instr : block.instructions) {
+            if (instr.opcode == InstrOpcode::Copy &&
+                instr.def >= 0 && instr.args.size() == 1) {
+                copies[instr.def] = resolveCopy(instr.args[0], copies);
+            }
+        }
+    }
+    int rewrites = 0;
+    for (BasicBlock& block : fn.blocks) {
+        for (Instr& instr : block.instructions) {
+            for (ValueId& arg : instr.args) {
+                const ValueId resolved = resolveCopy(arg, copies);
+                if (resolved != arg) {
+                    arg = resolved;
+                    ++rewrites;
+                }
+            }
+            for (auto& incoming : instr.phi_incoming) {
+                const ValueId resolved =
+                    resolveCopy(incoming.second, copies);
+                if (resolved != incoming.second) {
+                    incoming.second = resolved;
+                    ++rewrites;
+                }
+            }
+        }
+        const ValueId resolved =
+            resolveCopy(block.terminator.condition, copies);
+        if (resolved != block.terminator.condition) {
+            block.terminator.condition = resolved;
+            ++rewrites;
+        }
+    }
+    return rewrites;
+}
+
+inline int runGlobalValueNumbering(Function& fn) {
+    const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+    const DominanceInfo dominance = computeDominance(fn, cfg);
+    std::map<std::string, std::pair<ValueId, std::string>> available;
+    int hits = 0;
+    for (BasicBlock& block : fn.blocks) {
+        for (Instr& instr : block.instructions) {
+            if (instr.def < 0 || !isPureInstruction(instr) ||
+                instr.opcode == InstrOpcode::Const ||
+                instr.opcode == InstrOpcode::Copy ||
+                instr.opcode == InstrOpcode::Phi ||
+                instr.opcode == InstrOpcode::Nop) {
+                continue;
+            }
+            const std::string key = instrKey(instr);
+            const auto found = available.find(key);
+            if (found != available.end() &&
+                dominance.dominates(found->second.second, block.name)) {
+                instr.opcode = InstrOpcode::Copy;
+                instr.args = {found->second.first};
+                instr.effect = Effect::Pure;
+                ++hits;
+            } else {
+                available[key] = {instr.def, block.name};
+            }
+        }
+    }
+    return hits;
+}
+
+inline int runCfgWideDeadCodeElimination(Function& fn) {
+    int removed = 0;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        std::map<ValueId, int> uses;
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                for (ValueId arg : instr.args) if (arg >= 0) ++uses[arg];
+                for (const auto& incoming : instr.phi_incoming)
+                    if (incoming.second >= 0) ++uses[incoming.second];
+            }
+            if (block.terminator.condition >= 0)
+                ++uses[block.terminator.condition];
+        }
+        for (BasicBlock& block : fn.blocks) {
+            const auto old_size = block.instructions.size();
+            block.instructions.erase(
+                std::remove_if(
+                    block.instructions.begin(),
+                    block.instructions.end(),
+                    [&](const Instr& instr) {
+                        return instr.opcode == InstrOpcode::Nop ||
+                               (instr.def >= 0 && uses[instr.def] == 0 &&
+                                isPureInstruction(instr));
+                    }),
+                block.instructions.end());
+            if (block.instructions.size() != old_size) {
+                removed += static_cast<int>(
+                    old_size - block.instructions.size());
+                changed = true;
+            }
+        }
+    }
+    return removed;
+}
+
+inline int runLoopInvariantCodeMotion(Function& fn) {
+    const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+    const DominanceInfo dominance = computeDominance(fn, cfg);
+    std::map<ValueId, std::string> defining_block;
+    for (const BasicBlock& block : fn.blocks)
+        for (const Instr& instr : block.instructions)
+            if (instr.def >= 0) defining_block[instr.def] = block.name;
+    int hoisted = 0;
+    for (const std::string& latch : cfg.order) {
+        for (const std::string& header : cfg.successors.at(latch)) {
+            if (!dominance.dominates(header, latch)) continue;
+            std::set<std::string> loop{header, latch};
+            std::vector<std::string> work{latch};
+            while (!work.empty()) {
+                const std::string block = work.back();
+                work.pop_back();
+                for (const std::string& pred : cfg.predecessors.at(block)) {
+                    if (loop.insert(pred).second && pred != header)
+                        work.push_back(pred);
+                }
+            }
+            std::vector<std::string> preheaders;
+            for (const std::string& pred : cfg.predecessors.at(header))
+                if (!loop.count(pred)) preheaders.push_back(pred);
+            if (preheaders.size() != 1) continue;
+            BasicBlock& preheader =
+                fn.blocks[cfg.index.at(preheaders.front())];
+            bool progress = true;
+            while (progress) {
+                progress = false;
+                for (const std::string& block_name : loop) {
+                    if (block_name == header) continue;
+                    BasicBlock& block =
+                        fn.blocks[cfg.index.at(block_name)];
+                    for (auto it = block.instructions.begin();
+                         it != block.instructions.end(); ++it) {
+                        if (it->def < 0 ||
+                            !isSpeculatableInstruction(*it) ||
+                            it->opcode == InstrOpcode::Phi ||
+                            it->opcode == InstrOpcode::Const) {
+                            continue;
+                        }
+                        bool invariant = true;
+                        for (ValueId arg : it->args) {
+                            const auto def = defining_block.find(arg);
+                            if (def != defining_block.end() &&
+                                loop.count(def->second)) {
+                                invariant = false;
+                                break;
+                            }
+                        }
+                        if (!invariant) continue;
+                        preheader.instructions.push_back(std::move(*it));
+                        defining_block[preheader.instructions.back().def] =
+                            preheader.name;
+                        block.instructions.erase(it);
+                        ++hoisted;
+                        progress = true;
+                        break;
+                    }
+                    if (progress) break;
+                }
+            }
+        }
+    }
+    return hoisted;
+}
+
 [[nodiscard]] inline OptimizerStats optimizeModule(
     Module& module,
     OptimizationLevel level,
@@ -3732,9 +4406,19 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
     if (level == OptimizationLevel::None) return stats;
 
     for (auto& fn : module.functions) {
-        if (options.enable_mem2reg) {
+        if (options.enable_mem2reg && fn.cfg_complete) {
             const Mem2RegResult promoted = promoteMemoryToSSA(fn);
             stats.mem2reg_promotions += promoted.promoted_allocas;
+        }
+        if (fn.cfg_complete) {
+            stats.copy_props += runGlobalCopyPropagation(fn);
+        }
+        if (fn.cfg_complete &&
+            level == OptimizationLevel::Aggressive && options.enable_cse) {
+            const int hits = runGlobalValueNumbering(fn);
+            stats.gvn_hits += hits;
+            stats.cse_hits += hits;
+            stats.licm_hoists += runLoopInvariantCodeMotion(fn);
         }
         const ControlFlowGraph cfg = buildControlFlowGraph(fn);
         const BlockLiveness liveness = computeBlockLiveness(fn, cfg);
@@ -3857,6 +4541,13 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
                 ++stats.branch_simplifications;
             }
         }  // for (auto& block : fn.blocks)
+        if (fn.cfg_complete) {
+            const int sccp_rewrites =
+                runSparseConditionalConstantPropagation(fn);
+            stats.sccp_constants += sccp_rewrites;
+            stats.constant_folds += sccp_rewrites;
+            stats.dead_instrs += runCfgWideDeadCodeElimination(fn);
+        }
     }  // for (auto& fn : module.functions)
     return stats;
 }

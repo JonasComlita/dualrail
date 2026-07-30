@@ -179,6 +179,7 @@ void runTests() {
     expect(!readRepoText("tcl_asm.trit").empty(), "tcl_asm.trit is present");
 
     expectNativeAssemblerMatchesCpp("scalar branch loop", R"(
+        .isa 2
         .text
         _start:
             MOV r1, 3
@@ -194,6 +195,8 @@ void runTests() {
     )");
 
     expectNativeAssemblerMatchesCpp("typed scalar suffixes and mov word counts", R"(
+        .isa 2
+        .require wide_t50
         .text
         _start:
             mov.t5 r1, 3
@@ -216,6 +219,7 @@ void runTests() {
     )");
 
     expectNativeAssemblerMatchesCpp("calls memory and comments", R"(
+        .isa 2
         .text
         _start:
             MOV sp, 100
@@ -230,6 +234,7 @@ void runTests() {
     )");
 
     expectNativeAssemblerMatchesCpp("three way branch", R"(
+        .isa 2
         .text
         _start:
             MOV r1, 0

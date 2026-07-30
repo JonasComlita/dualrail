@@ -27,6 +27,7 @@ enum class Effect : uint8_t {
 
 enum class InstrOpcode : uint8_t {
     Alloca,
+    Param,
     Const,
     Copy,
     Add,
@@ -106,6 +107,7 @@ struct Function {
     std::vector<BasicBlock> blocks;
     bool exported = true;
     bool unsafe_allowed = false;
+    bool cfg_complete = true;
     int ir_value_ceiling = 1;
 };
 
@@ -118,12 +120,16 @@ struct Module {
 
 struct OptimizerStats {
     int mem2reg_promotions = 0;
+    int sccp_constants = 0;
     int constant_folds = 0;
     int copy_props = 0;
     int strength_reductions = 0;
+    int gvn_hits = 0;
     int cse_hits = 0;
     int dead_instrs = 0;
     int branch_simplifications = 0;
+    int licm_hoists = 0;
+    int induction_simplifications = 0;
     int swaps = 0;
 };
 
@@ -136,6 +142,9 @@ struct AllocationResult {
     std::set<int> callee_saved_used;
     std::set<int> caller_saved_live_across_calls;
     int coalesced_moves = 0;
+    int simplify_steps = 0;
+    int freeze_steps = 0;
+    int spill_candidates = 0;
     int interference_edges = 0;
     int spill_rewrite_rounds = 0;
     int spill_loads = 0;

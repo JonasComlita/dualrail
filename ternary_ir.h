@@ -118,8 +118,49 @@ public:
 
     [[nodiscard]] LowerResult lower() const {
         LowerResult result;
-        result.assembly = assembly();
+        const std::string body = assembly();
+        std::uint64_t required_features =
+            isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+        std::vector<vm::assembler::AssemblyError> parse_errors;
+        const auto source_lines =
+            vm::assembler::parseSources(body, parse_errors);
+        for (const auto& source_line : source_lines) {
+            const auto parts =
+                vm::assembler::splitMnemonic(source_line.mnemonic);
+            const auto opcode =
+                vm::assembler::OPCODE_TABLE.find(parts.base);
+            if (opcode == vm::assembler::OPCODE_TABLE.end()) continue;
+            isa::InstructionWord semantic;
+            semantic.opcode = opcode->second.opcode;
+            semantic.func = parts.func;
+            required_features |= isa::requiredV2Features(semantic);
+        }
+        std::ostringstream assembly_out;
+        assembly_out << ".isa 2\n";
+        const auto requireFeature = [&](
+            int trit, const char* name) {
+            if ((required_features & isa::featureBit(trit)) != 0)
+                assembly_out << ".require " << name << "\n";
+        };
+        requireFeature(
+            architecture::v2::FEATURE_SCALAR_ADVANCED,
+            "scalar_advanced");
+        requireFeature(architecture::v2::FEATURE_LANE, "lane");
+        requireFeature(architecture::v2::FEATURE_VECTOR, "vector");
+        requireFeature(
+            architecture::v2::FEATURE_ACCUMULATOR_AI,
+            "accumulator_ai");
+        requireFeature(architecture::v2::FEATURE_ATOMICS, "atomics");
+        requireFeature(architecture::v2::FEATURE_MMU, "mmu");
+        requireFeature(architecture::v2::FEATURE_WAIT, "wait");
+        requireFeature(
+            architecture::v2::FEATURE_WIDE_T50,
+            "wide_t50");
+        assembly_out << body;
+        result.assembly = assembly_out.str();
         result.diagnostics = diagnostics_;
+        for (const auto& error : parse_errors)
+            result.diagnostics.push_back(error.format());
         if (!result.diagnostics.empty()) return result;
 
         result.assembled = vm::assembler::assemble(result.assembly);
