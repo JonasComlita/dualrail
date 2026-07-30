@@ -1086,6 +1086,35 @@ public:
                                 value_starts[fn.name]);
         }
 
+        int ir_emitted_functions = 0;
+        int target_replay_functions = 0;
+        for (const Function& function : optimized_module.functions) {
+            Module allocation_unit;
+            allocation_unit.name = optimized_module.name;
+            allocation_unit.functions.push_back(function);
+            const AllocationResult ir_allocation =
+                allocateRegisters(allocation_unit, options_);
+            std::string ir_assembly;
+            if (ir_allocation.success &&
+                ir_allocation.spill_slots.empty() &&
+                emitStraightLineSsaFunction(
+                    function, ir_allocation, ir_assembly)) {
+                result.object.function_sections[function.name] =
+                    std::move(ir_assembly);
+                ++ir_emitted_functions;
+            } else {
+                ++target_replay_functions;
+            }
+        }
+        result.assembly.clear();
+        for (const std::string& function_name :
+             result.object.function_order) {
+            const auto section =
+                result.object.function_sections.find(function_name);
+            if (section != result.object.function_sections.end())
+                result.assembly += section->second;
+        }
+
         result.ssa_module = dry_module;
         result.optimized_module = optimized_module;
         result.allocation = allocation;
@@ -1097,11 +1126,15 @@ public:
         result.object.assembly = result.assembly;
         result.object.metadata["phase"] = "ir-transition-v2";
         result.object.metadata["pipeline"] =
-            "typed-ast,address-cfg-ir,verify,optimize,allocate,target-replay";
+            "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-with-explicit-replay-fallback";
         result.object.metadata["ssa.admitted_functions"] =
             std::to_string(ssa_admitted_functions);
         result.object.metadata["ssa.cfg_fallback_functions"] =
             std::to_string(cfg_fallback_functions);
+        result.object.metadata["target.ir_emitted_functions"] =
+            std::to_string(ir_emitted_functions);
+        result.object.metadata["target.ast_replay_functions"] =
+            std::to_string(target_replay_functions);
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -1134,6 +1167,261 @@ private:
             }
         }
         return std::vector<int>(used.begin(), used.end());
+    }
+
+    [[nodiscard]] bool emitStraightLineSsaFunction(
+        const Function& function,
+        const AllocationResult& allocation,
+        std::string& assembly) {
+        if (!function.cfg_complete || function.blocks.size() != 1 ||
+            function.blocks.front().terminator.kind !=
+                TerminatorKind::Return) {
+            return false;
+        }
+
+        std::map<ValueId, TypeRef> value_types;
+        for (const Instr& instr :
+             function.blocks.front().instructions) {
+            if (instr.def >= 0) value_types[instr.def] = instr.type;
+            switch (instr.opcode) {
+                case InstrOpcode::Param:
+                case InstrOpcode::Const:
+                case InstrOpcode::Copy:
+                case InstrOpcode::Add:
+                case InstrOpcode::Sub:
+                case InstrOpcode::Mul:
+                case InstrOpcode::Div:
+                case InstrOpcode::Tmod:
+                case InstrOpcode::Cvt:
+                case InstrOpcode::Cmp:
+                case InstrOpcode::Tsel:
+                case InstrOpcode::Ret:
+                case InstrOpcode::Nop:
+                    break;
+                default:
+                    return false;
+            }
+            if (instr.type.kind == TypeKind::Vector ||
+                instr.type.kind == TypeKind::Struct ||
+                instr.type.kind == TypeKind::Array ||
+                instr.type.kind == TypeKind::Owned ||
+                instr.type.kind == TypeKind::Shared) {
+                return false;
+            }
+        }
+
+        auto registerFor = [&](ValueId value,
+                               int& reg) {
+            if (value < 0) {
+                reg = 0;
+                return true;
+            }
+            const auto found =
+                allocation.scalar_registers.find(value);
+            if (found == allocation.scalar_registers.end())
+                return false;
+            reg = found->second;
+            return true;
+        };
+        auto valueType = [&](ValueId value) {
+            const auto found = value_types.find(value);
+            return found == value_types.end()
+                ? TypeRef::numeric(ir::Type::T40)
+                : found->second;
+        };
+        auto regName = [](int reg) {
+            return "r" + std::to_string(reg);
+        };
+
+        const std::vector<int> callee_saved =
+            getCalleeSavedUsed(allocation, function);
+        const int frame_words = align9(
+            1 + static_cast<int>(callee_saved.size()));
+        std::ostringstream out;
+        out << function.name << ":\n";
+        out << "    mov.t40 r24, " << frame_words << "\n";
+        out << "    sub.t40 sp, sp, r24\n";
+        out << "    store lr, sp, 0\n";
+        for (std::size_t index = 0;
+             index < callee_saved.size(); ++index) {
+            out << "    store r" << callee_saved[index]
+                << ", sp, " << (index + 1) << "\n";
+        }
+
+        bool emitted_return = false;
+        for (const Instr& instr :
+             function.blocks.front().instructions) {
+            int destination = -1;
+            if (instr.def >= 0 &&
+                !registerFor(instr.def, destination)) {
+                return false;
+            }
+            auto argumentRegister = [&](std::size_t index,
+                                        int& reg) {
+                return index < instr.args.size() &&
+                       registerFor(instr.args[index], reg);
+            };
+            const std::string suffix =
+                instr.type.kind == TypeKind::Trit
+                    ? "t1"
+                    : std::string(ir::suffix(instr.type.scalar));
+            switch (instr.opcode) {
+                case InstrOpcode::Param: {
+                    const int width = usesWideT50Pair(instr.type)
+                        ? 2
+                        : 1;
+                    if (instr.aux < 0 ||
+                        instr.aux + width > kRegisterArgCount) {
+                        return false;
+                    }
+                    const int source = 13 + instr.aux;
+                    if (destination != source) {
+                        out << "    copy"
+                            << (width == 2 ? ".t50" : "")
+                            << " " << regName(destination)
+                            << ", " << regName(source) << "\n";
+                    }
+                    break;
+                }
+                case InstrOpcode::Const:
+                    if (instr.imm < 0) {
+                        out << "    mov." << suffix << " "
+                            << regName(destination) << ", "
+                            << -instr.imm << "\n";
+                        out << "    neg." << suffix << " "
+                            << regName(destination) << ", "
+                            << regName(destination) << "\n";
+                    } else {
+                        out << "    mov." << suffix << " "
+                            << regName(destination) << ", "
+                            << instr.imm << "\n";
+                    }
+                    break;
+                case InstrOpcode::Copy: {
+                    int source = -1;
+                    if (!argumentRegister(0, source)) return false;
+                    if (destination != source) {
+                        out << "    copy"
+                            << (usesWideT50Pair(instr.type)
+                                    ? ".t50"
+                                    : "")
+                            << " " << regName(destination)
+                            << ", " << regName(source) << "\n";
+                    }
+                    break;
+                }
+                case InstrOpcode::Add:
+                case InstrOpcode::Sub:
+                case InstrOpcode::Mul:
+                case InstrOpcode::Div:
+                case InstrOpcode::Tmod: {
+                    int lhs = -1;
+                    int rhs = -1;
+                    if (!argumentRegister(0, lhs) ||
+                        !argumentRegister(1, rhs)) {
+                        return false;
+                    }
+                    const char* mnemonic =
+                        instr.opcode == InstrOpcode::Add ? "add" :
+                        instr.opcode == InstrOpcode::Sub ? "sub" :
+                        instr.opcode == InstrOpcode::Mul ? "mul" :
+                        instr.opcode == InstrOpcode::Div ? "div" :
+                                                         "tmod";
+                    out << "    " << mnemonic << "." << suffix
+                        << " " << regName(destination)
+                        << ", " << regName(lhs)
+                        << ", " << regName(rhs) << "\n";
+                    break;
+                }
+                case InstrOpcode::Cvt: {
+                    int source = -1;
+                    if (!argumentRegister(0, source)) return false;
+                    const TypeRef from = valueType(instr.args[0]);
+                    const std::string from_suffix =
+                        from.kind == TypeKind::Trit
+                            ? "t1"
+                            : std::string(ir::suffix(from.scalar));
+                    out << "    cvt." << from_suffix << "."
+                        << suffix << " " << regName(destination)
+                        << ", " << regName(source) << "\n";
+                    break;
+                }
+                case InstrOpcode::Cmp: {
+                    int lhs = -1;
+                    int rhs = -1;
+                    if (!argumentRegister(0, lhs) ||
+                        !argumentRegister(1, rhs)) {
+                        return false;
+                    }
+                    const TypeRef operand_type =
+                        valueType(instr.args[0]);
+                    const std::string operand_suffix =
+                        operand_type.kind == TypeKind::Trit
+                            ? "t1"
+                            : std::string(
+                                  ir::suffix(operand_type.scalar));
+                    out << "    tcmp." << operand_suffix << " "
+                        << regName(destination) << ", "
+                        << regName(lhs) << ", " << regName(rhs)
+                        << "\n";
+                    break;
+                }
+                case InstrOpcode::Tsel: {
+                    if (instr.args.size() != 4) return false;
+                    int condition = -1;
+                    int negative = -1;
+                    int zero = -1;
+                    int positive = -1;
+                    if (!argumentRegister(0, condition) ||
+                        !argumentRegister(1, negative) ||
+                        !argumentRegister(2, zero) ||
+                        !argumentRegister(3, positive)) {
+                        return false;
+                    }
+                    out << "    tsel " << regName(destination)
+                        << ", " << regName(condition)
+                        << ", " << regName(negative)
+                        << ", " << regName(zero)
+                        << ", " << regName(positive) << "\n";
+                    break;
+                }
+                case InstrOpcode::Ret: {
+                    if (instr.args.size() > 1) return false;
+                    if (!instr.args.empty()) {
+                        int source = -1;
+                        if (!argumentRegister(0, source))
+                            return false;
+                        if (source != 13) {
+                            out << "    copy"
+                                << (usesWideT50Pair(instr.type)
+                                        ? ".t50"
+                                        : "")
+                                << " r13, " << regName(source)
+                                << "\n";
+                        }
+                    }
+                    emitted_return = true;
+                    break;
+                }
+                case InstrOpcode::Nop:
+                    break;
+                default:
+                    return false;
+            }
+        }
+        if (!emitted_return) return false;
+
+        for (std::size_t index = 0;
+             index < callee_saved.size(); ++index) {
+            out << "    load r" << callee_saved[index]
+                << ", sp, " << (index + 1) << "\n";
+        }
+        out << "    load lr, sp, 0\n";
+        out << "    mov.t40 r24, " << frame_words << "\n";
+        out << "    add.t40 sp, sp, r24\n";
+        out << "    ret\n";
+        assembly = out.str();
+        return true;
     }
 
     Function compileFunctionDry(const FunctionAst& fn, int start_value) {

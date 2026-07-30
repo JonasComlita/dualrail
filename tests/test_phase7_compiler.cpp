@@ -63,7 +63,10 @@ void testCompileAndRunMatchProgram() {
     }
     expect(compiled.success, "match source compiles");
     expect(compiled.ssa_module.functions.size() == 1, "compile result includes SSA function");
-    expect(contains(compiled.assembly, "tsel"), "pure match return lowers to TSEL");
+    expect(!contains(compiled.assembly, "tsel"),
+           "constant pure match folds beyond TSEL during IR emission");
+    expect(compiled.optimizer_stats.constant_folds > 0,
+           "constant pure match is folded by the SSA optimizer");
     expect(!contains(compiled.assembly, "brn"), "pure match avoids negative branch");
     expect(!contains(compiled.assembly, "brz"), "pure match avoids zero branch");
     expect(!contains(compiled.assembly, "brp"), "pure match avoids positive branch");
@@ -899,6 +902,12 @@ void testOptimizerAndGraphColoringDetails() {
                "source return value is explicit in structural IR");
         expect(verifyModule(compiled.optimized_module).empty(),
                "optimized source-level SSA passes dominance verification");
+        expect(
+            compiled.object.metadata.at(
+                "target.ir_emitted_functions") == "1" &&
+            compiled.object.metadata.at(
+                "target.ast_replay_functions") == "0",
+            "verified straight-line source emits solely from optimized IR");
 
         LinkResult linked = linkModules({compiled.object});
         expect(linked.success,
