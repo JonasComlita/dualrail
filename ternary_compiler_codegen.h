@@ -1088,6 +1088,7 @@ public:
 
         int ir_emitted_functions = 0;
         int target_replay_functions = 0;
+        std::vector<std::string> ir_emitted_function_names;
         for (const Function& function : optimized_module.functions) {
             Module allocation_unit;
             allocation_unit.name = optimized_module.name;
@@ -1097,11 +1098,13 @@ public:
             std::string ir_assembly;
             if (ir_allocation.success &&
                 ir_allocation.spill_slots.empty() &&
-                emitStraightLineSsaFunction(
+                emitScalarSsaFunction(
                     function, ir_allocation, ir_assembly)) {
                 result.object.function_sections[function.name] =
                     std::move(ir_assembly);
                 ++ir_emitted_functions;
+                ir_emitted_function_names.push_back(
+                    function.name);
             } else {
                 ++target_replay_functions;
             }
@@ -1135,6 +1138,16 @@ public:
             std::to_string(ir_emitted_functions);
         result.object.metadata["target.ast_replay_functions"] =
             std::to_string(target_replay_functions);
+        std::ostringstream ir_emitted_names;
+        for (std::size_t index = 0;
+             index < ir_emitted_function_names.size(); ++index) {
+            if (index != 0) ir_emitted_names << ",";
+            ir_emitted_names
+                << ir_emitted_function_names[index];
+        }
+        result.object.metadata[
+            "target.ir_emitted_function_names"] =
+            ir_emitted_names.str();
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -1169,47 +1182,51 @@ private:
         return std::vector<int>(used.begin(), used.end());
     }
 
-    [[nodiscard]] bool emitStraightLineSsaFunction(
+    [[nodiscard]] bool emitScalarSsaFunction(
         const Function& function,
         const AllocationResult& allocation,
         std::string& assembly) {
-        if (!function.cfg_complete || function.blocks.size() != 1 ||
-            function.blocks.front().terminator.kind !=
-                TerminatorKind::Return) {
+        if (!function.cfg_complete || function.blocks.empty()) {
             return false;
         }
 
         std::map<ValueId, TypeRef> value_types;
-        for (const Instr& instr :
-             function.blocks.front().instructions) {
-            if (instr.def >= 0) value_types[instr.def] = instr.type;
-            switch (instr.opcode) {
-                case InstrOpcode::Param:
-                case InstrOpcode::Const:
-                case InstrOpcode::Copy:
-                case InstrOpcode::Add:
-                case InstrOpcode::Sub:
-                case InstrOpcode::Mul:
-                case InstrOpcode::Div:
-                case InstrOpcode::Tmod:
-                case InstrOpcode::Cvt:
-                case InstrOpcode::Cmp:
-                case InstrOpcode::Tsel:
-                case InstrOpcode::Ret:
-                case InstrOpcode::Nop:
-                    break;
-                default:
-                    return false;
-            }
-            if (instr.type.kind == TypeKind::Vector ||
-                instr.type.kind == TypeKind::Struct ||
-                instr.type.kind == TypeKind::Array ||
-                instr.type.kind == TypeKind::Owned ||
-                instr.type.kind == TypeKind::Shared) {
+        for (const BasicBlock& block : function.blocks) {
+            if (block.terminator.kind == TerminatorKind::None ||
+                block.terminator.kind == TerminatorKind::Halt) {
                 return false;
             }
+            for (const Instr& instr : block.instructions) {
+                if (instr.def >= 0)
+                    value_types[instr.def] = instr.type;
+                switch (instr.opcode) {
+                    case InstrOpcode::Param:
+                    case InstrOpcode::Const:
+                    case InstrOpcode::Copy:
+                    case InstrOpcode::Add:
+                    case InstrOpcode::Sub:
+                    case InstrOpcode::Mul:
+                    case InstrOpcode::Div:
+                    case InstrOpcode::Tmod:
+                    case InstrOpcode::Cvt:
+                    case InstrOpcode::Cmp:
+                    case InstrOpcode::Tsel:
+                    case InstrOpcode::Phi:
+                    case InstrOpcode::Ret:
+                    case InstrOpcode::Nop:
+                        break;
+                    default:
+                        return false;
+                }
+                if (instr.type.kind == TypeKind::Vector ||
+                    instr.type.kind == TypeKind::Struct ||
+                    instr.type.kind == TypeKind::Array ||
+                    instr.type.kind == TypeKind::Owned ||
+                    instr.type.kind == TypeKind::Shared) {
+                    return false;
+                }
+            }
         }
-
         auto registerFor = [&](ValueId value,
                                int& reg) {
             if (value < 0) {
@@ -1233,10 +1250,83 @@ private:
             return "r" + std::to_string(reg);
         };
 
+        const ControlFlowGraph cfg =
+            buildControlFlowGraph(function);
+        if (!cfg.invalid_targets.empty()) return false;
+        struct EdgeMove {
+            int destination = -1;
+            int source = -1;
+            TypeRef type = TypeRef::unknown();
+            bool source_is_scratch = false;
+        };
+        std::map<
+            std::pair<std::string, std::string>,
+            std::vector<EdgeMove>> edge_moves;
+        for (const BasicBlock& block : function.blocks) {
+            bool past_phis = false;
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode != InstrOpcode::Phi) {
+                    past_phis = true;
+                    continue;
+                }
+                if (past_phis || instr.def < 0) return false;
+                int destination = -1;
+                if (!registerFor(instr.def, destination))
+                    return false;
+                for (const auto& incoming :
+                     instr.phi_incoming) {
+                    int source = -1;
+                    if (!registerFor(incoming.second, source) ||
+                        !cfg.predecessors.at(block.name).count(
+                            incoming.first)) {
+                        return false;
+                    }
+                    if (destination != source) {
+                        edge_moves[
+                            {incoming.first, block.name}]
+                            .push_back(
+                                EdgeMove{
+                                    destination,
+                                    source,
+                                    instr.type,
+                                    false});
+                    }
+                }
+            }
+        }
+        for (const Instr& instr :
+             function.blocks.front().instructions) {
+            if (instr.opcode != InstrOpcode::Param)
+                continue;
+            int destination = -1;
+            if (!registerFor(instr.def, destination))
+                return false;
+            const int width =
+                usesWideT50Pair(instr.type) ? 2 : 1;
+            if (instr.aux < 0 ||
+                instr.aux + width > kRegisterArgCount) {
+                return false;
+            }
+            const int source = 13 + instr.aux;
+            if (destination != source) {
+                edge_moves[
+                    {"$params",
+                     function.blocks.front().name}]
+                    .push_back(
+                        EdgeMove{
+                            destination,
+                            source,
+                            instr.type,
+                            false});
+            }
+        }
+
         const std::vector<int> callee_saved =
             getCalleeSavedUsed(allocation, function);
+        const int parallel_copy_scratch =
+            1 + static_cast<int>(callee_saved.size());
         const int frame_words = align9(
-            1 + static_cast<int>(callee_saved.size()));
+            parallel_copy_scratch + 2);
         std::ostringstream out;
         out << function.name << ":\n";
         out << "    mov.t40 r24, " << frame_words << "\n";
@@ -1247,10 +1337,135 @@ private:
             out << "    store r" << callee_saved[index]
                 << ", sp, " << (index + 1) << "\n";
         }
+        auto widthOf = [](const TypeRef& type) {
+            return usesWideT50Pair(type) ? 2 : 1;
+        };
+        auto rangesOverlap = [](
+            int lhs, int lhs_width,
+            int rhs, int rhs_width) {
+            return lhs < rhs + rhs_width &&
+                   rhs < lhs + lhs_width;
+        };
+        auto emitParallelCopies =
+            [&](const std::string& predecessor,
+                const std::string& successor) {
+            std::vector<EdgeMove> pending =
+                edge_moves[{predecessor, successor}];
+            bool scratch_in_use = false;
+            int scratch_users = 0;
+            while (!pending.empty()) {
+                pending.erase(
+                    std::remove_if(
+                        pending.begin(), pending.end(),
+                        [&](const EdgeMove& move) {
+                            return !move.source_is_scratch &&
+                                   move.destination ==
+                                       move.source;
+                        }),
+                    pending.end());
+                if (pending.empty()) break;
+
+                std::size_t selected = pending.size();
+                for (std::size_t index = 0;
+                     index < pending.size(); ++index) {
+                    const EdgeMove& candidate =
+                        pending[index];
+                    bool destination_is_source = false;
+                    for (std::size_t other = 0;
+                         other < pending.size(); ++other) {
+                        if (index == other ||
+                            pending[other]
+                                .source_is_scratch) {
+                            continue;
+                        }
+                        if (rangesOverlap(
+                                candidate.destination,
+                                widthOf(candidate.type),
+                                pending[other].source,
+                                widthOf(pending[other].type))) {
+                            destination_is_source = true;
+                            break;
+                        }
+                    }
+                    if (!destination_is_source) {
+                        selected = index;
+                        break;
+                    }
+                }
+
+                if (selected == pending.size()) {
+                    if (scratch_in_use) return false;
+                    const EdgeMove& cycle = pending.front();
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "store", cycle.type)
+                        << " " << regName(cycle.destination)
+                        << ", sp, "
+                        << parallel_copy_scratch << "\n";
+                    const int saved_width =
+                        widthOf(cycle.type);
+                    for (EdgeMove& move : pending) {
+                        if (move.source_is_scratch)
+                            continue;
+                        if (move.source ==
+                                cycle.destination &&
+                            widthOf(move.type) ==
+                                saved_width) {
+                            move.source_is_scratch = true;
+                            ++scratch_users;
+                        } else if (rangesOverlap(
+                                       move.source,
+                                       widthOf(move.type),
+                                       cycle.destination,
+                                       saved_width)) {
+                            return false;
+                        }
+                    }
+                    if (scratch_users == 0) return false;
+                    scratch_in_use = true;
+                    continue;
+                }
+
+                EdgeMove move = pending[selected];
+                pending.erase(
+                    pending.begin() +
+                    static_cast<std::ptrdiff_t>(
+                        selected));
+                if (move.source_is_scratch) {
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "load", move.type)
+                        << " " << regName(move.destination)
+                        << ", sp, "
+                        << parallel_copy_scratch << "\n";
+                    --scratch_users;
+                    if (scratch_users == 0)
+                        scratch_in_use = false;
+                } else {
+                    out << "    copy"
+                        << (widthOf(move.type) == 2
+                                ? ".t50"
+                                : "")
+                        << " " << regName(move.destination)
+                        << ", " << regName(move.source)
+                        << "\n";
+                }
+            }
+            return !scratch_in_use;
+        };
+        if (!emitParallelCopies(
+                "$params",
+                function.blocks.front().name)) {
+            return false;
+        }
 
         bool emitted_return = false;
-        for (const Instr& instr :
-             function.blocks.front().instructions) {
+        for (std::size_t block_index = 0;
+             block_index < function.blocks.size(); ++block_index) {
+            const BasicBlock& block =
+                function.blocks[block_index];
+            out << block.name << ":\n";
+            for (const Instr& instr : block.instructions) {
             int destination = -1;
             if (instr.def >= 0 &&
                 !registerFor(instr.def, destination)) {
@@ -1267,20 +1482,9 @@ private:
                     : std::string(ir::suffix(instr.type.scalar));
             switch (instr.opcode) {
                 case InstrOpcode::Param: {
-                    const int width = usesWideT50Pair(instr.type)
-                        ? 2
-                        : 1;
-                    if (instr.aux < 0 ||
-                        instr.aux + width > kRegisterArgCount) {
-                        return false;
-                    }
-                    const int source = 13 + instr.aux;
-                    if (destination != source) {
-                        out << "    copy"
-                            << (width == 2 ? ".t50" : "")
-                            << " " << regName(destination)
-                            << ", " << regName(source) << "\n";
-                    }
+                    // Parameters are assigned as one parallel ABI copy set
+                    // before the entry block so overlapping r13-r18 sources
+                    // cannot be clobbered by an earlier destination.
                     break;
                 }
                 case InstrOpcode::Const:
@@ -1385,6 +1589,9 @@ private:
                         << ", " << regName(positive) << "\n";
                     break;
                 }
+                case InstrOpcode::Phi:
+                    // Materialized on predecessor edges after allocation.
+                    break;
                 case InstrOpcode::Ret: {
                     if (instr.args.size() > 1) return false;
                     if (!instr.args.empty()) {
@@ -1400,6 +1607,8 @@ private:
                                 << "\n";
                         }
                     }
+                    out << "    jmp " << function.name
+                        << "_return\n";
                     emitted_return = true;
                     break;
                 }
@@ -1408,9 +1617,67 @@ private:
                 default:
                     return false;
             }
+            }
+            switch (block.terminator.kind) {
+                case TerminatorKind::Return:
+                    break;
+                case TerminatorKind::Jump:
+                    if (!emitParallelCopies(
+                            block.name,
+                            block.terminator.target)) {
+                        return false;
+                    }
+                    out << "    jmp "
+                        << block.terminator.target << "\n";
+                    break;
+                case TerminatorKind::Branch3: {
+                    int condition = -1;
+                    if (!registerFor(
+                            block.terminator.condition,
+                            condition)) {
+                        return false;
+                    }
+                    const auto& successors =
+                        cfg.successors.at(block.name);
+                    if (successors.size() == 1) {
+                        const std::string& successor =
+                            *successors.begin();
+                        if (!emitParallelCopies(
+                                block.name, successor)) {
+                            return false;
+                        }
+                        out << "    jmp " << successor
+                            << "\n";
+                        break;
+                    }
+                    for (const std::string& successor :
+                         successors) {
+                        if (!edge_moves[
+                                 {block.name, successor}]
+                                 .empty()) {
+                            // This is a critical edge. It must be split
+                            // before edge-local phi copies can be emitted.
+                            return false;
+                        }
+                    }
+                    out << "    brn " << regName(condition)
+                        << ", "
+                        << block.terminator.target_neg << "\n";
+                    out << "    brz " << regName(condition)
+                        << ", "
+                        << block.terminator.target_zero << "\n";
+                    out << "    jmp "
+                        << block.terminator.target_pos << "\n";
+                    break;
+                }
+                case TerminatorKind::None:
+                case TerminatorKind::Halt:
+                    return false;
+            }
         }
         if (!emitted_return) return false;
 
+        out << function.name << "_return:\n";
         for (std::size_t index = 0;
              index < callee_saved.size(); ++index) {
             out << "    load r" << callee_saved[index]
@@ -4774,6 +5041,7 @@ inline int runLoopInvariantCodeMotion(Function& fn) {
                     if (instr.def < 0 || !isPureInstruction(instr) ||
                         instr.opcode == InstrOpcode::Const ||
                         instr.opcode == InstrOpcode::Copy ||
+                        instr.opcode == InstrOpcode::Phi ||
                         instr.opcode == InstrOpcode::Nop) {
                         continue;
                     }

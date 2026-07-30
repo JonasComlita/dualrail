@@ -262,6 +262,9 @@ void testIfElseStatements() {
         }
     }
     expect(compiled.success, "if/else source compiles");
+    expect(std::stoi(compiled.object.metadata.at(
+               "target.ir_emitted_functions")) >= 1,
+           "verified multi-block scalar function emits from SSA IR");
     expect(contains(compiled.assembly, "if_then"), "if lowering emits then label");
     expect(contains(compiled.assembly, "if_else"), "if lowering emits else label");
     const auto classify_ir = std::find_if(
@@ -922,6 +925,116 @@ void testOptimizerAndGraphColoringDetails() {
                    "source-level mem2reg differential image halts");
             expect(regLong(vm, 13) == 3,
                    "optimized-IR source retains AST replay semantics");
+        }
+    }
+
+    {
+        const std::string source = R"(
+            fn main() -> t40 {
+              var i: t40 = 0;
+              while 3 - i > 0 {
+                i = i + 1;
+              }
+              return i;
+            }
+        )";
+        CompileResult compiled =
+            compileSource("source_loop_phi.trit", source);
+        expect(compiled.success,
+               "source loop-phi program compiles");
+        bool saw_phi = false;
+        for (const BasicBlock& block :
+             compiled.optimized_module.functions[0].blocks) {
+            for (const Instr& instr : block.instructions)
+                saw_phi =
+                    saw_phi ||
+                    instr.opcode == InstrOpcode::Phi;
+        }
+        expect(saw_phi,
+               "source loop produces an optimized SSA phi");
+        expect(
+            compiled.object.metadata.at(
+                "target.ir_emitted_functions") == "1" &&
+            compiled.object.metadata.at(
+                "target.ast_replay_functions") == "0",
+            "loop phi lowers through edge-local IR copies");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source loop-phi IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source loop-phi IR image loads");
+            const auto run = sandbox::vm::run(vm, 512);
+            expect(run.halted(),
+                   "source loop-phi IR image halts");
+            expect(regLong(vm, 13) == 3,
+                   "edge-local phi copies preserve loop semantics");
+        }
+    }
+
+    {
+        const std::string source = R"(
+            fn choose(x: t40) -> t40 {
+              var a: t40 = 1;
+              var b: t40 = 2;
+              if x > 0 {
+                a = 10;
+                b = 20;
+              } else {
+                a = 30;
+                b = 40;
+              }
+              return a + b;
+            }
+
+            fn main() -> t40 {
+              return choose(1) + choose(0);
+            }
+        )";
+        CompileResult compiled =
+            compileSource("source_multi_phi.trit", source);
+        expect(compiled.success,
+               "source multi-phi program compiles");
+        const auto choose = std::find_if(
+            compiled.optimized_module.functions.begin(),
+            compiled.optimized_module.functions.end(),
+            [](const Function& fn) {
+                return fn.name == "choose";
+            });
+        int phi_count = 0;
+        if (choose !=
+            compiled.optimized_module.functions.end()) {
+            for (const BasicBlock& block : choose->blocks)
+                for (const Instr& instr :
+                     block.instructions)
+                    if (instr.opcode ==
+                        InstrOpcode::Phi) {
+                        ++phi_count;
+                    }
+        }
+        expect(phi_count == 2,
+               "block-local CSE preserves distinct simultaneous phis");
+        expect(compiled.object.metadata.at(
+                   "target.ir_emitted_function_names")
+                   .find("choose") != std::string::npos,
+               "multi-phi function emits from optimized SSA");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source multi-phi IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source multi-phi IR image loads");
+            const auto run = sandbox::vm::run(vm, 1024);
+            expect(run.halted(),
+                   "source multi-phi IR image halts");
+            expect(regLong(vm, 13) == 100,
+                   "parallel phi copies preserve both merged values");
         }
     }
 }
@@ -1733,6 +1846,16 @@ void testTclTernaryErgonomicsExtensions() {
         if (linked.success) {
             expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled), "split buffer test VM image loads");
             const auto result = sandbox::vm::run(vm, 500000);
+            if (!result.halted()) {
+                std::cout << "SPLIT DEBUG status="
+                          << static_cast<int>(result.status)
+                          << " pc=" << vm.pc
+                          << " cause=" << vm.cause
+                          << " ir_functions="
+                          << compiled.object.metadata.at(
+                                 "target.ir_emitted_function_names")
+                          << "\n";
+            }
             expect(result.halted(), "split buffer test halts");
             expect(regLong(vm, 13) == 1, "SplitBuf push/pop and zero-zone steal operations work correctly");
         }
