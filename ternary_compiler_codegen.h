@@ -3054,7 +3054,17 @@ private:
                 diag("address-of requires an addressable place", expr.span);
                 return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
             }
+            ValueId place_value = -1;
+            const auto current =
+                ctx.reg_to_value.find(place.reg);
+            if (current != ctx.reg_to_value.end())
+                place_value = current->second;
             ValueId id = ctx.value(InstrOpcode::AddrOf, TypeRef::pointer(place.type), expr.span, place.reg);
+            if (ctx.block &&
+                !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    place_value};
+            }
             return ExprCode{place.reg, TypeRef::pointer(place.type), false, id};
         }
         if (expr.text == "*") {
@@ -3079,6 +3089,11 @@ private:
                      " r" + std::to_string(out) + ", r" +
                      std::to_string(ptr.reg) + ", 0");
             ValueId id = ctx.value(InstrOpcode::Deref, elem, expr.span, out);
+            if (ctx.block &&
+                !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    ptr.value};
+            }
             return ExprCode{out, elem, false, id};
         }
         diag("unsupported unary operator '" + expr.text + "'", expr.span);
@@ -3099,9 +3114,26 @@ private:
             ctx.block->instructions.back().imm = local.offset;
         }
         ctx.line("add.t40 r" + std::to_string(reg) + ", sp, r" + std::to_string(off));
-        ctx.value(InstrOpcode::AddrOf, TypeRef::pointer(local.type), SourceSpan{}, reg);
+        const ValueId address_id =
+            ctx.value(
+                InstrOpcode::AddrOf,
+                TypeRef::pointer(local.type),
+                SourceSpan{}, reg);
         if (ctx.block && !ctx.block->instructions.empty()) {
-            ctx.block->instructions.back().args = {off_id};
+            ctx.block->instructions.back().args = {
+                isAggregateType(local.type)
+                    ? local.ir_address
+                    : off_id};
+        }
+        if (ctx.dry_run &&
+            !isAggregateType(local.type)) {
+            // Scalar local loads/stores use the virtual frame index directly
+            // so mem2reg can reason about the allocation. The target-only
+            // address calculation above remains for value-ID parity with
+            // legacy replay and is dead unless unary '&' consumes it.
+            ctx.reg_to_value[reg] = local.ir_address;
+        } else {
+            ctx.reg_to_value[reg] = address_id;
         }
         ctx.release(off);
         return reg;
@@ -4357,6 +4389,17 @@ inline void addInterferenceEdge(
     std::set<std::pair<ValueId, ValueId>> moveEdges;
     std::set<ValueId> liveAcrossCalls;
     std::set<ValueId> spillTemporaries;
+    std::set<ValueId> frameValues;
+    for (const Function& fn : module.functions) {
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode == InstrOpcode::Alloca &&
+                    instr.def >= 0) {
+                    frameValues.insert(instr.def);
+                }
+            }
+        }
+    }
 
     for (const auto& fn : module.functions) {
         const ControlFlowGraph cfg = buildControlFlowGraph(fn);
@@ -4367,39 +4410,55 @@ inline void addInterferenceEdge(
                 block_liveness.live_out.count(block.name)
                     ? block_liveness.live_out.at(block.name)
                     : std::set<ValueId>{};
-            if (block.terminator.condition >= 0) live.insert(block.terminator.condition);
+            for (ValueId frame : frameValues)
+                live.erase(frame);
+            if (block.terminator.condition >= 0 &&
+                !frameValues.count(
+                    block.terminator.condition)) {
+                live.insert(block.terminator.condition);
+            }
             for (auto it = block.instructions.rbegin(); it != block.instructions.rend(); ++it) {
                 const Instr& instr = *it;
                 if (instr.opcode == InstrOpcode::Call || instr.opcode == InstrOpcode::CallR ||
                     instr.opcode == InstrOpcode::Syscall) {
-                    liveAcrossCalls.insert(live.begin(), live.end());
+                    for (ValueId value : live) {
+                        if (!frameValues.count(value))
+                            liveAcrossCalls.insert(value);
+                    }
                 }
                 std::vector<ValueId> uses;
                 for (ValueId arg : instr.args) {
-                    if (arg >= 0) uses.push_back(arg);
+                    if (arg >= 0 && !frameValues.count(arg))
+                        uses.push_back(arg);
                 }
                 for (std::size_t i = 0; i < uses.size(); ++i) {
                     for (std::size_t j = i + 1; j < uses.size(); ++j) {
                         addInterferenceEdge(graph, uses[i], uses[j]);
                     }
                 }
-                if (instr.def >= 0) {
+                if (instr.def >= 0 &&
+                    !frameValues.count(instr.def)) {
                     valueTypes[instr.def] = instr.type;
                     if (instr.spill_temporary)
                         spillTemporaries.insert(instr.def);
                     graph[instr.def];
                     for (ValueId value : live) addInterferenceEdge(graph, instr.def, value);
                     live.erase(instr.def);
+                } else if (instr.def >= 0) {
+                    live.erase(instr.def);
                 }
                 if (instr.opcode == InstrOpcode::Copy && instr.def >= 0 &&
-                    instr.args.size() == 1 && instr.args[0] >= 0) {
+                    !frameValues.count(instr.def) &&
+                    instr.args.size() == 1 && instr.args[0] >= 0 &&
+                    !frameValues.count(instr.args[0])) {
                     ValueId a = instr.def;
                     ValueId b = instr.args[0];
                     if (a > b) std::swap(a, b);
                     moveEdges.insert({a, b});
                 }
                 for (ValueId arg : instr.args) {
-                    if (arg >= 0) live.insert(arg);
+                    if (arg >= 0 && !frameValues.count(arg))
+                        live.insert(arg);
                 }
             }
         }
@@ -4462,14 +4521,21 @@ inline void addInterferenceEdge(
                 weight *= 10;
             }
             for (const Instr& instr : block.instructions) {
-                if (instr.def >= 0) spill_cost[instr.def] += weight;
+                if (instr.def >= 0 &&
+                    !frameValues.count(instr.def))
+                    spill_cost[instr.def] += weight;
                 for (ValueId arg : instr.args)
-                    if (arg >= 0) spill_cost[arg] += weight;
+                    if (arg >= 0 &&
+                        !frameValues.count(arg))
+                        spill_cost[arg] += weight;
                 for (const auto& incoming : instr.phi_incoming)
-                    if (incoming.second >= 0)
+                    if (incoming.second >= 0 &&
+                        !frameValues.count(incoming.second))
                         spill_cost[incoming.second] += weight;
             }
-            if (block.terminator.condition >= 0)
+            if (block.terminator.condition >= 0 &&
+                !frameValues.count(
+                    block.terminator.condition))
                 spill_cost[block.terminator.condition] += weight;
         }
     }

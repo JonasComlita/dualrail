@@ -737,6 +737,34 @@ void testOptimizerAndGraphColoringDetails() {
     expect(allocation.interference_edges > 0, "allocator builds interference graph");
     expect(allocation.spills > 0, "allocator reports stack spills under pressure");
 
+    Module frame_index_module;
+    frame_index_module.name = "frame_index";
+    Function frame_index_function;
+    frame_index_function.name = "frame_index";
+    BasicBlock frame_index_block;
+    frame_index_block.name = "entry";
+    frame_index_block.instructions.push_back(
+        Instr{1, InstrOpcode::Alloca,
+              TypeRef::numeric(sandbox::ir::Type::T40)});
+    frame_index_block.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40),
+              {}, 7});
+    frame_index_block.instructions.push_back(
+        Instr{-1, InstrOpcode::Store,
+              TypeRef::voidType(), {1, 2}});
+    frame_index_block.terminator.kind =
+        TerminatorKind::Return;
+    frame_index_function.blocks.push_back(
+        frame_index_block);
+    frame_index_module.functions.push_back(
+        frame_index_function);
+    const AllocationResult frame_index_allocation =
+        allocateRegisters(frame_index_module);
+    expect(frame_index_allocation.success &&
+               !frame_index_allocation.scalar_registers.count(1),
+           "virtual frame indices consume no physical graph color");
+
     Module rewrite_pressure;
     rewrite_pressure.name = "rewrite_pressure";
     Function rewrite_fn;
@@ -898,6 +926,50 @@ void testOptimizerAndGraphColoringDetails() {
            "mem2reg removes promoted alloca/load/store operations");
     expect(verifyModule(mem2reg).empty(),
            "mem2reg output passes SSA dominance verification");
+
+    Module escaped_mem2reg;
+    escaped_mem2reg.name = "escaped_mem2reg";
+    Function escaped_fn;
+    escaped_fn.name = "escaped";
+    BasicBlock escaped_entry;
+    escaped_entry.name = "entry";
+    escaped_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Alloca,
+              TypeRef::numeric(sandbox::ir::Type::T40)});
+    escaped_entry.instructions.push_back(
+        Instr{2, InstrOpcode::AddrOf,
+              TypeRef::pointer(
+                  TypeRef::numeric(
+                      sandbox::ir::Type::T40)),
+              {1}});
+    Instr escaped_sink;
+    escaped_sink.opcode = InstrOpcode::Call;
+    escaped_sink.args = {2};
+    escaped_sink.symbol = "sink";
+    escaped_sink.effect = Effect::Control;
+    escaped_entry.instructions.push_back(
+        escaped_sink);
+    escaped_entry.terminator.kind =
+        TerminatorKind::Return;
+    escaped_fn.blocks.push_back(escaped_entry);
+    escaped_mem2reg.functions.push_back(escaped_fn);
+    const OptimizerStats escaped_stats =
+        optimizeModule(
+            escaped_mem2reg,
+            OptimizationLevel::Basic,
+            options);
+    expect(escaped_stats.mem2reg_promotions == 0,
+           "address-taken allocas remain in memory");
+    expect(std::any_of(
+               escaped_mem2reg.functions[0]
+                   .blocks[0].instructions.begin(),
+               escaped_mem2reg.functions[0]
+                   .blocks[0].instructions.end(),
+               [](const Instr& instr) {
+                   return instr.opcode ==
+                          InstrOpcode::Alloca;
+               }),
+           "alias-blocked promotion retains the escaped frame object");
 
     Module loop_mem2reg;
     loop_mem2reg.name = "loop_mem2reg";
