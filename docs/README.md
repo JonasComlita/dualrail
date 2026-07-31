@@ -14,6 +14,10 @@ The project namespace is `sandbox::` in C++, and `trit` in file extensions (`.tr
 For a dependency-ordered, file-by-file review and optimization plan, use
 [`STACK_REVIEW_ORDER.md`](STACK_REVIEW_ORDER.md).
 
+For the agent-sized TreatCode platform implementation plans and objective
+completion gates, use
+[`11_TreatCode_Platform/PLAN_INDEX.md`](11_TreatCode_Platform/PLAN_INDEX.md).
+
 ---
 
 ## Layer Map (Bottom to Top)
@@ -86,6 +90,11 @@ For a dependency-ordered, file-by-file review and optimization plan, use
 - **[10_Benchmarks/system_benchmark_plan.md](10_Benchmarks/system_benchmark_plan.md)** - Doom-class and BitNet-class benchmark plan
 - **[10_Benchmarks/doom.md](10_Benchmarks/doom.md)** - Interactive OS benchmark target
 - **[10_Benchmarks/bitnet.md](10_Benchmarks/bitnet.md)** - Inference and data-movement benchmark target
+
+### TreatCode Platform
+- **[11_TreatCode_Platform/README.md](11_TreatCode_Platform/README.md)** - Program purpose and execution rules
+- **[11_TreatCode_Platform/PLAN_INDEX.md](11_TreatCode_Platform/PLAN_INDEX.md)** - Bounded plan dependency order
+- **[11_TreatCode_Platform/COMPLETION_PROTOCOL.md](11_TreatCode_Platform/COMPLETION_PROTOCOL.md)** - Verifiable completion requirements
 
 ---
 

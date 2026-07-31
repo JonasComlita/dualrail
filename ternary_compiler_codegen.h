@@ -1341,6 +1341,14 @@ private:
                     case InstrOpcode::SpillStore:
                     case InstrOpcode::Call:
                     case InstrOpcode::Syscall:
+                    case InstrOpcode::Wait:
+                    case InstrOpcode::TlbInv:
+                    case InstrOpcode::Fence:
+                    case InstrOpcode::Tldr:
+                    case InstrOpcode::Tstr:
+                    case InstrOpcode::Csrr:
+                    case InstrOpcode::Csrw:
+                    case InstrOpcode::Csrrw:
                     case InstrOpcode::Ret:
                     case InstrOpcode::Nop:
                         break;
@@ -2008,6 +2016,102 @@ private:
                 case InstrOpcode::Phi:
                     // Materialized on predecessor edges after allocation.
                     break;
+                case InstrOpcode::Wait:
+                    if (!instr.args.empty()) return false;
+                    out << "    wait\n";
+                    break;
+                case InstrOpcode::Fence:
+                    if (!instr.args.empty() ||
+                        !isa::isAtomicOrder(instr.aux)) {
+                        return false;
+                    }
+                    out << "    fence"
+                        << ir::memoryOrderSuffix(instr.aux)
+                        << "\n";
+                    break;
+                case InstrOpcode::Tldr: {
+                    int address = -1;
+                    if (instr.args.size() != 1 ||
+                        !isa::isAtomicOrder(instr.aux) ||
+                        !argumentRegister(0, address)) {
+                        return false;
+                    }
+                    out << "    tldr"
+                        << ir::memoryOrderSuffix(instr.aux)
+                        << " " << regName(destination)
+                        << ", " << regName(address) << "\n";
+                    break;
+                }
+                case InstrOpcode::Tstr: {
+                    int address = -1;
+                    int desired = -1;
+                    int expected = -1;
+                    if (instr.args.size() != 3 ||
+                        !isa::isAtomicOrder(instr.aux) ||
+                        !argumentRegister(0, address) ||
+                        !argumentRegister(1, desired) ||
+                        !argumentRegister(2, expected)) {
+                        return false;
+                    }
+                    out << "    tstr"
+                        << ir::memoryOrderSuffix(instr.aux)
+                        << " " << regName(destination)
+                        << ", " << regName(address)
+                        << ", " << regName(desired)
+                        << ", " << regName(expected) << "\n";
+                    break;
+                }
+                case InstrOpcode::Csrr:
+                    if (!instr.args.empty() ||
+                        !isa::isValidCSR(instr.aux)) {
+                        return false;
+                    }
+                    out << "    csrr "
+                        << regName(destination) << ", "
+                        << isa::csrToString(instr.aux)
+                        << "\n";
+                    break;
+                case InstrOpcode::Csrw: {
+                    int source = -1;
+                    if (instr.args.size() != 1 ||
+                        !isa::isValidCSR(instr.aux) ||
+                        !argumentRegister(0, source)) {
+                        return false;
+                    }
+                    out << "    csrw "
+                        << isa::csrToString(instr.aux)
+                        << ", " << regName(source) << "\n";
+                    break;
+                }
+                case InstrOpcode::Csrrw: {
+                    int source = -1;
+                    if (instr.args.size() != 1 ||
+                        !isa::isValidCSR(instr.aux) ||
+                        !argumentRegister(0, source)) {
+                        return false;
+                    }
+                    out << "    csrrw "
+                        << regName(destination) << ", "
+                        << isa::csrToString(instr.aux)
+                        << ", " << regName(source) << "\n";
+                    break;
+                }
+                case InstrOpcode::TlbInv: {
+                    int address = -1;
+                    int asid = -1;
+                    int scope = -1;
+                    if (instr.args.size() != 3 ||
+                        !argumentRegister(0, address) ||
+                        !argumentRegister(1, asid) ||
+                        !argumentRegister(2, scope)) {
+                        return false;
+                    }
+                    out << "    tlbinv "
+                        << regName(address) << ", "
+                        << regName(asid) << ", "
+                        << regName(scope) << "\n";
+                    break;
+                }
                 case InstrOpcode::Call: {
                     if (!emitParallelMoveSet(
                             edge_moves[

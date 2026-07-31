@@ -364,7 +364,7 @@ void testTypeDiagnostics() {
         const std::string src = R"(
             fn main() -> t40 {
               unsafe {
-                let cause_value = csr_read(cause);
+                csr_read(cause);
                 fence(1);
               }
               return 0;
@@ -372,25 +372,59 @@ void testTypeDiagnostics() {
         )";
         CompileResult compiled = compileSource("phase7_unsafe_ok.trit", src);
         expect(compiled.success, "raw CSR intrinsic inside unsafe compiles");
+        expect(compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+               "CSR and fence intrinsics emit solely from optimized IR");
         expect(contains(compiled.assembly, "csrr"), "unsafe csr_read lowers to CSRR");
         expect(contains(compiled.assembly, "fence.+1"), "unsafe fence lowers memory order");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "CSR/fence optimized IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "CSR/fence optimized IR image loads");
+            expect(sandbox::vm::run(vm, 256).halted(),
+                   "CSR/fence optimized IR image halts");
+        }
     }
 
     {
         const std::string src = R"(
             fn main() -> t40 {
-              var addr: t40 = 12;
               unsafe {
-                let old = tldr(addr, 1);
-                let status = tstr(addr, 33, old, -1);
+                let old = tldr(12, 1);
+                tstr(12, 33, old, -1);
               }
               return 0;
             }
         )";
         CompileResult compiled = compileSource("phase7_atomic.trit", src);
         expect(compiled.success, "raw atomic intrinsics inside unsafe compile");
+        expect(compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+               "ternary atomic intrinsics emit solely from optimized IR");
         expect(contains(compiled.assembly, "tldr.+1"), "unsafe tldr lowers memory order");
         expect(contains(compiled.assembly, "tstr.-1"), "unsafe tstr lowers memory order");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "ternary atomic optimized IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "ternary atomic optimized IR image loads");
+            expect(sandbox::vm::run(vm, 256).halted(),
+                   "ternary atomic optimized IR image halts");
+            const auto [stored, fault] =
+                vm.dmem.load(12);
+            expect(fault ==
+                       sandbox::vm::MemFaultCode::OK &&
+                       sandbox::vm::ops::toLong(stored) ==
+                           33,
+                   "ternary atomic optimized IR updates memory");
+        }
     }
 
     {

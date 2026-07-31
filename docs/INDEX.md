@@ -6,6 +6,9 @@ Sorted by architectural layer (bottom-up).
 For the executable review sequence, subsystem internals, optimization questions,
 and validation gates, see [`STACK_REVIEW_ORDER.md`](STACK_REVIEW_ORDER.md).
 
+For the bounded TreatCode platform work packages and completion protocol, see
+[`11_TreatCode_Platform/PLAN_INDEX.md`](11_TreatCode_Platform/PLAN_INDEX.md).
+
 ---
 
 ## Root Directory
