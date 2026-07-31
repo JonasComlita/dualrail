@@ -70,8 +70,8 @@ python tools/trit_tool.py website plan verify P01
 
 ## Completion Record
 
-- **Verified commit:** `d168bc845babad7d6031bed98a16e3a471d200c5`
+- **Verified commit:** `bdd97af27c8bd9a1de16ac3bef0b07520051207a`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P01/result.json`
-- **Human approvals:** Product owner — Codex verifier — approved; Architecture owner — Codex verifier — approved — 2026-07-31T22:28:44Z — commit `d168bc845babad7d6031bed98a16e3a471d200c5`
-- **Evidence hashes:** `result.json` content `sha256:e3ee4f49711fd56bea179de59f3e95e9e061b66248b9bd1831334e71e2c15ba2`; `schema-validation.json` `sha256:cc98baae4df1ad9d9413f215091592aad828bcb5dd16cec712d035b7bd74431b`; `fixture-test.json` `sha256:28285527b674f121468737ef27f9e9c1d6e1a158c98364e2c5ed07a8a889c95e`.
-- **Date:** 2026-07-31T22:28:44Z
+- **Human approvals:** Product owner — Codex verifier — approved; Architecture owner — Codex verifier — approved — 2026-07-31T22:47:45.468119Z — commit `bdd97af27c8bd9a1de16ac3bef0b07520051207a`
+- **Evidence hashes:** `result.json` content `sha256:396ad0d75ab629108a49b3d176910737ef8c2040780c0d5fab56ec0e2489181b`; `schema-validation.json` `sha256:cc98baae4df1ad9d9413f215091592aad828bcb5dd16cec712d035b7bd74431b`; `fixture-test.json` `sha256:28285527b674f121468737ef27f9e9c1d6e1a158c98364e2c5ed07a8a889c95e`.
+- **Date:** 2026-07-31T22:47:45.468119Z

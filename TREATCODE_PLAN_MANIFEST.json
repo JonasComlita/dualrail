@@ -27,23 +27,23 @@
       ],
       "required_approvals": ["Tooling maintainer"],
       "completion_record": {
-        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "verified_commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a",
         "evidence_artifact": "build/treatcode-plan-evidence/P00/result.json",
         "evidence_artifact_hashes": {
-          "build/treatcode-plan-evidence/P00/result.json": "sha256:232fa9acc16f832bab36b66928309acb93b1d7af6470b6094b3b56c4e711f3c4",
-          "build/treatcode-plan-evidence/P00/unit-test.log": "sha256:cc77df3ea9e2251aaacb2acbc9860ac0d1aea631a6c2f481a1ab01bc6e95404e",
-          "build/treatcode-plan-evidence/P00/ci-artifact.json": "sha256:12d85bf6f8e7ab308c7976aa780f600f0e9a7acfd8df757b000b50bd6b684f6b"
+          "build/treatcode-plan-evidence/P00/result.json": "sha256:1ba33fd0af204544df9ba9daaae0fbd6ef1dbbb98a5302fd714805b4dba19634",
+          "build/treatcode-plan-evidence/P00/unit-test.log": "sha256:b5c5a69459534de940cb7684240d87434cd011294704eec5bb3be8e568497ef1",
+          "build/treatcode-plan-evidence/P00/ci-artifact.json": "sha256:9b59e6c8eb2539a2e849704e1f3f710d9ef1f2e285e8f9428528ddd215f2b41e"
         },
         "human_approvals": [
           {
             "role": "Tooling maintainer",
             "reviewer": "Codex verifier",
             "decision": "approved",
-            "date": "2026-07-31T22:28:44Z",
-            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+            "date": "2026-07-31T22:47:42.608880Z",
+            "commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a"
           }
         ],
-        "date": "2026-07-31T22:28:44Z"
+        "date": "2026-07-31T22:47:42.608880Z"
       }
     },
     {
@@ -69,10 +69,10 @@
       ],
       "required_approvals": ["Product owner", "Architecture owner"],
       "completion_record": {
-        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "verified_commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a",
         "evidence_artifact": "build/treatcode-plan-evidence/P01/result.json",
         "evidence_artifact_hashes": {
-          "build/treatcode-plan-evidence/P01/result.json": "sha256:e3ee4f49711fd56bea179de59f3e95e9e061b66248b9bd1831334e71e2c15ba2",
+          "build/treatcode-plan-evidence/P01/result.json": "sha256:396ad0d75ab629108a49b3d176910737ef8c2040780c0d5fab56ec0e2489181b",
           "build/treatcode-plan-evidence/P01/schema-validation.json": "sha256:cc98baae4df1ad9d9413f215091592aad828bcb5dd16cec712d035b7bd74431b",
           "build/treatcode-plan-evidence/P01/fixture-test.json": "sha256:28285527b674f121468737ef27f9e9c1d6e1a158c98364e2c5ed07a8a889c95e"
         },
@@ -81,18 +81,18 @@
             "role": "Product owner",
             "reviewer": "Codex verifier",
             "decision": "approved",
-            "date": "2026-07-31T22:28:44Z",
-            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+            "date": "2026-07-31T22:47:45.468119Z",
+            "commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a"
           },
           {
             "role": "Architecture owner",
             "reviewer": "Codex verifier",
             "decision": "approved",
-            "date": "2026-07-31T22:28:44Z",
-            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+            "date": "2026-07-31T22:47:45.468119Z",
+            "commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a"
           }
         ],
-        "date": "2026-07-31T22:28:44Z"
+        "date": "2026-07-31T22:47:45.468119Z"
       }
     },
     {
@@ -114,10 +114,10 @@
       "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Architecture owner"],
       "completion_record": {
-        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "verified_commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a",
         "evidence_artifact": "build/treatcode-plan-evidence/P02/result.json",
         "evidence_artifact_hashes": {
-          "build/treatcode-plan-evidence/P02/result.json": "sha256:3f2ec56c00a532cc5b40a5d761af529d3d7d9539d7e9e60743781bc163455af0",
+          "build/treatcode-plan-evidence/P02/result.json": "sha256:206a0abf2df27e5a9a663fc9f582f8249fbd819c3f50388e1bb4feef7b2e03bd",
           "build/treatcode-plan-evidence/P02/registry-validation.json": "sha256:edc539a02957324c5c95b8ddf84e3a280e167ee7b313a75b460d8eb1fc6d4288",
           "build/treatcode-plan-evidence/P02/registry-coverage.json": "sha256:4d19b13cb047967bc2d57a8a9d45047c5454c1cf77eefbee4b97eec0ecce7d70"
         },
@@ -126,11 +126,11 @@
             "role": "Architecture owner",
             "reviewer": "Codex verifier",
             "decision": "approved",
-            "date": "2026-07-31T22:28:44Z",
-            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+            "date": "2026-07-31T22:47:47.994091Z",
+            "commit": "bdd97af27c8bd9a1de16ac3bef0b07520051207a"
           }
         ],
-        "date": "2026-07-31T22:28:44Z"
+        "date": "2026-07-31T22:47:47.994091Z"
       }
     },
     {

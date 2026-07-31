@@ -72,8 +72,8 @@ python tools/trit_tool.py website plan verify P02
 
 ## Completion Record
 
-- **Verified commit:** `d168bc845babad7d6031bed98a16e3a471d200c5`
+- **Verified commit:** `bdd97af27c8bd9a1de16ac3bef0b07520051207a`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P02/result.json`
-- **Human approvals:** Architecture owner — Codex verifier — approved — 2026-07-31T22:28:44Z — commit `d168bc845babad7d6031bed98a16e3a471d200c5`
-- **Evidence hashes:** `result.json` content `sha256:3f2ec56c00a532cc5b40a5d761af529d3d7d9539d7e9e60743781bc163455af0`; `registry-validation.json` `sha256:edc539a02957324c5c95b8ddf84e3a280e167ee7b313a75b460d8eb1fc6d4288`; `registry-coverage.json` `sha256:4d19b13cb047967bc2d57a8a9d45047c5454c1cf77eefbee4b97eec0ecce7d70`.
-- **Date:** 2026-07-31T22:28:44Z
+- **Human approvals:** Architecture owner — Codex verifier — approved — 2026-07-31T22:47:47.994091Z — commit `bdd97af27c8bd9a1de16ac3bef0b07520051207a`
+- **Evidence hashes:** `result.json` content `sha256:206a0abf2df27e5a9a663fc9f582f8249fbd819c3f50388e1bb4feef7b2e03bd`; `registry-validation.json` `sha256:edc539a02957324c5c95b8ddf84e3a280e167ee7b313a75b460d8eb1fc6d4288`; `registry-coverage.json` `sha256:4d19b13cb047967bc2d57a8a9d45047c5454c1cf77eefbee4b97eec0ecce7d70`.
+- **Date:** 2026-07-31T22:47:47.994091Z
