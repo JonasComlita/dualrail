@@ -1572,6 +1572,47 @@ void testPointerValidationPhaseA() {
         }
         expect(compiled.success, "valid(p) match arm promotes pointer to valid");
     }
+
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+                var value: t40 = 41;
+                let p = &value;
+                match p {
+                    null => { return -1; }
+                    unknown => { return -2; }
+                    valid(q) => { return *q + 1; }
+                }
+            }
+        )";
+        CompilerOptions stack_options;
+        stack_options.optimization =
+            OptimizationLevel::None;
+        CompileResult compiled =
+            compileSource(
+                "phaseA_stack_address_ir.trit",
+                src,
+                stack_options);
+        expect(compiled.success,
+               "address-taken scalar source compiles");
+        expect(compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+               "address-taken scalar emits solely from optimized IR");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "address-taken scalar IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "address-taken scalar IR image loads");
+            const auto run = sandbox::vm::run(vm, 512);
+            expect(run.halted(),
+                   "address-taken scalar IR image halts");
+            expect(regLong(vm, 13) == 42,
+                   "virtual frame address preserves scalar dereference semantics");
+        }
+    }
 }
 
 void testOwnershipAndAutoDropPhaseA() {

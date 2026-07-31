@@ -1199,6 +1199,101 @@ private:
             return false;
         }
 
+        std::set<ValueId> frame_indices;
+        std::set<ValueId> stack_addresses;
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode == InstrOpcode::Alloca &&
+                    instr.def >= 0) {
+                    frame_indices.insert(instr.def);
+                    stack_addresses.insert(instr.def);
+                }
+            }
+        }
+        bool address_changed = true;
+        while (address_changed) {
+            address_changed = false;
+            for (const BasicBlock& block : function.blocks) {
+                for (const Instr& instr :
+                     block.instructions) {
+                    if (instr.def < 0 ||
+                        stack_addresses.count(instr.def)) {
+                        continue;
+                    }
+                    bool derived = false;
+                    switch (instr.opcode) {
+                        case InstrOpcode::AddrOf:
+                        case InstrOpcode::Copy:
+                        case InstrOpcode::Cvt:
+                        case InstrOpcode::Add:
+                        case InstrOpcode::Sub:
+                            derived = std::any_of(
+                                instr.args.begin(),
+                                instr.args.end(),
+                                [&](ValueId argument) {
+                                    return stack_addresses.count(
+                                               argument) != 0;
+                                });
+                            break;
+                        case InstrOpcode::Phi:
+                            derived =
+                                !instr.phi_incoming.empty() &&
+                                std::all_of(
+                                    instr.phi_incoming.begin(),
+                                    instr.phi_incoming.end(),
+                                    [&](const auto& incoming) {
+                                        return stack_addresses.count(
+                                                   incoming.second) != 0;
+                                    });
+                            break;
+                        case InstrOpcode::Tsel:
+                            derived = instr.args.size() == 4 &&
+                                stack_addresses.count(
+                                    instr.args[1]) &&
+                                stack_addresses.count(
+                                    instr.args[2]) &&
+                                stack_addresses.count(
+                                    instr.args[3]);
+                            break;
+                        case InstrOpcode::Load:
+                            if (instr.args.size() == 1 &&
+                                stack_addresses.count(
+                                    instr.args[0])) {
+                                bool saw_store = false;
+                                bool all_stack = true;
+                                for (const BasicBlock& source_block :
+                                     function.blocks) {
+                                    for (const Instr& store :
+                                         source_block.instructions) {
+                                        if (store.opcode !=
+                                                InstrOpcode::Store ||
+                                            store.args.size() != 2 ||
+                                            store.args[0] !=
+                                                instr.args[0]) {
+                                            continue;
+                                        }
+                                        saw_store = true;
+                                        if (!stack_addresses.count(
+                                                store.args[1])) {
+                                            all_stack = false;
+                                        }
+                                    }
+                                }
+                                derived =
+                                    saw_store && all_stack;
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                    if (derived) {
+                        stack_addresses.insert(instr.def);
+                        address_changed = true;
+                    }
+                }
+            }
+        }
+
         std::map<ValueId, TypeRef> value_types;
         for (const BasicBlock& block : function.blocks) {
             if (block.terminator.kind == TerminatorKind::None ||
@@ -1209,6 +1304,7 @@ private:
                 if (instr.def >= 0)
                     value_types[instr.def] = instr.type;
                 switch (instr.opcode) {
+                    case InstrOpcode::Alloca:
                     case InstrOpcode::Param:
                     case InstrOpcode::Const:
                     case InstrOpcode::Copy:
@@ -1221,6 +1317,10 @@ private:
                     case InstrOpcode::Cmp:
                     case InstrOpcode::Tsel:
                     case InstrOpcode::Phi:
+                    case InstrOpcode::AddrOf:
+                    case InstrOpcode::Deref:
+                    case InstrOpcode::Load:
+                    case InstrOpcode::Store:
                     case InstrOpcode::Call:
                     case InstrOpcode::Syscall:
                     case InstrOpcode::Ret:
@@ -1228,6 +1328,13 @@ private:
                         break;
                     default:
                         return false;
+                }
+                if ((instr.opcode == InstrOpcode::Load ||
+                     instr.opcode == InstrOpcode::Store ||
+                     instr.opcode == InstrOpcode::Deref) &&
+                    (instr.args.empty() ||
+                     !stack_addresses.count(instr.args[0]))) {
+                    return false;
                 }
                 if (instr.type.kind == TypeKind::Vector ||
                     instr.type.kind == TypeKind::Struct ||
@@ -1264,6 +1371,58 @@ private:
         const ControlFlowGraph cfg =
             buildControlFlowGraph(function);
         if (!cfg.invalid_targets.empty()) return false;
+        const bool has_stack_memory = std::any_of(
+            function.blocks.begin(),
+            function.blocks.end(),
+            [](const BasicBlock& block) {
+                return std::any_of(
+                    block.instructions.begin(),
+                    block.instructions.end(),
+                    [](const Instr& instr) {
+                        return instr.opcode ==
+                                   InstrOpcode::Alloca ||
+                               instr.opcode ==
+                                   InstrOpcode::Load ||
+                               instr.opcode ==
+                                   InstrOpcode::Store ||
+                               instr.opcode ==
+                                   InstrOpcode::Deref;
+                    });
+            });
+        if (has_stack_memory) {
+            const bool has_explicit_frame_address =
+                std::any_of(
+                    function.blocks.begin(),
+                    function.blocks.end(),
+                    [&](const BasicBlock& block) {
+                        return std::any_of(
+                            block.instructions.begin(),
+                            block.instructions.end(),
+                            [&](const Instr& instr) {
+                                return instr.opcode ==
+                                           InstrOpcode::AddrOf &&
+                                       instr.args.size() == 1 &&
+                                       frame_indices.count(
+                                           instr.args[0]) != 0;
+                            });
+                    });
+            if (!has_explicit_frame_address)
+                return false;
+            for (const auto& [predecessor, successors] :
+                 cfg.successors) {
+                for (const std::string& successor :
+                     successors) {
+                    if (cfg.index.at(successor) <=
+                        cfg.index.at(predecessor)) {
+                        // Loop-carried stack state needs memory-SSA or an
+                        // equally explicit dependence model before direct
+                        // lowering. Keep replay admission visible until that
+                        // verifier and differential suite are in place.
+                        return false;
+                    }
+                }
+            }
+        }
         struct EdgeMove {
             int destination = -1;
             int source = -1;
@@ -1432,8 +1591,20 @@ private:
             getCalleeSavedUsed(allocation, function);
         const int parallel_copy_scratch =
             1 + static_cast<int>(callee_saved.size());
+        std::map<ValueId, int> frame_offsets;
+        int frame_cursor = parallel_copy_scratch + 2;
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode != InstrOpcode::Alloca ||
+                    instr.def < 0) {
+                    continue;
+                }
+                frame_offsets[instr.def] = frame_cursor;
+                frame_cursor += std::max(1, instr.aux);
+            }
+        }
         const int frame_words = align9(
-            parallel_copy_scratch + 2);
+            frame_cursor);
         std::ostringstream out;
         out << function.name << ":\n";
         out << "    mov.t40 r24, " << frame_words << "\n";
@@ -1582,19 +1753,34 @@ private:
             for (const Instr& instr : block.instructions) {
             int destination = -1;
             if (instr.def >= 0 &&
+                instr.opcode != InstrOpcode::Alloca &&
                 !registerFor(instr.def, destination)) {
                 return false;
             }
             auto argumentRegister = [&](std::size_t index,
-                                        int& reg) {
-                return index < instr.args.size() &&
-                       registerFor(instr.args[index], reg);
+                                         int& reg) {
+                if (index >= instr.args.size())
+                    return false;
+                const ValueId value = instr.args[index];
+                const auto frame =
+                    frame_offsets.find(value);
+                if (frame != frame_offsets.end()) {
+                    out << "    mov.t40 r24, "
+                        << frame->second << "\n";
+                    out << "    add.t40 r24, sp, r24\n";
+                    reg = 24;
+                    return true;
+                }
+                return registerFor(value, reg);
             };
             const std::string suffix =
                 instr.type.kind == TypeKind::Trit
                     ? "t1"
                     : std::string(ir::suffix(instr.type.scalar));
             switch (instr.opcode) {
+                case InstrOpcode::Alloca:
+                    // Virtual frame index: materialized only at a use.
+                    break;
                 case InstrOpcode::Param: {
                     // Parameters are assigned as one parallel ABI copy set
                     // before the entry block so overlapping r13-r18 sources
@@ -1626,6 +1812,52 @@ private:
                             << " " << regName(destination)
                             << ", " << regName(source) << "\n";
                     }
+                    break;
+                }
+                case InstrOpcode::AddrOf: {
+                    int source = -1;
+                    if (instr.args.size() != 1 ||
+                        !argumentRegister(0, source)) {
+                        return false;
+                    }
+                    if (destination != source) {
+                        out << "    copy "
+                            << regName(destination)
+                            << ", " << regName(source)
+                            << "\n";
+                    }
+                    break;
+                }
+                case InstrOpcode::Deref:
+                case InstrOpcode::Load: {
+                    int address = -1;
+                    if (instr.args.size() != 1 ||
+                        !argumentRegister(0, address)) {
+                        return false;
+                    }
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "load", instr.type)
+                        << " " << regName(destination)
+                        << ", " << regName(address)
+                        << ", 0\n";
+                    break;
+                }
+                case InstrOpcode::Store: {
+                    int address = -1;
+                    int source = -1;
+                    if (instr.args.size() != 2 ||
+                        !argumentRegister(0, address) ||
+                        !argumentRegister(1, source)) {
+                        return false;
+                    }
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "store",
+                               valueType(instr.args[1]))
+                        << " " << regName(source)
+                        << ", " << regName(address)
+                        << ", 0\n";
                     break;
                 }
                 case InstrOpcode::Add:
