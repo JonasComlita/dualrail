@@ -1089,6 +1089,9 @@ public:
         int ir_emitted_functions = 0;
         int target_replay_functions = 0;
         int target_critical_edges_split = 0;
+        int target_spill_rewrite_rounds = 0;
+        int target_spill_loads = 0;
+        int target_spill_stores = 0;
         std::vector<std::string> ir_emitted_function_names;
         for (const Function& function : optimized_module.functions) {
             Function target_function = function;
@@ -1099,12 +1102,18 @@ public:
             allocation_unit.functions.push_back(
                 target_function);
             const AllocationResult ir_allocation =
-                allocateRegisters(allocation_unit, options_);
+                allocateRegistersWithSpillRewrite(
+                    allocation_unit, options_, 8);
+            target_spill_rewrite_rounds +=
+                ir_allocation.spill_rewrite_rounds;
+            target_spill_loads +=
+                ir_allocation.spill_loads;
+            target_spill_stores +=
+                ir_allocation.spill_stores;
             std::string ir_assembly;
             if (ir_allocation.success &&
-                ir_allocation.spill_slots.empty() &&
                 emitScalarSsaFunction(
-                    target_function,
+                    allocation_unit.functions.front(),
                     ir_allocation,
                     ir_assembly)) {
                 result.object.function_sections[function.name] =
@@ -1147,6 +1156,13 @@ public:
             std::to_string(target_replay_functions);
         result.object.metadata["target.critical_edges_split"] =
             std::to_string(target_critical_edges_split);
+        result.object.metadata[
+            "target.spill_rewrite_rounds"] =
+            std::to_string(target_spill_rewrite_rounds);
+        result.object.metadata["target.spill_loads"] =
+            std::to_string(target_spill_loads);
+        result.object.metadata["target.spill_stores"] =
+            std::to_string(target_spill_stores);
         std::ostringstream ir_emitted_names;
         for (std::size_t index = 0;
              index < ir_emitted_function_names.size(); ++index) {
@@ -1321,6 +1337,8 @@ private:
                     case InstrOpcode::Deref:
                     case InstrOpcode::Load:
                     case InstrOpcode::Store:
+                    case InstrOpcode::SpillLoad:
+                    case InstrOpcode::SpillStore:
                     case InstrOpcode::Call:
                     case InstrOpcode::Syscall:
                     case InstrOpcode::Ret:
@@ -1603,8 +1621,33 @@ private:
                 frame_cursor += std::max(1, instr.aux);
             }
         }
+        const int spill_base = frame_cursor;
+        int spill_extent = 0;
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode == InstrOpcode::SpillLoad) {
+                    spill_extent = std::max(
+                        spill_extent,
+                        instr.aux +
+                            (usesWideT50Pair(instr.type)
+                                 ? 2
+                                 : 1));
+                } else if (
+                    instr.opcode ==
+                        InstrOpcode::SpillStore &&
+                    !instr.args.empty()) {
+                    spill_extent = std::max(
+                        spill_extent,
+                        instr.aux +
+                            (usesWideT50Pair(
+                                 valueType(instr.args[0]))
+                                 ? 2
+                                 : 1));
+                }
+            }
+        }
         const int frame_words = align9(
-            frame_cursor);
+            spill_base + spill_extent);
         std::ostringstream out;
         out << function.name << ":\n";
         out << "    mov.t40 r24, " << frame_words << "\n";
@@ -1858,6 +1901,33 @@ private:
                         << " " << regName(source)
                         << ", " << regName(address)
                         << ", 0\n";
+                    break;
+                }
+                case InstrOpcode::SpillLoad:
+                    if (instr.aux < 0) return false;
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "load", instr.type)
+                        << " " << regName(destination)
+                        << ", sp, "
+                        << (spill_base + instr.aux)
+                        << "\n";
+                    break;
+                case InstrOpcode::SpillStore: {
+                    int source = -1;
+                    if (instr.aux < 0 ||
+                        instr.args.size() != 1 ||
+                        !argumentRegister(0, source)) {
+                        return false;
+                    }
+                    out << "    "
+                        << scalarMemoryMnemonic(
+                               "store",
+                               valueType(instr.args[0]))
+                        << " " << regName(source)
+                        << ", sp, "
+                        << (spill_base + instr.aux)
+                        << "\n";
                     break;
                 }
                 case InstrOpcode::Add:

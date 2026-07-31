@@ -1255,6 +1255,72 @@ void testOptimizerAndGraphColoringDetails() {
                    "synthetic phi edge preserves branch merge semantics");
         }
     }
+
+    {
+        const std::string source = R"(
+            fn identity(x: t40) -> t40 {
+              return x;
+            }
+
+            fn main() -> t40 {
+              let v01 = identity(1);
+              let v02 = identity(2);
+              let v03 = identity(3);
+              let v04 = identity(4);
+              let v05 = identity(5);
+              let v06 = identity(6);
+              let v07 = identity(7);
+              let v08 = identity(8);
+              let v09 = identity(9);
+              let v10 = identity(10);
+              let v11 = identity(11);
+              let v12 = identity(12);
+              let v13 = identity(13);
+              let v14 = identity(14);
+              let v15 = identity(15);
+              let v16 = identity(16);
+              let v17 = identity(17);
+              let v18 = identity(18);
+              let v19 = identity(19);
+              let v20 = identity(20);
+              return v01 + v02 + v03 + v04 + v05 +
+                     v06 + v07 + v08 + v09 + v10 +
+                     v11 + v12 + v13 + v14 + v15 +
+                     v16 + v17 + v18 + v19 + v20;
+            }
+        )";
+        CompileResult compiled =
+            compileSource(
+                "source_spill_rewrite.trit",
+                source);
+        expect(compiled.success,
+               "source spill-pressure program compiles");
+        expect(compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+               "spill-pressure functions emit solely from optimized IR");
+        expect(std::stoi(compiled.object.metadata.at(
+                   "target.spill_rewrite_rounds")) > 0 &&
+               std::stoi(compiled.object.metadata.at(
+                   "target.spill_loads")) > 0 &&
+               std::stoi(compiled.object.metadata.at(
+                   "target.spill_stores")) > 0,
+               "target emission performs iterative spill rewriting");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source spill-pressure IR image links");
+        sandbox::vm::VMState vm(1024, 1024);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source spill-pressure IR image loads");
+            const auto run = sandbox::vm::run(vm, 4096);
+            expect(run.halted(),
+                   "source spill-pressure IR image halts");
+            expect(regLong(vm, 13) == 210,
+                   "spill rewrite preserves all live values");
+        }
+    }
 }
 
 void testConcurrencyFeatures() {
