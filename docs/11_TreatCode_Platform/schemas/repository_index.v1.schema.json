@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.dev/schemas/repository-index.v1.schema.json",
+  "title": "TreatCode repository ingestion index",
+  "description": "Commit-addressed repository files, symbols, provenance spans, and typed relationships.",
+  "type": "object",
+  "required": [
+    "schema",
+    "version",
+    "indexer",
+    "repository",
+    "authority",
+    "files",
+    "symbols",
+    "entities",
+    "relationships",
+    "excluded_files"
+  ],
+  "properties": {
+    "schema": {"const": "treatcode.repository-index.v1"},
+    "version": {"const": 1},
+    "indexer": {
+      "type": "object",
+      "required": ["name", "version", "parsers"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "parsers": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "repository": {
+      "type": "object",
+      "required": ["name", "commit", "inventory", "snapshot"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-fA-F]{7,64}$"},
+        "inventory": {"const": "git ls-files"},
+        "snapshot": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "authority": {
+      "type": "object",
+      "required": ["source", "untracked_policy", "generated_policy", "exclusion_rules"],
+      "properties": {
+        "source": {"type": "string"},
+        "untracked_policy": {"type": "string"},
+        "generated_policy": {"type": "string"},
+        "exclusion_rules": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": true
+    },
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+    "symbols": {"type": "array", "items": {"$ref": "#/$defs/symbol"}},
+    "entities": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}},
+    "excluded_files": {"type": "array", "items": {"type": "object"}},
+    "coverage": {"type": "object"}
+  },
+  "$defs": {
+    "span": {
+      "type": ["object", "null"],
+      "properties": {
+        "start_line": {"type": "integer", "minimum": 1},
+        "start_column": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "end_column": {"type": "integer", "minimum": 1}
+      },
+      "required": ["start_line", "start_column", "end_line", "end_column"],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository", "commit", "path", "span"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-fA-F]{7,64}$"},
+        "path": {"type": "string", "minLength": 1},
+        "span": {"$ref": "#/$defs/span"},
+        "status": {"type": "string"},
+        "role": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "id",
+        "path",
+        "language",
+        "role",
+        "authority",
+        "source_authority",
+        "index_status",
+        "content_sha256",
+        "parser",
+        "source"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^file:"},
+        "path": {"type": "string"},
+        "language": {"type": "string"},
+        "role": {"type": "string"},
+        "authority": {"type": "string"},
+        "source_authority": {"type": "boolean"},
+        "index_status": {"const": "indexed"},
+        "content_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "parser": {"type": "object"},
+        "source": {"$ref": "#/$defs/source"}
+      },
+      "additionalProperties": true
+    },
+    "symbol": {
+      "type": "object",
+      "required": ["id", "name", "kind", "path", "source", "source_span"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^symbol:"},
+        "name": {"type": "string"},
+        "kind": {"type": "string"},
+        "path": {"type": "string"},
+        "source_span": {"$ref": "#/$defs/span"},
+        "source": {"$ref": "#/$defs/source"}
+      },
+      "additionalProperties": true
+    },
+    "entity": {
+      "type": "object",
+      "required": ["id", "record_id", "kind", "path", "source"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^record:"},
+        "record_id": {"type": "string"},
+        "kind": {"type": "string"},
+        "path": {"type": "string"},
+        "source": {"$ref": "#/$defs/source"},
+        "data": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["id", "type", "from", "to", "resolution", "source"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^relationship:"},
+        "type": {
+          "type": "string",
+          "enum": [
+            "imports",
+            "includes",
+            "calls",
+            "manifest",
+            "tests",
+            "benchmarks",
+            "documents",
+            "decisions",
+            "contracts",
+            "capabilities",
+            "gaps",
+            "releases",
+            "depends_on",
+            "references"
+          ]
+        },
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "resolution": {"enum": ["resolved", "external", "unresolved"]},
+        "source": {"$ref": "#/$defs/source"},
+        "target_source": {"$ref": "#/$defs/source"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

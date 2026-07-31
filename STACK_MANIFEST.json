@@ -1,0 +1,514 @@
+{
+  "version": 1,
+  "schema": "trit.stack_manifest.v1",
+  "namespace": "trit",
+  "source_of_truth": "docs/STACK_REVIEW_ORDER.md",
+  "source_refs": [
+    {
+      "repository": "trit",
+      "commit": "d168bc8",
+      "path": "docs/STACK_REVIEW_ORDER.md",
+      "status": "resolved",
+      "role": "ordered_review_spine"
+    },
+    {
+      "repository": "trit",
+      "commit": "d168bc8",
+      "path": "ROADMAP_STATUS.json",
+      "status": "resolved",
+      "role": "current_status"
+    },
+    {
+      "repository": "trit",
+      "commit": "d168bc8",
+      "path": "KNOWN_GAPS.md",
+      "status": "resolved",
+      "role": "known_gaps"
+    }
+  ],
+  "ordered_phase_ids": [
+    "trit.stack.phase.00.authority",
+    "trit.stack.phase.01.representation",
+    "trit.stack.phase.02.isa-binary",
+    "trit.stack.phase.03.numeric-operations",
+    "trit.stack.phase.04.vm-state",
+    "trit.stack.phase.05.vm-execution",
+    "trit.stack.phase.06.assembler",
+    "trit.stack.phase.07.low-level-ir",
+    "trit.stack.phase.08.tcl-language",
+    "trit.stack.phase.09.host-compiler",
+    "trit.stack.phase.10.self-hosted-compiler",
+    "trit.stack.phase.11.runtime-sdk",
+    "trit.stack.phase.12.boot-trap",
+    "trit.stack.phase.13.kernel-foundations",
+    "trit.stack.phase.14.storage-vfs",
+    "trit.stack.phase.15.devices-services",
+    "trit.stack.phase.16.host-runtime",
+    "trit.stack.phase.17.user-space-apps",
+    "trit.stack.phase.18.images-release",
+    "trit.stack.phase.19.specialized-products",
+    "trit.stack.phase.20.closure-evidence"
+  ],
+  "dependency_edges": [
+    {"from": "trit.stack.phase.00.authority", "to": "trit.stack.phase.01.representation", "relation": "depends_on"},
+    {"from": "trit.stack.phase.01.representation", "to": "trit.stack.phase.02.isa-binary", "relation": "depends_on"},
+    {"from": "trit.stack.phase.02.isa-binary", "to": "trit.stack.phase.03.numeric-operations", "relation": "depends_on"},
+    {"from": "trit.stack.phase.02.isa-binary", "to": "trit.stack.phase.04.vm-state", "relation": "depends_on"},
+    {"from": "trit.stack.phase.03.numeric-operations", "to": "trit.stack.phase.04.vm-state", "relation": "depends_on"},
+    {"from": "trit.stack.phase.04.vm-state", "to": "trit.stack.phase.05.vm-execution", "relation": "depends_on"},
+    {"from": "trit.stack.phase.02.isa-binary", "to": "trit.stack.phase.06.assembler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.05.vm-execution", "to": "trit.stack.phase.06.assembler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.06.assembler", "to": "trit.stack.phase.07.low-level-ir", "relation": "depends_on"},
+    {"from": "trit.stack.phase.07.low-level-ir", "to": "trit.stack.phase.08.tcl-language", "relation": "depends_on"},
+    {"from": "trit.stack.phase.07.low-level-ir", "to": "trit.stack.phase.09.host-compiler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.08.tcl-language", "to": "trit.stack.phase.09.host-compiler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.08.tcl-language", "to": "trit.stack.phase.10.self-hosted-compiler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.09.host-compiler", "to": "trit.stack.phase.10.self-hosted-compiler", "relation": "depends_on"},
+    {"from": "trit.stack.phase.07.low-level-ir", "to": "trit.stack.phase.11.runtime-sdk", "relation": "depends_on"},
+    {"from": "trit.stack.phase.08.tcl-language", "to": "trit.stack.phase.11.runtime-sdk", "relation": "depends_on"},
+    {"from": "trit.stack.phase.02.isa-binary", "to": "trit.stack.phase.12.boot-trap", "relation": "depends_on"},
+    {"from": "trit.stack.phase.06.assembler", "to": "trit.stack.phase.12.boot-trap", "relation": "depends_on"},
+    {"from": "trit.stack.phase.04.vm-state", "to": "trit.stack.phase.13.kernel-foundations", "relation": "depends_on"},
+    {"from": "trit.stack.phase.07.low-level-ir", "to": "trit.stack.phase.13.kernel-foundations", "relation": "depends_on"},
+    {"from": "trit.stack.phase.12.boot-trap", "to": "trit.stack.phase.13.kernel-foundations", "relation": "depends_on"},
+    {"from": "trit.stack.phase.13.kernel-foundations", "to": "trit.stack.phase.14.storage-vfs", "relation": "depends_on"},
+    {"from": "trit.stack.phase.12.boot-trap", "to": "trit.stack.phase.14.storage-vfs", "relation": "depends_on"},
+    {"from": "trit.stack.phase.13.kernel-foundations", "to": "trit.stack.phase.15.devices-services", "relation": "depends_on"},
+    {"from": "trit.stack.phase.14.storage-vfs", "to": "trit.stack.phase.15.devices-services", "relation": "depends_on"},
+    {"from": "trit.stack.phase.12.boot-trap", "to": "trit.stack.phase.16.host-runtime", "relation": "depends_on"},
+    {"from": "trit.stack.phase.15.devices-services", "to": "trit.stack.phase.16.host-runtime", "relation": "depends_on"},
+    {"from": "trit.stack.phase.11.runtime-sdk", "to": "trit.stack.phase.17.user-space-apps", "relation": "depends_on"},
+    {"from": "trit.stack.phase.13.kernel-foundations", "to": "trit.stack.phase.17.user-space-apps", "relation": "depends_on"},
+    {"from": "trit.stack.phase.16.host-runtime", "to": "trit.stack.phase.17.user-space-apps", "relation": "depends_on"},
+    {"from": "trit.stack.phase.16.host-runtime", "to": "trit.stack.phase.18.images-release", "relation": "depends_on"},
+    {"from": "trit.stack.phase.17.user-space-apps", "to": "trit.stack.phase.18.images-release", "relation": "depends_on"},
+    {"from": "trit.stack.phase.18.images-release", "to": "trit.stack.phase.19.specialized-products", "relation": "depends_on"},
+    {"from": "trit.stack.phase.19.specialized-products", "to": "trit.stack.phase.20.closure-evidence", "relation": "depends_on"},
+    {"from": "trit.stack.phase.18.images-release", "to": "trit.stack.phase.20.closure-evidence", "relation": "depends_on"}
+  ],
+  "layers": [
+    {
+      "id": "trit.stack.phase.00.authority",
+      "phase": 0,
+      "slug": "authority",
+      "name": "Authority, build graph, and review controls",
+      "depends_on": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "AGENTS.md", "status": "resolved", "role": "agent_workflow"},
+        {"repository": "trit", "commit": "d168bc8", "path": "TEST_MANIFEST.json", "status": "resolved", "role": "test_authority"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tools/trit_tool.py", "status": "resolved", "role": "tooling"}
+      ],
+      "contract_ids": ["trit.contract.authority.manifests"],
+      "capability_ids": ["trit.capability.authority.manifested-source-of-truth"],
+      "test_refs": ["test_agent_tooling"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.benchmark-baselines"],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.01.representation",
+      "phase": 1,
+      "slug": "representation",
+      "name": "Trit representation, gates, and hardware realization",
+      "depends_on": ["trit.stack.phase.00.authority"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_backend.h", "status": "resolved", "role": "reference_backend"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_lanes.h", "status": "resolved", "role": "packed_lanes"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/01_Logic_Level/contract_hdl.md", "status": "resolved", "role": "hardware_contract"}
+      ],
+      "contract_ids": ["trit.contract.logic.dual-rail"],
+      "capability_ids": ["trit.capability.logic.dual-rail-trit"],
+      "test_refs": ["test_native_ops", "test_ternary_lanes"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.02.isa-binary",
+      "phase": 2,
+      "slug": "isa-binary",
+      "name": "ISA, registers, privilege, CSRs, traps, and ABI",
+      "depends_on": ["trit.stack.phase.01.representation"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_isa.h", "status": "resolved", "role": "isa_definition"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "generated_contract_input"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/02_Hardware_ISA/encoding.md", "status": "resolved", "role": "isa_explanation"}
+      ],
+      "contract_ids": ["trit.contract.isa.v2", "trit.contract.abi.v2"],
+      "capability_ids": ["trit.capability.isa.v2-instruction-contract"],
+      "test_refs": ["test_architecture_v2", "test_ternary_ir"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format"]
+    },
+    {
+      "id": "trit.stack.phase.03.numeric-operations",
+      "phase": 3,
+      "slug": "numeric-operations",
+      "name": "Numeric model, native operations, lanes, SIMD, and accelerators",
+      "depends_on": ["trit.stack.phase.02.isa-binary"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_scalar.h", "status": "resolved", "role": "scalar_types"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_native_ops.h", "status": "resolved", "role": "native_arithmetic"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_simd.h", "status": "resolved", "role": "host_simd"}
+      ],
+      "contract_ids": ["trit.contract.numeric.native-operations"],
+      "capability_ids": ["trit.capability.numeric.native-ops"],
+      "test_refs": ["test_native_ops", "test_numeric_workloads", "test_ternary_lanes"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.04.vm-state",
+      "phase": 4,
+      "slug": "vm-state",
+      "name": "VM architectural state and memory system",
+      "depends_on": ["trit.stack.phase.02.isa-binary", "trit.stack.phase.03.numeric-operations"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_vm_state.h", "status": "resolved", "role": "architectural_state"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/03_Execution_Engine/vm_state.md", "status": "resolved", "role": "vm_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/03_Execution_Engine/memory_model.md", "status": "resolved", "role": "memory_contract"}
+      ],
+      "contract_ids": ["trit.contract.vm.state-memory"],
+      "capability_ids": ["trit.capability.vm.state-and-mmu"],
+      "test_refs": ["test_multiwidth_vm", "test_architecture_v2"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.05.vm-execution",
+      "phase": 5,
+      "slug": "vm-execution",
+      "name": "VM interpreter, dispatch, trace JIT, and multicore execution",
+      "depends_on": ["trit.stack.phase.04.vm-state"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_vm.h", "status": "resolved", "role": "interpreter"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "status": "resolved", "role": "jit_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tests/test_vm_widths.cpp", "status": "resolved", "role": "execution_regression"}
+      ],
+      "contract_ids": ["trit.contract.vm.execution"],
+      "capability_ids": ["trit.capability.vm.interpreter-and-jit-fallback"],
+      "test_refs": ["test_multiwidth_vm", "test_execution_backends_benchmark"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": ["trit.gap.deterministic-replay"],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.06.assembler",
+      "phase": 6,
+      "slug": "assembler",
+      "name": "Assembler, disassembler, relocations, and binary contract",
+      "depends_on": ["trit.stack.phase.02.isa-binary", "trit.stack.phase.05.vm-execution"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_asm.h", "status": "resolved", "role": "assembler"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/asm_syntax.md", "status": "resolved", "role": "syntax_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tests/test_tcl_asm.cpp", "status": "resolved", "role": "assembler_tests"}
+      ],
+      "contract_ids": ["trit.contract.binary.assembler"],
+      "capability_ids": ["trit.capability.binary.two-pass-assembler"],
+      "test_refs": ["test_tcl_asm", "next_assembler_goldens"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.tascii81"],
+      "release_refs": ["trit.release.v2-format"]
+    },
+    {
+      "id": "trit.stack.phase.07.low-level-ir",
+      "phase": 7,
+      "slug": "low-level-ir",
+      "name": "Low-level assembly IR and linking boundary",
+      "depends_on": ["trit.stack.phase.06.assembler"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_ir.h", "status": "resolved", "role": "object_ir"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/05_Compiler_Infra/ternary_ir.md", "status": "resolved", "role": "ir_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tests/test_ternary_ir.cpp", "status": "resolved", "role": "ir_tests"}
+      ],
+      "contract_ids": ["trit.contract.compiler.object-ir"],
+      "capability_ids": ["trit.capability.compiler.low-level-ir"],
+      "test_refs": ["test_ternary_ir"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.08.tcl-language",
+      "phase": 8,
+      "slug": "tcl-language",
+      "name": "TCL language contract",
+      "depends_on": ["trit.stack.phase.07.low-level-ir"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "TCL_Spec_1.0.md", "status": "resolved", "role": "language_specification"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/06_Language/tcl_language.md", "status": "resolved", "role": "language_documentation"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_parser.trit", "status": "resolved", "role": "native_parser"}
+      ],
+      "contract_ids": ["trit.contract.language.tcl-v1"],
+      "capability_ids": ["trit.capability.language.tcl-frontend"],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.09.host-compiler",
+      "phase": 9,
+      "slug": "host-compiler",
+      "name": "Host compiler: front end through object and link output",
+      "depends_on": ["trit.stack.phase.07.low-level-ir", "trit.stack.phase.08.tcl-language"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_compiler.h", "status": "resolved", "role": "compiler_facade"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_compiler_codegen.h", "status": "resolved", "role": "codegen"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tritc.cpp", "status": "resolved", "role": "compiler_driver"}
+      ],
+      "contract_ids": ["trit.contract.compiler.host-pipeline"],
+      "capability_ids": ["trit.capability.compiler.host-pipeline"],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline", "next_compiler_phase_c5_pred"],
+      "benchmark_refs": ["test_malloc_micro"],
+      "gap_refs": ["trit.gap.syscall-tracing"],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.10.self-hosted-compiler",
+      "phase": 10,
+      "slug": "self-hosted-compiler",
+      "name": "Self-hosted TCL compiler",
+      "depends_on": ["trit.stack.phase.08.tcl-language", "trit.stack.phase.09.host-compiler"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_frontend.trit", "status": "resolved", "role": "native_frontend_facade"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_backend.trit", "status": "resolved", "role": "native_backend"},
+        {"repository": "trit", "commit": "d168bc8", "path": "treatcode/compiler_driver.trit", "status": "resolved", "role": "bootstrap_driver"}
+      ],
+      "contract_ids": ["trit.contract.compiler.self-hosted-subset"],
+      "capability_ids": ["trit.capability.language.self-hosted-subset"],
+      "test_refs": ["next_compiler_native_ulib", "next_compiler_pipeline"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.11.runtime-sdk",
+      "phase": 11,
+      "slug": "runtime-sdk",
+      "name": "User runtime, libraries, streams, and SDK ABI",
+      "depends_on": ["trit.stack.phase.07.low-level-ir", "trit.stack.phase.08.tcl-language"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ulib.trit", "status": "resolved", "role": "user_runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/os_sdk.trit", "status": "resolved", "role": "syscall_sdk"},
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/libwidget.trit", "status": "resolved", "role": "widget_sdk"}
+      ],
+      "contract_ids": ["trit.contract.runtime.sdk-abi"],
+      "capability_ids": ["trit.capability.runtime.sdk-and-libraries"],
+      "test_refs": ["test_native_apps", "next_runtime_ulib_sdk"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.consumer-bundle"]
+    },
+    {
+      "id": "trit.stack.phase.12.boot-trap",
+      "phase": 12,
+      "slug": "boot-trap",
+      "name": "Reset, boot, trap entry, and first executable programs",
+      "depends_on": ["trit.stack.phase.02.isa-binary", "trit.stack.phase.06.assembler"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "bootloader.tasm", "status": "resolved", "role": "reset_program"},
+        {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_boot.tasm", "status": "resolved", "role": "native_boot"},
+        {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_trap_stub.tasm", "status": "resolved", "role": "trap_entry"}
+      ],
+      "contract_ids": ["trit.contract.boot.trap-loader"],
+      "capability_ids": ["trit.capability.boot.native-trap-and-loader"],
+      "test_refs": ["test_architecture_v2", "test_os_platform"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format"]
+    },
+    {
+      "id": "trit.stack.phase.13.kernel-foundations",
+      "phase": 13,
+      "slug": "kernel-foundations",
+      "name": "Kernel foundations: HAL, memory, MMU/TLB, process, traps, and IPC",
+      "depends_on": ["trit.stack.phase.04.vm-state", "trit.stack.phase.07.low-level-ir", "trit.stack.phase.12.boot-trap"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/hal.trit", "status": "resolved", "role": "hal_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/process.trit", "status": "resolved", "role": "process_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel.trit", "status": "resolved", "role": "integrated_kernel"}
+      ],
+      "contract_ids": ["trit.contract.kernel.process-syscall"],
+      "capability_ids": ["trit.capability.kernel.process-and-syscalls"],
+      "test_refs": ["test_layer1_hal", "test_kernel", "test_os_platform", "test_phase_d_kernel", "test_process_handoff"],
+      "benchmark_refs": ["test_scaling_profile_compact"],
+      "gap_refs": ["trit.gap.fuzz-harnesses", "trit.gap.crash-recovery"],
+      "release_refs": ["trit.release.consumer-bundle"]
+    },
+    {
+      "id": "trit.stack.phase.14.storage-vfs",
+      "phase": 14,
+      "slug": "storage-vfs",
+      "name": "Kernel storage: BIO, buffer pool, WAL, relational state, and VFS",
+      "depends_on": ["trit.stack.phase.12.boot-trap", "trit.stack.phase.13.kernel-foundations"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/bio.trit", "status": "resolved", "role": "block_io"},
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/vfs.trit", "status": "resolved", "role": "vfs_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_redo_wal.h", "status": "resolved", "role": "wal_engine"}
+      ],
+      "contract_ids": ["trit.contract.storage.vfs-wal"],
+      "capability_ids": ["trit.capability.storage.vfs-wal-and-persistence"],
+      "test_refs": ["test_production_layers", "test_migration_v2", "test_redo_wal_v2", "next_vfs_persistence", "next_vfs_recovery"],
+      "benchmark_refs": ["test_scaling_profile_compact"],
+      "gap_refs": ["trit.gap.crash-recovery", "trit.gap.encrypted-volumes"],
+      "release_refs": ["trit.release.v2-format"]
+    },
+    {
+      "id": "trit.stack.phase.15.devices-services",
+      "phase": 15,
+      "slug": "devices-services",
+      "name": "Kernel networking, graphics, devices, and services",
+      "depends_on": ["trit.stack.phase.13.kernel-foundations", "trit.stack.phase.14.storage-vfs"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/net.trit", "status": "resolved", "role": "network_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/service_stub.trit", "status": "resolved", "role": "service_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_os.h", "status": "resolved", "role": "device_bridge"}
+      ],
+      "contract_ids": ["trit.contract.kernel.devices-services"],
+      "capability_ids": ["trit.capability.devices.graphics-network-services"],
+      "test_refs": ["test_os_platform", "next_drivers_hal", "next_graphics_gui"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.syscall-tracing"],
+      "release_refs": ["trit.release.desktop-host"]
+    },
+    {
+      "id": "trit.stack.phase.16.host-runtime",
+      "phase": 16,
+      "slug": "host-runtime",
+      "name": "Host OS model and native integration",
+      "depends_on": ["trit.stack.phase.12.boot-trap", "trit.stack.phase.15.devices-services"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_host_runtime.h", "status": "resolved", "role": "host_runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "run_tos_sdl.cpp", "status": "resolved", "role": "desktop_runner"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_consumer_shell.h", "status": "resolved", "role": "consumer_shell_bridge"}
+      ],
+      "contract_ids": ["trit.contract.host.runtime"],
+      "capability_ids": ["trit.capability.host.desktop-runtime"],
+      "test_refs": ["test_host_runtime", "test_consumer_shell_productization"],
+      "benchmark_refs": ["test_benchmark"],
+      "gap_refs": ["trit.gap.deterministic-replay", "trit.gap.framebuffer-png"],
+      "release_refs": ["trit.release.desktop-host"]
+    },
+    {
+      "id": "trit.stack.phase.17.user-space-apps",
+      "phase": 17,
+      "slug": "user-space-apps",
+      "name": "User space, shell, GUI, and bundled applications",
+      "depends_on": ["trit.stack.phase.11.runtime-sdk", "trit.stack.phase.13.kernel-foundations", "trit.stack.phase.16.host-runtime"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/desktop.trit", "status": "resolved", "role": "desktop"},
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/shell.trit", "status": "resolved", "role": "shell"},
+        {"repository": "trit", "commit": "d168bc8", "path": "APP_MANIFEST.json", "status": "resolved", "role": "bundle_manifest"}
+      ],
+      "contract_ids": ["trit.contract.apps.bundle"],
+      "capability_ids": ["trit.capability.apps.bundled-consumer-shell"],
+      "test_refs": ["test_all_apps", "test_native_apps", "test_consumer_shell_productization", "next_apps_consumer_bundle", "next_apps_desktop_shell"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.app-golden"],
+      "release_refs": ["trit.release.consumer-bundle"]
+    },
+    {
+      "id": "trit.stack.phase.18.images-release",
+      "phase": 18,
+      "slug": "images-release",
+      "name": "Images, loading, packaging, and distribution",
+      "depends_on": ["trit.stack.phase.16.host-runtime", "trit.stack.phase.17.user-space-apps"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "image_authority"},
+        {"repository": "trit", "commit": "d168bc8", "path": "build_tos_image.cpp", "status": "resolved", "role": "image_builder"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tools/trit-inspect-image.ps1", "status": "resolved", "role": "release_validation"}
+      ],
+      "contract_ids": ["trit.contract.release.tboot-tdisk"],
+      "capability_ids": ["trit.capability.release.tboot-and-tdisk"],
+      "test_refs": ["test_host_runtime", "test_migration_v2", "next_full_system_release"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format", "trit.release.desktop-host", "trit.release.consumer-bundle"]
+    },
+    {
+      "id": "trit.stack.phase.19.specialized-products",
+      "phase": 19,
+      "slug": "specialized-products",
+      "name": "Specialized libraries and developer products",
+      "depends_on": ["trit.stack.phase.18.images-release"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_montgomery.h", "status": "resolved", "role": "cryptographic_library"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_transformer_runtime.h", "status": "resolved", "role": "transformer_runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "treatcode/src/App.tsx", "status": "resolved", "role": "developer_product"}
+      ],
+      "contract_ids": ["trit.contract.products.specialized"],
+      "capability_ids": ["trit.capability.products.bitnet-and-specialized-libraries"],
+      "test_refs": ["test_numeric_workloads", "test_benchmark"],
+      "benchmark_refs": ["benchmark_bitnet_os", "benchmark_doom_os"],
+      "gap_refs": ["trit.gap.full-doom-assets", "trit.gap.full-bitnet-assets"],
+      "release_refs": []
+    },
+    {
+      "id": "trit.stack.phase.20.closure-evidence",
+      "phase": 20,
+      "slug": "closure-evidence",
+      "name": "Security, fuzzing, performance, and full-system closure",
+      "depends_on": ["trit.stack.phase.18.images-release", "trit.stack.phase.19.specialized-products"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "tests_next/manifests/coverage_matrix.json", "status": "resolved", "role": "coverage_matrix"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tests_next/manifests/acceptance_gates.json", "status": "resolved", "role": "acceptance_gates"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "closure_gaps"}
+      ],
+      "contract_ids": ["trit.contract.evidence.full-system"],
+      "capability_ids": ["trit.capability.evidence.full-system-validation"],
+      "test_refs": ["test_agent_tooling", "test_production_layers", "test_production_hardening", "next_full_system_release"],
+      "benchmark_refs": ["benchmark_doom_os", "benchmark_bitnet_os"],
+      "gap_refs": ["trit.gap.fuzz-harnesses", "trit.gap.benchmark-baselines"],
+      "release_refs": ["trit.release.v2-format"]
+    }
+  ],
+  "known_gaps": [
+    {"id": "trit.gap.syscall-tracing", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.deterministic-replay", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.fuzz-harnesses", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.crash-recovery", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.framebuffer-png", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.app-golden", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.full-doom-assets", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.full-bitnet-assets", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.benchmark-baselines", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.tascii81", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "gap_entry"}]},
+    {"id": "trit.gap.encrypted-volumes", "status": "open", "source_refs": [{"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "gap_entry"}]}
+  ],
+  "releases": [
+    {
+      "id": "trit.release.v2-format",
+      "name": "Trit v2 image and ABI format",
+      "status": "built_and_tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "release_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "abi_contract"}
+      ],
+      "verification_refs": ["test_host_runtime", "test_migration_v2", "next_full_system_release"]
+    },
+    {
+      "id": "trit.release.desktop-host",
+      "name": "Desktop host runtime release path",
+      "status": "staged",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "run_tos_sdl.cpp", "status": "resolved", "role": "runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tools/trit-run.ps1", "status": "resolved", "role": "launch_tool"}
+      ],
+      "verification_refs": ["test_host_runtime"]
+    },
+    {
+      "id": "trit.release.consumer-bundle",
+      "name": "Bundled consumer application image",
+      "status": "staged",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "APP_MANIFEST.json", "status": "resolved", "role": "bundle_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "build_tos_image.cpp", "status": "resolved", "role": "bundle_builder"}
+      ],
+      "verification_refs": ["test_native_apps", "test_consumer_shell_productization"]
+    }
+  ]
+}

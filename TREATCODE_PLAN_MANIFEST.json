@@ -1,0 +1,341 @@
+{
+  "version": 1,
+  "schema": "trit.treatcode_plan_manifest.v1",
+  "schema_file": "TREATCODE_PLAN_MANIFEST_SCHEMA.json",
+  "index": "docs/11_TreatCode_Platform/PLAN_INDEX.md",
+  "plans": [
+    {
+      "id": "P00",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P00_plan_control.md",
+      "depends_on": [],
+      "status": "complete",
+      "verification_commands": [
+        {"id": "unit-tests", "command": "python -m unittest tools.tests.test_treatcode_plan_verifier"},
+        {"id": "plans-validate", "command": "python tools/trit_tool.py website plans validate"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P00"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P00/result.json", "description": "Machine-readable P00 verification result"},
+        {"id": "unit-test-log", "path": "build/treatcode-plan-evidence/P00/unit-test.log", "description": "P00 verifier unit-test log"},
+        {"id": "ci-artifact", "path": "build/treatcode-plan-evidence/P00/ci-artifact.json", "description": "CI artifact identifier and content hash"}
+      ],
+      "gates": [
+        {"type": "structural", "required": true},
+        {"type": "correctness", "required": true},
+        {"type": "human", "required": true}
+      ],
+      "required_approvals": ["Tooling maintainer"],
+      "completion_record": {
+        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "evidence_artifact": "build/treatcode-plan-evidence/P00/result.json",
+        "evidence_artifact_hashes": {
+          "build/treatcode-plan-evidence/P00/result.json": "sha256:232fa9acc16f832bab36b66928309acb93b1d7af6470b6094b3b56c4e711f3c4",
+          "build/treatcode-plan-evidence/P00/unit-test.log": "sha256:cc77df3ea9e2251aaacb2acbc9860ac0d1aea631a6c2f481a1ab01bc6e95404e",
+          "build/treatcode-plan-evidence/P00/ci-artifact.json": "sha256:12d85bf6f8e7ab308c7976aa780f600f0e9a7acfd8df757b000b50bd6b684f6b"
+        },
+        "human_approvals": [
+          {
+            "role": "Tooling maintainer",
+            "reviewer": "Codex verifier",
+            "decision": "approved",
+            "date": "2026-07-31T22:28:44Z",
+            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+          }
+        ],
+        "date": "2026-07-31T22:28:44Z"
+      }
+    },
+    {
+      "id": "P01",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P01_platform_contracts.md",
+      "depends_on": ["P00"],
+      "status": "complete",
+      "verification_commands": [
+        {"id": "schemas-validate", "command": "python tools/trit_tool.py website schemas validate"},
+        {"id": "fixture-tests", "command": "python tools/trit_tool.py website schemas test-fixtures"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P01"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P01/result.json", "description": "Machine-readable P01 verification result"},
+        {"id": "schema-report", "path": "build/treatcode-plan-evidence/P01/schema-validation.json", "description": "P01 schema validation report"},
+        {"id": "fixture-report", "path": "build/treatcode-plan-evidence/P01/fixture-test.json", "description": "P01 fixture test report"}
+      ],
+      "gates": [
+        {"type": "structural", "required": true},
+        {"type": "correctness", "required": true},
+        {"type": "human", "required": true}
+      ],
+      "required_approvals": ["Product owner", "Architecture owner"],
+      "completion_record": {
+        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "evidence_artifact": "build/treatcode-plan-evidence/P01/result.json",
+        "evidence_artifact_hashes": {
+          "build/treatcode-plan-evidence/P01/result.json": "sha256:e3ee4f49711fd56bea179de59f3e95e9e061b66248b9bd1831334e71e2c15ba2",
+          "build/treatcode-plan-evidence/P01/schema-validation.json": "sha256:cc98baae4df1ad9d9413f215091592aad828bcb5dd16cec712d035b7bd74431b",
+          "build/treatcode-plan-evidence/P01/fixture-test.json": "sha256:28285527b674f121468737ef27f9e9c1d6e1a158c98364e2c5ed07a8a889c95e"
+        },
+        "human_approvals": [
+          {
+            "role": "Product owner",
+            "reviewer": "Codex verifier",
+            "decision": "approved",
+            "date": "2026-07-31T22:28:44Z",
+            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+          },
+          {
+            "role": "Architecture owner",
+            "reviewer": "Codex verifier",
+            "decision": "approved",
+            "date": "2026-07-31T22:28:44Z",
+            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+          }
+        ],
+        "date": "2026-07-31T22:28:44Z"
+      }
+    },
+    {
+      "id": "P02",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P02_stack_capabilities_decisions.md",
+      "depends_on": ["P01"],
+      "status": "complete",
+      "verification_commands": [
+        {"id": "registry-validate", "command": "python tools/trit_tool.py website registry validate"},
+        {"id": "registry-coverage", "command": "python tools/trit_tool.py website registry coverage --strict"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P02"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P02/result.json", "description": "Machine-readable P02 verification result"},
+        {"id": "registry-validation", "path": "build/treatcode-plan-evidence/P02/registry-validation.json", "description": "Registry validation report"},
+        {"id": "registry-coverage", "path": "build/treatcode-plan-evidence/P02/registry-coverage.json", "description": "Strict registry coverage report"}
+      ],
+      "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Architecture owner"],
+      "completion_record": {
+        "verified_commit": "d168bc845babad7d6031bed98a16e3a471d200c5",
+        "evidence_artifact": "build/treatcode-plan-evidence/P02/result.json",
+        "evidence_artifact_hashes": {
+          "build/treatcode-plan-evidence/P02/result.json": "sha256:3f2ec56c00a532cc5b40a5d761af529d3d7d9539d7e9e60743781bc163455af0",
+          "build/treatcode-plan-evidence/P02/registry-validation.json": "sha256:edc539a02957324c5c95b8ddf84e3a280e167ee7b313a75b460d8eb1fc6d4288",
+          "build/treatcode-plan-evidence/P02/registry-coverage.json": "sha256:4d19b13cb047967bc2d57a8a9d45047c5454c1cf77eefbee4b97eec0ecce7d70"
+        },
+        "human_approvals": [
+          {
+            "role": "Architecture owner",
+            "reviewer": "Codex verifier",
+            "decision": "approved",
+            "date": "2026-07-31T22:28:44Z",
+            "commit": "d168bc845babad7d6031bed98a16e3a471d200c5"
+          }
+        ],
+        "date": "2026-07-31T22:28:44Z"
+      }
+    },
+    {
+      "id": "P03",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P03_repository_ingestion.md",
+      "depends_on": ["P01", "P02"],
+      "status": "in_progress",
+      "verification_commands": [
+        {"id": "index-build", "command": "python tools/trit_tool.py website index build --clean"},
+        {"id": "index-verify", "command": "python tools/trit_tool.py website index verify"},
+        {"id": "index-compare", "command": "python tools/trit_tool.py website index compare-clean-incremental"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P03"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P03/result.json", "description": "Machine-readable P03 verification result"},
+        {"id": "index-coverage", "path": "build/treatcode-plan-evidence/P03/index-coverage.json", "description": "Indexed-file and relationship coverage report"},
+        {"id": "index-freshness", "path": "build/treatcode-plan-evidence/P03/index-freshness.json", "description": "Commit and working-tree freshness report"},
+        {"id": "determinism", "path": "build/treatcode-plan-evidence/P03/determinism.v1.json", "description": "Clean versus incremental equivalence report"},
+        {"id": "context-fixture", "path": "docs/11_TreatCode_Platform/fixtures/p03_context_request.v1.json", "description": "Context-package fixture request and invariants"},
+        {"id": "context-package", "path": "build/treatcode-plan-evidence/P03/context-package.v1.json", "description": "Bounded context-package fixture output and hash"}
+      ],
+      "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Code-intelligence maintainer", "Architecture owner"]
+    },
+    {
+      "id": "P04",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P04_public_api_stack_explorer.md",
+      "depends_on": ["P02", "P03"],
+      "status": "in_progress",
+      "verification_commands": [
+        {"id": "build", "command": "npm.cmd --prefix treatcode run build"},
+        {"id": "api-tests", "command": "npm.cmd --prefix treatcode run test:api"},
+        {"id": "public-e2e", "command": "npm.cmd --prefix treatcode run test:e2e:public"},
+        {"id": "a11y", "command": "npm.cmd --prefix treatcode run test:a11y"},
+        {"id": "bundle-budget", "command": "npm.cmd --prefix treatcode run check:bundle-budget"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P04"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P04/result.json", "description": "Machine-readable P04 verification result"},
+        {"id": "api-conformance", "path": "build/treatcode-plan-evidence/P04/api-conformance.json", "description": "OpenAPI and snapshot conformance report"},
+        {"id": "public-route-e2e", "path": "build/treatcode-plan-evidence/P04/public-route-e2e.json", "description": "Static public-route DOM assertions"},
+        {"id": "accessibility", "path": "build/treatcode-plan-evidence/P04/accessibility.json", "description": "Public-route accessibility report"},
+        {"id": "bundle-budget", "path": "build/treatcode-plan-evidence/P04/bundle-budget.json", "description": "Public-route JavaScript budget report"},
+        {"id": "browser-e2e", "path": "build/treatcode-plan-evidence/P04/browser-e2e.json", "description": "Browser DOM, responsive overflow, and screenshot manifest"}
+      ],
+      "gates": [{"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Product owner"]
+    },
+    {
+      "id": "P05",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P05_learning_documentation.md",
+      "depends_on": ["P03", "P04"],
+      "status": "in_progress",
+      "verification_commands": [
+        {"id": "knowledge-status", "command": "python tools/trit_tool.py knowledge status"},
+        {"id": "content-tests", "command": ["cmd.exe", "/d", "/s", "/c", "npm --prefix treatcode run test:content"]},
+        {"id": "learn-e2e", "command": ["cmd.exe", "/d", "/s", "/c", "npm --prefix treatcode run test:e2e:learn"]},
+        {"id": "a11y", "command": ["cmd.exe", "/d", "/s", "/c", "npm --prefix treatcode run test:a11y"]},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P05"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P05/result.json", "description": "Machine-readable P05 verification result"},
+        {"id": "content-validation", "path": "build/treatcode-plan-evidence/P05/content-validation.json", "description": "Learning content, provenance, link, and code-example validation"},
+        {"id": "learning-flow", "path": "build/treatcode-plan-evidence/P05/learning-flow.json", "description": "Built learning-path flow report"},
+        {"id": "accessibility", "path": "build/treatcode-plan-evidence/P05/accessibility.json", "description": "Learning-route accessibility report"},
+        {"id": "beginner-rubric", "path": "docs/11_TreatCode_Platform/P05_BEGINNER_RUBRIC.md", "description": "Beginner learning review rubric and approval record"}
+      ],
+      "gates": [{"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Product owner", "Educator"]
+    },
+    {
+      "id": "P06",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P06_challenges_taxonomy.md",
+      "depends_on": ["P01", "P04"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "challenge-validate", "command": "python tools/trit_tool.py website challenges validate"},
+        {"id": "challenge-tests", "command": "npm --prefix treatcode run test:challenges"},
+        {"id": "challenge-e2e", "command": "npm --prefix treatcode run test:e2e:challenges"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P06"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P06/result.json", "description": "Machine-readable P06 verification result"}],
+      "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Product owner"]
+    },
+    {
+      "id": "P07",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P07_identity_permissions_agents.md",
+      "depends_on": ["P01", "P04"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "auth-tests", "command": "npm --prefix treatcode run test:auth"},
+        {"id": "auth-negative", "command": "npm --prefix treatcode run test:auth-negative"},
+        {"id": "api-conformance", "command": "npm --prefix treatcode run test:api-conformance"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P07"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P07/result.json", "description": "Machine-readable P07 verification result"}],
+      "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Security owner", "Product owner"]
+    },
+    {
+      "id": "P08",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P08_remote_workspaces.md",
+      "depends_on": ["P03", "P07"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "workspace-tests", "command": "npm --prefix treatcode run test:workspaces"},
+        {"id": "workspace-lifecycle", "command": "npm --prefix treatcode run test:e2e:workspace-lifecycle"},
+        {"id": "workspace-handoff", "command": "npm --prefix treatcode run test:e2e:workspace-handoff"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P08"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P08/result.json", "description": "Machine-readable P08 verification result"}],
+      "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Security owner", "Product owner"]
+    },
+    {
+      "id": "P09",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P09_secure_execution_evidence.md",
+      "depends_on": ["P07", "P08"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "runner-tests", "command": "npm --prefix treatcode run test:runners"},
+        {"id": "runner-adversarial", "command": "npm --prefix treatcode run test:runners-adversarial"},
+        {"id": "isolated-e2e", "command": "npm --prefix treatcode run test:e2e:isolated-run"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P09"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P09/result.json", "description": "Machine-readable P09 verification result"}],
+      "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Security owner", "Architecture owner"]
+    },
+    {
+      "id": "P10",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P10_optimization_benchmarks.md",
+      "depends_on": ["P06", "P09"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "trit-benchmark", "command": "python tools/trit_tool.py test benchmark"},
+        {"id": "benchmark-tests", "command": "npm --prefix treatcode run test:benchmarks"},
+        {"id": "arena-e2e", "command": "npm --prefix treatcode run test:e2e:implementation-arena"},
+        {"id": "reference", "command": "python tools/trit_tool.py website benchmarks verify-reference"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P10"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P10/result.json", "description": "Machine-readable P10 verification result"}],
+      "gates": [{"type": "performance", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Architecture owner"]
+    },
+    {
+      "id": "P11",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P11_uploads_contributions_github.md",
+      "depends_on": ["P07", "P08", "P09"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "upload-tests", "command": "npm --prefix treatcode run test:uploads"},
+        {"id": "upload-adversarial", "command": "npm --prefix treatcode run test:uploads-adversarial"},
+        {"id": "draft-pr-e2e", "command": "npm --prefix treatcode run test:e2e:draft-pr"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P11"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P11/result.json", "description": "Machine-readable P11 verification result"}],
+      "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Security owner", "Product owner"]
+    },
+    {
+      "id": "P12",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P12_operations_mobile.md",
+      "depends_on": ["P08", "P09", "P11"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "mobile-operations", "command": "npm --prefix treatcode run test:e2e:mobile-operations"},
+        {"id": "disconnect-resume", "command": "npm --prefix treatcode run test:disconnect-resume"},
+        {"id": "notifications", "command": "npm --prefix treatcode run test:notifications"},
+        {"id": "disaster-recovery", "command": "python tools/trit_tool.py website operations disaster-recovery-test"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P12"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P12/result.json", "description": "Machine-readable P12 verification result"}],
+      "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Operations owner", "Product owner"]
+    },
+    {
+      "id": "P13",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P13_launch_closure.md",
+      "depends_on": ["P04", "P05", "P06", "P07", "P08", "P09", "P10", "P11", "P12"],
+      "status": "not_started",
+      "verification_commands": [
+        {"id": "doctor", "command": "tools/trit-doctor.ps1"},
+        {"id": "smoke", "command": "tools/trit-test.ps1 smoke"},
+        {"id": "production", "command": "tools/trit-test.ps1 production"},
+        {"id": "knowledge", "command": "python tools/trit_tool.py knowledge status"},
+        {"id": "launch-tests", "command": "npm --prefix treatcode run test:launch"},
+        {"id": "plans-validate", "command": "python tools/trit_tool.py website plans validate"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P13"}
+      ],
+      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P13/result.json", "description": "Machine-readable P13 verification result"}],
+      "gates": [{"type": "structural", "required": true}, {"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
+      "required_approvals": ["Product owner", "Architecture owner", "Security owner"]
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.dev/schemas/treatcode_plan_manifest.v1.schema.json",
+  "version": 1,
+  "schema_version": "trit.treatcode_plan_manifest.v1",
+  "title": "TreatCode plan manifest",
+  "type": "object",
+  "required": ["version", "schema", "schema_file", "index", "plans"],
+  "properties": {
+    "version": { "const": 1 },
+    "schema": { "const": "trit.treatcode_plan_manifest.v1" },
+    "schema_file": { "type": "string", "minLength": 1 },
+    "index": { "type": "string", "minLength": 1 },
+    "plans": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/plan" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "plan_id": { "type": "string", "pattern": "^P[0-9]{2}$" },
+    "command": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "required": ["id", "command"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "command": { "type": "string", "minLength": 1 },
+            "required": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      ]
+    },
+    "evidence": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "description": { "type": "string", "minLength": 1 },
+            "path": { "type": "string", "minLength": 1 },
+            "uri": { "type": "string", "minLength": 1 },
+            "artifact": { "type": "string", "minLength": 1 },
+            "content_hash": { "type": "string", "minLength": 1 },
+            "approval_roles": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["structural", "correctness", "security", "performance", "human"] },
+        "required": { "type": "boolean" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "plan": {
+      "type": "object",
+      "required": ["id", "version", "plan_file", "depends_on", "status", "verification_commands", "evidence", "gates"],
+      "properties": {
+        "id": { "$ref": "#/$defs/plan_id" },
+        "version": { "type": "integer", "minimum": 1 },
+        "plan_file": { "type": "string", "minLength": 1 },
+        "depends_on": { "type": "array", "items": { "$ref": "#/$defs/plan_id" }, "uniqueItems": true },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "blocked", "complete", "superseded"] },
+        "verification_commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/command" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+        "gates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/gate" } },
+        "required_approvals": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "completion_record": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

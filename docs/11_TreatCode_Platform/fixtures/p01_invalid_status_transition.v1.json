@@ -1,0 +1,26 @@
+{
+  "schema_version": "treatcode.platform.fixture.v1",
+  "fixture_id": "tc:fixture:p01-invalid-status-transition",
+  "description": "Negative fixture: an accepted decision incorrectly moves back to proposed.",
+  "entities": [
+    {
+      "schema_version": "treatcode.platform.entity.v1",
+      "id": "tc:decision:invalid-transition",
+      "entity_type": "decision",
+      "name": "Invalid lifecycle decision",
+      "description": "A decision with an intentionally invalid status history.",
+      "question": "Can a decided item return to proposal?",
+      "resolution": "No; this fixture must be rejected.",
+      "decided_at": "2026-07-30T00:00:00Z",
+      "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"},
+      "status_history": [
+        {"at": "2026-07-30T00:00:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"}},
+        {"at": "2026-07-30T00:01:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "accepted", "maturity": "specified", "evidence": "verified", "compatibility": "compatible"}},
+        {"at": "2026-07-30T00:02:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "proposed", "maturity": "specified", "evidence": "verified", "compatibility": "compatible"}}
+      ],
+      "relations": [],
+      "source_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "docs/11_TreatCode_Platform/plans/P01_platform_contracts.md"}],
+      "evidence_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "TEST_MANIFEST.json", "description": "Negative status transition fixture", "kind": "test"}]
+    }
+  ]
+}

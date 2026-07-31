@@ -1,0 +1,34 @@
+{
+  "schema_version": "treatcode.platform.fixture.v1",
+  "fixture_id": "tc:fixture:p01-invalid-relation-target",
+  "description": "Negative fixture: the relation points at an entity that is not in the graph.",
+  "entities": [
+    {
+      "schema_version": "treatcode.platform.entity.v1",
+      "id": "tc:layer:synthetic",
+      "entity_type": "layer",
+      "name": "Synthetic layer",
+      "description": "A valid synthetic layer whose relation target is intentionally missing.",
+      "ordinal": 99,
+      "layer_kind": "synthetic",
+      "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"},
+      "status_history": [{"at": "2026-07-30T00:00:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"}}],
+      "relations": [{"type": "depends_on", "target_id": "tc:component:not-present"}, {"type": "implements", "target_id": "tc:project:wrong-target-type"}],
+      "source_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "README.md"}],
+      "evidence_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "TEST_MANIFEST.json", "description": "Negative relation fixture", "kind": "test"}]
+    },
+    {
+      "schema_version": "treatcode.platform.entity.v1",
+      "id": "tc:project:wrong-target-type",
+      "entity_type": "project",
+      "name": "Wrong target type",
+      "description": "An existing but incompatible relation target.",
+      "repository": "https://github.com/JonasComlita/dualrail",
+      "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"},
+      "status_history": [{"at": "2026-07-30T00:00:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"}}],
+      "relations": [],
+      "source_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "README.md"}],
+      "evidence_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "path": "TEST_MANIFEST.json", "description": "Negative relation target type fixture", "kind": "test"}]
+    }
+  ]
+}

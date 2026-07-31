@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "schema": "trit.decision_manifest.v1",
+  "namespace": "trit",
+  "source_of_truth": "CONTRACT_MANIFEST.json",
+  "allowed_dispositions": ["accepted", "superseded", "rejected", "open"],
+  "source_refs": [
+    {"repository": "trit", "commit": "d168bc8", "path": "README.md", "status": "resolved", "role": "historical_and_current_context"},
+    {"repository": "trit", "commit": "d168bc8", "path": "tcl_native_rewrite.md", "status": "resolved", "role": "accepted_architecture_spec"},
+    {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "current_architecture"}
+  ],
+  "decisions": [
+    {
+      "id": "trit.decision.registry.source-authority",
+      "title": "Root manifests and tests remain authoritative over navigation content",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "current_repository_policy",
+      "conflict_set": null,
+      "current_truth": "trit.contract.authority.manifests",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/README.md", "status": "resolved", "role": "authority_policy"},
+        {"repository": "trit", "commit": "d168bc8", "path": "AGENTS.md", "status": "resolved", "role": "agent_policy"}
+      ],
+      "affected_contract_ids": ["trit.contract.authority.manifests"],
+      "affected_capability_ids": ["trit.capability.authority.manifested-source-of-truth"],
+      "rationale": "TreatCode registries are navigation and evidence data; implementation manifests, source, and tests decide current behavior."
+    },
+    {
+      "id": "trit.decision.v2-over-v1-image",
+      "title": "Trit v2 image format is the current runtime boundary",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "current_repository_policy",
+      "conflict_set": "boot-image-format",
+      "current_truth": "trit.contract.release.tboot-tdisk",
+      "supersedes": ["trit.decision.historical-v1-image"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "current_format"},
+        {"repository": "trit", "commit": "d168bc8", "path": "migrate_tos_artifacts.cpp", "status": "resolved", "role": "migration_boundary"}
+      ],
+      "affected_contract_ids": ["trit.contract.boot.trap-loader", "trit.contract.release.tboot-tdisk"],
+      "affected_capability_ids": ["trit.capability.boot.native-trap-and-loader", "trit.capability.release.tboot-and-tdisk"],
+      "rationale": "The v2 runtime accepts the v2 image contract; v1 artifacts remain reproducible historical fixtures and are not runtime inputs."
+    },
+    {
+      "id": "trit.decision.historical-v1-image",
+      "title": "Historical v1 boot artifact is not a v2 runtime input",
+      "disposition": "superseded",
+      "canonical": false,
+      "origin": "os3_historical",
+      "conflict_set": "boot-image-format",
+      "current_truth": "trit.contract.release.tboot-tdisk",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "f5b5b3d", "path": "tests/fixtures/v1/manifest.json", "status": "resolved", "role": "historical_fixture"},
+        {"repository": "trit", "commit": "d168bc8", "path": "OS3/minimal_kernel_bringup.tasm", "status": "missing", "role": "historical_reference", "reason": "Retired from the v2 tree; the v1 seed is preserved at tag trit-v1-final."}
+      ],
+      "affected_contract_ids": ["trit.contract.boot.trap-loader", "trit.contract.release.tboot-tdisk"],
+      "affected_capability_ids": ["trit.capability.boot.native-trap-and-loader", "trit.capability.release.tboot-and-tdisk"],
+      "rationale": "The historical artifact is evidence for migration and compatibility only, not simultaneous production truth."
+    },
+    {
+      "id": "trit.decision.v2-over-os3-freeze",
+      "title": "Current v2 architecture supersedes the historical OS3 Phase 4 freeze",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "current_repository_policy",
+      "conflict_set": "os3-freeze-vs-v2",
+      "current_truth": "trit.contract.isa.v2",
+      "supersedes": ["trit.decision.historical-os3-freeze"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "current_v2_contract"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_isa.h", "status": "resolved", "role": "current_isa"}
+      ],
+      "affected_contract_ids": ["trit.contract.isa.v2", "trit.contract.abi.v2", "trit.contract.binary.assembler"],
+      "affected_capability_ids": ["trit.capability.isa.v2-instruction-contract", "trit.capability.binary.two-pass-assembler"],
+      "rationale": "The checked-in v2 manifests and implementation define current widths, ABI versions, and image readers; older OS3 freeze prose is historical context."
+    },
+    {
+      "id": "trit.decision.historical-os3-freeze",
+      "title": "Historical OS3 Phase 4 v1 freeze is rejected as current truth",
+      "disposition": "rejected",
+      "canonical": false,
+      "origin": "os3_historical",
+      "conflict_set": "os3-freeze-vs-v2",
+      "current_truth": "trit.contract.isa.v2",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "OS3/PHASE4_COMPLETION_ROADMAP.md", "status": "missing", "role": "historical_reference", "reason": "The OS3 proposal tree is not present in the v2 repository."},
+        {"repository": "trit", "commit": "d168bc8", "path": "README.md", "status": "resolved", "role": "historical_summary"}
+      ],
+      "affected_contract_ids": ["trit.contract.isa.v2", "trit.contract.abi.v2"],
+      "affected_capability_ids": ["trit.capability.isa.v2-instruction-contract"],
+      "rationale": "References to the old Phase 4 freeze are retained as history and do not silently override v2 source manifests."
+    },
+    {
+      "id": "trit.decision.vfs-bootstrap-separation",
+      "title": "Bootstrap allocation stays non-relational until storage is ready",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "accepted_architecture_spec",
+      "conflict_set": "bootstrap-storage-order",
+      "current_truth": "trit.contract.storage.vfs-wal",
+      "supersedes": ["trit.decision.historical-relational-first-bootstrap"],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_native_rewrite.md", "status": "resolved", "role": "architecture_spec"},
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/bio.trit", "status": "resolved", "role": "implementation_boundary"}
+      ],
+      "affected_contract_ids": ["trit.contract.kernel.process-syscall", "trit.contract.storage.vfs-wal"],
+      "affected_capability_ids": ["trit.capability.kernel.process-and-syscalls", "trit.capability.storage.vfs-wal-and-persistence"],
+      "rationale": "The trap path and bootstrap allocator must not depend on the relational store before its buffer and WAL foundations exist."
+    },
+    {
+      "id": "trit.decision.historical-relational-first-bootstrap",
+      "title": "Relational-first bootstrap proposal is not the current bootstrap order",
+      "disposition": "rejected",
+      "canonical": false,
+      "origin": "os3_historical",
+      "conflict_set": "bootstrap-storage-order",
+      "current_truth": "trit.contract.storage.vfs-wal",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "OS3/strategic_architecture.md", "status": "missing", "role": "historical_reference", "reason": "Historical OS3 proposal is referenced by README but is not in the current tree."}
+      ],
+      "affected_contract_ids": ["trit.contract.storage.vfs-wal"],
+      "affected_capability_ids": ["trit.capability.storage.vfs-wal-and-persistence"],
+      "rationale": "The accepted architecture explicitly preserves a flat bootstrap phase and records the migration boundary."
+    },
+    {
+      "id": "trit.decision.jit-fallback",
+      "title": "Optional execution acceleration must retain interpreter equivalence",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "current_repository_policy",
+      "conflict_set": null,
+      "current_truth": "trit.contract.vm.execution",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "status": "resolved", "role": "execution_policy"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "native_jit_gap"}
+      ],
+      "affected_contract_ids": ["trit.contract.vm.execution", "trit.contract.host.runtime"],
+      "affected_capability_ids": ["trit.capability.vm.interpreter-and-jit-fallback", "trit.capability.host.desktop-runtime"],
+      "rationale": "Fast execution paths are optional and must preserve the reference interpreter and diagnostics while the direct native lowering gap remains open."
+    },
+    {
+      "id": "trit.decision.encoding.host-boundary",
+      "title": "ASCII, UTF-8, and hexadecimal remain compatibility projections",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "current_repository_policy",
+      "conflict_set": "symbolic-encoding-abi",
+      "current_truth": "trit.contract.symbolic-encoding-compatibility",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "encoding_policy"}
+      ],
+      "affected_contract_ids": ["trit.contract.symbolic-encoding-compatibility"],
+      "affected_capability_ids": ["trit.capability.encoding.ascii-compatibility", "trit.capability.encoding.utf8-compatibility", "trit.capability.encoding.hex-compatibility"],
+      "rationale": "Host text, manifest, diagnostic, and binary-inspection behavior remains compatible while ternary-native notation is designed separately."
+    },
+    {
+      "id": "trit.decision.tascii81-not-abi",
+      "title": "Ternary-native symbolic encodings are proposals, not guest ABI",
+      "disposition": "open",
+      "canonical": false,
+      "origin": "current_proposal",
+      "conflict_set": "symbolic-encoding-abi",
+      "current_truth": "trit.contract.symbolic-encoding-compatibility",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "proposal"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "open_gap"}
+      ],
+      "affected_contract_ids": ["trit.contract.symbolic-encoding-ternary-native"],
+      "affected_capability_ids": ["trit.capability.encoding.tascii81-ternary-native", "trit.capability.encoding.trit-literals-ternary-native", "trit.capability.encoding.base27-base81-dumps-ternary-native"],
+      "rationale": "TASCII-81, exact trit literals, and compact dumps need a fixed table and conversion tests before they can become stable guest-facing contracts."
+    },
+    {
+      "id": "trit.decision.encrypted-volume-design",
+      "title": "Encrypted-volume design remains an explicit two-track open decision",
+      "disposition": "open",
+      "canonical": false,
+      "origin": "future_capability_proposal",
+      "conflict_set": "encrypted-volume-design",
+      "current_truth": null,
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "open_gap"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_montgomery.h", "status": "resolved", "role": "candidate_crypto_evidence"}
+      ],
+      "affected_contract_ids": ["trit.contract.encrypted-volume-compatibility", "trit.contract.encrypted-volume-ternary-native"],
+      "affected_capability_ids": ["trit.capability.storage.encrypted-volume-compatibility", "trit.capability.storage.encrypted-volume-ternary-native"],
+      "rationale": "Compatibility integration and a possible ternary-native design are separate future capabilities; neither is implemented or selected by this registry."
+    },
+    {
+      "id": "trit.decision.self-hosting-last",
+      "title": "Self-hosting follows stable storage, product, and distribution boundaries",
+      "disposition": "accepted",
+      "canonical": true,
+      "origin": "accepted_architecture_spec",
+      "conflict_set": null,
+      "current_truth": "trit.contract.compiler.self-hosted-subset",
+      "supersedes": [],
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "README.md", "status": "resolved", "role": "roadmap"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_native_rewrite.md", "status": "resolved", "role": "bootstrap_guardrail"}
+      ],
+      "affected_contract_ids": ["trit.contract.compiler.self-hosted-subset"],
+      "affected_capability_ids": ["trit.capability.language.self-hosted-subset"],
+      "rationale": "The native compiler is a late consumer of the persistent OS and release stack, not a replacement authority before those boundaries are verified."
+    }
+  ]
+}

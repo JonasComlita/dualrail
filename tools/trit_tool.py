@@ -15,6 +15,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import statistics
 import struct
@@ -24,6 +25,28 @@ import time
 from urllib.parse import unquote
 from pathlib import Path
 from typing import Any
+try:
+    from treatcode_platform import cmd_website
+except ModuleNotFoundError:  # package import used by unittest and other host tools
+    from tools.treatcode_platform import cmd_website
+try:
+    from repository_ingestion import (
+        build_index,
+        compare_clean_incremental,
+        generate_context_package,
+        load_index,
+        print_report as print_repository_index_report,
+        verify_index,
+    )
+except ModuleNotFoundError:  # package import used by unittest and other host tools
+    from tools.repository_ingestion import (
+        build_index,
+        compare_clean_incremental,
+        generate_context_package,
+        load_index,
+        print_report as print_repository_index_report,
+        verify_index,
+    )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +81,27 @@ MANIFEST_FILES = [
     "SYSCALL_MANIFEST.json",
     "IMAGE_FORMAT_MANIFEST.json",
     "APP_MANIFEST.json",
+    "STACK_MANIFEST.json",
+    "CAPABILITY_MANIFEST.json",
+    "CONTRACT_MANIFEST.json",
+    "DECISION_MANIFEST.json",
+    "STACK_COVERAGE_REPORT.json",
+    "TREATCODE_PLAN_MANIFEST.json",
+    "TREATCODE_PLAN_MANIFEST_SCHEMA.json",
 ]
+REGISTRY_FILES = {
+    "stack": "STACK_MANIFEST.json",
+    "capability": "CAPABILITY_MANIFEST.json",
+    "contract": "CONTRACT_MANIFEST.json",
+    "decision": "DECISION_MANIFEST.json",
+    "coverage": "STACK_COVERAGE_REPORT.json",
+}
+PLAN_INDEX_PATH = DOCS_DIR / "11_TreatCode_Platform" / "PLAN_INDEX.md"
+PLAN_MANIFEST_PATH = REPO_ROOT / "TREATCODE_PLAN_MANIFEST.json"
+PLAN_MANIFEST_SCHEMA_PATH = REPO_ROOT / "TREATCODE_PLAN_MANIFEST_SCHEMA.json"
+PLAN_EVIDENCE_DIR = REPO_ROOT / "build" / "treatcode-plan-evidence"
+PLAN_STATUSES = {"not_started", "in_progress", "blocked", "complete", "superseded"}
+PLAN_GATE_TYPES = {"structural", "correctness", "security", "performance", "human"}
 OBSIDIAN_REQUIRED_FILES = [
     "README.md",
     "INDEX.md",
@@ -665,6 +708,667 @@ def text_status(label: str, ok: bool, detail: str = "") -> None:
 
 def canonical_json(data: Any) -> str:
     return json.dumps(data, indent=2, sort_keys=True) + "\n"
+
+
+REGISTRY_ID_RE = re.compile(r"^trit\.[a-z0-9]+(?:[.-][a-z0-9]+)*$")
+REGISTRY_SOURCE_STATUSES = {"resolved", "missing"}
+REGISTRY_COVERAGE_STATUSES = {"complete", "partial", "planned", "not_available"}
+REGISTRY_DECISION_DISPOSITIONS = {"accepted", "superseded", "rejected", "open"}
+
+
+def _registry_error(errors: list[str], message: str) -> None:
+    errors.append(message)
+
+
+def _registry_id(value: Any, location: str, errors: list[str]) -> bool:
+    if not isinstance(value, str) or not REGISTRY_ID_RE.fullmatch(value):
+        _registry_error(errors, f"{location} must be a namespaced trit.* id")
+        return False
+    return True
+
+
+def _registry_ids(
+    records: Any,
+    key: str,
+    location: str,
+    errors: list[str],
+) -> set[str]:
+    if isinstance(records, dict):
+        records = records.get(key)
+    if not isinstance(records, list):
+        _registry_error(errors, f"{location}.{key} must be an array")
+        return set()
+    found: set[str] = set()
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            _registry_error(errors, f"{location}.{key}[{index}] must be an object")
+            continue
+        value = record.get("id")
+        if not _registry_id(value, f"{location}.{key}[{index}].id", errors):
+            continue
+        if value in found:
+            _registry_error(errors, f"duplicate id {value} in {location}.{key}")
+        found.add(value)
+    return found
+
+
+def _registry_path(path_value: Any, location: str, errors: list[str]) -> None:
+    if not isinstance(path_value, str) or not path_value.strip():
+        _registry_error(errors, f"{location}.path must be a non-empty repository-relative path")
+        return
+    candidate = (REPO_ROOT / Path(path_value)).resolve()
+    try:
+        candidate.relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        _registry_error(errors, f"{location}.path escapes the repository: {path_value}")
+        return
+    if not candidate.exists():
+        _registry_error(errors, f"{location}.path does not resolve: {path_value}")
+
+
+def _registry_source_refs(
+    refs: Any,
+    location: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(refs, list) or not refs:
+        _registry_error(errors, f"{location} must be a non-empty array")
+        return
+    for index, ref in enumerate(refs):
+        ref_location = f"{location}[{index}]"
+        if not isinstance(ref, dict):
+            _registry_error(errors, f"{ref_location} must be an object")
+            continue
+        for field in ("repository", "commit", "path", "status"):
+            if not isinstance(ref.get(field), str) or not ref[field].strip():
+                _registry_error(errors, f"{ref_location}.{field} must be a non-empty string")
+        status = ref.get("status")
+        if status not in REGISTRY_SOURCE_STATUSES:
+            _registry_error(errors, f"{ref_location}.status must be resolved or missing")
+        elif status == "resolved":
+            _registry_path(ref.get("path"), ref_location, errors)
+        elif not isinstance(ref.get("reason"), str) or not ref["reason"].strip():
+            _registry_error(errors, f"{ref_location}.reason is required for an explicitly missing path")
+
+
+def _registry_check_source_refs(
+    data: dict[str, Any],
+    location: str,
+    errors: list[str],
+) -> None:
+    if "source_refs" in data:
+        _registry_source_refs(data["source_refs"], f"{location}.source_refs", errors)
+
+
+def _registry_string_refs(
+    values: Any,
+    location: str,
+    errors: list[str],
+    required: bool = False,
+) -> set[str]:
+    if not isinstance(values, list):
+        _registry_error(errors, f"{location} must be an array")
+        return set()
+    if required and not values:
+        _registry_error(errors, f"{location} must not be empty")
+    result: set[str] = set()
+    for index, value in enumerate(values):
+        if not isinstance(value, str) or not value.strip():
+            _registry_error(errors, f"{location}[{index}] must be a non-empty string")
+        else:
+            result.add(value)
+    return result
+
+
+def _registry_check_layer_refs(
+    record: dict[str, Any],
+    location: str,
+    layer_ids: set[str],
+    errors: list[str],
+) -> None:
+    for field in ("layer_ids",):
+        refs = _registry_string_refs(record.get(field), f"{location}.{field}", errors, required=True)
+        for ref in refs:
+            if ref not in layer_ids:
+                _registry_error(errors, f"{location}.{field} references unknown layer {ref}")
+
+
+def _registry_check_path_strings(
+    values: Any,
+    location: str,
+    errors: list[str],
+) -> None:
+    refs = _registry_string_refs(values, location, errors, required=True)
+    for ref in refs:
+        _registry_path(ref, location, errors)
+
+
+def _registry_load_bundle() -> tuple[dict[str, dict[str, Any]], list[str]]:
+    bundle: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for kind, filename in REGISTRY_FILES.items():
+        data, error = load_json_file(REPO_ROOT / filename)
+        if error or data is None:
+            _registry_error(errors, f"{filename}: {error or 'missing JSON object'}")
+        else:
+            bundle[kind] = data
+    return bundle, errors
+
+
+def _registry_validate_stack(
+    stack: dict[str, Any],
+    contracts: dict[str, Any],
+    capabilities: dict[str, Any],
+    decisions: dict[str, Any],
+    errors: list[str],
+) -> dict[str, Any]:
+    if stack.get("schema") != "trit.stack_manifest.v1":
+        _registry_error(errors, "STACK_MANIFEST.json has the wrong schema")
+    _registry_check_source_refs(stack, "stack", errors)
+    layers = stack.get("layers")
+    if not isinstance(layers, list):
+        _registry_error(errors, "stack.layers must be an array")
+        layers = []
+    layer_ids = _registry_ids(stack, "layers", "stack", errors)
+    if len(layers) != 21:
+        _registry_error(errors, f"stack.layers must contain exactly 21 phases, found {len(layers)}")
+    ordered = stack.get("ordered_phase_ids")
+    if not isinstance(ordered, list) or len(ordered) != 21:
+        _registry_error(errors, "stack.ordered_phase_ids must contain exactly 21 ids")
+        ordered = []
+    if ordered and ordered != [record.get("id") for record in layers if isinstance(record, dict)]:
+        _registry_error(errors, "stack.ordered_phase_ids must match the layer list order")
+    expected_phases = list(range(21))
+    actual_phases = [record.get("phase") for record in layers if isinstance(record, dict)]
+    if actual_phases != expected_phases:
+        _registry_error(errors, "stack phases must be the ordered integers 0 through 20")
+
+    contract_ids = _registry_ids(contracts, "contracts", "contracts", errors)
+    capability_ids = _registry_ids(capabilities, "capabilities", "capabilities", errors)
+    decision_ids = _registry_ids(decisions, "decisions", "decisions", errors)
+    gaps = stack.get("known_gaps", [])
+    gap_ids = _registry_ids({"items": gaps}, "items", "stack.known_gaps", errors)
+    releases = stack.get("releases", [])
+    release_ids = _registry_ids({"items": releases}, "items", "stack.releases", errors)
+
+    edge_pairs: set[tuple[str, str]] = set()
+    edges = stack.get("dependency_edges")
+    if not isinstance(edges, list) or not edges:
+        _registry_error(errors, "stack.dependency_edges must be a non-empty array")
+        edges = []
+    phase_by_id: dict[str, int] = {}
+    for index, layer in enumerate(layers):
+        location = f"stack.layers[{index}]"
+        if not isinstance(layer, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        _registry_check_source_refs(layer, location, errors)
+        layer_id = layer.get("id")
+        phase = layer.get("phase")
+        if isinstance(layer_id, str) and isinstance(phase, int):
+            phase_by_id[layer_id] = phase
+        dependencies = _registry_string_refs(layer.get("depends_on"), f"{location}.depends_on", errors)
+        for dependency in dependencies:
+            if dependency not in layer_ids:
+                _registry_error(errors, f"{location}.depends_on references unknown layer {dependency}")
+            elif isinstance(phase, int) and phase_by_id.get(dependency, phase) >= phase:
+                _registry_error(errors, f"{location}.depends_on is not ordered before phase {phase}: {dependency}")
+        for field, known in (("contract_ids", contract_ids), ("capability_ids", capability_ids), ("gap_refs", gap_ids), ("release_refs", release_ids)):
+            refs = _registry_string_refs(layer.get(field), f"{location}.{field}", errors)
+            for ref in refs:
+                if ref not in known:
+                    _registry_error(errors, f"{location}.{field} references unknown id {ref}")
+        _registry_string_refs(layer.get("test_refs"), f"{location}.test_refs", errors)
+        _registry_string_refs(layer.get("benchmark_refs"), f"{location}.benchmark_refs", errors)
+    for index, edge in enumerate(edges):
+        location = f"stack.dependency_edges[{index}]"
+        if not isinstance(edge, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        source = edge.get("from")
+        target = edge.get("to")
+        if source not in layer_ids or target not in layer_ids:
+            _registry_error(errors, f"{location} references an unknown layer")
+            continue
+        if source == target or phase_by_id.get(source, 999) >= phase_by_id.get(target, -1):
+            _registry_error(errors, f"{location} is not ordered from an earlier phase to a later phase")
+        edge_pairs.add((source, target))
+    for layer in layers:
+        if not isinstance(layer, dict):
+            continue
+        target = layer.get("id")
+        for source in layer.get("depends_on", []) if isinstance(layer.get("depends_on"), list) else []:
+            if (source, target) not in edge_pairs:
+                _registry_error(errors, f"missing dependency edge {source} -> {target}")
+
+    return {
+        "layer_ids": layer_ids,
+        "contract_ids": contract_ids,
+        "capability_ids": capability_ids,
+        "decision_ids": decision_ids,
+        "gap_ids": gap_ids,
+        "release_ids": release_ids,
+        "phase_by_id": phase_by_id,
+    }
+
+
+def _registry_validate_contracts(
+    contracts: dict[str, Any],
+    indexes: dict[str, Any],
+    errors: list[str],
+) -> None:
+    if contracts.get("schema") != "trit.contract_manifest.v1":
+        _registry_error(errors, "CONTRACT_MANIFEST.json has the wrong schema")
+    _registry_check_source_refs(contracts, "contracts", errors)
+    for index, contract in enumerate(contracts.get("contracts", []) if isinstance(contracts.get("contracts"), list) else []):
+        location = f"contracts.contracts[{index}]"
+        if not isinstance(contract, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        _registry_check_source_refs(contract, location, errors)
+        _registry_check_layer_refs(contract, location, indexes["layer_ids"], errors)
+        for field, known in (("test_refs", None), ("decision_ids", indexes["decision_ids"])):
+            refs = _registry_string_refs(contract.get(field), f"{location}.{field}", errors)
+            if known is not None:
+                for ref in refs:
+                    if ref not in known:
+                        _registry_error(errors, f"{location}.{field} references unknown id {ref}")
+        for field in ("contract_status", "maturity_status", "compatibility_status", "evidence_status"):
+            if not isinstance(contract.get(field), str) or not contract[field].strip():
+                _registry_error(errors, f"{location}.{field} must be explicit")
+
+
+def _registry_validate_capabilities(
+    capabilities: dict[str, Any],
+    indexes: dict[str, Any],
+    errors: list[str],
+) -> None:
+    if capabilities.get("schema") != "trit.capability_manifest.v1":
+        _registry_error(errors, "CAPABILITY_MANIFEST.json has the wrong schema")
+    _registry_check_source_refs(capabilities, "capabilities", errors)
+    records = capabilities.get("capabilities", [])
+    if not isinstance(records, list):
+        _registry_error(errors, "capabilities.capabilities must be an array")
+        records = []
+    for index, capability in enumerate(records):
+        location = f"capabilities.capabilities[{index}]"
+        if not isinstance(capability, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        _registry_check_source_refs(capability, location, errors)
+        _registry_check_layer_refs(capability, location, indexes["layer_ids"], errors)
+        for field, known in (("contract_ids", indexes["contract_ids"]), ("depends_on_capability_ids", indexes["capability_ids"]), ("gap_refs", indexes["gap_ids"])):
+            refs = _registry_string_refs(capability.get(field), f"{location}.{field}", errors)
+            for ref in refs:
+                if ref not in known:
+                    _registry_error(errors, f"{location}.{field} references unknown id {ref}")
+        for field in ("test_refs", "benchmark_refs"):
+            _registry_string_refs(capability.get(field), f"{location}.{field}", errors)
+        for field in ("status", "maturity_status", "compatibility_status", "evidence_status"):
+            if not isinstance(capability.get(field), str) or not capability[field].strip():
+                _registry_error(errors, f"{location}.{field} must be explicit")
+
+    compatibility_names = {
+        str(record.get("encoding_name", "")).lower()
+        for record in records
+        if isinstance(record, dict) and record.get("capability_class") == "symbolic_encoding" and record.get("encoding_family") == "compatibility"
+    }
+    required_compatibility = {"ascii", "utf-8", "hexadecimal"}
+    if not required_compatibility <= compatibility_names:
+        _registry_error(errors, "symbolic compatibility capabilities must separately cover ASCII, UTF-8, and hexadecimal")
+    native_names = {
+        str(record.get("encoding_name", "")).lower()
+        for record in records
+        if isinstance(record, dict) and record.get("capability_class") == "symbolic_encoding" and record.get("encoding_family") == "ternary_native"
+    }
+    required_native = {"tascii-81", "exact-trit-literals", "base-27-base-81-dump"}
+    if not required_native <= native_names:
+        _registry_error(errors, "ternary-native symbolic capabilities must separately cover TASCII-81, trit literals, and base-27/base-81 dumps")
+    encrypted = [
+        record for record in records
+        if isinstance(record, dict) and record.get("design_family") == "encrypted_volume"
+    ]
+    encrypted_families = {record.get("encoding_family") for record in encrypted}
+    if not {"compatibility", "ternary_native"} <= encrypted_families:
+        _registry_error(errors, "encrypted-volume compatibility and ternary-native design capabilities must be separate records")
+    storage_layer = "trit.stack.phase.14.storage-vfs"
+    if encrypted and any(storage_layer not in record.get("layer_ids", []) for record in encrypted if isinstance(record, dict)):
+        _registry_error(errors, "each encrypted-volume capability must depend on the storage/VFS layer")
+
+
+def _registry_validate_decisions(
+    decisions: dict[str, Any],
+    indexes: dict[str, Any],
+    errors: list[str],
+) -> None:
+    if decisions.get("schema") != "trit.decision_manifest.v1":
+        _registry_error(errors, "DECISION_MANIFEST.json has the wrong schema")
+    _registry_check_source_refs(decisions, "decisions", errors)
+    records = decisions.get("decisions", [])
+    if not isinstance(records, list):
+        _registry_error(errors, "decisions.decisions must be an array")
+        records = []
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for index, decision in enumerate(records):
+        location = f"decisions.decisions[{index}]"
+        if not isinstance(decision, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        _registry_check_source_refs(decision, location, errors)
+        disposition = decision.get("disposition")
+        if disposition not in REGISTRY_DECISION_DISPOSITIONS:
+            _registry_error(errors, f"{location}.disposition must be accepted, superseded, rejected, or open")
+        conflict_set = decision.get("conflict_set")
+        if conflict_set is not None:
+            if not isinstance(conflict_set, str) or not conflict_set.strip():
+                _registry_error(errors, f"{location}.conflict_set must be null or a non-empty string")
+            else:
+                groups.setdefault(conflict_set, []).append(decision)
+        if not isinstance(decision.get("canonical"), bool):
+            _registry_error(errors, f"{location}.canonical must be boolean")
+        if disposition == "accepted" and decision.get("canonical") is not True:
+            _registry_error(errors, f"{location}: an accepted decision must be canonical")
+        if disposition in {"superseded", "rejected", "open"} and decision.get("canonical") is True:
+            _registry_error(errors, f"{location}: {disposition} decisions cannot be canonical")
+        current_truth = decision.get("current_truth")
+        if current_truth is not None and current_truth not in indexes["contract_ids"]:
+            _registry_error(errors, f"{location}.current_truth references unknown contract {current_truth}")
+        for field, known in (("supersedes", indexes["decision_ids"]), ("affected_contract_ids", indexes["contract_ids"]), ("affected_capability_ids", indexes["capability_ids"])):
+            refs = _registry_string_refs(decision.get(field), f"{location}.{field}", errors)
+            for ref in refs:
+                if ref not in known:
+                    _registry_error(errors, f"{location}.{field} references unknown id {ref}")
+    for conflict_set, group in groups.items():
+        canonical = [decision for decision in group if decision.get("canonical") is True]
+        if len(canonical) > 1:
+            _registry_error(errors, f"conflict set {conflict_set} has simultaneous canonical decisions")
+        if not canonical and not any(decision.get("disposition") == "open" for decision in group):
+            _registry_error(errors, f"conflict set {conflict_set} has no canonical current truth or explicit open resolution")
+
+
+def _registry_validate_coverage(
+    coverage: dict[str, Any],
+    indexes: dict[str, Any],
+    errors: list[str],
+    strict: bool,
+) -> dict[str, Any]:
+    if coverage.get("schema") != "trit.stack_coverage_report.v1":
+        _registry_error(errors, "STACK_COVERAGE_REPORT.json has the wrong schema")
+    _registry_check_source_refs(coverage, "coverage", errors)
+    dimensions = coverage.get("dimensions")
+    required_dimensions = ["specified", "implemented", "integrated", "tested", "benchmarked", "released"]
+    if dimensions != required_dimensions:
+        _registry_error(errors, "coverage.dimensions must distinguish specified, implemented, integrated, tested, benchmarked, and released")
+    records = coverage.get("coverage", [])
+    if not isinstance(records, list):
+        _registry_error(errors, "coverage.coverage must be an array")
+        records = []
+    seen: set[str] = set()
+    for index, record in enumerate(records):
+        location = f"coverage.coverage[{index}]"
+        if not isinstance(record, dict):
+            _registry_error(errors, f"{location} must be an object")
+            continue
+        stack_id = record.get("stack_id")
+        if stack_id not in indexes["layer_ids"]:
+            _registry_error(errors, f"{location}.stack_id references unknown layer {stack_id}")
+        elif stack_id in seen:
+            _registry_error(errors, f"duplicate coverage record for {stack_id}")
+        else:
+            seen.add(stack_id)
+        _registry_check_path_strings(record.get("source_refs"), f"{location}.source_refs", errors)
+        for field, known in (("contract_ids", indexes["contract_ids"]), ("capability_ids", indexes["capability_ids"]), ("gap_refs", indexes["gap_ids"]), ("release_refs", indexes["release_ids"])):
+            refs = _registry_string_refs(record.get(field), f"{location}.{field}", errors)
+            for ref in refs:
+                if ref not in known:
+                    _registry_error(errors, f"{location}.{field} references unknown id {ref}")
+        for field in ("test_refs", "benchmark_refs"):
+            _registry_string_refs(record.get(field), f"{location}.{field}", errors)
+        dimensions_data = record.get("coverage")
+        if not isinstance(dimensions_data, dict):
+            _registry_error(errors, f"{location}.coverage must be an object")
+            continue
+        for dimension in required_dimensions:
+            entry = dimensions_data.get(dimension)
+            entry_location = f"{location}.coverage.{dimension}"
+            if not isinstance(entry, dict):
+                _registry_error(errors, f"{entry_location} must be an object")
+                continue
+            status = entry.get("status")
+            if status not in REGISTRY_COVERAGE_STATUSES:
+                _registry_error(errors, f"{entry_location}.status is invalid")
+            _registry_string_refs(entry.get("evidence_refs"), f"{entry_location}.evidence_refs", errors)
+            if strict and status == "planned" and dimension in {"specified", "implemented", "integrated", "tested"}:
+                _registry_error(errors, f"{entry_location} cannot be merely planned in strict coverage")
+    missing = indexes["layer_ids"] - seen
+    if missing:
+        _registry_error(errors, f"coverage is missing stack layers: {', '.join(sorted(missing))}")
+    return {"records": len(records), "covered_layers": len(seen), "required_layers": len(indexes["layer_ids"])}
+
+
+def validate_registry(strict: bool = False) -> dict[str, Any]:
+    bundle, errors = _registry_load_bundle()
+    report: dict[str, Any] = {
+        "schema": "trit.registry_validation_report.v1",
+        "ok": False,
+        "strict": strict,
+        "files": {kind: REGISTRY_FILES[kind] for kind in REGISTRY_FILES},
+        "errors": errors,
+        "checks": {},
+    }
+    if errors:
+        return report
+    stack = bundle["stack"]
+    capabilities = bundle["capability"]
+    contracts = bundle["contract"]
+    decisions = bundle["decision"]
+    indexes = _registry_validate_stack(stack, contracts, capabilities, decisions, report["errors"])
+    _registry_validate_contracts(contracts, indexes, report["errors"])
+    _registry_validate_capabilities(capabilities, indexes, report["errors"])
+    _registry_validate_decisions(decisions, indexes, report["errors"])
+    coverage_summary = _registry_validate_coverage(bundle["coverage"], indexes, report["errors"], strict)
+    report["checks"] = {
+        "stack_layers": len(indexes["layer_ids"]),
+        "contracts": len(indexes["contract_ids"]),
+        "capabilities": len(indexes["capability_ids"]),
+        "decisions": len(indexes["decision_ids"]),
+        "known_gaps": len(indexes["gap_ids"]),
+        "releases": len(indexes["release_ids"]),
+        "coverage": coverage_summary,
+    }
+    report["ok"] = not report["errors"]
+    return report
+
+
+def _plan_index_report() -> dict[str, Any]:
+    index_path = DOCS_DIR / "11_TreatCode_Platform" / "PLAN_INDEX.md"
+    report: dict[str, Any] = {"path": rel(index_path), "ok": False, "errors": [], "plans": []}
+    if not index_path.exists():
+        report["errors"].append("plan index is missing")
+        return report
+    row_re = re.compile(r"^\|\s*(P\d+)\s*\|\s*\[([^]]+)\]\(([^)]+)\)\s*\|\s*([^|]+)\|\s*([^|]+)\|", re.MULTILINE)
+    rows = row_re.findall(index_path.read_text(encoding="utf-8", errors="replace"))
+    if len(rows) != 14:
+        report["errors"].append(f"plan index must contain 14 plan rows, found {len(rows)}")
+    seen: set[str] = set()
+    status_values = {"not_started", "in_progress", "blocked", "complete", "superseded"}
+    for plan_id, title, path_value, depends, status in rows:
+        if plan_id in seen:
+            report["errors"].append(f"duplicate plan id {plan_id}")
+        seen.add(plan_id)
+        status = status.strip()
+        if status not in status_values:
+            report["errors"].append(f"{plan_id} has invalid status {status}")
+        plan_path = (index_path.parent / path_value).resolve()
+        if not plan_path.exists():
+            report["errors"].append(f"{plan_id} plan file is missing: {path_value}")
+            continue
+        text_value = plan_path.read_text(encoding="utf-8", errors="replace")
+        metadata_id = re.search(r"\*\*Plan ID:\*\*\s*(P\d+)", text_value)
+        metadata_status = re.search(r"\*\*Status:\*\s*`([^`]+)`", text_value)
+        if not metadata_id or metadata_id.group(1) != plan_id:
+            report["errors"].append(f"{plan_id} metadata id does not match the index")
+        if not metadata_status or metadata_status.group(1) != status:
+            report["errors"].append(f"{plan_id} metadata status does not match the index")
+        dependencies = re.findall(r"P\d+", depends)
+        report["plans"].append({
+            "id": plan_id,
+            "title": title,
+            "path": rel(plan_path),
+            "depends_on": dependencies,
+            "status": status,
+        })
+    plan_ids = {item["id"] for item in report["plans"]}
+    for plan in report["plans"]:
+        for dependency in plan["depends_on"]:
+            if dependency not in plan_ids:
+                report["errors"].append(f"{plan['id']} depends on unknown plan {dependency}")
+    report["ok"] = not report["errors"]
+    return report
+
+
+def _git_head() -> str:
+    result = run_command(["git", "rev-parse", "HEAD"], capture=True, timeout=10)
+    value = result.get("stdout", "").strip()
+    return value if result.get("returncode") == 0 and value else "unknown"
+
+
+def _artifact_record(path: Path) -> dict[str, Any]:
+    record: dict[str, Any] = {"path": rel(path), "exists": path.exists()}
+    if path.exists() and path.is_file():
+        record["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return record
+
+
+def cmd_website_registry_validate(args: argparse.Namespace) -> int:
+    report = validate_registry(strict=False)
+    evidence_path = PLAN_EVIDENCE_DIR / "P02" / "registry-validation.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(canonical_json(report), encoding="utf-8")
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode registry validation")
+        print(f"[{'ok' if report['ok'] else 'fail'}] registry files")
+        if report.get("checks"):
+            checks = report["checks"]
+            print(
+                "[ok] records "
+                f"layers={checks.get('stack_layers', 0)} "
+                f"capabilities={checks.get('capabilities', 0)} "
+                f"contracts={checks.get('contracts', 0)} "
+                f"decisions={checks.get('decisions', 0)}"
+            )
+        for error in report["errors"]:
+            print(f"[fail] {error}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_website_registry_coverage(args: argparse.Namespace) -> int:
+    report = validate_registry(strict=bool(args.strict))
+    coverage = report.get("checks", {}).get("coverage", {})
+    evidence = {
+        "schema": "trit.registry_coverage_result.v1",
+        "strict": bool(args.strict),
+        "ok": report["ok"],
+        "coverage": coverage,
+        "errors": report["errors"],
+    }
+    evidence_path = PLAN_EVIDENCE_DIR / "P02" / "registry-coverage.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(canonical_json(evidence), encoding="utf-8")
+    if args.json:
+        print_json(evidence)
+    else:
+        print("TreatCode registry coverage")
+        print(
+            f"[{'ok' if report['ok'] else 'fail'}] "
+            f"covered {coverage.get('covered_layers', 0)}/{coverage.get('required_layers', 21)} stack layers"
+        )
+        for error in report["errors"]:
+            print(f"[fail] {error}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_website_plans_validate(args: argparse.Namespace) -> int:
+    report = _plan_index_report()
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode plan validation")
+        print(f"[{'ok' if report['ok'] else 'fail'}] {len(report['plans'])} plan entries")
+        for error in report["errors"]:
+            print(f"[fail] {error}")
+    return 0 if report["ok"] else 1
+
+
+def cmd_website_plan_verify(args: argparse.Namespace) -> int:
+    plan_id = args.plan_id.upper()
+    plan_report = _plan_index_report()
+    target = next((plan for plan in plan_report["plans"] if plan["id"] == plan_id), None)
+    registry_report = validate_registry(strict=True) if plan_id == "P02" else {"ok": False, "errors": [f"no verifier implemented for {plan_id}"]}
+    dependency_status: dict[str, str] = {}
+    if target:
+        for dependency in target["depends_on"]:
+            dependency_record = next((plan for plan in plan_report["plans"] if plan["id"] == dependency), None)
+            dependency_status[dependency] = dependency_record["status"] if dependency_record else "missing"
+    required_artifacts = [REPO_ROOT / REGISTRY_FILES[key] for key in ("stack", "capability", "contract", "decision", "coverage")]
+    artifacts = [_artifact_record(path) for path in required_artifacts]
+    dependency_ok = bool(target) and all(status == "complete" for status in dependency_status.values())
+    human_approval_ok = False
+    if target and target["status"] == "complete":
+        plan_path = DOCS_DIR / "11_TreatCode_Platform" / "plans" / "P02_stack_capabilities_decisions.md"
+        if plan_path.exists():
+            plan_text = plan_path.read_text(encoding="utf-8", errors="replace")
+            human_approval_ok = bool(re.search(r"Architecture owner[^\n]*approved", plan_text, re.IGNORECASE))
+    checks = {
+        "plan_index": plan_report["ok"],
+        "registry": registry_report["ok"],
+        "required_artifacts": all(item["exists"] for item in artifacts),
+        "dependencies_complete": dependency_ok,
+        "human_approval": human_approval_ok,
+    }
+    result: dict[str, Any] = {
+        "schema": "trit.plan_verification_result.v1",
+        "plan_id": plan_id,
+        "plan_version": 1,
+        "verified_commit": _git_head(),
+        "ok": all(checks.values()),
+        "completion_eligible": all(checks.values()),
+        "checks": checks,
+        "dependency_status": dependency_status,
+        "registry_errors": registry_report.get("errors", []),
+        "artifacts": artifacts,
+        "commands": [
+            {"command": "python tools/trit_tool.py website plans validate", "exit_code": 0 if plan_report["ok"] else 1},
+            {"command": "python tools/trit_tool.py website registry validate", "exit_code": 0 if validate_registry(strict=False)["ok"] else 1},
+            {"command": "python tools/trit_tool.py website registry coverage --strict", "exit_code": 0 if registry_report["ok"] else 1},
+        ],
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "repository": str(REPO_ROOT),
+        },
+        "human_approvals": {
+            "required": ["Architecture owner"],
+            "recorded": human_approval_ok,
+        },
+        "verification_date_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
+    evidence_path = REPO_ROOT / "build" / "treatcode-plan-evidence" / plan_id / "result.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.json:
+        print_json(result)
+    else:
+        print(f"TreatCode plan verification: {plan_id}")
+        print(f"[{'ok' if result['ok'] else 'blocked'}] completion eligibility")
+        for name, value in checks.items():
+            print(f"[{'ok' if value else 'fail'}] {name}")
+        print(f"evidence: {evidence_path}")
+        if not result["ok"]:
+            print("Plan completion remains blocked until all dependency and human gates are recorded.")
+    return 0 if result["ok"] else 1
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:
@@ -1906,6 +2610,906 @@ def cmd_knowledge_graph(args: argparse.Namespace) -> int:
     return int(result["returncode"])
 
 
+def _plan_error(code: str, message: str, **details: Any) -> dict[str, Any]:
+    error = {"code": code, "message": message}
+    error.update(details)
+    return error
+
+
+def _normalise_plan_status(value: Any) -> str:
+    return str(value or "").strip().strip("`").strip().lower()
+
+
+def _parse_plan_dependencies(value: Any) -> tuple[list[str], list[str]]:
+    if value is None:
+        return [], []
+    text_value = str(value).strip().strip("`")
+    if not text_value or text_value.lower() in {"none", "-", "—", "–"}:
+        return [], []
+    dependencies: list[str] = []
+    invalid: list[str] = []
+    tokens = [token.strip() for token in re.split(r"[,;]", text_value) if token.strip()]
+    for token in tokens:
+        range_match = re.fullmatch(r"(P\d+)\s*[-–—]\s*(P\d+)", token, flags=re.IGNORECASE)
+        if range_match:
+            first = int(range_match.group(1)[1:])
+            last = int(range_match.group(2)[1:])
+            if first > last:
+                invalid.append(token)
+                continue
+            dependencies.extend(f"P{number:02d}" for number in range(first, last + 1))
+            continue
+        if re.fullmatch(r"P\d+", token, flags=re.IGNORECASE):
+            dependencies.append(token.upper())
+        else:
+            invalid.append(token)
+    return dependencies, invalid
+
+
+def parse_treatcode_plan_index(index_path: Path = PLAN_INDEX_PATH) -> dict[str, Any]:
+    """Parse the authoritative TreatCode plan index table."""
+
+    errors: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    try:
+        text_value = index_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "path": str(index_path),
+            "rows": [],
+            "errors": [_plan_error("missing_plan_index", f"plan index is missing: {index_path}")],
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "path": str(index_path),
+            "rows": [],
+            "errors": [_plan_error("unreadable_plan_index", f"could not read plan index: {exc}")],
+        }
+
+    link_re = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+    for line_number, line in enumerate(text_value.splitlines(), 1):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or not re.fullmatch(r"P\d+", cells[0], flags=re.IGNORECASE):
+            continue
+        link = link_re.search(cells[1])
+        if not link:
+            errors.append(
+                _plan_error(
+                    "invalid_plan_index_row",
+                    f"plan index row {line_number} has no plan link",
+                    line=line_number,
+                )
+            )
+            continue
+        dependencies, invalid_dependencies = _parse_plan_dependencies(cells[2])
+        if invalid_dependencies:
+            errors.append(
+                _plan_error(
+                    "invalid_dependency_reference",
+                    f"plan index row {line_number} has invalid dependencies: {', '.join(invalid_dependencies)}",
+                    plan_id=cells[0].upper(),
+                    line=line_number,
+                )
+            )
+        rows.append(
+            {
+                "id": cells[0].upper(),
+                "title": link.group(1).strip(),
+                "path": link.group(2).strip(),
+                "depends_on": dependencies,
+                "status": _normalise_plan_status(cells[3]),
+                "completion_evidence": cells[4].strip(),
+                "line": line_number,
+            }
+        )
+    if not rows:
+        errors.append(_plan_error("empty_plan_index", f"no plan rows found in {index_path}"))
+    return {"ok": not errors, "path": str(index_path), "rows": rows, "errors": errors}
+
+
+def parse_treatcode_plan_document(plan_path: Path) -> dict[str, Any]:
+    """Extract the machine-relevant sections from one plan document."""
+
+    try:
+        text_value = plan_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "path": str(plan_path),
+            "errors": [_plan_error("missing_plan_document", f"plan document is missing: {plan_path}")],
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "path": str(plan_path),
+            "errors": [_plan_error("unreadable_plan_document", f"could not read plan document: {exc}")],
+        }
+
+    def metadata(pattern: str, default: Any = None) -> Any:
+        match = re.search(pattern, text_value, flags=re.IGNORECASE | re.MULTILINE)
+        return match.group(1).strip() if match else default
+
+    version_value = metadata(r"^\s*-\s*\*\*Version:\*\*\s*`?([^`\s]+)", "")
+    try:
+        version: int | None = int(version_value)
+    except (TypeError, ValueError):
+        version = None
+    depends_text = metadata(r"^\s*-\s*\*\*Depends on:\*\*\s*(.+)$", "")
+    dependencies, invalid_dependencies = _parse_plan_dependencies(depends_text)
+
+    verification_commands: list[str] = []
+    verification_match = re.search(
+        r"^##\s+Verification\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text_value,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    if verification_match:
+        fence_match = re.search(r"```[^\r\n]*\r?\n([\s\S]*?)```", verification_match.group(1))
+        if fence_match:
+            verification_commands = [
+                line.strip()
+                for line in fence_match.group(1).splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+
+    evidence: list[str] = []
+    evidence_match = re.search(
+        r"^##\s+Required Evidence\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text_value,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    if evidence_match:
+        current: str | None = None
+        for line in evidence_match.group(1).splitlines():
+            bullet = re.match(r"^\s*-\s+(.+?)\s*$", line)
+            if bullet:
+                if current:
+                    evidence.append(current)
+                current = bullet.group(1).strip()
+            elif current and line.strip():
+                current += " " + line.strip()
+        if current:
+            evidence.append(current)
+
+    errors: list[dict[str, Any]] = []
+    if invalid_dependencies:
+        errors.append(
+            _plan_error(
+                "invalid_dependency_reference",
+                f"{rel(plan_path)} has invalid dependencies: {', '.join(invalid_dependencies)}",
+            )
+        )
+    return {
+        "ok": not errors,
+        "path": str(plan_path),
+        "plan_id": metadata(r"^\s*-\s*\*\*Plan ID:\*\*\s*`?([^`\s]+)", "").upper(),
+        "version": version,
+        "status": _normalise_plan_status(metadata(r"^\s*-\s*\*\*Status:\*\*\s*`?([^`\s]+)", "")),
+        "depends_on": dependencies,
+        "scope_owner": metadata(r"^\s*-\s*\*\*Scope owner:\*\*\s*(.+)$", ""),
+        "verification_commands": verification_commands,
+        "required_evidence": evidence,
+        "errors": errors,
+    }
+
+
+def _plan_command_text(command: Any) -> str:
+    if isinstance(command, str):
+        return command.strip()
+    if isinstance(command, dict):
+        display = command.get("display")
+        if isinstance(display, str) and display.strip():
+            return display.strip()
+        return _plan_command_text(command.get("command", ""))
+    if isinstance(command, list):
+        return " ".join(str(item) for item in command).strip()
+    return ""
+
+
+def _plan_evidence_reference(evidence: Any) -> str:
+    if isinstance(evidence, str):
+        return evidence.strip()
+    if not isinstance(evidence, dict):
+        return ""
+    for key in ("path", "uri", "artifact", "reference", "content_hash"):
+        value = evidence.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    roles = evidence.get("approval_roles")
+    if isinstance(roles, list) and any(str(role).strip() for role in roles):
+        return "approval_roles:" + ",".join(str(role).strip() for role in roles if str(role).strip())
+    return ""
+
+
+def _plan_resolve_path(value: str | Path, repo_root: Path) -> Path:
+    path = Path(value)
+    return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
+
+
+def _plan_dependency_cycles(entries: dict[str, dict[str, Any]]) -> list[list[str]]:
+    cycles: list[list[str]] = []
+    visiting: list[str] = []
+    visited: set[str] = set()
+
+    def visit(plan_id: str) -> None:
+        if plan_id in visiting:
+            start = visiting.index(plan_id)
+            cycle = visiting[start:] + [plan_id]
+            if cycle not in cycles:
+                cycles.append(cycle)
+            return
+        if plan_id in visited or plan_id not in entries:
+            return
+        visiting.append(plan_id)
+        for dependency in entries[plan_id].get("depends_on", []):
+            visit(str(dependency).upper())
+        visiting.pop()
+        visited.add(plan_id)
+
+    for plan_id in entries:
+        visit(plan_id)
+    return cycles
+
+
+def validate_treatcode_plan_manifest(
+    manifest: Any,
+    *,
+    repo_root: Path = REPO_ROOT,
+    manifest_path: Path | None = None,
+    index_path: Path | None = None,
+) -> dict[str, Any]:
+    """Validate the plan manifest and its relationship to PLAN_INDEX.md."""
+
+    errors: list[dict[str, Any]] = []
+    if not isinstance(manifest, dict):
+        return {
+            "ok": False,
+            "errors": [_plan_error("invalid_manifest", "plan manifest must be a JSON object")],
+            "plan_ids": [],
+            "index_plan_ids": [],
+        }
+
+    if manifest.get("version") != 1:
+        errors.append(_plan_error("invalid_manifest_version", "plan manifest version must be 1"))
+    if manifest.get("schema") != "trit.treatcode_plan_manifest.v1":
+        errors.append(_plan_error("invalid_manifest_schema", "plan manifest schema must be trit.treatcode_plan_manifest.v1"))
+
+    manifest_file = manifest_path or PLAN_MANIFEST_PATH
+    schema_value = manifest.get("schema_file", "TREATCODE_PLAN_MANIFEST_SCHEMA.json")
+    if not isinstance(schema_value, str) or not schema_value.strip():
+        errors.append(_plan_error("missing_manifest_schema", "manifest schema_file is missing"))
+    else:
+        schema_path = _plan_resolve_path(schema_value, manifest_file.parent if manifest_path else repo_root)
+        if not schema_path.exists():
+            errors.append(_plan_error("missing_manifest_schema", f"manifest schema is missing: {schema_value}"))
+
+    index_value = index_path
+    if index_value is None:
+        index_value = manifest.get("index", str(PLAN_INDEX_PATH.relative_to(repo_root)))
+    if not isinstance(index_value, Path):
+        index_value = _plan_resolve_path(str(index_value), manifest_file.parent if manifest_path else repo_root)
+    index_report = parse_treatcode_plan_index(index_value)
+    errors.extend(index_report.get("errors", []))
+    index_rows = index_report.get("rows", [])
+    index_ids = [str(row.get("id", "")).upper() for row in index_rows]
+    index_id_counts: dict[str, int] = {}
+    for plan_id in index_ids:
+        index_id_counts[plan_id] = index_id_counts.get(plan_id, 0) + 1
+        if index_id_counts[plan_id] > 1:
+            errors.append(_plan_error("duplicate_plan_id", f"plan index contains duplicate plan ID {plan_id}", plan_id=plan_id))
+
+    plans = manifest.get("plans")
+    if not isinstance(plans, list):
+        errors.append(_plan_error("missing_plans", "manifest plans must be a list"))
+        plans = []
+
+    entries: dict[str, dict[str, Any]] = {}
+    manifest_ids: list[str] = []
+    for position, entry in enumerate(plans):
+        if not isinstance(entry, dict):
+            errors.append(_plan_error("invalid_plan_entry", f"manifest plan entry {position} must be an object", position=position))
+            continue
+        plan_id = str(entry.get("id", "")).strip().upper()
+        manifest_ids.append(plan_id)
+        if not plan_id or not re.fullmatch(r"P\d+", plan_id):
+            errors.append(_plan_error("invalid_plan_id", f"manifest plan entry {position} has an invalid ID", position=position))
+            continue
+        if plan_id in entries:
+            errors.append(_plan_error("duplicate_plan_id", f"manifest contains duplicate plan ID {plan_id}", plan_id=plan_id))
+        entries[plan_id] = entry
+
+        status = _normalise_plan_status(entry.get("status"))
+        if status not in PLAN_STATUSES:
+            errors.append(_plan_error("invalid_status", f"{plan_id} has invalid status {entry.get('status')!r}", plan_id=plan_id))
+        if not isinstance(entry.get("version"), int) or entry.get("version") < 1:
+            errors.append(_plan_error("invalid_plan_version", f"{plan_id} has an invalid version", plan_id=plan_id))
+        if "depends_on" not in entry or not isinstance(entry.get("depends_on"), list):
+            errors.append(_plan_error("missing_dependencies", f"{plan_id} must declare depends_on as a list", plan_id=plan_id))
+        dependencies = [str(item).strip().upper() for item in entry.get("depends_on", [])] if isinstance(entry.get("depends_on"), list) else []
+        if len(dependencies) != len(set(dependencies)):
+            errors.append(_plan_error("duplicate_dependency", f"{plan_id} declares a dependency more than once", plan_id=plan_id))
+        entry["depends_on"] = dependencies
+        if not isinstance(entry.get("plan_file"), str) or not entry.get("plan_file", "").strip():
+            errors.append(_plan_error("missing_plan_file", f"{plan_id} must reference its plan_file", plan_id=plan_id))
+
+        commands = entry.get("verification_commands")
+        if not isinstance(commands, list) or not commands:
+            errors.append(_plan_error("absent_verification_commands", f"{plan_id} has no verification commands", plan_id=plan_id))
+        else:
+            command_ids: set[str] = set()
+            for command_position, command in enumerate(commands):
+                command_text = _plan_command_text(command)
+                if not command_text:
+                    errors.append(
+                        _plan_error(
+                            "absent_verification_command",
+                            f"{plan_id} verification command {command_position} is empty",
+                            plan_id=plan_id,
+                        )
+                    )
+                if isinstance(command, dict):
+                    command_id = str(command.get("id", "")).strip()
+                    if not command_id:
+                        errors.append(_plan_error("missing_verification_command_id", f"{plan_id} has an unnamed verification command", plan_id=plan_id))
+                    elif command_id in command_ids:
+                        errors.append(_plan_error("duplicate_verification_command_id", f"{plan_id} repeats command ID {command_id}", plan_id=plan_id))
+                    command_ids.add(command_id)
+
+        evidence = entry.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            errors.append(_plan_error("absent_evidence_references", f"{plan_id} has no evidence references", plan_id=plan_id))
+        else:
+            for evidence_position, reference in enumerate(evidence):
+                if not _plan_evidence_reference(reference):
+                    errors.append(
+                        _plan_error(
+                            "absent_evidence_reference",
+                            f"{plan_id} evidence reference {evidence_position} is empty",
+                            plan_id=plan_id,
+                        )
+                    )
+
+        gates = entry.get("gates")
+        if not isinstance(gates, list) or not gates:
+            errors.append(_plan_error("missing_gates", f"{plan_id} has no gates", plan_id=plan_id))
+        else:
+            human_gate = False
+            for gate_position, gate in enumerate(gates):
+                if not isinstance(gate, dict) or str(gate.get("type", "")).lower() not in PLAN_GATE_TYPES:
+                    errors.append(_plan_error("invalid_gate", f"{plan_id} has an invalid gate at position {gate_position}", plan_id=plan_id))
+                elif str(gate.get("type", "")).lower() == "human" and gate.get("required", True):
+                    human_gate = True
+            approvals = entry.get("required_approvals")
+            if human_gate and (not isinstance(approvals, list) or not any(str(item).strip() for item in approvals)):
+                errors.append(_plan_error("missing_required_approvals", f"{plan_id} has a required human gate but no required_approvals", plan_id=plan_id))
+
+        if status == "complete" and not isinstance(entry.get("completion_record"), dict):
+            errors.append(_plan_error("missing_completion_record", f"{plan_id} is complete but has no completion_record", plan_id=plan_id))
+
+    manifest_id_set = set(manifest_ids)
+    index_id_set = set(index_ids)
+    for plan_id in sorted(index_id_set - manifest_id_set):
+        errors.append(_plan_error("missing_plan_entry", f"plan index entry {plan_id} is missing from manifest", plan_id=plan_id))
+    for plan_id in sorted(manifest_id_set - index_id_set):
+        errors.append(_plan_error("extra_plan_entry", f"manifest entry {plan_id} is missing from plan index", plan_id=plan_id))
+
+    for row in index_rows:
+        plan_id = str(row.get("id", "")).upper()
+        entry = entries.get(plan_id)
+        if not entry:
+            continue
+        if _normalise_plan_status(entry.get("status")) != row.get("status"):
+            errors.append(_plan_error("status_mismatch", f"{plan_id} status differs between manifest and plan index", plan_id=plan_id))
+        manifest_dependencies = [str(item).upper() for item in entry.get("depends_on", [])]
+        if manifest_dependencies != row.get("depends_on", []):
+            errors.append(_plan_error("dependency_mismatch", f"{plan_id} dependencies differ between manifest and plan index", plan_id=plan_id))
+        expected_path = (index_value.parent / str(row.get("path", ""))).resolve()
+        actual_path = _plan_resolve_path(str(entry.get("plan_file", "")), repo_root)
+        if expected_path != actual_path:
+            errors.append(_plan_error("plan_file_mismatch", f"{plan_id} plan_file differs from plan index", plan_id=plan_id))
+        if expected_path.exists():
+            document = parse_treatcode_plan_document(expected_path)
+            errors.extend(document.get("errors", []))
+            if document.get("plan_id") and document.get("plan_id") != plan_id:
+                errors.append(_plan_error("plan_document_id_mismatch", f"{plan_id} document metadata has a different ID", plan_id=plan_id))
+            if document.get("version") is not None and document.get("version") != entry.get("version"):
+                errors.append(_plan_error("plan_document_version_mismatch", f"{plan_id} document version differs from manifest", plan_id=plan_id))
+            if document.get("status") and document.get("status") != _normalise_plan_status(entry.get("status")):
+                errors.append(_plan_error("plan_document_status_mismatch", f"{plan_id} document status differs from manifest", plan_id=plan_id))
+            if document.get("depends_on", []) != manifest_dependencies:
+                errors.append(_plan_error("plan_document_dependency_mismatch", f"{plan_id} document dependencies differ from manifest", plan_id=plan_id))
+            manifest_commands = [_plan_command_text(command) for command in entry.get("verification_commands", [])]
+            if document.get("verification_commands", []) != manifest_commands:
+                errors.append(_plan_error("verification_command_mismatch", f"{plan_id} verification commands differ from plan document", plan_id=plan_id))
+
+    for plan_id, entry in entries.items():
+        for dependency in entry.get("depends_on", []):
+            if dependency not in entries:
+                errors.append(_plan_error("missing_dependency", f"{plan_id} depends on unknown plan {dependency}", plan_id=plan_id, dependency=dependency))
+    for cycle in _plan_dependency_cycles(entries):
+        errors.append(_plan_error("dependency_cycle", f"dependency cycle detected: {' -> '.join(cycle)}", cycle=cycle))
+
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "manifest": str(manifest_file),
+        "index": str(index_value),
+        "plan_ids": manifest_ids,
+        "index_plan_ids": index_ids,
+        "plan_count": len(manifest_ids),
+    }
+
+
+def load_treatcode_plan_manifest(path: Path = PLAN_MANIFEST_PATH) -> tuple[Any | None, str | None]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle), None
+    except FileNotFoundError:
+        return None, "file is missing"
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON at line {exc.lineno}: {exc.msg}"
+
+
+def _plan_current_commit() -> str:
+    result = run_command(["git", "rev-parse", "HEAD"], capture=True, timeout=10)
+    if result["returncode"] == 0 and result["stdout"].strip():
+        return result["stdout"].strip()
+    return "nogit"
+
+
+def _plan_environment() -> dict[str, Any]:
+    environment = {
+        "platform": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "tool": "tools/trit_tool.py",
+    }
+    environment["fingerprint"] = hashlib.sha256(canonical_json(environment).encode("utf-8")).hexdigest()
+    return environment
+
+
+def _plan_command_argv(command: Any) -> list[str]:
+    if isinstance(command, dict):
+        command = command.get("command", "")
+    if isinstance(command, list):
+        return [str(item) for item in command]
+    text_value = str(command or "").strip()
+    if not text_value:
+        return []
+    if text_value.lower().endswith(".ps1") and " " not in text_value:
+        powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", text_value]
+    if text_value.lower().startswith("tools/") and text_value.lower().endswith(".cmd"):
+        return ["cmd", "/c", text_value]
+    try:
+        return shlex.split(text_value, posix=True)
+    except ValueError:
+        return [text_value]
+
+
+def _plan_is_self_verification(command: Any, plan_id: str) -> bool:
+    text_value = _plan_command_text(command)
+    return bool(re.search(rf"\bwebsite\s+plan\s+verify\s+{re.escape(plan_id)}(?:\s|$)", text_value, flags=re.IGNORECASE))
+
+
+def _plan_approval_entries(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    record = entry.get("completion_record")
+    if not isinstance(record, dict):
+        return []
+    raw = record.get("human_approvals", [])
+    if not isinstance(raw, list):
+        return []
+    approvals: list[dict[str, Any]] = []
+    for approval in raw:
+        if isinstance(approval, str):
+            approvals.append({"role": approval})
+        elif isinstance(approval, dict):
+            approvals.append(approval)
+    return approvals
+
+
+def _plan_approval_status(entry: dict[str, Any]) -> dict[str, Any]:
+    required = [str(item).strip() for item in entry.get("required_approvals", []) if str(item).strip()]
+    actual = _plan_approval_entries(entry)
+    missing: list[str] = []
+    accepted: list[dict[str, Any]] = []
+    accepted_decisions = {"approve", "approved", "accept", "accepted", "pass", "passed"}
+    for role in required:
+        found = None
+        for approval in actual:
+            if str(approval.get("role", "")).strip().casefold() != role.casefold():
+                continue
+            fields_present = all(str(approval.get(field, "")).strip() for field in ("reviewer", "decision", "date", "commit"))
+            decision = str(approval.get("decision", "")).strip().casefold()
+            if fields_present and decision in accepted_decisions:
+                found = approval
+                break
+        if found is None:
+            missing.append(role)
+        else:
+            accepted.append(found)
+    return {"required": required, "accepted": accepted, "missing": missing, "ok": not missing}
+
+
+def _plan_evidence_status(entry: dict[str, Any], output_dir: Path, result_path: Path) -> list[dict[str, Any]]:
+    statuses: list[dict[str, Any]] = []
+    for reference in entry.get("evidence", []):
+        item = reference if isinstance(reference, dict) else {"description": str(reference)}
+        path_value = item.get("path") if isinstance(item, dict) else None
+        path = _plan_resolve_path(path_value, REPO_ROOT) if isinstance(path_value, str) and path_value.strip() else None
+        is_result = path is not None and path.resolve() == result_path.resolve()
+        exists = bool(path and path.exists()) or is_result
+        digest = None
+        if path and path.exists() and not is_result:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        artifact = item.get("artifact") if isinstance(item, dict) else None
+        uri = item.get("uri") if isinstance(item, dict) else None
+        approval_roles = item.get("approval_roles", []) if isinstance(item, dict) else []
+        statuses.append(
+            {
+                "id": item.get("id", "") if isinstance(item, dict) else "",
+                "description": item.get("description", "") if isinstance(item, dict) else str(reference),
+                "reference": _plan_evidence_reference(reference),
+                "path": str(path) if path else None,
+                "exists": exists,
+                "sha256": digest,
+                "artifact": artifact,
+                "uri": uri,
+                "approval_roles": approval_roles,
+                "self_reference": is_result,
+            }
+        )
+    return statuses
+
+
+def _plan_stable_result_view(value: Any) -> Any:
+    """Return the reproducible portion of a verification result.
+
+    Evidence paths are useful to humans but are not part of the verification
+    claim, and command duration/timestamps are expected to vary between runs.
+    Keeping the content hash over this projection makes same-commit reruns
+    directly comparable without hiding the full diagnostic result.
+    """
+
+    volatile_keys = {
+        "content_hash",
+        "duration_seconds",
+        "log",
+        "output",
+        "path",
+        "result_sha256",
+        "sha256",
+        "stderr_sha256",
+        "stdout_sha256",
+        "verification_date",
+    }
+    if isinstance(value, dict):
+        return {
+            key: _plan_stable_result_view(item)
+            for key, item in value.items()
+            if key not in volatile_keys
+        }
+    if isinstance(value, list):
+        return [_plan_stable_result_view(item) for item in value]
+    return value
+
+
+def verify_treatcode_plan(
+    plan_id: str,
+    *,
+    manifest_path: Path = PLAN_MANIFEST_PATH,
+    output_dir: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+    index_path: Path | None = None,
+    run_commands: bool = True,
+    timeout: int = 300,
+) -> dict[str, Any]:
+    """Run one plan's declared commands and write its reproducible evidence."""
+
+    normalized_id = str(plan_id).strip().upper()
+    manifest, load_error = load_treatcode_plan_manifest(manifest_path)
+    output_root = output_dir or (repo_root / "build" / "treatcode-plan-evidence" / normalized_id)
+    output_root = output_root if output_root.is_absolute() else (repo_root / output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    result_path = output_root / "result.json"
+    started_at = _dt.datetime.now(_dt.timezone.utc)
+
+    result: dict[str, Any] = {
+        "schema": "trit.treatcode_plan_verification_result.v1",
+        "plan": {"id": normalized_id, "version": None, "status": None},
+        "complete": False,
+        "verification_ok": False,
+        "verified_commit": _plan_current_commit(),
+        "dependencies": {},
+        "verifier": {"tool": "tools/trit_tool.py", "command": f"website plan verify {normalized_id}"},
+        "verification_commands": [],
+        "environment": _plan_environment(),
+        "evidence": [],
+        "human_approvals": {"required": [], "accepted": [], "missing": [], "ok": False},
+        "issues": [],
+        "verification_date": started_at.isoformat().replace("+00:00", "Z"),
+        "output": str(result_path),
+    }
+
+    if load_error:
+        result["issues"].append(_plan_error("manifest_load_failed", f"could not load plan manifest: {load_error}"))
+    else:
+        validation = validate_treatcode_plan_manifest(
+            manifest,
+            repo_root=repo_root,
+            manifest_path=manifest_path,
+            index_path=index_path,
+        )
+        result["validation"] = validation
+        if not validation["ok"]:
+            result["issues"].extend(validation["errors"])
+
+        entries = {str(item.get("id", "")).upper(): item for item in manifest.get("plans", []) if isinstance(item, dict)}
+        entry = entries.get(normalized_id)
+        if entry is None:
+            result["issues"].append(_plan_error("unknown_plan_id", f"unknown plan ID {normalized_id}", plan_id=normalized_id))
+        else:
+            result["plan"] = {
+                "id": normalized_id,
+                "version": entry.get("version"),
+                "status": _normalise_plan_status(entry.get("status")),
+            }
+            for dependency in entry.get("depends_on", []):
+                dependency_entry = entries.get(str(dependency).upper())
+                result["dependencies"][str(dependency).upper()] = {
+                    "status": _normalise_plan_status(dependency_entry.get("status")) if dependency_entry else None,
+                    "verified_commit": dependency_entry.get("completion_record", {}).get("verified_commit") if dependency_entry and isinstance(dependency_entry.get("completion_record"), dict) else None,
+                    "complete": bool(dependency_entry and _normalise_plan_status(dependency_entry.get("status")) == "complete"),
+                }
+                if not dependency_entry or _normalise_plan_status(dependency_entry.get("status")) != "complete":
+                    result["issues"].append(_plan_error("dependency_not_complete", f"dependency {dependency} is not complete", dependency=dependency))
+
+            command_results: list[dict[str, Any]] = []
+            commands_passed = True
+            for position, command in enumerate(entry.get("verification_commands", [])):
+                command_text = _plan_command_text(command)
+                command_id = command.get("id", f"command_{position + 1}") if isinstance(command, dict) else f"command_{position + 1}"
+                command_record: dict[str, Any] = {
+                    "id": str(command_id),
+                    "command": command_text,
+                    "required": command.get("required", True) if isinstance(command, dict) else True,
+                }
+                if _plan_is_self_verification(command, normalized_id):
+                    command_record.update({"status": "self_reference_skipped", "returncode": 0, "duration_seconds": 0.0, "stdout_sha256": "", "stderr_sha256": ""})
+                elif not run_commands:
+                    command_record.update({"status": "not_run", "returncode": 125, "duration_seconds": 0.0, "stdout_sha256": "", "stderr_sha256": ""})
+                    if command_record["required"]:
+                        commands_passed = False
+                else:
+                    argv = _plan_command_argv(command)
+                    execution = run_command(argv, cwd=repo_root, capture=True, timeout=timeout)
+                    stdout = execution.get("stdout", "") or ""
+                    stderr = execution.get("stderr", "") or ""
+                    command_record.update(
+                        {
+                            "status": "passed" if execution["returncode"] == 0 else "failed",
+                            "returncode": execution["returncode"],
+                            "duration_seconds": execution["duration_seconds"],
+                            "stdout_sha256": hashlib.sha256(stdout.encode("utf-8", errors="replace")).hexdigest(),
+                            "stderr_sha256": hashlib.sha256(stderr.encode("utf-8", errors="replace")).hexdigest(),
+                            "stdout_bytes": len(stdout.encode("utf-8", errors="replace")),
+                            "stderr_bytes": len(stderr.encode("utf-8", errors="replace")),
+                            "argv": argv,
+                        }
+                    )
+                    log_path = output_root / f"command-{position + 1:02d}-{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(command_id))}.log"
+                    log_path.write_text(
+                        f"$ {command_text}\n\n[stdout]\n{stdout}\n[stderr]\n{stderr}",
+                        encoding="utf-8",
+                    )
+                    command_record["log"] = str(log_path)
+                    if command_record["required"] and execution["returncode"] != 0:
+                        commands_passed = False
+                command_results.append(command_record)
+            result["verification_commands"] = command_results
+
+            # P00 names its passing unit-test log explicitly. Keep this stable
+            # and human-readable while also retaining per-command logs above.
+            log_evidence_path = output_root / "unit-test.log"
+            if any("unittest" in item["command"] for item in command_results):
+                log_lines = []
+                for item in command_results:
+                    if "unittest" not in item["command"]:
+                        continue
+                    log_path = Path(item.get("log", ""))
+                    if log_path.exists():
+                        log_lines.append(log_path.read_text(encoding="utf-8", errors="replace"))
+                    else:
+                        log_lines.append(
+                            f"{item['id']}: returncode={item.get('returncode')} status={item.get('status')}"
+                        )
+                log_evidence_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+            ci_payload = {
+                "artifact_id": os.environ.get("GITHUB_RUN_ID") or f"local:{result.get('verified_commit', '')}",
+                "artifact_name": "treatcode-plan-verification",
+                "plan_id": normalized_id,
+                "command_exit_codes": [
+                    {"id": item.get("id"), "returncode": item.get("returncode")}
+                    for item in command_results
+                ],
+            }
+            ci_payload["content_hash"] = hashlib.sha256(
+                canonical_json(ci_payload).encode("utf-8")
+            ).hexdigest()
+            (output_root / "ci-artifact.json").write_text(
+                canonical_json(ci_payload), encoding="utf-8"
+            )
+
+            result["evidence"] = _plan_evidence_status(entry, output_root, result_path)
+            result["human_approvals"] = _plan_approval_status(entry)
+            status = _normalise_plan_status(entry.get("status"))
+            if status != "complete":
+                result["issues"].append(_plan_error("plan_not_complete", f"{normalized_id} status is {status}, not complete"))
+            if not commands_passed:
+                result["issues"].append(_plan_error("verification_command_failed", f"one or more required commands failed for {normalized_id}"))
+            if not result["human_approvals"]["ok"]:
+                result["issues"].append(_plan_error("human_approval_missing", f"required human approval is missing for {normalized_id}", roles=result["human_approvals"]["missing"]))
+            evidence_missing = [item for item in result["evidence"] if item.get("path") and not item.get("exists") and not item.get("self_reference")]
+            if evidence_missing:
+                result["issues"].append(
+                    _plan_error(
+                        "evidence_missing",
+                        f"required evidence is missing for {normalized_id}",
+                        references=[item.get("reference") for item in evidence_missing],
+                    )
+                )
+            record = entry.get("completion_record") if isinstance(entry.get("completion_record"), dict) else {}
+            required_completion_fields = ("verified_commit", "evidence_artifact", "date")
+            missing_completion_fields = [field for field in required_completion_fields if not str(record.get(field, "")).strip()]
+            if missing_completion_fields and status == "complete":
+                result["issues"].append(_plan_error("completion_record_incomplete", "completion record is missing required fields", fields=missing_completion_fields))
+            result["verification_ok"] = bool(validation["ok"] and commands_passed)
+            dependencies_ok = all(item.get("complete") for item in result["dependencies"].values())
+            result["complete"] = bool(
+                result["verification_ok"]
+                and status == "complete"
+                and result["human_approvals"]["ok"]
+                and not evidence_missing
+                and not missing_completion_fields
+                and dependencies_ok
+            )
+
+    result["command_exit_codes"] = [
+        {"id": item.get("id"), "returncode": item.get("returncode")}
+        for item in result.get("verification_commands", [])
+    ]
+    result["issues"] = list(result.get("issues", []))
+    result["content_hash"] = hashlib.sha256(
+        canonical_json(_plan_stable_result_view(result)).encode("utf-8")
+    ).hexdigest()
+    result_path.write_text(canonical_json(result), encoding="utf-8")
+    result["result_sha256"] = hashlib.sha256(result_path.read_bytes()).hexdigest()
+    return result
+
+
+def cmd_website_plans_validate(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).resolve() if args.manifest else PLAN_MANIFEST_PATH
+    manifest, load_error = load_treatcode_plan_manifest(manifest_path)
+    if load_error:
+        report = {
+            "ok": False,
+            "errors": [_plan_error("manifest_load_failed", f"{manifest_path}: {load_error}")],
+            "manifest": str(manifest_path),
+        }
+    else:
+        index_path = Path(args.index).resolve() if args.index else None
+        report = validate_treatcode_plan_manifest(
+            manifest,
+            repo_root=REPO_ROOT,
+            manifest_path=manifest_path,
+            index_path=index_path,
+        )
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode plans validate")
+        text_status("plan manifest", bool(report.get("ok")), f"{report.get('plan_count', 0)} plans")
+        for error in report.get("errors", []):
+            print(f"- {error.get('code')}: {error.get('message')}")
+    return 0 if report.get("ok") else 1
+
+
+def cmd_website_plan_verify(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).resolve() if args.manifest else PLAN_MANIFEST_PATH
+    output_dir = Path(args.output).resolve() if args.output else None
+    index_path = Path(args.index).resolve() if args.index else None
+    result = verify_treatcode_plan(
+        args.plan_id,
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        repo_root=REPO_ROOT,
+        index_path=index_path,
+        run_commands=not args.no_run,
+        timeout=args.timeout,
+    )
+    if args.json:
+        print_json(result)
+    else:
+        state = "complete" if result.get("complete") else "incomplete"
+        print(f"TreatCode plan {result['plan']['id']}: {state}")
+        print(f"evidence: {result.get('output')}")
+        for issue in result.get("issues", []):
+            print(f"- {issue.get('code')}: {issue.get('message')}")
+    if result.get("complete"):
+        return 0
+    if args.allow_incomplete and result.get("verification_ok"):
+        return 0
+    return 1
+
+
+def _repository_index_repo_root(args: argparse.Namespace) -> Path:
+    value = getattr(args, "repo_root", None)
+    return Path(value).resolve() if value else REPO_ROOT
+
+
+def cmd_website_index_build(args: argparse.Namespace) -> int:
+    repo_root = _repository_index_repo_root(args)
+    report = build_index(
+        repo_root=repo_root,
+        output_dir=Path(args.output).resolve() if getattr(args, "output", None) else None,
+        clean=bool(getattr(args, "clean", False)),
+    )
+    return print_repository_index_report(report, "TreatCode repository index build", json_output=bool(args.json))
+
+
+def cmd_website_index_verify(args: argparse.Namespace) -> int:
+    repo_root = _repository_index_repo_root(args)
+    report = verify_index(
+        repo_root=repo_root,
+        index_path=Path(args.index).resolve() if getattr(args, "index", None) else None,
+        evidence_dir=Path(args.evidence).resolve() if getattr(args, "evidence", None) else None,
+    )
+    return print_repository_index_report(report, "TreatCode repository index verify", json_output=bool(args.json))
+
+
+def cmd_website_index_compare(args: argparse.Namespace) -> int:
+    repo_root = _repository_index_repo_root(args)
+    report = compare_clean_incremental(
+        repo_root=repo_root,
+        evidence_dir=Path(args.evidence).resolve() if getattr(args, "evidence", None) else None,
+    )
+    return print_repository_index_report(report, "TreatCode repository index compare-clean-incremental", json_output=bool(args.json))
+
+
+def cmd_website_index_context(args: argparse.Namespace) -> int:
+    repo_root = _repository_index_repo_root(args)
+    index, load_error, index_file = load_index(
+        Path(args.index).resolve() if getattr(args, "index", None) else None,
+        repo_root=repo_root,
+    )
+    if load_error or index is None:
+        report = {
+            "schema": "treatcode.context-package.v1",
+            "ok": False,
+            "errors": [{"code": "index_load_failed", "message": load_error or "index is missing"}],
+            "index": str(index_file),
+        }
+        return print_repository_index_report(report, "TreatCode context package", json_output=bool(args.json))
+    output = Path(args.output).resolve() if getattr(args, "output", None) else (
+        repo_root / "build" / "treatcode-plan-evidence" / "P03" / "context-package.v1.json"
+    )
+    package = generate_context_package(
+        index,
+        args.scope,
+        output_path=output,
+        repo_root=repo_root,
+    )
+    package["ok"] = not package.get("errors")
+    return print_repository_index_report(package, "TreatCode context package", json_output=bool(args.json))
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     build_dir = default_build_dir(args.build_dir)
     report: dict[str, Any] = {
@@ -2667,6 +4271,81 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge_graph.add_argument("--timeout", type=int, default=600, help="Graphify timeout in seconds")
     knowledge_graph.add_argument("--json", action="store_true", help="emit JSON report")
     knowledge_graph.set_defaults(func=cmd_knowledge_graph)
+
+    website = sub.add_parser("website", help="validate TreatCode platform plans and domain contracts")
+    website_sub = website.add_subparsers(dest="website_command", required=True)
+
+    website_plans = website_sub.add_parser("plans", help="validate the complete TreatCode plan manifest")
+    website_plans_sub = website_plans.add_subparsers(dest="plans_command", required=True)
+    website_plans_validate = website_plans_sub.add_parser("validate", help="validate plan coverage, dependencies, and commands")
+    website_plans_validate.add_argument("--manifest", default=None, help="plan manifest path")
+    website_plans_validate.add_argument("--index", default=None, help="plan index path")
+    website_plans_validate.add_argument("--json", action="store_true", help="emit JSON report")
+    website_plans_validate.set_defaults(func=cmd_website_plans_validate)
+
+    website_plan = website_sub.add_parser("plan", help="verify one TreatCode plan")
+    website_plan_sub = website_plan.add_subparsers(dest="plan_command", required=True)
+    website_plan_verify = website_plan_sub.add_parser("verify", help="run the plan's machine verification gates")
+    website_plan_verify.add_argument("plan_id", help="plan id such as P01")
+    website_plan_verify.add_argument("--manifest", default=None, help="plan manifest path")
+    website_plan_verify.add_argument("--index", default=None, help="plan index path")
+    website_plan_verify.add_argument("--output", default=None, help="evidence output directory")
+    website_plan_verify.add_argument("--no-run", action="store_true", help="record commands without executing them")
+    website_plan_verify.add_argument("--allow-incomplete", action="store_true", help="return success for machine-passing pre-completion verification")
+    website_plan_verify.add_argument("--timeout", type=int, default=300, help="per-command timeout in seconds")
+    website_plan_verify.add_argument("--json", action="store_true", help="emit JSON report")
+    website_plan_verify.set_defaults(func=cmd_website_plan_verify)
+
+    website_registry = website_sub.add_parser("registry", help="validate stack, capability, contract, and decision registries")
+    website_registry_sub = website_registry.add_subparsers(dest="registry_command", required=True)
+    website_registry_validate = website_registry_sub.add_parser("validate", help="validate all TreatCode registry manifests")
+    website_registry_validate.add_argument("--json", action="store_true", help="emit JSON report")
+    website_registry_validate.set_defaults(func=cmd_website_registry_validate)
+    website_registry_coverage = website_registry_sub.add_parser("coverage", help="validate stack coverage dimensions")
+    website_registry_coverage.add_argument("--strict", action="store_true", help="reject planned implementation dimensions")
+    website_registry_coverage.add_argument("--json", action="store_true", help="emit JSON report")
+    website_registry_coverage.set_defaults(func=cmd_website_registry_coverage)
+
+    website_index = website_sub.add_parser("index", help="build and inspect the commit-addressed repository intelligence index")
+    website_index_sub = website_index.add_subparsers(dest="index_command", required=True)
+
+    website_index_build = website_index_sub.add_parser("build", help="build a clean or incremental repository index")
+    website_index_build.add_argument("--clean", action="store_true", help="ignore any existing index and rebuild all records")
+    website_index_build.add_argument("--output", default=None, help="index directory or JSON path")
+    website_index_build.add_argument("--repo-root", default=None, help="repository root (defaults to the Trit root)")
+    website_index_build.add_argument("--json", action="store_true", help="emit JSON report")
+    website_index_build.set_defaults(func=cmd_website_index_build)
+
+    website_index_verify = website_index_sub.add_parser("verify", help="verify coverage, source spans, hashes, authority, and freshness")
+    website_index_verify.add_argument("--index", default=None, help="index directory or JSON path")
+    website_index_verify.add_argument("--evidence", default=None, help="evidence output directory")
+    website_index_verify.add_argument("--repo-root", default=None, help="repository root (defaults to the Trit root)")
+    website_index_verify.add_argument("--json", action="store_true", help="emit JSON report")
+    website_index_verify.set_defaults(func=cmd_website_index_verify)
+
+    website_index_compare = website_index_sub.add_parser("compare-clean-incremental", help="prove clean and incremental indexes are equivalent")
+    website_index_compare.add_argument("--evidence", default=None, help="evidence output directory")
+    website_index_compare.add_argument("--repo-root", default=None, help="repository root (defaults to the Trit root)")
+    website_index_compare.add_argument("--json", action="store_true", help="emit JSON report")
+    website_index_compare.set_defaults(func=cmd_website_index_compare)
+
+    for context_name in ("context", "context-package"):
+        website_index_context = website_index_sub.add_parser(context_name, help="generate a bounded context package for files, symbols, or records")
+        website_index_context.add_argument("--scope", action="append", required=True, help="file path, file id, symbol id/name, or manifest record id; repeat for multiple scopes")
+        website_index_context.add_argument("--index", default=None, help="index directory or JSON path")
+        website_index_context.add_argument("--output", default=None, help="context package JSON path")
+        website_index_context.add_argument("--repo-root", default=None, help="repository root (defaults to the Trit root)")
+        website_index_context.add_argument("--json", action="store_true", help="emit JSON report")
+        website_index_context.set_defaults(func=cmd_website_index_context)
+
+    website_schemas = website_sub.add_parser("schemas", help="validate versioned platform schemas and fixtures")
+    website_schemas_sub = website_schemas.add_subparsers(dest="schemas_command", required=True)
+    website_schemas_validate = website_schemas_sub.add_parser("validate", help="validate the schema catalog")
+    website_schemas_validate.add_argument("--json", action="store_true", help="emit JSON report")
+    website_schemas_validate.set_defaults(func=cmd_website, website_action="schemas_validate")
+    website_schemas_fixtures = website_schemas_sub.add_parser("test-fixtures", help="run valid and negative schema fixtures")
+    website_schemas_fixtures.add_argument("--json", action="store_true", help="emit JSON report")
+    website_schemas_fixtures.set_defaults(func=cmd_website, website_action="schemas_fixtures")
 
     return parser
 

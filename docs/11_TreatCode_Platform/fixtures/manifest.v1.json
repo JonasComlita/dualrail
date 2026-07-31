@@ -1,0 +1,25 @@
+{
+  "schema_version": "treatcode.platform.fixture-manifest.v1",
+  "fixtures": [
+    {
+      "path": "p01_valid_platform_graph.v1.json",
+      "expected": "valid",
+      "covers": ["trit", "cross-layer capability", "superseded decision", "benchmark run", "scoped agent task"]
+    },
+    {
+      "path": "p01_invalid_relation_target.v1.json",
+      "expected": "invalid",
+      "covers": ["invalid relation targets"]
+    },
+    {
+      "path": "p01_invalid_status_transition.v1.json",
+      "expected": "invalid",
+      "covers": ["invalid status transitions"]
+    },
+    {
+      "path": "p01_invalid_reference.v1.json",
+      "expected": "invalid",
+      "covers": ["missing repository, commit, and immutable locator"]
+    }
+  ]
+}

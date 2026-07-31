@@ -6,12 +6,12 @@ Status values are `not_started`, `in_progress`, `blocked`, `complete`, or
 
 | ID | Plan | Depends on | Status | Completion evidence |
 |---|---|---|---|---|
-| P00 | [Plan control and verification](plans/P00_plan_control.md) | None | not_started | — |
-| P01 | [Platform contracts and domain schemas](plans/P01_platform_contracts.md) | P00 | not_started | — |
-| P02 | [Stack, capability, and decision registry](plans/P02_stack_capabilities_decisions.md) | P01 | not_started | — |
-| P03 | [Repository ingestion and code intelligence](plans/P03_repository_ingestion.md) | P01, P02 | not_started | — |
-| P04 | [Public API and Stack Explorer](plans/P04_public_api_stack_explorer.md) | P02, P03 | not_started | — |
-| P05 | [Learning and documentation](plans/P05_learning_documentation.md) | P03, P04 | not_started | — |
+| P00 | [Plan control and verification](plans/P00_plan_control.md) | None | complete | `build/treatcode-plan-evidence/P00/result.json` |
+| P01 | [Platform contracts and domain schemas](plans/P01_platform_contracts.md) | P00 | complete | `build/treatcode-plan-evidence/P01/result.json` |
+| P02 | [Stack, capability, and decision registry](plans/P02_stack_capabilities_decisions.md) | P01 | complete | `build/treatcode-plan-evidence/P02/result.json` |
+| P03 | [Repository ingestion and code intelligence](plans/P03_repository_ingestion.md) | P01, P02 | in_progress | machine reports under build/treatcode-plan-evidence/P03/ |
+| P04 | [Public API and Stack Explorer](plans/P04_public_api_stack_explorer.md) | P02, P03 | in_progress | — |
+| P05 | [Learning and documentation](plans/P05_learning_documentation.md) | P03, P04 | in_progress | machine reports under `build/treatcode-plan-evidence/P05/` |
 | P06 | [Challenges and faceted taxonomy](plans/P06_challenges_taxonomy.md) | P01, P04 | not_started | — |
 | P07 | [Identity, permissions, and agent access](plans/P07_identity_permissions_agents.md) | P01, P04 | not_started | — |
 | P08 | [Remote development workspaces](plans/P08_remote_workspaces.md) | P03, P07 | not_started | — |
@@ -38,4 +38,3 @@ After P01:
   plans and dependency edges.
 - A completed plan may only be changed by a new amendment plan or by marking it
   `superseded` with a replacement.
-

@@ -3,6 +3,14 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
+import {
+  PUBLIC_API_SCHEMA_VERSION,
+  PublicRecord,
+  PublicSnapshot,
+  collectionFor,
+  normalizeSearchMode,
+  searchSnapshot,
+} from "./src/publicApi";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,8 +21,156 @@ app.use(express.json());
 // In production, Vite builds static files to 'dist'. Serve them.
 const distPath = path.join(__dirname, "dist");
 if (fs.existsSync(distPath)) {
+  // Avoid a redirect-only response for the public entry points. This keeps
+  // direct requests useful to crawlers and clients with JavaScript disabled.
+  app.get("/", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "index.html")));
+  app.get("/stack", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "stack", "index.html")));
+  app.get("/learn", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "learn", "index.html")));
   app.use(express.static(distPath));
 }
+
+// The public platform surface is intentionally read-only and snapshot-backed.
+// It is registered before the legacy challenge endpoints so public reading
+// routes never need to load the compiler, editor, or runner state.
+const publicSnapshotCandidates = [
+  path.join(__dirname, "public", "api", "v1", "snapshot.json"),
+  path.join(process.cwd(), "public", "api", "v1", "snapshot.json"),
+  path.join(process.cwd(), "treatcode", "public", "api", "v1", "snapshot.json"),
+];
+
+function loadPublicSnapshot(): PublicSnapshot {
+  for (const candidate of publicSnapshotCandidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as PublicSnapshot;
+      if (parsed.schema_version === "treatcode.public.snapshot.v1" && parsed.snapshot?.commit) return parsed;
+    } catch {
+      // Try the next source location; the static route still has a useful fallback.
+    }
+  }
+  return {
+    schema_version: "treatcode.public.snapshot.v1",
+    snapshot: {
+      id: "tc:snapshot:unavailable",
+      repository: "https://github.com/JonasComlita/dualrail",
+      commit: "unknown",
+      generated_at: new Date(0).toISOString(),
+      source: "snapshot unavailable",
+    },
+    projects: [], stack_nodes: [], components: [], capabilities: [], contracts: [], decisions: [], sources: [], symbols: [], tests: [], benchmarks: [], runs: [], releases: [], gaps: [], relations: [], statistics: {},
+  };
+}
+
+const publicSnapshot = loadPublicSnapshot();
+const publicResources = new Set([
+  "projects", "stack-nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps",
+]);
+
+function publicEnvelope<T>(data: T, resource: string, prefix: string, meta: Record<string, unknown> = {}) {
+  return {
+    schema_version: PUBLIC_API_SCHEMA_VERSION,
+    snapshot: publicSnapshot.snapshot,
+    data,
+    meta: { resource, ...meta },
+    links: { self: `${prefix}/${resource}` },
+  };
+}
+
+function publicError(res: Response, status: number, code: string, message: string, prefix: string) {
+  res.status(status).json({
+    schema_version: PUBLIC_API_SCHEMA_VERSION,
+    snapshot: publicSnapshot.snapshot,
+    error: { code, message },
+    links: { api: prefix },
+  });
+}
+
+function publicEntityById(id: string): PublicRecord | null {
+  for (const resource of ["projects", "stack_nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps"] as const) {
+    const record = publicSnapshot[resource].find((candidate) => candidate.id === id);
+    if (record) return record;
+  }
+  return null;
+}
+
+function registerPublicApi(prefix: string) {
+  app.get(prefix, (_req: Request, res: Response) => {
+    const counts = Object.fromEntries([...publicResources].map((resource) => [resource, collectionFor(publicSnapshot, resource)?.length || 0]));
+    res.json(publicEnvelope({ api_schema: PUBLIC_API_SCHEMA_VERSION, snapshot_schema: publicSnapshot.schema_version, resources: counts }, "", prefix, { read_only: true }));
+  });
+
+  app.get(`${prefix}/snapshot.json`, (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json(publicSnapshot);
+  });
+
+  app.get(`${prefix}/openapi.json`, (_req: Request, res: Response) => {
+    const contractCandidates = [
+      path.join(__dirname, "public", "api", "v1", "openapi.json"),
+      path.join(process.cwd(), "public", "api", "v1", "openapi.json"),
+      path.join(process.cwd(), "treatcode", "public", "api", "v1", "openapi.json"),
+    ];
+    for (const candidate of contractCandidates) {
+      try {
+        const contract = JSON.parse(fs.readFileSync(candidate, "utf8"));
+        res.json({ ...contract, "x-treatcode-schema-version": PUBLIC_API_SCHEMA_VERSION, "x-treatcode-source-snapshot": publicSnapshot.snapshot });
+        return;
+      } catch {
+        // Keep looking for the generated contract.
+      }
+    }
+    publicError(res, 404, "contract_unavailable", "The generated OpenAPI contract is unavailable.", prefix);
+  });
+
+  app.get(`${prefix}/search`, (req: Request, res: Response) => {
+    const query = String(req.query.q || "").trim();
+    if (!query) {
+      publicError(res, 400, "query_required", "Search requires a non-empty q parameter.", prefix);
+      return;
+    }
+    const mode = normalizeSearchMode(String(req.query.mode || "semantic"));
+    const requestedLimit = Number.parseInt(String(req.query.limit || "25"), 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 25;
+    const results = searchSnapshot(publicSnapshot, query, mode).slice(0, limit);
+    res.json(publicEnvelope(results, "search", prefix, { count: results.length, query, mode, limit }));
+  });
+
+  app.get(`${prefix}/:resource/:id`, (req: Request, res: Response) => {
+    const resource = String(req.params.resource);
+    if (!publicResources.has(resource)) {
+      publicError(res, 404, "resource_not_found", `Unknown public resource: ${resource}.`, prefix);
+      return;
+    }
+    const collection = collectionFor(publicSnapshot, resource);
+    const record = collection?.find((candidate) => candidate.id === req.params.id) || publicEntityById(req.params.id);
+    if (!record) {
+      publicError(res, 404, "entity_not_found", `No ${resource} entity exists for id ${req.params.id}.`, prefix);
+      return;
+    }
+    res.json(publicEnvelope(record, resource, prefix));
+  });
+
+  app.get(`${prefix}/:resource`, (req: Request, res: Response, next) => {
+    const resource = String(req.params.resource);
+    if (resource.endsWith(".json")) {
+      next();
+      return;
+    }
+    if (!publicResources.has(resource)) {
+      publicError(res, 404, "resource_not_found", `Unknown public resource: ${resource}.`, prefix);
+      return;
+    }
+    const collection = collectionFor(publicSnapshot, resource) || [];
+    const requestedLimit = Number.parseInt(String(req.query.limit || "25"), 10);
+    const requestedOffset = Number.parseInt(String(req.query.offset || "0"), 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 25;
+    const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
+    const data = collection.slice(offset, offset + limit);
+    res.json(publicEnvelope(data, resource, prefix, { count: data.length, total: collection.length, offset, limit }));
+  });
+}
+
+registerPublicApi("/api/public/v1");
+registerPublicApi("/api/v1");
 
 // In-memory databases
 interface LeaderboardEntry {

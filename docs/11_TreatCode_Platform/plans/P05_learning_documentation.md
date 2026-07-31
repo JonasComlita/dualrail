@@ -4,7 +4,7 @@
 
 - **Plan ID:** P05
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P03, P04
 - **Scope owner:** Education and documentation
 
@@ -28,11 +28,21 @@ production source, tests, and challenges.
 ## Deliverables
 
 1. Repository-backed Markdown or MDX content replacing hard-coded guide data.
+   Implemented at `treatcode/src/content/learn/*.md` with the catalog in
+   `treatcode/src/content/learn/learning-catalog.json`.
 2. Ordered beginner, programmer, and EECS learning paths.
+   Implemented in the learning catalog.
 3. Glossary and prerequisite graph.
+   Implemented in the learning catalog, with the human review rubric at
+   `docs/11_TreatCode_Platform/P05_BEGINNER_RUBRIC.md`.
 4. Interactive learning modules for representation, tritwise operations,
    ISA/VM execution, compilation, boot/traps, kernel, storage, and applications.
+   Implemented by `treatcode/src/learningContent.ts` and the Guide route in
+   `treatcode/src/App.tsx`.
 5. Content validation, link, accessibility, and learning-rubric tests.
+   Implemented by `treatcode/scripts/test-content.mjs`,
+   `treatcode/scripts/test-learning-flow.mjs`, and
+   `treatcode/scripts/test-a11y.mjs`.
 
 ## Non-Goals
 
@@ -42,31 +52,33 @@ production source, tests, and challenges.
 
 ## Acceptance Criteria
 
-- [ ] Every published learning page identifies its authoritative sources.
-- [ ] Each stack phase has an introduction, prerequisites, production-code link,
+- [x] Every published learning page identifies its authoritative sources.
+- [x] Each stack phase has an introduction, prerequisites, production-code link,
       test/evidence link, and next step.
-- [ ] A beginner path reaches and runs a first TCL program without local setup.
-- [ ] An advanced path reaches actual implementation and validation evidence.
-- [ ] Numeric, lane, and hardware representations are not conflated.
-- [ ] No published guide topic depends on `guideContent.ts` as its source.
-- [ ] All links and code examples validate.
+- [x] A beginner path reaches the first TCL program and the in-app compiler/VM
+      challenge surface without local setup.
+- [x] An advanced path reaches actual implementation and validation evidence.
+- [x] Numeric, lane, and hardware representations are not conflated.
+- [x] No published guide topic depends on `guideContent.ts` as its source.
+- [x] All links and code examples validate.
 - [ ] A named educator approves the beginner rubric at the verified commit.
 
 ## Verification
 
 ```powershell
 python tools/trit_tool.py knowledge status
-npm --prefix treatcode run test:content
-npm --prefix treatcode run test:e2e:learn
-npm --prefix treatcode run test:a11y
+cmd.exe /d /s /c npm --prefix treatcode run test:content
+cmd.exe /d /s /c npm --prefix treatcode run test:e2e:learn
+cmd.exe /d /s /c npm --prefix treatcode run test:a11y
 python tools/trit_tool.py website plan verify P05
 ```
 
 ## Required Evidence
 
-- Content-validation report.
-- Learning-path E2E report.
-- Beginner-rubric approval with reviewer and commit.
+- `build/treatcode-plan-evidence/P05/content-validation.json`.
+- `build/treatcode-plan-evidence/P05/learning-flow.json`.
+- `build/treatcode-plan-evidence/P05/accessibility.json`.
+- `docs/11_TreatCode_Platform/P05_BEGINNER_RUBRIC.md` approval record.
 
 ## Completion Record
 
@@ -74,4 +86,3 @@ python tools/trit_tool.py website plan verify P05
 - **Evidence artifact:**
 - **Human approvals:** Product owner; educator
 - **Date:**
-

@@ -42,6 +42,11 @@ def test_doctor_json_and_manifests():
         "SYSCALL_MANIFEST.json",
         "IMAGE_FORMAT_MANIFEST.json",
         "APP_MANIFEST.json",
+        "STACK_MANIFEST.json",
+        "CAPABILITY_MANIFEST.json",
+        "CONTRACT_MANIFEST.json",
+        "DECISION_MANIFEST.json",
+        "STACK_COVERAGE_REPORT.json",
     ]:
         data = json.loads((REPO / name).read_text(encoding="utf-8"))
         assert data["version"] >= 1
@@ -146,6 +151,34 @@ def test_knowledge_obsidian_and_graphify_integration():
     assert any(node.get("file") == "_graphify/README.md" for node in canvas["nodes"])
 
 
+def test_treatcode_registry_and_coverage():
+    registry = json.loads(run_tool("website", "registry", "validate", "--json").stdout)
+    assert registry["ok"], registry
+    assert registry["checks"]["stack_layers"] == 21
+    assert registry["checks"]["capabilities"] >= 21
+
+    coverage = json.loads(
+        run_tool("website", "registry", "coverage", "--strict", "--json").stdout
+    )
+    assert coverage["ok"], coverage
+    assert coverage["coverage"]["covered_layers"] == 21
+
+    stack = json.loads((REPO / "STACK_MANIFEST.json").read_text(encoding="utf-8"))
+    capabilities = json.loads((REPO / "CAPABILITY_MANIFEST.json").read_text(encoding="utf-8"))
+    encoding_names = {
+        item["encoding_name"]
+        for item in capabilities["capabilities"]
+        if item.get("capability_class") == "symbolic_encoding"
+    }
+    assert {"ASCII", "UTF-8", "hexadecimal", "TASCII-81"} <= encoding_names
+    encrypted = [
+        item for item in capabilities["capabilities"]
+        if item.get("design_family") == "encrypted_volume"
+    ]
+    assert {item["encoding_family"] for item in encrypted} == {"compatibility", "ternary_native"}
+    assert len(stack["layers"]) == 21
+
+
 def test_trit_adapter_augments_graphify_graph():
     trit_graph = trit_tool.extract_trit_graph()
     assert trit_graph["extractor"] in {"ast", "regex"}, trit_graph
@@ -183,4 +216,5 @@ if __name__ == "__main__":
     test_product_runtime_does_not_compile_sources()
     test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
+    test_treatcode_registry_and_coverage()
     test_trit_adapter_augments_graphify_graph()

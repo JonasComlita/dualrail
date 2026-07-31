@@ -16,5 +16,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        overview: "index.html",
+        stack: "stack/index.html",
+        learn: "learn/index.html",
+      },
+    },
   },
 });

@@ -4,7 +4,7 @@
 
 - **Plan ID:** P04
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P02, P03
 - **Scope owner:** Public platform
 
@@ -43,35 +43,35 @@ identity.
 
 ## Acceptance Criteria
 
-- [ ] Every response includes schema version and source snapshot or commit.
-- [ ] Public routes render useful content with client JavaScript disabled.
-- [ ] A user can navigate silicon-to-user dependencies and reach exact source,
+- [x] Every response includes schema version and source snapshot or commit.
+- [x] Public routes render useful content with client JavaScript disabled.
+- [x] A user can navigate silicon-to-user dependencies and reach exact source,
       tests, benchmarks, decisions, and known gaps.
-- [ ] Known queries return authoritative results with exact citations.
-- [ ] Public reading routes ship no editor or runner bundle.
-- [ ] At 390 CSS pixels, required navigation and content have no horizontal
+- [x] Known queries return authoritative results with exact citations.
+- [x] Public reading routes ship no editor or runner bundle.
+- [x] At 390 CSS pixels, required navigation and content have no horizontal
       page overflow.
-- [ ] Initial JavaScript for `/`, `/stack`, and `/learn` is at most 100 KiB
+- [x] Initial JavaScript for `/`, `/stack`, and `/learn` is at most 100 KiB
       gzip per route.
 - [ ] Product owner approves visual continuity with the existing TreatCode site.
 
 ## Verification
 
 ```powershell
-npm --prefix treatcode run build
-npm --prefix treatcode run test:api
-npm --prefix treatcode run test:e2e:public
-npm --prefix treatcode run test:a11y
-npm --prefix treatcode run check:bundle-budget
+npm.cmd --prefix treatcode run build
+npm.cmd --prefix treatcode run test:api
+npm.cmd --prefix treatcode run test:e2e:public
+npm.cmd --prefix treatcode run test:a11y
+npm.cmd --prefix treatcode run check:bundle-budget
 python tools/trit_tool.py website plan verify P04
 ```
 
 ## Required Evidence
 
-- OpenAPI conformance report.
-- Public-route E2E screenshots and DOM assertions.
-- Accessibility report.
-- Bundle-size report.
+- OpenAPI conformance report: `build/treatcode-plan-evidence/P04/api-conformance.json`.
+- Public-route E2E DOM assertions and screenshots: `build/treatcode-plan-evidence/P04/public-route-e2e.json` and `build/treatcode-plan-evidence/P04/browser-e2e.json` (PNG captures are listed there).
+- Accessibility report: `build/treatcode-plan-evidence/P04/accessibility.json`.
+- Bundle-size report: `build/treatcode-plan-evidence/P04/bundle-budget.json`.
 - Product-owner visual approval.
 
 ## Completion Record
@@ -80,4 +80,3 @@ python tools/trit_tool.py website plan verify P04
 - **Evidence artifact:**
 - **Human approvals:** Product owner
 - **Date:**
-

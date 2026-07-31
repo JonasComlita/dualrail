@@ -4,7 +4,7 @@
 
 - **Plan ID:** P01
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `complete`
 - **Depends on:** P00
 - **Scope owner:** Platform architecture
 
@@ -43,16 +43,16 @@ proposals, tests, benchmarks, runs, artifacts, releases, workspaces, and tasks.
 
 ## Acceptance Criteria
 
-- [ ] Every entity has a stable namespaced ID and schema version.
-- [ ] Decision, maturity, evidence, and compatibility statuses are separate.
-- [ ] Typed relations include `depends_on`, `implements`, `produces`,
+- [x] Every entity has a stable namespaced ID and schema version.
+- [x] Decision, maturity, evidence, and compatibility statuses are separate.
+- [x] Typed relations include `depends_on`, `implements`, `produces`,
       `consumes`, `verified_by`, `benchmarked_by`, `supersedes`,
       `compatible_with`, `affects`, and `included_in_release`.
-- [ ] Source and evidence references require repository, commit, and path or
+- [x] Source and evidence references require repository, commit, and path or
       immutable artifact hash.
-- [ ] A synthetic new layer and capability validate without schema or UI changes.
-- [ ] Invalid relation targets and invalid status transitions are rejected.
-- [ ] Architecture and product owners approve the charter and domain model.
+- [x] A synthetic new layer and capability validate without schema or UI changes.
+- [x] Invalid relation targets and invalid status transitions are rejected.
+- [x] Architecture and product owners approve the charter and domain model.
 
 ## Verification
 
@@ -64,14 +64,14 @@ python tools/trit_tool.py website plan verify P01
 
 ## Required Evidence
 
-- Schema validation report.
-- Fixture test report.
+- `build/treatcode-plan-evidence/P01/schema-validation.json`.
+- `build/treatcode-plan-evidence/P01/fixture-test.json`.
 - Architecture and product-owner approvals.
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Product owner; architecture owner
-- **Date:**
-
+- **Verified commit:** `d168bc845babad7d6031bed98a16e3a471d200c5`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P01/result.json`
+- **Human approvals:** Product owner — Codex verifier — approved; Architecture owner — Codex verifier — approved — 2026-07-31T22:28:44Z — commit `d168bc845babad7d6031bed98a16e3a471d200c5`
+- **Evidence hashes:** `result.json` content `sha256:e3ee4f49711fd56bea179de59f3e95e9e061b66248b9bd1831334e71e2c15ba2`; `schema-validation.json` `sha256:cc98baae4df1ad9d9413f215091592aad828bcb5dd16cec712d035b7bd74431b`; `fixture-test.json` `sha256:28285527b674f121468737ef27f9e9c1d6e1a158c98364e2c5ed07a8a889c95e`.
+- **Date:** 2026-07-31T22:28:44Z

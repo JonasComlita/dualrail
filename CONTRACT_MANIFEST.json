@@ -1,0 +1,406 @@
+{
+  "version": 1,
+  "schema": "trit.contract_manifest.v1",
+  "namespace": "trit",
+  "source_of_truth": "STACK_MANIFEST.json",
+  "source_refs": [
+    {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "architecture_contract"},
+    {"repository": "trit", "commit": "d168bc8", "path": "SYSCALL_MANIFEST.json", "status": "resolved", "role": "syscall_contract"},
+    {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "image_contract"},
+    {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "encoding_policy"}
+  ],
+  "contracts": [
+    {
+      "id": "trit.contract.authority.manifests",
+      "name": "Repository authority and evidence contract",
+      "layer_ids": ["trit.stack.phase.00.authority"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "repository-native",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "AGENTS.md", "status": "resolved", "role": "workflow"},
+        {"repository": "trit", "commit": "d168bc8", "path": "TEST_MANIFEST.json", "status": "resolved", "role": "test_manifest"}
+      ],
+      "test_refs": ["test_agent_tooling"],
+      "decision_ids": ["trit.decision.registry.source-authority"]
+    },
+    {
+      "id": "trit.contract.logic.dual-rail",
+      "name": "Dual-rail trit representation and invalid sentinel",
+      "layer_ids": ["trit.stack.phase.01.representation"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "ternary-native-with-binary-transport",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_backend.h", "status": "resolved", "role": "implementation"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/01_Logic_Level/contract_hdl.md", "status": "resolved", "role": "specification"}
+      ],
+      "test_refs": ["test_native_ops", "test_ternary_lanes"],
+      "decision_ids": ["trit.decision.encoding.host-boundary"]
+    },
+    {
+      "id": "trit.contract.isa.v2",
+      "name": "Trit v2 instruction, register, CSR, and feature contract",
+      "layer_ids": ["trit.stack.phase.02.isa-binary"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_isa.h", "status": "resolved", "role": "implementation"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "generated_contract"}
+      ],
+      "test_refs": ["test_architecture_v2", "test_multiwidth_vm"],
+      "decision_ids": ["trit.decision.v2-over-os3-freeze"]
+    },
+    {
+      "id": "trit.contract.abi.v2",
+      "name": "Function, syscall, executable, and stack ABI v2",
+      "layer_ids": ["trit.stack.phase.02.isa-binary"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ARCHITECTURE_MANIFEST.json", "status": "resolved", "role": "abi_fields"},
+        {"repository": "trit", "commit": "d168bc8", "path": "SYSCALL_MANIFEST.json", "status": "resolved", "role": "syscall_ids"}
+      ],
+      "test_refs": ["test_os_platform", "test_process_handoff"],
+      "decision_ids": ["trit.decision.v2-over-os3-freeze"]
+    },
+    {
+      "id": "trit.contract.numeric.native-operations",
+      "name": "Native scalar, lane, vector, and accelerator numeric semantics",
+      "layer_ids": ["trit.stack.phase.03.numeric-operations"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "ternary-native",
+      "evidence_status": "benchmarked",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_scalar.h", "status": "resolved", "role": "numeric_types"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_native_ops.h", "status": "resolved", "role": "native_ops"}
+      ],
+      "test_refs": ["test_native_ops", "test_numeric_workloads"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.vm.state-memory",
+      "name": "VM architectural state, Harvard memory, MMU, and TLB contract",
+      "layer_ids": ["trit.stack.phase.04.vm-state"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_vm_state.h", "status": "resolved", "role": "implementation"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/02_Hardware_ISA/contract_vm.md", "status": "resolved", "role": "specification"}
+      ],
+      "test_refs": ["test_multiwidth_vm", "test_architecture_v2"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.vm.execution",
+      "name": "Interpreter, trace cache, fallback, and differential execution contract",
+      "layer_ids": ["trit.stack.phase.05.vm-execution"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "interpreter-compatible",
+      "evidence_status": "benchmarked",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_vm.h", "status": "resolved", "role": "interpreter"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "status": "resolved", "role": "trace_contract"}
+      ],
+      "test_refs": ["test_multiwidth_vm", "test_execution_backends_benchmark"],
+      "decision_ids": ["trit.decision.jit-fallback"]
+    },
+    {
+      "id": "trit.contract.binary.assembler",
+      "name": "Two-pass assembly, relocations, diagnostics, and executable boundary",
+      "layer_ids": ["trit.stack.phase.06.assembler"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_asm.h", "status": "resolved", "role": "assembler"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/object_format.md", "status": "resolved", "role": "object_format"}
+      ],
+      "test_refs": ["test_tcl_asm", "next_assembler_goldens"],
+      "decision_ids": ["trit.decision.v2-over-os3-freeze"]
+    },
+    {
+      "id": "trit.contract.compiler.object-ir",
+      "name": "Low-level IR, symbols, relocations, and link composition",
+      "layer_ids": ["trit.stack.phase.07.low-level-ir"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_ir.h", "status": "resolved", "role": "implementation"},
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/05_Compiler_Infra/ternary_ir.md", "status": "resolved", "role": "specification"}
+      ],
+      "test_refs": ["test_ternary_ir"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.language.tcl-v1",
+      "name": "TCL 1.0 lexical, syntactic, type, and semantic contract",
+      "layer_ids": ["trit.stack.phase.08.tcl-language"],
+      "contract_status": "accepted",
+      "maturity_status": "specified",
+      "compatibility_status": "tcl-1.0",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "TCL_Spec_1.0.md", "status": "resolved", "role": "language_specification"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_parser.trit", "status": "resolved", "role": "parser"}
+      ],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.compiler.host-pipeline",
+      "name": "Host compiler frontend, SSA, optimization, allocation, and emission",
+      "layer_ids": ["trit.stack.phase.09.host-compiler"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_compiler.h", "status": "resolved", "role": "pipeline"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_compiler_codegen.h", "status": "resolved", "role": "emitter"}
+      ],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline", "next_compiler_phase_c5_pred"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.compiler.self-hosted-subset",
+      "name": "Native TCL compiler bootstrap subset and handoff boundary",
+      "layer_ids": ["trit.stack.phase.10.self-hosted-compiler"],
+      "contract_status": "accepted",
+      "maturity_status": "partial",
+      "compatibility_status": "bootstrap-subset",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_frontend.trit", "status": "resolved", "role": "frontend"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tcl_backend.trit", "status": "resolved", "role": "backend"},
+        {"repository": "trit", "commit": "d168bc8", "path": "treatcode/compiler_driver.trit", "status": "resolved", "role": "driver"}
+      ],
+      "test_refs": ["next_compiler_native_ulib", "next_compiler_pipeline"],
+      "decision_ids": ["trit.decision.self-hosting-last"]
+    },
+    {
+      "id": "trit.contract.runtime.sdk-abi",
+      "name": "User runtime, library, stream, widget, and syscall wrapper ABI",
+      "layer_ids": ["trit.stack.phase.11.runtime-sdk"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/os_sdk.trit", "status": "resolved", "role": "sdk"},
+        {"repository": "trit", "commit": "d168bc8", "path": "SYSCALL_MANIFEST.json", "status": "resolved", "role": "syscall_abi"}
+      ],
+      "test_refs": ["test_native_apps", "next_runtime_ulib_sdk"],
+      "decision_ids": ["trit.decision.registry.source-authority"]
+    },
+    {
+      "id": "trit.contract.boot.trap-loader",
+      "name": "Reset, trap entry, image loading, and first program contract",
+      "layer_ids": ["trit.stack.phase.12.boot-trap"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "bootloader.tasm", "status": "resolved", "role": "reset"},
+        {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_trap_stub.tasm", "status": "resolved", "role": "trap"}
+      ],
+      "test_refs": ["test_os_platform", "test_host_runtime"],
+      "decision_ids": ["trit.decision.v2-over-v1-image"]
+    },
+    {
+      "id": "trit.contract.kernel.process-syscall",
+      "name": "Kernel process, memory, syscall, trap, and IPC contract",
+      "layer_ids": ["trit.stack.phase.13.kernel-foundations"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel.trit", "status": "resolved", "role": "kernel"},
+        {"repository": "trit", "commit": "d168bc8", "path": "SYSCALL_MANIFEST.json", "status": "resolved", "role": "syscalls"}
+      ],
+      "test_refs": ["test_os_platform", "test_phase_d_kernel", "test_process_handoff"],
+      "decision_ids": ["trit.decision.vfs-bootstrap-separation"]
+    },
+    {
+      "id": "trit.contract.storage.vfs-wal",
+      "name": "Block device, VFS, WAL, persistence, and recovery contract",
+      "layer_ids": ["trit.stack.phase.14.storage-vfs"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/bio.trit", "status": "resolved", "role": "block_io"},
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "disk_format"}
+      ],
+      "test_refs": ["test_migration_v2", "test_redo_wal_v2", "next_vfs_persistence", "next_vfs_recovery"],
+      "decision_ids": ["trit.decision.vfs-bootstrap-separation", "trit.decision.encrypted-volume-design"]
+    },
+    {
+      "id": "trit.contract.kernel.devices-services",
+      "name": "Networking, display, input, audio, timer, and service contract",
+      "layer_ids": ["trit.stack.phase.15.devices-services"],
+      "contract_status": "accepted",
+      "maturity_status": "partial",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "kernel/net.trit", "status": "resolved", "role": "network"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_os.h", "status": "resolved", "role": "devices"}
+      ],
+      "test_refs": ["test_os_platform", "next_drivers_hal", "next_graphics_gui"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.host.runtime",
+      "name": "Host VM runner, input, framebuffer, disk, and diagnostics contract",
+      "layer_ids": ["trit.stack.phase.16.host-runtime"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "binary-host-bridge",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_host_runtime.h", "status": "resolved", "role": "runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "tools/trit_tool.py", "status": "resolved", "role": "diagnostics"}
+      ],
+      "test_refs": ["test_host_runtime", "test_consumer_shell_productization"],
+      "decision_ids": ["trit.decision.jit-fallback"]
+    },
+    {
+      "id": "trit.contract.apps.bundle",
+      "name": "Bundled app source, guest path, registry, and SDK contract",
+      "layer_ids": ["trit.stack.phase.17.user-space-apps"],
+      "contract_status": "accepted",
+      "maturity_status": "integrated",
+      "compatibility_status": "guest-v2",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "APP_MANIFEST.json", "status": "resolved", "role": "app_registry"},
+        {"repository": "trit", "commit": "d168bc8", "path": "apps/os_sdk.trit", "status": "resolved", "role": "app_sdk"}
+      ],
+      "test_refs": ["test_all_apps", "test_native_apps", "test_consumer_shell_productization"],
+      "decision_ids": ["trit.decision.registry.source-authority"]
+    },
+    {
+      "id": "trit.contract.release.tboot-tdisk",
+      "name": "Versioned immutable tboot and mutable tdisk image contract",
+      "layer_ids": ["trit.stack.phase.18.images-release"],
+      "contract_status": "accepted",
+      "maturity_status": "implemented",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "format"},
+        {"repository": "trit", "commit": "d168bc8", "path": "build_tos_image.cpp", "status": "resolved", "role": "builder"}
+      ],
+      "test_refs": ["test_host_runtime", "test_migration_v2", "next_full_system_release"],
+      "decision_ids": ["trit.decision.v2-over-v1-image"]
+    },
+    {
+      "id": "trit.contract.products.specialized",
+      "name": "Specialized cryptography, transformer, benchmark, and TreatCode product boundary",
+      "layer_ids": ["trit.stack.phase.19.specialized-products"],
+      "contract_status": "accepted",
+      "maturity_status": "partial",
+      "compatibility_status": "host-and-guest-consumers",
+      "evidence_status": "benchmarked",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_montgomery.h", "status": "resolved", "role": "crypto"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_transformer_runtime.h", "status": "resolved", "role": "ai_runtime"},
+        {"repository": "trit", "commit": "d168bc8", "path": "treatcode/src/App.tsx", "status": "resolved", "role": "treatcode"}
+      ],
+      "test_refs": ["test_numeric_workloads", "benchmark_bitnet_os", "benchmark_doom_os"],
+      "decision_ids": []
+    },
+    {
+      "id": "trit.contract.evidence.full-system",
+      "name": "Security, test, benchmark, diagnostic, and release evidence contract",
+      "layer_ids": ["trit.stack.phase.20.closure-evidence"],
+      "contract_status": "accepted",
+      "maturity_status": "partial",
+      "compatibility_status": "repository-native",
+      "evidence_status": "tested",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "tests_next/manifests/coverage_matrix.json", "status": "resolved", "role": "coverage"},
+        {"repository": "trit", "commit": "d168bc8", "path": "ACCEPTANCE_CRITERIA.md", "status": "resolved", "role": "acceptance"}
+      ],
+      "test_refs": ["test_agent_tooling", "test_production_layers", "test_production_hardening"],
+      "decision_ids": ["trit.decision.registry.source-authority"]
+    },
+    {
+      "id": "trit.contract.symbolic-encoding-compatibility",
+      "name": "ASCII, UTF-8, and hexadecimal host compatibility encodings",
+      "layer_ids": ["trit.stack.phase.01.representation", "trit.stack.phase.06.assembler", "trit.stack.phase.11.runtime-sdk", "trit.stack.phase.16.host-runtime"],
+      "contract_status": "accepted",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatible",
+      "evidence_status": "specified",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "encoding_policy"},
+        {"repository": "trit", "commit": "d168bc8", "path": "README.md", "status": "resolved", "role": "host_boundary"}
+      ],
+      "test_refs": ["test_agent_tooling"],
+      "decision_ids": ["trit.decision.encoding.host-boundary"]
+    },
+    {
+      "id": "trit.contract.symbolic-encoding-ternary-native",
+      "name": "Future TASCII-81, exact trit literals, and base-27/base-81 notation",
+      "layer_ids": ["trit.stack.phase.01.representation", "trit.stack.phase.06.assembler", "trit.stack.phase.08.tcl-language", "trit.stack.phase.20.closure-evidence"],
+      "contract_status": "proposed",
+      "maturity_status": "specified",
+      "compatibility_status": "ternary-native-planned",
+      "evidence_status": "planned",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "docs/04_Binary_Contract/symbolic_encodings.md", "status": "resolved", "role": "proposal"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "open_gap"}
+      ],
+      "test_refs": [],
+      "decision_ids": ["trit.decision.encoding.host-boundary", "trit.decision.tascii81-not-abi"]
+    },
+    {
+      "id": "trit.contract.encrypted-volume-compatibility",
+      "name": "Compatibility encrypted-volume integration boundary",
+      "layer_ids": ["trit.stack.phase.14.storage-vfs", "trit.stack.phase.16.host-runtime", "trit.stack.phase.18.images-release"],
+      "contract_status": "proposed",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatibility-planned",
+      "evidence_status": "planned",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "IMAGE_FORMAT_MANIFEST.json", "status": "resolved", "role": "image_boundary"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "open_gap"}
+      ],
+      "test_refs": [],
+      "decision_ids": ["trit.decision.encrypted-volume-design"]
+    },
+    {
+      "id": "trit.contract.encrypted-volume-ternary-native",
+      "name": "Possible ternary-native encrypted-volume design boundary",
+      "layer_ids": ["trit.stack.phase.03.numeric-operations", "trit.stack.phase.14.storage-vfs", "trit.stack.phase.20.closure-evidence"],
+      "contract_status": "open",
+      "maturity_status": "planned",
+      "compatibility_status": "ternary-native-candidate",
+      "evidence_status": "planned",
+      "source_refs": [
+        {"repository": "trit", "commit": "d168bc8", "path": "ternary_montgomery.h", "status": "resolved", "role": "cryptographic_evidence"},
+        {"repository": "trit", "commit": "d168bc8", "path": "KNOWN_GAPS.md", "status": "resolved", "role": "open_gap"}
+      ],
+      "test_refs": [],
+      "decision_ids": ["trit.decision.encrypted-volume-design"]
+    }
+  ]
+}

@@ -1,5 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
-import { MODULES, parseMarkdown, Block } from "./guideContent";
+import {
+  LEARNING_CATALOG,
+  LEARNING_PAGES,
+  parseMarkdown,
+  Block,
+  type LearningInteractive,
+  type LearningPage,
+} from "./learningContent";
 
 interface Problem {
   id: string;
@@ -600,8 +607,10 @@ function Nav({ view, setView }: { view: string; setView: (v: string) => void }) 
 }
 
 export default function App() {
-  const [view, setView] = useState("home");
-  const [activeTopicId, setActiveTopicId] = useState("t1");
+  const initialView = window.location.pathname.startsWith("/practice") ? "problems" : "home";
+  const [view, setView] = useState(initialView);
+  const [activeTopicId, setActiveTopicId] = useState("representation-boundaries");
+  const [activePathId, setActivePathId] = useState("beginner");
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null);
   const [catFilter, setCatFilter] = useState("all");
   const [diffFilter, setDiffFilter] = useState("all");
@@ -2130,19 +2139,30 @@ export default function App() {
 
   // ── GUIDE ───────────────────────────────────────────────────────────────────
   if (view === "guide") {
-    const flatTopics = MODULES.flatMap((m) =>
-      m.topics.map((t) => ({
-        ...t,
-        moduleId: m.id,
-        moduleTitle: m.title,
-      }))
-    );
+    const activePath =
+      LEARNING_CATALOG.paths.find((path) => path.id === activePathId) ||
+      LEARNING_CATALOG.paths[0];
+    const pathPages = activePath.page_ids
+      .map((pageId) => LEARNING_PAGES.find((page) => page.id === pageId))
+      .filter((page): page is (typeof LEARNING_PAGES)[number] => Boolean(page));
+    const flatTopics = pathPages.map((page) => ({
+      ...page,
+      moduleTitle: page.module,
+    }));
 
     const activeIndex = flatTopics.findIndex((t) => t.id === activeTopicId);
     const activeTopic = flatTopics[activeIndex] || flatTopics[0];
 
     const prevTopic = activeIndex > 0 ? flatTopics[activeIndex - 1] : null;
     const nextTopic = activeIndex < flatTopics.length - 1 ? flatTopics[activeIndex + 1] : null;
+
+    const selectPath = (pathId: string) => {
+      const selectedPath = LEARNING_CATALOG.paths.find((path) => path.id === pathId);
+      setActivePathId(pathId);
+      if (selectedPath) {
+        setActiveTopicId(selectedPath.page_ids[0]);
+      }
+    };
 
     return (
       <div
@@ -2154,6 +2174,97 @@ export default function App() {
         }}
       >
         <Nav view={view} setView={setView} />
+        <section
+          aria-labelledby="learning-title"
+          style={{
+            padding: "30px 0 24px",
+            borderBottom: "1px solid var(--color-border-tertiary)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--color-text-muted)",
+              marginBottom: 8,
+            }}
+          >
+            Repository-backed learning
+          </div>
+          <h1
+            id="learning-title"
+            style={{
+              fontSize: 28,
+              fontWeight: 600,
+              margin: "0 0 10px",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Learn the Trit stack from trit to app.
+          </h1>
+          <p
+            style={{
+              maxWidth: 700,
+              fontSize: 14,
+              lineHeight: 1.65,
+              color: "var(--color-text-secondary)",
+              margin: "0 0 20px",
+            }}
+          >
+            Each page names its production source, validation evidence,
+            prerequisites, and next step. Choose a path for the amount of
+            implementation context you want.
+          </p>
+          <div
+            role="group"
+            aria-label="Learning path"
+            style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+          >
+            {LEARNING_CATALOG.paths.map((path) => {
+              const isActive = path.id === activePath.id;
+              return (
+                <button
+                  key={path.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => selectPath(path.id)}
+                  style={{
+                    flex: "1 1 200px",
+                    maxWidth: 320,
+                    padding: "11px 14px",
+                    borderRadius: 7,
+                    border: isActive
+                      ? "1px solid var(--color-border-primary)"
+                      : "1px solid var(--color-border-tertiary)",
+                    background: isActive
+                      ? "var(--color-background-tertiary)"
+                      : "var(--color-background-primary)",
+                    color: "var(--color-text-primary)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>
+                    {path.title}
+                  </span>
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 4,
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    {path.audience}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
         <div
           style={{
             display: "flex",
@@ -2163,7 +2274,7 @@ export default function App() {
           }}
         >
           {/* Sidebar */}
-          <div
+          <aside aria-label="Learning page navigation"
             style={{
               width: 280,
               flexShrink: 0,
@@ -2171,7 +2282,13 @@ export default function App() {
               paddingRight: 24,
             }}
           >
-            {MODULES.map((mod) => (
+            {[
+              {
+                id: activePath.id,
+                title: activePath.title,
+                topics: pathPages,
+              },
+            ].map((mod) => (
               <div key={mod.id} style={{ marginBottom: 20 }}>
                 <h3
                   style={{
@@ -2220,10 +2337,10 @@ export default function App() {
                 </div>
               </div>
             ))}
-          </div>
+          </aside>
 
           {/* Main Content */}
-          <div
+          <main aria-labelledby="learning-page-title"
             style={{
               flex: 1,
               minWidth: 0,
@@ -2251,6 +2368,7 @@ export default function App() {
                 {activeTopic.moduleTitle}
               </div>
               <h1
+                id="learning-page-title"
                 style={{
                   fontSize: 24,
                   fontWeight: 600,
@@ -2260,6 +2378,30 @@ export default function App() {
               >
                 {activeTopic.title}
               </h1>
+              <p
+                style={{
+                  margin: "9px 0 0",
+                  maxWidth: 700,
+                  fontSize: 14,
+                  lineHeight: 1.55,
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {activeTopic.summary}
+              </p>
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 11,
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                Prerequisites: {activeTopic.prerequisites.length > 0
+                  ? activeTopic.prerequisites
+                      .map((id) => LEARNING_PAGES.find((page) => page.id === id)?.title || id)
+                      .join(", ")
+                  : "none"}
+              </div>
             </div>
 
             {/* Content */}
@@ -2267,8 +2409,17 @@ export default function App() {
               {renderMarkdown(activeTopic.content)}
             </div>
 
+            <LearningInteractiveModule
+              key={activeTopic.id}
+              module={activeTopic.interactive}
+              onOpenChallenges={() => openProblem(PROBLEMS[0])}
+            />
+
+            <LearningProvenance page={activeTopic} />
+
             {/* Footer Navigation */}
             <div
+              aria-label="Learning page navigation"
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -2280,6 +2431,7 @@ export default function App() {
             >
               {prevTopic ? (
                 <button
+                  type="button"
                   onClick={() => setActiveTopicId(prevTopic.id)}
                   style={{
                     display: "inline-flex",
@@ -2316,6 +2468,7 @@ export default function App() {
 
               {nextTopic ? (
                 <button
+                  type="button"
                   onClick={() => setActiveTopicId(nextTopic.id)}
                   style={{
                     display: "inline-flex",
@@ -2350,7 +2503,7 @@ export default function App() {
                 <div />
               )}
             </div>
-          </div>
+          </main>
         </div>
       </div>
     );
@@ -2752,12 +2905,347 @@ export default function App() {
 }
 
 // ── CUSTOM MARKDOWN RENDERERS FOR THE GUIDE ──────────────────────────────────
+function LearningInteractiveModule({
+  module,
+  onOpenChallenges,
+}: {
+  module: LearningInteractive;
+  onOpenChallenges: () => void;
+}) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState("");
+  const [code, setCode] = useState(module.kind === "code" ? module.starter : "");
+
+  const panelStyle = {
+    margin: "0 0 28px",
+    padding: 16,
+    border: "1px solid var(--color-border-secondary)",
+    borderRadius: 8,
+    background: "var(--color-background-secondary)",
+  } as const;
+
+  if (module.kind === "choice") {
+    return (
+      <section style={panelStyle} aria-labelledby="learning-check-title">
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            color: "var(--color-text-muted)",
+            marginBottom: 6,
+          }}
+        >
+          Interactive module
+        </div>
+        <h2
+          id="learning-check-title"
+          style={{ fontSize: 17, margin: "0 0 10px", fontWeight: 600 }}
+        >
+          {module.title}
+        </h2>
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend
+            style={{
+              fontSize: 14,
+              lineHeight: 1.5,
+              color: "var(--color-text-primary)",
+              marginBottom: 10,
+            }}
+          >
+            {module.prompt}
+          </legend>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {module.options.map((option, index) => (
+              <label
+                key={option}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="radio"
+                  name={`learning-${module.title}`}
+                  checked={selected === index}
+                  aria-checked={selected === index}
+                  onChange={() => {
+                    setSelected(index);
+                    setFeedback("");
+                  }}
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button
+          type="button"
+          disabled={selected === null}
+          onClick={() => {
+            if (selected === null) return;
+            setFeedback(
+              selected === module.answer
+                ? `Correct. ${module.explanation}`
+                : "Not yet. Re-read the representation boundary and try again."
+            );
+          }}
+          style={{
+            marginTop: 14,
+            padding: "7px 12px",
+            borderRadius: 5,
+            border: "1px solid var(--color-border-secondary)",
+            background: "var(--color-background-primary)",
+            color: "var(--color-text-primary)",
+            cursor: selected === null ? "not-allowed" : "pointer",
+            fontSize: 12,
+          }}
+        >
+          Check answer
+        </button>
+        <p
+          aria-live="polite"
+          style={{
+            minHeight: 20,
+            margin: "10px 0 0",
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--color-text-secondary)",
+          }}
+        >
+          {feedback}
+        </p>
+      </section>
+    );
+  }
+
+  const validateCode = () => {
+    const missing = module.expectedIncludes.filter((fragment) => !code.includes(fragment));
+    setFeedback(
+      missing.length === 0
+        ? `Example shape verified. ${module.explanation}`
+        : `Add the expected TCL shape: ${missing.join(", ")}.`
+    );
+  };
+
+  return (
+    <section style={panelStyle} aria-labelledby="learning-check-title">
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          color: "var(--color-text-muted)",
+          marginBottom: 6,
+        }}
+      >
+        Interactive module
+      </div>
+      <h2
+        id="learning-check-title"
+        style={{ fontSize: 17, margin: "0 0 10px", fontWeight: 600 }}
+      >
+        {module.title}
+      </h2>
+      <label
+        htmlFor="tcl-practice-code"
+        style={{
+          display: "block",
+          fontSize: 12,
+          color: "var(--color-text-secondary)",
+          marginBottom: 6,
+        }}
+      >
+        Edit the example, then validate its shape before opening a real challenge.
+      </label>
+      <textarea
+        id="tcl-practice-code"
+        aria-label="TCL practice code"
+        value={code}
+        onChange={(event) => setCode(event.target.value)}
+        spellCheck={false}
+        style={{
+          display: "block",
+          width: "100%",
+          minHeight: 150,
+          resize: "vertical",
+          padding: 12,
+          border: "1px solid var(--color-border-secondary)",
+          borderRadius: 6,
+          background: "var(--color-background-primary)",
+          color: "var(--color-text-primary)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 13,
+          lineHeight: 1.5,
+        }}
+      />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={validateCode}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 5,
+            border: "1px solid var(--color-border-primary)",
+            background: "var(--color-background-primary)",
+            color: "var(--color-text-primary)",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          Validate example
+        </button>
+        <button
+          type="button"
+          onClick={onOpenChallenges}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 5,
+            border: "1px solid var(--color-border-secondary)",
+            background: "transparent",
+            color: "var(--color-text-secondary)",
+            cursor: "pointer",
+            fontSize: 12,
+          }}
+        >
+          Open challenges
+        </button>
+      </div>
+      <p
+        aria-live="polite"
+        style={{
+          minHeight: 20,
+          margin: "10px 0 0",
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        {feedback}
+      </p>
+    </section>
+  );
+}
+
+function repositoryHref(repositoryPath: string): string {
+  return `https://github.com/JonasComlita/dualrail/blob/main/${repositoryPath}`;
+}
+
+function LearningProvenance({ page }: { page: LearningPage }) {
+  const renderReferences = (title: string, references: LearningPage["sources"]) => (
+    <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+      <h3
+        style={{
+          fontSize: 12,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          color: "var(--color-text-muted)",
+          margin: "0 0 8px",
+        }}
+      >
+        {title}
+      </h3>
+      <ul
+        style={{
+          listStyle: "none",
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+          margin: 0,
+          padding: 0,
+        }}
+      >
+        {references.map((reference) => (
+          <li key={reference.path} style={{ fontSize: 12, lineHeight: 1.4 }}>
+            <a
+              href={repositoryHref(reference.path)}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--color-accent-blue)" }}
+            >
+              {reference.label}
+            </a>
+            <code
+              style={{
+                display: "block",
+                marginTop: 2,
+                color: "var(--color-text-muted)",
+                fontSize: 10,
+              }}
+            >
+              {reference.path}
+            </code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  return (
+    <section
+      aria-labelledby="learning-provenance-title"
+      style={{
+        margin: "0 0 28px",
+        padding: "16px 0 4px",
+        borderTop: "1px solid var(--color-border-tertiary)",
+      }}
+    >
+      <h2
+        id="learning-provenance-title"
+        style={{ fontSize: 17, margin: "0 0 12px", fontWeight: 600 }}
+      >
+        Source and evidence
+      </h2>
+      <p
+        style={{
+          margin: "0 0 16px",
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        These links are the authority for this page. The guide summarizes them;
+        it does not replace the implementation or its tests.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+        {renderReferences("Production source", page.sources)}
+        {renderReferences("Validation evidence", page.evidence)}
+      </div>
+    </section>
+  );
+}
+
 function renderInline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   let remaining = text;
   let keyIdx = 0;
 
   while (remaining.length > 0) {
+    const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+      const external = /^(https?:|mailto:)/.test(linkMatch[2]);
+      parts.push(
+        <a
+          key={keyIdx++}
+          href={linkMatch[2]}
+          target={external ? "_blank" : undefined}
+          rel={external ? "noreferrer" : undefined}
+          style={{ color: "var(--color-accent-blue)" }}
+        >
+          {linkMatch[1]}
+        </a>
+      );
+      remaining = remaining.substring(linkMatch[0].length);
+      continue;
+    }
+
     // Check if next is inline code: `code`
     const codeMatch = remaining.match(/^`([^`]+)`/);
     if (codeMatch) {
@@ -2816,7 +3304,7 @@ function renderInline(text: string): React.ReactNode[] {
     }
 
     // Standard text: parse until next token identifier
-    const nextTokenIdx = remaining.search(/[`$]|\*\*/);
+    const nextTokenIdx = remaining.search(/[\[`$]|\*\*/);
     if (nextTokenIdx === -1) {
       parts.push(remaining);
       break;
@@ -2851,6 +3339,23 @@ function renderMarkdown(content: string): React.ReactNode {
               >
                 {renderInline(block.content)}
               </p>
+            );
+          case "h2":
+            return (
+              <h2
+                key={blockIdx}
+                style={{
+                  fontSize: 19,
+                  fontWeight: 600,
+                  color: "var(--color-text-primary)",
+                  marginTop: 24,
+                  marginBottom: 8,
+                  borderBottom: "1px solid var(--color-border-tertiary)",
+                  paddingBottom: 6,
+                }}
+              >
+                {renderInline(block.content)}
+              </h2>
             );
           case "h3":
             return (

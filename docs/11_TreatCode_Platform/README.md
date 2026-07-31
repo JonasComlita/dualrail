@@ -36,6 +36,10 @@ before implementation. Do not silently expand scope.
 - [COMPLETION_PROTOCOL.md](COMPLETION_PROTOCOL.md): objective completion rules.
 - [PLAN_TEMPLATE.md](PLAN_TEMPLATE.md): required structure for new plans.
 - [`plans/`](plans/): independently executable plans.
+- [PRODUCT_CHARTER.md](PRODUCT_CHARTER.md): product boundary and ownership gates.
+- [DOMAIN_MODEL.md](DOMAIN_MODEL.md): entity, status, relation, and provenance contract.
+- [`schemas/`](schemas/): versioned JSON Schemas used by the P01 verifier.
+- [`fixtures/`](fixtures/): positive and negative contract fixtures.
 
 ## Product Requirements Preserved Across Every Plan
 
@@ -46,4 +50,3 @@ before implementation. Do not silently expand scope.
 - Make every important human operation available through a versioned API.
 - Keep Git, manifests, tests, and immutable evidence authoritative.
 - Never promote uploaded or agent-generated work without validation and review.
-

@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.dev/schemas/platform_domain.v1.schema.json",
+  "schema_version": "treatcode.platform.domain.v1",
+  "title": "TreatCode platform domain entity",
+  "description": "Versioned entities and typed relations shared by the TreatCode platform.",
+  "oneOf": [
+    { "$ref": "#/$defs/project" },
+    { "$ref": "#/$defs/layer" },
+    { "$ref": "#/$defs/component" },
+    { "$ref": "#/$defs/capability" },
+    { "$ref": "#/$defs/contract" },
+    { "$ref": "#/$defs/implementation" },
+    { "$ref": "#/$defs/decision" },
+    { "$ref": "#/$defs/proposal" },
+    { "$ref": "#/$defs/test" },
+    { "$ref": "#/$defs/benchmark" },
+    { "$ref": "#/$defs/run" },
+    { "$ref": "#/$defs/artifact" },
+    { "$ref": "#/$defs/release" },
+    { "$ref": "#/$defs/workspace" },
+    { "$ref": "#/$defs/task" }
+  ],
+  "$defs": {
+    "namespaced_id": {
+      "type": "string",
+      "pattern": "^tc:(project|layer|component|capability|contract|implementation|decision|proposal|test|benchmark|run|artifact|release|workspace|task):[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)*$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{7,64}$"
+    },
+    "artifact_hash": {
+      "type": "string",
+      "pattern": "^(?:sha256|sha512):[0-9a-fA-F]{64,128}$"
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "commit": { "$ref": "#/$defs/commit" },
+        "path": { "type": "string", "minLength": 1 },
+        "artifact_hash": { "$ref": "#/$defs/artifact_hash" },
+        "line": { "type": "integer", "minimum": 1 },
+        "symbol": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        { "required": ["path"] },
+        { "required": ["artifact_hash"] }
+      ],
+      "additionalProperties": false
+    },
+    "evidence_ref": {
+      "type": "object",
+      "required": ["repository", "commit", "description"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "commit": { "$ref": "#/$defs/commit" },
+        "path": { "type": "string", "minLength": 1 },
+        "artifact_hash": { "$ref": "#/$defs/artifact_hash" },
+        "description": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["test", "benchmark", "review", "approval", "build", "release", "other"]
+        }
+      },
+      "oneOf": [
+        { "required": ["path"] },
+        { "required": ["artifact_hash"] }
+      ],
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "required": ["type", "target_id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "depends_on",
+            "implements",
+            "produces",
+            "consumes",
+            "verified_by",
+            "benchmarked_by",
+            "supersedes",
+            "compatible_with",
+            "affects",
+            "included_in_release"
+          ]
+        },
+        "target_id": { "$ref": "#/$defs/namespaced_id" },
+        "note": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "statuses": {
+      "type": "object",
+      "required": ["decision", "maturity", "evidence", "compatibility"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["proposed", "accepted", "superseded", "rejected", "withdrawn"]
+        },
+        "maturity": {
+          "type": "string",
+          "enum": ["planned", "specified", "implemented", "integrated", "tested", "benchmarked", "released", "deprecated"]
+        },
+        "evidence": {
+          "type": "string",
+          "enum": ["none", "claimed", "partial", "verified", "disputed"]
+        },
+        "compatibility": {
+          "type": "string",
+          "enum": ["unknown", "incompatible", "experimental", "compatible", "deprecated"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "status_event": {
+      "type": "object",
+      "required": ["at", "commit", "statuses"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "statuses": { "$ref": "#/$defs/statuses" },
+        "actor": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "entity_common": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "id",
+        "entity_type",
+        "name",
+        "description",
+        "statuses",
+        "status_history",
+        "relations",
+        "source_refs",
+        "evidence_refs"
+      ],
+      "properties": {
+        "schema_version": { "const": "treatcode.platform.entity.v1" },
+        "id": { "$ref": "#/$defs/namespaced_id" },
+        "entity_type": { "type": "string", "enum": ["project", "layer", "component", "capability", "contract", "implementation", "decision", "proposal", "test", "benchmark", "run", "artifact", "release", "workspace", "task"] },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "statuses": { "$ref": "#/$defs/statuses" },
+        "status_history": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/status_event" }
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relation" }
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/source_ref" }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "project": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "repository"],
+          "properties": {
+            "entity_type": { "const": "project" },
+            "id": { "pattern": "^tc:project:" },
+            "repository": { "type": "string", "minLength": 1 },
+            "default_branch": { "type": "string", "minLength": 1 },
+            "license": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "layer": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "ordinal", "layer_kind"],
+          "properties": {
+            "entity_type": { "const": "layer" },
+            "id": { "pattern": "^tc:layer:" },
+            "ordinal": { "type": "integer", "minimum": 0 },
+            "layer_kind": { "type": "string", "minLength": 1 },
+            "owner": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "component": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "layer_id", "component_kind"],
+          "properties": {
+            "entity_type": { "const": "component" },
+            "id": { "pattern": "^tc:component:" },
+            "layer_id": { "pattern": "^tc:layer:" },
+            "component_kind": { "type": "string", "minLength": 1 },
+            "maintainers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+    "capability": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "layer_ids", "capability_kind"],
+          "properties": {
+            "entity_type": { "const": "capability" },
+            "id": { "pattern": "^tc:capability:" },
+            "layer_ids": { "type": "array", "minItems": 1, "items": { "pattern": "^tc:layer:" }, "uniqueItems": true },
+            "capability_kind": { "type": "string", "minLength": 1 },
+            "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+    "contract": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "contract_kind", "contract_version", "surface"],
+          "properties": {
+            "entity_type": { "const": "contract" },
+            "id": { "pattern": "^tc:contract:" },
+            "contract_kind": { "type": "string", "minLength": 1 },
+            "contract_version": { "type": "string", "pattern": "^v[0-9]+(?:\\.[0-9]+){0,2}$" },
+            "surface": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+    "implementation": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "component_id", "implementation_kind"],
+          "properties": {
+            "entity_type": { "const": "implementation" },
+            "id": { "pattern": "^tc:implementation:" },
+            "component_id": { "pattern": "^tc:component:" },
+            "implementation_kind": { "type": "string", "minLength": 1 },
+            "language": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "decision": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "question", "resolution", "decided_at"],
+          "properties": {
+            "entity_type": { "const": "decision" },
+            "id": { "pattern": "^tc:decision:" },
+            "question": { "type": "string", "minLength": 1 },
+            "resolution": { "type": "string", "minLength": 1 },
+            "decided_at": { "type": "string", "format": "date-time" },
+            "decided_by": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "proposal": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "problem", "proposed_by"],
+          "properties": {
+            "entity_type": { "const": "proposal" },
+            "id": { "pattern": "^tc:proposal:" },
+            "problem": { "type": "string", "minLength": 1 },
+            "options": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "proposed_by": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "test": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "command", "asserts"],
+          "properties": {
+            "entity_type": { "const": "test" },
+            "id": { "pattern": "^tc:test:" },
+            "command": { "type": "string", "minLength": 1 },
+            "asserts": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "timeout_seconds": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "benchmark": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "workload", "metric", "budget"],
+          "properties": {
+            "entity_type": { "const": "benchmark" },
+            "id": { "pattern": "^tc:benchmark:" },
+            "workload": { "type": "string", "minLength": 1 },
+            "metric": { "type": "string", "minLength": 1 },
+            "budget": { "type": "object", "required": ["value", "unit"], "properties": { "value": { "type": "number", "minimum": 0 }, "unit": { "type": "string", "minLength": 1 } }, "additionalProperties": false }
+          }
+        }
+      ]
+    },
+    "run": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "run_kind", "started_at", "result"],
+          "properties": {
+            "entity_type": { "const": "run" },
+            "id": { "pattern": "^tc:run:" },
+            "run_kind": { "type": "string", "enum": ["test", "benchmark", "build", "release", "import"] },
+            "started_at": { "type": "string", "format": "date-time" },
+            "ended_at": { "type": "string", "format": "date-time" },
+            "result": { "type": "string", "enum": ["passed", "failed", "cancelled", "inconclusive"] },
+            "runner": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "artifact_kind", "artifact_hash"],
+          "properties": {
+            "entity_type": { "const": "artifact" },
+            "id": { "pattern": "^tc:artifact:" },
+            "artifact_kind": { "type": "string", "minLength": 1 },
+            "artifact_hash": { "$ref": "#/$defs/artifact_hash" },
+            "uri": { "type": "string", "minLength": 1 },
+            "bytes": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "release": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "release_version", "released_at"],
+          "properties": {
+            "entity_type": { "const": "release" },
+            "id": { "pattern": "^tc:release:" },
+            "release_version": { "type": "string", "pattern": "^v[0-9]+(?:\\.[0-9]+){0,2}(?:-[a-z0-9.-]+)?$" },
+            "released_at": { "type": "string", "format": "date-time" },
+            "channel": { "type": "string", "enum": ["dev", "canary", "stable", "archived"] }
+          }
+        }
+      ]
+    },
+    "workspace": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "repository", "base_commit", "mode"],
+          "properties": {
+            "entity_type": { "const": "workspace" },
+            "id": { "pattern": "^tc:workspace:" },
+            "repository": { "type": "string", "minLength": 1 },
+            "base_commit": { "$ref": "#/$defs/commit" },
+            "branch": { "type": "string", "minLength": 1 },
+            "mode": { "type": "string", "enum": ["read_only", "isolated", "shared"] }
+          }
+        }
+      ]
+    },
+    "task": {
+      "allOf": [
+        { "$ref": "#/$defs/entity_common" },
+        {
+          "type": "object",
+          "required": ["entity_type", "scope", "acceptance", "priority"],
+          "properties": {
+            "entity_type": { "const": "task" },
+            "id": { "pattern": "^tc:task:" },
+            "scope": { "type": "string", "minLength": 1 },
+            "acceptance": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "priority": { "type": "string", "enum": ["low", "normal", "high", "critical"] },
+            "assigned_to": { "type": "string", "minLength": 1 },
+            "workspace_id": { "pattern": "^tc:workspace:" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "treatcode.platform.fixture.v1",
+  "fixture_id": "tc:fixture:p01-invalid-reference",
+  "description": "Negative fixture: source and evidence references omit immutable provenance fields.",
+  "entities": [
+    {
+      "schema_version": "treatcode.platform.entity.v1",
+      "id": "tc:project:invalid-reference",
+      "entity_type": "project",
+      "name": "Invalid reference project",
+      "description": "This fixture must be rejected because provenance is incomplete.",
+      "repository": "https://github.com/JonasComlita/dualrail",
+      "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"},
+      "status_history": [{"at": "2026-07-30T00:00:00Z", "commit": "d168bc845babad7d6031bed98a16e3a471d200c5", "statuses": {"decision": "proposed", "maturity": "planned", "evidence": "claimed", "compatibility": "experimental"}}],
+      "relations": [],
+      "source_refs": [{"repository": "https://github.com/JonasComlita/dualrail"}],
+      "evidence_refs": [{"repository": "https://github.com/JonasComlita/dualrail", "commit": "not-a-commit", "description": "Missing path and invalid commit"}]
+    }
+  ]
+}

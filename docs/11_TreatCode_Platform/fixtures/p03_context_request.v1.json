@@ -1,0 +1,20 @@
+{
+  "schema": "treatcode.context-package-fixture.v1",
+  "fixture_id": "p03-kernel-context",
+  "scope": ["kernel.trit"],
+  "required_sections": [
+    "files",
+    "symbols",
+    "relationships",
+    "required_contracts",
+    "tests",
+    "gaps",
+    "baselines"
+  ],
+  "invariants": {
+    "bounded": true,
+    "direct_dependency_depth": 1,
+    "requires_package_sha256": true,
+    "requires_source_provenance": true
+  }
+}

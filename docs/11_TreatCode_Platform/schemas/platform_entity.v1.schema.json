@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.dev/schemas/platform_entity.v1.schema.json",
+  "schema_version": "treatcode.platform.entity.v1",
+  "title": "TreatCode platform entity",
+  "description": "The public, versioned entity contract. The domain schema supplies the entity-type branches.",
+  "$ref": "platform_domain.v1.schema.json"
+}

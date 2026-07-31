@@ -1,0 +1,120 @@
+{
+  "schema": "trit.treatcode_learning_catalog.v1",
+  "paths": [
+    {
+      "id": "beginner",
+      "title": "Beginner path",
+      "audience": "I am new to ternary computing",
+      "description": "Build a correct mental model, then write and validate a first TCL function in the browser.",
+      "page_ids": [
+        "representation-boundaries",
+        "tritwise-operations",
+        "first-tcl-program"
+      ]
+    },
+    {
+      "id": "programmer",
+      "title": "Programmer path",
+      "audience": "I already write systems or application code",
+      "description": "Trace a program from source through the ISA, VM, compiler, and boot boundary.",
+      "page_ids": [
+        "representation-boundaries",
+        "tritwise-operations",
+        "first-tcl-program",
+        "isa-vm-execution",
+        "compiler-pipeline",
+        "boot-and-traps"
+      ]
+    },
+    {
+      "id": "eecs",
+      "title": "EECS path",
+      "audience": "I want implementation and validation evidence",
+      "description": "Follow the full silicon-to-user path through kernel services, storage, images, and applications.",
+      "page_ids": [
+        "representation-boundaries",
+        "tritwise-operations",
+        "isa-vm-execution",
+        "compiler-pipeline",
+        "boot-and-traps",
+        "kernel-syscalls",
+        "storage-and-images",
+        "applications-and-validation"
+      ]
+    }
+  ],
+  "prerequisite_graph": [
+    { "from": "representation-boundaries", "to": "tritwise-operations" },
+    { "from": "tritwise-operations", "to": "first-tcl-program" },
+    { "from": "tritwise-operations", "to": "isa-vm-execution" },
+    { "from": "first-tcl-program", "to": "compiler-pipeline" },
+    { "from": "isa-vm-execution", "to": "compiler-pipeline" },
+    { "from": "compiler-pipeline", "to": "boot-and-traps" },
+    { "from": "boot-and-traps", "to": "kernel-syscalls" },
+    { "from": "kernel-syscalls", "to": "storage-and-images" },
+    { "from": "storage-and-images", "to": "applications-and-validation" }
+  ],
+  "glossary": [
+    {
+      "term": "trit",
+      "definition": "A balanced ternary digit with the numeric values -1, 0, or +1.",
+      "page_id": "representation-boundaries"
+    },
+    {
+      "term": "balanced ternary",
+      "definition": "A positional number system whose digits are negative, neutral, and positive rather than 0 and 1.",
+      "page_id": "representation-boundaries"
+    },
+    {
+      "term": "numeric representation",
+      "definition": "The positional base-3 encoding used for scalar arithmetic and numeric values.",
+      "page_id": "representation-boundaries"
+    },
+    {
+      "term": "lane representation",
+      "definition": "A two-bit-per-trit transport encoding used for packed, vector, and tritwise operations.",
+      "page_id": "tritwise-operations"
+    },
+    {
+      "term": "tritwise operation",
+      "definition": "An operation that combines corresponding trits without interpreting the packed word as a scalar number.",
+      "page_id": "tritwise-operations"
+    },
+    {
+      "term": "TritWord27",
+      "definition": "The 27-trit instruction word used by the ISA and stored in 54 meaningful host bits.",
+      "page_id": "isa-vm-execution"
+    },
+    {
+      "term": "CSR",
+      "definition": "A control and status register used for machine, trap, MMU, device, and syscall state.",
+      "page_id": "kernel-syscalls"
+    },
+    {
+      "term": "TCL",
+      "definition": "The .trit source language used by the compiler, kernel, apps, and libraries.",
+      "page_id": "first-tcl-program"
+    },
+    {
+      "term": "TASM",
+      "definition": "The textual assembly representation emitted by the compiler and consumed by the assembler.",
+      "page_id": "compiler-pipeline"
+    },
+    {
+      "term": "trap",
+      "definition": "A controlled VM or kernel fault record for illegal, malformed, or otherwise exceptional execution.",
+      "page_id": "boot-and-traps"
+    },
+    {
+      "term": "WAL",
+      "definition": "A write-ahead log that protects storage updates against interruption and supports recovery.",
+      "page_id": "storage-and-images"
+    },
+    {
+      "term": "authoritative source",
+      "definition": "A repository file, manifest, or test that can verify the claim made by a learning page.",
+      "page_id": "applications-and-validation"
+    }
+  ],
+  "interactive_module_kinds": ["choice", "code"]
+}

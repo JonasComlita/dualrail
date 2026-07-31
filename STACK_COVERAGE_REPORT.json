@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "schema": "trit.stack_coverage_report.v1",
+  "namespace": "trit",
+  "source_of_truth": "STACK_MANIFEST.json",
+  "dimensions": ["specified", "implemented", "integrated", "tested", "benchmarked", "released"],
+  "allowed_statuses": ["complete", "partial", "planned", "not_available"],
+  "source_refs": [
+    {"repository": "trit", "commit": "d168bc8", "path": "STACK_MANIFEST.json", "status": "resolved", "role": "stack_nodes"},
+    {"repository": "trit", "commit": "d168bc8", "path": "CAPABILITY_MANIFEST.json", "status": "resolved", "role": "capabilities"},
+    {"repository": "trit", "commit": "d168bc8", "path": "CONTRACT_MANIFEST.json", "status": "resolved", "role": "contracts"},
+    {"repository": "trit", "commit": "d168bc8", "path": "DECISION_MANIFEST.json", "status": "resolved", "role": "decisions"}
+  ],
+  "coverage": [
+    {
+      "stack_id": "trit.stack.phase.00.authority",
+      "source_refs": ["AGENTS.md", "TEST_MANIFEST.json", "tools/trit_tool.py"],
+      "contract_ids": ["trit.contract.authority.manifests"],
+      "capability_ids": ["trit.capability.authority.manifested-source-of-truth"],
+      "test_refs": ["test_agent_tooling"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.benchmark-baselines"],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["AGENTS.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["tools/trit_tool.py"]},
+        "integrated": {"status": "complete", "evidence_refs": ["TEST_MANIFEST.json"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_agent_tooling"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.01.representation",
+      "source_refs": ["ternary_backend.h", "ternary_lanes.h", "docs/01_Logic_Level/contract_hdl.md"],
+      "contract_ids": ["trit.contract.logic.dual-rail"],
+      "capability_ids": ["trit.capability.logic.dual-rail-trit"],
+      "test_refs": ["test_native_ops", "test_ternary_lanes"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/01_Logic_Level/contract_hdl.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_backend.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_lanes.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_native_ops", "test_ternary_lanes"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.02.isa-binary",
+      "source_refs": ["ternary_isa.h", "ARCHITECTURE_MANIFEST.json", "docs/02_Hardware_ISA/encoding.md"],
+      "contract_ids": ["trit.contract.isa.v2", "trit.contract.abi.v2"],
+      "capability_ids": ["trit.capability.isa.v2-instruction-contract"],
+      "test_refs": ["test_architecture_v2", "test_multiwidth_vm"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["ARCHITECTURE_MANIFEST.json"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_isa.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_vm.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_architecture_v2", "test_multiwidth_vm"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.03.numeric-operations",
+      "source_refs": ["ternary_scalar.h", "ternary_native_ops.h", "ternary_simd.h"],
+      "contract_ids": ["trit.contract.numeric.native-operations"],
+      "capability_ids": ["trit.capability.numeric.native-ops"],
+      "test_refs": ["test_native_ops", "test_numeric_workloads"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["ternary_scalar.h"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_native_ops.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_simd.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_native_ops", "test_numeric_workloads"]},
+        "benchmarked": {"status": "complete", "evidence_refs": ["test_execution_backends_benchmark"]},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.04.vm-state",
+      "source_refs": ["ternary_vm_state.h", "docs/03_Execution_Engine/vm_state.md"],
+      "contract_ids": ["trit.contract.vm.state-memory"],
+      "capability_ids": ["trit.capability.vm.state-and-mmu"],
+      "test_refs": ["test_multiwidth_vm", "test_architecture_v2"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/03_Execution_Engine/vm_state.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_vm_state.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_vm.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_multiwidth_vm", "test_architecture_v2"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["test_execution_backends_benchmark"]},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.05.vm-execution",
+      "source_refs": ["ternary_vm.h", "docs/03_Execution_Engine/decoded_trace_and_native_jit.md"],
+      "contract_ids": ["trit.contract.vm.execution"],
+      "capability_ids": ["trit.capability.vm.interpreter-and-jit-fallback"],
+      "test_refs": ["test_multiwidth_vm"],
+      "benchmark_refs": ["test_execution_backends_benchmark"],
+      "gap_refs": ["trit.gap.deterministic-replay"],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/03_Execution_Engine/decoded_trace_and_native_jit.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_vm.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_host_runtime.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_multiwidth_vm"]},
+        "benchmarked": {"status": "complete", "evidence_refs": ["test_execution_backends_benchmark"]},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.06.assembler",
+      "source_refs": ["ternary_asm.h", "docs/04_Binary_Contract/asm_syntax.md", "tests/test_tcl_asm.cpp"],
+      "contract_ids": ["trit.contract.binary.assembler"],
+      "capability_ids": ["trit.capability.binary.two-pass-assembler"],
+      "test_refs": ["test_tcl_asm", "next_assembler_goldens"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.tascii81"],
+      "release_refs": ["trit.release.v2-format"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/04_Binary_Contract/asm_syntax.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_asm.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["tests/test_tcl_asm.cpp"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_tcl_asm", "next_assembler_goldens"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.07.low-level-ir",
+      "source_refs": ["ternary_ir.h", "docs/05_Compiler_Infra/ternary_ir.md"],
+      "contract_ids": ["trit.contract.compiler.object-ir"],
+      "capability_ids": ["trit.capability.compiler.low-level-ir"],
+      "test_refs": ["test_ternary_ir"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/05_Compiler_Infra/ternary_ir.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_ir.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_compiler_ir.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_ternary_ir"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.08.tcl-language",
+      "source_refs": ["TCL_Spec_1.0.md", "docs/06_Language/tcl_language.md", "tcl_parser.trit"],
+      "contract_ids": ["trit.contract.language.tcl-v1"],
+      "capability_ids": ["trit.capability.language.tcl-frontend"],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["TCL_Spec_1.0.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["tcl_parser.trit"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_compiler_parser.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_phase7_compiler", "next_compiler_pipeline"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.09.host-compiler",
+      "source_refs": ["ternary_compiler.h", "ternary_compiler_codegen.h", "tritc.cpp"],
+      "contract_ids": ["trit.contract.compiler.host-pipeline"],
+      "capability_ids": ["trit.capability.compiler.host-pipeline"],
+      "test_refs": ["test_phase7_compiler", "next_compiler_pipeline", "next_compiler_phase_c5_pred"],
+      "benchmark_refs": ["test_malloc_micro"],
+      "gap_refs": ["trit.gap.syscall-tracing"],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["ternary_compiler.h"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_compiler_codegen.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["tritc.cpp"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_phase7_compiler", "next_compiler_pipeline"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["test_malloc_micro"]},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.10.self-hosted-compiler",
+      "source_refs": ["tcl_frontend.trit", "tcl_backend.trit", "treatcode/compiler_driver.trit"],
+      "contract_ids": ["trit.contract.compiler.self-hosted-subset"],
+      "capability_ids": ["trit.capability.language.self-hosted-subset"],
+      "test_refs": ["next_compiler_native_ulib", "next_compiler_pipeline"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["tcl_frontend.trit"]},
+        "implemented": {"status": "partial", "evidence_refs": ["tcl_backend.trit"]},
+        "integrated": {"status": "partial", "evidence_refs": ["treatcode/compiler_driver.trit"]},
+        "tested": {"status": "complete", "evidence_refs": ["next_compiler_native_ulib", "next_compiler_pipeline"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.11.runtime-sdk",
+      "source_refs": ["ulib.trit", "apps/os_sdk.trit", "apps/libwidget.trit"],
+      "contract_ids": ["trit.contract.runtime.sdk-abi"],
+      "capability_ids": ["trit.capability.runtime.sdk-and-libraries"],
+      "test_refs": ["test_native_apps", "next_runtime_ulib_sdk"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.consumer-bundle"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["apps/os_sdk.trit"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ulib.trit"]},
+        "integrated": {"status": "complete", "evidence_refs": ["apps/libwidget.trit"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_native_apps", "next_runtime_ulib_sdk"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.consumer-bundle"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.12.boot-trap",
+      "source_refs": ["bootloader.tasm", "native_kernel_boot.tasm", "native_kernel_trap_stub.tasm"],
+      "contract_ids": ["trit.contract.boot.trap-loader"],
+      "capability_ids": ["trit.capability.boot.native-trap-and-loader"],
+      "test_refs": ["test_os_platform", "test_host_runtime"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["native_kernel_trap_stub.tasm"]},
+        "implemented": {"status": "complete", "evidence_refs": ["native_kernel_boot.tasm"]},
+        "integrated": {"status": "complete", "evidence_refs": ["build_tos_image.cpp"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_os_platform", "test_host_runtime"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.13.kernel-foundations",
+      "source_refs": ["kernel.trit", "kernel/hal.trit", "kernel/process.trit"],
+      "contract_ids": ["trit.contract.kernel.process-syscall"],
+      "capability_ids": ["trit.capability.kernel.process-and-syscalls"],
+      "test_refs": ["test_layer1_hal", "test_kernel", "test_os_platform", "test_phase_d_kernel", "test_process_handoff"],
+      "benchmark_refs": ["test_scaling_profile_compact"],
+      "gap_refs": ["trit.gap.fuzz-harnesses", "trit.gap.crash-recovery"],
+      "release_refs": ["trit.release.consumer-bundle"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["kernel/hal.trit"]},
+        "implemented": {"status": "complete", "evidence_refs": ["kernel.trit"]},
+        "integrated": {"status": "complete", "evidence_refs": ["test_process_handoff"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_os_platform", "test_phase_d_kernel"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["test_scaling_profile_compact"]},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.consumer-bundle"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.14.storage-vfs",
+      "source_refs": ["kernel/bio.trit", "kernel/vfs.trit", "ternary_redo_wal.h"],
+      "contract_ids": ["trit.contract.storage.vfs-wal"],
+      "capability_ids": ["trit.capability.storage.vfs-wal-and-persistence"],
+      "test_refs": ["test_migration_v2", "test_redo_wal_v2", "next_vfs_persistence", "next_vfs_recovery"],
+      "benchmark_refs": ["test_scaling_profile_compact"],
+      "gap_refs": ["trit.gap.crash-recovery", "trit.gap.encrypted-volumes"],
+      "release_refs": ["trit.release.v2-format"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["IMAGE_FORMAT_MANIFEST.json"]},
+        "implemented": {"status": "complete", "evidence_refs": ["kernel/vfs.trit", "ternary_redo_wal.h"]},
+        "integrated": {"status": "complete", "evidence_refs": ["test_migration_v2"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_redo_wal_v2", "next_vfs_persistence", "next_vfs_recovery"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["test_scaling_profile_compact"]},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.15.devices-services",
+      "source_refs": ["kernel/net.trit", "apps/service_stub.trit", "ternary_os.h"],
+      "contract_ids": ["trit.contract.kernel.devices-services"],
+      "capability_ids": ["trit.capability.devices.graphics-network-services"],
+      "test_refs": ["test_os_platform", "next_drivers_hal", "next_graphics_gui"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.syscall-tracing"],
+      "release_refs": ["trit.release.desktop-host"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["ternary_os.h"]},
+        "implemented": {"status": "partial", "evidence_refs": ["kernel/net.trit", "apps/service_stub.trit"]},
+        "integrated": {"status": "complete", "evidence_refs": ["ternary_host_runtime.h"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_os_platform", "next_drivers_hal", "next_graphics_gui"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.desktop-host"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.16.host-runtime",
+      "source_refs": ["ternary_host_runtime.h", "run_tos_sdl.cpp", "tools/trit_tool.py"],
+      "contract_ids": ["trit.contract.host.runtime"],
+      "capability_ids": ["trit.capability.host.desktop-runtime"],
+      "test_refs": ["test_host_runtime", "test_consumer_shell_productization"],
+      "benchmark_refs": ["test_benchmark"],
+      "gap_refs": ["trit.gap.deterministic-replay", "trit.gap.framebuffer-png"],
+      "release_refs": ["trit.release.desktop-host"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/09_Host_Runtime/build_and_test.md"]},
+        "implemented": {"status": "complete", "evidence_refs": ["ternary_host_runtime.h", "run_tos_sdl.cpp"]},
+        "integrated": {"status": "complete", "evidence_refs": ["tools/trit_tool.py"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_host_runtime"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["test_benchmark"]},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.desktop-host"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.17.user-space-apps",
+      "source_refs": ["apps/desktop.trit", "apps/shell.trit", "APP_MANIFEST.json"],
+      "contract_ids": ["trit.contract.apps.bundle"],
+      "capability_ids": ["trit.capability.apps.bundled-consumer-shell"],
+      "test_refs": ["test_all_apps", "test_native_apps", "test_consumer_shell_productization", "next_apps_consumer_bundle", "next_apps_desktop_shell"],
+      "benchmark_refs": [],
+      "gap_refs": ["trit.gap.app-golden"],
+      "release_refs": ["trit.release.consumer-bundle"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["APP_MANIFEST.json"]},
+        "implemented": {"status": "complete", "evidence_refs": ["apps/desktop.trit", "apps/shell.trit"]},
+        "integrated": {"status": "complete", "evidence_refs": ["build_tos_image.cpp"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_all_apps", "test_native_apps", "next_apps_consumer_bundle"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.consumer-bundle"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.18.images-release",
+      "source_refs": ["IMAGE_FORMAT_MANIFEST.json", "build_tos_image.cpp", "tools/trit-inspect-image.ps1"],
+      "contract_ids": ["trit.contract.release.tboot-tdisk"],
+      "capability_ids": ["trit.capability.release.tboot-and-tdisk"],
+      "test_refs": ["test_host_runtime", "test_migration_v2", "next_full_system_release"],
+      "benchmark_refs": [],
+      "gap_refs": [],
+      "release_refs": ["trit.release.v2-format", "trit.release.desktop-host", "trit.release.consumer-bundle"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["IMAGE_FORMAT_MANIFEST.json"]},
+        "implemented": {"status": "complete", "evidence_refs": ["build_tos_image.cpp"]},
+        "integrated": {"status": "complete", "evidence_refs": ["next_full_system_release"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_host_runtime", "test_migration_v2"]},
+        "benchmarked": {"status": "not_available", "evidence_refs": []},
+        "released": {"status": "complete", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.19.specialized-products",
+      "source_refs": ["ternary_montgomery.h", "ternary_transformer_runtime.h", "treatcode/src/App.tsx"],
+      "contract_ids": ["trit.contract.products.specialized"],
+      "capability_ids": ["trit.capability.products.bitnet-and-specialized-libraries"],
+      "test_refs": ["test_numeric_workloads"],
+      "benchmark_refs": ["benchmark_bitnet_os", "benchmark_doom_os"],
+      "gap_refs": ["trit.gap.full-doom-assets", "trit.gap.full-bitnet-assets"],
+      "release_refs": [],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["docs/10_Benchmarks/system_benchmark_plan.md"]},
+        "implemented": {"status": "partial", "evidence_refs": ["ternary_transformer_runtime.h"]},
+        "integrated": {"status": "partial", "evidence_refs": ["treatcode/src/App.tsx"]},
+        "tested": {"status": "partial", "evidence_refs": ["test_numeric_workloads"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["benchmark_bitnet_os", "benchmark_doom_os"]},
+        "released": {"status": "not_available", "evidence_refs": []}
+      }
+    },
+    {
+      "stack_id": "trit.stack.phase.20.closure-evidence",
+      "source_refs": ["tests_next/manifests/coverage_matrix.json", "tests_next/manifests/acceptance_gates.json", "KNOWN_GAPS.md"],
+      "contract_ids": ["trit.contract.evidence.full-system"],
+      "capability_ids": ["trit.capability.evidence.full-system-validation"],
+      "test_refs": ["test_agent_tooling", "test_production_layers", "test_production_hardening", "next_full_system_release"],
+      "benchmark_refs": ["benchmark_bitnet_os", "benchmark_doom_os"],
+      "gap_refs": ["trit.gap.fuzz-harnesses", "trit.gap.benchmark-baselines"],
+      "release_refs": ["trit.release.v2-format"],
+      "coverage": {
+        "specified": {"status": "complete", "evidence_refs": ["tests_next/manifests/acceptance_gates.json"]},
+        "implemented": {"status": "partial", "evidence_refs": ["tests_next/manifests/coverage_matrix.json"]},
+        "integrated": {"status": "partial", "evidence_refs": ["tools/trit_tool.py"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_agent_tooling", "test_production_layers", "test_production_hardening"]},
+        "benchmarked": {"status": "partial", "evidence_refs": ["benchmark_bitnet_os", "benchmark_doom_os"]},
+        "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
+      }
+    }
+  ]
+}
