@@ -1088,18 +1088,25 @@ public:
 
         int ir_emitted_functions = 0;
         int target_replay_functions = 0;
+        int target_critical_edges_split = 0;
         std::vector<std::string> ir_emitted_function_names;
         for (const Function& function : optimized_module.functions) {
+            Function target_function = function;
+            target_critical_edges_split +=
+                splitCriticalPhiEdges(target_function);
             Module allocation_unit;
             allocation_unit.name = optimized_module.name;
-            allocation_unit.functions.push_back(function);
+            allocation_unit.functions.push_back(
+                target_function);
             const AllocationResult ir_allocation =
                 allocateRegisters(allocation_unit, options_);
             std::string ir_assembly;
             if (ir_allocation.success &&
                 ir_allocation.spill_slots.empty() &&
                 emitScalarSsaFunction(
-                    function, ir_allocation, ir_assembly)) {
+                    target_function,
+                    ir_allocation,
+                    ir_assembly)) {
                 result.object.function_sections[function.name] =
                     std::move(ir_assembly);
                 ++ir_emitted_functions;
@@ -1138,6 +1145,8 @@ public:
             std::to_string(ir_emitted_functions);
         result.object.metadata["target.ast_replay_functions"] =
             std::to_string(target_replay_functions);
+        result.object.metadata["target.critical_edges_split"] =
+            std::to_string(target_critical_edges_split);
         std::ostringstream ir_emitted_names;
         for (std::size_t index = 0;
              index < ir_emitted_function_names.size(); ++index) {
@@ -1212,6 +1221,7 @@ private:
                     case InstrOpcode::Cmp:
                     case InstrOpcode::Tsel:
                     case InstrOpcode::Phi:
+                    case InstrOpcode::Call:
                     case InstrOpcode::Ret:
                     case InstrOpcode::Nop:
                         break;
@@ -1320,6 +1330,57 @@ private:
                             false});
             }
         }
+        auto callMoveKey = [](
+            const BasicBlock& block,
+            const Instr& instr) {
+            return std::make_pair(
+                std::string("$call"),
+                block.name + ":" +
+                    std::to_string(instr.def));
+        };
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode != InstrOpcode::Call)
+                    continue;
+                if (instr.symbol.empty() || instr.def < 0)
+                    return false;
+                int argument_word = 0;
+                for (ValueId argument : instr.args) {
+                    const auto type = value_types.find(argument);
+                    int source = -1;
+                    if (type == value_types.end() ||
+                        !registerFor(argument, source) ||
+                        type->second.kind == TypeKind::Vector ||
+                        type->second.kind == TypeKind::Struct ||
+                        type->second.kind == TypeKind::Array ||
+                        type->second.kind == TypeKind::Owned ||
+                        type->second.kind == TypeKind::Shared) {
+                        return false;
+                    }
+                    const int width =
+                        usesWideT50Pair(type->second) ? 2 : 1;
+                    if (argument_word + width >
+                        kRegisterArgCount) {
+                        // Stack arguments need a dedicated outgoing-call
+                        // area. Keep the explicit replay fallback until the
+                        // spill-frame layout owns that area.
+                        return false;
+                    }
+                    const int destination =
+                        13 + argument_word;
+                    if (destination != source) {
+                        edge_moves[callMoveKey(block, instr)]
+                            .push_back(
+                                EdgeMove{
+                                    destination,
+                                    source,
+                                    type->second,
+                                    false});
+                    }
+                    argument_word += width;
+                }
+            }
+        }
 
         const std::vector<int> callee_saved =
             getCalleeSavedUsed(allocation, function);
@@ -1346,11 +1407,8 @@ private:
             return lhs < rhs + rhs_width &&
                    rhs < lhs + lhs_width;
         };
-        auto emitParallelCopies =
-            [&](const std::string& predecessor,
-                const std::string& successor) {
-            std::vector<EdgeMove> pending =
-                edge_moves[{predecessor, successor}];
+        auto emitParallelMoveSet =
+            [&](std::vector<EdgeMove> pending) {
             bool scratch_in_use = false;
             int scratch_users = 0;
             while (!pending.empty()) {
@@ -1453,6 +1511,12 @@ private:
             }
             return !scratch_in_use;
         };
+        auto emitParallelCopies =
+            [&](const std::string& predecessor,
+                const std::string& successor) {
+            return emitParallelMoveSet(
+                edge_moves[{predecessor, successor}]);
+        };
         if (!emitParallelCopies(
                 "$params",
                 function.blocks.front().name)) {
@@ -1460,6 +1524,10 @@ private:
         }
 
         bool emitted_return = false;
+        std::vector<
+            std::pair<
+                std::pair<std::string, std::string>,
+                std::string>> synthetic_edges;
         for (std::size_t block_index = 0;
              block_index < function.blocks.size(); ++block_index) {
             const BasicBlock& block =
@@ -1592,6 +1660,23 @@ private:
                 case InstrOpcode::Phi:
                     // Materialized on predecessor edges after allocation.
                     break;
+                case InstrOpcode::Call: {
+                    if (!emitParallelMoveSet(
+                            edge_moves[
+                                callMoveKey(block, instr)])) {
+                        return false;
+                    }
+                    out << "    call " << instr.symbol << "\n";
+                    if (destination != 13) {
+                        out << "    copy"
+                            << (usesWideT50Pair(instr.type)
+                                    ? ".t50"
+                                    : "")
+                            << " " << regName(destination)
+                            << ", r13\n";
+                    }
+                    break;
+                }
                 case InstrOpcode::Ret: {
                     if (instr.args.size() > 1) return false;
                     if (!instr.args.empty()) {
@@ -1650,24 +1735,41 @@ private:
                             << "\n";
                         break;
                     }
+                    std::map<std::string, std::string>
+                        branch_targets;
                     for (const std::string& successor :
                          successors) {
-                        if (!edge_moves[
-                                 {block.name, successor}]
-                                 .empty()) {
-                            // This is a critical edge. It must be split
-                            // before edge-local phi copies can be emitted.
-                            return false;
+                        const auto edge =
+                            std::make_pair(
+                                block.name, successor);
+                        if (edge_moves[edge].empty()) {
+                            branch_targets[successor] =
+                                successor;
+                        } else {
+                            branch_targets[successor] =
+                                function.name +
+                                "_phi_edge_" +
+                                std::to_string(
+                                    synthetic_edges.size());
+                            synthetic_edges.push_back(
+                                {edge,
+                                 branch_targets[successor]});
                         }
                     }
                     out << "    brn " << regName(condition)
                         << ", "
-                        << block.terminator.target_neg << "\n";
+                        << branch_targets[
+                               block.terminator.target_neg]
+                        << "\n";
                     out << "    brz " << regName(condition)
                         << ", "
-                        << block.terminator.target_zero << "\n";
+                        << branch_targets[
+                               block.terminator.target_zero]
+                        << "\n";
                     out << "    jmp "
-                        << block.terminator.target_pos << "\n";
+                        << branch_targets[
+                               block.terminator.target_pos]
+                        << "\n";
                     break;
                 }
                 case TerminatorKind::None:
@@ -1677,6 +1779,16 @@ private:
         }
         if (!emitted_return) return false;
 
+        for (const auto& synthetic : synthetic_edges) {
+            out << synthetic.second << ":\n";
+            if (!emitParallelCopies(
+                    synthetic.first.first,
+                    synthetic.first.second)) {
+                return false;
+            }
+            out << "    jmp "
+                << synthetic.first.second << "\n";
+        }
         out << function.name << "_return:\n";
         for (std::size_t index = 0;
              index < callee_saved.size(); ++index) {

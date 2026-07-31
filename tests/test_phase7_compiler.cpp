@@ -199,6 +199,9 @@ void testFunctionCallAndWhileLoop() {
         }
     }
     expect(compiled.success, "function call and while source compiles");
+    expect(compiled.object.metadata.at(
+               "target.ast_replay_functions") == "0",
+           "ordinary scalar calls and loop phis emit solely from optimized IR");
     expect(contains(compiled.assembly, "call inc"), "direct function call lowers to CALL");
     expect(contains(compiled.assembly, "brn"), "while lowers cold negative exit branch");
     expect(contains(compiled.assembly, "brz"), "while lowers cold zero exit branch");
@@ -604,6 +607,86 @@ void testOptimizerAndGraphColoringDetails() {
     expect(stats.constant_folds >= 1, "optimizer folds constants");
     expect(stats.cse_hits >= 1, "optimizer performs pure CSE");
     expect(stats.branch_simplifications >= 1, "optimizer simplifies constant branches");
+
+    Function critical;
+    critical.name = "critical";
+    critical.return_type =
+        TypeRef::numeric(sandbox::ir::Type::T40);
+    critical.ir_value_ceiling = 6;
+    BasicBlock critical_entry;
+    critical_entry.name = "entry";
+    critical_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40),
+              {}, 1});
+    critical_entry.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40),
+              {}, -1});
+    critical_entry.terminator.kind =
+        TerminatorKind::Branch3;
+    critical_entry.terminator.condition = 2;
+    critical_entry.terminator.target_neg = "merge";
+    critical_entry.terminator.target_zero = "merge";
+    critical_entry.terminator.target_pos = "other";
+    BasicBlock critical_other;
+    critical_other.name = "other";
+    critical_other.instructions.push_back(
+        Instr{3, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40),
+              {}, 10});
+    critical_other.terminator.kind =
+        TerminatorKind::Jump;
+    critical_other.terminator.target = "merge";
+    BasicBlock critical_merge;
+    critical_merge.name = "merge";
+    Instr critical_phi;
+    critical_phi.def = 4;
+    critical_phi.opcode = InstrOpcode::Phi;
+    critical_phi.type =
+        TypeRef::numeric(sandbox::ir::Type::T40);
+    critical_phi.phi_incoming = {
+        {"entry", 1}, {"other", 3}};
+    critical_merge.instructions.push_back(critical_phi);
+    critical_merge.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T40),
+              {4}});
+    critical_merge.terminator.kind =
+        TerminatorKind::Return;
+    critical.blocks = {
+        critical_entry, critical_other, critical_merge};
+    expect(splitCriticalPhiEdges(critical) == 1,
+           "phi lowering splits one critical CFG edge");
+    const ControlFlowGraph split_cfg =
+        buildControlFlowGraph(critical);
+    expect(split_cfg.invalid_targets.empty() &&
+               split_cfg.predecessors.at("merge").size() == 2,
+           "critical-edge split preserves a closed CFG");
+    const auto split_edge = std::find_if(
+        critical.blocks.begin(),
+        critical.blocks.end(),
+        [](const BasicBlock& candidate) {
+            return candidate.name.find(
+                       "_critical_phi_edge_") !=
+                   std::string::npos;
+        });
+    expect(split_edge != critical.blocks.end() &&
+               split_edge->terminator.kind ==
+                   TerminatorKind::Jump &&
+               split_edge->terminator.target == "merge",
+           "critical-edge split creates a concrete phi-copy block");
+    bool phi_uses_split_predecessor = false;
+    for (const auto& incoming :
+         critical.blocks[2].instructions[0].phi_incoming) {
+        phi_uses_split_predecessor =
+            phi_uses_split_predecessor ||
+            incoming.first.find(
+                "_critical_phi_edge_") !=
+                std::string::npos;
+    }
+    expect(phi_uses_split_predecessor,
+           "critical-edge split rewrites phi predecessor identity");
 
     Module alloc;
     alloc.name = "alloc_pressure";
@@ -1035,6 +1118,47 @@ void testOptimizerAndGraphColoringDetails() {
                    "source multi-phi IR image halts");
             expect(regLong(vm, 13) == 100,
                    "parallel phi copies preserve both merged values");
+        }
+    }
+
+    {
+        const std::string source = R"(
+            fn choose_positive_or_one(x: t40) -> t40 {
+              var value: t40 = 1;
+              if x > 0 {
+                value = 10;
+              }
+              return value;
+            }
+
+            fn main() -> t40 {
+              return choose_positive_or_one(1) +
+                     choose_positive_or_one(0);
+            }
+        )";
+        CompileResult compiled =
+            compileSource(
+                "source_critical_phi_edge.trit",
+                source);
+        expect(compiled.success,
+               "source critical-phi-edge program compiles");
+        expect(compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+               "conditional phi merges and their callers emit solely from optimized IR");
+
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source critical-phi-edge IR image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source critical-phi-edge IR image loads");
+            const auto run = sandbox::vm::run(vm, 1024);
+            expect(run.halted(),
+                   "source critical-phi-edge IR image halts");
+            expect(regLong(vm, 13) == 11,
+                   "synthetic phi edge preserves branch merge semantics");
         }
     }
 }

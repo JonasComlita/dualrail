@@ -57,6 +57,100 @@ struct ControlFlowGraph {
     return cfg;
 }
 
+// Phi copies conceptually execute on incoming edges. Split any edge whose
+// predecessor has multiple successors and whose phi-bearing successor has
+// multiple predecessors so target lowering always has a concrete block in
+// which to materialize those copies.
+[[nodiscard]] inline int splitCriticalPhiEdges(Function& function) {
+    const ControlFlowGraph cfg = buildControlFlowGraph(function);
+    if (!cfg.invalid_targets.empty()) return 0;
+
+    struct Split {
+        std::string predecessor;
+        std::string successor;
+        std::string block;
+    };
+    std::set<std::string> names;
+    for (const BasicBlock& block : function.blocks)
+        names.insert(block.name);
+    std::vector<Split> splits;
+    for (const BasicBlock& successor : function.blocks) {
+        const bool has_phi = std::any_of(
+            successor.instructions.begin(),
+            successor.instructions.end(),
+            [](const Instr& instr) {
+                return instr.opcode == InstrOpcode::Phi;
+            });
+        if (!has_phi ||
+            cfg.predecessors.at(successor.name).size() < 2) {
+            continue;
+        }
+        for (const std::string& predecessor :
+             cfg.predecessors.at(successor.name)) {
+            if (cfg.successors.at(predecessor).size() < 2)
+                continue;
+            std::string name =
+                function.name + "_critical_phi_edge_" +
+                std::to_string(splits.size());
+            int suffix = 0;
+            while (names.count(name)) {
+                name = function.name +
+                       "_critical_phi_edge_" +
+                       std::to_string(splits.size()) +
+                       "_" + std::to_string(++suffix);
+            }
+            names.insert(name);
+            splits.push_back(
+                Split{predecessor, successor.name, name});
+        }
+    }
+
+    auto redirect = [](
+        Terminator& terminator,
+        const std::string& from,
+        const std::string& to) {
+        if (terminator.kind == TerminatorKind::Jump) {
+            if (terminator.target == from)
+                terminator.target = to;
+            return;
+        }
+        if (terminator.kind != TerminatorKind::Branch3)
+            return;
+        if (terminator.target_neg == from)
+            terminator.target_neg = to;
+        if (terminator.target_zero == from)
+            terminator.target_zero = to;
+        if (terminator.target_pos == from)
+            terminator.target_pos = to;
+    };
+    for (const Split& split : splits) {
+        BasicBlock& predecessor =
+            function.blocks[
+                cfg.index.at(split.predecessor)];
+        BasicBlock& successor =
+            function.blocks[
+                cfg.index.at(split.successor)];
+        redirect(
+            predecessor.terminator,
+            split.successor,
+            split.block);
+        for (Instr& instr : successor.instructions) {
+            if (instr.opcode != InstrOpcode::Phi)
+                continue;
+            for (auto& incoming : instr.phi_incoming) {
+                if (incoming.first == split.predecessor)
+                    incoming.first = split.block;
+            }
+        }
+        BasicBlock edge;
+        edge.name = split.block;
+        edge.terminator.kind = TerminatorKind::Jump;
+        edge.terminator.target = split.successor;
+        function.blocks.push_back(std::move(edge));
+    }
+    return static_cast<int>(splits.size());
+}
+
 struct DominanceInfo {
     std::map<std::string, std::set<std::string>> dominators;
     std::map<std::string, std::string> immediate_dominator;
