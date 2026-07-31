@@ -159,7 +159,11 @@ void testRuntimeSyscallWrapperAndTupleSwap() {
 
     CompileResult compiled = compileSource("phase7_runtime.trit", src);
     expect(compiled.success, "runtime source compiles");
-    expect(contains(compiled.assembly, "swap"), "tuple swap lowers to SWAP");
+    expect(compiled.object.metadata.at(
+               "target.ast_replay_functions") == "0",
+           "tuple swap and runtime wrappers emit solely from optimized IR");
+    expect(!contains(compiled.assembly, "swap"),
+           "SSA value renaming eliminates a redundant physical SWAP");
     expect(contains(compiled.assembly, "syscall 1"), "sys_write_int wrapper emits syscall 1");
     expect(contains(compiled.assembly, "copy r13"), "syscall wrapper uses r13 ABI");
 

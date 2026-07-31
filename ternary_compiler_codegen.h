@@ -1738,10 +1738,22 @@ private:
                         // The standalone VM console oracle still observes
                         // r1, while the architectural/kernel ABI consumes
                         // the canonical first argument in r13.
+                        out << "    store r1, sp, "
+                            << parallel_copy_scratch
+                            << "\n";
                         out << "    copy r1, r13\n";
                     }
                     out << "    syscall " << instr.aux
                         << "\n";
+                    if ((instr.aux ==
+                             runtime::sys_write_int ||
+                         instr.aux ==
+                             runtime::sys_write_char) &&
+                        !instr.args.empty()) {
+                        out << "    load r1, sp, "
+                            << parallel_copy_scratch
+                            << "\n";
+                    }
                     const int result_register =
                         runtimeReturnsPayload(instr.aux)
                             ? 14
@@ -2918,7 +2930,9 @@ private:
         }
         
         ctx.line("swap r" + std::to_string(ra) + ", r" + std::to_string(rb));
-        ctx.value(InstrOpcode::Swap, a->second.type, stmt.span);
+        // The structural IR expresses the swap through the two reversed
+        // stores below. The target-only SWAP instruction above belongs only
+        // to legacy assembly replay and must not become a second IR effect.
         
         ctx.line(scalarMemoryMnemonic("store", a->second.type) +
                  " r" + std::to_string(ra) + ", sp, " +
