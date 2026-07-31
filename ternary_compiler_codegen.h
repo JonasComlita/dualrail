@@ -1222,6 +1222,7 @@ private:
                     case InstrOpcode::Tsel:
                     case InstrOpcode::Phi:
                     case InstrOpcode::Call:
+                    case InstrOpcode::Syscall:
                     case InstrOpcode::Ret:
                     case InstrOpcode::Nop:
                         break;
@@ -1378,6 +1379,51 @@ private:
                                     false});
                     }
                     argument_word += width;
+                }
+            }
+        }
+        auto syscallMoveKey = [](
+            const BasicBlock& block,
+            const Instr& instr) {
+            return std::make_pair(
+                std::string("$syscall"),
+                block.name + ":" +
+                    std::to_string(instr.def));
+        };
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode != InstrOpcode::Syscall)
+                    continue;
+                if (instr.def < 0 || instr.args.size() > 4)
+                    return false;
+                for (std::size_t index = 0;
+                     index < instr.args.size(); ++index) {
+                    const ValueId argument =
+                        instr.args[index];
+                    const auto type = value_types.find(argument);
+                    int source = -1;
+                    if (type == value_types.end() ||
+                        !registerFor(argument, source) ||
+                        usesWideT50Pair(type->second) ||
+                        type->second.kind == TypeKind::Vector ||
+                        type->second.kind == TypeKind::Struct ||
+                        type->second.kind == TypeKind::Array ||
+                        type->second.kind == TypeKind::Owned ||
+                        type->second.kind == TypeKind::Shared) {
+                        return false;
+                    }
+                    const int destination =
+                        13 + static_cast<int>(index);
+                    if (destination != source) {
+                        edge_moves[
+                            syscallMoveKey(block, instr)]
+                            .push_back(
+                                EdgeMove{
+                                    destination,
+                                    source,
+                                    type->second,
+                                    false});
+                    }
                 }
             }
         }
@@ -1674,6 +1720,37 @@ private:
                                     : "")
                             << " " << regName(destination)
                             << ", r13\n";
+                    }
+                    break;
+                }
+                case InstrOpcode::Syscall: {
+                    if (!emitParallelMoveSet(
+                            edge_moves[
+                                syscallMoveKey(
+                                    block, instr)])) {
+                        return false;
+                    }
+                    if ((instr.aux ==
+                             runtime::sys_write_int ||
+                         instr.aux ==
+                             runtime::sys_write_char) &&
+                        !instr.args.empty()) {
+                        // The standalone VM console oracle still observes
+                        // r1, while the architectural/kernel ABI consumes
+                        // the canonical first argument in r13.
+                        out << "    copy r1, r13\n";
+                    }
+                    out << "    syscall " << instr.aux
+                        << "\n";
+                    const int result_register =
+                        runtimeReturnsPayload(instr.aux)
+                            ? 14
+                            : 13;
+                    if (destination != result_register) {
+                        out << "    copy "
+                            << regName(destination)
+                            << ", r" << result_register
+                            << "\n";
                     }
                     break;
                 }
@@ -3510,9 +3587,12 @@ private:
 
     [[nodiscard]] ExprCode emitRuntimeCall(const Expr& expr, TypeRef expected, FunctionContext& ctx) {
         const int service = runtimeService(expr.text);
-        if (expr.args.size() > 6) diag("syscall wrapper accepts at most six arguments", expr.span);
+        if (expr.args.size() > 4)
+            diag("syscall ABI v2 accepts at most four arguments",
+                 expr.span);
         std::vector<ValueId> arg_values;
-        const std::size_t argc = std::min<std::size_t>(expr.args.size(), 6);
+        const std::size_t argc =
+            std::min<std::size_t>(expr.args.size(), 4);
         const int saved_call_arg_depth = ctx.call_arg_depth;
         if (saved_call_arg_depth >= kCallArgScratchAreas) {
             diag("nested syscall wrapper calls exceed bootstrap call scratch depth", expr.span);

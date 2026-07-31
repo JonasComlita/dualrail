@@ -96,8 +96,7 @@ void testSideEffectfulMatchKeepsBranchLowering() {
     using namespace sandbox::compiler;
 
     const std::string src = R"(
-        fn main() -> t40 {
-          let x = 0;
+        fn main(x: t40) -> t40 {
           match x {
             neg => {
               sys_write_char(45);
@@ -123,6 +122,9 @@ void testSideEffectfulMatchKeepsBranchLowering() {
         }
     }
     expect(compiled.success, "side-effectful match compiles");
+    expect(compiled.object.metadata.at(
+               "target.ast_replay_functions") == "0",
+           "dynamic side-effectful match emits solely from optimized IR");
     expect(contains(compiled.assembly, "brn"), "side-effectful match emits negative branch");
     expect(contains(compiled.assembly, "brz"), "side-effectful match emits zero branch");
     expect(!contains(compiled.assembly, "brp"), "side-effectful match uses positive fallthrough");
@@ -385,6 +387,22 @@ void testTypeDiagnostics() {
         expect(compiled.success, "raw atomic intrinsics inside unsafe compile");
         expect(contains(compiled.assembly, "tldr.+1"), "unsafe tldr lowers memory order");
         expect(contains(compiled.assembly, "tstr.-1"), "unsafe tstr lowers memory order");
+    }
+
+    {
+        const std::string src = R"(
+            fn main() -> t40 {
+              return sys_write(1, 2, 3, 4, 5);
+            }
+        )";
+        CompileResult compiled =
+            compileSource("phase7_syscall_arity.trit", src);
+        expect(!compiled.success,
+               "syscall ABI v2 rejects a fifth argument");
+        expect(hasDiagnostic(
+                   compiled.diagnostics,
+                   "at most four arguments"),
+               "syscall ABI v2 arity diagnostic is clear");
     }
 }
 
@@ -1268,6 +1286,9 @@ void testSysWriteChar() {
 
     CompileResult compiled = compileSource("phase7_sys_write_char.trit", src);
     expect(compiled.success, "sys_write_char compiles");
+    expect(compiled.object.metadata.at(
+               "target.ast_replay_functions") == "0",
+           "syscall-only scalar function emits solely from optimized IR");
     expect(contains(compiled.assembly, "syscall 22"), "sys_write_char wrapper emits syscall 22");
 
     LinkResult linked = linkModules({compiled.object});
