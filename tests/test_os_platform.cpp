@@ -881,6 +881,57 @@ void testNativeKernelInodeFsyncOrdering() {
     }
 }
 
+void testNativeWalErrorPropagation() {
+    std::cout << "[9] Native kernel WAL error propagation\n";
+    using namespace sandbox::compiler;
+    const std::string kernel = readTextFile("kernel.trit");
+    const std::string driver = R"(
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var i: t40 = 0;
+            // Each transaction consumes one data and one commit record.  Fill
+            // the current group until its next commit will force a WAL sync,
+            // then tear the oldest durable record immediately before that
+            // commit so the real sync error path is exercised.
+            while 64 - i > 0 {
+                var tx: t40 = log_begin();
+                if log_write(tx, 40000 + i, 0, i + 1) < 0 { return -2; }
+                if kload(WAL_PENDING_BLOCK_ADDR) - 26 >= 0 {
+                    var durable_slot: t40 = kload(WAL_DURABLE_HEAD_ADDR);
+                    kstore(wal_record_addr(durable_slot) + WAL_CHECKSUM, 0);
+                    var committed: t40 = log_commit(tx);
+                    if committed - ERR_INVALID != 0 { return -4; }
+                    if kload(WAL_LAST_ERROR_ADDR) - ERR_INVALID != 0 { return -5; }
+                    return 1;
+                }
+                var committed: t40 = log_commit(tx);
+                if committed < 0 { return -3; }
+                i = i + 1;
+            }
+            return -6;
+        }
+    )";
+    CompileResult compiled = compileSource("native_wal_error_propagation.trit", kernel + "\n" + driver);
+    expect(compiled.success, "native WAL error propagation driver compiles");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "native WAL error propagation driver links");
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
+               "native WAL error propagation driver loads");
+        const auto result = sandbox::vm::run(vm, 50000000);
+        expect(result.halted(), "native WAL error propagation driver halts");
+        const long long wal_error_ret = sandbox::vm::ops::toLong(vm.regfile.read(13));
+        if (wal_error_ret != 1) {
+            std::cout << "DEBUG wal-error: status=" << static_cast<int>(result.status)
+                      << " pc=" << vm.pc << " r13=" << wal_error_ret
+                      << "\n";
+        }
+        expect(wal_error_ret == 1,
+               "kernel returns and records a WAL sync failure");
+    }
+}
+
 void testNativeVfsImageBuilderBootsKernelRoot() {
     std::cout << "[9] Native VFS image builder boots kernel root\n";
     using namespace sandbox::os;
@@ -1091,6 +1142,7 @@ int main() {
     testNativeBioReadsRootFilesystemImage();
     testNativeKernelVfsMountsDiskBackedState();
     testNativeKernelInodeFsyncOrdering();
+    testNativeWalErrorPropagation();
     testNativeVfsImageBuilderBootsKernelRoot();
     testSharedStatusAndCompilerWrappers();
 
