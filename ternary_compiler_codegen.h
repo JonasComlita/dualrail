@@ -7,6 +7,7 @@
 #include "ternary_compiler_ast.h"
 #include "ternary_compiler_cfg.h"
 #include "ternary_compiler_parser.h"
+#include <deque>
 
 namespace sandbox {
 namespace compiler {
@@ -5505,40 +5506,222 @@ inline void rewriteAsConstant(Instr& instr, long long value) {
 }
 
 inline int runSparseConditionalConstantPropagation(Function& fn) {
-    std::map<ValueId, long long> constants;
-    bool changed = true;
-    while (changed) {
-        changed = false;
+    if (fn.blocks.empty()) return 0;
+    const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+    if (!cfg.invalid_targets.empty()) return 0;
+
+    enum class LatticeKind : uint8_t { Unknown, Constant, Overdefined };
+    struct LatticeValue {
+        LatticeKind kind = LatticeKind::Unknown;
+        long long value = 0;
+    };
+    std::map<ValueId, LatticeValue> values;
+    std::map<std::string, bool> executable;
+    std::deque<std::string> worklist;
+
+    auto stateOf = [&](ValueId value) {
+        const auto found = values.find(value);
+        return found == values.end() ? LatticeValue{} : found->second;
+    };
+    auto mergeValue = [&](ValueId value, LatticeValue incoming) {
+        if (value < 0 || incoming.kind == LatticeKind::Unknown) return false;
+        LatticeValue& current = values[value];
+        if (current.kind == LatticeKind::Overdefined) return false;
+        if (current.kind == LatticeKind::Unknown) {
+            current = incoming;
+            return true;
+        }
+        if (incoming.kind == LatticeKind::Overdefined ||
+            current.value != incoming.value) {
+            current.kind = LatticeKind::Overdefined;
+            return true;
+        }
+        return false;
+    };
+    auto markExecutable = [&](const std::string& name) {
+        if (name.empty() || executable[name]) return false;
+        executable[name] = true;
+        worklist.push_back(name);
+        return true;
+    };
+    auto enqueueExecutable = [&]() {
         for (const BasicBlock& block : fn.blocks) {
-            for (const Instr& instr : block.instructions) {
-                if (instr.def < 0) continue;
-                long long value = 0;
-                if (!evaluateSsaConstant(instr, constants, value)) continue;
-                const auto found = constants.find(instr.def);
-                if (found == constants.end() || found->second != value) {
-                    constants[instr.def] = value;
-                    changed = true;
+            if (executable[block.name]) worklist.push_back(block.name);
+        }
+    };
+
+    auto evaluate = [&](const Instr& instr) {
+        if (instr.def < 0) return LatticeValue{};
+        if (instr.opcode == InstrOpcode::Const)
+            return LatticeValue{LatticeKind::Constant, instr.imm};
+        auto argument = [&](std::size_t index) {
+            return index < instr.args.size()
+                ? stateOf(instr.args[index])
+                : LatticeValue{LatticeKind::Overdefined, 0};
+        };
+        if (instr.opcode == InstrOpcode::Copy ||
+            instr.opcode == InstrOpcode::Cvt) {
+            return argument(0);
+        }
+        if (instr.opcode == InstrOpcode::Phi) {
+            LatticeValue result{};
+            bool saw_incoming = false;
+            for (const auto& incoming : instr.phi_incoming) {
+                if (!executable[incoming.first]) continue;
+                saw_incoming = true;
+                const LatticeValue candidate = stateOf(incoming.second);
+                if (candidate.kind == LatticeKind::Unknown) continue;
+                if (result.kind == LatticeKind::Unknown) {
+                    result = candidate;
+                } else if (candidate.kind == LatticeKind::Overdefined ||
+                           result.kind == LatticeKind::Overdefined ||
+                           result.value != candidate.value) {
+                    result.kind = LatticeKind::Overdefined;
                 }
             }
+            return saw_incoming ? result : LatticeValue{};
         }
+        const LatticeValue lhs = argument(0);
+        const LatticeValue rhs = argument(1);
+        if (instr.opcode == InstrOpcode::Tsel && instr.args.size() == 4) {
+            const LatticeValue condition = argument(0);
+            if (condition.kind != LatticeKind::Constant)
+                return condition.kind == LatticeKind::Overdefined
+                    ? LatticeValue{LatticeKind::Overdefined, 0}
+                    : LatticeValue{};
+            const std::size_t selected = condition.value < 0 ? 1 :
+                condition.value > 0 ? 3 : 2;
+            return stateOf(instr.args[selected]);
+        }
+        if (lhs.kind != LatticeKind::Constant ||
+            rhs.kind != LatticeKind::Constant) {
+            return lhs.kind == LatticeKind::Overdefined ||
+                           rhs.kind == LatticeKind::Overdefined
+                ? LatticeValue{LatticeKind::Overdefined, 0}
+                : LatticeValue{};
+        }
+        long long result = 0;
+        const auto addOverflow = [](long long a, long long b) {
+            return (b > 0 && a > std::numeric_limits<long long>::max() - b) ||
+                   (b < 0 && a < std::numeric_limits<long long>::min() - b);
+        };
+        const auto subOverflow = [](long long a, long long b) {
+            return (b < 0 && a > std::numeric_limits<long long>::max() + b) ||
+                   (b > 0 && a < std::numeric_limits<long long>::min() + b);
+        };
+        const auto mulOverflow = [](long long a, long long b) {
+            if (a == 0 || b == 0) return false;
+            if (a == -1) return b == std::numeric_limits<long long>::min();
+            if (b == -1) return a == std::numeric_limits<long long>::min();
+            if (a > 0) {
+                if (b > 0)
+                    return a > std::numeric_limits<long long>::max() / b;
+                return b < std::numeric_limits<long long>::min() / a;
+            }
+            if (b > 0)
+                return a < std::numeric_limits<long long>::min() / b;
+            return a < std::numeric_limits<long long>::max() / b;
+        };
+        switch (instr.opcode) {
+            case InstrOpcode::Add:
+                if (addOverflow(lhs.value, rhs.value))
+                    return LatticeValue{LatticeKind::Overdefined, 0};
+                result = lhs.value + rhs.value;
+                return LatticeValue{LatticeKind::Constant, result};
+            case InstrOpcode::Sub:
+                if (subOverflow(lhs.value, rhs.value))
+                    return LatticeValue{LatticeKind::Overdefined, 0};
+                result = lhs.value - rhs.value;
+                return LatticeValue{LatticeKind::Constant, result};
+            case InstrOpcode::Mul:
+                if (mulOverflow(lhs.value, rhs.value))
+                    return LatticeValue{LatticeKind::Overdefined, 0};
+                result = lhs.value * rhs.value;
+                return LatticeValue{LatticeKind::Constant, result};
+            case InstrOpcode::Div:
+            case InstrOpcode::Tmod:
+                if (rhs.value == 0 ||
+                    (lhs.value == std::numeric_limits<long long>::min() &&
+                     rhs.value == -1))
+                    return LatticeValue{LatticeKind::Overdefined, 0};
+                result = instr.opcode == InstrOpcode::Div
+                    ? lhs.value / rhs.value
+                    : lhs.value % rhs.value;
+                return LatticeValue{LatticeKind::Constant, result};
+            case InstrOpcode::Cmp:
+                return LatticeValue{LatticeKind::Constant,
+                                    lhs.value < rhs.value ? -1 :
+                                    lhs.value > rhs.value ? 1 : 0};
+            default:
+                return LatticeValue{LatticeKind::Overdefined, 0};
+        }
+    };
+
+    markExecutable(fn.blocks.front().name);
+    while (!worklist.empty()) {
+        const std::string block_name = worklist.front();
+        worklist.pop_front();
+        const auto block_index = cfg.index.find(block_name);
+        if (block_index == cfg.index.end()) continue;
+        BasicBlock& block = fn.blocks[static_cast<std::size_t>(block_index->second)];
+        bool state_changed = false;
+        for (const Instr& instr : block.instructions) {
+            state_changed = mergeValue(instr.def, evaluate(instr)) || state_changed;
+        }
+        const auto markAll = [&]() {
+            for (const std::string& successor : cfg.successors.at(block.name))
+                markExecutable(successor);
+        };
+        switch (block.terminator.kind) {
+            case TerminatorKind::Jump:
+                markExecutable(block.terminator.target);
+                break;
+            case TerminatorKind::Branch3: {
+                const LatticeValue condition = stateOf(block.terminator.condition);
+                if (condition.kind == LatticeKind::Constant) {
+                    markExecutable(condition.value < 0
+                        ? block.terminator.target_neg
+                        : condition.value > 0
+                            ? block.terminator.target_pos
+                            : block.terminator.target_zero);
+                } else {
+                    markAll();
+                }
+                break;
+            }
+            case TerminatorKind::Return:
+            case TerminatorKind::None:
+            case TerminatorKind::Halt:
+                break;
+        }
+        if (state_changed) enqueueExecutable();
     }
+
     int rewritten = 0;
     for (BasicBlock& block : fn.blocks) {
+        if (!executable[block.name]) continue;
         for (Instr& instr : block.instructions) {
-            if (instr.def < 0 || instr.opcode == InstrOpcode::Const) continue;
-            const auto found = constants.find(instr.def);
-            if (found == constants.end() || !isPureInstruction(instr)) continue;
-            rewriteAsConstant(instr, found->second);
+            // Keep phi nodes explicit for the later edge-copy lowering pass.
+            // Even when SCCP proves a single executable incoming edge, the
+            // structural SSA form remains the authoritative representation
+            // until CFG simplification removes that block explicitly.
+            if (instr.def < 0 || instr.opcode == InstrOpcode::Const ||
+                instr.opcode == InstrOpcode::Phi ||
+                !isPureInstruction(instr)) continue;
+            const LatticeValue value = stateOf(instr.def);
+            if (value.kind != LatticeKind::Constant) continue;
+            rewriteAsConstant(instr, value.value);
             ++rewritten;
         }
         if (block.terminator.kind == TerminatorKind::Branch3) {
-            const auto found = constants.find(block.terminator.condition);
-            if (found != constants.end()) {
+            const LatticeValue condition = stateOf(block.terminator.condition);
+            if (condition.kind == LatticeKind::Constant) {
                 block.terminator.kind = TerminatorKind::Jump;
-                block.terminator.target =
-                    found->second < 0 ? block.terminator.target_neg :
-                    found->second > 0 ? block.terminator.target_pos :
-                                          block.terminator.target_zero;
+                block.terminator.target = condition.value < 0
+                    ? block.terminator.target_neg
+                    : condition.value > 0
+                        ? block.terminator.target_pos
+                        : block.terminator.target_zero;
             }
         }
     }
@@ -5546,36 +5729,94 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
 }
 
 inline int runGlobalCopyPropagation(Function& fn) {
+    const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+    if (!cfg.invalid_targets.empty() || fn.blocks.empty()) return 0;
+    const DominanceInfo dominance = computeDominance(fn, cfg);
+
+    // A copy is visible only after its defining instruction and only along a
+    // path dominated by that definition.  The previous module-wide map could
+    // rewrite a use in a sibling branch with a value defined on a different
+    // path, turning a valid SSA graph into a latent use-before-definition.
     std::map<ValueId, ValueId> copies;
+    std::map<ValueId, std::string> defining_block;
+    std::map<ValueId, int> defining_index;
     for (const BasicBlock& block : fn.blocks) {
-        for (const Instr& instr : block.instructions) {
-            if (instr.opcode == InstrOpcode::Copy &&
-                instr.def >= 0 && instr.args.size() == 1) {
-                copies[instr.def] = resolveCopy(instr.args[0], copies);
+        for (std::size_t index = 0; index < block.instructions.size(); ++index) {
+            const Instr& instr = block.instructions[index];
+            if (instr.def >= 0) {
+                defining_block[instr.def] = block.name;
+                defining_index[instr.def] = static_cast<int>(index);
             }
         }
     }
+
+    auto visibleAt = [&](ValueId value,
+                         const std::string& use_block,
+                         int use_index) {
+        const auto block_it = defining_block.find(value);
+        if (block_it == defining_block.end()) return false;
+        if (!dominance.dominates(block_it->second, use_block)) return false;
+        if (block_it->second == use_block) {
+            const auto index_it = defining_index.find(value);
+            if (index_it == defining_index.end() ||
+                index_it->second >= use_index) {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto resolveAt = [&](ValueId value,
+                         const std::string& use_block,
+                         int use_index) {
+        std::set<ValueId> seen;
+        ValueId current = value;
+        while (copies.count(current) && !seen.count(current)) {
+            if (!visibleAt(current, use_block, use_index)) break;
+            seen.insert(current);
+            const ValueId next = copies.at(current);
+            if (!visibleAt(next, use_block, use_index)) break;
+            current = next;
+        }
+        return current;
+    };
+
     int rewrites = 0;
     for (BasicBlock& block : fn.blocks) {
-        for (Instr& instr : block.instructions) {
+        for (std::size_t index = 0; index < block.instructions.size(); ++index) {
+            Instr& instr = block.instructions[index];
             for (ValueId& arg : instr.args) {
-                const ValueId resolved = resolveCopy(arg, copies);
+                const ValueId resolved = resolveAt(
+                    arg, block.name, static_cast<int>(index));
                 if (resolved != arg) {
                     arg = resolved;
                     ++rewrites;
                 }
             }
-            for (auto& incoming : instr.phi_incoming) {
-                const ValueId resolved =
-                    resolveCopy(incoming.second, copies);
-                if (resolved != incoming.second) {
-                    incoming.second = resolved;
-                    ++rewrites;
+            if (instr.opcode == InstrOpcode::Phi) {
+                for (auto& incoming : instr.phi_incoming) {
+                    const auto predecessor = cfg.index.find(incoming.first);
+                    if (predecessor == cfg.index.end()) continue;
+                    const BasicBlock& pred =
+                        fn.blocks[static_cast<std::size_t>(predecessor->second)];
+                    const ValueId resolved = resolveAt(
+                        incoming.second,
+                        incoming.first,
+                        static_cast<int>(pred.instructions.size()));
+                    if (resolved != incoming.second) {
+                        incoming.second = resolved;
+                        ++rewrites;
+                    }
                 }
             }
+            if (instr.opcode == InstrOpcode::Copy &&
+                instr.def >= 0 && instr.args.size() == 1) {
+                copies[instr.def] = instr.args.front();
+            }
         }
-        const ValueId resolved =
-            resolveCopy(block.terminator.condition, copies);
+        const ValueId resolved = resolveAt(
+            block.terminator.condition,
+            block.name,
+            static_cast<int>(block.instructions.size()));
         if (resolved != block.terminator.condition) {
             block.terminator.condition = resolved;
             ++rewrites;

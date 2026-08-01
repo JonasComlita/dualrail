@@ -713,6 +713,54 @@ void testOptimizerAndGraphColoringDetails() {
     expect(stats.cse_hits >= 1, "optimizer performs pure CSE");
     expect(stats.branch_simplifications >= 1, "optimizer simplifies constant branches");
 
+    Module sccp;
+    sccp.name = "sccp_reachability";
+    Function sccp_fn;
+    sccp_fn.name = "reachable";
+    BasicBlock sccp_entry;
+    sccp_entry.name = "entry";
+    sccp_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 1});
+    sccp_entry.terminator.kind = TerminatorKind::Branch3;
+    sccp_entry.terminator.condition = 1;
+    sccp_entry.terminator.target_neg = "dead";
+    sccp_entry.terminator.target_zero = "dead";
+    sccp_entry.terminator.target_pos = "live";
+    BasicBlock sccp_dead;
+    sccp_dead.name = "dead";
+    sccp_dead.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 99});
+    sccp_dead.terminator.kind = TerminatorKind::Jump;
+    sccp_dead.terminator.target = "merge";
+    BasicBlock sccp_live;
+    sccp_live.name = "live";
+    sccp_live.instructions.push_back(
+        Instr{3, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 7});
+    sccp_live.terminator.kind = TerminatorKind::Jump;
+    sccp_live.terminator.target = "merge";
+    BasicBlock sccp_merge;
+    sccp_merge.name = "merge";
+    Instr sccp_phi;
+    sccp_phi.def = 4;
+    sccp_phi.opcode = InstrOpcode::Phi;
+    sccp_phi.type = TypeRef::numeric(sandbox::ir::Type::T40);
+    sccp_phi.phi_incoming = {{"dead", 2}, {"live", 3}};
+    sccp_merge.instructions.push_back(sccp_phi);
+    sccp_merge.terminator.kind = TerminatorKind::Return;
+    sccp_fn.blocks = {sccp_entry, sccp_dead, sccp_live, sccp_merge};
+    sccp.functions.push_back(sccp_fn);
+    expect(runSparseConditionalConstantPropagation(sccp.functions[0]) == 0,
+           "path-aware SCCP keeps structural phi nodes explicit");
+    expect(sccp.functions[0].blocks[0].terminator.kind == TerminatorKind::Jump &&
+               sccp.functions[0].blocks[0].terminator.target == "live",
+           "path-aware SCCP folds only the executable branch");
+    expect(sccp.functions[0].blocks[1].instructions.front().opcode ==
+               InstrOpcode::Const,
+           "path-aware SCCP does not rewrite unreachable blocks");
+
     Function critical;
     critical.name = "critical";
     critical.return_type =
