@@ -214,7 +214,7 @@
       "evidence_status": "tested",
       "source_refs": [
         {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_boot.tasm", "status": "resolved", "role": "implementation"},
-        {"repository": "trit", "commit": "working-tree", "path": "v2_first_silicon_bringup.tasm", "status": "resolved", "role": "first_silicon_bringup"}
+        {"repository": "trit", "commit": "bbcb3fa14eddae73edd33825e9097b197d4a05e5", "path": "v2_first_silicon_bringup.tasm", "status": "resolved", "role": "first_silicon_bringup"}
       ],
       "test_refs": ["test_os_platform", "test_first_silicon_bringup", "test_host_runtime"],
       "benchmark_refs": [],

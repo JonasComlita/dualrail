@@ -313,7 +313,7 @@
         {"repository": "trit", "commit": "d168bc8", "path": "bootloader.tasm", "status": "resolved", "role": "reset_program"},
         {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_boot.tasm", "status": "resolved", "role": "native_boot"},
         {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_trap_stub.tasm", "status": "resolved", "role": "trap_entry"},
-        {"repository": "trit", "commit": "working-tree", "path": "v2_first_silicon_bringup.tasm", "status": "resolved", "role": "first_silicon_bringup"}
+        {"repository": "trit", "commit": "bbcb3fa14eddae73edd33825e9097b197d4a05e5", "path": "v2_first_silicon_bringup.tasm", "status": "resolved", "role": "first_silicon_bringup"}
       ],
       "contract_ids": ["trit.contract.boot.trap-loader"],
       "capability_ids": ["trit.capability.boot.native-trap-and-loader"],
