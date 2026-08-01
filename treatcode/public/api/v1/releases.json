@@ -1,0 +1,161 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:release:trit-release-v2-format",
+      "entity_type": "release",
+      "source_id": "trit.release.v2-format",
+      "name": "Trit v2 image and ABI format",
+      "description": "Trit v2 image and ABI format",
+      "status": "built_and_tested",
+      "verification_ids": [
+        "tc:test:test-host-runtime",
+        "tc:test:test-migration-v2",
+        "tc:test:next-full-system-release"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "IMAGE_FORMAT_MANIFEST.json",
+          "status": "resolved",
+          "role": "release_contract"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ARCHITECTURE_MANIFEST.json",
+          "status": "resolved",
+          "role": "abi_contract"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:release:trit-release-desktop-host",
+      "entity_type": "release",
+      "source_id": "trit.release.desktop-host",
+      "name": "Desktop host runtime release path",
+      "description": "Desktop host runtime release path",
+      "status": "staged",
+      "verification_ids": [
+        "tc:test:test-host-runtime"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "run_tos_sdl.cpp",
+          "status": "resolved",
+          "role": "runtime"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tools/trit-run.ps1",
+          "status": "resolved",
+          "role": "launch_tool"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:release:trit-release-consumer-bundle",
+      "entity_type": "release",
+      "source_id": "trit.release.consumer-bundle",
+      "name": "Bundled consumer application image",
+      "description": "Bundled consumer application image",
+      "status": "staged",
+      "verification_ids": [
+        "tc:test:test-native-apps",
+        "tc:test:test-consumer-shell-productization"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "APP_MANIFEST.json",
+          "status": "resolved",
+          "role": "bundle_contract"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "build_tos_image.cpp",
+          "status": "resolved",
+          "role": "bundle_builder"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:release:treatcode-public-api-v1",
+      "entity_type": "release",
+      "source_id": "treatcode-public-api-v1",
+      "name": "TreatCode public API v1",
+      "description": "Read-only, provenance-preserving Stack Explorer snapshot release.",
+      "status": "generated",
+      "verification_ids": [
+        "tc:test:treatcode-public-api-conformance"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/11_TreatCode_Platform/schemas/public_api.v1.openapi.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/package.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/package.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "releases",
+    "count": 4,
+    "total": 4
+  },
+  "links": {
+    "self": "/api/public/v1/releases"
+  }
+}

@@ -34,7 +34,7 @@ const FALLBACK_SNAPSHOT: PublicSnapshot = {
     { id: "tc:layer:user", entity_type: "stack_node", ordinal: 20, slug: "user", name: "User surface", description: "User-facing applications and learning surfaces.", depends_on: ["tc:layer:isa"], source_refs: [], evidence_refs: [] },
   ],
   components: [], capabilities: [], contracts: [], decisions: [], sources: [], symbols: [], tests: [], benchmarks: [], runs: [], releases: [], gaps: [], relations: [],
-  statistics: { stack_node: 3 },
+  statistics: {},
 };
 
 function parseRoute(): Route {
@@ -117,6 +117,7 @@ function Header({ route, onNavigate }: { route: Route; onNavigate: (href: string
       {nav("/stack", "Stack Explorer", route.page === "stack")}
       {nav("/learn", "Learn", route.page === "learn")}
       {nav("/practice", "Practice", false)}
+      {nav("/arena", "Implementation Arena", false)}
       <a href="/api/public/v1/openapi.json">API</a>
     </nav>
   </header>;

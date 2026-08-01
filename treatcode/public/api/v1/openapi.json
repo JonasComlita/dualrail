@@ -1,0 +1,162 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TreatCode Public Platform API",
+    "version": "1.0.0",
+    "description": "Read-only, provenance-preserving access to the Trit stack and its evidence graph. Every response carries the API schema version and the source snapshot commit."
+  },
+  "servers": [{"url": "/api/public/v1"}],
+  "paths": {
+    "/": {
+      "get": {"operationId": "getApiIndex", "responses": {"200": {"description": "API metadata and collection counts", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}}
+    },
+    "/snapshot.json": {
+      "get": {"operationId": "getStaticSnapshot", "responses": {"200": {"description": "Complete static snapshot", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Snapshot"}}}}}}
+    },
+    "/openapi.json": {
+      "get": {"operationId": "getOpenApi", "responses": {"200": {"description": "This OpenAPI document"}}}
+    },
+    "/projects": {"$ref": "#/components/pathItems/collection"},
+    "/stack-nodes": {"$ref": "#/components/pathItems/collection"},
+    "/components": {"$ref": "#/components/pathItems/collection"},
+    "/capabilities": {"$ref": "#/components/pathItems/collection"},
+    "/contracts": {"$ref": "#/components/pathItems/collection"},
+    "/decisions": {"$ref": "#/components/pathItems/collection"},
+    "/sources": {"$ref": "#/components/pathItems/collection"},
+    "/symbols": {"$ref": "#/components/pathItems/collection"},
+    "/tests": {"$ref": "#/components/pathItems/collection"},
+    "/benchmarks": {"$ref": "#/components/pathItems/collection"},
+    "/runs": {"$ref": "#/components/pathItems/collection"},
+    "/releases": {"$ref": "#/components/pathItems/collection"},
+    "/gaps": {"$ref": "#/components/pathItems/collection"},
+    "/{resource}/{id}": {
+      "get": {
+        "operationId": "getResourceById",
+        "parameters": [{"$ref": "#/components/parameters/resource"}, {"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"description": "One provenance-backed entity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "searchPublicGraph",
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "mode", "in": "query", "schema": {"type": "string", "enum": ["exact", "symbol", "relationship", "semantic"], "default": "semantic"}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}}
+        ],
+        "responses": {"200": {"description": "Ranked search matches with provenance", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SearchEnvelope"}}}}}
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "resource": {"name": "resource", "in": "path", "required": true, "schema": {"type": "string"}},
+      "id": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+    },
+    "pathItems": {
+      "collection": {
+        "get": {
+          "operationId": "listResource",
+          "parameters": [
+            {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}},
+            {"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "default": 0}}
+          ],
+          "responses": {"200": {"description": "A paginated, provenance-backed collection", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        }
+      }
+    },
+    "responses": {"NotFound": {"description": "The requested entity does not exist"}},
+    "schemas": {
+      "Provenance": {
+        "type": "object",
+        "required": ["repository", "commit"],
+        "properties": {
+          "repository": {"type": "string", "format": "uri"},
+          "commit": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+          "path": {"type": "string"},
+          "source_span": {"type": "object", "properties": {"start_line": {"type": "integer"}, "end_line": {"type": "integer"}}},
+          "artifact_hash": {"type": "string"},
+          "status": {"type": "string"},
+          "role": {"type": "string"}
+        }
+      },
+      "SnapshotInfo": {
+        "type": "object",
+        "required": ["id", "repository", "commit", "generated_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "repository": {"type": "string", "format": "uri"},
+          "commit": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+          "generated_at": {"type": "string", "format": "date-time"},
+          "source": {"type": "string"}
+        }
+      },
+      "Entity": {
+        "type": "object",
+        "required": ["id", "entity_type", "source_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^tc:"},
+          "entity_type": {"type": "string"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "source_refs": {"type": "array", "items": {"$ref": "#/components/schemas/Provenance"}},
+          "evidence_refs": {"type": "array", "items": {"$ref": "#/components/schemas/Provenance"}}
+        },
+        "additionalProperties": true
+      },
+      "Envelope": {
+        "type": "object",
+        "required": ["schema_version", "snapshot", "data"],
+        "properties": {
+          "schema_version": {"const": "treatcode.public.api.v1"},
+          "snapshot": {"$ref": "#/components/schemas/SnapshotInfo"},
+          "data": {},
+          "meta": {"type": "object", "additionalProperties": true},
+          "links": {"type": "object", "additionalProperties": {"type": "string"}}
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "required": ["schema_version", "snapshot", "projects", "stack_nodes", "relations"],
+        "properties": {
+          "schema_version": {"const": "treatcode.public.snapshot.v1"},
+          "snapshot": {"$ref": "#/components/schemas/SnapshotInfo"},
+          "projects": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "stack_nodes": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "components": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "capabilities": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "contracts": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "decisions": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "sources": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "symbols": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "tests": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "benchmarks": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "runs": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "releases": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "gaps": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
+          "relations": {"type": "array", "items": {"type": "object", "required": ["from", "type", "to"]}},
+          "statistics": {"type": "object", "additionalProperties": {"type": "integer"}}
+        }
+      },
+      "SearchMatch": {
+        "type": "object",
+        "required": ["entity_type", "entity_id", "name", "match_type", "score", "provenance"],
+        "properties": {
+          "entity_type": {"type": "string"},
+          "entity_id": {"type": "string"},
+          "name": {"type": "string"},
+          "match_type": {"type": "string"},
+          "score": {"type": "number"},
+          "matched_fields": {"type": "array", "items": {"type": "string"}},
+          "provenance": {"type": "array", "items": {"$ref": "#/components/schemas/Provenance"}}
+        }
+      },
+      "SearchEnvelope": {
+        "allOf": [
+          {"$ref": "#/components/schemas/Envelope"},
+          {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/SearchMatch"}}}}
+        ]
+      }
+    }
+  }
+}

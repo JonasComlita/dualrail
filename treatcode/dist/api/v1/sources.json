@@ -1,0 +1,4353 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:source:acceptance-criteria-md-f11f9ee9",
+      "entity_type": "source",
+      "name": "ACCEPTANCE_CRITERIA.md",
+      "path": "ACCEPTANCE_CRITERIA.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 3333,
+      "sha256": "sha256:8189226d8d601fb281d3889cff7676f394eda8844a7b673d2123ea9d5e7f52ae",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ACCEPTANCE_CRITERIA.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:agents-md-a54ff182",
+      "entity_type": "source",
+      "name": "AGENTS.md",
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 4778,
+      "sha256": "sha256:db0902c38ab5cd9fcbbfffb4122c9ae2c28da6f328fbb211a86210894b0be0a8",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "AGENTS.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:app-manifest-json-771af03a",
+      "entity_type": "source",
+      "name": "APP_MANIFEST.json",
+      "path": "APP_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 11637,
+      "sha256": "sha256:49423967408327390ea2e1f65c5f20ad92cf401789a6f2caf032ed627c5b2df6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "APP_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:architecture-manifest-json-d1c3bafc",
+      "entity_type": "source",
+      "name": "ARCHITECTURE_MANIFEST.json",
+      "path": "ARCHITECTURE_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 5043,
+      "sha256": "sha256:359ed0b78933032b992036f5961a69778a91f6de81d41ed5ef74e75f67a06fe6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ARCHITECTURE_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:benchmark-manifest-json-ee6c1bc0",
+      "entity_type": "source",
+      "name": "BENCHMARK_MANIFEST.json",
+      "path": "BENCHMARK_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 7370,
+      "sha256": "sha256:32c78faf64d77a2a615b8d3c4d521270148c2233c7a43f87096ca666c6a4b56f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:benchmark-protocol-schema-json-4cf59568",
+      "entity_type": "source",
+      "name": "BENCHMARK_PROTOCOL_SCHEMA.json",
+      "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 2622,
+      "sha256": "sha256:766637edf63a34ef0f6db01e74c7544bbf7bf1009a1f52f666e63378e9c05721",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:capability-manifest-json-ee134123",
+      "entity_type": "source",
+      "name": "CAPABILITY_MANIFEST.json",
+      "path": "CAPABILITY_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 26503,
+      "sha256": "sha256:5adadddc628bc95834f8b3b8d6d6674a9ecd213ce25da84695831921b7309b38",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "CAPABILITY_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:contract-manifest-json-0a7e0922",
+      "entity_type": "source",
+      "name": "CONTRACT_MANIFEST.json",
+      "path": "CONTRACT_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 21473,
+      "sha256": "sha256:cbd61910eeebda23059338b44130c08d65caea3132c5dd2814e176236f078aa0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "CONTRACT_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:decision-manifest-json-dec07791",
+      "entity_type": "source",
+      "name": "DECISION_MANIFEST.json",
+      "path": "DECISION_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 13317,
+      "sha256": "sha256:d0158f9e4a69b1a0d63ef1372d235092221f2869469191bfebbef7390ec9461f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:image-format-manifest-json-5f3b992d",
+      "entity_type": "source",
+      "name": "IMAGE_FORMAT_MANIFEST.json",
+      "path": "IMAGE_FORMAT_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 3593,
+      "sha256": "sha256:c1c2a26aca425ba78ce272b13aaa5597465cadcb07cdcef83f4dc0130ab9ed06",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "IMAGE_FORMAT_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:known-gaps-md-d8880519",
+      "entity_type": "source",
+      "name": "KNOWN_GAPS.md",
+      "path": "KNOWN_GAPS.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2361,
+      "sha256": "sha256:fbedf4cb8ee2a21cc70efba3514ff05904a1d9645acac23b77c4255a270df1b4",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "KNOWN_GAPS.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:os3-phase4-completion-roadmap-md-13be38c1",
+      "entity_type": "source",
+      "name": "PHASE4_COMPLETION_ROADMAP.md",
+      "path": "OS3/PHASE4_COMPLETION_ROADMAP.md",
+      "language": "markdown",
+      "status": "missing",
+      "bytes": 0,
+      "sha256": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "OS3/PHASE4_COMPLETION_ROADMAP.md",
+          "status": "missing",
+          "role": "snapshot_source",
+          "reason": "Path is not present at the snapshot commit."
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:os3-minimal-kernel-bringup-tasm-54bb9b6c",
+      "entity_type": "source",
+      "name": "minimal_kernel_bringup.tasm",
+      "path": "OS3/minimal_kernel_bringup.tasm",
+      "language": "tasm",
+      "status": "missing",
+      "bytes": 0,
+      "sha256": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "OS3/minimal_kernel_bringup.tasm",
+          "status": "missing",
+          "role": "snapshot_source",
+          "reason": "Path is not present at the snapshot commit."
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:os3-strategic-architecture-md-10a09f8d",
+      "entity_type": "source",
+      "name": "strategic_architecture.md",
+      "path": "OS3/strategic_architecture.md",
+      "language": "markdown",
+      "status": "missing",
+      "bytes": 0,
+      "sha256": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "OS3/strategic_architecture.md",
+          "status": "missing",
+          "role": "snapshot_source",
+          "reason": "Path is not present at the snapshot commit."
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:readme-md-b3356305",
+      "entity_type": "source",
+      "name": "README.md",
+      "path": "README.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 81668,
+      "sha256": "sha256:bfa8af34a21a3a72f5918fc4ba5a1a09ecd5e335f5bd4240350da31a2aaa7571",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "README.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:stack-coverage-report-json-c6d5921d",
+      "entity_type": "source",
+      "name": "STACK_COVERAGE_REPORT.json",
+      "path": "STACK_COVERAGE_REPORT.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 23339,
+      "sha256": "sha256:1890fcdefe1c6fed57cafbedc0ae7c977eca9bdf9bf52974b4377b29e68dd499",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_COVERAGE_REPORT.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:stack-manifest-json-8550b31e",
+      "entity_type": "source",
+      "name": "STACK_MANIFEST.json",
+      "path": "STACK_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 31194,
+      "sha256": "sha256:5599eb2fcfd1c92be1480a15fa13a23ba1f4c07d37f7c019bd1e035a32a5051a",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:syscall-manifest-json-f5623595",
+      "entity_type": "source",
+      "name": "SYSCALL_MANIFEST.json",
+      "path": "SYSCALL_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 6225,
+      "sha256": "sha256:314d6f86e283a4ae74f86694271861a7b5e0a4d4b49c2c43486ca3a091609c10",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "SYSCALL_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tcl-spec-1-0-md-8c94b2ba",
+      "entity_type": "source",
+      "name": "TCL_Spec_1.0.md",
+      "path": "TCL_Spec_1.0.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 32847,
+      "sha256": "sha256:bfdaa195e9535ad246b6498678d59300b3d1634e8d996dbbee7e0c55ea09372a",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TCL_Spec_1.0.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:test-manifest-json-30e5a6a8",
+      "entity_type": "source",
+      "name": "TEST_MANIFEST.json",
+      "path": "TEST_MANIFEST.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 4398,
+      "sha256": "sha256:80685a7378213906ffdca24fdf1986588c560c4a7483d995d6ceb548b4a692e4",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:apps-desktop-trit-f35e770c",
+      "entity_type": "source",
+      "name": "desktop.trit",
+      "path": "apps/desktop.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 39007,
+      "sha256": "sha256:a5b30500845b9960407e389db3431369ab845d065d300af598bba12e4394f3b6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "apps/desktop.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:apps-desktop-trit-desktop-calc-slot-1",
+        "tc:symbol:apps-desktop-trit-desktop-task-slot-2",
+        "tc:symbol:apps-desktop-trit-desktop-paint-slot-3",
+        "tc:symbol:apps-desktop-trit-desktop-files-slot-4",
+        "tc:symbol:apps-desktop-trit-desktop-settings-slot-5",
+        "tc:symbol:apps-desktop-trit-desktop-terminal-slot-6",
+        "tc:symbol:apps-desktop-trit-desktop-calc-pid-8",
+        "tc:symbol:apps-desktop-trit-desktop-task-pid-9",
+        "tc:symbol:apps-desktop-trit-desktop-paint-pid-10",
+        "tc:symbol:apps-desktop-trit-desktop-files-pid-11",
+        "tc:symbol:apps-desktop-trit-desktop-settings-pid-12",
+        "tc:symbol:apps-desktop-trit-desktop-terminal-pid-13",
+        "tc:symbol:apps-desktop-trit-desktop-procinfo-addr-14",
+        "tc:symbol:apps-desktop-trit-desktop-procinfo-state-15",
+        "tc:symbol:apps-desktop-trit-desktop-proc-runnable-16",
+        "tc:symbol:apps-desktop-trit-desktop-proc-running-17",
+        "tc:symbol:apps-desktop-trit-desktop-proc-blocked-18",
+        "tc:symbol:apps-desktop-trit-desktop-proc-sleeping-19",
+        "tc:symbol:apps-desktop-trit-desktop-title-21",
+        "tc:symbol:apps-desktop-trit-desktop-menu-32",
+        "tc:symbol:apps-desktop-trit-desktop-seed-calculator-path-55",
+        "tc:symbol:apps-desktop-trit-desktop-seed-task-manager-path-77",
+        "tc:symbol:apps-desktop-trit-desktop-seed-paint-path-101",
+        "tc:symbol:apps-desktop-trit-desktop-seed-file-manager-path-118",
+        "tc:symbol:apps-desktop-trit-desktop-seed-settings-path-142",
+        "tc:symbol:apps-desktop-trit-desktop-seed-terminal-path-162",
+        "tc:symbol:apps-desktop-trit-desktop-launch-child-182",
+        "tc:symbol:apps-desktop-trit-desktop-child-accepts-input-186",
+        "tc:symbol:apps-desktop-trit-proc-words-190",
+        "tc:symbol:apps-desktop-trit-state-194",
+        "tc:symbol:apps-desktop-trit-desktop-launch-hotkey-203",
+        "tc:symbol:apps-desktop-trit-path-addr-205",
+        "tc:symbol:apps-desktop-trit-path-addr-209",
+        "tc:symbol:apps-desktop-trit-path-addr-213",
+        "tc:symbol:apps-desktop-trit-path-addr-217",
+        "tc:symbol:apps-desktop-trit-path-addr-221",
+        "tc:symbol:apps-desktop-trit-path-addr-225",
+        "tc:symbol:apps-desktop-trit-draw-box-231",
+        "tc:symbol:apps-desktop-trit-draw-string-247",
+        "tc:symbol:apps-desktop-trit-seed-login-header-258",
+        "tc:symbol:apps-desktop-trit-seed-passcode-prompt-271",
+        "tc:symbol:apps-desktop-trit-seed-access-granted-281",
+        "tc:symbol:apps-desktop-trit-seed-access-denied-291",
+        "tc:symbol:apps-desktop-trit-draw-background-301",
+        "tc:symbol:apps-desktop-trit-desktop-clear-region-313",
+        "tc:symbol:apps-desktop-trit-desktop-clear-login-area-326",
+        "tc:symbol:apps-desktop-trit-draw-taskbar-331",
+        "tc:symbol:apps-desktop-trit-tx-333",
+        "tc:symbol:apps-desktop-trit-desktop-draw-launcher-line-371",
+        "tc:symbol:apps-desktop-trit-desktop-draw-launcher-382",
+        "tc:symbol:apps-desktop-trit-desktop-draw-launch-status-396",
+        "tc:symbol:apps-desktop-trit-draw-icon-cell-413",
+        "tc:symbol:apps-desktop-trit-cell-x-415",
+        "tc:symbol:apps-desktop-trit-cell-y-416",
+        "tc:symbol:apps-desktop-trit-border-color-418",
+        "tc:symbol:apps-desktop-trit-glyph-color-419",
+        "tc:symbol:apps-desktop-trit-fill1-441",
+        "tc:symbol:apps-desktop-trit-fill2-450",
+        "tc:symbol:apps-desktop-trit-fill3-460",
+        "tc:symbol:apps-desktop-trit-label-x-466",
+        "tc:symbol:apps-desktop-trit-li-470",
+        "tc:symbol:apps-desktop-trit-lc-472",
+        "tc:symbol:apps-desktop-trit-bi-481",
+        "tc:symbol:apps-desktop-trit-desktop-draw-hud-491"
+      ]
+    },
+    {
+      "id": "tc:source:apps-libwidget-trit-10192f67",
+      "entity_type": "source",
+      "name": "libwidget.trit",
+      "path": "apps/libwidget.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 36192,
+      "sha256": "sha256:19b9ee9d6aa62e8ecf033be86174ecef53c415493a627a325c551c55293be4d8",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "apps/libwidget.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:apps-libwidget-trit-widget-event-none-1",
+        "tc:symbol:apps-libwidget-trit-widget-event-hit-2",
+        "tc:symbol:apps-libwidget-trit-widget-event-activate-3",
+        "tc:symbol:apps-libwidget-trit-widget-event-changed-4",
+        "tc:symbol:apps-libwidget-trit-widget-kind-panel-6",
+        "tc:symbol:apps-libwidget-trit-widget-kind-label-7",
+        "tc:symbol:apps-libwidget-trit-widget-kind-button-8",
+        "tc:symbol:apps-libwidget-trit-widget-kind-textfield-9",
+        "tc:symbol:apps-libwidget-trit-widget-kind-passwordfield-10",
+        "tc:symbol:apps-libwidget-trit-widget-kind-listbox-11",
+        "tc:symbol:apps-libwidget-trit-widget-kind-scrollbar-12",
+        "tc:symbol:apps-libwidget-trit-widget-x-14",
+        "tc:symbol:apps-libwidget-trit-widget-y-15",
+        "tc:symbol:apps-libwidget-trit-widget-w-16",
+        "tc:symbol:apps-libwidget-trit-widget-h-17",
+        "tc:symbol:apps-libwidget-trit-widget-focus-18",
+        "tc:symbol:apps-libwidget-trit-widget-dirty-19",
+        "tc:symbol:apps-libwidget-trit-widget-enabled-20",
+        "tc:symbol:apps-libwidget-trit-widget-parent-21",
+        "tc:symbol:apps-libwidget-trit-widget-window-22",
+        "tc:symbol:apps-libwidget-trit-widget-kind-23",
+        "tc:symbol:apps-libwidget-trit-widget-state-24",
+        "tc:symbol:apps-libwidget-trit-widget-value-25",
+        "tc:symbol:apps-libwidget-trit-widget-scroll-26",
+        "tc:symbol:apps-libwidget-trit-widget-selected-27",
+        "tc:symbol:apps-libwidget-trit-widget-cursor-28",
+        "tc:symbol:apps-libwidget-trit-widget-sel-start-29",
+        "tc:symbol:apps-libwidget-trit-widget-sel-end-30",
+        "tc:symbol:apps-libwidget-trit-widget-dirty-x-31",
+        "tc:symbol:apps-libwidget-trit-widget-dirty-y-32",
+        "tc:symbol:apps-libwidget-trit-widget-dirty-w-33",
+        "tc:symbol:apps-libwidget-trit-widget-dirty-h-34",
+        "tc:symbol:apps-libwidget-trit-widget-text-addr-35",
+        "tc:symbol:apps-libwidget-trit-widget-text-len-36",
+        "tc:symbol:apps-libwidget-trit-widget-text-max-37",
+        "tc:symbol:apps-libwidget-trit-widget-item-addr-38",
+        "tc:symbol:apps-libwidget-trit-widget-item-count-39",
+        "tc:symbol:apps-libwidget-trit-widget-row-h-40",
+        "tc:symbol:apps-libwidget-trit-widget-aux-41",
+        "tc:symbol:apps-libwidget-trit-widget-words-42",
+        "tc:symbol:apps-libwidget-trit-widget-theme-bg-44",
+        "tc:symbol:apps-libwidget-trit-widget-theme-panel-45",
+        "tc:symbol:apps-libwidget-trit-widget-theme-panel-dim-46",
+        "tc:symbol:apps-libwidget-trit-widget-theme-text-47",
+        "tc:symbol:apps-libwidget-trit-widget-theme-muted-48",
+        "tc:symbol:apps-libwidget-trit-widget-theme-accent-49",
+        "tc:symbol:apps-libwidget-trit-widget-theme-danger-50",
+        "tc:symbol:apps-libwidget-trit-widget-theme-warn-51",
+        "tc:symbol:apps-libwidget-trit-widget-theme-title-52",
+        "tc:symbol:apps-libwidget-trit-widget-theme-spacing-53",
+        "tc:symbol:apps-libwidget-trit-widget-theme-titlebar-h-54",
+        "tc:symbol:apps-libwidget-trit-widget-theme-control-h-55",
+        "tc:symbol:apps-libwidget-trit-widget-theme-icon-bg-56",
+        "tc:symbol:apps-libwidget-trit-widget-theme-icon-border-57",
+        "tc:symbol:apps-libwidget-trit-widget-theme-icon-hover-58",
+        "tc:symbol:apps-libwidget-trit-widget-theme-tab-active-59",
+        "tc:symbol:apps-libwidget-trit-widget-theme-tab-inactive-60",
+        "tc:symbol:apps-libwidget-trit-widget-store-62",
+        "tc:symbol:apps-libwidget-trit-widget-draw-slider-69",
+        "tc:symbol:apps-libwidget-trit-filled-71",
+        "tc:symbol:apps-libwidget-trit-widget-load-89",
+        "tc:symbol:apps-libwidget-trit-value-90",
+        "tc:symbol:apps-libwidget-trit-widget-min-95",
+        "tc:symbol:apps-libwidget-trit-widget-max-102"
+      ]
+    },
+    {
+      "id": "tc:source:apps-os-sdk-trit-84a066fa",
+      "entity_type": "source",
+      "name": "os_sdk.trit",
+      "path": "apps/os_sdk.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 11928,
+      "sha256": "sha256:fc5961c8b854412bae2712b32191239f807668ae56d47bf05aa59866cd57c868",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "apps/os_sdk.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:apps-os-sdk-trit-os-text-base-6",
+        "tc:symbol:apps-os-sdk-trit-os-text-width-7",
+        "tc:symbol:apps-os-sdk-trit-os-text-height-8",
+        "tc:symbol:apps-os-sdk-trit-os-text-words-9",
+        "tc:symbol:apps-os-sdk-trit-os-event-kind-key-10",
+        "tc:symbol:apps-os-sdk-trit-os-event-kind-mouse-11",
+        "tc:symbol:apps-os-sdk-trit-os-event-kind-close-12",
+        "tc:symbol:apps-os-sdk-trit-os-putc-14",
+        "tc:symbol:apps-os-sdk-trit-os-newline-18",
+        "tc:symbol:apps-os-sdk-trit-os-print-int-22",
+        "tc:symbol:apps-os-sdk-trit-os-puts-26",
+        "tc:symbol:apps-os-sdk-trit-done-28",
+        "tc:symbol:apps-os-sdk-trit-os-text-attr-42",
+        "tc:symbol:apps-os-sdk-trit-os-text-cell-46",
+        "tc:symbol:apps-os-sdk-trit-os-clear-text-63",
+        "tc:symbol:apps-os-sdk-trit-blank-65",
+        "tc:symbol:apps-os-sdk-trit-os-gpu-mode-73",
+        "tc:symbol:apps-os-sdk-trit-os-gpu-page-78",
+        "tc:symbol:apps-os-sdk-trit-os-gpu-clear-83",
+        "tc:symbol:apps-os-sdk-trit-os-gpu-rect-92",
+        "tc:symbol:apps-os-sdk-trit-os-gpu-line-104",
+        "tc:symbol:apps-os-sdk-trit-os-sprite-116",
+        "tc:symbol:apps-os-sdk-trit-os-key-available-125",
+        "tc:symbol:apps-os-sdk-trit-available-126",
+        "tc:symbol:apps-os-sdk-trit-os-read-key-131",
+        "tc:symbol:apps-os-sdk-trit-available-132",
+        "tc:symbol:apps-os-sdk-trit-key-136",
+        "tc:symbol:apps-os-sdk-trit-os-open-144",
+        "tc:symbol:apps-os-sdk-trit-os-close-148",
+        "tc:symbol:apps-os-sdk-trit-os-read-152",
+        "tc:symbol:apps-os-sdk-trit-os-write-156",
+        "tc:symbol:apps-os-sdk-trit-os-stat-160",
+        "tc:symbol:apps-os-sdk-trit-os-readdir-164",
+        "tc:symbol:apps-os-sdk-trit-os-ipc-send-168",
+        "tc:symbol:apps-os-sdk-trit-os-ipc-recv-172",
+        "tc:symbol:apps-os-sdk-trit-os-fb-init-176",
+        "tc:symbol:apps-os-sdk-trit-os-fb-flip-180",
+        "tc:symbol:apps-os-sdk-trit-os-window-create-184",
+        "tc:symbol:apps-os-sdk-trit-os-window-get-buffer-188",
+        "tc:symbol:apps-os-sdk-trit-os-window-present-192",
+        "tc:symbol:apps-os-sdk-trit-os-window-move-196",
+        "tc:symbol:apps-os-sdk-trit-os-window-set-z-200",
+        "tc:symbol:apps-os-sdk-trit-os-window-destroy-204",
+        "tc:symbol:apps-os-sdk-trit-os-window-read-event-208",
+        "tc:symbol:apps-os-sdk-trit-os-window-resize-212",
+        "tc:symbol:apps-os-sdk-trit-os-window-request-close-216",
+        "tc:symbol:apps-os-sdk-trit-os-event-kind-220",
+        "tc:symbol:apps-os-sdk-trit-val-221",
+        "tc:symbol:apps-os-sdk-trit-os-event-x-or-key-226",
+        "tc:symbol:apps-os-sdk-trit-val-227",
+        "tc:symbol:apps-os-sdk-trit-os-event-y-232",
+        "tc:symbol:apps-os-sdk-trit-val-233",
+        "tc:symbol:apps-os-sdk-trit-os-event-modifiers-238",
+        "tc:symbol:apps-os-sdk-trit-val-239",
+        "tc:symbol:apps-os-sdk-trit-os-window-pixel-offset-244",
+        "tc:symbol:apps-os-sdk-trit-os-window-plot-rgb-248",
+        "tc:symbol:apps-os-sdk-trit-off-264",
+        "tc:symbol:apps-os-sdk-trit-os-window-fill-rgb-273",
+        "tc:symbol:apps-os-sdk-trit-words-283",
+        "tc:symbol:apps-os-sdk-trit-os-window-fill-rect-rgb-296",
+        "tc:symbol:apps-os-sdk-trit-x0-312",
+        "tc:symbol:apps-os-sdk-trit-y0-313",
+        "tc:symbol:apps-os-sdk-trit-x1-314",
+        "tc:symbol:apps-os-sdk-trit-y1-315"
+      ]
+    },
+    {
+      "id": "tc:source:apps-service-stub-trit-a59ff5f0",
+      "entity_type": "source",
+      "name": "service_stub.trit",
+      "path": "apps/service_stub.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 291,
+      "sha256": "sha256:5c373f7c5407d37e852d2372363cdbd29d94c75b69f71133e9fa5e260459414f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "apps/service_stub.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:apps-service-stub-trit-main-3"
+      ]
+    },
+    {
+      "id": "tc:source:apps-shell-trit-fec5c5ae",
+      "entity_type": "source",
+      "name": "shell.trit",
+      "path": "apps/shell.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 16411,
+      "sha256": "sha256:88f68053bc7a688510d73fa94de2f8b042ff5f47357bcd9da4f7d76cf73f1e8d",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "apps/shell.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:apps-shell-trit-sh-banner-13",
+        "tc:symbol:apps-shell-trit-sh-buf-14",
+        "tc:symbol:apps-shell-trit-sh-buf-max-15",
+        "tc:symbol:apps-shell-trit-sh-path-16",
+        "tc:symbol:apps-shell-trit-sh-out-17",
+        "tc:symbol:apps-shell-trit-sh-event-18",
+        "tc:symbol:apps-shell-trit-sh-store-22",
+        "tc:symbol:apps-shell-trit-sh-load-27",
+        "tc:symbol:apps-shell-trit-sh-seed-33",
+        "tc:symbol:apps-shell-trit-sh-puts-42",
+        "tc:symbol:apps-shell-trit-sh-putc-46",
+        "tc:symbol:apps-shell-trit-sh-newline-50",
+        "tc:symbol:apps-shell-trit-sh-print-prompt-54",
+        "tc:symbol:apps-shell-trit-sh-has-routed-traps-59",
+        "tc:symbol:apps-shell-trit-trap-vector-60",
+        "tc:symbol:apps-shell-trit-sh-read-key-blocking-68",
+        "tc:symbol:apps-shell-trit-key-69",
+        "tc:symbol:apps-shell-trit-event-status-70",
+        "tc:symbol:apps-shell-trit-kind-71",
+        "tc:symbol:apps-shell-trit-routed-traps-72",
+        "tc:symbol:apps-shell-trit-sh-readline-96",
+        "tc:symbol:apps-shell-trit-pos-97",
+        "tc:symbol:apps-shell-trit-done-98",
+        "tc:symbol:apps-shell-trit-sh-cmd-eq4-128",
+        "tc:symbol:apps-shell-trit-sh-cmd-eq2-136",
+        "tc:symbol:apps-shell-trit-sh-seed-calc-144",
+        "tc:symbol:apps-shell-trit-sh-seed-paint-154",
+        "tc:symbol:apps-shell-trit-sh-seed-tasks-163",
+        "tc:symbol:apps-shell-trit-sh-seed-files-174",
+        "tc:symbol:apps-shell-trit-sh-seed-settings-185",
+        "tc:symbol:apps-shell-trit-sh-seed-root-195",
+        "tc:symbol:apps-shell-trit-sh-seed-bin-command-201",
+        "tc:symbol:apps-shell-trit-sh-builtin-ls-218",
+        "tc:symbol:apps-shell-trit-path-219",
+        "tc:symbol:apps-shell-trit-written-221",
+        "tc:symbol:apps-shell-trit-pos-226",
+        "tc:symbol:apps-shell-trit-inode-228",
+        "tc:symbol:apps-shell-trit-kind-229",
+        "tc:symbol:apps-shell-trit-nlen-230",
+        "tc:symbol:apps-shell-trit-ni-231",
+        "tc:symbol:apps-shell-trit-sh-draw-state-label-257",
+        "tc:symbol:apps-shell-trit-sh-print-int-266",
+        "tc:symbol:apps-shell-trit-sh-builtin-ps-270",
+        "tc:symbol:apps-shell-trit-count-271",
+        "tc:symbol:apps-shell-trit-base-282",
+        "tc:symbol:apps-shell-trit-sh-builtin-help-293",
+        "tc:symbol:apps-shell-trit-main-314",
+        "tc:symbol:apps-shell-trit-banner-315",
+        "tc:symbol:apps-shell-trit-running-319",
+        "tc:symbol:apps-shell-trit-handled-320",
+        "tc:symbol:apps-shell-trit-launched-321",
+        "tc:symbol:apps-shell-trit-len-324",
+        "tc:symbol:apps-shell-trit-c0-329"
+      ]
+    },
+    {
+      "id": "tc:source:benchmarks-reference-p10-reference-v1-json-b84efb47",
+      "entity_type": "source",
+      "name": "p10-reference.v1.json",
+      "path": "benchmarks/reference/p10-reference.v1.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 16544,
+      "sha256": "sha256:16e263e885dcbad26771cb46b94f70de79dfaa487b53cc700861e71234c05e47",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "benchmarks/reference/p10-reference.v1.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:bootloader-tasm-d54f10cc",
+      "entity_type": "source",
+      "name": "bootloader.tasm",
+      "path": "bootloader.tasm",
+      "language": "tasm",
+      "status": "resolved",
+      "bytes": 2892,
+      "sha256": "sha256:795d26e9fae4ca07f817c76589faaba69c66a41d3e94d1482d449c04c0f6bde8",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "bootloader.tasm",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:build-diagnostics-latest-agent-diagnostics-json-27f8c84e",
+      "entity_type": "source",
+      "name": "agent_diagnostics.json",
+      "path": "build/diagnostics/latest/agent_diagnostics.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 5923,
+      "sha256": "sha256:2c2ea4519751622af437564fbc2e849921fd0582af4882a7a7400a0cc1fd2f07",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "build/diagnostics/latest/agent_diagnostics.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:build-tos-image-cpp-476660b6",
+      "entity_type": "source",
+      "name": "build_tos_image.cpp",
+      "path": "build_tos_image.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 22431,
+      "sha256": "sha256:e466dd9afbffdf44bb4578714aaa3064daecdd78857d876f50449617abb7f6c6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "build_tos_image.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:build-tos-image-cpp-bundledapp-15",
+        "tc:symbol:build-tos-image-cpp-readtextfile-25",
+        "tc:symbol:build-tos-image-cpp-dumpdiagnostics-32",
+        "tc:symbol:build-tos-image-cpp-appendstoreword-38",
+        "tc:symbol:build-tos-image-cpp-appendstorecstring-44",
+        "tc:symbol:build-tos-image-cpp-std-55",
+        "tc:symbol:build-tos-image-cpp-int-59",
+        "tc:symbol:build-tos-image-cpp-int-61",
+        "tc:symbol:build-tos-image-cpp-appendstringwords-66",
+        "tc:symbol:build-tos-image-cpp-asciiwords-73",
+        "tc:symbol:build-tos-image-cpp-alignup-82",
+        "tc:symbol:build-tos-image-cpp-int-84",
+        "tc:symbol:build-tos-image-cpp-pagesforwords-88",
+        "tc:symbol:build-tos-image-cpp-defaultdiskpathforboot-93",
+        "tc:symbol:build-tos-image-cpp-std-94",
+        "tc:symbol:build-tos-image-cpp-std-95",
+        "tc:symbol:build-tos-image-cpp-buildbootexecassembly-103",
+        "tc:symbol:build-tos-image-cpp-compileapp-144",
+        "tc:symbol:build-tos-image-cpp-std-147",
+        "tc:symbol:build-tos-image-cpp-std-149",
+        "tc:symbol:build-tos-image-cpp-std-150",
+        "tc:symbol:build-tos-image-cpp-std-151",
+        "tc:symbol:build-tos-image-cpp-char-184",
+        "tc:symbol:build-tos-image-cpp-appendregistryapp-194",
+        "tc:symbol:build-tos-image-cpp-std-203",
+        "tc:symbol:build-tos-image-cpp-std-204",
+        "tc:symbol:build-tos-image-cpp-std-209",
+        "tc:symbol:build-tos-image-cpp-std-210",
+        "tc:symbol:build-tos-image-cpp-std-233",
+        "tc:symbol:build-tos-image-cpp-std-249",
+        "tc:symbol:build-tos-image-cpp-usage-314",
+        "tc:symbol:build-tos-image-cpp-main-322",
+        "tc:symbol:build-tos-image-cpp-std-326",
+        "tc:symbol:build-tos-image-cpp-std-327",
+        "tc:symbol:build-tos-image-cpp-std-328",
+        "tc:symbol:build-tos-image-cpp-std-392",
+        "tc:symbol:build-tos-image-cpp-std-394",
+        "tc:symbol:build-tos-image-cpp-std-395",
+        "tc:symbol:build-tos-image-cpp-bundledapp-441",
+        "tc:symbol:build-tos-image-cpp-linkresult-442",
+        "tc:symbol:build-tos-image-cpp-std-458",
+        "tc:symbol:build-tos-image-cpp-bundledapp-491",
+        "tc:symbol:build-tos-image-cpp-auto-492"
+      ]
+    },
+    {
+      "id": "tc:source:docs-01-logic-level-contract-hdl-md-8931e420",
+      "entity_type": "source",
+      "name": "contract_hdl.md",
+      "path": "docs/01_Logic_Level/contract_hdl.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2233,
+      "sha256": "sha256:abeaafb3fecbaccf8d201c2124408b0bce435b772164eeb473c1ed2f7726b0f9",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/01_Logic_Level/contract_hdl.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-02-hardware-isa-contract-vm-md-d1596da7",
+      "entity_type": "source",
+      "name": "contract_vm.md",
+      "path": "docs/02_Hardware_ISA/contract_vm.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2344,
+      "sha256": "sha256:f70882d3d1596e783e679e631700a2c211d07c7a332abb311913c9348864ff0f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/02_Hardware_ISA/contract_vm.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-02-hardware-isa-encoding-md-80cf947c",
+      "entity_type": "source",
+      "name": "encoding.md",
+      "path": "docs/02_Hardware_ISA/encoding.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 4062,
+      "sha256": "sha256:e8657a1b8c63ab201b608c38c3764f525bae97f8f73e60c5fc4a5a5edee7ab6c",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/02_Hardware_ISA/encoding.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-03-execution-engine-decoded-trace-and-native-jit-md-d568f619",
+      "entity_type": "source",
+      "name": "decoded_trace_and_native_jit.md",
+      "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2166,
+      "sha256": "sha256:ac9867fd415f3e5c74b95186acc0a0c8e0d5d1499b77a9d31a5efa8de5e13a65",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-03-execution-engine-memory-model-md-09907456",
+      "entity_type": "source",
+      "name": "memory_model.md",
+      "path": "docs/03_Execution_Engine/memory_model.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 6673,
+      "sha256": "sha256:96d39d0658d0f3dad46be9257eed71e67e320485218b72128752ce64b77f2ba6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/03_Execution_Engine/memory_model.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-03-execution-engine-vm-state-md-4b555f36",
+      "entity_type": "source",
+      "name": "vm_state.md",
+      "path": "docs/03_Execution_Engine/vm_state.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 4718,
+      "sha256": "sha256:1a194e28fab7a6c128ee5241206b2dd2e78ff5af85ae54701014c7e6e05b6461",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/03_Execution_Engine/vm_state.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-04-binary-contract-asm-syntax-md-0fdbede0",
+      "entity_type": "source",
+      "name": "asm_syntax.md",
+      "path": "docs/04_Binary_Contract/asm_syntax.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2262,
+      "sha256": "sha256:284e4df9731f0a550aecb8005486cc8654d338543426ca7e8e17aa69e88defb6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/04_Binary_Contract/asm_syntax.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-04-binary-contract-object-format-md-5f3c1bb2",
+      "entity_type": "source",
+      "name": "object_format.md",
+      "path": "docs/04_Binary_Contract/object_format.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2287,
+      "sha256": "sha256:f7120f53fd97491c06560401f0ee3d91b443720202e1fe20130dd84214ddb3d0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/04_Binary_Contract/object_format.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-04-binary-contract-symbolic-encodings-md-f4f145db",
+      "entity_type": "source",
+      "name": "symbolic_encodings.md",
+      "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 3252,
+      "sha256": "sha256:3805cf421b72c27bf1446aa42b8c5ebd13c2f0002317db5d901ea1c1c21eb352",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-05-compiler-infra-ternary-ir-md-b8f8cc2a",
+      "entity_type": "source",
+      "name": "ternary_ir.md",
+      "path": "docs/05_Compiler_Infra/ternary_ir.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 5779,
+      "sha256": "sha256:1987adeafac5425693cce15db8463239dda84059b0053a8f11a5eec34602dd5a",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/05_Compiler_Infra/ternary_ir.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-06-language-tcl-language-md-d91805ee",
+      "entity_type": "source",
+      "name": "tcl_language.md",
+      "path": "docs/06_Language/tcl_language.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 5402,
+      "sha256": "sha256:686cf8dc208b92bb06482db44b480d1b27aff273255b50cd0f1228c0e8d32c71",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/06_Language/tcl_language.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-10-benchmarks-bitnet-md-a34ad258",
+      "entity_type": "source",
+      "name": "bitnet.md",
+      "path": "docs/10_Benchmarks/bitnet.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 1852,
+      "sha256": "sha256:0c843b8f1c1dadc023f6b66cea6cfe95c32b2a8c4b0ab5aef2341c6073db84ab",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/bitnet.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-10-benchmarks-doom-md-c73bb02d",
+      "entity_type": "source",
+      "name": "doom.md",
+      "path": "docs/10_Benchmarks/doom.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 1785,
+      "sha256": "sha256:4ba10d047be2f981c7be33851236037ee88a4751c5981d4ffd14688664a19626",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/doom.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-10-benchmarks-system-benchmark-plan-md-b3fb5fc6",
+      "entity_type": "source",
+      "name": "system_benchmark_plan.md",
+      "path": "docs/10_Benchmarks/system_benchmark_plan.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2020,
+      "sha256": "sha256:0cfaa2f4e17bd6ec75c064ae9e474349009a52bcd31a63309ad2b865801dc084",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/system_benchmark_plan.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-11-treatcode-platform-domain-model-md-3a7f363f",
+      "entity_type": "source",
+      "name": "DOMAIN_MODEL.md",
+      "path": "docs/11_TreatCode_Platform/DOMAIN_MODEL.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 6578,
+      "sha256": "sha256:51cb2b1037d47bdbe6a37f230df8bb51856f1cbf785616c212da9b9b76f31825",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/11_TreatCode_Platform/DOMAIN_MODEL.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-11-treatcode-platform-plans-p04-public-api-stack-explorer-md-c7e7075e",
+      "entity_type": "source",
+      "name": "P04_public_api_stack_explorer.md",
+      "path": "docs/11_TreatCode_Platform/plans/P04_public_api_stack_explorer.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 2864,
+      "sha256": "sha256:0836ffe40d2ad9bcca3c2d2c20f3454c2281594a631750a357c79277b9e8e819",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/11_TreatCode_Platform/plans/P04_public_api_stack_explorer.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-11-treatcode-platform-schemas-public-api-v1-openapi-json-9ea49253",
+      "entity_type": "source",
+      "name": "public_api.v1.openapi.json",
+      "path": "docs/11_TreatCode_Platform/schemas/public_api.v1.openapi.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 8341,
+      "sha256": "sha256:f4c8596fc9038688dbf84702e18d7ac882ab5de9982d37d8a80256b3666d0844",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/11_TreatCode_Platform/schemas/public_api.v1.openapi.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:docs-readme-md-0b5ca119",
+      "entity_type": "source",
+      "name": "README.md",
+      "path": "docs/README.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 7916,
+      "sha256": "sha256:e0e14bfb611aa9c4a296b785e2e452a6a0c45ddbedac8de5db3a3a776b9a3361",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/README.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:kernel-trit-9535c1b2",
+      "entity_type": "source",
+      "name": "kernel.trit",
+      "path": "kernel.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 246716,
+      "sha256": "sha256:f2aa990a0a78557a057e347916f2f4fe900bb24e9f57d18db3466e2c99cc3d89",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-trit-kernel-magic-6",
+        "tc:symbol:kernel-trit-storage-block-words-7",
+        "tc:symbol:kernel-trit-mmu-page-words-8",
+        "tc:symbol:kernel-trit-mmu-superpage-words-9",
+        "tc:symbol:kernel-trit-ptr-state-null-11",
+        "tc:symbol:kernel-trit-ptr-state-unknown-12",
+        "tc:symbol:kernel-trit-ptr-state-valid-13",
+        "tc:symbol:kernel-trit-err-not-found-15",
+        "tc:symbol:kernel-trit-err-exists-16",
+        "tc:symbol:kernel-trit-err-no-space-17",
+        "tc:symbol:kernel-trit-err-bad-fd-18",
+        "tc:symbol:kernel-trit-err-bad-ptr-19",
+        "tc:symbol:kernel-trit-err-not-dir-20",
+        "tc:symbol:kernel-trit-err-is-dir-21",
+        "tc:symbol:kernel-trit-err-invalid-22",
+        "tc:symbol:kernel-trit-err-eof-23",
+        "tc:symbol:kernel-trit-err-timeout-24",
+        "tc:symbol:kernel-trit-err-again-25",
+        "tc:symbol:kernel-trit-err-canceled-26",
+        "tc:symbol:kernel-trit-sys-blocked-27",
+        "tc:symbol:kernel-trit-kind-free-29",
+        "tc:symbol:kernel-trit-kind-file-30",
+        "tc:symbol:kernel-trit-kind-dir-31",
+        "tc:symbol:kernel-trit-kind-exec-32",
+        "tc:symbol:kernel-trit-bootstrap-max-pages-34",
+        "tc:symbol:kernel-trit-bootstrap-reserved-pages-35",
+        "tc:symbol:kernel-trit-bootstrap-kernel-image-pages-36",
+        "tc:symbol:kernel-trit-bootstrap-buffer-pool-header-pages-37",
+        "tc:symbol:kernel-trit-bootstrap-wal-ring-pages-38",
+        "tc:symbol:kernel-trit-kernel-state-base-40",
+        "tc:symbol:kernel-trit-kernel-booted-addr-41",
+        "tc:symbol:kernel-trit-boot-alloc-count-addr-42",
+        "tc:symbol:kernel-trit-rel-online-addr-43",
+        "tc:symbol:kernel-trit-rel-migration-cursor-addr-44",
+        "tc:symbol:kernel-trit-rel-migration-done-addr-45",
+        "tc:symbol:kernel-trit-wal-head-addr-46",
+        "tc:symbol:kernel-trit-wal-tail-addr-47",
+        "tc:symbol:kernel-trit-wal-next-txid-addr-48",
+        "tc:symbol:kernel-trit-wal-checkpoint-addr-49",
+        "tc:symbol:kernel-trit-tier1-head-addr-50",
+        "tc:symbol:kernel-trit-tier1-tail-addr-51",
+        "tc:symbol:kernel-trit-tier1-count-addr-52",
+        "tc:symbol:kernel-trit-macro-count-addr-53",
+        "tc:symbol:kernel-trit-sched-epoch-addr-54",
+        "tc:symbol:kernel-trit-vfs-magic-addr-55",
+        "tc:symbol:kernel-trit-vfs-next-inode-addr-56",
+        "tc:symbol:kernel-trit-vfs-next-dirent-addr-57",
+        "tc:symbol:kernel-trit-vfs-next-extent-addr-58",
+        "tc:symbol:kernel-trit-vfs-next-data-addr-59",
+        "tc:symbol:kernel-trit-current-context-addr-60",
+        "tc:symbol:kernel-trit-current-pid-addr-61",
+        "tc:symbol:kernel-trit-sys-status-addr-62",
+        "tc:symbol:kernel-trit-sys-payload-addr-63",
+        "tc:symbol:kernel-trit-sys-detail-addr-64",
+        "tc:symbol:kernel-trit-buffer-clock-addr-65",
+        "tc:symbol:kernel-trit-buffer-dirty-count-addr-66",
+        "tc:symbol:kernel-trit-buffer-flush-count-addr-67",
+        "tc:symbol:kernel-trit-buffer-eviction-count-addr-68",
+        "tc:symbol:kernel-trit-window-next-id-addr-69",
+        "tc:symbol:kernel-trit-compositor-frame-count-addr-70",
+        "tc:symbol:kernel-trit-window-focus-id-addr-71",
+        "tc:symbol:kernel-trit-input-last-mouse-btn-addr-72",
+        "tc:symbol:kernel-trit-buffer-clock-hand-addr-73",
+        "tc:symbol:kernel-trit-kernel-tick-addr-74"
+      ]
+    },
+    {
+      "id": "tc:source:kernel-bio-trit-4b0da364",
+      "entity_type": "source",
+      "name": "bio.trit",
+      "path": "kernel/bio.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 3498,
+      "sha256": "sha256:6e379984f802d469819bc683ba4c9720050792f2de3b12371c62e2afdfeb37c0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel/bio.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-bio-trit-bio-row-words-3",
+        "tc:symbol:kernel-bio-trit-bio-block-no-4",
+        "tc:symbol:kernel-bio-trit-bio-data-ptr-5",
+        "tc:symbol:kernel-bio-trit-bio-dirty-6",
+        "tc:symbol:kernel-bio-trit-bio-pinned-7",
+        "tc:symbol:kernel-bio-trit-bio-version-8",
+        "tc:symbol:kernel-bio-trit-bio-wal-row-words-10",
+        "tc:symbol:kernel-bio-trit-bio-wal-txid-11",
+        "tc:symbol:kernel-bio-trit-bio-wal-block-12",
+        "tc:symbol:kernel-bio-trit-bio-wal-old-ptr-13",
+        "tc:symbol:kernel-bio-trit-bio-wal-new-ptr-14",
+        "tc:symbol:kernel-bio-trit-bio-wal-state-15",
+        "tc:symbol:kernel-bio-trit-bio-load-17",
+        "tc:symbol:kernel-bio-trit-value-18",
+        "tc:symbol:kernel-bio-trit-bio-store-23",
+        "tc:symbol:kernel-bio-trit-bio-clear-28",
+        "tc:symbol:kernel-bio-trit-bio-slot-for-37",
+        "tc:symbol:kernel-bio-trit-slot-41",
+        "tc:symbol:kernel-bio-trit-bio-row-48",
+        "tc:symbol:kernel-bio-trit-bio-init-52",
+        "tc:symbol:kernel-bio-trit-bio-get-56",
+        "tc:symbol:kernel-bio-trit-slot-57",
+        "tc:symbol:kernel-bio-trit-row-61",
+        "tc:symbol:kernel-bio-trit-bio-mark-dirty-70",
+        "tc:symbol:kernel-bio-trit-bio-release-76",
+        "tc:symbol:kernel-bio-trit-pins-77",
+        "tc:symbol:kernel-bio-trit-bio-wal-row-85",
+        "tc:symbol:kernel-bio-trit-bio-wal-append-89",
+        "tc:symbol:kernel-bio-trit-slot-90",
+        "tc:symbol:kernel-bio-trit-row-94",
+        "tc:symbol:kernel-bio-trit-bio-wal-commit-103",
+        "tc:symbol:kernel-bio-trit-bio-wal-replay-needed-108",
+        "tc:symbol:kernel-bio-trit-bio-device-read-115",
+        "tc:symbol:kernel-bio-trit-bio-device-write-124",
+        "tc:symbol:kernel-bio-trit-bio-device-block-count-133",
+        "tc:symbol:kernel-bio-trit-bio-device-block-words-137"
+      ]
+    },
+    {
+      "id": "tc:source:kernel-hal-trit-bd126b18",
+      "entity_type": "source",
+      "name": "hal.trit",
+      "path": "kernel/hal.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 6303,
+      "sha256": "sha256:2d6bb8768a3eec207b24676395175d09a43eb5300ec8ab92c569410badcb891d",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel/hal.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-hal-trit-dtb-base-5",
+        "tc:symbol:kernel-hal-trit-dtb-magic-6",
+        "tc:symbol:kernel-hal-trit-dtb-memory-size-7",
+        "tc:symbol:kernel-hal-trit-dtb-console-out-8",
+        "tc:symbol:kernel-hal-trit-dtb-console-in-9",
+        "tc:symbol:kernel-hal-trit-dtb-console-in-ctrl-10",
+        "tc:symbol:kernel-hal-trit-dtb-timer-counter-11",
+        "tc:symbol:kernel-hal-trit-dtb-timer-reload-12",
+        "tc:symbol:kernel-hal-trit-dtb-mmu-enable-13",
+        "tc:symbol:kernel-hal-trit-dtb-user-dmem-ptbr-14",
+        "tc:symbol:kernel-hal-trit-dtb-gpu-draw-base-15",
+        "tc:symbol:kernel-hal-trit-dtb-framebuffer-base-16",
+        "tc:symbol:kernel-hal-trit-dtb-framebuffer-ctrl-17",
+        "tc:symbol:kernel-hal-trit-dtb-framebuffer-max-w-18",
+        "tc:symbol:kernel-hal-trit-dtb-framebuffer-max-h-19",
+        "tc:symbol:kernel-hal-trit-dtb-framebuffer-format-20",
+        "tc:symbol:kernel-hal-trit-dtb-block-index-21",
+        "tc:symbol:kernel-hal-trit-dtb-block-addr-22",
+        "tc:symbol:kernel-hal-trit-dtb-block-cmd-23",
+        "tc:symbol:kernel-hal-trit-dtb-block-status-24",
+        "tc:symbol:kernel-hal-trit-dtb-block-count-25",
+        "tc:symbol:kernel-hal-trit-dtb-block-words-26",
+        "tc:symbol:kernel-hal-trit-fb-desc-base-28",
+        "tc:symbol:kernel-hal-trit-fb-desc-phys-base-29",
+        "tc:symbol:kernel-hal-trit-fb-desc-width-30",
+        "tc:symbol:kernel-hal-trit-fb-desc-height-31",
+        "tc:symbol:kernel-hal-trit-fb-desc-stride-32",
+        "tc:symbol:kernel-hal-trit-fb-desc-format-33",
+        "tc:symbol:kernel-hal-trit-fb-desc-pages-34",
+        "tc:symbol:kernel-hal-trit-fb-desc-epoch-35",
+        "tc:symbol:kernel-hal-trit-fb-format-t5-rgb-36",
+        "tc:symbol:kernel-hal-trit-hal-load-38",
+        "tc:symbol:kernel-hal-trit-val-39",
+        "tc:symbol:kernel-hal-trit-hal-store-44",
+        "tc:symbol:kernel-hal-trit-hal-verify-dtb-49",
+        "tc:symbol:kernel-hal-trit-hal-dtb-slot-56",
+        "tc:symbol:kernel-hal-trit-hal-get-memory-size-63",
+        "tc:symbol:kernel-hal-trit-hal-get-console-out-id-67",
+        "tc:symbol:kernel-hal-trit-hal-get-console-in-id-71",
+        "tc:symbol:kernel-hal-trit-hal-get-console-in-ctrl-id-75",
+        "tc:symbol:kernel-hal-trit-hal-get-framebuffer-base-79",
+        "tc:symbol:kernel-hal-trit-hal-get-framebuffer-ctrl-id-83",
+        "tc:symbol:kernel-hal-trit-hal-get-framebuffer-format-87",
+        "tc:symbol:kernel-hal-trit-hal-get-framebuffer-max-width-91",
+        "tc:symbol:kernel-hal-trit-hal-get-framebuffer-max-height-95",
+        "tc:symbol:kernel-hal-trit-hal-get-block-index-id-99",
+        "tc:symbol:kernel-hal-trit-hal-get-block-addr-id-103",
+        "tc:symbol:kernel-hal-trit-hal-get-block-cmd-id-107",
+        "tc:symbol:kernel-hal-trit-hal-get-block-status-id-111",
+        "tc:symbol:kernel-hal-trit-hal-get-block-count-115",
+        "tc:symbol:kernel-hal-trit-hal-get-block-words-119",
+        "tc:symbol:kernel-hal-trit-hal-write-console-char-123",
+        "tc:symbol:kernel-hal-trit-hal-write-console-int-131",
+        "tc:symbol:kernel-hal-trit-hal-read-console-char-137",
+        "tc:symbol:kernel-hal-trit-available-138",
+        "tc:symbol:kernel-hal-trit-key-139",
+        "tc:symbol:kernel-hal-trit-hal-get-cycle-count-152",
+        "tc:symbol:kernel-hal-trit-cyc-153",
+        "tc:symbol:kernel-hal-trit-hal-enable-timer-160",
+        "tc:symbol:kernel-hal-trit-hal-disable-timer-168",
+        "tc:symbol:kernel-hal-trit-hal-clear-timer-pending-174",
+        "tc:symbol:kernel-hal-trit-hal-enable-mmu-180",
+        "tc:symbol:kernel-hal-trit-hal-disable-mmu-186",
+        "tc:symbol:kernel-hal-trit-hal-fb-mode-index-192"
+      ]
+    },
+    {
+      "id": "tc:source:kernel-net-trit-80e39e86",
+      "entity_type": "source",
+      "name": "net.trit",
+      "path": "kernel/net.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 3669,
+      "sha256": "sha256:ab9667521979adba270cfbeb0b218472eea039af88fd175bbadf57118417b92b",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel/net.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-net-trit-net-socket-words-3",
+        "tc:symbol:kernel-net-trit-net-sock-state-4",
+        "tc:symbol:kernel-net-trit-net-sock-owner-5",
+        "tc:symbol:kernel-net-trit-net-sock-kind-6",
+        "tc:symbol:kernel-net-trit-net-sock-local-port-7",
+        "tc:symbol:kernel-net-trit-net-sock-remote-port-8",
+        "tc:symbol:kernel-net-trit-net-sock-rx-read-9",
+        "tc:symbol:kernel-net-trit-net-sock-rx-write-10",
+        "tc:symbol:kernel-net-trit-net-sock-rx-base-11",
+        "tc:symbol:kernel-net-trit-net-state-free-13",
+        "tc:symbol:kernel-net-trit-net-state-open-14",
+        "tc:symbol:kernel-net-trit-net-state-bound-15",
+        "tc:symbol:kernel-net-trit-net-state-connected-16",
+        "tc:symbol:kernel-net-trit-net-load-18",
+        "tc:symbol:kernel-net-trit-value-19",
+        "tc:symbol:kernel-net-trit-net-store-24",
+        "tc:symbol:kernel-net-trit-net-socket-row-29",
+        "tc:symbol:kernel-net-trit-net-init-33",
+        "tc:symbol:kernel-net-trit-net-socket-create-42",
+        "tc:symbol:kernel-net-trit-slot-43",
+        "tc:symbol:kernel-net-trit-row-45",
+        "tc:symbol:kernel-net-trit-net-bind-60",
+        "tc:symbol:kernel-net-trit-row-61",
+        "tc:symbol:kernel-net-trit-net-connect-70",
+        "tc:symbol:kernel-net-trit-row-71",
+        "tc:symbol:kernel-net-trit-net-ring-next-80",
+        "tc:symbol:kernel-net-trit-next-81",
+        "tc:symbol:kernel-net-trit-net-send-word-88",
+        "tc:symbol:kernel-net-trit-row-89",
+        "tc:symbol:kernel-net-trit-read-pos-93",
+        "tc:symbol:kernel-net-trit-write-pos-94",
+        "tc:symbol:kernel-net-trit-next-write-95",
+        "tc:symbol:kernel-net-trit-rx-base-99",
+        "tc:symbol:kernel-net-trit-net-recv-word-105",
+        "tc:symbol:kernel-net-trit-row-106",
+        "tc:symbol:kernel-net-trit-read-pos-110",
+        "tc:symbol:kernel-net-trit-write-pos-111",
+        "tc:symbol:kernel-net-trit-rx-base-115"
+      ]
+    },
+    {
+      "id": "tc:source:kernel-process-trit-7d104f8f",
+      "entity_type": "source",
+      "name": "process.trit",
+      "path": "kernel/process.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 4796,
+      "sha256": "sha256:a9f4b176c84a8ac466b16c12f823e647351abc529eb1a13dba9b765063ea13ab",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel/process.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-process-trit-proc2-page-words-3",
+        "tc:symbol:kernel-process-trit-proc2-l1-entries-4",
+        "tc:symbol:kernel-process-trit-proc2-l2-entries-5",
+        "tc:symbol:kernel-process-trit-proc2-pte-scale-6",
+        "tc:symbol:kernel-process-trit-proc2-flag-valid-8",
+        "tc:symbol:kernel-process-trit-proc2-flag-user-9",
+        "tc:symbol:kernel-process-trit-proc2-flag-read-10",
+        "tc:symbol:kernel-process-trit-proc2-flag-write-11",
+        "tc:symbol:kernel-process-trit-proc2-flag-exec-12",
+        "tc:symbol:kernel-process-trit-proc2-flag-cow-13",
+        "tc:symbol:kernel-process-trit-proc2-fault-not-present-15",
+        "tc:symbol:kernel-process-trit-proc2-fault-protection-16",
+        "tc:symbol:kernel-process-trit-proc2-fault-cow-17",
+        "tc:symbol:kernel-process-trit-proc2-load-19",
+        "tc:symbol:kernel-process-trit-value-20",
+        "tc:symbol:kernel-process-trit-proc2-store-25",
+        "tc:symbol:kernel-process-trit-proc2-l1-index-30",
+        "tc:symbol:kernel-process-trit-index-31",
+        "tc:symbol:kernel-process-trit-cursor-32",
+        "tc:symbol:kernel-process-trit-proc2-l2-index-40",
+        "tc:symbol:kernel-process-trit-proc2-page-offset-44",
+        "tc:symbol:kernel-process-trit-offset-45",
+        "tc:symbol:kernel-process-trit-proc2-encode-pte-52",
+        "tc:symbol:kernel-process-trit-proc2-pte-ppn-56",
+        "tc:symbol:kernel-process-trit-ppn-60",
+        "tc:symbol:kernel-process-trit-cursor-61",
+        "tc:symbol:kernel-process-trit-proc2-pte-flags-69",
+        "tc:symbol:kernel-process-trit-cursor-73",
+        "tc:symbol:kernel-process-trit-proc2-has-flag-80",
+        "tc:symbol:kernel-process-trit-window-81",
+        "tc:symbol:kernel-process-trit-cursor-82",
+        "tc:symbol:kernel-process-trit-proc2-ptr-state-from-version-92",
+        "tc:symbol:kernel-process-trit-proc2-bootstrap-table-102",
+        "tc:symbol:kernel-process-trit-proc2-leaf-addr-113",
+        "tc:symbol:kernel-process-trit-l1-117",
+        "tc:symbol:kernel-process-trit-pde-121",
+        "tc:symbol:kernel-process-trit-proc2-map-128",
+        "tc:symbol:kernel-process-trit-leaf-129",
+        "tc:symbol:kernel-process-trit-proc2-translate-137",
+        "tc:symbol:kernel-process-trit-vpn-138",
+        "tc:symbol:kernel-process-trit-cursor-139",
+        "tc:symbol:kernel-process-trit-leaf-144",
+        "tc:symbol:kernel-process-trit-pte-148",
+        "tc:symbol:kernel-process-trit-flags-152",
+        "tc:symbol:kernel-process-trit-proc2-fork-leaf-as-cow-164",
+        "tc:symbol:kernel-process-trit-pte-165",
+        "tc:symbol:kernel-process-trit-ppn-170",
+        "tc:symbol:kernel-process-trit-flags-171",
+        "tc:symbol:kernel-process-trit-cow-pte-178"
+      ]
+    },
+    {
+      "id": "tc:source:kernel-vfs-trit-b9be873b",
+      "entity_type": "source",
+      "name": "vfs.trit",
+      "path": "kernel/vfs.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 1521,
+      "sha256": "sha256:b60d0b33c4744d8a0f7c6cfd55fd3f874e5271089b952f1dd3c8fece7ef4790b",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "kernel/vfs.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:kernel-vfs-trit-vfs2-kind-file-3",
+        "tc:symbol:kernel-vfs-trit-vfs2-kind-dir-4",
+        "tc:symbol:kernel-vfs-trit-vfs2-kind-device-5",
+        "tc:symbol:kernel-vfs-trit-vfs2-load-7",
+        "tc:symbol:kernel-vfs-trit-value-8",
+        "tc:symbol:kernel-vfs-trit-vfs2-store-13",
+        "tc:symbol:kernel-vfs-trit-vfs2-copy-words-18",
+        "tc:symbol:kernel-vfs-trit-vfs2-strlen-27",
+        "tc:symbol:kernel-vfs-trit-vfs2-path-hash-41",
+        "tc:symbol:kernel-vfs-trit-len-42",
+        "tc:symbol:kernel-vfs-trit-vfs2-stat-pack-58",
+        "tc:symbol:kernel-vfs-trit-vfs2-neutral-router-65"
+      ]
+    },
+    {
+      "id": "tc:source:migrate-tos-artifacts-cpp-06b41f90",
+      "entity_type": "source",
+      "name": "migrate_tos_artifacts.cpp",
+      "path": "migrate_tos_artifacts.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 40772,
+      "sha256": "sha256:c4c5d53686fcbce2da2fbb1663beceddd7156722790ba5c25c98e2400c71449f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "migrate_tos_artifacts.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:migrate-tos-artifacts-cpp-options-27",
+        "tc:symbol:migrate-tos-artifacts-cpp-nativeentry-36",
+        "tc:symbol:migrate-tos-artifacts-cpp-nativesnapshot-43",
+        "tc:symbol:migrate-tos-artifacts-cpp-templateexecutable-47",
+        "tc:symbol:migrate-tos-artifacts-cpp-printusage-55",
+        "tc:symbol:migrate-tos-artifacts-cpp-parseoptions-66",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-82",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-83",
+        "tc:symbol:migrate-tos-artifacts-cpp-bool-100",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-109",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-110",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-113",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-115",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-129",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-130",
+        "tc:symbol:migrate-tos-artifacts-cpp-bool-139",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-164",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-305",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-339",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-340",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-341",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-377",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-405",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-456",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-458",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-459",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-461",
+        "tc:symbol:migrate-tos-artifacts-cpp-record-484",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-537",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-543",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-545",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-558",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-570",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-589",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-592",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-595",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-638",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-639",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-641",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-643",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-645",
+        "tc:symbol:migrate-tos-artifacts-cpp-long-647",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-649",
+        "tc:symbol:migrate-tos-artifacts-cpp-long-666",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-691",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-692",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-695",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-706",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-719",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-725",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-727",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-729",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-731",
+        "tc:symbol:migrate-tos-artifacts-cpp-nativeentry-757",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-758",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-783",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-785",
+        "tc:symbol:migrate-tos-artifacts-cpp-int-787",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-794",
+        "tc:symbol:migrate-tos-artifacts-cpp-pathdepth-817",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-823",
+        "tc:symbol:migrate-tos-artifacts-cpp-std-824",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-839",
+        "tc:symbol:migrate-tos-artifacts-cpp-auto-846"
+      ]
+    },
+    {
+      "id": "tc:source:native-kernel-boot-tasm-3fcd2b0a",
+      "entity_type": "source",
+      "name": "native_kernel_boot.tasm",
+      "path": "native_kernel_boot.tasm",
+      "language": "tasm",
+      "status": "resolved",
+      "bytes": 906,
+      "sha256": "sha256:0399172c4ba28d170c9e4ea240e655fb4cc74e62cab7d4e7039c958aa4591b8e",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "native_kernel_boot.tasm",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:native-kernel-trap-stub-tasm-28a4a7ad",
+      "entity_type": "source",
+      "name": "native_kernel_trap_stub.tasm",
+      "path": "native_kernel_trap_stub.tasm",
+      "language": "tasm",
+      "status": "resolved",
+      "bytes": 2470,
+      "sha256": "sha256:c32f73549dc1c3c6afed3fd1631a5d2190f05992e3cd146421761347c7143e9f",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "native_kernel_trap_stub.tasm",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:run-tos-sdl-cpp-c106b463",
+      "entity_type": "source",
+      "name": "run_tos_sdl.cpp",
+      "path": "run_tos_sdl.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 39277,
+      "sha256": "sha256:4d03f848495c042b44c6bad0a5b58afbfcf82a6b371b9afe780361736c4c2c3a",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "run_tos_sdl.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:run-tos-sdl-cpp-texturestate-21",
+        "tc:symbol:run-tos-sdl-cpp-rendermetrics-28",
+        "tc:symbol:run-tos-sdl-cpp-textrendercache-37",
+        "tc:symbol:run-tos-sdl-cpp-pixelrendercache-45",
+        "tc:symbol:run-tos-sdl-cpp-framerenderstate-50",
+        "tc:symbol:run-tos-sdl-cpp-destroytexture-65",
+        "tc:symbol:run-tos-sdl-cpp-tosdlabgr-75",
+        "tc:symbol:run-tos-sdl-cpp-std-76",
+        "tc:symbol:run-tos-sdl-cpp-std-77",
+        "tc:symbol:run-tos-sdl-cpp-std-78",
+        "tc:symbol:run-tos-sdl-cpp-std-79",
+        "tc:symbol:run-tos-sdl-cpp-letterboxrect-83",
+        "tc:symbol:run-tos-sdl-cpp-int-89",
+        "tc:symbol:run-tos-sdl-cpp-int-90",
+        "tc:symbol:run-tos-sdl-cpp-texturedimensions-95",
+        "tc:symbol:run-tos-sdl-cpp-glyphrows-103",
+        "tc:symbol:run-tos-sdl-cpp-int-191",
+        "tc:symbol:run-tos-sdl-cpp-int-192",
+        "tc:symbol:run-tos-sdl-cpp-int-193",
+        "tc:symbol:run-tos-sdl-cpp-int-194",
+        "tc:symbol:run-tos-sdl-cpp-auto-209",
+        "tc:symbol:run-tos-sdl-cpp-int-210",
+        "tc:symbol:run-tos-sdl-cpp-int-211",
+        "tc:symbol:run-tos-sdl-cpp-int-217",
+        "tc:symbol:run-tos-sdl-cpp-int-218",
+        "tc:symbol:run-tos-sdl-cpp-glyphfromtextword-259",
+        "tc:symbol:run-tos-sdl-cpp-char-260",
+        "tc:symbol:run-tos-sdl-cpp-colorfromtextword-264",
+        "tc:symbol:run-tos-sdl-cpp-int-265",
+        "tc:symbol:run-tos-sdl-cpp-colorfromgraphicsword-269",
+        "tc:symbol:run-tos-sdl-cpp-uploaddirtyrects-286",
+        "tc:symbol:run-tos-sdl-cpp-std-288",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-302",
+        "tc:symbol:run-tos-sdl-cpp-int-305",
+        "tc:symbol:run-tos-sdl-cpp-long-306",
+        "tc:symbol:run-tos-sdl-cpp-char-307",
+        "tc:symbol:run-tos-sdl-cpp-std-308",
+        "tc:symbol:run-tos-sdl-cpp-int-309",
+        "tc:symbol:run-tos-sdl-cpp-int-310",
+        "tc:symbol:run-tos-sdl-cpp-bool-311",
+        "tc:symbol:run-tos-sdl-cpp-std-312",
+        "tc:symbol:run-tos-sdl-cpp-spritevisible-333",
+        "tc:symbol:run-tos-sdl-cpp-char-334",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-348",
+        "tc:symbol:run-tos-sdl-cpp-char-350",
+        "tc:symbol:run-tos-sdl-cpp-int-351",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-362",
+        "tc:symbol:run-tos-sdl-cpp-int-363",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-376",
+        "tc:symbol:run-tos-sdl-cpp-int-380",
+        "tc:symbol:run-tos-sdl-cpp-bool-413",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-438",
+        "tc:symbol:run-tos-sdl-cpp-int-439",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-449",
+        "tc:symbol:run-tos-sdl-cpp-int-453",
+        "tc:symbol:run-tos-sdl-cpp-int-454",
+        "tc:symbol:run-tos-sdl-cpp-int-455",
+        "tc:symbol:run-tos-sdl-cpp-int-471",
+        "tc:symbol:run-tos-sdl-cpp-sandbox-493",
+        "tc:symbol:run-tos-sdl-cpp-auto-497",
+        "tc:symbol:run-tos-sdl-cpp-auto-499",
+        "tc:symbol:run-tos-sdl-cpp-bool-509",
+        "tc:symbol:run-tos-sdl-cpp-auto-518",
+        "tc:symbol:run-tos-sdl-cpp-auto-547"
+      ]
+    },
+    {
+      "id": "tc:source:tcl-backend-trit-3047ad9f",
+      "entity_type": "source",
+      "name": "tcl_backend.trit",
+      "path": "tcl_backend.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 89667,
+      "sha256": "sha256:37455b9261698e3c2231a16db4c932ef36fbf8a6fe5477976842fd1aac54c513",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tcl_backend.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:tcl-backend-trit-tcl-backend-err-spill-5",
+        "tc:symbol:tcl-backend-trit-tcl-backend-interval-words-7",
+        "tc:symbol:tcl-backend-trit-tcl-backend-mono-words-8",
+        "tc:symbol:tcl-backend-trit-tcl-backend-spill-reg-a-9",
+        "tc:symbol:tcl-backend-trit-tcl-backend-spill-reg-b-10",
+        "tc:symbol:tcl-backend-trit-tcl-backend-local-words-11",
+        "tc:symbol:tcl-backend-trit-tcl-backend-arg-words-12",
+        "tc:symbol:tcl-backend-trit-tcl-backend-call-save-words-13",
+        "tc:symbol:tcl-backend-trit-c5-native-stage-addr-15",
+        "tc:symbol:tcl-backend-trit-c5-native-stage-detail-addr-16",
+        "tc:symbol:tcl-backend-trit-c5-native-stage-fn-addr-17",
+        "tc:symbol:tcl-backend-trit-tcl-backend-ctx-new-24",
+        "tc:symbol:tcl-backend-trit-ctx-25",
+        "tc:symbol:tcl-backend-trit-diags-26",
+        "tc:symbol:tcl-backend-trit-mono-27",
+        "tc:symbol:tcl-backend-trit-tcl-native-stage-37",
+        "tc:symbol:tcl-backend-trit-tcl-backend-ctx-free-46",
+        "tc:symbol:tcl-backend-trit-diags-49",
+        "tc:symbol:tcl-backend-trit-mono-50",
+        "tc:symbol:tcl-backend-trit-tcl-backend-ctx-errors-65",
+        "tc:symbol:tcl-backend-trit-errors-66",
+        "tc:symbol:tcl-backend-trit-tcl-backend-record-error-71",
+        "tc:symbol:tcl-backend-trit-errors-72",
+        "tc:symbol:tcl-backend-trit-diags-73",
+        "tc:symbol:tcl-backend-trit-tcl-backend-mono-records-87",
+        "tc:symbol:tcl-backend-trit-mono-88",
+        "tc:symbol:tcl-backend-trit-tcl-backend-find-mono-93",
+        "tc:symbol:tcl-backend-trit-mono-94",
+        "tc:symbol:tcl-backend-trit-len-95",
+        "tc:symbol:tcl-backend-trit-tcl-backend-monomorphize-function-118",
+        "tc:symbol:tcl-backend-trit-found-119",
+        "tc:symbol:tcl-backend-trit-next-id-126",
+        "tc:symbol:tcl-backend-trit-mono-130",
+        "tc:symbol:tcl-backend-trit-tcl-backend-monomorphize-cfg-137",
+        "tc:symbol:tcl-backend-trit-blocks-138",
+        "tc:symbol:tcl-backend-trit-nblocks-139",
+        "tc:symbol:tcl-backend-trit-bidx-140",
+        "tc:symbol:tcl-backend-trit-block-141",
+        "tc:symbol:tcl-backend-trit-instrs-142",
+        "tc:symbol:tcl-backend-trit-len-143",
+        "tc:symbol:tcl-backend-trit-op-145",
+        "tc:symbol:tcl-backend-trit-token-or-id-146",
+        "tc:symbol:tcl-backend-trit-count-147",
+        "tc:symbol:tcl-backend-trit-tcl-backend-mem2reg-block-175",
+        "tc:symbol:tcl-backend-trit-instrs-176",
+        "tc:symbol:tcl-backend-trit-len-177",
+        "tc:symbol:tcl-backend-trit-op-179",
+        "tc:symbol:tcl-backend-trit-dest-180",
+        "tc:symbol:tcl-backend-trit-name-tok-181",
+        "tc:symbol:tcl-backend-trit-value-182",
+        "tc:symbol:tcl-backend-trit-promoted-183",
+        "tc:symbol:tcl-backend-trit-alias-root-202",
+        "tc:symbol:tcl-backend-trit-tcl-backend-mem2reg-cfg-223",
+        "tc:symbol:tcl-backend-trit-aliases-box-224",
+        "tc:symbol:tcl-backend-trit-blocks-226",
+        "tc:symbol:tcl-backend-trit-nblocks-227",
+        "tc:symbol:tcl-backend-trit-bidx-228",
+        "tc:symbol:tcl-backend-trit-block-229",
+        "tc:symbol:tcl-backend-trit-promoted-230",
+        "tc:symbol:tcl-backend-trit-root-236",
+        "tc:symbol:tcl-backend-trit-tcl-backend-alloc-new-254",
+        "tc:symbol:tcl-backend-trit-alloc-255",
+        "tc:symbol:tcl-backend-trit-intervals-256",
+        "tc:symbol:tcl-backend-trit-used-257"
+      ]
+    },
+    {
+      "id": "tc:source:tcl-frontend-trit-fc5fe21a",
+      "entity_type": "source",
+      "name": "tcl_frontend.trit",
+      "path": "tcl_frontend.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 678,
+      "sha256": "sha256:c7a6a8236f9714cd398e54fc7bf383e348340e6a29873f3b7f1c81b20bcc00be",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tcl_frontend.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-lex-4",
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-token-count-8",
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-token-kind-12",
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-token-start-16",
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-token-len-20",
+        "tc:symbol:tcl-frontend-trit-tcl-frontend-free-24"
+      ]
+    },
+    {
+      "id": "tc:source:tcl-native-rewrite-md-54f2c351",
+      "entity_type": "source",
+      "name": "tcl_native_rewrite.md",
+      "path": "tcl_native_rewrite.md",
+      "language": "markdown",
+      "status": "resolved",
+      "bytes": 57885,
+      "sha256": "sha256:1d53f663a75cc952b3f4a00393a4affc534eee19970f843dc5ec0208c56109dd",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tcl_native_rewrite.md",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tcl-parser-trit-9c4816eb",
+      "entity_type": "source",
+      "name": "tcl_parser.trit",
+      "path": "tcl_parser.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 94682,
+      "sha256": "sha256:b14cd01cdd04b7211e43ef8e2a77e11b1a0a4739fe9b04bdc4c160f135afe710",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tcl_parser.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-semicolon-6",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-rbracket-7",
+        "tc:symbol:tcl-parser-trit-tcl-err-array-len-const-8",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-less-9",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-greater-10",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-comma-11",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-qualifier-12",
+        "tc:symbol:tcl-parser-trit-tcl-err-unknown-ptr-state-13",
+        "tc:symbol:tcl-parser-trit-tcl-err-unknown-ptr-region-14",
+        "tc:symbol:tcl-parser-trit-tcl-err-invalid-mem-order-15",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-type-name-16",
+        "tc:symbol:tcl-parser-trit-tcl-err-undefined-width-param-17",
+        "tc:symbol:tcl-parser-trit-tcl-err-call-fn-name-18",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-rparen-19",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-field-name-20",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-expr-21",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-colon-22",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-equal-23",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-lbrace-24",
+        "tc:symbol:tcl-parser-trit-tcl-err-invalid-match-arm-25",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-fat-arrow-26",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-rbrace-27",
+        "tc:symbol:tcl-parser-trit-tcl-err-invalid-tuple-swap-28",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-decl-29",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-constraint-30",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-arrow-31",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-ident-32",
+        "tc:symbol:tcl-parser-trit-tcl-err-expected-lparen-33",
+        "tc:symbol:tcl-parser-trit-tcl-err-invalid-guard-keyword-34",
+        "tc:symbol:tcl-parser-trit-tcl-parser-tokens-48",
+        "tc:symbol:tcl-parser-trit-tcl-parser-src-49",
+        "tc:symbol:tcl-parser-trit-tcl-parser-current-50",
+        "tc:symbol:tcl-parser-trit-tcl-parser-set-current-51",
+        "tc:symbol:tcl-parser-trit-tcl-parser-errors-52",
+        "tc:symbol:tcl-parser-trit-tcl-parser-set-errors-53",
+        "tc:symbol:tcl-parser-trit-tcl-parser-diagnostics-54",
+        "tc:symbol:tcl-parser-trit-tcl-parser-width-params-55",
+        "tc:symbol:tcl-parser-trit-tcl-parser-vec-new-cap-57",
+        "tc:symbol:tcl-parser-trit-vec-63",
+        "tc:symbol:tcl-parser-trit-data-68",
+        "tc:symbol:tcl-parser-trit-tcl-parser-vec-new-small-85",
+        "tc:symbol:tcl-parser-trit-tcl-parser-vec-new-medium-89",
+        "tc:symbol:tcl-parser-trit-tcl-parser-vec-grow-93",
+        "tc:symbol:tcl-parser-trit-new-cap-96",
+        "tc:symbol:tcl-parser-trit-new-data-102",
+        "tc:symbol:tcl-parser-trit-tcl-parser-new-122",
+        "tc:symbol:tcl-parser-trit-tcl-parser-free-141",
+        "tc:symbol:tcl-parser-trit-diags-142",
+        "tc:symbol:tcl-parser-trit-wparams-143",
+        "tc:symbol:tcl-parser-trit-tcl-parser-clear-width-params-158",
+        "tc:symbol:tcl-parser-trit-wp-159",
+        "tc:symbol:tcl-parser-trit-tcl-token-is-1-169",
+        "tc:symbol:tcl-parser-trit-tokens-170",
+        "tc:symbol:tcl-parser-trit-src-171",
+        "tc:symbol:tcl-parser-trit-start-172",
+        "tc:symbol:tcl-parser-trit-tcl-token-is-2-188",
+        "tc:symbol:tcl-parser-trit-tokens-189",
+        "tc:symbol:tcl-parser-trit-src-190",
+        "tc:symbol:tcl-parser-trit-start-191",
+        "tc:symbol:tcl-parser-trit-tcl-token-is-3-213",
+        "tc:symbol:tcl-parser-trit-tokens-214",
+        "tc:symbol:tcl-parser-trit-src-215",
+        "tc:symbol:tcl-parser-trit-start-216",
+        "tc:symbol:tcl-parser-trit-tcl-token-is-4-244"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-asm-h-f555f2e5",
+      "entity_type": "source",
+      "name": "ternary_asm.h",
+      "path": "ternary_asm.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 99079,
+      "sha256": "sha256:0a4123722cf26fd0f304b9fc66eb7608b2969250e8c9206d74a203ff73df25d0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_asm.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-asm-h-class-123",
+        "tc:symbol:ternary-asm-h-assemblyerror-132",
+        "tc:symbol:ternary-asm-h-assemblyresult-143",
+        "tc:symbol:ternary-asm-h-immorlabel-310",
+        "tc:symbol:ternary-asm-h-opcodeinfo-345",
+        "tc:symbol:ternary-asm-h-mnemonicparts-352",
+        "tc:symbol:ternary-asm-h-std-398",
+        "tc:symbol:ternary-asm-h-size-t-399",
+        "tc:symbol:ternary-asm-h-size-t-406",
+        "tc:symbol:ternary-asm-h-std-408",
+        "tc:symbol:ternary-asm-h-std-419",
+        "tc:symbol:ternary-asm-h-std-420",
+        "tc:symbol:ternary-asm-h-auto-461",
+        "tc:symbol:ternary-asm-h-sourceline-591",
+        "tc:symbol:ternary-asm-h-std-604",
+        "tc:symbol:ternary-asm-h-labelmaps-747",
+        "tc:symbol:ternary-asm-h-labelmaps-753",
+        "tc:symbol:ternary-asm-h-std-754",
+        "tc:symbol:ternary-asm-h-std-755",
+        "tc:symbol:ternary-asm-h-std-756",
+        "tc:symbol:ternary-asm-h-std-764",
+        "tc:symbol:ternary-asm-h-std-822",
+        "tc:symbol:ternary-asm-h-std-823",
+        "tc:symbol:ternary-asm-h-std-824",
+        "tc:symbol:ternary-asm-h-bool-922",
+        "tc:symbol:ternary-asm-h-bool-925",
+        "tc:symbol:ternary-asm-h-bool-930",
+        "tc:symbol:ternary-asm-h-bool-935",
+        "tc:symbol:ternary-asm-h-bool-940",
+        "tc:symbol:ternary-asm-h-bool-942",
+        "tc:symbol:ternary-asm-h-bool-945",
+        "tc:symbol:ternary-asm-h-bool-947",
+        "tc:symbol:ternary-asm-h-bool-949",
+        "tc:symbol:ternary-asm-h-opcodeinfo-1044",
+        "tc:symbol:ternary-asm-h-std-1045",
+        "tc:symbol:ternary-asm-h-auto-1046",
+        "tc:symbol:ternary-asm-h-int-1047",
+        "tc:symbol:ternary-asm-h-uint8-t-1317",
+        "tc:symbol:ternary-asm-h-int-1474",
+        "tc:symbol:ternary-asm-h-int-1475",
+        "tc:symbol:ternary-asm-h-bool-1476",
+        "tc:symbol:ternary-asm-h-bool-1477",
+        "tc:symbol:ternary-asm-h-uint8-t-1493",
+        "tc:symbol:ternary-asm-h-std-1883",
+        "tc:symbol:ternary-asm-h-std-1884",
+        "tc:symbol:ternary-asm-h-std-1885",
+        "tc:symbol:ternary-asm-h-std-1907",
+        "tc:symbol:ternary-asm-h-std-2003",
+        "tc:symbol:ternary-asm-h-std-2004",
+        "tc:symbol:ternary-asm-h-std-2035",
+        "tc:symbol:ternary-asm-h-assemblyoptions-2036",
+        "tc:symbol:ternary-asm-h-architecturedirectives-2039",
+        "tc:symbol:ternary-asm-h-sourceline-2057",
+        "tc:symbol:ternary-asm-h-std-2069",
+        "tc:symbol:ternary-asm-h-std-2083",
+        "tc:symbol:ternary-asm-h-int-2089",
+        "tc:symbol:ternary-asm-h-int-2091",
+        "tc:symbol:ternary-asm-h-int-2093",
+        "tc:symbol:ternary-asm-h-instructionword-2109",
+        "tc:symbol:ternary-asm-h-std-2111",
+        "tc:symbol:ternary-asm-h-std-2164",
+        "tc:symbol:ternary-asm-h-loadandreset-2170",
+        "tc:symbol:ternary-asm-h-std-2199",
+        "tc:symbol:ternary-asm-h-std-2200"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-backend-h-66ad8c1d",
+      "entity_type": "source",
+      "name": "ternary_backend.h",
+      "path": "ternary_backend.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 9803,
+      "sha256": "sha256:99bc8842dc4067131800fd0f5ac10cd7d272711d662f1a5b34a6ba3656572df1",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_backend.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-backend-h-encodetritpair-30",
+        "tc:symbol:ternary-backend-h-decodetritpair-34",
+        "tc:symbol:ternary-backend-h-validtritpair-38",
+        "tc:symbol:ternary-backend-h-negatetritpair-42",
+        "tc:symbol:ternary-backend-h-normalizetritsum-46",
+        "tc:symbol:ternary-backend-h-rawuint128-52",
+        "tc:symbol:ternary-backend-h-payloadmask64-57",
+        "tc:symbol:ternary-backend-h-int-58",
+        "tc:symbol:ternary-backend-h-paddingclear64-64",
+        "tc:symbol:ternary-backend-h-uint64-t-65",
+        "tc:symbol:ternary-backend-h-getpair64-69",
+        "tc:symbol:ternary-backend-h-int-78",
+        "tc:symbol:ternary-backend-h-uint64-t-79",
+        "tc:symbol:ternary-backend-h-validlane64-83",
+        "tc:symbol:ternary-backend-h-invalidlane64-91",
+        "tc:symbol:ternary-backend-h-compareresultlane1raw-97",
+        "tc:symbol:ternary-backend-h-neglane64-101",
+        "tc:symbol:ternary-backend-h-int-121",
+        "tc:symbol:ternary-backend-h-addlane64-141",
+        "tc:symbol:ternary-backend-h-sublane64-145",
+        "tc:symbol:ternary-backend-h-comparelane64-149",
+        "tc:symbol:ternary-backend-h-int8-t-152",
+        "tc:symbol:ternary-backend-h-int8-t-153",
+        "tc:symbol:ternary-backend-h-minlane64-160",
+        "tc:symbol:ternary-backend-h-maxlane64-165",
+        "tc:symbol:ternary-backend-h-makerawuint128-170",
+        "tc:symbol:ternary-backend-h-equalraw128-177",
+        "tc:symbol:ternary-backend-h-paddingclear128-181",
+        "tc:symbol:ternary-backend-h-int-182",
+        "tc:symbol:ternary-backend-h-uint64-t-186",
+        "tc:symbol:ternary-backend-h-int-190",
+        "tc:symbol:ternary-backend-h-uint64-t-191",
+        "tc:symbol:ternary-backend-h-getpair128-195",
+        "tc:symbol:ternary-backend-h-int-196",
+        "tc:symbol:ternary-backend-h-int-206",
+        "tc:symbol:ternary-backend-h-uint64-t-208",
+        "tc:symbol:ternary-backend-h-int-211",
+        "tc:symbol:ternary-backend-h-uint64-t-212",
+        "tc:symbol:ternary-backend-h-validlane128-218",
+        "tc:symbol:ternary-backend-h-invalidlane128-226",
+        "tc:symbol:ternary-backend-h-neglane128-232",
+        "tc:symbol:ternary-backend-h-int-252",
+        "tc:symbol:ternary-backend-h-int8-t-295",
+        "tc:symbol:ternary-backend-h-int8-t-296"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-compiler-h-fab6853a",
+      "entity_type": "source",
+      "name": "ternary_compiler.h",
+      "path": "ternary_compiler.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 10303,
+      "sha256": "sha256:7cbe29b6acf63ffe71cc679d8a43d5c5bd72cb4c43df1c11b940893e8ec77cf4",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_compiler.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-compiler-h-inference-7",
+        "tc:symbol:ternary-compiler-h-std-40",
+        "tc:symbol:ternary-compiler-h-std-41",
+        "tc:symbol:ternary-compiler-h-compileroptions-42",
+        "tc:symbol:ternary-compiler-h-std-75",
+        "tc:symbol:ternary-compiler-h-linkoptions-76",
+        "tc:symbol:ternary-compiler-h-int-80",
+        "tc:symbol:ternary-compiler-h-auto-141",
+        "tc:symbol:ternary-compiler-h-auto-144",
+        "tc:symbol:ternary-compiler-h-auto-146",
+        "tc:symbol:ternary-compiler-h-auto-159",
+        "tc:symbol:ternary-compiler-h-vm-214"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-compiler-codegen-h-bdf61dbb",
+      "entity_type": "source",
+      "name": "ternary_compiler_codegen.h",
+      "path": "ternary_compiler_codegen.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 257023,
+      "sha256": "sha256:a1dffe3589b4bd04de44cc68dda4630589f10a22a61ff9143abfff75a78b2f2b",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_compiler_codegen.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-compiler-codegen-h-typeinferencer-18",
+        "tc:symbol:ternary-compiler-codegen-h-moduleast-48",
+        "tc:symbol:ternary-compiler-codegen-h-layouttable-49",
+        "tc:symbol:ternary-compiler-codegen-h-inferfunction-61",
+        "tc:symbol:ternary-compiler-codegen-h-inferblock-76",
+        "tc:symbol:ternary-compiler-codegen-h-inferstmt-87",
+        "tc:symbol:ternary-compiler-codegen-h-bool-93",
+        "tc:symbol:ternary-compiler-codegen-h-bool-110",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-128",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-141",
+        "tc:symbol:ternary-compiler-codegen-h-typeref-175",
+        "tc:symbol:ternary-compiler-codegen-h-bool-229",
+        "tc:symbol:ternary-compiler-codegen-h-of-239",
+        "tc:symbol:ternary-compiler-codegen-h-inferexpr-252",
+        "tc:symbol:ternary-compiler-codegen-h-inferunary-292",
+        "tc:symbol:ternary-compiler-codegen-h-typeref-317",
+        "tc:symbol:ternary-compiler-codegen-h-inferbinary-331",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-346",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-347",
+        "tc:symbol:ternary-compiler-codegen-h-infercall-353",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-405",
+        "tc:symbol:ternary-compiler-codegen-h-functionast-436",
+        "tc:symbol:ternary-compiler-codegen-h-argument-465",
+        "tc:symbol:ternary-compiler-codegen-h-argument-537",
+        "tc:symbol:ternary-compiler-codegen-h-inferfield-542",
+        "tc:symbol:ternary-compiler-codegen-h-fieldlayout-545",
+        "tc:symbol:ternary-compiler-codegen-h-inferindex-554",
+        "tc:symbol:ternary-compiler-codegen-h-inferstructliteral-577",
+        "tc:symbol:ternary-compiler-codegen-h-type-584",
+        "tc:symbol:ternary-compiler-codegen-h-exprptr-589",
+        "tc:symbol:ternary-compiler-codegen-h-literal-595",
+        "tc:symbol:ternary-compiler-codegen-h-field-601",
+        "tc:symbol:ternary-compiler-codegen-h-inferarrayliteral-606",
+        "tc:symbol:ternary-compiler-codegen-h-mismatch-614",
+        "tc:symbol:ternary-compiler-codegen-h-moduleast-681",
+        "tc:symbol:ternary-compiler-codegen-h-layouttable-682",
+        "tc:symbol:ternary-compiler-codegen-h-localinfo-693",
+        "tc:symbol:ternary-compiler-codegen-h-char-709",
+        "tc:symbol:ternary-compiler-codegen-h-typeref-710",
+        "tc:symbol:ternary-compiler-codegen-h-functioncontext-714",
+        "tc:symbol:ternary-compiler-codegen-h-functionast-715",
+        "tc:symbol:ternary-compiler-codegen-h-layouttable-722",
+        "tc:symbol:ternary-compiler-codegen-h-compileroptions-723",
+        "tc:symbol:ternary-compiler-codegen-h-allocationresult-734",
+        "tc:symbol:ternary-compiler-codegen-h-colorregister-752",
+        "tc:symbol:ternary-compiler-codegen-h-rewriteassemblyline-779",
+        "tc:symbol:ternary-compiler-codegen-h-line-827",
+        "tc:symbol:ternary-compiler-codegen-h-raw-831",
+        "tc:symbol:ternary-compiler-codegen-h-release-843",
+        "tc:symbol:ternary-compiler-codegen-h-value-850",
+        "tc:symbol:ternary-compiler-codegen-h-exprcode-902",
+        "tc:symbol:ternary-compiler-codegen-h-lvaluecode-909",
+        "tc:symbol:ternary-compiler-codegen-h-module-917",
+        "tc:symbol:ternary-compiler-codegen-h-compileroptions-918",
+        "tc:symbol:ternary-compiler-codegen-h-compileroptions-921",
+        "tc:symbol:ternary-compiler-codegen-h-compileroptions-927",
+        "tc:symbol:ternary-compiler-codegen-h-compilerimpl-929",
+        "tc:symbol:ternary-compiler-codegen-h-returns-969",
+        "tc:symbol:ternary-compiler-codegen-h-auto-971",
+        "tc:symbol:ternary-compiler-codegen-h-optimizerstats-1019",
+        "tc:symbol:ternary-compiler-codegen-h-auto-1043",
+        "tc:symbol:ternary-compiler-codegen-h-optimizerstats-1061",
+        "tc:symbol:ternary-compiler-codegen-h-auto-1063",
+        "tc:symbol:ternary-compiler-codegen-h-functionast-1084"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-consumer-shell-h-b529d838",
+      "entity_type": "source",
+      "name": "ternary_consumer_shell.h",
+      "path": "ternary_consumer_shell.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 23447,
+      "sha256": "sha256:c494cb3c818ebe88f8f3680f9378c2b65dd0233c94701d308e6339bfec76376e",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_consumer_shell.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-consumer-shell-h-class-27",
+        "tc:symbol:ternary-consumer-shell-h-class-36",
+        "tc:symbol:ternary-consumer-shell-h-consumerappentry-42",
+        "tc:symbol:ternary-consumer-shell-h-consumeruserrecord-50",
+        "tc:symbol:ternary-consumer-shell-h-consumerwindow-57",
+        "tc:symbol:ternary-consumer-shell-h-consumerdialog-67",
+        "tc:symbol:ternary-consumer-shell-h-consumerdesktopsnapshot-75",
+        "tc:symbol:ternary-consumer-shell-h-consumersettingsinfo-88",
+        "tc:symbol:ternary-consumer-shell-h-consumershell-99",
+        "tc:symbol:ternary-consumer-shell-h-std-136",
+        "tc:symbol:ternary-consumer-shell-h-std-162",
+        "tc:symbol:ternary-consumer-shell-h-std-164",
+        "tc:symbol:ternary-consumer-shell-h-std-170",
+        "tc:symbol:ternary-consumer-shell-h-int-223",
+        "tc:symbol:ternary-consumer-shell-h-std-304",
+        "tc:symbol:ternary-consumer-shell-h-std-315",
+        "tc:symbol:ternary-consumer-shell-h-std-316",
+        "tc:symbol:ternary-consumer-shell-h-std-322",
+        "tc:symbol:ternary-consumer-shell-h-std-323",
+        "tc:symbol:ternary-consumer-shell-h-productionprofile-339",
+        "tc:symbol:ternary-consumer-shell-h-std-415",
+        "tc:symbol:ternary-consumer-shell-h-appendstring-420",
+        "tc:symbol:ternary-consumer-shell-h-std-426",
+        "tc:symbol:ternary-consumer-shell-h-long-431",
+        "tc:symbol:ternary-consumer-shell-h-std-433",
+        "tc:symbol:ternary-consumer-shell-h-std-450",
+        "tc:symbol:ternary-consumer-shell-h-std-465",
+        "tc:symbol:ternary-consumer-shell-h-int-470",
+        "tc:symbol:ternary-consumer-shell-h-std-485",
+        "tc:symbol:ternary-consumer-shell-h-std-498",
+        "tc:symbol:ternary-consumer-shell-h-std-510",
+        "tc:symbol:ternary-consumer-shell-h-int-515",
+        "tc:symbol:ternary-consumer-shell-h-std-527",
+        "tc:symbol:ternary-consumer-shell-h-std-561",
+        "tc:symbol:ternary-consumer-shell-h-std-562",
+        "tc:symbol:ternary-consumer-shell-h-std-575",
+        "tc:symbol:ternary-consumer-shell-h-std-602",
+        "tc:symbol:ternary-consumer-shell-h-std-610",
+        "tc:symbol:ternary-consumer-shell-h-std-611"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-host-runtime-h-388c2801",
+      "entity_type": "source",
+      "name": "ternary_host_runtime.h",
+      "path": "ternary_host_runtime.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 72868,
+      "sha256": "sha256:31761afdb5ed1e862b3320c4839a49d8c0b1c9b031f578cd145d9cdddc2640a2",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_host_runtime.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-host-runtime-h-tosappmanifestentry-38",
+        "tc:symbol:ternary-host-runtime-h-tosimagesection-53",
+        "tc:symbol:ternary-host-runtime-h-tosimagemanifest-64",
+        "tc:symbol:ternary-host-runtime-h-tosbootimage-82",
+        "tc:symbol:ternary-host-runtime-h-tosruntimeconfig-90",
+        "tc:symbol:ternary-host-runtime-h-class-98",
+        "tc:symbol:ternary-host-runtime-h-tosframebuffersnapshot-103",
+        "tc:symbol:ternary-host-runtime-h-tosframebuffermemorysnapshot-114",
+        "tc:symbol:ternary-host-runtime-h-tosruntimesnapshot-126",
+        "tc:symbol:ternary-host-runtime-h-seterror-144",
+        "tc:symbol:ternary-host-runtime-h-appendpod-149",
+        "tc:symbol:ternary-host-runtime-h-auto-150",
+        "tc:symbol:ternary-host-runtime-h-readpod-155",
+        "tc:symbol:ternary-host-runtime-h-checkedsize-164",
+        "tc:symbol:ternary-host-runtime-h-appendstring-168",
+        "tc:symbol:ternary-host-runtime-h-fnv1a-187",
+        "tc:symbol:ternary-host-runtime-h-tosappmanifestentry-197",
+        "tc:symbol:ternary-host-runtime-h-tosimagesection-230",
+        "tc:symbol:ternary-host-runtime-h-serializepayload-257",
+        "tc:symbol:ternary-host-runtime-h-std-299",
+        "tc:symbol:ternary-host-runtime-h-parentdirectoryexistsorcreate-422",
+        "tc:symbol:ternary-host-runtime-h-std-423",
+        "tc:symbol:ternary-host-runtime-h-std-424",
+        "tc:symbol:ternary-host-runtime-h-iszeroblock-435",
+        "tc:symbol:ternary-host-runtime-h-int-436",
+        "tc:symbol:ternary-host-runtime-h-nonzeroblocks-443",
+        "tc:symbol:ternary-host-runtime-h-int-449",
+        "tc:symbol:ternary-host-runtime-h-rgba-457",
+        "tc:symbol:ternary-host-runtime-h-palettecolor-464",
+        "tc:symbol:ternary-host-runtime-h-jsonescape-486",
+        "tc:symbol:ternary-host-runtime-h-writejsonstring-512",
+        "tc:symbol:ternary-host-runtime-h-processstatename-516",
+        "tc:symbol:ternary-host-runtime-h-dmemword-532",
+        "tc:symbol:ternary-host-runtime-h-inputpendingforwaiter-593",
+        "tc:symbol:ternary-host-runtime-h-canidlewithoutstepping-600",
+        "tc:symbol:ternary-host-runtime-h-long-606",
+        "tc:symbol:ternary-host-runtime-h-validatebootimage-619",
+        "tc:symbol:ternary-host-runtime-h-bool-663",
+        "tc:symbol:ternary-host-runtime-h-tosbootimage-700",
+        "tc:symbol:ternary-host-runtime-h-std-710",
+        "tc:symbol:ternary-host-runtime-h-std-711",
+        "tc:symbol:ternary-host-runtime-h-vm-774",
+        "tc:symbol:ternary-host-runtime-h-std-776",
+        "tc:symbol:ternary-host-runtime-h-profileformanifest-809",
+        "tc:symbol:ternary-host-runtime-h-std-823",
+        "tc:symbol:ternary-host-runtime-h-std-836",
+        "tc:symbol:ternary-host-runtime-h-int-840",
+        "tc:symbol:ternary-host-runtime-h-std-842",
+        "tc:symbol:ternary-host-runtime-h-std-854",
+        "tc:symbol:ternary-host-runtime-h-std-855",
+        "tc:symbol:ternary-host-runtime-h-std-856",
+        "tc:symbol:ternary-host-runtime-h-std-857",
+        "tc:symbol:ternary-host-runtime-h-std-858",
+        "tc:symbol:ternary-host-runtime-h-int-859",
+        "tc:symbol:ternary-host-runtime-h-tosbootimage-879",
+        "tc:symbol:ternary-host-runtime-h-std-880",
+        "tc:symbol:ternary-host-runtime-h-vm-905",
+        "tc:symbol:ternary-host-runtime-h-decodeframebuffer-948",
+        "tc:symbol:ternary-host-runtime-h-long-961",
+        "tc:symbol:ternary-host-runtime-h-char-962",
+        "tc:symbol:ternary-host-runtime-h-int-963",
+        "tc:symbol:ternary-host-runtime-h-int-975",
+        "tc:symbol:ternary-host-runtime-h-long-977",
+        "tc:symbol:ternary-host-runtime-h-tosframebufferreadplan-985"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-ir-h-b7a5a607",
+      "entity_type": "source",
+      "name": "ternary_ir.h",
+      "path": "ternary_ir.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 30669,
+      "sha256": "sha256:873a7365c164c4381bb3eaac36dd26989defe4d841435a6da995542c3d5ce323",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_ir.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-ir-h-class-23",
+        "tc:symbol:ternary-ir-h-value-38",
+        "tc:symbol:ternary-ir-h-lowerresult-46",
+        "tc:symbol:ternary-ir-h-isnumeric-53",
+        "tc:symbol:ternary-ir-h-islane-67",
+        "tc:symbol:ternary-ir-h-suffix-71",
+        "tc:symbol:ternary-ir-h-regname-89",
+        "tc:symbol:ternary-ir-h-memoryordersuffix-93",
+        "tc:symbol:ternary-ir-h-program-102",
+        "tc:symbol:ternary-ir-h-std-121",
+        "tc:symbol:ternary-ir-h-auto-125",
+        "tc:symbol:ternary-ir-h-auto-128",
+        "tc:symbol:ternary-ir-h-auto-130",
+        "tc:symbol:ternary-ir-h-auto-140",
+        "tc:symbol:ternary-ir-h-store-211",
+        "tc:symbol:ternary-ir-h-tmac-248",
+        "tc:symbol:ternary-ir-h-swap-301",
+        "tc:symbol:ternary-ir-h-label-306",
+        "tc:symbol:ternary-ir-h-brn-310",
+        "tc:symbol:ternary-ir-h-brz-311",
+        "tc:symbol:ternary-ir-h-brp-312",
+        "tc:symbol:ternary-ir-h-jmp-314",
+        "tc:symbol:ternary-ir-h-callr-318",
+        "tc:symbol:ternary-ir-h-jmpr-327",
+        "tc:symbol:ternary-ir-h-syscall-336",
+        "tc:symbol:ternary-ir-h-fence-340",
+        "tc:symbol:ternary-ir-h-csrw-400",
+        "tc:symbol:ternary-ir-h-eret-421",
+        "tc:symbol:ternary-ir-h-vstore-449",
+        "tc:symbol:ternary-ir-h-vswap-512",
+        "tc:symbol:ternary-ir-h-vscatter-528",
+        "tc:symbol:ternary-ir-h-aclr-538",
+        "tc:symbol:ternary-ir-h-aload-542",
+        "tc:symbol:ternary-ir-h-aadd-543",
+        "tc:symbol:ternary-ir-h-asub-544",
+        "tc:symbol:ternary-ir-h-amul-545",
+        "tc:symbol:ternary-ir-h-vmact1-566",
+        "tc:symbol:ternary-ir-h-nop-583",
+        "tc:symbol:ternary-ir-h-halt-584",
+        "tc:symbol:ternary-ir-h-release-586",
+        "tc:symbol:ternary-ir-h-diag-604",
+        "tc:symbol:ternary-ir-h-emit-608",
+        "tc:symbol:ternary-ir-h-int-617",
+        "tc:symbol:ternary-ir-h-int-627",
+        "tc:symbol:ternary-ir-h-checkscalar-632",
+        "tc:symbol:ternary-ir-h-checkvector-640",
+        "tc:symbol:ternary-ir-h-std-677",
+        "tc:symbol:ternary-ir-h-branch-729",
+        "tc:symbol:ternary-ir-h-accumulatorunary-788"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-isa-h-85bb195d",
+      "entity_type": "source",
+      "name": "ternary_isa.h",
+      "path": "ternary_isa.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 67254,
+      "sha256": "sha256:57be70427759cd5cb2956893b08a4d1ce08ff685b74fda544f7dda9979eab6d0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_isa.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-isa-h-imm16-44",
+        "tc:symbol:ternary-isa-h-tritword27-111",
+        "tc:symbol:ternary-isa-h-settrit-133",
+        "tc:symbol:ternary-isa-h-pack-144",
+        "tc:symbol:ternary-isa-h-setfield-168",
+        "tc:symbol:ternary-isa-h-encodesigned-200",
+        "tc:symbol:ternary-isa-h-fields-251",
+        "tc:symbol:ternary-isa-h-fields-277",
+        "tc:symbol:ternary-isa-h-overlay-280",
+        "tc:symbol:ternary-isa-h-fields-285",
+        "tc:symbol:ternary-isa-h-class-293",
+        "tc:symbol:ternary-isa-h-class-320",
+        "tc:symbol:ternary-isa-h-class-436",
+        "tc:symbol:ternary-isa-h-class-592",
+        "tc:symbol:ternary-isa-h-class-622",
+        "tc:symbol:ternary-isa-h-instructionword-755",
+        "tc:symbol:ternary-isa-h-fields-759",
+        "tc:symbol:ternary-isa-h-and-776",
+        "tc:symbol:ternary-isa-h-condition-780",
+        "tc:symbol:ternary-isa-h-encoding-974",
+        "tc:symbol:ternary-isa-h-setopcode-1012",
+        "tc:symbol:ternary-isa-h-verifyroundtrip-1032",
+        "tc:symbol:ternary-isa-h-nop-1081",
+        "tc:symbol:ternary-isa-h-tritword27-1452"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-lanes-h-3a587f58",
+      "entity_type": "source",
+      "name": "ternary_lanes.h",
+      "path": "ternary_lanes.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 14936,
+      "sha256": "sha256:8ff9b483a545df55536c4bc0b24e10cdc4ccf1fc078e15e157ce58e2d670ff32",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_lanes.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-lanes-h-int-43",
+        "tc:symbol:ternary-lanes-h-setpair-49",
+        "tc:symbol:ternary-lanes-h-storage-51",
+        "tc:symbol:ternary-lanes-h-storage-52",
+        "tc:symbol:ternary-lanes-h-setpair-57",
+        "tc:symbol:ternary-lanes-h-int-58",
+        "tc:symbol:ternary-lanes-h-int-60",
+        "tc:symbol:ternary-lanes-h-uint64-t-61",
+        "tc:symbol:ternary-lanes-h-int-68",
+        "tc:symbol:ternary-lanes-h-storage-70",
+        "tc:symbol:ternary-lanes-h-tritlane-85",
+        "tc:symbol:ternary-lanes-h-settrit-127",
+        "tc:symbol:ternary-lanes-h-fill-132",
+        "tc:symbol:ternary-lanes-h-constexpr-159",
+        "tc:symbol:ternary-lanes-h-constexpr-177",
+        "tc:symbol:ternary-lanes-h-constexpr-197",
+        "tc:symbol:ternary-lanes-h-constexpr-275",
+        "tc:symbol:ternary-lanes-h-std-288",
+        "tc:symbol:ternary-lanes-h-of-310",
+        "tc:symbol:ternary-lanes-h-auto-337",
+        "tc:symbol:ternary-lanes-h-constexpr-353"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-montgomery-h-f8307f3a",
+      "entity_type": "source",
+      "name": "ternary_montgomery.h",
+      "path": "ternary_montgomery.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 37088,
+      "sha256": "sha256:72123dd3082bddf553a185de8309c607228992d775b9f074458e603d702daab6",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_montgomery.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-montgomery-h-tritbigint-86",
+        "tc:symbol:ternary-montgomery-h-normalize-150",
+        "tc:symbol:ternary-montgomery-h-conditionalsubct-194",
+        "tc:symbol:ternary-montgomery-h-tritbigint-307",
+        "tc:symbol:ternary-montgomery-h-tritbigint-308",
+        "tc:symbol:ternary-montgomery-h-tritbigint-309",
+        "tc:symbol:ternary-montgomery-h-montgomerycontext-384",
+        "tc:symbol:ternary-montgomery-h-montgomerycontext-394",
+        "tc:symbol:ternary-montgomery-h-bigint-423",
+        "tc:symbol:ternary-montgomery-h-std-424",
+        "tc:symbol:ternary-montgomery-h-computermodn-461",
+        "tc:symbol:ternary-montgomery-h-int-463",
+        "tc:symbol:ternary-montgomery-h-selftestresult-508",
+        "tc:symbol:ternary-montgomery-h-unsigned-525",
+        "tc:symbol:ternary-montgomery-h-unsigned-526",
+        "tc:symbol:ternary-montgomery-h-rsa2048testvector-600",
+        "tc:symbol:ternary-montgomery-h-is-772",
+        "tc:symbol:ternary-montgomery-h-smartcardinitresult-787",
+        "tc:symbol:ternary-montgomery-h-int-804",
+        "tc:symbol:ternary-montgomery-h-int-817"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-native-ops-h-6ffd2806",
+      "entity_type": "source",
+      "name": "ternary_native_ops.h",
+      "path": "ternary_native_ops.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 33984,
+      "sha256": "sha256:68fe01bc4521362380604527a0c9772e21ffa551e25b278db6610e436c071337",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_native_ops.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-native-ops-h-pow3int-25",
+        "tc:symbol:ternary-native-ops-h-unsigned-49",
+        "tc:symbol:ternary-native-ops-h-int-72",
+        "tc:symbol:ternary-native-ops-h-uint128-90",
+        "tc:symbol:ternary-native-ops-h-ternaryintformat-107",
+        "tc:symbol:ternary-native-ops-h-fmtt1-116",
+        "tc:symbol:ternary-native-ops-h-fmtt5-117",
+        "tc:symbol:ternary-native-ops-h-valuet-119",
+        "tc:symbol:ternary-native-ops-h-ternaryfloatformat-127",
+        "tc:symbol:ternary-native-ops-h-fmtt10-143",
+        "tc:symbol:ternary-native-ops-h-fmtt20-145",
+        "tc:symbol:ternary-native-ops-h-fmtt40-147",
+        "tc:symbol:ternary-native-ops-h-fmtt50-149",
+        "tc:symbol:ternary-native-ops-h-fmt-152",
+        "tc:symbol:ternary-native-ops-h-fmt-159",
+        "tc:symbol:ternary-native-ops-h-fmt-164",
+        "tc:symbol:ternary-native-ops-h-fmt-178",
+        "tc:symbol:ternary-native-ops-h-int8-t-188",
+        "tc:symbol:ternary-native-ops-h-fmt-197",
+        "tc:symbol:ternary-native-ops-h-long-199",
+        "tc:symbol:ternary-native-ops-h-fmt-203",
+        "tc:symbol:ternary-native-ops-h-fmt-210",
+        "tc:symbol:ternary-native-ops-h-fmt-217",
+        "tc:symbol:ternary-native-ops-h-fmt-224",
+        "tc:symbol:ternary-native-ops-h-long-228",
+        "tc:symbol:ternary-native-ops-h-fmt-233",
+        "tc:symbol:ternary-native-ops-h-long-236",
+        "tc:symbol:ternary-native-ops-h-fmt-242",
+        "tc:symbol:ternary-native-ops-h-fmt-248",
+        "tc:symbol:ternary-native-ops-h-long-251",
+        "tc:symbol:ternary-native-ops-h-fmt-255",
+        "tc:symbol:ternary-native-ops-h-std-257",
+        "tc:symbol:ternary-native-ops-h-fmt-267",
+        "tc:symbol:ternary-native-ops-h-encodeexponent-268",
+        "tc:symbol:ternary-native-ops-h-int8-t-270",
+        "tc:symbol:ternary-native-ops-h-fmt-276",
+        "tc:symbol:ternary-native-ops-h-std-278",
+        "tc:symbol:ternary-native-ops-h-fmt-291",
+        "tc:symbol:ternary-native-ops-h-fmt-296",
+        "tc:symbol:ternary-native-ops-h-fmt-301",
+        "tc:symbol:ternary-native-ops-h-std-303",
+        "tc:symbol:ternary-native-ops-h-std-304",
+        "tc:symbol:ternary-native-ops-h-long-316",
+        "tc:symbol:ternary-native-ops-h-int8-t-317",
+        "tc:symbol:ternary-native-ops-h-fmt-324",
+        "tc:symbol:ternary-native-ops-h-std-326",
+        "tc:symbol:ternary-native-ops-h-fmt-334",
+        "tc:symbol:ternary-native-ops-h-std-336",
+        "tc:symbol:ternary-native-ops-h-int-342",
+        "tc:symbol:ternary-native-ops-h-fmt-354",
+        "tc:symbol:ternary-native-ops-h-int8-t-363",
+        "tc:symbol:ternary-native-ops-h-fmt-371",
+        "tc:symbol:ternary-native-ops-h-fmt-376",
+        "tc:symbol:ternary-native-ops-h-fmt-381",
+        "tc:symbol:ternary-native-ops-h-fmt-408",
+        "tc:symbol:ternary-native-ops-h-fmt-413",
+        "tc:symbol:ternary-native-ops-h-normalizeparts-414",
+        "tc:symbol:ternary-native-ops-h-int-415",
+        "tc:symbol:ternary-native-ops-h-srcfmt-431",
+        "tc:symbol:ternary-native-ops-h-auto-439",
+        "tc:symbol:ternary-native-ops-h-int128-440",
+        "tc:symbol:ternary-native-ops-h-int-441",
+        "tc:symbol:ternary-native-ops-h-fmt-447",
+        "tc:symbol:ternary-native-ops-h-fmt-452"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-os-h-ffcd9f6e",
+      "entity_type": "source",
+      "name": "ternary_os.h",
+      "path": "ternary_os.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 120227,
+      "sha256": "sha256:fd9d3ed46391f06b1d712bb3d1c154963df9e47548dfcc1fbaaed4354f6dc6d0",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_os.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-os-h-platform-2",
+        "tc:symbol:ternary-os-h-statusresult-140",
+        "tc:symbol:ternary-os-h-fsconsistencyreport-157",
+        "tc:symbol:ternary-os-h-fail-172",
+        "tc:symbol:ternary-os-h-warn-173",
+        "tc:symbol:ternary-os-h-class-176",
+        "tc:symbol:ternary-os-h-bootrecoveryreport-181",
+        "tc:symbol:ternary-os-h-class-188",
+        "tc:symbol:ternary-os-h-journalreplayrecord-197",
+        "tc:symbol:ternary-os-h-journalreplayharness-205",
+        "tc:symbol:ternary-os-h-long-227",
+        "tc:symbol:ternary-os-h-signedexecutablemetadata-274",
+        "tc:symbol:ternary-os-h-packageentry-284",
+        "tc:symbol:ternary-os-h-packageimage-292",
+        "tc:symbol:ternary-os-h-std-301",
+        "tc:symbol:ternary-os-h-vm-314",
+        "tc:symbol:ternary-os-h-auto-317",
+        "tc:symbol:ternary-os-h-appendstringwords-324",
+        "tc:symbol:ternary-os-h-std-336",
+        "tc:symbol:ternary-os-h-vm-337",
+        "tc:symbol:ternary-os-h-std-338",
+        "tc:symbol:ternary-os-h-std-339",
+        "tc:symbol:ternary-os-h-std-362",
+        "tc:symbol:ternary-os-h-vm-363",
+        "tc:symbol:ternary-os-h-signedexecutablemetadata-364",
+        "tc:symbol:ternary-os-h-std-374",
+        "tc:symbol:ternary-os-h-vm-375",
+        "tc:symbol:ternary-os-h-signedexecutablemetadata-376",
+        "tc:symbol:ternary-os-h-std-377",
+        "tc:symbol:ternary-os-h-signedexecutablemetadata-386",
+        "tc:symbol:ternary-os-h-packageimagebuilder-418",
+        "tc:symbol:ternary-os-h-std-424",
+        "tc:symbol:ternary-os-h-std-425",
+        "tc:symbol:ternary-os-h-std-436",
+        "tc:symbol:ternary-os-h-std-437",
+        "tc:symbol:ternary-os-h-vm-438",
+        "tc:symbol:ternary-os-h-signedexecutablemetadata-439",
+        "tc:symbol:ternary-os-h-class-466",
+        "tc:symbol:ternary-os-h-userptr-473",
+        "tc:symbol:ternary-os-h-class-482",
+        "tc:symbol:ternary-os-h-sharedword-488",
+        "tc:symbol:ternary-os-h-devicenode-523",
+        "tc:symbol:ternary-os-h-devicetree-529",
+        "tc:symbol:ternary-os-h-add-532",
+        "tc:symbol:ternary-os-h-devicenode-558",
+        "tc:symbol:ternary-os-h-blockdevice-584",
+        "tc:symbol:ternary-os-h-int-647",
+        "tc:symbol:ternary-os-h-long-717",
+        "tc:symbol:ternary-os-h-int-718",
+        "tc:symbol:ternary-os-h-class-738",
+        "tc:symbol:ternary-os-h-directoryentry-745",
+        "tc:symbol:ternary-os-h-filestat-750",
+        "tc:symbol:ternary-os-h-inode-758",
+        "tc:symbol:ternary-os-h-tinyfilesystem-776",
+        "tc:symbol:ternary-os-h-inode-968",
+        "tc:symbol:ternary-os-h-int-1008",
+        "tc:symbol:ternary-os-h-std-1017",
+        "tc:symbol:ternary-os-h-bool-1034",
+        "tc:symbol:ternary-os-h-bool-1035",
+        "tc:symbol:ternary-os-h-std-1048",
+        "tc:symbol:ternary-os-h-int-1092",
+        "tc:symbol:ternary-os-h-int-1093",
+        "tc:symbol:ternary-os-h-int-1094",
+        "tc:symbol:ternary-os-h-int-1099"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-redo-wal-h-742ecc4b",
+      "entity_type": "source",
+      "name": "ternary_redo_wal.h",
+      "path": "ternary_redo_wal.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 19794,
+      "sha256": "sha256:718b535b1bd2458b2b8fe2b0a3f755e4020020f6ed665010dd9b0287adb2c661",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_redo_wal.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-redo-wal-h-redowalv2-20",
+        "tc:symbol:ternary-redo-wal-h-class-30",
+        "tc:symbol:ternary-redo-wal-h-class-36",
+        "tc:symbol:ternary-redo-wal-h-class-42",
+        "tc:symbol:ternary-redo-wal-h-counters-54",
+        "tc:symbol:ternary-redo-wal-h-snapshot-67",
+        "tc:symbol:ternary-redo-wal-h-format-80",
+        "tc:symbol:ternary-redo-wal-h-long-117",
+        "tc:symbol:ternary-redo-wal-h-std-126",
+        "tc:symbol:ternary-redo-wal-h-auto-127",
+        "tc:symbol:ternary-redo-wal-h-auto-153",
+        "tc:symbol:ternary-redo-wal-h-transaction-155",
+        "tc:symbol:ternary-redo-wal-h-int-173",
+        "tc:symbol:ternary-redo-wal-h-long-207",
+        "tc:symbol:ternary-redo-wal-h-std-216",
+        "tc:symbol:ternary-redo-wal-h-std-274",
+        "tc:symbol:ternary-redo-wal-h-timertick-296",
+        "tc:symbol:ternary-redo-wal-h-long-305",
+        "tc:symbol:ternary-redo-wal-h-block-353",
+        "tc:symbol:ternary-redo-wal-h-block-366",
+        "tc:symbol:ternary-redo-wal-h-auto-373",
+        "tc:symbol:ternary-redo-wal-h-auto-384",
+        "tc:symbol:ternary-redo-wal-h-int-391",
+        "tc:symbol:ternary-redo-wal-h-int-392",
+        "tc:symbol:ternary-redo-wal-h-corruptrecordchecksum-417",
+        "tc:symbol:ternary-redo-wal-h-corruptsuperblockchecksum-422",
+        "tc:symbol:ternary-redo-wal-h-pendingrecord-428",
+        "tc:symbol:ternary-redo-wal-h-transaction-434",
+        "tc:symbol:ternary-redo-wal-h-checksum-474",
+        "tc:symbol:ternary-redo-wal-h-long-493",
+        "tc:symbol:ternary-redo-wal-h-append-514",
+        "tc:symbol:ternary-redo-wal-h-int-524",
+        "tc:symbol:ternary-redo-wal-h-writedurablesuperblock-528",
+        "tc:symbol:ternary-redo-wal-h-validrecord-545",
+        "tc:symbol:ternary-redo-wal-h-int-550",
+        "tc:symbol:ternary-redo-wal-h-validsuperblock-558"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-scalar-h-3ba0d490",
+      "entity_type": "source",
+      "name": "ternary_scalar.h",
+      "path": "ternary_scalar.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 10450,
+      "sha256": "sha256:7e8f2c27de739282c37bc9ff4c34e11921d4e7a0c9bfe0b842aa21b941a817ca",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_scalar.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-scalar-h-class-36",
+        "tc:symbol:ternary-scalar-h-storagetraits-54",
+        "tc:symbol:ternary-scalar-h-maxvalue-55",
+        "tc:symbol:ternary-scalar-h-maxvalueminus1-56",
+        "tc:symbol:ternary-scalar-h-one-57",
+        "tc:symbol:ternary-scalar-h-zero-58",
+        "tc:symbol:ternary-scalar-h-storagetraits-62",
+        "tc:symbol:ternary-scalar-h-maxvalue-63",
+        "tc:symbol:ternary-scalar-h-maxvalueminus1-64",
+        "tc:symbol:ternary-scalar-h-one-65",
+        "tc:symbol:ternary-scalar-h-zero-66",
+        "tc:symbol:ternary-scalar-h-ternaryscalar-75",
+        "tc:symbol:ternary-scalar-h-constexpr-92",
+        "tc:symbol:ternary-scalar-h-pow3table-105",
+        "tc:symbol:ternary-scalar-h-constexpr-108",
+        "tc:symbol:ternary-scalar-h-auto-131",
+        "tc:symbol:ternary-scalar-h-constexpr-132",
+        "tc:symbol:ternary-scalar-h-auto-151",
+        "tc:symbol:ternary-scalar-h-constexpr-152",
+        "tc:symbol:ternary-scalar-h-constexpr-173",
+        "tc:symbol:ternary-scalar-h-from-210",
+        "tc:symbol:ternary-scalar-h-initpowtable-236"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-simd-h-2bc26917",
+      "entity_type": "source",
+      "name": "ternary_simd.h",
+      "path": "ternary_simd.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 16778,
+      "sha256": "sha256:87d9624a1b75b723f338bdc26780f8a362c6b8622bf358c79f72eaca0aeb09d8",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_simd.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-simd-h-class-28",
+        "tc:symbol:ternary-simd-h-batchtritwisenegscalar-110",
+        "tc:symbol:ternary-simd-h-lane-117",
+        "tc:symbol:ternary-simd-h-lane-118",
+        "tc:symbol:ternary-simd-h-lane-128",
+        "tc:symbol:ternary-simd-h-lane-129",
+        "tc:symbol:ternary-simd-h-lane-139",
+        "tc:symbol:ternary-simd-h-lane-140",
+        "tc:symbol:ternary-simd-h-lane-152",
+        "tc:symbol:ternary-simd-h-lane-153",
+        "tc:symbol:ternary-simd-h-lane-163",
+        "tc:symbol:ternary-simd-h-lane-164",
+        "tc:symbol:ternary-simd-h-tritlane20-173",
+        "tc:symbol:ternary-simd-h-tritlane20-174",
+        "tc:symbol:ternary-simd-h-tritlane20-184",
+        "tc:symbol:ternary-simd-h-m256i-189",
+        "tc:symbol:ternary-simd-h-m256i-190",
+        "tc:symbol:ternary-simd-h-uint64-t-191",
+        "tc:symbol:ternary-simd-h-m256i-204",
+        "tc:symbol:ternary-simd-h-m256i-212",
+        "tc:symbol:ternary-simd-h-m256i-213",
+        "tc:symbol:ternary-simd-h-m256i-214",
+        "tc:symbol:ternary-simd-h-tritlane20-232",
+        "tc:symbol:ternary-simd-h-tritlane20-233",
+        "tc:symbol:ternary-simd-h-uint64-t-239",
+        "tc:symbol:ternary-simd-h-m256i-240",
+        "tc:symbol:ternary-simd-h-m256i-241",
+        "tc:symbol:ternary-simd-h-m256i-242",
+        "tc:symbol:ternary-simd-h-m256i-243",
+        "tc:symbol:ternary-simd-h-m256i-256",
+        "tc:symbol:ternary-simd-h-m256i-261",
+        "tc:symbol:ternary-simd-h-m256i-271",
+        "tc:symbol:ternary-simd-h-m256i-272",
+        "tc:symbol:ternary-simd-h-m256i-273",
+        "tc:symbol:ternary-simd-h-m256i-275",
+        "tc:symbol:ternary-simd-h-m256i-280",
+        "tc:symbol:ternary-simd-h-m256i-281",
+        "tc:symbol:ternary-simd-h-m256i-286",
+        "tc:symbol:ternary-simd-h-tritlane20-315",
+        "tc:symbol:ternary-simd-h-tritlane20-316",
+        "tc:symbol:ternary-simd-h-tritlane20-325",
+        "tc:symbol:ternary-simd-h-tritlane20-326",
+        "tc:symbol:ternary-simd-h-tritlane20-335",
+        "tc:symbol:ternary-simd-h-tritlane20-336",
+        "tc:symbol:ternary-simd-h-m256i-341",
+        "tc:symbol:ternary-simd-h-m256i-342",
+        "tc:symbol:ternary-simd-h-m256i-343",
+        "tc:symbol:ternary-simd-h-m256i-344",
+        "tc:symbol:ternary-simd-h-m256i-354",
+        "tc:symbol:ternary-simd-h-m256i-359",
+        "tc:symbol:ternary-simd-h-m256i-367",
+        "tc:symbol:ternary-simd-h-m256i-368",
+        "tc:symbol:ternary-simd-h-m256i-370",
+        "tc:symbol:ternary-simd-h-m256i-373",
+        "tc:symbol:ternary-simd-h-m256i-374",
+        "tc:symbol:ternary-simd-h-m256i-375",
+        "tc:symbol:ternary-simd-h-lane-393",
+        "tc:symbol:ternary-simd-h-tritlane20-403",
+        "tc:symbol:ternary-simd-h-lane-421",
+        "tc:symbol:ternary-simd-h-lane-422",
+        "tc:symbol:ternary-simd-h-tritlane20-432",
+        "tc:symbol:ternary-simd-h-tritlane20-433",
+        "tc:symbol:ternary-simd-h-lane-451",
+        "tc:symbol:ternary-simd-h-lane-452"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-transformer-runtime-h-5d48dbf0",
+      "entity_type": "source",
+      "name": "ternary_transformer_runtime.h",
+      "path": "ternary_transformer_runtime.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 43031,
+      "sha256": "sha256:d6049174e60240ce5f3d61fd0fc4402fd82622b22ea56e2c3950c2818d7ad331",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_transformer_runtime.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-transformer-runtime-h-tensorview-25",
+        "tc:symbol:ternary-transformer-runtime-h-runtimestats-32",
+        "tc:symbol:ternary-transformer-runtime-h-generatedkernelresult-42",
+        "tc:symbol:ternary-transformer-runtime-h-validtensor-53",
+        "tc:symbol:ternary-transformer-runtime-h-long-55",
+        "tc:symbol:ternary-transformer-runtime-h-offsetof-59",
+        "tc:symbol:ternary-transformer-runtime-h-ast40-63",
+        "tc:symbol:ternary-transformer-runtime-h-intvalue-67",
+        "tc:symbol:ternary-transformer-runtime-h-ratiovalue-71",
+        "tc:symbol:ternary-transformer-runtime-h-addt40-76",
+        "tc:symbol:ternary-transformer-runtime-h-subt40-81",
+        "tc:symbol:ternary-transformer-runtime-h-mult40-86",
+        "tc:symbol:ternary-transformer-runtime-h-divt40-91",
+        "tc:symbol:ternary-transformer-runtime-h-negt40-97",
+        "tc:symbol:ternary-transformer-runtime-h-sqrtt40-102",
+        "tc:symbol:ternary-transformer-runtime-h-vm-108",
+        "tc:symbol:ternary-transformer-runtime-h-irtypeformode-138",
+        "tc:symbol:ternary-transformer-runtime-h-generatedkernelresult-158",
+        "tc:symbol:ternary-transformer-runtime-h-std-174",
+        "tc:symbol:ternary-transformer-runtime-h-sandbox-175",
+        "tc:symbol:ternary-transformer-runtime-h-auto-181",
+        "tc:symbol:ternary-transformer-runtime-h-auto-198",
+        "tc:symbol:ternary-transformer-runtime-h-vm-199",
+        "tc:symbol:ternary-transformer-runtime-h-auto-200",
+        "tc:symbol:ternary-transformer-runtime-h-std-210",
+        "tc:symbol:ternary-transformer-runtime-h-sandbox-211",
+        "tc:symbol:ternary-transformer-runtime-h-executegeneratedkernel-214",
+        "tc:symbol:ternary-transformer-runtime-h-buildexpscalarprogram-240",
+        "tc:symbol:ternary-transformer-runtime-h-buildtanhfromexpprogram-286",
+        "tc:symbol:ternary-transformer-runtime-h-buildtanhprepprogram-302",
+        "tc:symbol:ternary-transformer-runtime-h-buildgeluprepprogram-342",
+        "tc:symbol:ternary-transformer-runtime-h-buildgelufinishprogram-364",
+        "tc:symbol:ternary-transformer-runtime-h-expt40-411",
+        "tc:symbol:ternary-transformer-runtime-h-vm-421",
+        "tc:symbol:ternary-transformer-runtime-h-tanht40-440",
+        "tc:symbol:ternary-transformer-runtime-h-gelut40-446",
+        "tc:symbol:ternary-transformer-runtime-h-int-563",
+        "tc:symbol:ternary-transformer-runtime-h-vm-620",
+        "tc:symbol:ternary-transformer-runtime-h-vm-621",
+        "tc:symbol:ternary-transformer-runtime-h-vm-644",
+        "tc:symbol:ternary-transformer-runtime-h-vm-669",
+        "tc:symbol:ternary-transformer-runtime-h-vm-670",
+        "tc:symbol:ternary-transformer-runtime-h-vm-682",
+        "tc:symbol:ternary-transformer-runtime-h-buildsoftmaxrowsprogram-728",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-800",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-801",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-866",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-892",
+        "tc:symbol:ternary-transformer-runtime-h-buildt1dotstoreprogram-897",
+        "tc:symbol:ternary-transformer-runtime-h-auto-936",
+        "tc:symbol:ternary-transformer-runtime-h-int-943",
+        "tc:symbol:ternary-transformer-runtime-h-int-944",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-1074",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-1075",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-1161",
+        "tc:symbol:ternary-transformer-runtime-h-uint64-t-1162"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-vm-h-452056f1",
+      "entity_type": "source",
+      "name": "ternary_vm.h",
+      "path": "ternary_vm.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 158729,
+      "sha256": "sha256:07604352346b2450903f8eaacc1b96e6e557d667590ae7e00e0cda7dd20e12ef",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_vm.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-vm-h-class-111",
+        "tc:symbol:ternary-vm-h-unarybymode-133",
+        "tc:symbol:ternary-vm-h-unarybymode-137",
+        "tc:symbol:ternary-vm-h-unarybymode-141",
+        "tc:symbol:ternary-vm-h-binarybymode-167",
+        "tc:symbol:ternary-vm-h-binarybymode-171",
+        "tc:symbol:ternary-vm-h-binarybymode-175",
+        "tc:symbol:ternary-vm-h-binarybymode-179",
+        "tc:symbol:ternary-vm-h-class-215",
+        "tc:symbol:ternary-vm-h-preparevectorop-340",
+        "tc:symbol:ternary-vm-h-writevectorfaultzero-372",
+        "tc:symbol:ternary-vm-h-int-381",
+        "tc:symbol:ternary-vm-h-constexpr-394",
+        "tc:symbol:ternary-vm-h-constexpr-414",
+        "tc:symbol:ternary-vm-h-int-427",
+        "tc:symbol:ternary-vm-h-constexpr-438",
+        "tc:symbol:ternary-vm-h-constexpr-452",
+        "tc:symbol:ternary-vm-h-int-465",
+        "tc:symbol:ternary-vm-h-constexpr-478",
+        "tc:symbol:ternary-vm-h-int8-t-623",
+        "tc:symbol:ternary-vm-h-int8-t-650",
+        "tc:symbol:ternary-vm-h-int8-t-651",
+        "tc:symbol:ternary-vm-h-writevectoractivatet1-684",
+        "tc:symbol:ternary-vm-h-std-724",
+        "tc:symbol:ternary-vm-h-std-725",
+        "tc:symbol:ternary-vm-h-long-732",
+        "tc:symbol:ternary-vm-h-long-758",
+        "tc:symbol:ternary-vm-h-std-759",
+        "tc:symbol:ternary-vm-h-long-770",
+        "tc:symbol:ternary-vm-h-int-801",
+        "tc:symbol:ternary-vm-h-trapcode-802",
+        "tc:symbol:ternary-vm-h-long-830",
+        "tc:symbol:ternary-vm-h-std-831",
+        "tc:symbol:ternary-vm-h-std-832",
+        "tc:symbol:ternary-vm-h-long-845",
+        "tc:symbol:ternary-vm-h-int-872",
+        "tc:symbol:ternary-vm-h-trapcode-873",
+        "tc:symbol:ternary-vm-h-int-884",
+        "tc:symbol:ternary-vm-h-vmexecutionrecord-914",
+        "tc:symbol:ternary-vm-h-int-940",
+        "tc:symbol:ternary-vm-h-step-944",
+        "tc:symbol:ternary-vm-h-recordfinalizer-959",
+        "tc:symbol:ternary-vm-h-std-1099",
+        "tc:symbol:ternary-vm-h-std-1113",
+        "tc:symbol:ternary-vm-h-long-1125",
+        "tc:symbol:ternary-vm-h-long-1127",
+        "tc:symbol:ternary-vm-h-long-1129",
+        "tc:symbol:ternary-vm-h-ternaryvalue-1188",
+        "tc:symbol:ternary-vm-h-int8-t-1388",
+        "tc:symbol:ternary-vm-h-uint8-t-1389",
+        "tc:symbol:ternary-vm-h-long-1512",
+        "tc:symbol:ternary-vm-h-long-1519",
+        "tc:symbol:ternary-vm-h-int-1556",
+        "tc:symbol:ternary-vm-h-trapcode-1557",
+        "tc:symbol:ternary-vm-h-long-1587",
+        "tc:symbol:ternary-vm-h-long-1596",
+        "tc:symbol:ternary-vm-h-int-1627",
+        "tc:symbol:ternary-vm-h-trapcode-1628",
+        "tc:symbol:ternary-vm-h-int-1639",
+        "tc:symbol:ternary-vm-h-ternaryvalue-1858",
+        "tc:symbol:ternary-vm-h-int-1878",
+        "tc:symbol:ternary-vm-h-int-1904",
+        "tc:symbol:ternary-vm-h-bool-1912",
+        "tc:symbol:ternary-vm-h-long-2250"
+      ]
+    },
+    {
+      "id": "tc:source:ternary-vm-state-h-388cc8b4",
+      "entity_type": "source",
+      "name": "ternary_vm_state.h",
+      "path": "ternary_vm_state.h",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 165265,
+      "sha256": "sha256:2fc0dca592971ab6bc2154c60b2e94c3a08036c36b4be53c123d89f95d0cc7b9",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ternary_vm_state.h",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ],
+      "symbol_ids": [
+        "tc:symbol:ternary-vm-state-h-syncfiletostablestorage-91",
+        "tc:symbol:ternary-vm-state-h-std-93",
+        "tc:symbol:ternary-vm-state-h-int-94",
+        "tc:symbol:ternary-vm-state-h-bool-96",
+        "tc:symbol:ternary-vm-state-h-int-100",
+        "tc:symbol:ternary-vm-state-h-bool-102",
+        "tc:symbol:ternary-vm-state-h-imm16-121",
+        "tc:symbol:ternary-vm-state-h-productionprofile-136",
+        "tc:symbol:ternary-vm-state-h-std-157",
+        "tc:symbol:ternary-vm-state-h-class-177",
+        "tc:symbol:ternary-vm-state-h-ternaryvalue-261",
+        "tc:symbol:ternary-vm-state-h-int-545",
+        "tc:symbol:ternary-vm-state-h-int8-t-582",
+        "tc:symbol:ternary-vm-state-h-int8-t-590",
+        "tc:symbol:ternary-vm-state-h-ternaryregisterfile-605"
+      ]
+    },
+    {
+      "id": "tc:source:tests-fixtures-v1-manifest-json-ac118538",
+      "entity_type": "source",
+      "name": "manifest.json",
+      "path": "tests/fixtures/v1/manifest.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 1207,
+      "sha256": "sha256:422e7c5d9383250d5d7b396610c405d36a00c922b9d17bdbec1d4847d9d3af5e",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests/fixtures/v1/manifest.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tests-test-tcl-asm-cpp-79fa1e9f",
+      "entity_type": "source",
+      "name": "test_tcl_asm.cpp",
+      "path": "tests/test_tcl_asm.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 7921,
+      "sha256": "sha256:f91168a4dfc6f861dc399318370d3a1887c252a3605e2e6205377b00a058ea8b",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests/test_tcl_asm.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tests-test-ternary-ir-cpp-1e3a41fb",
+      "entity_type": "source",
+      "name": "test_ternary_ir.cpp",
+      "path": "tests/test_ternary_ir.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 17660,
+      "sha256": "sha256:fd876e6741839b4ef2f379a4f5a254148948bd25ba9b03a505e7e6d447381c63",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests/test_ternary_ir.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tests-test-vm-widths-cpp-ac07bd19",
+      "entity_type": "source",
+      "name": "test_vm_widths.cpp",
+      "path": "tests/test_vm_widths.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 48032,
+      "sha256": "sha256:6c3d53d345c81df59c2f2a70901cf135e3d80eb893e662c702dc186c263f976c",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests/test_vm_widths.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tests-next-manifests-acceptance-gates-json-f6b60393",
+      "entity_type": "source",
+      "name": "acceptance_gates.json",
+      "path": "tests_next/manifests/acceptance_gates.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 1243,
+      "sha256": "sha256:d95198fd10bccd078f85ad740b17c7c6fe5e63ebbe119dd833d5aceef03afa9e",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests_next/manifests/acceptance_gates.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tests-next-manifests-coverage-matrix-json-5b781bfc",
+      "entity_type": "source",
+      "name": "coverage_matrix.json",
+      "path": "tests_next/manifests/coverage_matrix.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 16168,
+      "sha256": "sha256:e080951cda9faf90825d91cf6009df01bdf89f03c91c6464dc8909833e98cb83",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tests_next/manifests/coverage_matrix.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tools-trit-inspect-image-ps1-0594a11c",
+      "entity_type": "source",
+      "name": "trit-inspect-image.ps1",
+      "path": "tools/trit-inspect-image.ps1",
+      "language": "powershell",
+      "status": "resolved",
+      "bytes": 131,
+      "sha256": "sha256:ff6fb722e393ad866756c8d8783c4d947598d9f74f0efa2986656ae10cacc9d8",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tools/trit-inspect-image.ps1",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tools-trit-run-ps1-55ea1f07",
+      "entity_type": "source",
+      "name": "trit-run.ps1",
+      "path": "tools/trit-run.ps1",
+      "language": "powershell",
+      "status": "resolved",
+      "bytes": 121,
+      "sha256": "sha256:cabfe3afef418554ed74c5d0a4cb118719163eab2676e42a72ca9886e03e5d99",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tools/trit-run.ps1",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tools-trit-tool-py-9b8d03f9",
+      "entity_type": "source",
+      "name": "trit_tool.py",
+      "path": "tools/trit_tool.py",
+      "language": "text",
+      "status": "resolved",
+      "bytes": 194329,
+      "sha256": "sha256:c57857f8d529cf2854c682dfc51725414e589552dcaaf301a1d35316104b5459",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tools/trit_tool.py",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:treatcode-compiler-driver-trit-781f0fd8",
+      "entity_type": "source",
+      "name": "compiler_driver.trit",
+      "path": "treatcode/compiler_driver.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 599,
+      "sha256": "sha256:4b4b83aaa742bd142f6a9d058ae8ab54dd27333ea57ccedea20070b4edc09829",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/compiler_driver.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:treatcode-package-json-a52efb11",
+      "entity_type": "source",
+      "name": "package.json",
+      "path": "treatcode/package.json",
+      "language": "json",
+      "status": "resolved",
+      "bytes": 2905,
+      "sha256": "sha256:7a3a54d80ea27223a841aad1e189e936970827e7b5f8e05fe637b60becb25910",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/package.json",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:treatcode-src-app-tsx-f8d945ad",
+      "entity_type": "source",
+      "name": "App.tsx",
+      "path": "treatcode/src/App.tsx",
+      "language": "typescript-react",
+      "status": "resolved",
+      "bytes": 119729,
+      "sha256": "sha256:4025a95c11effda65fdeea14403fbf4382890825c5a81ddbb40630cab2683db3",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/src/App.tsx",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:treatcode-src-implementationarena-tsx-e4806a1a",
+      "entity_type": "source",
+      "name": "ImplementationArena.tsx",
+      "path": "treatcode/src/ImplementationArena.tsx",
+      "language": "typescript-react",
+      "status": "resolved",
+      "bytes": 12994,
+      "sha256": "sha256:0649debc1f6f4e5aab6eb6fd4584c2d2cc9270f03af26da37d640b3d25174456",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/src/ImplementationArena.tsx",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:treatcode-src-publicapp-tsx-3a9bf6ad",
+      "entity_type": "source",
+      "name": "PublicApp.tsx",
+      "path": "treatcode/src/PublicApp.tsx",
+      "language": "typescript-react",
+      "status": "resolved",
+      "bytes": 29902,
+      "sha256": "sha256:6b7781a370c11ffdaa43db428178bd306585e058de3ea2a8a59f7ffe437f4b11",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/src/PublicApp.tsx",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:tritc-cpp-d2df5112",
+      "entity_type": "source",
+      "name": "tritc.cpp",
+      "path": "tritc.cpp",
+      "language": "cpp",
+      "status": "resolved",
+      "bytes": 37891,
+      "sha256": "sha256:4e6cef6410e097ec52a09712f5fbaecbffa0975e3d4f371f471af83aa0b43289",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "tritc.cpp",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    },
+    {
+      "id": "tc:source:ulib-trit-75f67dc9",
+      "entity_type": "source",
+      "name": "ulib.trit",
+      "path": "ulib.trit",
+      "language": "trit",
+      "status": "resolved",
+      "bytes": 92552,
+      "sha256": "sha256:46545bb84133140c449b16215be09debb9a3f1797acb3bd572254775b311f63c",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "ulib.trit",
+          "status": "resolved",
+          "role": "snapshot_source"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "STACK_MANIFEST.json",
+          "status": "resolved",
+          "role": "snapshot_manifest"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "sources",
+    "count": 95,
+    "total": 95
+  },
+  "links": {
+    "self": "/api/public/v1/sources"
+  }
+}

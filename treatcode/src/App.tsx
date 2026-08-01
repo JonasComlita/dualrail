@@ -7,13 +7,26 @@ import {
   type LearningInteractive,
   type LearningPage,
 } from "./learningContent";
+import challengeData from "./generated/challenges.client.json";
+
+type ChallengeFacetKey =
+  | "domain"
+  | "technique"
+  | "data_model"
+  | "stack_layer"
+  | "target"
+  | "optimization_objective";
+
+type ChallengeFacets = Record<ChallengeFacetKey, string[]>;
 
 interface Problem {
   id: string;
   title: string;
+  lifecycle: "published" | "draft";
   difficulty: "easy" | "medium" | "hard";
   category: string;
   tags: string[];
+  facets: ChallengeFacets;
   solved: boolean;
   submissions: number;
   acceptance: number;
@@ -21,78 +34,49 @@ interface Problem {
   description?: string;
   signature?: string;
   template?: string;
+  execution: {
+    mode: "verified" | "compile-only";
+    runner: string;
+    limits: {
+      time_ms: number;
+      memory_kib: number;
+      max_cycles: number;
+      max_output_bytes: number;
+    };
+  };
 }
 
-const PROBLEMS: Problem[] = [
-  { id: "T001", title: "Three-Way Sign Test", difficulty: "easy", category: "three-valued", tags: ["T1", "match"], solved: true, submissions: 2841, acceptance: 94, points: 50 },
-  { id: "T002", title: "Ternary FizzBuzz", difficulty: "easy", category: "three-valued", tags: ["T1", "match", "arithmetic"], solved: true, submissions: 2103, acceptance: 91, points: 50 },
-  { id: "T003", title: "Three-State Machine", difficulty: "easy", category: "three-valued", tags: ["T1", "enum"], solved: false, submissions: 1654, acceptance: 88, points: 50 },
-  { id: "T004", title: "Null Pointer Safety Chain", difficulty: "medium", category: "pointer-safety", tags: ["ptr<T,S>", "match"], solved: false, submissions: 892, acceptance: 67, points: 150 },
-  { id: "T005", title: "Validated Buffer Walk", difficulty: "medium", category: "pointer-safety", tags: ["ptr<T,S>", "borrow"], solved: false, submissions: 743, acceptance: 61, points: 150 },
-  { id: "T006", title: "Ownership Transfer Chain", difficulty: "hard", category: "pointer-safety", tags: ["own<T>", "move"], solved: false, submissions: 312, acceptance: 42, points: 300 },
-  { id: "T007", title: "Balanced Ternary Addition", difficulty: "easy", category: "arithmetic", tags: ["T40", "carry"], solved: true, submissions: 3102, acceptance: 89, points: 50 },
-  { id: "T008", title: "Sign-Free Absolute Value", difficulty: "easy", category: "arithmetic", tags: ["T40", "match"], solved: true, submissions: 2890, acceptance: 92, points: 50 },
-  { id: "T009", title: "Ternary Integer Square Root", difficulty: "medium", category: "arithmetic", tags: ["T40", "binary-search"], solved: false, submissions: 621, acceptance: 54, points: 150 },
-  { id: "T010", title: "Big Integer Limb Multiply", difficulty: "hard", category: "arithmetic", tags: ["T40", "montgomery"], solved: false, submissions: 204, acceptance: 31, points: 300 },
-  { id: "T011", title: "TLDR/TSTR Atomic Counter", difficulty: "medium", category: "concurrent", tags: ["tldr", "tstr", "atomic"], solved: false, submissions: 501, acceptance: 59, points: 150 },
-  { id: "T012", title: "Lock-Free Stack", difficulty: "hard", category: "concurrent", tags: ["tldr", "tstr", "shared<T>"], solved: false, submissions: 188, acceptance: 28, points: 300 },
-  { id: "T013", title: "Split Buffer Claim Race", difficulty: "hard", category: "concurrent", tags: ["SplitBuf", "atomic"], solved: false, submissions: 97, acceptance: 22, points: 300 },
-  { id: "T014", title: "Ternary Search on Sorted Array", difficulty: "easy", category: "dsa", tags: ["T40", "search"], solved: true, submissions: 1987, acceptance: 86, points: 50 },
-  { id: "T015", title: "Three-Way Partition Quicksort", difficulty: "medium", category: "dsa", tags: ["vec_sort", "pivot"], solved: false, submissions: 834, acceptance: 63, points: 150 },
-  { id: "T016", title: "TST String Interning", difficulty: "medium", category: "dsa", tags: ["TST", "string"], solved: false, submissions: 567, acceptance: 58, points: 150 },
-  { id: "T017", title: "Ternary Heap Priority Queue", difficulty: "hard", category: "dsa", tags: ["heap", "T40"], solved: false, submissions: 289, acceptance: 38, points: 300 },
-  { id: "T018", title: "Montgomery Ladder Step", difficulty: "hard", category: "crypto", tags: ["montgomery", "T40"], solved: false, submissions: 143, acceptance: 19, points: 300 },
-  { id: "T019", title: "Constant-Time Comparison", difficulty: "medium", category: "crypto", tags: ["T1", "timing"], solved: false, submissions: 412, acceptance: 55, points: 150 },
-  { id: "T020", title: "Execute-Only Page Guard", difficulty: "hard", category: "crypto", tags: ["MMU", "PTE"], solved: false, submissions: 78, acceptance: 15, points: 300 },
-  {"id":"T021","title":"Three-State Conway's Game","difficulty":"medium","category":"three-valued","tags":["T1","cellular-automaton"],"solved":false,"submissions":692,"acceptance":51,"points":150},
-  {"id":"T022","title":"Ternary Run-Length Encoding","difficulty":"easy","category":"three-valued","tags":["match","rle"],"solved":false,"submissions":262,"acceptance":60,"points":50},
-  {"id":"T023","title":"Balanced Logic Evaluator","difficulty":"medium","category":"three-valued","tags":["T1","expression-tree"],"solved":false,"submissions":325,"acceptance":53,"points":150},
-  {"id":"T024","title":"Three-Way String Classifier","difficulty":"easy","category":"three-valued","tags":["match","character"],"solved":false,"submissions":511,"acceptance":61,"points":50},
-  {"id":"T025","title":"Ternary Carry Propagation","difficulty":"medium","category":"three-valued","tags":["T1","carry-propagation"],"solved":false,"submissions":312,"acceptance":49,"points":150},
-  {"id":"T026","title":"Nullable Field Chain","difficulty":"easy","category":"pointer-safety","tags":["ptr","match"],"solved":false,"submissions":428,"acceptance":33,"points":50},
-  {"id":"T027","title":"Pointer Chain Reversal","difficulty":"medium","category":"pointer-safety","tags":["ptr","linked-list"],"solved":false,"submissions":877,"acceptance":61,"points":150},
-  {"id":"T028","title":"Move Without Copy","difficulty":"medium","category":"pointer-safety","tags":["own","move"],"solved":false,"submissions":177,"acceptance":20,"points":150},
-  {"id":"T029","title":"Safe Arena Allocator","difficulty":"hard","category":"pointer-safety","tags":["ptr","allocator"],"solved":false,"submissions":378,"acceptance":18,"points":300},
-  {"id":"T030","title":"Ternary GCD","difficulty":"easy","category":"arithmetic","tags":["TCMP","euclidean"],"solved":false,"submissions":502,"acceptance":41,"points":50},
-  {"id":"T031","title":"Ternary Integer Logarithm","difficulty":"medium","category":"arithmetic","tags":["TCMP","while-loop"],"solved":false,"submissions":442,"acceptance":63,"points":150},
-  {"id":"T032","title":"Base-27 Formatter","difficulty":"easy","category":"arithmetic","tags":["base-27","itoa"],"solved":false,"submissions":275,"acceptance":64,"points":50},
-  {"id":"T033","title":"Fixed-Point Multiply","difficulty":"medium","category":"arithmetic","tags":["Q13.13","multiply"],"solved":false,"submissions":348,"acceptance":61,"points":150},
-  {"id":"T034","title":"Multi-Precision Add","difficulty":"easy","category":"arithmetic","tags":["bigint","carry"],"solved":false,"submissions":590,"acceptance":21,"points":50},
-  {"id":"T035","title":"TLDR/TSTR Spinlock","difficulty":"medium","category":"concurrent","tags":["tldr","tstr","spinlock"],"solved":false,"submissions":663,"acceptance":34,"points":150},
-  {"id":"T036","title":"Three-Phase Barrier","difficulty":"hard","category":"concurrent","tags":["atomic","barrier"],"solved":false,"submissions":185,"acceptance":21,"points":300},
-  {"id":"T037","title":"Epoch-Based Reclamation","difficulty":"hard","category":"concurrent","tags":["epoch","memory-reclamation"],"solved":false,"submissions":239,"acceptance":50,"points":300},
-  {"id":"T038","title":"Three-Way Radix Sort","difficulty":"medium","category":"dsa","tags":["msd-radix","sorting"],"solved":false,"submissions":422,"acceptance":63,"points":150},
-  {"id":"T039","title":"Ternary Huffman Coding","difficulty":"hard","category":"dsa","tags":["huffman","tree"],"solved":false,"submissions":284,"acceptance":41,"points":300},
-  {"id":"T040","title":"TST Delete","difficulty":"medium","category":"dsa","tags":["TST","deletion"],"solved":false,"submissions":639,"acceptance":30,"points":150},
-  {"id":"T041","title":"Ternary Skip List","difficulty":"hard","category":"dsa","tags":["skip-list","probabilistic"],"solved":false,"submissions":754,"acceptance":59,"points":300},
-  {"id":"T042","title":"Interval Tree Query","difficulty":"medium","category":"dsa","tags":["interval-tree","BST"],"solved":false,"submissions":887,"acceptance":25,"points":150},
-  {"id":"T043","title":"Constant-Time Select","difficulty":"easy","category":"crypto","tags":["TSEL","branch-free"],"solved":false,"submissions":560,"acceptance":32,"points":50},
-  {"id":"T044","title":"Hensel Lifting Step","difficulty":"hard","category":"crypto","tags":["hensel-lifting","newton-step"],"solved":false,"submissions":682,"acceptance":24,"points":300},
-  {"id":"T045","title":"Ternary Feistel Round","difficulty":"medium","category":"crypto","tags":["feistel","sub-word"],"solved":false,"submissions":422,"acceptance":16,"points":150},
-  {"id":"T046","title":"Branch-Free Clamp","difficulty":"easy","category":"isa-optimization","tags":["TSEL","TCMP","optimization"],"solved":false,"submissions":302,"acceptance":20,"points":50},
-  {"id":"T047","title":"Sub-Word Pack / Unpack","difficulty":"easy","category":"isa-optimization","tags":["trit-shift","masking"],"solved":false,"submissions":641,"acceptance":17,"points":50},
-  {"id":"T048","title":"Register Pressure Reduction","difficulty":"medium","category":"isa-optimization","tags":["register-allocation","stack-spill"],"solved":false,"submissions":549,"acceptance":38,"points":150},
-  {"id":"T049","title":"Strength Reduction","difficulty":"medium","category":"isa-optimization","tags":["strength-reduction","trit-shift"],"solved":false,"submissions":155,"acceptance":40,"points":150},
-  {"id":"T050","title":"Peephole Optimization","difficulty":"hard","category":"isa-optimization","tags":["peephole","redundancy"],"solved":false,"submissions":644,"acceptance":38,"points":300},
-  {"id":"T051","title":"Generic Dot Product","difficulty":"medium","category":"width-polymorphism","tags":["VMAC","TritWidth","generic"],"solved":false,"submissions":762,"acceptance":54,"points":150},
-  {"id":"T052","title":"Width-Parametric Clamp","difficulty":"easy","category":"width-polymorphism","tags":["TritWidth","generic"],"solved":false,"submissions":501,"acceptance":50,"points":50},
-  {"id":"T053","title":"Polymorphic Vec Map","difficulty":"medium","category":"width-polymorphism","tags":["TritWidth","generic","function-pointer"],"solved":false,"submissions":134,"acceptance":53,"points":150},
-  {"id":"T054","title":"Trinfuck Interpreter","difficulty":"medium","category":"trinfuck","tags":["esolang","interpreter"],"solved":false,"submissions":168,"acceptance":43,"points":150},
-  {"id":"T055","title":"Trinfuck to TASM Compiler","difficulty":"hard","category":"trinfuck","tags":["esolang","meta-programming","compiler"],"solved":false,"submissions":391,"acceptance":53,"points":300},
-  { id: "T056", title: "Recursive Fibonacci", difficulty: "easy", category: "arithmetic", tags: ["T40", "recursion"], solved: false, submissions: 1880, acceptance: 75, points: 50 }
-];
+interface ChallengeData {
+  schema: string;
+  manifest_schema: string;
+  manifest_version: number;
+  source_of_truth: string;
+  facet_dimensions: Record<ChallengeFacetKey, string[]>;
+  challenges: Problem[];
+}
+
+const CHALLENGE_DATA = challengeData as unknown as ChallengeData;
+const CHALLENGES: Problem[] = CHALLENGE_DATA.challenges;
+const FACET_KEYS: ChallengeFacetKey[] = ["domain", "technique", "data_model", "stack_layer", "target", "optimization_objective"];
+
+const CATEGORY_LABELS: Record<string, string> = {
+  "three-valued": "Three-Valued Logic",
+  "pointer-safety": "Pointer Safety",
+  arithmetic: "Balanced Arithmetic",
+  concurrent: "Concurrent Primitives",
+  dsa: "DSA Classics",
+  crypto: "Cryptographic",
+  "isa-optimization": "ISA Optimization",
+  "width-polymorphism": "Width Polymorphism",
+  trinfuck: "Trinfuck",
+};
 
 const CATEGORIES = [
   { id: "all", label: "All" },
-  { id: "three-valued", label: "Three-Valued Logic" },
-  { id: "pointer-safety", label: "Pointer Safety" },
-  { id: "arithmetic", label: "Balanced Arithmetic" },
-  { id: "concurrent", label: "Concurrent Primitives" },
-  { id: "dsa", label: "DSA Classics" },
-  { id: "crypto", label: "Cryptographic" },
-  { id: "isa-optimization", label: "ISA Optimization" },
-  { id: "width-polymorphism", label: "Width Polymorphism" },
-  { id: "trinfuck", label: "Trinfuck" },
+  ...Array.from(new Set(CHALLENGES.map((challenge) => challenge.category))).map((id) => ({
+    id,
+    label: CATEGORY_LABELS[id] || id,
+  })),
 ];
 
 interface LeaderboardData {
@@ -104,6 +88,14 @@ interface LeaderboardData {
   date: string;
 }
 
+interface AuthUiState {
+  identityLabel: string | null;
+  actions: string[];
+  error: string;
+  onLogin: (accessKey: string) => void;
+  onLogout: () => void;
+}
+
 const PROPOSALS = [
   { id: "UP-001", title: "ulib/ternary_map.trit", author: "trit_wizard", status: "review", votes: 14, desc: "Bidirectional probing hash map with TCMP-driven collision resolution." },
   { id: "UP-002", title: "ulib/trie_compressed.trit", author: "balanced_0xff", status: "draft", votes: 7, desc: "Compressed trie optimized for 9-trit sub-word key fragments." },
@@ -111,317 +103,13 @@ const PROPOSALS = [
   { id: "UP-004", title: "ulib/bloom_filter.trit", author: "ternary_ghost", status: "draft", votes: 3, desc: "Ternary bloom filter with three-valued membership states." },
 ];
 
-const STARTER_CODES: Record<string, string> = {
-  "T001": `// T001 — Three-Way Sign Test
-// Given a t40 value, return:
-//   -1  if x is negative
-//    0  if x is zero
-//   +1  if x is positive
-//
-// Constraint: no if statements.
-// Use the native three-arm match.
-
-import ulib;
-
-fn sign_test(x: t40) -> t40 {
-    // your solution here
-    
-}`,
-  "T002": `// T002 — Ternary FizzBuzz
-// Given an integer n, print numbers from 1 to n (inclusive).
-// For each number i:
-//   - If i is a multiple of 3, print "Trit" followed by a newline.
-//   - Otherwise, print i followed by a newline.
-//
-// Use: print_char(c) or print_string(str) or sys_write_char(c) or sys_write_int(val) or sys_newline()
-
-import ulib;
-
-fn multiples_of_three(n: t40) -> t40 {
-    var i: t40 = 1;
-    while n - i >= 0 {
-        // Your code here:
-        
-        i = i + 1;
-    }
-    return 0;
-}`,
-  "T005": `// T005 — Validated Buffer Walk
-// Given a pointer to a null-terminated ASCII string, invert the characters of the string in-place.
-// You must reverse the string in the allocated buffer without using extra string memory allocations.
-
-import ulib;
-
-fn invert_string(str: borrow<ptr<t40, user, valid>>) -> t40 {
-    // Write your in-place string reversal code here
-    
-    return 0;
-}`,
-  "T021": `// T021 — Three-State Conway's Game
-import ulib;
-
-fn conway_step(grid: borrow<[t1]>, width: t40, height: t40, next_grid: borrow_mut<[t1]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T022": `// T022 — Ternary Run-Length Encoding
-import ulib;
-
-fn encode_rle(in_arr: borrow<[t40]>, out_val: borrow_mut<[t40]>, out_count: borrow_mut<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T023": `// T023 — Balanced Logic Evaluator
-import ulib;
-
-fn evaluate_expr(nodes: borrow<[t40]>, left: borrow<[t40]>, right: borrow<[t40]>, root: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T024": `// T024 — Three-Way String Classifier
-import ulib;
-
-fn classify_char(c: t40) -> t1 {
-    // your solution here
-    return zero;
-}`,
-  "T025": `// T025 — Ternary Carry Propagation
-import ulib;
-
-fn propagate_carries(digits: borrow_mut<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T026": `// T026 — Nullable Field Chain
-import ulib;
-
-fn access_chain(a: ptr<ptr<t40, user, unknown>, user, unknown>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T027": `// T027 — Pointer Chain Reversal
-import ulib;
-
-fn reverse_list(head: ptr<t40, user, unknown>) -> ptr<t40, user, unknown> {
-    // your solution here
-    return head;
-}`,
-  "T028": `// T028 — Move Without Copy
-import ulib;
-
-fn process_buffer(buf: own<ptr<t40, user, valid>>) -> own<ptr<t40, user, valid>> {
-    // your solution here
-    return buf;
-}`,
-  "T029": `// T029 — Safe Arena Allocator
-import ulib;
-
-fn arena_alloc(arena: borrow_mut<ptr<t40, user, valid>>, size: t40, end: ptr<t40, user, valid>) -> ptr<t40, user, unknown> {
-    // your solution here
-    return arena;
-}`,
-  "T030": `// T030 — Ternary GCD
-import ulib;
-
-fn ternary_gcd(a: t40, b: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T031": `// T031 — Ternary Integer Logarithm
-import ulib;
-
-fn ternary_log3(n: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T032": `// T032 — Base-27 Formatter
-import ulib;
-
-fn format_base27(n: t40, out_str: borrow_mut<ptr<t40, user, valid>>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T033": `// T033 — Fixed-Point Multiply
-import ulib;
-
-fn q_multiply(a: t40, b: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T034": `// T034 — Multi-Precision Add
-import ulib;
-
-fn bigint_add(a: borrow<[t40]>, b: borrow<[t40]>, out: borrow_mut<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T035": `// T035 — TLDR/TSTR Spinlock
-import ulib;
-
-fn spin_lock(lock_ptr: ptr<t1, shared, valid>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T036": `// T036 — Three-Phase Barrier
-import ulib;
-
-fn barrier_wait(counter: ptr<t40, shared, valid>, num_threads: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T037": `// T037 — Epoch-Based Reclamation
-import ulib;
-
-fn try_reclaim(epochs: borrow<[t40]>, reclaim_epoch: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T038": `// T038 — Three-Way Radix Sort
-import ulib;
-
-fn radix_sort(arr: borrow_mut<[t40]>, digit_index: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T039": `// T039 — Ternary Huffman Coding
-import ulib;
-
-fn build_huffman_tree(freqs: borrow<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T040": `// T040 — TST Delete
-import ulib;
-
-fn tst_delete(root: ptr<t40, user, unknown>, key: borrow<ptr<t40, user, valid>>) -> ptr<t40, user, unknown> {
-    // your solution here
-    return root;
-}`,
-  "T041": `// T041 — Ternary Skip List
-import ulib;
-
-fn skip_list_search(head: ptr<t40, user, valid>, target: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T042": `// T042 — Interval Tree Query
-import ulib;
-
-fn interval_search(root: ptr<t40, user, unknown>, q_lo: t40, q_hi: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T043": `// T043 — Constant-Time Select
-import ulib;
-
-fn ct_select(cond: t1, a: t40, b: t40, c: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T044": `// T044 — Hensel Lifting Step
-import ulib;
-
-fn hensel_step(n: t40, x0: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T045": `// T045 — Ternary Feistel Round
-import ulib;
-
-fn feistel_round(word: t40, key: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T046": `// T046 — Branch-Free Clamp
-import ulib;
-
-fn clamp_branchfree(x: t40, lo: t40, hi: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T047": `// T047 — Sub-Word Pack / Unpack
-import ulib;
-
-fn pack_unpack(a: t40, b: t40, c: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T048": `// T048 — Register Pressure Reduction
-import ulib;
-
-fn optimize_registers(a: t40, b: t40, c: t40, d: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T049": `// T049 — Strength Reduction
-import ulib;
-
-fn multiply_fast(x: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T050": `// T050 — Peephole Optimization
-import ulib;
-
-fn peephole_opt(x: t40) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T051": `// T051 — Generic Dot Product
-import ulib;
-
-fn dot<W: TritWidth>(a: borrow<[T<W>]>, b: borrow<[T<W>]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T052": `// T052 — Width-Parametric Clamp
-import ulib;
-
-fn clamp<W: TritWidth>(x: T<W>, lo: T<W>, hi: T<W>) -> T<W> {
-    // your solution here
-    return x;
-}`,
-  "T053": `// T053 — Polymorphic Vec Map
-import ulib;
-
-fn vec_map<W: TritWidth>(v: borrow<[T<W>]>, f: fn(T<W>) -> T<W>, out: borrow_mut<[T<W>]>) {
-    // your solution here
-    
-}`,
-  "T054": `// T054 — Trinfuck Interpreter
-import ulib;
-
-fn interpret(program: borrow<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T055": `// T055 — Trinfuck to TASM Compiler
-import ulib;
-
-fn compile_trinfuck(program: borrow<[t40]>) -> t40 {
-    // your solution here
-    return 0;
-}`,
-  "T056": `// T056 — Recursive Fibonacci
-// Compute the Nth Fibonacci number recursively.
-// F(0) = 0, F(1) = 1, F(n) = F(n-1) + F(n-2)
-// Implement it recursively to verify call stack mechanics in the VM.
-
-import ulib;
-
-fn fibonacci(n: t40) -> t40 {
-    // Write your recursive code here
-    
-    return 0;
-}`,
-  default: `// Solution
+const DEFAULT_STARTER_CODE = `// Solution
 import ulib;
 
 fn main() -> t40 {
     // your solution here
     return 0;
-}`
-};
+}`;
 
 function toBalancedTernary(val: number): string {
   if (val === 0) return "0";
@@ -517,7 +205,8 @@ function mono(text: string) {
   );
 }
 
-function Nav({ view, setView }: { view: string; setView: (v: string) => void }) {
+function Nav({ view, setView, auth }: { view: string; setView: (v: string) => void; auth?: AuthUiState }) {
+  const [accessKey, setAccessKey] = useState("");
   return (
     <div
       style={{
@@ -574,33 +263,47 @@ function Nav({ view, setView }: { view: string; setView: (v: string) => void }) 
         ))}
       </div>
       <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-        <button
-          style={{
-            fontSize: 12,
-            padding: "5px 14px",
-            borderRadius: 5,
-            border: "0.5px solid var(--color-border-tertiary)",
-            background: "transparent",
-            cursor: "pointer",
-            color: "var(--color-text-secondary)",
-          }}
-        >
-          log in
-        </button>
-        <button
-          style={{
-            fontSize: 12,
-            padding: "5px 14px",
-            borderRadius: 5,
-            border: "0.5px solid var(--color-border-secondary)",
-            background: "var(--color-background-primary)",
-            cursor: "pointer",
-            color: "var(--color-text-primary)",
-            fontWeight: 500,
-          }}
-        >
-          sign up
-        </button>
+        {auth?.identityLabel ? (
+          <>
+            <span style={{ fontSize: 11, color: "var(--color-text-secondary)", alignSelf: "center" }}>
+              {auth.identityLabel} · {auth.actions.length} grants
+            </span>
+            <button
+              type="button"
+              onClick={auth.onLogout}
+              style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}
+            >
+              log out
+            </button>
+          </>
+        ) : auth ? (
+          <>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
+              <span className="sr-only">TreatCode access key</span>
+              <input
+                aria-label="TreatCode access key"
+                type="password"
+                value={accessKey}
+                onChange={(event) => setAccessKey(event.target.value)}
+                placeholder="access key"
+                style={{ width: 112, fontSize: 11, padding: "4px 6px" }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => { auth.onLogin(accessKey); setAccessKey(""); }}
+              style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}
+            >
+              log in
+            </button>
+            {auth.error ? <span role="status" style={{ fontSize: 10, color: "var(--color-accent-red, #b33)" }}>{auth.error}</span> : null}
+          </>
+        ) : (
+          <>
+            <button type="button" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}>log in</button>
+            <button type="button" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", color: "var(--color-text-primary)", fontWeight: 500 }}>sign up</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -614,6 +317,15 @@ export default function App() {
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null);
   const [catFilter, setCatFilter] = useState("all");
   const [diffFilter, setDiffFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [facetFilters, setFacetFilters] = useState<Record<ChallengeFacetKey, string>>({
+    domain: "all",
+    technique: "all",
+    data_model: "all",
+    stack_layer: "all",
+    target: "all",
+    optimization_objective: "all",
+  });
   const [code, setCode] = useState("");
   const [running, setRunning] = useState(false);
   const [outputTab, setOutputTab] = useState<"tasm" | "vm" | "registers" | "telemetry" | "leaderboard">("vm");
@@ -640,6 +352,82 @@ export default function App() {
 
   // Dynamic leaderboard loaded from Express API
   const [dynamicLeaderboard, setDynamicLeaderboard] = useState<LeaderboardData[]>([]);
+  const [authToken, setAuthToken] = useState(() => window.localStorage.getItem("treatcode.auth.token") || "");
+  const [authIdentity, setAuthIdentity] = useState<string | null>(null);
+  const [authActions, setAuthActions] = useState<string[]>(["read"]);
+  const [authError, setAuthError] = useState("");
+
+  const loadAuthCapabilities = async (token: string) => {
+    try {
+      const response = await fetch("/api/auth/v1/capabilities", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        window.localStorage.removeItem("treatcode.auth.token");
+        setAuthToken("");
+        setAuthIdentity(null);
+        setAuthActions(["read"]);
+        setAuthError(payload?.error?.reason || "Session expired");
+        return;
+      }
+      setAuthIdentity(payload.data?.principal?.display_name || null);
+      setAuthActions(Array.isArray(payload.data?.actions) ? payload.data.actions : ["read"]);
+      setAuthError("");
+    } catch {
+      setAuthError("Auth service unavailable");
+    }
+  };
+
+  const login = async (accessKey: string) => {
+    if (!accessKey.trim()) {
+      setAuthError("Access key required");
+      return;
+    }
+    try {
+      const response = await fetch("/api/auth/v1/login", {
+        method: "POST",
+        headers: actionHeaders(),
+        body: JSON.stringify({ identity_id: "tc:identity:demo-human", access_key: accessKey }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setAuthError(payload?.error?.reason || "Login denied");
+        return;
+      }
+      const token = payload.data.credential.token;
+      window.localStorage.setItem("treatcode.auth.token", token);
+      setAuthToken(token);
+      setAuthIdentity(payload.data.identity?.display_name || null);
+      setAuthActions(payload.data.credential.credential?.actions || []);
+      setAuthError("");
+    } catch {
+      setAuthError("Auth service unavailable");
+    }
+  };
+
+  const logout = () => {
+    window.localStorage.removeItem("treatcode.auth.token");
+    setAuthToken("");
+    setAuthIdentity(null);
+    setAuthActions(["read"]);
+    setAuthError("");
+  };
+
+  const actionHeaders = (nonce = true): Record<string, string> => ({
+    "Content-Type": "application/json",
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    "X-TreatCode-Project": "tc:project:trit",
+    ...(nonce ? { "X-Action-Nonce": `ui-${Date.now()}-${Math.random().toString(36).slice(2, 12)}` } : {}),
+  });
+
+  const authUi: AuthUiState = {
+    identityLabel: authIdentity,
+    actions: authActions,
+    error: authError,
+    onLogin: (accessKey) => { void login(accessKey); },
+    onLogout: logout,
+  };
 
   // Fetch API leaderboard
   const loadLeaderboard = async () => {
@@ -658,22 +446,39 @@ export default function App() {
     loadLeaderboard();
   }, []);
 
-  const filteredProblems = useMemo(() => {
-    return PROBLEMS.filter(
-      (p) =>
-        (catFilter === "all" || p.category === catFilter) &&
-        (diffFilter === "all" || p.difficulty === diffFilter)
-    );
-  }, [catFilter, diffFilter]);
+  useEffect(() => {
+    if (authToken) void loadAuthCapabilities(authToken);
+    else void loadAuthCapabilities("");
+  }, [authToken]);
 
+  const canTest = authActions.includes("test");
+  const canSubmit = authActions.includes("edit") && authActions.includes("test");
+
+  const filteredProblems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return CHALLENGES.filter((p) => {
+      const searchable = [p.id, p.title, p.category, p.description || "", ...p.tags, ...FACET_KEYS.flatMap((key) => p.facets[key])]
+        .join(" ")
+        .toLowerCase();
+      return (
+        (catFilter === "all" || p.category === catFilter) &&
+        (diffFilter === "all" || p.difficulty === diffFilter) &&
+        (!normalizedQuery || searchable.includes(normalizedQuery)) &&
+        FACET_KEYS.every((key) => facetFilters[key] === "all" || p.facets[key].includes(facetFilters[key]))
+      );
+    });
+  }, [catFilter, diffFilter, facetFilters, query]);
+
+  const verifiedChallenges = CHALLENGES.filter((p) => p.lifecycle === "published");
   const stats = {
-    total: PROBLEMS.length,
-    solved: PROBLEMS.filter((p) => p.solved).length,
+    total: CHALLENGES.length,
+    verified: verifiedChallenges.length,
+    solved: verifiedChallenges.filter((p) => p.solved).length,
   };
 
   function openProblem(p: Problem) {
     setActiveProblem(p);
-    setCode(STARTER_CODES[p.id] || STARTER_CODES.default);
+    setCode(p.template || DEFAULT_STARTER_CODE);
     setTasmOutput("");
     setVmConsoleOutput("TreatCode Terminal initialized. Select a problem and click Run Code to begin.");
     setRegisters({});
@@ -710,7 +515,7 @@ export default function App() {
     try {
       const res = await fetch("/api/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: actionHeaders(),
         body: JSON.stringify({
           problemId: activeProblem.id,
           code,
@@ -775,7 +580,7 @@ export default function App() {
     try {
       const res = await fetch("/api/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: actionHeaders(),
         body: JSON.stringify({
           problemId: activeProblem.id,
           code,
@@ -937,6 +742,9 @@ export default function App() {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
               {diff(activeProblem.difficulty)}
               {cat(activeProblem.category)}
+              <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, fontFamily: "var(--font-mono)", color: "var(--color-text-secondary)", border: "0.5px solid var(--color-border-tertiary)" }}>
+                {activeProblem.lifecycle === "published" ? "verified" : "draft / compile-only"}
+              </span>
               {activeProblem.tags.map((t) => (
                 <span
                   key={t}
@@ -1034,9 +842,9 @@ export default function App() {
                 }}
               >
                 {[
-                  ["Submissions", activeProblem.submissions.toLocaleString()],
-                  ["Acceptance", activeProblem.acceptance + "%"],
-                  ["Points", activeProblem.points],
+                  ["Submissions", activeProblem.lifecycle === "published" ? activeProblem.submissions.toLocaleString() : "-"],
+                  ["Acceptance", activeProblem.lifecycle === "published" ? activeProblem.acceptance + "%" : "-"],
+                  ["Points", activeProblem.lifecycle === "published" ? activeProblem.points : "-"],
                   ["Streak bonus", "×1.5"],
                 ].map(([k, v]) => (
                   <div
@@ -1140,7 +948,7 @@ export default function App() {
 
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => setCode(STARTER_CODES[activeProblem.id] || STARTER_CODES.default)}
+                    onClick={() => setCode(activeProblem.template || DEFAULT_STARTER_CODE)}
                     style={{
                       fontSize: 12,
                       padding: "4px 12px",
@@ -1155,25 +963,27 @@ export default function App() {
                   </button>
                   <button
                     onClick={handleRun}
-                    disabled={running}
+                    disabled={running || !canTest}
+                    title={canTest ? "Run the bounded task" : "Log in with a credential that grants test"}
                     style={{
                       fontSize: 12,
                       padding: "4px 12px",
                       borderRadius: 4,
                       border: "0.5px solid var(--color-border-primary)",
                       background: "var(--color-background-primary)",
-                      cursor: running ? "default" : "pointer",
+                      cursor: running || !canTest ? "default" : "pointer",
                       fontFamily: "var(--font-mono)",
                       color: "var(--color-text-primary)",
                       fontWeight: 500,
-                      opacity: running ? 0.6 : 1,
+                      opacity: running || !canTest ? 0.6 : 1,
                     }}
                   >
                     {running ? "Compiling..." : "▶ run"}
                   </button>
                   <button
                     onClick={handleSubmit}
-                    disabled={running}
+                    disabled={running || !canSubmit}
+                    title={canSubmit ? "Submit the solution" : "Log in with edit and test grants"}
                     style={{
                       fontSize: 12,
                       padding: "4px 14px",
@@ -1181,10 +991,10 @@ export default function App() {
                       border: "none",
                       background: "var(--color-border-primary)",
                       color: "var(--color-background-primary)",
-                      cursor: running ? "default" : "pointer",
+                      cursor: running || !canSubmit ? "default" : "pointer",
                       fontFamily: "var(--font-mono)",
                       fontWeight: 600,
-                      opacity: running ? 0.6 : 1,
+                      opacity: running || !canSubmit ? 0.6 : 1,
                     }}
                   >
                     🚀 submit
@@ -1468,7 +1278,7 @@ export default function App() {
     );
   }
 
-  // ── PROBLEMS LIST ───────────────────────────────────────────────────────────
+  // ── CHALLENGES LIST ───────────────────────────────────────────────────────────
   if (view === "problems") {
     return (
       <div
@@ -1479,7 +1289,7 @@ export default function App() {
           padding: "0 24px",
         }}
       >
-        <Nav view={view} setView={setView} />
+        <Nav view={view} setView={setView} auth={authUi} />
         <div style={{ padding: "28px 0" }}>
           <div
             style={{
@@ -1490,11 +1300,11 @@ export default function App() {
             }}
           >
             {[
-              ["total", PROBLEMS.length, "var(--color-text-primary)"],
+              ["total", CHALLENGES.length, "var(--color-text-primary)"],
               ["solved", stats.solved, "#3B6D11"],
-              ["easy", PROBLEMS.filter((p) => p.difficulty === "easy").length, "#3B6D11"],
-              ["medium", PROBLEMS.filter((p) => p.difficulty === "medium").length, "#854F0B"],
-              ["hard", PROBLEMS.filter((p) => p.difficulty === "hard").length, "#A32D2D"],
+              ["easy", CHALLENGES.filter((p) => p.difficulty === "easy").length, "#3B6D11"],
+              ["medium", CHALLENGES.filter((p) => p.difficulty === "medium").length, "#854F0B"],
+              ["hard", CHALLENGES.filter((p) => p.difficulty === "hard").length, "#A32D2D"],
             ].map(([k, v, c]) => (
               <div
                 key={k as string}
@@ -1582,6 +1392,60 @@ export default function App() {
           </div>
 
           <div
+            aria-label="Challenge search and facets"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(220px, 1.3fr) repeat(3, minmax(145px, 1fr))",
+              gap: 8,
+              marginBottom: 18,
+            }}
+          >
+            <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              Search
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="title, tag, facet, or ID"
+                aria-label="Search challenges"
+                style={{ padding: "8px 10px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 12, textTransform: "none", letterSpacing: "normal" }}
+              />
+            </label>
+            {FACET_KEYS.slice(0, 3).map((key) => (
+              <label key={key} style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 10, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                {key.replace(/_/g, " ")}
+                <select
+                  value={facetFilters[key]}
+                  onChange={(event) => setFacetFilters((current) => ({ ...current, [key]: event.target.value }))}
+                  aria-label={`Filter by ${key.replace(/_/g, " ")}`}
+                  style={{ padding: "7px 8px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 12 }}
+                >
+                  <option value="all">All</option>
+                  {CHALLENGE_DATA.facet_dimensions[key].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+            {FACET_KEYS.slice(3).map((key) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--color-text-secondary)" }}>
+                <span>{key.replace(/_/g, " ")}</span>
+                <select
+                  value={facetFilters[key]}
+                  onChange={(event) => setFacetFilters((current) => ({ ...current, [key]: event.target.value }))}
+                  aria-label={`Filter by ${key.replace(/_/g, " ")}`}
+                  style={{ padding: "4px 6px", border: "0.5px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontSize: 11 }}
+                >
+                  <option value="all">all</option>
+                  {CHALLENGE_DATA.facet_dimensions[key].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+            ))}
+            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--color-text-secondary)" }}>
+              {filteredProblems.length} shown · draft entries are compile-only
+            </span>
+          </div>
+
+          <div
             style={{
               border: "0.5px solid var(--color-border-tertiary)",
               borderRadius: 8,
@@ -1645,7 +1509,8 @@ export default function App() {
                       {p.id}
                     </td>
                     <td style={{ padding: "10px 14px", fontWeight: 500 }}>
-                      {p.title}
+                      <div>{p.title}</div>
+                      {p.lifecycle !== "published" && <div style={{ marginTop: 3, fontSize: 10, color: "var(--color-text-secondary)", fontFamily: "var(--font-mono)" }}>draft / compile-only</div>}
                     </td>
                     <td style={{ padding: "10px 14px" }}>
                       {diff(p.difficulty)}
@@ -1678,7 +1543,7 @@ export default function App() {
                         color: "var(--color-text-secondary)",
                       }}
                     >
-                      {p.acceptance}%
+                      {p.lifecycle === "published" ? `${p.acceptance}%` : "-"}
                     </td>
                     <td
                       style={{
@@ -1687,7 +1552,7 @@ export default function App() {
                         fontSize: 12,
                       }}
                     >
-                      {p.points}
+                      {p.lifecycle === "published" ? p.points : "-"}
                     </td>
                   </tr>
                 ))}
@@ -1717,7 +1582,7 @@ export default function App() {
           padding: "0 24px",
         }}
       >
-        <Nav view={view} setView={setView} />
+        <Nav view={view} setView={setView} auth={authUi} />
         <div style={{ padding: "28px 0" }}>
           <div
             style={{
@@ -1881,7 +1746,7 @@ export default function App() {
           padding: "0 24px",
         }}
       >
-        <Nav view={view} setView={setView} />
+        <Nav view={view} setView={setView} auth={authUi} />
         <div style={{ padding: "28px 0" }}>
           <h2 style={{ fontSize: 18, fontWeight: 500, margin: "0 0 6px" }}>
             Contribute to ulib
@@ -2173,7 +2038,7 @@ export default function App() {
           padding: "0 24px",
         }}
       >
-        <Nav view={view} setView={setView} />
+        <Nav view={view} setView={setView} auth={authUi} />
         <section
           aria-labelledby="learning-title"
           style={{
@@ -2412,7 +2277,7 @@ export default function App() {
             <LearningInteractiveModule
               key={activeTopic.id}
               module={activeTopic.interactive}
-              onOpenChallenges={() => openProblem(PROBLEMS[0])}
+              onOpenChallenges={() => openProblem(CHALLENGES[0])}
             />
 
             <LearningProvenance page={activeTopic} />
@@ -2519,7 +2384,7 @@ export default function App() {
         padding: "0 24px",
       }}
     >
-      <Nav view={view} setView={setView} />
+      <Nav view={view} setView={setView} auth={authUi} />
 
       <div
         style={{
@@ -2607,7 +2472,7 @@ export default function App() {
             Browse Problems →
           </button>
           <button
-            onClick={() => openProblem(PROBLEMS[0])}
+            onClick={() => openProblem(CHALLENGES[0])}
             style={{
               padding: "9px 22px",
               borderRadius: 6,
@@ -2632,7 +2497,7 @@ export default function App() {
         }}
       >
         {[
-          ["Problems", PROBLEMS.length],
+          ["Problems", CHALLENGES.length],
           ["Active Solvers", "847"],
           ["ulib Functions", "47"],
           ["Open Proposals", "4"],
@@ -2700,7 +2565,7 @@ export default function App() {
               overflow: "hidden",
             }}
           >
-            {PROBLEMS.slice(0, 7).map((p, i) => (
+            {CHALLENGES.slice(0, 7).map((p, i) => (
               <div
                 key={p.id}
                 onClick={() => openProblem(p)}
@@ -2840,8 +2705,8 @@ export default function App() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {CATEGORIES.filter((c) => c.id !== "all").map((c) => {
-                const total = PROBLEMS.filter((p) => p.category === c.id).length;
-                const solved = PROBLEMS.filter((p) => p.category === c.id && p.solved).length;
+                const total = CHALLENGES.filter((p) => p.category === c.id).length;
+                const solved = CHALLENGES.filter((p) => p.category === c.id && p.lifecycle === "published" && p.solved).length;
                 const pct = Math.round((solved / total) * 100);
                 return (
                   <div

@@ -1,0 +1,424 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:benchmark:benchmark",
+      "entity_type": "benchmark",
+      "name": "benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "workload": "Performance-oriented benchmark regression harness.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "referenced",
+      "documentation_paths": [
+        "BENCHMARK_MANIFEST.json",
+        "BENCHMARK_PROTOCOL_SCHEMA.json",
+        "benchmarks/reference/p10-reference.v1.json"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "benchmarks/reference/p10-reference.v1.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:benchmark-bitnet-os",
+      "entity_type": "benchmark",
+      "name": "benchmark_bitnet_os",
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "workload": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "active",
+      "documentation_paths": [
+        "docs/10_Benchmarks/system_benchmark_plan.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/system_benchmark_plan.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/doom.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/bitnet.md",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:benchmark-doom-os",
+      "entity_type": "benchmark",
+      "name": "benchmark_doom_os",
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "workload": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "active",
+      "documentation_paths": [
+        "docs/10_Benchmarks/system_benchmark_plan.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/system_benchmark_plan.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/doom.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/bitnet.md",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:p10-optimization-lab",
+      "entity_type": "benchmark",
+      "name": "p10-optimization-lab",
+      "description": "Correctness-gated, representation-aware benchmark protocol with tritwise and vector/matrix pilots.",
+      "workload": "P10 tritwise sign inversion and vector/matrix dot-product pilots.",
+      "metric": "time, VM cycles, instructions, dispatches, memory traffic, code size, register pressure, allocations, and hardware proxies",
+      "budget": "two warmups, seven measured repetitions, and a declared coefficient-of-variation envelope",
+      "status": "active",
+      "documentation_paths": [
+        "BENCHMARK_MANIFEST.json",
+        "BENCHMARK_PROTOCOL_SCHEMA.json",
+        "benchmarks/reference/p10-reference.v1.json",
+        "treatcode/src/ImplementationArena.tsx"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "benchmarks/reference/p10-reference.v1.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "treatcode/src/ImplementationArena.tsx",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:system-benchmarks",
+      "entity_type": "benchmark",
+      "name": "system_benchmarks",
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "workload": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "active",
+      "documentation_paths": [
+        "docs/10_Benchmarks/system_benchmark_plan.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/system_benchmark_plan.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/doom.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "docs/10_Benchmarks/bitnet.md",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:test-benchmark",
+      "entity_type": "benchmark",
+      "name": "test_benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "workload": "Performance-oriented benchmark regression harness.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "referenced",
+      "documentation_paths": [
+        "BENCHMARK_MANIFEST.json",
+        "BENCHMARK_PROTOCOL_SCHEMA.json",
+        "benchmarks/reference/p10-reference.v1.json"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "benchmarks/reference/p10-reference.v1.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:test-execution-backends-benchmark",
+      "entity_type": "benchmark",
+      "name": "test_execution_backends_benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "workload": "Performance-oriented benchmark regression harness.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "referenced",
+      "documentation_paths": [
+        "BENCHMARK_MANIFEST.json",
+        "BENCHMARK_PROTOCOL_SCHEMA.json",
+        "benchmarks/reference/p10-reference.v1.json"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_MANIFEST.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "BENCHMARK_PROTOCOL_SCHEMA.json",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "benchmarks/reference/p10-reference.v1.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:test-malloc-micro",
+      "entity_type": "benchmark",
+      "name": "test_malloc_micro",
+      "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "workload": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "referenced",
+      "documentation_paths": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:benchmark:test-scaling-profile-compact",
+      "entity_type": "benchmark",
+      "name": "test_scaling_profile_compact",
+      "description": "Current production profile gate mirrored by the CMake ci_production target.",
+      "workload": "Current production profile gate mirrored by the CMake ci_production target.",
+      "metric": "repeatable test or workload result",
+      "budget": "recorded by the authoritative test manifest",
+      "status": "referenced",
+      "documentation_paths": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "benchmarks",
+    "count": 9,
+    "total": 9
+  },
+  "links": {
+    "self": "/api/public/v1/benchmarks"
+  }
+}

@@ -1,0 +1,1073 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:test:benchmark-bitnet-os",
+      "entity_type": "test",
+      "name": "benchmark_bitnet_os",
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "test_kind": "system_benchmarks",
+      "command": "python tools/trit_tool.py test system_benchmarks",
+      "asserts": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "status": "active",
+      "suite": "system_benchmarks",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:benchmark-doom-os",
+      "entity_type": "test",
+      "name": "benchmark_doom_os",
+      "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "test_kind": "system_benchmarks",
+      "command": "python tools/trit_tool.py test system_benchmarks",
+      "asserts": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
+      "status": "active",
+      "suite": "system_benchmarks",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-apps-consumer-bundle",
+      "entity_type": "test",
+      "name": "next_apps_consumer_bundle",
+      "description": "Referenced verification target next_apps_consumer_bundle.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_apps_consumer_bundle",
+      "asserts": "next_apps_consumer_bundle",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-apps-desktop-shell",
+      "entity_type": "test",
+      "name": "next_apps_desktop_shell",
+      "description": "Referenced verification target next_apps_desktop_shell.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_apps_desktop_shell",
+      "asserts": "next_apps_desktop_shell",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-assembler-goldens",
+      "entity_type": "test",
+      "name": "next_assembler_goldens",
+      "description": "Referenced verification target next_assembler_goldens.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_assembler_goldens",
+      "asserts": "next_assembler_goldens",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-compiler-native-ulib",
+      "entity_type": "test",
+      "name": "next_compiler_native_ulib",
+      "description": "Referenced verification target next_compiler_native_ulib.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_compiler_native_ulib",
+      "asserts": "next_compiler_native_ulib",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-compiler-phase-c5-pred",
+      "entity_type": "test",
+      "name": "next_compiler_phase_c5_pred",
+      "description": "Referenced verification target next_compiler_phase_c5_pred.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_compiler_phase_c5_pred",
+      "asserts": "next_compiler_phase_c5_pred",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-compiler-pipeline",
+      "entity_type": "test",
+      "name": "next_compiler_pipeline",
+      "description": "Referenced verification target next_compiler_pipeline.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_compiler_pipeline",
+      "asserts": "next_compiler_pipeline",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-drivers-hal",
+      "entity_type": "test",
+      "name": "next_drivers_hal",
+      "description": "Referenced verification target next_drivers_hal.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_drivers_hal",
+      "asserts": "next_drivers_hal",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-full-system-release",
+      "entity_type": "test",
+      "name": "next_full_system_release",
+      "description": "Referenced verification target next_full_system_release.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_full_system_release",
+      "asserts": "next_full_system_release",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-graphics-gui",
+      "entity_type": "test",
+      "name": "next_graphics_gui",
+      "description": "Referenced verification target next_graphics_gui.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_graphics_gui",
+      "asserts": "next_graphics_gui",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-runtime-ulib-sdk",
+      "entity_type": "test",
+      "name": "next_runtime_ulib_sdk",
+      "description": "Referenced verification target next_runtime_ulib_sdk.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_runtime_ulib_sdk",
+      "asserts": "next_runtime_ulib_sdk",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-vfs-persistence",
+      "entity_type": "test",
+      "name": "next_vfs_persistence",
+      "description": "Referenced verification target next_vfs_persistence.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_vfs_persistence",
+      "asserts": "next_vfs_persistence",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:next-vfs-recovery",
+      "entity_type": "test",
+      "name": "next_vfs_recovery",
+      "description": "Referenced verification target next_vfs_recovery.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R next_vfs_recovery",
+      "asserts": "next_vfs_recovery",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-agent-tooling",
+      "entity_type": "test",
+      "name": "test_agent_tooling",
+      "description": "Referenced verification target test_agent_tooling.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R test_agent_tooling",
+      "asserts": "test_agent_tooling",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-all-apps",
+      "entity_type": "test",
+      "name": "test_all_apps",
+      "description": "Native app compilation and desktop productization tests.",
+      "test_kind": "apps",
+      "command": "python tools/trit_tool.py test apps",
+      "asserts": "Native app compilation and desktop productization tests.",
+      "status": "active",
+      "suite": "apps",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-architecture-v2",
+      "entity_type": "test",
+      "name": "test_architecture_v2",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-benchmark",
+      "entity_type": "test",
+      "name": "test_benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "test_kind": "benchmark",
+      "command": "python tools/trit_tool.py test benchmark",
+      "asserts": "Performance-oriented benchmark regression harness.",
+      "status": "active",
+      "suite": "benchmark",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-consumer-shell-productization",
+      "entity_type": "test",
+      "name": "test_consumer_shell_productization",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-execution-backends-benchmark",
+      "entity_type": "test",
+      "name": "test_execution_backends_benchmark",
+      "description": "Performance-oriented benchmark regression harness.",
+      "test_kind": "benchmark",
+      "command": "python tools/trit_tool.py test benchmark",
+      "asserts": "Performance-oriented benchmark regression harness.",
+      "status": "active",
+      "suite": "benchmark",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-host-runtime",
+      "entity_type": "test",
+      "name": "test_host_runtime",
+      "description": "Fast host/runtime sanity checks for agent loops.",
+      "test_kind": "smoke",
+      "command": "python tools/trit_tool.py test smoke",
+      "asserts": "Fast host/runtime sanity checks for agent loops.",
+      "status": "active",
+      "suite": "smoke",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-kernel",
+      "entity_type": "test",
+      "name": "test_kernel",
+      "description": "Referenced verification target test_kernel.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R test_kernel",
+      "asserts": "test_kernel",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-layer1-hal",
+      "entity_type": "test",
+      "name": "test_layer1_hal",
+      "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "test_kind": "compiler",
+      "command": "python tools/trit_tool.py test compiler",
+      "asserts": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "status": "active",
+      "suite": "compiler",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-migration-v2",
+      "entity_type": "test",
+      "name": "test_migration_v2",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-multiwidth-vm",
+      "entity_type": "test",
+      "name": "test_multiwidth_vm",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-native-apps",
+      "entity_type": "test",
+      "name": "test_native_apps",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-native-ops",
+      "entity_type": "test",
+      "name": "test_native_ops",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-numeric-workloads",
+      "entity_type": "test",
+      "name": "test_numeric_workloads",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-os-platform",
+      "entity_type": "test",
+      "name": "test_os_platform",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-phase7-compiler",
+      "entity_type": "test",
+      "name": "test_phase7_compiler",
+      "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "test_kind": "compiler",
+      "command": "python tools/trit_tool.py test compiler",
+      "asserts": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "status": "active",
+      "suite": "compiler",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-phase-d-kernel",
+      "entity_type": "test",
+      "name": "test_phase_d_kernel",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-process-handoff",
+      "entity_type": "test",
+      "name": "test_process_handoff",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-production-hardening",
+      "entity_type": "test",
+      "name": "test_production_hardening",
+      "description": "Fast host/runtime sanity checks for agent loops.",
+      "test_kind": "smoke",
+      "command": "python tools/trit_tool.py test smoke",
+      "asserts": "Fast host/runtime sanity checks for agent loops.",
+      "status": "active",
+      "suite": "smoke",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-production-layers",
+      "entity_type": "test",
+      "name": "test_production_layers",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-redo-wal-v2",
+      "entity_type": "test",
+      "name": "test_redo_wal_v2",
+      "description": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "test_kind": "os",
+      "command": "python tools/trit_tool.py test os",
+      "asserts": "Kernel, platform, VFS, process handoff, native apps, and host runtime coverage.",
+      "status": "active",
+      "suite": "os",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-tcl-asm",
+      "entity_type": "test",
+      "name": "test_tcl_asm",
+      "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "test_kind": "compiler",
+      "command": "python tools/trit_tool.py test compiler",
+      "asserts": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
+      "status": "active",
+      "suite": "compiler",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-ternary-ir",
+      "entity_type": "test",
+      "name": "test_ternary_ir",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:test-ternary-lanes",
+      "entity_type": "test",
+      "name": "test_ternary_lanes",
+      "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "test_kind": "core",
+      "command": "python tools/trit_tool.py test core",
+      "asserts": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
+      "status": "active",
+      "suite": "core",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:test:treatcode-public-api-conformance",
+      "entity_type": "test",
+      "name": "treatcode-public-api-conformance",
+      "description": "Referenced verification target treatcode-public-api-conformance.",
+      "test_kind": "referenced_target",
+      "command": "ctest --test-dir build -R treatcode-public-api-conformance",
+      "asserts": "treatcode-public-api-conformance",
+      "status": "referenced",
+      "suite": null,
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "tests",
+    "count": 39,
+    "total": 39
+  },
+  "links": {
+    "self": "/api/public/v1/tests"
+  }
+}

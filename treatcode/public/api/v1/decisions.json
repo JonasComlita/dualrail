@@ -1,0 +1,537 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:decision:decision-registry-source-authority",
+      "entity_type": "decision",
+      "source_id": "trit.decision.registry.source-authority",
+      "name": "Root manifests and tests remain authoritative over navigation content",
+      "title": "Root manifests and tests remain authoritative over navigation content",
+      "description": "TreatCode registries are navigation and evidence data; implementation manifests, source, and tests decide current behavior.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-authority-manifests",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-authority-manifests"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-authority-manifested-source-of-truth"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/README.md",
+          "status": "resolved",
+          "role": "authority_policy"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "AGENTS.md",
+          "status": "resolved",
+          "role": "agent_policy"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-v2-over-v1-image",
+      "entity_type": "decision",
+      "source_id": "trit.decision.v2-over-v1-image",
+      "name": "Trit v2 image format is the current runtime boundary",
+      "title": "Trit v2 image format is the current runtime boundary",
+      "description": "The v2 runtime accepts the v2 image contract; v1 artifacts remain reproducible historical fixtures and are not runtime inputs.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-release-tboot-tdisk",
+      "supersedes": [
+        "tc:decision:trit-decision-historical-v1-image"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-boot-trap-loader",
+        "tc:contract:contract-release-tboot-tdisk"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-boot-native-trap-and-loader",
+        "tc:capability:capability-release-tboot-and-tdisk"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "IMAGE_FORMAT_MANIFEST.json",
+          "status": "resolved",
+          "role": "current_format"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "migrate_tos_artifacts.cpp",
+          "status": "resolved",
+          "role": "migration_boundary"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-historical-v1-image",
+      "entity_type": "decision",
+      "source_id": "trit.decision.historical-v1-image",
+      "name": "Historical v1 boot artifact is not a v2 runtime input",
+      "title": "Historical v1 boot artifact is not a v2 runtime input",
+      "description": "The historical artifact is evidence for migration and compatibility only, not simultaneous production truth.",
+      "disposition": "superseded",
+      "canonical": false,
+      "current_truth": "tc:contract:contract-release-tboot-tdisk",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-boot-trap-loader",
+        "tc:contract:contract-release-tboot-tdisk"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-boot-native-trap-and-loader",
+        "tc:capability:capability-release-tboot-and-tdisk"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f5b5b3d",
+          "path": "tests/fixtures/v1/manifest.json",
+          "status": "resolved",
+          "role": "historical_fixture"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "OS3/minimal_kernel_bringup.tasm",
+          "status": "missing",
+          "role": "historical_reference",
+          "reason": "Retired from the v2 tree; the v1 seed is preserved at tag trit-v1-final."
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-v2-over-os3-freeze",
+      "entity_type": "decision",
+      "source_id": "trit.decision.v2-over-os3-freeze",
+      "name": "Current v2 architecture supersedes the historical OS3 Phase 4 freeze",
+      "title": "Current v2 architecture supersedes the historical OS3 Phase 4 freeze",
+      "description": "The checked-in v2 manifests and implementation define current widths, ABI versions, and image readers; older OS3 freeze prose is historical context.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-isa-v2",
+      "supersedes": [
+        "tc:decision:trit-decision-historical-os3-freeze"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-isa-v2",
+        "tc:contract:contract-abi-v2",
+        "tc:contract:contract-binary-assembler"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-isa-v2-instruction-contract",
+        "tc:capability:capability-binary-two-pass-assembler"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ARCHITECTURE_MANIFEST.json",
+          "status": "resolved",
+          "role": "current_v2_contract"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_isa.h",
+          "status": "resolved",
+          "role": "current_isa"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-historical-os3-freeze",
+      "entity_type": "decision",
+      "source_id": "trit.decision.historical-os3-freeze",
+      "name": "Historical OS3 Phase 4 v1 freeze is rejected as current truth",
+      "title": "Historical OS3 Phase 4 v1 freeze is rejected as current truth",
+      "description": "References to the old Phase 4 freeze are retained as history and do not silently override v2 source manifests.",
+      "disposition": "rejected",
+      "canonical": false,
+      "current_truth": "tc:contract:contract-isa-v2",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-isa-v2",
+        "tc:contract:contract-abi-v2"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-isa-v2-instruction-contract"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "OS3/PHASE4_COMPLETION_ROADMAP.md",
+          "status": "missing",
+          "role": "historical_reference",
+          "reason": "The OS3 proposal tree is not present in the v2 repository."
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "README.md",
+          "status": "resolved",
+          "role": "historical_summary"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-vfs-bootstrap-separation",
+      "entity_type": "decision",
+      "source_id": "trit.decision.vfs-bootstrap-separation",
+      "name": "Bootstrap allocation stays non-relational until storage is ready",
+      "title": "Bootstrap allocation stays non-relational until storage is ready",
+      "description": "The trap path and bootstrap allocator must not depend on the relational store before its buffer and WAL foundations exist.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-storage-vfs-wal",
+      "supersedes": [
+        "tc:decision:trit-decision-historical-relational-first-bootstrap"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-kernel-process-syscall",
+        "tc:contract:contract-storage-vfs-wal"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-kernel-process-and-syscalls",
+        "tc:capability:capability-storage-vfs-wal-and-persistence"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tcl_native_rewrite.md",
+          "status": "resolved",
+          "role": "architecture_spec"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "kernel/bio.trit",
+          "status": "resolved",
+          "role": "implementation_boundary"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-historical-relational-first-bootstrap",
+      "entity_type": "decision",
+      "source_id": "trit.decision.historical-relational-first-bootstrap",
+      "name": "Relational-first bootstrap proposal is not the current bootstrap order",
+      "title": "Relational-first bootstrap proposal is not the current bootstrap order",
+      "description": "The accepted architecture explicitly preserves a flat bootstrap phase and records the migration boundary.",
+      "disposition": "rejected",
+      "canonical": false,
+      "current_truth": "tc:contract:contract-storage-vfs-wal",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-storage-vfs-wal"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-storage-vfs-wal-and-persistence"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "OS3/strategic_architecture.md",
+          "status": "missing",
+          "role": "historical_reference",
+          "reason": "Historical OS3 proposal is referenced by README but is not in the current tree."
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-jit-fallback",
+      "entity_type": "decision",
+      "source_id": "trit.decision.jit-fallback",
+      "name": "Optional execution acceleration must retain interpreter equivalence",
+      "title": "Optional execution acceleration must retain interpreter equivalence",
+      "description": "Fast execution paths are optional and must preserve the reference interpreter and diagnostics while the direct native lowering gap remains open.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-vm-execution",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-vm-execution",
+        "tc:contract:contract-host-runtime"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-vm-interpreter-and-jit-fallback",
+        "tc:capability:capability-host-desktop-runtime"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md",
+          "status": "resolved",
+          "role": "execution_policy"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "KNOWN_GAPS.md",
+          "status": "resolved",
+          "role": "native_jit_gap"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:decision-encoding-host-boundary",
+      "entity_type": "decision",
+      "source_id": "trit.decision.encoding.host-boundary",
+      "name": "ASCII, UTF-8, and hexadecimal remain compatibility projections",
+      "title": "ASCII, UTF-8, and hexadecimal remain compatibility projections",
+      "description": "Host text, manifest, diagnostic, and binary-inspection behavior remains compatible while ternary-native notation is designed separately.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:trit-contract-symbolic-encoding-compatibility",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-compatibility"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-encoding-ascii-compatibility",
+        "tc:capability:capability-encoding-utf8-compatibility",
+        "tc:capability:capability-encoding-hex-compatibility"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "encoding_policy"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-tascii81-not-abi",
+      "entity_type": "decision",
+      "source_id": "trit.decision.tascii81-not-abi",
+      "name": "Ternary-native symbolic encodings are proposals, not guest ABI",
+      "title": "Ternary-native symbolic encodings are proposals, not guest ABI",
+      "description": "TASCII-81, exact trit literals, and compact dumps need a fixed table and conversion tests before they can become stable guest-facing contracts.",
+      "disposition": "open",
+      "canonical": false,
+      "current_truth": "tc:contract:trit-contract-symbolic-encoding-compatibility",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-ternary-native"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-encoding-tascii81-ternary-native",
+        "tc:capability:capability-encoding-trit-literals-ternary-native",
+        "tc:capability:capability-encoding-base27-base81-dumps-ternary-native"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "proposal"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "KNOWN_GAPS.md",
+          "status": "resolved",
+          "role": "open_gap"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-encrypted-volume-design",
+      "entity_type": "decision",
+      "source_id": "trit.decision.encrypted-volume-design",
+      "name": "Encrypted-volume design remains an explicit two-track open decision",
+      "title": "Encrypted-volume design remains an explicit two-track open decision",
+      "description": "Compatibility integration and a possible ternary-native design are separate future capabilities; neither is implemented or selected by this registry.",
+      "disposition": "open",
+      "canonical": false,
+      "current_truth": null,
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:trit-contract-encrypted-volume-compatibility",
+        "tc:contract:trit-contract-encrypted-volume-ternary-native"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-storage-encrypted-volume-compatibility",
+        "tc:capability:capability-storage-encrypted-volume-ternary-native"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "KNOWN_GAPS.md",
+          "status": "resolved",
+          "role": "open_gap"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_montgomery.h",
+          "status": "resolved",
+          "role": "candidate_crypto_evidence"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:decision:trit-decision-self-hosting-last",
+      "entity_type": "decision",
+      "source_id": "trit.decision.self-hosting-last",
+      "name": "Self-hosting follows stable storage, product, and distribution boundaries",
+      "title": "Self-hosting follows stable storage, product, and distribution boundaries",
+      "description": "The native compiler is a late consumer of the persistent OS and release stack, not a replacement authority before those boundaries are verified.",
+      "disposition": "accepted",
+      "canonical": true,
+      "current_truth": "tc:contract:contract-compiler-self-hosted-subset",
+      "supersedes": [],
+      "contract_ids": [
+        "tc:contract:contract-compiler-self-hosted-subset"
+      ],
+      "capability_ids": [
+        "tc:capability:capability-language-self-hosted-subset"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "README.md",
+          "status": "resolved",
+          "role": "roadmap"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tcl_native_rewrite.md",
+          "status": "resolved",
+          "role": "bootstrap_guardrail"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "DECISION_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "decisions",
+    "count": 12,
+    "total": 12
+  },
+  "links": {
+    "self": "/api/public/v1/decisions"
+  }
+}

@@ -21,6 +21,8 @@ export default defineConfig({
         overview: "index.html",
         stack: "stack/index.html",
         learn: "learn/index.html",
+        operations: "operations/index.html",
+        arena: "arena/index.html",
       },
     },
   },

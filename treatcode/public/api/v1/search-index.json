@@ -1,0 +1,28 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": {
+    "searchable_resources": [
+      "projects",
+      "stack_nodes",
+      "components",
+      "capabilities",
+      "contracts",
+      "decisions",
+      "sources",
+      "symbols",
+      "tests",
+      "benchmarks",
+      "runs",
+      "releases",
+      "gaps"
+    ],
+    "relationship_count": 2040
+  }
+}

@@ -1,0 +1,3310 @@
+{
+  "schema": "treatcode.challenge_data.v1",
+  "manifest_schema": "treatcode.challenge_manifest.v1",
+  "manifest_version": 1,
+  "source_of_truth": "CHALLENGE_MANIFEST.json",
+  "facet_dimensions": {
+    "domain": [
+      "algorithms",
+      "architecture",
+      "concurrency",
+      "language-tools",
+      "logic",
+      "memory-safety",
+      "numerical",
+      "security"
+    ],
+    "technique": [
+      "atomic-coordination",
+      "balanced-arithmetic",
+      "constant-time-computation",
+      "data-structures",
+      "fused-accumulate",
+      "instruction-selection",
+      "interpreter-and-compiler",
+      "migration",
+      "ownership-and-borrowing",
+      "three-way-reasoning",
+      "tritwise",
+      "vector-dot-product",
+      "width-polymorphism",
+      "word-parallel",
+      "t1",
+      "ptr-t-s-",
+      "own-t-",
+      "t40",
+      "tldr",
+      "splitbuf",
+      "vec-sort",
+      "tst",
+      "heap",
+      "montgomery",
+      "mmu",
+      "match",
+      "ptr",
+      "own",
+      "tcmp",
+      "base-27",
+      "q13-13",
+      "bigint",
+      "atomic",
+      "epoch",
+      "msd-radix",
+      "huffman",
+      "skip-list",
+      "interval-tree",
+      "tsel",
+      "hensel-lifting",
+      "feistel",
+      "trit-shift",
+      "register-allocation",
+      "strength-reduction",
+      "peephole",
+      "vmac",
+      "tritwidth",
+      "esolang"
+    ],
+    "data_model": [
+      "balanced-integer",
+      "collections",
+      "scalar-trit",
+      "shared-state",
+      "streams",
+      "validated-pointers",
+      "vectors",
+      "word-parallel-trits"
+    ],
+    "stack_layer": [
+      "compiler",
+      "isa",
+      "language",
+      "library"
+    ],
+    "target": [
+      "tasm",
+      "tcl"
+    ],
+    "optimization_objective": [
+      "constant-time",
+      "correctness",
+      "latency",
+      "representation-dependent-cost",
+      "safety",
+      "throughput"
+    ]
+  },
+  "challenges": [
+    {
+      "id": "T001",
+      "title": "Three-Way Sign Test",
+      "lifecycle": "published",
+      "difficulty": "easy",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "match"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Given a `t40` value `x`, return its ternary sign — `-1` if negative, `0` if zero, `+1` if positive.\n\n### Constraints\n- Do not use `if` statements. The three-arm `match` construct is the intended solution mechanism. All three arms must be present.\n\n### Examples\n- `sign_test(-42)` → `-1`\n- `sign_test(0)` → `0`\n- `sign_test(99)` → `+1`",
+      "signature": "fn sign_test(x: t40) -> t40",
+      "template": "// T001 — Three-Way Sign Test\n// Given a t40 value, return:\n//   -1  if x is negative\n//    0  if x is zero\n//   +1  if x is positive\n//\n// Constraint: no if statements.\n// Use the native three-arm match.\n\nimport ulib;\n\nfn sign_test(x: t40) -> t40 {\n    // your solution here\n    \n}",
+      "stats": {
+        "solved": true,
+        "submissions": 2841,
+        "acceptance": 94,
+        "points": 50
+      },
+      "solved": true,
+      "submissions": 2841,
+      "acceptance": 94,
+      "points": 50,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T002",
+      "title": "Ternary FizzBuzz",
+      "lifecycle": "published",
+      "difficulty": "easy",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "match",
+        "arithmetic"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Given an integer `N`, print numbers from `1` to `N` (inclusive).\n    \nFor each number `i`:\n- If `i` is a multiple of 3, print `\"Trit\"` followed by a newline.\n- Otherwise, print `i` followed by a newline (using `sys_write_int` and `sys_newline`).\n\n### Constraints\n- `1 <= N <= 50`\n\n### Example Output for N = 5\n```text\n1\n2\nTrit\n4\n5\n```",
+      "signature": "fn multiples_of_three(n: t40) -> t40",
+      "template": "// T002 — Ternary FizzBuzz\n// Given an integer n, print numbers from 1 to n (inclusive).\n// For each number i:\n//   - If i is a multiple of 3, print \"Trit\" followed by a newline.\n//   - Otherwise, print i followed by a newline.\n//\n// Use: print_char(c) or print_string(str) or sys_write_char(c) or sys_write_int(val) or sys_newline()\n\nimport ulib;\n\nfn multiples_of_three(n: t40) -> t40 {\n    var i: t40 = 1;\n    while n - i >= 0 {\n        // Your code here:\n        \n        i = i + 1;\n    }\n    return 0;\n}",
+      "stats": {
+        "solved": true,
+        "submissions": 2103,
+        "acceptance": 91,
+        "points": 50
+      },
+      "solved": true,
+      "submissions": 2103,
+      "acceptance": 91,
+      "points": 50,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T003",
+      "title": "Three-State Machine",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "enum"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Design a simple finite state machine using three-valued logic state values. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T003 — Three-State Machine\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 1654,
+        "acceptance": 88,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 1654,
+      "acceptance": 88,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T004",
+      "title": "Null Pointer Safety Chain",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "pointer-safety",
+      "tags": [
+        "ptr<T,S>",
+        "match"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "ptr-t-s-"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Safely traverse a chain of pointers, handling any null pointer states securely. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T004 — Null Pointer Safety Chain\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 892,
+        "acceptance": 67,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 892,
+      "acceptance": 67,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T005",
+      "title": "Validated Buffer Walk",
+      "lifecycle": "published",
+      "difficulty": "medium",
+      "category": "pointer-safety",
+      "tags": [
+        "ptr<T,S>",
+        "borrow"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "ptr-t-s-"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Given a pointer to a null-terminated ASCII string, invert the characters of the string **in-place**.\n    \nYou must reverse the string in the allocated buffer without using extra string memory allocations.\n\n### Constraints\n- String length up to 50 characters.\n- Memory pointer is guaranteed to be `valid` and accessible.\n\n### Example\n- Input: `\"hello\"`\n- Output: `\"olleh\"`",
+      "signature": "fn invert_string(str: borrow<ptr<t40, user, valid>>) -> t40",
+      "template": "// T005 — Validated Buffer Walk\n// Given a pointer to a null-terminated ASCII string, invert the characters of the string in-place.\n// You must reverse the string in the allocated buffer without using extra string memory allocations.\n\nimport ulib;\n\nfn invert_string(str: borrow<ptr<t40, user, valid>>) -> t40 {\n    // Write your in-place string reversal code here\n    \n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 743,
+        "acceptance": 61,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 743,
+      "acceptance": 61,
+      "points": 150,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T006",
+      "title": "Ownership Transfer Chain",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "pointer-safety",
+      "tags": [
+        "own<T>",
+        "move"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "own-t-"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Implement ownership transfer mechanics across multiple worker context queues. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T006 — Ownership Transfer Chain\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 312,
+        "acceptance": 42,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 312,
+      "acceptance": 42,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T007",
+      "title": "Balanced Ternary Addition",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "T40",
+        "carry"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "t40"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement carry-save balanced ternary addition. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T007 — Balanced Ternary Addition\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": true,
+        "submissions": 3102,
+        "acceptance": 89,
+        "points": 50
+      },
+      "solved": true,
+      "submissions": 3102,
+      "acceptance": 89,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T008",
+      "title": "Sign-Free Absolute Value",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "T40",
+        "match"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "t40"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Compute the absolute value of a balanced ternary number without explicit branch testing. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T008 — Sign-Free Absolute Value\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": true,
+        "submissions": 2890,
+        "acceptance": 92,
+        "points": 50
+      },
+      "solved": true,
+      "submissions": 2890,
+      "acceptance": 92,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T009",
+      "title": "Ternary Integer Square Root",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "arithmetic",
+      "tags": [
+        "T40",
+        "binary-search"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "t40"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Compute the integer square root using base-3 binary-search variants. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T009 — Ternary Integer Square Root\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 621,
+        "acceptance": 54,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 621,
+      "acceptance": 54,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T010",
+      "title": "Big Integer Limb Multiply",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "arithmetic",
+      "tags": [
+        "T40",
+        "montgomery"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "t40"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement large limb multiplication matching Montgomery reduction layouts. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T010 — Big Integer Limb Multiply\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 204,
+        "acceptance": 31,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 204,
+      "acceptance": 31,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T011",
+      "title": "TLDR/TSTR Atomic Counter",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "concurrent",
+      "tags": [
+        "tldr",
+        "tstr",
+        "atomic"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "tldr"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Implement a thread-safe atomic counter using Triton-27 TLDR and TSTR assembly primitives. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T011 — TLDR/TSTR Atomic Counter\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 501,
+        "acceptance": 59,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 501,
+      "acceptance": 59,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T012",
+      "title": "Lock-Free Stack",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "concurrent",
+      "tags": [
+        "tldr",
+        "tstr",
+        "shared<T>"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "tldr"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Build a lock-free stack using hardware-native CAS-like instructions. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T012 — Lock-Free Stack\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 188,
+        "acceptance": 28,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 188,
+      "acceptance": 28,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T013",
+      "title": "Split Buffer Claim Race",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "concurrent",
+      "tags": [
+        "SplitBuf",
+        "atomic"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "splitbuf"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Coordinate buffer claims across parallel Triton threads under high contention. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T013 — Split Buffer Claim Race\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 97,
+        "acceptance": 22,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 97,
+      "acceptance": 22,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T014",
+      "title": "Ternary Search on Sorted Array",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "dsa",
+      "tags": [
+        "T40",
+        "search"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "t40"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement logarithmic search partitioning the search space into three equal parts. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T014 — Ternary Search on Sorted Array\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": true,
+        "submissions": 1987,
+        "acceptance": 86,
+        "points": 50
+      },
+      "solved": true,
+      "submissions": 1987,
+      "acceptance": 86,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T015",
+      "title": "Three-Way Partition Quicksort",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "dsa",
+      "tags": [
+        "vec_sort",
+        "pivot"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "vec-sort"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement Dutch National Flag partition logic for array sorting. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T015 — Three-Way Partition Quicksort\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 834,
+        "acceptance": 63,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 834,
+      "acceptance": 63,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T016",
+      "title": "TST String Interning",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "dsa",
+      "tags": [
+        "TST",
+        "string"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "tst"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement a Ternary Search Tree for space-efficient string interning lookup. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T016 — TST String Interning\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 567,
+        "acceptance": 58,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 567,
+      "acceptance": 58,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T017",
+      "title": "Ternary Heap Priority Queue",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "dsa",
+      "tags": [
+        "heap",
+        "T40"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "heap"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement a 3-ary heap priority queue with log3-bound insertion complexity. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T017 — Ternary Heap Priority Queue\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 289,
+        "acceptance": 38,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 289,
+      "acceptance": 38,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T018",
+      "title": "Montgomery Ladder Step",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "crypto",
+      "tags": [
+        "montgomery",
+        "T40"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "montgomery"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Coordinate constant-time ladder steps to protect against timing attacks. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T018 — Montgomery Ladder Step\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 143,
+        "acceptance": 19,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 143,
+      "acceptance": 19,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T019",
+      "title": "Constant-Time Comparison",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "crypto",
+      "tags": [
+        "T1",
+        "timing"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Evaluate memory block equality with uniform instructions to prevent side-channel leaks. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T019 — Constant-Time Comparison\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 412,
+        "acceptance": 55,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 412,
+      "acceptance": 55,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T020",
+      "title": "Execute-Only Page Guard",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "crypto",
+      "tags": [
+        "MMU",
+        "PTE"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "mmu"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Enforce execute-only page table permissions in Virtual Memory structures. (Compile Check Only Mode)",
+      "signature": "fn main() -> t40",
+      "template": "// T020 — Execute-Only Page Guard\nimport ulib;\n\nfn main() -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 78,
+        "acceptance": 15,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 78,
+      "acceptance": 15,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T021",
+      "title": "Three-State Conway's Game",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "cellular-automaton"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement a Conway's Game of Life variant on a grid using three states: dead (-1), dormant (0), and alive (+1). Birth and survival rules use T1 comparisons on neighbor counts.",
+      "signature": "fn conway_step(grid: borrow<[t1]>, width: t40, height: t40, next_grid: borrow_mut<[t1]>) -> t40",
+      "template": "// T021 — Three-State Conway's Game\nimport ulib;\n\nfn conway_step(grid: borrow<[t1]>, width: t40, height: t40, next_grid: borrow_mut<[t1]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 692,
+        "acceptance": 51,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 692,
+      "acceptance": 51,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T022",
+      "title": "Ternary Run-Length Encoding",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "three-valued",
+      "tags": [
+        "match",
+        "rle"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "match"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Given a t40 array, encode it as a sequence of (value, count) pairs. Use a three-arm match on value equality to drive the state machine cleanly.",
+      "signature": "fn encode_rle(in_arr: borrow<[t40]>, out_val: borrow_mut<[t40]>, out_count: borrow_mut<[t40]>) -> t40",
+      "template": "// T022 — Ternary Run-Length Encoding\nimport ulib;\n\nfn encode_rle(in_arr: borrow<[t40]>, out_val: borrow_mut<[t40]>, out_count: borrow_mut<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 262,
+        "acceptance": 60,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 262,
+      "acceptance": 60,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T023",
+      "title": "Balanced Logic Evaluator",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "expression-tree"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Evaluate an expression tree where AND/OR/NOT operations act on T1 values. Note that T1 is not a standard bool: -1 is False, 0 is Unknown, +1 is True. E.g., (-1) AND (+1) is False, but (0) OR (+1) is True.",
+      "signature": "fn evaluate_expr(nodes: borrow<[t40]>, left: borrow<[t40]>, right: borrow<[t40]>, root: t40) -> t40",
+      "template": "// T023 — Balanced Logic Evaluator\nimport ulib;\n\nfn evaluate_expr(nodes: borrow<[t40]>, left: borrow<[t40]>, right: borrow<[t40]>, root: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 325,
+        "acceptance": 53,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 325,
+      "acceptance": 53,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T024",
+      "title": "Three-Way String Classifier",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "three-valued",
+      "tags": [
+        "match",
+        "character"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "match"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Given a character code (t40), return: neg (-1) if it's a control character, zero (0) if it's whitespace, or pos (+1) if it's a printable character. Use range comparisons returning T1 with one match block and no lookup tables.",
+      "signature": "fn classify_char(c: t40) -> t1",
+      "template": "// T024 — Three-Way String Classifier\nimport ulib;\n\nfn classify_char(c: t40) -> t1 {\n    // your solution here\n    return zero;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 511,
+        "acceptance": 61,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 511,
+      "acceptance": 61,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T025",
+      "title": "Ternary Carry Propagation",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "three-valued",
+      "tags": [
+        "T1",
+        "carry-propagation"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "three-way-reasoning",
+          "t1"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Given a t40 array of trit digits in {-1, 0, +1}, normalize them into a balanced ternary format with no outstanding carries. Perform carry-chain handling iteratively using TCMP.",
+      "signature": "fn propagate_carries(digits: borrow_mut<[t40]>) -> t40",
+      "template": "// T025 — Ternary Carry Propagation\nimport ulib;\n\nfn propagate_carries(digits: borrow_mut<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 312,
+        "acceptance": 49,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 312,
+      "acceptance": 49,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T026",
+      "title": "Nullable Field Chain",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "pointer-safety",
+      "tags": [
+        "ptr",
+        "match"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "ptr"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Safely traverse a nested field chain a.b.c where each field pointer is of type ptr<t40, user, unknown>. Ensure every pointer state is checked before dereferencing to prevent compilation failures.",
+      "signature": "fn access_chain(a: ptr<ptr<t40, user, unknown>, user, unknown>) -> t40",
+      "template": "// T026 — Nullable Field Chain\nimport ulib;\n\nfn access_chain(a: ptr<ptr<t40, user, unknown>, user, unknown>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 428,
+        "acceptance": 33,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 428,
+      "acceptance": 33,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T027",
+      "title": "Pointer Chain Reversal",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "pointer-safety",
+      "tags": [
+        "ptr",
+        "linked-list"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "ptr"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Reverse a singly linked list in-place where next links are ptr<Node, user, unknown>. Ensure pointer states are validated and tracked correctly after updating each link.",
+      "signature": "fn reverse_list(head: ptr<t40, user, unknown>) -> ptr<t40, user, unknown>",
+      "template": "// T027 — Pointer Chain Reversal\nimport ulib;\n\nfn reverse_list(head: ptr<t40, user, unknown>) -> ptr<t40, user, unknown> {\n    // your solution here\n    return head;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 877,
+        "acceptance": 61,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 877,
+      "acceptance": 61,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T028",
+      "title": "Move Without Copy",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "pointer-safety",
+      "tags": [
+        "own",
+        "move"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "own"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Transfer ownership of a heap-allocated buffer through three successive function calls without cloning or copying. The compiler will check that the source binding is invalidated immediately after each transfer.",
+      "signature": "fn process_buffer(buf: own<ptr<t40, user, valid>>) -> own<ptr<t40, user, valid>>",
+      "template": "// T028 — Move Without Copy\nimport ulib;\n\nfn process_buffer(buf: own<ptr<t40, user, valid>>) -> own<ptr<t40, user, valid>> {\n    // your solution here\n    return buf;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 177,
+        "acceptance": 20,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 177,
+      "acceptance": 20,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T029",
+      "title": "Safe Arena Allocator",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "pointer-safety",
+      "tags": [
+        "ptr",
+        "allocator"
+      ],
+      "facets": {
+        "domain": [
+          "memory-safety"
+        ],
+        "technique": [
+          "ownership-and-borrowing",
+          "ptr"
+        ],
+        "data_model": [
+          "validated-pointers"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "safety"
+        ]
+      },
+      "description": "Implement a basic bump allocator over a fixed memory arena. Return ptr<t40, user, valid> on successful allocation, and ptr<t40, user, null> on exhaustion. Callers must validate pointer status before using the memory.",
+      "signature": "fn arena_alloc(arena: borrow_mut<ptr<t40, user, valid>>, size: t40, end: ptr<t40, user, valid>) -> ptr<t40, user, unknown>",
+      "template": "// T029 — Safe Arena Allocator\nimport ulib;\n\nfn arena_alloc(arena: borrow_mut<ptr<t40, user, valid>>, size: t40, end: ptr<t40, user, valid>) -> ptr<t40, user, unknown> {\n    // your solution here\n    return arena;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 378,
+        "acceptance": 18,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 378,
+      "acceptance": 18,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T030",
+      "title": "Ternary GCD",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "TCMP",
+        "euclidean"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "tcmp"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement the Euclidean GCD algorithm using TCMP for remainder checks. Balanced ternary representation is highly efficient because remainder calculations can be negative without affecting loop termination.",
+      "signature": "fn ternary_gcd(a: t40, b: t40) -> t40",
+      "template": "// T030 — Ternary GCD\nimport ulib;\n\nfn ternary_gcd(a: t40, b: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 502,
+        "acceptance": 41,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 502,
+      "acceptance": 41,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T031",
+      "title": "Ternary Integer Logarithm",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "arithmetic",
+      "tags": [
+        "TCMP",
+        "while-loop"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "tcmp"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Compute the floor of log₃(n) for n > 0. Implement a while loop driven by a T1 condition and terminate it using TCMP-based comparisons.",
+      "signature": "fn ternary_log3(n: t40) -> t40",
+      "template": "// T031 — Ternary Integer Logarithm\nimport ulib;\n\nfn ternary_log3(n: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 442,
+        "acceptance": 63,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 442,
+      "acceptance": 63,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T032",
+      "title": "Base-27 Formatter",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "base-27",
+        "itoa"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "base-27"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Format a t40 value as its base-27 representation with a 0z prefix. Requires extracting digits of base-27 (using base-3 groupings of 3 trits) and outputting characters.",
+      "signature": "fn format_base27(n: t40, out_str: borrow_mut<ptr<t40, user, valid>>) -> t40",
+      "template": "// T032 — Base-27 Formatter\nimport ulib;\n\nfn format_base27(n: t40, out_str: borrow_mut<ptr<t40, user, valid>>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 275,
+        "acceptance": 64,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 275,
+      "acceptance": 64,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T033",
+      "title": "Fixed-Point Multiply",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "arithmetic",
+      "tags": [
+        "Q13.13",
+        "multiply"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "q13-13"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Multiply two Q13.13 ternary fixed-point values (13 integer trits, 13 fractional trits packed in a t40 word). Handles sign propagation, wide multiplication, and shifting.",
+      "signature": "fn q_multiply(a: t40, b: t40) -> t40",
+      "template": "// T033 — Fixed-Point Multiply\nimport ulib;\n\nfn q_multiply(a: t40, b: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 348,
+        "acceptance": 61,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 348,
+      "acceptance": 61,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T034",
+      "title": "Multi-Precision Add",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "bigint",
+        "carry"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "bigint"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Add two big integers represented as arrays of t40 limbs, propagating carries sequentially. This serves as a building block for multi-precision cryptographic math.",
+      "signature": "fn bigint_add(a: borrow<[t40]>, b: borrow<[t40]>, out: borrow_mut<[t40]>) -> t40",
+      "template": "// T034 — Multi-Precision Add\nimport ulib;\n\nfn bigint_add(a: borrow<[t40]>, b: borrow<[t40]>, out: borrow_mut<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 590,
+        "acceptance": 21,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 590,
+      "acceptance": 21,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T035",
+      "title": "TLDR/TSTR Spinlock",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "concurrent",
+      "tags": [
+        "tldr",
+        "tstr",
+        "spinlock"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "tldr"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Implement lock() and unlock() using TLDR/TSTR atomic primitives. Lock state uses T1 values (neg = locked, pos = free). Avoid busy-spinning without a FENCE instruction.",
+      "signature": "fn spin_lock(lock_ptr: ptr<t1, shared, valid>) -> t40",
+      "template": "// T035 — TLDR/TSTR Spinlock\nimport ulib;\n\nfn spin_lock(lock_ptr: ptr<t1, shared, valid>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 663,
+        "acceptance": 34,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 663,
+      "acceptance": 34,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T036",
+      "title": "Three-Phase Barrier",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "concurrent",
+      "tags": [
+        "atomic",
+        "barrier"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "atomic"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Synchronize N concurrent threads using atomic decrement (via TLDR/TSTR). Threads pass through approach, wait, and release phases, which map directly onto the three ternary state values.",
+      "signature": "fn barrier_wait(counter: ptr<t40, shared, valid>, num_threads: t40) -> t40",
+      "template": "// T036 — Three-Phase Barrier\nimport ulib;\n\nfn barrier_wait(counter: ptr<t40, shared, valid>, num_threads: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 185,
+        "acceptance": 21,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 185,
+      "acceptance": 21,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T037",
+      "title": "Epoch-Based Reclamation",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "concurrent",
+      "tags": [
+        "epoch",
+        "memory-reclamation"
+      ],
+      "facets": {
+        "domain": [
+          "concurrency"
+        ],
+        "technique": [
+          "atomic-coordination",
+          "epoch"
+        ],
+        "data_model": [
+          "shared-state"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Safely reclaim concurrent memory without garbage collection. Threads publish their epoch status in a shared<t40, ACQ_REL> slot. Reclaim buffers only after all threads have moved past the epoch.",
+      "signature": "fn try_reclaim(epochs: borrow<[t40]>, reclaim_epoch: t40) -> t40",
+      "template": "// T037 — Epoch-Based Reclamation\nimport ulib;\n\nfn try_reclaim(epochs: borrow<[t40]>, reclaim_epoch: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 239,
+        "acceptance": 50,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 239,
+      "acceptance": 50,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T038",
+      "title": "Three-Way Radix Sort",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "dsa",
+      "tags": [
+        "msd-radix",
+        "sorting"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "msd-radix"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement a most-significant-digit (MSD) radix sort that partitions elements by trits. Enables branchless, in-place sorting at the digit level into neg, zero, and pos buckets.",
+      "signature": "fn radix_sort(arr: borrow_mut<[t40]>, digit_index: t40) -> t40",
+      "template": "// T038 — Three-Way Radix Sort\nimport ulib;\n\nfn radix_sort(arr: borrow_mut<[t40]>, digit_index: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 422,
+        "acceptance": 63,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 422,
+      "acceptance": 63,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T039",
+      "title": "Ternary Huffman Coding",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "dsa",
+      "tags": [
+        "huffman",
+        "tree"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "huffman"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Build an optimal prefix tree with up to 3 children per node. Satisfies the ternary tree leaf property ((n-1) mod 2 = 0), padding with dummy leaf nodes when required.",
+      "signature": "fn build_huffman_tree(freqs: borrow<[t40]>) -> t40",
+      "template": "// T039 — Ternary Huffman Coding\nimport ulib;\n\nfn build_huffman_tree(freqs: borrow<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 284,
+        "acceptance": 41,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 284,
+      "acceptance": 41,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T040",
+      "title": "TST Delete",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "dsa",
+      "tags": [
+        "TST",
+        "deletion"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "tst"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Delete a key from a Ternary Search Tree without corrupting prefix matches. Requires recursive safety checks and updating pointer states during node teardown.",
+      "signature": "fn tst_delete(root: ptr<t40, user, unknown>, key: borrow<ptr<t40, user, valid>>) -> ptr<t40, user, unknown>",
+      "template": "// T040 — TST Delete\nimport ulib;\n\nfn tst_delete(root: ptr<t40, user, unknown>, key: borrow<ptr<t40, user, valid>>) -> ptr<t40, user, unknown> {\n    // your solution here\n    return root;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 639,
+        "acceptance": 30,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 639,
+      "acceptance": 30,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T041",
+      "title": "Ternary Skip List",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "dsa",
+      "tags": [
+        "skip-list",
+        "probabilistic"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "skip-list"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement a skip list where each node has a random height. Use TCMP on a random t40 word to determine the level selection probabilistically, achieving O(log₃ n) lookup.",
+      "signature": "fn skip_list_search(head: ptr<t40, user, valid>, target: t40) -> t40",
+      "template": "// T041 — Ternary Skip List\nimport ulib;\n\nfn skip_list_search(head: ptr<t40, user, valid>, target: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 754,
+        "acceptance": 59,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 754,
+      "acceptance": 59,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T042",
+      "title": "Interval Tree Query",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "dsa",
+      "tags": [
+        "interval-tree",
+        "BST"
+      ],
+      "facets": {
+        "domain": [
+          "algorithms"
+        ],
+        "technique": [
+          "data-structures",
+          "interval-tree"
+        ],
+        "data_model": [
+          "collections"
+        ],
+        "stack_layer": [
+          "library"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Store intervals [lo, hi] and query for overlaps. Augment a BST with a max-endpoint field, driving search routing via three-way TCMP comparisons.",
+      "signature": "fn interval_search(root: ptr<t40, user, unknown>, q_lo: t40, q_hi: t40) -> t40",
+      "template": "// T042 — Interval Tree Query\nimport ulib;\n\nfn interval_search(root: ptr<t40, user, unknown>, q_lo: t40, q_hi: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 887,
+        "acceptance": 25,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 887,
+      "acceptance": 25,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T043",
+      "title": "Constant-Time Select",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "crypto",
+      "tags": [
+        "TSEL",
+        "branch-free"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "tsel"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Return a if condition is pos, b if neg, or c if zero, executing in constant time with no branches. Uses the TSEL hardware instruction directly.",
+      "signature": "fn ct_select(cond: t1, a: t40, b: t40, c: t40) -> t40",
+      "template": "// T043 — Constant-Time Select\nimport ulib;\n\nfn ct_select(cond: t1, a: t40, b: t40, c: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 560,
+        "acceptance": 32,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 560,
+      "acceptance": 32,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T044",
+      "title": "Hensel Lifting Step",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "crypto",
+      "tags": [
+        "hensel-lifting",
+        "newton-step"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "hensel-lifting"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Given N and x₀ such that N * x₀ ≡ 1 (mod 3), perform one Newton-Raphson step to double the correct digits. Serves as the core loop of Montgomery reduction parameter setup.",
+      "signature": "fn hensel_step(n: t40, x0: t40) -> t40",
+      "template": "// T044 — Hensel Lifting Step\nimport ulib;\n\nfn hensel_step(n: t40, x0: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 682,
+        "acceptance": 24,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 682,
+      "acceptance": 24,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T045",
+      "title": "Ternary Feistel Round",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "crypto",
+      "tags": [
+        "feistel",
+        "sub-word"
+      ],
+      "facets": {
+        "domain": [
+          "security"
+        ],
+        "technique": [
+          "constant-time-computation",
+          "feistel"
+        ],
+        "data_model": [
+          "scalar-trit"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "constant-time"
+        ]
+      },
+      "description": "Perform one Feistel cipher round. Split a t40 word into two t20 halves, evaluate the round function on one half, and add it mod 3 (tritwise XOR) to the other, then swap halves.",
+      "signature": "fn feistel_round(word: t40, key: t40) -> t40",
+      "template": "// T045 — Ternary Feistel Round\nimport ulib;\n\nfn feistel_round(word: t40, key: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 422,
+        "acceptance": 16,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 422,
+      "acceptance": 16,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T046",
+      "title": "Branch-Free Clamp",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "isa-optimization",
+      "tags": [
+        "TSEL",
+        "TCMP",
+        "optimization"
+      ],
+      "facets": {
+        "domain": [
+          "architecture"
+        ],
+        "technique": [
+          "instruction-selection",
+          "tsel"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tasm",
+          "tcl"
+        ],
+        "optimization_objective": [
+          "latency"
+        ]
+      },
+      "description": "Clamp a value x to the interval [lo, hi] without using conditional jump instructions (BRN, BRZ, BRP). Optimize cycle count by exploiting TCMP and TSEL.",
+      "signature": "fn clamp_branchfree(x: t40, lo: t40, hi: t40) -> t40",
+      "template": "// T046 — Branch-Free Clamp\nimport ulib;\n\nfn clamp_branchfree(x: t40, lo: t40, hi: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 302,
+        "acceptance": 20,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 302,
+      "acceptance": 20,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T047",
+      "title": "Sub-Word Pack / Unpack",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "isa-optimization",
+      "tags": [
+        "trit-shift",
+        "masking"
+      ],
+      "facets": {
+        "domain": [
+          "architecture"
+        ],
+        "technique": [
+          "instruction-selection",
+          "trit-shift"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tasm",
+          "tcl"
+        ],
+        "optimization_objective": [
+          "latency"
+        ]
+      },
+      "description": "Pack three t9 values into a single t40 word and extract them. The reference solution uses 8 instructions; find an optimized formulation using 4.",
+      "signature": "fn pack_unpack(a: t40, b: t40, c: t40) -> t40",
+      "template": "// T047 — Sub-Word Pack / Unpack\nimport ulib;\n\nfn pack_unpack(a: t40, b: t40, c: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 641,
+        "acceptance": 17,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 641,
+      "acceptance": 17,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T048",
+      "title": "Register Pressure Reduction",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "isa-optimization",
+      "tags": [
+        "register-allocation",
+        "stack-spill"
+      ],
+      "facets": {
+        "domain": [
+          "architecture"
+        ],
+        "technique": [
+          "instruction-selection",
+          "register-allocation"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tasm",
+          "tcl"
+        ],
+        "optimization_objective": [
+          "latency"
+        ]
+      },
+      "description": "Rewrite a complex calculation containing multiple intermediate results to reduce register pressure. Fit the logic within 24 registers with zero stack spills.",
+      "signature": "fn optimize_registers(a: t40, b: t40, c: t40, d: t40) -> t40",
+      "template": "// T048 — Register Pressure Reduction\nimport ulib;\n\nfn optimize_registers(a: t40, b: t40, c: t40, d: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 549,
+        "acceptance": 38,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 549,
+      "acceptance": 38,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T049",
+      "title": "Strength Reduction",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "isa-optimization",
+      "tags": [
+        "strength-reduction",
+        "trit-shift"
+      ],
+      "facets": {
+        "domain": [
+          "architecture"
+        ],
+        "technique": [
+          "instruction-selection",
+          "strength-reduction"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tasm",
+          "tcl"
+        ],
+        "optimization_objective": [
+          "latency"
+        ]
+      },
+      "description": "Replace multiplication operations with equivalent combinations of shifts and additions. E.g., multiply by 9 using base-3 shift operations to speed up execution.",
+      "signature": "fn multiply_fast(x: t40) -> t40",
+      "template": "// T049 — Strength Reduction\nimport ulib;\n\nfn multiply_fast(x: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 155,
+        "acceptance": 40,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 155,
+      "acceptance": 40,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T050",
+      "title": "Peephole Optimization",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "isa-optimization",
+      "tags": [
+        "peephole",
+        "redundancy"
+      ],
+      "facets": {
+        "domain": [
+          "architecture"
+        ],
+        "technique": [
+          "instruction-selection",
+          "peephole"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tasm",
+          "tcl"
+        ],
+        "optimization_objective": [
+          "latency"
+        ]
+      },
+      "description": "Analyze a provided assembly sequence and eliminate redundancies such as consecutive identical loads/stores, identity math, or dead branch conditions.",
+      "signature": "fn peephole_opt(x: t40) -> t40",
+      "template": "// T050 — Peephole Optimization\nimport ulib;\n\nfn peephole_opt(x: t40) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 644,
+        "acceptance": 38,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 644,
+      "acceptance": 38,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T051",
+      "title": "Generic Dot Product",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "width-polymorphism",
+      "tags": [
+        "VMAC",
+        "TritWidth",
+        "generic"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "width-polymorphism",
+          "vmac"
+        ],
+        "data_model": [
+          "vectors"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Write a generic dot product function over arrays of width W. Must lower to hardware VMAC instructions when instantiated at T1, or standard multiply-accumulate otherwise.",
+      "signature": "fn dot<W: TritWidth>(a: borrow<[T<W>]>, b: borrow<[T<W>]>) -> t40",
+      "template": "// T051 — Generic Dot Product\nimport ulib;\n\nfn dot<W: TritWidth>(a: borrow<[T<W>]>, b: borrow<[T<W>]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 762,
+        "acceptance": 54,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 762,
+      "acceptance": 54,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T052",
+      "title": "Width-Parametric Clamp",
+      "lifecycle": "draft",
+      "difficulty": "easy",
+      "category": "width-polymorphism",
+      "tags": [
+        "TritWidth",
+        "generic"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "width-polymorphism",
+          "tritwidth"
+        ],
+        "data_model": [
+          "vectors"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Create a generic clamp function for elements of width W. Constrain parameters lo and hi to be the exact same width as the input value x.",
+      "signature": "fn clamp<W: TritWidth>(x: T<W>, lo: T<W>, hi: T<W>) -> T<W>",
+      "template": "// T052 — Width-Parametric Clamp\nimport ulib;\n\nfn clamp<W: TritWidth>(x: T<W>, lo: T<W>, hi: T<W>) -> T<W> {\n    // your solution here\n    return x;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 501,
+        "acceptance": 50,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 501,
+      "acceptance": 50,
+      "points": 50,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T053",
+      "title": "Polymorphic Vec Map",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "width-polymorphism",
+      "tags": [
+        "TritWidth",
+        "generic",
+        "function-pointer"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "width-polymorphism",
+          "tritwidth"
+        ],
+        "data_model": [
+          "vectors"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Map a function f over an array of elements of width W. Note that TCL 1.0 does not support closures; f must be passed as a named function reference.",
+      "signature": "fn vec_map<W: TritWidth>(v: borrow<[T<W>]>, f: fn(T<W>) -> T<W>, out: borrow_mut<[T<W>]>)",
+      "template": "// T053 — Polymorphic Vec Map\nimport ulib;\n\nfn vec_map<W: TritWidth>(v: borrow<[T<W>]>, f: fn(T<W>) -> T<W>, out: borrow_mut<[T<W>]>) {\n    // your solution here\n    \n}",
+      "stats": {
+        "solved": false,
+        "submissions": 134,
+        "acceptance": 53,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 134,
+      "acceptance": 53,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T054",
+      "title": "Trinfuck Interpreter",
+      "lifecycle": "draft",
+      "difficulty": "medium",
+      "category": "trinfuck",
+      "tags": [
+        "esolang",
+        "interpreter"
+      ],
+      "facets": {
+        "domain": [
+          "language-tools"
+        ],
+        "technique": [
+          "interpreter-and-compiler",
+          "esolang"
+        ],
+        "data_model": [
+          "streams"
+        ],
+        "stack_layer": [
+          "compiler"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Implement an interpreter for Trinfuck (balanced ternary Brainfuck) in TCL 1.0. Program execution details: tape cells span [-9841, +9841], instruction '+' increments, '-' decrements, and ternary branch operators are '[', '{', '}'.",
+      "signature": "fn interpret(program: borrow<[t40]>) -> t40",
+      "template": "// T054 — Trinfuck Interpreter\nimport ulib;\n\nfn interpret(program: borrow<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 168,
+        "acceptance": 43,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 168,
+      "acceptance": 43,
+      "points": 150,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T055",
+      "title": "Trinfuck to TASM Compiler",
+      "lifecycle": "draft",
+      "difficulty": "hard",
+      "category": "trinfuck",
+      "tags": [
+        "esolang",
+        "meta-programming",
+        "compiler"
+      ],
+      "facets": {
+        "domain": [
+          "language-tools"
+        ],
+        "technique": [
+          "interpreter-and-compiler",
+          "esolang"
+        ],
+        "data_model": [
+          "streams"
+        ],
+        "stack_layer": [
+          "compiler"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Write a TCL program that compiles Trinfuck code to TASM assembly instructions in memory. Map operations to 1-4 assembly instructions, translating branches to BRZ/BRN/BRP.",
+      "signature": "fn compile_trinfuck(program: borrow<[t40]>) -> t40",
+      "template": "// T055 — Trinfuck to TASM Compiler\nimport ulib;\n\nfn compile_trinfuck(program: borrow<[t40]>) -> t40 {\n    // your solution here\n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 391,
+        "acceptance": 53,
+        "points": 300
+      },
+      "solved": false,
+      "submissions": 391,
+      "acceptance": 53,
+      "points": 300,
+      "execution": {
+        "mode": "compile-only",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T056",
+      "title": "Recursive Fibonacci",
+      "lifecycle": "published",
+      "difficulty": "easy",
+      "category": "arithmetic",
+      "tags": [
+        "T40",
+        "recursion"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "balanced-arithmetic",
+          "t40"
+        ],
+        "data_model": [
+          "balanced-integer"
+        ],
+        "stack_layer": [
+          "language"
+        ],
+        "target": [
+          "tcl"
+        ],
+        "optimization_objective": [
+          "correctness"
+        ]
+      },
+      "description": "Compute the Nth Fibonacci number recursively.\n\nFibonacci sequence:\n- `F(0) = 0`\n- `F(1) = 1`\n- `F(2) = 1`\n- `F(3) = 2`\n- `F(n) = F(n-1) + F(n-2)`\n\n### Constraints\n- `0 <= N <= 15`\n- Implement it **recursively** to verify proper register spill and call stack mechanics in the VM!",
+      "signature": "fn fibonacci(n: t40) -> t40",
+      "template": "// T056 — Recursive Fibonacci\n// Compute the Nth Fibonacci number recursively.\n// F(0) = 0, F(1) = 1, F(n) = F(n-1) + F(n-2)\n// Implement it recursively to verify call stack mechanics in the VM.\n\nimport ulib;\n\nfn fibonacci(n: t40) -> t40 {\n    // Write your recursive code here\n    \n    return 0;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 1880,
+        "acceptance": 75,
+        "points": 50
+      },
+      "solved": false,
+      "submissions": 1880,
+      "acceptance": 75,
+      "points": 50,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 250000,
+          "max_output_bytes": 8192
+        }
+      }
+    },
+    {
+      "id": "T057",
+      "title": "Word-Parallel Tritwise Cost",
+      "lifecycle": "published",
+      "difficulty": "medium",
+      "category": "isa-optimization",
+      "tags": [
+        "TLAND",
+        "tritwise",
+        "word-parallel",
+        "cost-model"
+      ],
+      "facets": {
+        "domain": [
+          "logic"
+        ],
+        "technique": [
+          "tritwise",
+          "word-parallel"
+        ],
+        "data_model": [
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa"
+        ],
+        "target": [
+          "tcl",
+          "tasm"
+        ],
+        "optimization_objective": [
+          "latency",
+          "representation-dependent-cost"
+        ]
+      },
+      "description": "Apply a tritwise operation to a packed word and preserve the representation-dependent cost contract. The correctness result must match the scalar reference while the published limit records the word-parallel budget.",
+      "signature": "fn word_parallel_mask(x: t40) -> t40",
+      "template": "// T057 — Word-Parallel Tritwise Cost\nimport ulib;\n\nfn word_parallel_mask(x: t40) -> t40 {\n    // Use the word-parallel tritwise primitive where available.\n    return x;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 0,
+        "acceptance": 0,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 0,
+      "acceptance": 0,
+      "points": 150,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 120000,
+          "max_output_bytes": 1024
+        }
+      }
+    },
+    {
+      "id": "T058",
+      "title": "Ternary Vector Dot Product",
+      "lifecycle": "published",
+      "difficulty": "medium",
+      "category": "width-polymorphism",
+      "tags": [
+        "vector",
+        "dot-product",
+        "VMAC",
+        "TritWidth"
+      ],
+      "facets": {
+        "domain": [
+          "numerical"
+        ],
+        "technique": [
+          "vector-dot-product",
+          "fused-accumulate"
+        ],
+        "data_model": [
+          "vectors",
+          "word-parallel-trits"
+        ],
+        "stack_layer": [
+          "isa",
+          "library"
+        ],
+        "target": [
+          "tcl",
+          "tasm"
+        ],
+        "optimization_objective": [
+          "throughput"
+        ]
+      },
+      "description": "Compute a three-lane dot product with balanced ternary values. The fixture keeps the lane order explicit so scalar and vector implementations share one deterministic correctness contract.",
+      "signature": "fn dot3(a0: t40, a1: t40, a2: t40, b0: t40, b1: t40, b2: t40) -> t40",
+      "template": "// T058 — Ternary Vector Dot Product\nimport ulib;\n\nfn dot3(a0: t40, a1: t40, a2: t40, b0: t40, b1: t40, b2: t40) -> t40 {\n    // Replace the scalar reference with the vector/VMAC path.\n    return a0 * b0 + a1 * b1 + a2 * b2;\n}",
+      "stats": {
+        "solved": false,
+        "submissions": 0,
+        "acceptance": 0,
+        "points": 150
+      },
+      "solved": false,
+      "submissions": 0,
+      "acceptance": 0,
+      "points": 150,
+      "execution": {
+        "mode": "verified",
+        "runner": "tcl-vm",
+        "limits": {
+          "time_ms": 2000,
+          "memory_kib": 65536,
+          "max_cycles": 180000,
+          "max_output_bytes": 1024
+        }
+      }
+    }
+  ]
+}

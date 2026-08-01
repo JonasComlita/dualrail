@@ -123,6 +123,7 @@ function buildSnapshot() {
   const decisionsManifest = readJson("DECISION_MANIFEST.json");
   const coverageManifest = readJson("STACK_COVERAGE_REPORT.json");
   const testManifest = readJson("TEST_MANIFEST.json");
+  const benchmarkManifest = readJson("BENCHMARK_MANIFEST.json");
 
   const layerIdByRaw = new Map();
   const capabilityIdByRaw = new Map();
@@ -153,6 +154,7 @@ function buildSnapshot() {
     }
     if (suite.name?.includes("benchmark") || suite.name === "system_benchmarks") benchmarkNames.add(suite.name);
   }
+  if (benchmarkManifest.schema === "trit.benchmark_manifest.v1") benchmarkNames.add("p10-optimization-lab");
   const referencedTests = new Set();
   const referencedBenchmarks = new Set();
   for (const item of asArray(stack.layers)) {
@@ -175,6 +177,9 @@ function buildSnapshot() {
     "README.md",
     "KNOWN_GAPS.md",
     "TEST_MANIFEST.json",
+    "BENCHMARK_MANIFEST.json",
+    "BENCHMARK_PROTOCOL_SCHEMA.json",
+    "benchmarks/reference/p10-reference.v1.json",
     "STACK_MANIFEST.json",
     "CAPABILITY_MANIFEST.json",
     "CONTRACT_MANIFEST.json",
@@ -208,6 +213,7 @@ function buildSnapshot() {
   sourcePaths.add("docs/10_Benchmarks/system_benchmark_plan.md");
   sourcePaths.add("docs/10_Benchmarks/doom.md");
   sourcePaths.add("docs/10_Benchmarks/bitnet.md");
+  sourcePaths.add("treatcode/src/ImplementationArena.tsx");
 
   const sourceRecords = [];
   const sourceIdByPath = new Map();
@@ -392,16 +398,19 @@ function buildSnapshot() {
 
   const benchmarks = [...benchmarkIdByRaw.keys()].sort().map((name) => {
     const suite = suiteByTarget.get(name) || asArray(testManifest.suites).find((item) => item.name === name);
-    const docs = asArray(suite?.docs);
+    const isP10 = name === "p10-optimization-lab";
+    const docs = isP10
+      ? ["BENCHMARK_MANIFEST.json", "BENCHMARK_PROTOCOL_SCHEMA.json", "benchmarks/reference/p10-reference.v1.json", "treatcode/src/ImplementationArena.tsx"]
+      : asArray(suite?.docs);
     return {
       id: benchmarkIdByRaw.get(name),
       entity_type: "benchmark",
       name,
-      description: suite?.description || `Benchmark evidence for ${name}.`,
-      workload: suite?.description || name,
-      metric: "repeatable test or workload result",
-      budget: "recorded by the authoritative test manifest",
-      status: suite?.status || "referenced",
+      description: isP10 ? "Correctness-gated, representation-aware benchmark protocol with tritwise and vector/matrix pilots." : suite?.description || `Benchmark evidence for ${name}.`,
+      workload: isP10 ? "P10 tritwise sign inversion and vector/matrix dot-product pilots." : suite?.description || name,
+      metric: isP10 ? "time, VM cycles, instructions, dispatches, memory traffic, code size, register pressure, allocations, and hardware proxies" : "repeatable test or workload result",
+      budget: isP10 ? "two warmups, seven measured repetitions, and a declared coefficient-of-variation envelope" : "recorded by the authoritative test manifest",
+      status: isP10 ? "active" : suite?.status || "referenced",
       documentation_paths: docs,
       source_refs: sourceRefsFor(["TEST_MANIFEST.json", ...docs]),
       evidence_refs: sourceRefsFor(["TEST_MANIFEST.json"]),
@@ -507,7 +516,32 @@ function buildSnapshot() {
     });
   }
 
-  const allEntities = [projects, stackNodes, components, capabilities, contracts, decisions, sourceRecords, symbolRecords, tests, benchmarks, releases, gaps];
+  const runs = [
+    {
+      id: "tc:run:baseline-smoke",
+      entity_type: "run",
+      name: "Smoke baseline",
+      run_kind: "test_suite",
+      started_at: generatedAt,
+      result: "passed",
+      command: "tools/trit-test.ps1 smoke",
+      source_refs: sourceRefsFor(["TEST_MANIFEST.json"]),
+      evidence_refs: sourceRefsFor(["build/diagnostics/latest/agent_diagnostics.json"]),
+    },
+    {
+      id: "tc:run:baseline-production",
+      entity_type: "run",
+      name: "Production baseline",
+      run_kind: "test_suite",
+      started_at: generatedAt,
+      result: "passed",
+      command: "tools/trit-test.ps1 production",
+      source_refs: sourceRefsFor(["TEST_MANIFEST.json"]),
+      evidence_refs: sourceRefsFor(["build/diagnostics/latest/agent_diagnostics.json"]),
+    },
+  ];
+
+  const allEntities = [projects, stackNodes, components, capabilities, contracts, decisions, sourceRecords, symbolRecords, tests, benchmarks, runs, releases, gaps];
   const counts = {};
   for (const collection of allEntities) for (const item of collection) counts[item.entity_type || "entity"] = (counts[item.entity_type || "entity"] || 0) + 1;
   counts.relations = relations.length;
@@ -531,30 +565,7 @@ function buildSnapshot() {
     symbols: symbolRecords,
     tests,
     benchmarks,
-    runs: [
-      {
-        id: "tc:run:baseline-smoke",
-        entity_type: "run",
-        name: "Smoke baseline",
-        run_kind: "test_suite",
-        started_at: generatedAt,
-        result: "passed",
-        command: "tools/trit-test.ps1 smoke",
-        source_refs: sourceRefsFor(["TEST_MANIFEST.json"]),
-        evidence_refs: sourceRefsFor(["build/diagnostics/latest/agent_diagnostics.json"]),
-      },
-      {
-        id: "tc:run:baseline-production",
-        entity_type: "run",
-        name: "Production baseline",
-        run_kind: "test_suite",
-        started_at: generatedAt,
-        result: "passed",
-        command: "tools/trit-test.ps1 production",
-        source_refs: sourceRefsFor(["TEST_MANIFEST.json"]),
-        evidence_refs: sourceRefsFor(["build/diagnostics/latest/agent_diagnostics.json"]),
-      },
-    ],
+    runs,
     releases,
     gaps,
     relations,

@@ -1,0 +1,1369 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:capability:capability-authority-manifested-source-of-truth",
+      "entity_type": "capability",
+      "source_id": "trit.capability.authority.manifested-source-of-truth",
+      "name": "Manifested source-of-truth and evidence navigation",
+      "description": "Manifested source-of-truth and evidence navigation",
+      "capability_class": "tooling",
+      "layer_ids": [
+        "tc:layer:phase-00-authority"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-authority-manifests"
+      ],
+      "depends_on": [],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "repository-native",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-agent-tooling"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tools/trit_tool.py",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-logic-dual-rail-trit",
+      "entity_type": "capability",
+      "source_id": "trit.capability.logic.dual-rail-trit",
+      "name": "Dual-rail trit values with invalid propagation",
+      "description": "Dual-rail trit values with invalid propagation",
+      "capability_class": "hardware_representation",
+      "layer_ids": [
+        "tc:layer:phase-01-representation"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-logic-dual-rail"
+      ],
+      "depends_on": [
+        "tc:capability:capability-authority-manifested-source-of-truth"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "ternary-native-with-binary-transport",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-native-ops",
+        "tc:test:test-ternary-lanes"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_backend.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-isa-v2-instruction-contract",
+      "entity_type": "capability",
+      "source_id": "trit.capability.isa.v2-instruction-contract",
+      "name": "Trit v2 ISA and ABI",
+      "description": "Trit v2 ISA and ABI",
+      "capability_class": "isa",
+      "layer_ids": [
+        "tc:layer:phase-02-isa-binary"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-isa-v2",
+        "tc:contract:contract-abi-v2"
+      ],
+      "depends_on": [
+        "tc:capability:capability-logic-dual-rail-trit"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-architecture-v2",
+        "tc:test:test-multiwidth-vm"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_isa.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-numeric-native-ops",
+      "entity_type": "capability",
+      "source_id": "trit.capability.numeric.native-ops",
+      "name": "Bridge-free ternary numeric operations",
+      "description": "Bridge-free ternary numeric operations",
+      "capability_class": "numeric",
+      "layer_ids": [
+        "tc:layer:phase-03-numeric-operations"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-numeric-native-operations"
+      ],
+      "depends_on": [
+        "tc:capability:capability-isa-v2-instruction-contract"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "ternary-native",
+      "evidence_status": "benchmarked",
+      "test_ids": [
+        "tc:test:test-native-ops",
+        "tc:test:test-numeric-workloads"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-execution-backends-benchmark"
+      ],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_native_ops.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-vm-state-and-mmu",
+      "entity_type": "capability",
+      "source_id": "trit.capability.vm.state-and-mmu",
+      "name": "VM state, memory, MMU, and TLB",
+      "description": "VM state, memory, MMU, and TLB",
+      "capability_class": "vm_state",
+      "layer_ids": [
+        "tc:layer:phase-04-vm-state"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-vm-state-memory"
+      ],
+      "depends_on": [
+        "tc:capability:capability-isa-v2-instruction-contract",
+        "tc:capability:capability-numeric-native-ops"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-multiwidth-vm",
+        "tc:test:test-architecture-v2"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_vm_state.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-vm-interpreter-and-jit-fallback",
+      "entity_type": "capability",
+      "source_id": "trit.capability.vm.interpreter-and-jit-fallback",
+      "name": "Interpreter and optional fallback-safe trace execution",
+      "description": "Interpreter and optional fallback-safe trace execution",
+      "capability_class": "execution",
+      "layer_ids": [
+        "tc:layer:phase-05-vm-execution"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-vm-execution"
+      ],
+      "depends_on": [
+        "tc:capability:capability-vm-state-and-mmu"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "interpreter-compatible",
+      "evidence_status": "benchmarked",
+      "test_ids": [
+        "tc:test:test-multiwidth-vm",
+        "tc:test:test-execution-backends-benchmark"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-execution-backends-benchmark"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-deterministic-replay"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_vm.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-binary-two-pass-assembler",
+      "entity_type": "capability",
+      "source_id": "trit.capability.binary.two-pass-assembler",
+      "name": "Two-pass assembler and binary diagnostics",
+      "description": "Two-pass assembler and binary diagnostics",
+      "capability_class": "assembler",
+      "layer_ids": [
+        "tc:layer:phase-06-assembler"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-binary-assembler"
+      ],
+      "depends_on": [
+        "tc:capability:capability-isa-v2-instruction-contract",
+        "tc:capability:capability-vm-interpreter-and-jit-fallback"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-tcl-asm",
+        "tc:test:next-assembler-goldens"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-tascii81"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_asm.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-compiler-low-level-ir",
+      "entity_type": "capability",
+      "source_id": "trit.capability.compiler.low-level-ir",
+      "name": "Low-level IR and link boundary",
+      "description": "Low-level IR and link boundary",
+      "capability_class": "compiler_ir",
+      "layer_ids": [
+        "tc:layer:phase-07-low-level-ir"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-compiler-object-ir"
+      ],
+      "depends_on": [
+        "tc:capability:capability-binary-two-pass-assembler"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-ternary-ir"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_ir.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-language-tcl-frontend",
+      "entity_type": "capability",
+      "source_id": "trit.capability.language.tcl-frontend",
+      "name": "TCL language frontend contract",
+      "description": "TCL language frontend contract",
+      "capability_class": "language",
+      "layer_ids": [
+        "tc:layer:phase-08-tcl-language"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-language-tcl-v1"
+      ],
+      "depends_on": [
+        "tc:capability:capability-compiler-low-level-ir"
+      ],
+      "status": "implemented",
+      "maturity_status": "specified",
+      "compatibility_status": "tcl-1.0",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-phase7-compiler",
+        "tc:test:next-compiler-pipeline"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "TCL_Spec_1.0.md",
+          "status": "resolved",
+          "role": "specification"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-compiler-host-pipeline",
+      "entity_type": "capability",
+      "source_id": "trit.capability.compiler.host-pipeline",
+      "name": "Host compiler through optimized emission",
+      "description": "Host compiler through optimized emission",
+      "capability_class": "compiler",
+      "layer_ids": [
+        "tc:layer:phase-09-host-compiler"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-compiler-host-pipeline"
+      ],
+      "depends_on": [
+        "tc:capability:capability-compiler-low-level-ir",
+        "tc:capability:capability-language-tcl-frontend"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-phase7-compiler",
+        "tc:test:next-compiler-pipeline",
+        "tc:test:next-compiler-phase-c5-pred"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-malloc-micro"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-syscall-tracing"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_compiler_codegen.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-language-self-hosted-subset",
+      "entity_type": "capability",
+      "source_id": "trit.capability.language.self-hosted-subset",
+      "name": "Native TCL compiler bootstrap subset",
+      "description": "Native TCL compiler bootstrap subset",
+      "capability_class": "self_hosting",
+      "layer_ids": [
+        "tc:layer:phase-10-self-hosted-compiler"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-compiler-self-hosted-subset"
+      ],
+      "depends_on": [
+        "tc:capability:capability-language-tcl-frontend",
+        "tc:capability:capability-compiler-host-pipeline"
+      ],
+      "status": "partial",
+      "maturity_status": "partial",
+      "compatibility_status": "bootstrap-subset",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:next-compiler-native-ulib",
+        "tc:test:next-compiler-pipeline"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tcl_frontend.trit",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-runtime-sdk-and-libraries",
+      "entity_type": "capability",
+      "source_id": "trit.capability.runtime.sdk-and-libraries",
+      "name": "User runtime, libraries, SDK, and widgets",
+      "description": "User runtime, libraries, SDK, and widgets",
+      "capability_class": "runtime_sdk",
+      "layer_ids": [
+        "tc:layer:phase-11-runtime-sdk"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-runtime-sdk-abi"
+      ],
+      "depends_on": [
+        "tc:capability:capability-compiler-low-level-ir",
+        "tc:capability:capability-language-tcl-frontend"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-native-apps",
+        "tc:test:next-runtime-ulib-sdk"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "apps/os_sdk.trit",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-boot-native-trap-and-loader",
+      "entity_type": "capability",
+      "source_id": "trit.capability.boot.native-trap-and-loader",
+      "name": "Native reset, trap, and initial loader",
+      "description": "Native reset, trap, and initial loader",
+      "capability_class": "boot",
+      "layer_ids": [
+        "tc:layer:phase-12-boot-trap"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-boot-trap-loader"
+      ],
+      "depends_on": [
+        "tc:capability:capability-isa-v2-instruction-contract",
+        "tc:capability:capability-binary-two-pass-assembler"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-os-platform",
+        "tc:test:test-host-runtime"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "native_kernel_boot.tasm",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-kernel-process-and-syscalls",
+      "entity_type": "capability",
+      "source_id": "trit.capability.kernel.process-and-syscalls",
+      "name": "Native kernel process, memory, syscall, and IPC substrate",
+      "description": "Native kernel process, memory, syscall, and IPC substrate",
+      "capability_class": "kernel",
+      "layer_ids": [
+        "tc:layer:phase-13-kernel-foundations"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-kernel-process-syscall"
+      ],
+      "depends_on": [
+        "tc:capability:capability-vm-state-and-mmu",
+        "tc:capability:capability-compiler-low-level-ir",
+        "tc:capability:capability-boot-native-trap-and-loader"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "guest-v2",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-os-platform",
+        "tc:test:test-phase-d-kernel",
+        "tc:test:test-process-handoff"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-scaling-profile-compact"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-fuzz-harnesses",
+        "tc:gap:trit-gap-crash-recovery"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "kernel.trit",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-storage-vfs-wal-and-persistence",
+      "entity_type": "capability",
+      "source_id": "trit.capability.storage.vfs-wal-and-persistence",
+      "name": "Persistent VFS, block IO, WAL, and recovery",
+      "description": "Persistent VFS, block IO, WAL, and recovery",
+      "capability_class": "storage",
+      "layer_ids": [
+        "tc:layer:phase-14-storage-vfs"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-storage-vfs-wal"
+      ],
+      "depends_on": [
+        "tc:capability:capability-kernel-process-and-syscalls",
+        "tc:capability:capability-boot-native-trap-and-loader"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "guest-v2",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-migration-v2",
+        "tc:test:test-redo-wal-v2",
+        "tc:test:next-vfs-persistence",
+        "tc:test:next-vfs-recovery"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-scaling-profile-compact"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-crash-recovery",
+        "tc:gap:trit-gap-encrypted-volumes"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "kernel/vfs.trit",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-devices-graphics-network-services",
+      "entity_type": "capability",
+      "source_id": "trit.capability.devices.graphics-network-services",
+      "name": "Graphics, input, networking, timers, and services",
+      "description": "Graphics, input, networking, timers, and services",
+      "capability_class": "devices",
+      "layer_ids": [
+        "tc:layer:phase-15-devices-services"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-kernel-devices-services"
+      ],
+      "depends_on": [
+        "tc:capability:capability-kernel-process-and-syscalls",
+        "tc:capability:capability-storage-vfs-wal-and-persistence"
+      ],
+      "status": "partial",
+      "maturity_status": "integrated",
+      "compatibility_status": "guest-v2",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-os-platform",
+        "tc:test:next-drivers-hal",
+        "tc:test:next-graphics-gui"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-syscall-tracing"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_os.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-host-desktop-runtime",
+      "entity_type": "capability",
+      "source_id": "trit.capability.host.desktop-runtime",
+      "name": "Desktop host runtime and diagnostics",
+      "description": "Desktop host runtime and diagnostics",
+      "capability_class": "host_runtime",
+      "layer_ids": [
+        "tc:layer:phase-16-host-runtime"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-host-runtime"
+      ],
+      "depends_on": [
+        "tc:capability:capability-boot-native-trap-and-loader",
+        "tc:capability:capability-devices-graphics-network-services"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "binary-host-bridge",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-host-runtime",
+        "tc:test:test-consumer-shell-productization"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:test-benchmark"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-deterministic-replay",
+        "tc:gap:trit-gap-framebuffer-png"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_host_runtime.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-apps-bundled-consumer-shell",
+      "entity_type": "capability",
+      "source_id": "trit.capability.apps.bundled-consumer-shell",
+      "name": "Bundled applications, desktop, shell, and app registry",
+      "description": "Bundled applications, desktop, shell, and app registry",
+      "capability_class": "user_space",
+      "layer_ids": [
+        "tc:layer:phase-17-user-space-apps"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-apps-bundle"
+      ],
+      "depends_on": [
+        "tc:capability:capability-runtime-sdk-and-libraries",
+        "tc:capability:capability-kernel-process-and-syscalls",
+        "tc:capability:capability-host-desktop-runtime"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "guest-v2",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-all-apps",
+        "tc:test:test-native-apps",
+        "tc:test:test-consumer-shell-productization",
+        "tc:test:next-apps-consumer-bundle",
+        "tc:test:next-apps-desktop-shell"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-app-golden"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "APP_MANIFEST.json",
+          "status": "resolved",
+          "role": "manifest"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-release-tboot-and-tdisk",
+      "entity_type": "capability",
+      "source_id": "trit.capability.release.tboot-and-tdisk",
+      "name": "Versioned tboot and tdisk release images",
+      "description": "Versioned tboot and tdisk release images",
+      "capability_class": "release",
+      "layer_ids": [
+        "tc:layer:phase-18-images-release"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-release-tboot-tdisk"
+      ],
+      "depends_on": [
+        "tc:capability:capability-host-desktop-runtime",
+        "tc:capability:capability-apps-bundled-consumer-shell"
+      ],
+      "status": "implemented",
+      "maturity_status": "integrated",
+      "compatibility_status": "v2-current",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-host-runtime",
+        "tc:test:test-migration-v2",
+        "tc:test:next-full-system-release"
+      ],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "IMAGE_FORMAT_MANIFEST.json",
+          "status": "resolved",
+          "role": "format"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-products-bitnet-and-specialized-libraries",
+      "entity_type": "capability",
+      "source_id": "trit.capability.products.bitnet-and-specialized-libraries",
+      "name": "Specialized crypto, BitNet, and TreatCode products",
+      "description": "Specialized crypto, BitNet, and TreatCode products",
+      "capability_class": "specialized_product",
+      "layer_ids": [
+        "tc:layer:phase-19-specialized-products"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-products-specialized"
+      ],
+      "depends_on": [
+        "tc:capability:capability-release-tboot-and-tdisk"
+      ],
+      "status": "partial",
+      "maturity_status": "specified",
+      "compatibility_status": "host-and-guest-consumers",
+      "evidence_status": "benchmarked",
+      "test_ids": [
+        "tc:test:test-numeric-workloads"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:benchmark-bitnet-os",
+        "tc:benchmark:benchmark-doom-os"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-full-doom-assets",
+        "tc:gap:trit-gap-full-bitnet-assets"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_transformer_runtime.h",
+          "status": "resolved",
+          "role": "implementation"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-evidence-full-system-validation",
+      "entity_type": "capability",
+      "source_id": "trit.capability.evidence.full-system-validation",
+      "name": "Cross-layer correctness, security, performance, and release evidence",
+      "description": "Cross-layer correctness, security, performance, and release evidence",
+      "capability_class": "evidence",
+      "layer_ids": [
+        "tc:layer:phase-20-closure-evidence"
+      ],
+      "contract_ids": [
+        "tc:contract:contract-evidence-full-system"
+      ],
+      "depends_on": [
+        "tc:capability:capability-release-tboot-and-tdisk",
+        "tc:capability:capability-products-bitnet-and-specialized-libraries"
+      ],
+      "status": "partial",
+      "maturity_status": "specified",
+      "compatibility_status": "repository-native",
+      "evidence_status": "tested",
+      "test_ids": [
+        "tc:test:test-agent-tooling",
+        "tc:test:test-production-layers",
+        "tc:test:test-production-hardening",
+        "tc:test:next-full-system-release"
+      ],
+      "benchmark_ids": [
+        "tc:benchmark:benchmark-bitnet-os",
+        "tc:benchmark:benchmark-doom-os"
+      ],
+      "gap_ids": [
+        "tc:gap:trit-gap-fuzz-harnesses",
+        "tc:gap:trit-gap-benchmark-baselines"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "tests_next/manifests/coverage_matrix.json",
+          "status": "resolved",
+          "role": "coverage"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-ascii-compatibility",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.ascii-compatibility",
+      "name": "ASCII compatibility encoding",
+      "description": "ASCII compatibility encoding",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-01-representation",
+        "tc:layer:phase-08-tcl-language",
+        "tc:layer:phase-11-runtime-sdk",
+        "tc:layer:phase-16-host-runtime"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-compatibility"
+      ],
+      "depends_on": [
+        "tc:capability:capability-logic-dual-rail-trit"
+      ],
+      "status": "implemented",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatible",
+      "evidence_status": "specified",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "policy"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-utf8-compatibility",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.utf8-compatibility",
+      "name": "UTF-8 compatibility encoding",
+      "description": "UTF-8 compatibility encoding",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-08-tcl-language",
+        "tc:layer:phase-11-runtime-sdk",
+        "tc:layer:phase-16-host-runtime"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-compatibility"
+      ],
+      "depends_on": [
+        "tc:capability:capability-encoding-ascii-compatibility"
+      ],
+      "status": "implemented",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatible",
+      "evidence_status": "specified",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "policy"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-hex-compatibility",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.hex-compatibility",
+      "name": "Hexadecimal host and debug notation",
+      "description": "Hexadecimal host and debug notation",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-02-isa-binary",
+        "tc:layer:phase-06-assembler",
+        "tc:layer:phase-16-host-runtime",
+        "tc:layer:phase-18-images-release"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-compatibility"
+      ],
+      "depends_on": [
+        "tc:capability:capability-isa-v2-instruction-contract"
+      ],
+      "status": "implemented",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatible",
+      "evidence_status": "specified",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "policy"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-tascii81-ternary-native",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.tascii81-ternary-native",
+      "name": "TASCII-81 fixed-width ternary-native text candidate",
+      "description": "TASCII-81 fixed-width ternary-native text candidate",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-01-representation",
+        "tc:layer:phase-06-assembler",
+        "tc:layer:phase-08-tcl-language",
+        "tc:layer:phase-20-closure-evidence"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-ternary-native"
+      ],
+      "depends_on": [
+        "tc:capability:capability-encoding-ascii-compatibility",
+        "tc:capability:capability-logic-dual-rail-trit"
+      ],
+      "status": "planned",
+      "maturity_status": "specified",
+      "compatibility_status": "ternary-native-planned",
+      "evidence_status": "planned",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-tascii81"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "proposal"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-trit-literals-ternary-native",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.trit-literals-ternary-native",
+      "name": "Exact trit literal syntax candidate",
+      "description": "Exact trit literal syntax candidate",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-06-assembler",
+        "tc:layer:phase-08-tcl-language"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-ternary-native"
+      ],
+      "depends_on": [
+        "tc:capability:capability-encoding-tascii81-ternary-native"
+      ],
+      "status": "planned",
+      "maturity_status": "specified",
+      "compatibility_status": "ternary-native-planned",
+      "evidence_status": "planned",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-tascii81"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "proposal"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-encoding-base27-base81-dumps-ternary-native",
+      "entity_type": "capability",
+      "source_id": "trit.capability.encoding.base27-base81-dumps-ternary-native",
+      "name": "Compact base-27 and base-81 dump notation candidate",
+      "description": "Compact base-27 and base-81 dump notation candidate",
+      "capability_class": "symbolic_encoding",
+      "layer_ids": [
+        "tc:layer:phase-06-assembler",
+        "tc:layer:phase-16-host-runtime",
+        "tc:layer:phase-20-closure-evidence"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-symbolic-encoding-ternary-native"
+      ],
+      "depends_on": [
+        "tc:capability:capability-encoding-hex-compatibility",
+        "tc:capability:capability-encoding-trit-literals-ternary-native"
+      ],
+      "status": "planned",
+      "maturity_status": "specified",
+      "compatibility_status": "ternary-native-planned",
+      "evidence_status": "planned",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-tascii81"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "docs/04_Binary_Contract/symbolic_encodings.md",
+          "status": "resolved",
+          "role": "proposal"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-storage-encrypted-volume-compatibility",
+      "entity_type": "capability",
+      "source_id": "trit.capability.storage.encrypted-volume-compatibility",
+      "name": "Encrypted-volume compatibility integration",
+      "description": "Encrypted-volume compatibility integration",
+      "capability_class": "storage_security",
+      "layer_ids": [
+        "tc:layer:phase-14-storage-vfs",
+        "tc:layer:phase-16-host-runtime",
+        "tc:layer:phase-18-images-release"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-encrypted-volume-compatibility"
+      ],
+      "depends_on": [
+        "tc:capability:capability-storage-vfs-wal-and-persistence",
+        "tc:capability:capability-host-desktop-runtime"
+      ],
+      "status": "planned",
+      "maturity_status": "specified",
+      "compatibility_status": "host-compatibility-planned",
+      "evidence_status": "planned",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-encrypted-volumes"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "KNOWN_GAPS.md",
+          "status": "resolved",
+          "role": "gap"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:capability:capability-storage-encrypted-volume-ternary-native",
+      "entity_type": "capability",
+      "source_id": "trit.capability.storage.encrypted-volume-ternary-native",
+      "name": "Possible ternary-native encrypted-volume design",
+      "description": "Possible ternary-native encrypted-volume design",
+      "capability_class": "storage_security",
+      "layer_ids": [
+        "tc:layer:phase-03-numeric-operations",
+        "tc:layer:phase-14-storage-vfs",
+        "tc:layer:phase-20-closure-evidence"
+      ],
+      "contract_ids": [
+        "tc:contract:trit-contract-encrypted-volume-ternary-native"
+      ],
+      "depends_on": [
+        "tc:capability:capability-storage-encrypted-volume-compatibility",
+        "tc:capability:capability-numeric-native-ops"
+      ],
+      "status": "planned",
+      "maturity_status": "planned",
+      "compatibility_status": "ternary-native-candidate",
+      "evidence_status": "planned",
+      "test_ids": [],
+      "benchmark_ids": [],
+      "gap_ids": [
+        "tc:gap:trit-gap-encrypted-volumes"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "d168bc8",
+          "path": "ternary_montgomery.h",
+          "status": "resolved",
+          "role": "cryptographic_evidence"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "capabilities",
+    "count": 29,
+    "total": 29
+  },
+  "links": {
+    "self": "/api/public/v1/capabilities"
+  }
+}

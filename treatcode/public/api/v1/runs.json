@@ -1,0 +1,70 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:run:baseline-smoke",
+      "entity_type": "run",
+      "name": "Smoke baseline",
+      "run_kind": "test_suite",
+      "started_at": "2026-07-31T15:49:46-07:00",
+      "result": "passed",
+      "command": "tools/trit-test.ps1 smoke",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "build/diagnostics/latest/agent_diagnostics.json",
+          "status": "resolved"
+        }
+      ]
+    },
+    {
+      "id": "tc:run:baseline-production",
+      "entity_type": "run",
+      "name": "Production baseline",
+      "run_kind": "test_suite",
+      "started_at": "2026-07-31T15:49:46-07:00",
+      "result": "passed",
+      "command": "tools/trit-test.ps1 production",
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "build/diagnostics/latest/agent_diagnostics.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "runs",
+    "count": 2,
+    "total": 2
+  },
+  "links": {
+    "self": "/api/public/v1/runs"
+  }
+}

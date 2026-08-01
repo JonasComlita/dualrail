@@ -1,0 +1,74 @@
+{
+  "schema_version": "treatcode.public.api.v1",
+  "snapshot": {
+    "id": "tc:snapshot:0e0bbb80e8c7",
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+    "generated_at": "2026-07-31T15:49:46-07:00",
+    "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
+  },
+  "data": [
+    {
+      "id": "tc:project:trit",
+      "entity_type": "project",
+      "name": "Trit",
+      "description": "Trit v2 ternary ISA, compiler, VM, kernel, and application stack.",
+      "repository": "https://github.com/JonasComlita/dualrail",
+      "default_branch": "main",
+      "current_commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+      "stack_node_ids": [
+        "tc:layer:phase-00-authority",
+        "tc:layer:phase-01-representation",
+        "tc:layer:phase-02-isa-binary",
+        "tc:layer:phase-03-numeric-operations",
+        "tc:layer:phase-04-vm-state",
+        "tc:layer:phase-05-vm-execution",
+        "tc:layer:phase-06-assembler",
+        "tc:layer:phase-07-low-level-ir",
+        "tc:layer:phase-08-tcl-language",
+        "tc:layer:phase-09-host-compiler",
+        "tc:layer:phase-10-self-hosted-compiler",
+        "tc:layer:phase-11-runtime-sdk",
+        "tc:layer:phase-12-boot-trap",
+        "tc:layer:phase-13-kernel-foundations",
+        "tc:layer:phase-14-storage-vfs",
+        "tc:layer:phase-15-devices-services",
+        "tc:layer:phase-16-host-runtime",
+        "tc:layer:phase-17-user-space-apps",
+        "tc:layer:phase-18-images-release",
+        "tc:layer:phase-19-specialized-products",
+        "tc:layer:phase-20-closure-evidence"
+      ],
+      "source_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "README.md",
+          "status": "resolved"
+        },
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "AGENTS.md",
+          "status": "resolved"
+        }
+      ],
+      "evidence_refs": [
+        {
+          "repository": "https://github.com/JonasComlita/dualrail",
+          "commit": "f0d30809a1534475c2726339b2618d4c11507e1e",
+          "path": "TEST_MANIFEST.json",
+          "status": "resolved"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "resource": "projects",
+    "count": 1,
+    "total": 1
+  },
+  "links": {
+    "self": "/api/public/v1/projects"
+  }
+}
