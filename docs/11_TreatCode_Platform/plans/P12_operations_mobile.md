@@ -90,8 +90,8 @@ owner approvals are recorded in the completion record below.
 
 ## Completion Record
 
-- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
+- **Verified commit:** `645809a4472e042f1389f00c9f936c15977b83cf`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P12/result.json`
-- **Evidence hashes:** `result.json` content `sha256:43c786f5c471803c2345510bfa4497169ed7b99b06c7cec08d3d1556b3869c32`; `mobile-operations.json` `sha256:e552ba00b7fffe4a251cc5513754b66a1a77ee0d26b456c1038ed55e8d94408d`; `disconnect-resume.json` `sha256:b6b916eab95ef121c70f121df89101935eb2909aa51f56779ff54ac9b0b72211`; `notifications.json` `sha256:a94e4514a1cc72cbcf35167b32a419e9e2da2044a10fb5af5b408e5ad335dffd`; `disaster-recovery.json` `sha256:158df3aad5dd8590feef6532381aa765ab62366a7003adf702d45fe88bcc3800`; `operations-command.json` `sha256:460790e5a56abe5f3a3c9366b01d83824b58df225ad1a3a959037e3516350a09`; `P12_OPERATIONS_RUNBOOK.md` `sha256:0ec18f90ee583cdc135ac62a51d0da7a51d06795b89c03af9e7fd56ebef14fdc`.
+- **Evidence hashes:** `result.json` content `sha256:512616e2ee805d9db56fcc736076a560b5521de48703702e88d02ca90df8d12b`; `mobile-operations.json` `sha256:e552ba00b7fffe4a251cc5513754b66a1a77ee0d26b456c1038ed55e8d94408d`; `disconnect-resume.json` `sha256:b6b916eab95ef121c70f121df89101935eb2909aa51f56779ff54ac9b0b72211`; `notifications.json` `sha256:a94e4514a1cc72cbcf35167b32a419e9e2da2044a10fb5af5b408e5ad335dffd`; `disaster-recovery.json` `sha256:158df3aad5dd8590feef6532381aa765ab62366a7003adf702d45fe88bcc3800`; `operations-command.json` `sha256:920772e080bc86c6ba8a15bf9afab4301ac77ab1ac7040bfb6f86c50436ecbc5`; `P12_OPERATIONS_RUNBOOK.md` `sha256:0ec18f90ee583cdc135ac62a51d0da7a51d06795b89c03af9e7fd56ebef14fdc`.
 - **Human approvals:** Operations owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T19:42:53.422988Z
+- **Date:** 2026-08-01T20:32:27.953454Z

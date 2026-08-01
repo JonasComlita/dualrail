@@ -72,8 +72,8 @@ python tools/trit_tool.py website plan verify P06
 
 ## Completion Record
 
-- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
+- **Verified commit:** `645809a4472e042f1389f00c9f936c15977b83cf`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P06/result.json`
-- **Evidence hashes:** `result.json` content `sha256:31a0c517856bd445f4ee020e46829bde8f2a2a4187ce58b852552b385e9f5921`; `challenge-validation.json` `sha256:4332735b02c90daf64a5df9575acd45aaede315dd27225e704f56c9187b9f72f`; `challenge-correctness.json` `sha256:c0b92f16bc0e142f19b7c9874677a779c579ab5b16a512230da0b420d398c839`; `challenge-e2e.json` `sha256:86585e17e71d0482352a99eae921ff1106f16418a07e05d8cfac0558f6256133`.
+- **Evidence hashes:** `result.json` content `sha256:473ce6c9997297a301e6f829c2bb7f0d0196528d941105ba5bc44fb5816c06ac`; `challenge-validation.json` `sha256:4332735b02c90daf64a5df9575acd45aaede315dd27225e704f56c9187b9f72f`; `challenge-correctness.json` `sha256:c0b92f16bc0e142f19b7c9874677a779c579ab5b16a512230da0b420d398c839`; `challenge-e2e.json` `sha256:86585e17e71d0482352a99eae921ff1106f16418a07e05d8cfac0558f6256133`.
 - **Human approvals:** Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T19:40:45.768526Z
+- **Date:** 2026-08-01T20:30:25.773077Z

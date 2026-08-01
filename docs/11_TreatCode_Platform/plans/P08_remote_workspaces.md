@@ -86,8 +86,8 @@ python tools/trit_tool.py website plan verify P08
 
 ## Completion Record
 
-- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
+- **Verified commit:** `645809a4472e042f1389f00c9f936c15977b83cf`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P08/result.json`
-- **Evidence hashes:** `result.json` content `sha256:3814995c18ebc1f2f2fb13d4ca076a9afb8b614f72511ecf0eae4fcde5e3f473`; `workspace-report.json` `sha256:1654ad36eb3b5292d74700595eabb938aafd9b4850a2ca05ab15f590a88e3243`; `snapshot-resume.json` `sha256:23173679964cbff1164266d47deaba4aac470176685bbfa4c425ed76d81779ec`; `handoff-destruction-audit.json` `sha256:999b6fd235da6ad1ec7c38025dae9a3d9994d23b40fa9e370ab1d3cfdc741476`; `workspace_api.v1.openapi.json` `sha256:1d2db7f451394bf6ac2d4ec2c6777a7d8dea4bc17a907de55eb2c4c2488f03f8`.
+- **Evidence hashes:** `result.json` content `sha256:3b5ec0df6948bab889ec4af141d7795b2850f5593de0a45d256ebde626aa6b96`; `workspace-report.json` `sha256:1f2bc2a38f8617f816761ee565ae3550cb1d817876273bb25d45a0b93a8717ce`; `snapshot-resume.json` `sha256:142e2f1ebb8630f89b57a5a031fda56162b9e38e842eeb3fe1c2049b31139cea`; `handoff-destruction-audit.json` `sha256:145cbbf4e79b1158e5c27923d89739f834207147eadeb1d803230b90c022146d`; `workspace_api.v1.openapi.json` `sha256:1d2db7f451394bf6ac2d4ec2c6777a7d8dea4bc17a907de55eb2c4c2488f03f8`.
 - **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T19:40:49.953269Z
+- **Date:** 2026-08-01T20:30:34.470808Z

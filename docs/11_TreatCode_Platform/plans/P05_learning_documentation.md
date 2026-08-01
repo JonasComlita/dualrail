@@ -82,8 +82,8 @@ python tools/trit_tool.py website plan verify P05
 
 ## Completion Record
 
-- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
+- **Verified commit:** `645809a4472e042f1389f00c9f936c15977b83cf`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P05/result.json`
-- **Evidence hashes:** `result.json` content `sha256:2595d39d29dc62f4d856131a56ec871658816a5858b27a7902c5f8fd70b94eeb`; `content-validation.json` `sha256:818be9bc82ce7edf079df7c637ca25d1187eb5f35c8425a1766c06288c191189`; `learning-flow.json` `sha256:f80c7024a50ae23160bae06c789e9cfeaffe30e076882be581389d8fd460a36b`; `accessibility.json` `sha256:5ab3e6bbb895b30e2556b54c3f996afaa1451975691d5759d20fb41d9e750fd6`; `P05_BEGINNER_RUBRIC.md` `sha256:8a353f09ff122d4504de7081a2ba8fd871e00ba7d9ba8cd359db478ac520e6cd`.
+- **Evidence hashes:** `result.json` content `sha256:ee8a45dc2a85a565d3ec62da5438b3707ce984052cc2cbf8d83dfa858eee99da`; `content-validation.json` `sha256:818be9bc82ce7edf079df7c637ca25d1187eb5f35c8425a1766c06288c191189`; `learning-flow.json` `sha256:f80c7024a50ae23160bae06c789e9cfeaffe30e076882be581389d8fd460a36b`; `accessibility.json` `sha256:5ab3e6bbb895b30e2556b54c3f996afaa1451975691d5759d20fb41d9e750fd6`; `P05_BEGINNER_RUBRIC.md` `sha256:8a353f09ff122d4504de7081a2ba8fd871e00ba7d9ba8cd359db478ac520e6cd`.
 - **Human approvals:** Product owner — Codex verifier (acting owner) — approved; Educator — Codex verifier (acting educator) — approved
-- **Date:** 2026-08-01T19:40:41.321901Z
+- **Date:** 2026-08-01T20:30:18.084140Z
