@@ -570,6 +570,8 @@ void testAggregatesEndToEnd() {
         )";
         CompileResult compiled = compileSource("phase7_struct.trit", src);
         expect(compiled.success, "struct literal and field assignment compile");
+        expect(compiled.object.metadata.at("target.ast_replay_functions") == "0",
+               "struct field access emits solely from optimized SSA IR");
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
@@ -590,6 +592,8 @@ void testAggregatesEndToEnd() {
         )";
         CompileResult compiled = compileSource("phase7_array.trit", src);
         expect(compiled.success, "array literal and index assignment compile");
+        expect(compiled.object.metadata.at("target.ast_replay_functions") == "0",
+               "array index access emits solely from optimized SSA IR");
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {
@@ -611,6 +615,10 @@ void testAggregatesEndToEnd() {
         )";
         CompileResult compiled = compileSource("phase7_aggregate_param.trit", src);
         expect(compiled.success, "aggregate parameter by pointer compiles");
+        expect(compiled.object.metadata.at("target.ast_replay_functions") == "0",
+               "aggregate parameter field access emits solely from optimized SSA IR");
+        expect(compiled.object.metadata.at("target.ir_emitted_function_names").find("sum") != std::string::npos,
+               "aggregate parameter callee is emitted from optimized SSA IR");
         LinkResult linked = linkModules({compiled.object});
         sandbox::vm::VMState vm(256, 256);
         if (linked.success) {

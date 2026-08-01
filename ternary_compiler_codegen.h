@@ -1243,6 +1243,8 @@ private:
                         case InstrOpcode::Cvt:
                         case InstrOpcode::Add:
                         case InstrOpcode::Sub:
+                        case InstrOpcode::FieldAddr:
+                        case InstrOpcode::IndexAddr:
                             derived = std::any_of(
                                 instr.args.begin(),
                                 instr.args.end(),
@@ -1275,6 +1277,16 @@ private:
                             if (instr.args.size() == 1 &&
                                 stack_addresses.count(
                                     instr.args[0])) {
+                                if (instr.type.kind == TypeKind::Pointer) {
+                                    // A by-pointer aggregate parameter is
+                                    // loaded from its frame slot. The loaded
+                                    // pointer remains a valid stack-memory
+                                    // base even though its stored value came
+                                    // from an ABI argument rather than from a
+                                    // local alloca.
+                                    derived = true;
+                                    break;
+                                }
                                 bool saw_store = false;
                                 bool all_stack = true;
                                 for (const BasicBlock& source_block :
@@ -1333,6 +1345,8 @@ private:
                     case InstrOpcode::Cmp:
                     case InstrOpcode::Tsel:
                     case InstrOpcode::Phi:
+                    case InstrOpcode::FieldAddr:
+                    case InstrOpcode::IndexAddr:
                     case InstrOpcode::AddrOf:
                     case InstrOpcode::Deref:
                     case InstrOpcode::Load:
@@ -1362,9 +1376,11 @@ private:
                      !stack_addresses.count(instr.args[0]))) {
                     return false;
                 }
+                // Structs and arrays are represented in target IR by scalar
+                // frame addresses and word-wise memory operations. Reject
+                // only values that still require a non-scalar register class
+                // or ownership lowering here.
                 if (instr.type.kind == TypeKind::Vector ||
-                    instr.type.kind == TypeKind::Struct ||
-                    instr.type.kind == TypeKind::Array ||
                     instr.type.kind == TypeKind::Owned ||
                     instr.type.kind == TypeKind::Shared) {
                     return false;
@@ -1425,9 +1441,21 @@ private:
                             block.instructions.begin(),
                             block.instructions.end(),
                             [&](const Instr& instr) {
-                                return instr.opcode ==
-                                           InstrOpcode::AddrOf &&
-                                       instr.args.size() == 1 &&
+                                if (instr.opcode ==
+                                        InstrOpcode::AddrOf &&
+                                    instr.args.size() == 1 &&
+                                    frame_indices.count(
+                                        instr.args[0]) != 0) {
+                                    return true;
+                                }
+                                // Aggregate parameters are represented as a
+                                // pointer copied through their one-word
+                                // frame slot. Their first memory operation
+                                // can therefore address the alloca directly.
+                                return (instr.opcode == InstrOpcode::Load ||
+                                        instr.opcode == InstrOpcode::Store ||
+                                        instr.opcode == InstrOpcode::Deref) &&
+                                       !instr.args.empty() &&
                                        frame_indices.count(
                                            instr.args[0]) != 0;
                             });
@@ -1879,6 +1907,25 @@ private:
                     }
                     break;
                 }
+                case InstrOpcode::FieldAddr:
+                case InstrOpcode::IndexAddr: {
+                    // Address arithmetic is emitted by the preceding Add
+                    // (or preserved as an identity for a zero offset). The
+                    // address node itself is an SSA alias so later loads and
+                    // stores retain an explicit memory dependency.
+                    int source = -1;
+                    if (instr.args.size() != 1 ||
+                        !argumentRegister(0, source)) {
+                        return false;
+                    }
+                    if (destination != source) {
+                        out << "    copy "
+                            << regName(destination)
+                            << ", " << regName(source)
+                            << "\n";
+                    }
+                    break;
+                }
                 case InstrOpcode::Deref:
                 case InstrOpcode::Load: {
                     int address = -1;
@@ -1908,7 +1955,7 @@ private:
                                valueType(instr.args[1]))
                         << " " << regName(source)
                         << ", " << regName(address)
-                        << ", 0\n";
+                        << ", " << instr.aux << "\n";
                     break;
                 }
                 case InstrOpcode::SpillLoad:
@@ -2695,7 +2742,6 @@ private:
             int base = emitLocalBase(it->second, ctx);
             emitAggregateInitToAddress(stmt.expr, it->second.type, base, ctx);
             ctx.release(base);
-            ctx.value(InstrOpcode::Store, it->second.type, stmt.span);
             return;
         }
         TypeRef expected = it->second.type.kind == TypeKind::Unknown
@@ -3511,6 +3557,10 @@ private:
         if (local.by_pointer) {
             ctx.line("load r" + std::to_string(reg) + ", sp, " + std::to_string(local.offset));
             ctx.value(InstrOpcode::Load, TypeRef::pointer(local.type), SourceSpan{}, reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    local.ir_address};
+            }
             return reg;
         }
         int off = ctx.acquire();
@@ -3605,7 +3655,15 @@ private:
                 return LValueCode{};
             }
             addImmediateToReg(base.reg, field->offset_words, ctx);
+            ValueId address_value = -1;
+            const auto after_offset = ctx.reg_to_value.find(base.reg);
+            if (after_offset != ctx.reg_to_value.end())
+                address_value = after_offset->second;
             ctx.value(InstrOpcode::FieldAddr, TypeRef::pointer(field->type), expr->span, base.reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    address_value};
+            }
             base.type = field->type;
             return base;
         }
@@ -3650,7 +3708,15 @@ private:
                          std::to_string(base.reg) + ", r" + std::to_string(index.reg));
                 ctx.release(index.reg);
             }
+            ValueId address_value = -1;
+            const auto after_index = ctx.reg_to_value.find(base.reg);
+            if (after_index != ctx.reg_to_value.end())
+                address_value = after_index->second;
             ctx.value(InstrOpcode::IndexAddr, TypeRef::pointer(elem), expr->span, base.reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    address_value};
+            }
             base.type = elem;
             return base;
         }
@@ -3709,6 +3775,7 @@ private:
                  std::to_string(baseReg) + ", " + std::to_string(offset));
         ctx.value(InstrOpcode::Store, expected, expr ? expr->span : SourceSpan{});
         if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().aux = offset;
             ValueId base_val = -1;
             auto it = ctx.reg_to_value.find(baseReg);
             if (it != ctx.reg_to_value.end()) base_val = it->second;
@@ -3741,6 +3808,7 @@ private:
                      ", " + std::to_string(i));
             ctx.value(InstrOpcode::Store, TypeRef::numeric(ir::Type::T40), SourceSpan{});
             if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().aux = i;
                 ctx.block->instructions.back().args = {dst_val, load_id};
             }
         }
