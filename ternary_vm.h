@@ -4098,6 +4098,12 @@ inline int nativeX64DirectControl(
     const VMState& vm,
     const VMTraceJitTrace& trace) {
     if (trace.instructions.empty()) return false;
+    // The inline commit sequence below updates PC, cycle_count, and the
+    // native instruction budget without calling VMState::completeInstruction.
+    // Timer delivery and routed traps must therefore remain on the precise
+    // portable path, where recordCycle() can observe them between every
+    // instruction.
+    if (vm.timer_enable || vm.trap_routing_enabled) return false;
     for (const TernaryMode mode : vm.regfile.view_mode) {
         if (mode != TernaryMode::T40) return false;
     }
@@ -4217,6 +4223,39 @@ struct VMNativeX64Emitter {
             ((src & 7) << 3) | (needs_sib ? 4 : (base & 7))));
         if (needs_sib) byte(0x24);
         u32(displacement);
+    }
+    void addMemDispImm8(
+        std::uint8_t base, std::uint32_t displacement, std::uint8_t value) {
+        byte(static_cast<std::uint8_t>(0x48 | (base >= 8 ? 1 : 0)));
+        byte(0x83);
+        const bool needs_sib = (base & 7) == 4;
+        byte(static_cast<std::uint8_t>(0x80 |
+            (needs_sib ? 4 : (base & 7))));
+        if (needs_sib) byte(0x24);
+        u32(displacement);
+        byte(value);
+    }
+    void commitSimple(int next_pc) {
+        // r12 holds VMNativeRunContext*.  Use r11 for VMState* and r10 for
+        // the next PC; neither value survives into the C++ side because this
+        // path does not make a helper call.
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(offsetof(VMNativeRunContext, vm)));
+        movImm64(10, static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(next_pc)));
+        movMemDispReg(
+            11,
+            static_cast<std::uint32_t>(offsetof(VMState, pc)),
+            10);
+        addMemDispImm8(
+            11,
+            static_cast<std::uint32_t>(offsetof(VMState, cycle_count)),
+            1);
+        addMemDispImm8(
+            12,
+            static_cast<std::uint32_t>(offsetof(VMNativeRunContext, executed)),
+            1);
     }
     void movByteMemImm(
         std::uint8_t base, std::uint32_t displacement, std::uint8_t value) {
@@ -4386,9 +4425,7 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     emitter.movByteMemImm(
                         10, 0, static_cast<std::uint8_t>(TernaryMode::T40));
                 }
-                emitter.callHelper(
-                    reinterpret_cast<const void*>(&nativeX64CommitInstruction),
-                    &instruction);
+                emitter.commitSimple(instruction.next_pc);
                 break;
             case VMMicroOpcode::Add:
             case VMMicroOpcode::Sub:
