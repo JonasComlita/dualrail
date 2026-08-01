@@ -17,7 +17,10 @@ These are intentionally visible so agents can pick useful work without asking fo
   direct lowering is fast enough; native JIT remains disabled by default.
 - Complete the IR-first compiler transition: frontend stack locals must feed
   real `mem2reg`, optimized IR must drive target emission, and spills must be
-  rewritten until the interference graph is colorable.
+  rewritten until the interference graph is colorable. A fail-closed
+  `--strict-ssa` mode now rejects unsupported target lowering; the default
+  transition build still permits the explicitly reported replay set until
+  those functions are lowered.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority
