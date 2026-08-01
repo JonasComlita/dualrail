@@ -3858,6 +3858,7 @@ struct VMNativeX64Instruction {
     int pc = 0;
     int next_pc = 0;
     int branch_target = -1;
+    int branch_target_index = -1;
     VMMicroOpcode op = VMMicroOpcode::Unsupported;
     TernaryMode mode = TernaryMode::T40;
     InstructionWord word{};
@@ -4224,6 +4225,37 @@ struct VMNativeX64Emitter {
         if (needs_sib) byte(0x24);
         u32(displacement);
     }
+    void cmpRegReg(std::uint8_t lhs, std::uint8_t rhs) {
+        byte(static_cast<std::uint8_t>(0x48 |
+            (rhs >= 8 ? 4 : 0) | (lhs >= 8 ? 1 : 0)));
+        byte(0x39);
+        byte(static_cast<std::uint8_t>(0xC0 |
+            ((rhs & 7) << 3) | (lhs & 7)));
+    }
+    void divReg(std::uint8_t divisor) {
+        // Unsigned RDX:RAX / divisor; the quotient remains in RAX and the
+        // remainder in RDX.  T40 mantissa extraction uses this for modulo
+        // 3^33 because a binary mask is not valid for positional ternary.
+        byte(static_cast<std::uint8_t>(0x48 | (divisor >= 8 ? 1 : 0)));
+        byte(0xF7);
+        byte(static_cast<std::uint8_t>(0xF0 | (divisor & 7)));
+    }
+    void clearRdx() {
+        byte(0x48); byte(0x31); byte(0xD2);
+    }
+    std::size_t jccRel32(std::uint8_t condition) {
+        byte(0x0F);
+        byte(condition);
+        const std::size_t displacement = code.size();
+        u32(0);
+        return displacement;
+    }
+    std::size_t jmpRel32() {
+        byte(0xE9);
+        const std::size_t displacement = code.size();
+        u32(0);
+        return displacement;
+    }
     void addMemDispImm8(
         std::uint8_t base, std::uint32_t displacement, std::uint8_t value) {
         byte(static_cast<std::uint8_t>(0x48 | (base >= 8 ? 1 : 0)));
@@ -4310,6 +4342,33 @@ struct VMNativeX64Emitter {
                     static_cast<std::uint8_t>(encoded >> shift);
         }
     }
+    void patchRelative(std::size_t displacement, std::size_t target) {
+        const std::int64_t relative =
+            static_cast<std::int64_t>(target) -
+            static_cast<std::int64_t>(displacement + 4);
+        const std::uint32_t encoded = static_cast<std::uint32_t>(relative);
+        for (int shift = 0; shift < 32; shift += 8)
+            code[displacement + static_cast<std::size_t>(shift / 8)] =
+                static_cast<std::uint8_t>(encoded >> shift);
+    }
+    void emitGuardFailure(int pc) {
+        // r12 holds VMNativeRunContext*.  Preserve precise state without
+        // entering a helper: the portable dispatcher resumes at this PC.
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(offsetof(VMNativeRunContext, vm)));
+        movImm64(10, static_cast<std::uint64_t>(static_cast<std::int64_t>(pc)));
+        movMemDispReg(
+            11,
+            static_cast<std::uint32_t>(offsetof(VMState, pc)),
+            10);
+        movImm64(10, static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(VMNativeX64ExitReason::GuardFailure)));
+        movMemDispReg(
+            12,
+            static_cast<std::uint32_t>(offsetof(VMNativeRunContext, exit_reason)),
+            10);
+    }
 };
 #endif
 
@@ -4328,6 +4387,7 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
         instruction.pc = micro_op.pc;
         instruction.next_pc = micro_op.pc + 1;
         instruction.branch_target = micro_op.branch_target;
+        instruction.branch_target_index = micro_op.branch_target_index;
         instruction.op = micro_op.op;
         instruction.mode = micro_op.mode;
         instruction.word = micro_op.word;
@@ -4355,6 +4415,13 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
 
     VMNativeX64Emitter emitter;
     emitter.code.reserve(128 + block->lowered.size() * 64);
+    std::vector<std::size_t> instruction_offsets;
+    instruction_offsets.reserve(block->lowered.size());
+    struct PendingBranch {
+        std::size_t target_index = 0;
+        std::size_t taken_jump_displacement = 0;
+    };
+    std::vector<PendingBranch> pending_branches;
     emitter.byte(0x41); emitter.byte(0x54);
 #if defined(_WIN32)
     emitter.movRegReg(12, 1);
@@ -4364,6 +4431,7 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
 #endif
 
     for (const VMNativeX64Instruction& instruction : block->lowered) {
+        instruction_offsets.push_back(emitter.code.size());
         switch (instruction.op) {
             case VMMicroOpcode::Nop:
             case VMMicroOpcode::Mov:
@@ -4443,9 +4511,93 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     &instruction);
                 break;
             case VMMicroOpcode::Jmp:
+                if (instruction.branch_target_index >= 0 &&
+                    instruction.branch_target_index <
+                        static_cast<int>(block->lowered.size())) {
+                    emitter.budgetGuard();
+                    // The unconditional branch has no condition path; its
+                    // commit is emitted after the target labels are known.
+                    emitter.commitSimple(instruction.branch_target);
+                    const std::size_t jump = emitter.jmpRel32();
+                    pending_branches.push_back(PendingBranch{
+                        static_cast<std::size_t>(instruction.branch_target_index),
+                        jump});
+                    break;
+                }
+                emitter.callHelper(
+                    reinterpret_cast<const void*>(&nativeX64DirectControl),
+                    &instruction);
+                break;
             case VMMicroOpcode::Brn:
             case VMMicroOpcode::Brz:
-            case VMMicroOpcode::Brp:
+            case VMMicroOpcode::Brp: {
+                if (instruction.branch_target_index < 0 ||
+                    instruction.branch_target_index >=
+                        static_cast<int>(block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectControl),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                // r11 = VMState*, rax = raw T40 payload.  A valid T40
+                // payload is below 3^40; modulo 3^33 extracts its lower
+                // balanced mantissa digits, whose raw midpoint is zero.
+                // This keeps sign testing native without a portable helper.
+                emitter.movRegMemDisp(
+                    11, 12,
+                    static_cast<std::uint32_t>(
+                        offsetof(VMNativeRunContext, vm)));
+                const std::uint32_t register_offset = static_cast<std::uint32_t>(
+                    offsetof(VMState, regfile) +
+                    offsetof(TernaryRegisterFile, reg) +
+                    static_cast<std::size_t>(instruction.word.rs_branch) *
+                        sizeof(TernaryValue) +
+                    offsetof(TernaryValue, bits) + offsetof(UInt128, lo));
+                emitter.movRegMemDisp(0, 11, register_offset);
+                emitter.movImm64(10, static_cast<std::uint64_t>(
+                    native_ops::detail::pow3(40).toUint64()));
+                emitter.cmpRegReg(0, 10);
+                const std::size_t invalid_jump = emitter.jccRel32(0x83); // jae
+                emitter.movImm64(10, static_cast<std::uint64_t>(
+                    native_ops::detail::pow3(33).toUint64()));
+                emitter.clearRdx();
+                emitter.divReg(10);
+                emitter.movImm64(10, static_cast<std::uint64_t>(
+                    (native_ops::detail::pow3(33).toUint64() - 1) / 2));
+                emitter.cmpRegReg(2, 10);
+                const std::uint8_t condition =
+                    instruction.op == VMMicroOpcode::Brn ? 0x8C :
+                    instruction.op == VMMicroOpcode::Brz ? 0x84 : 0x8F;
+                const std::size_t condition_jump =
+                    emitter.jccRel32(condition);
+                emitter.addMemDispImm8(
+                    11,
+                    static_cast<std::uint32_t>(
+                        offsetof(VMState, branch_instructions_count)),
+                    1);
+                emitter.commitSimple(instruction.next_pc);
+                const std::size_t fallthrough_jump = emitter.jmpRel32();
+                const std::size_t taken_offset = emitter.code.size();
+                emitter.addMemDispImm8(
+                    11,
+                    static_cast<std::uint32_t>(
+                        offsetof(VMState, branch_instructions_count)),
+                    1);
+                emitter.commitSimple(instruction.branch_target);
+                const std::size_t taken_jump = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_jump = emitter.jmpRel32();
+                pending_branches.push_back(PendingBranch{
+                    static_cast<std::size_t>(instruction.branch_target_index),
+                    taken_jump});
+                emitter.patchRelative(invalid_jump, guard_offset);
+                emitter.patchRelative(condition_jump, taken_offset);
+                emitter.patchRelative(fallthrough_jump, emitter.code.size());
+                emitter.patchRelative(guard_jump, emitter.code.size());
+                break;
+            }
             case VMMicroOpcode::Call:
             case VMMicroOpcode::Ret:
             case VMMicroOpcode::CallR:
@@ -4462,6 +4614,13 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
 
     const std::size_t epilogue = emitter.code.size();
     emitter.patchExits(epilogue);
+    for (const PendingBranch& branch : pending_branches) {
+        if (branch.target_index < instruction_offsets.size()) {
+            emitter.patchRelative(
+                branch.taken_jump_displacement,
+                instruction_offsets[branch.target_index]);
+        }
+    }
     emitter.movRegMemDisp(
         0, 12, static_cast<std::uint32_t>(
             offsetof(VMNativeRunContext, executed)));

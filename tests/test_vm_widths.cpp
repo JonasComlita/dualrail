@@ -376,6 +376,9 @@ void testVmWidths() {
                    "native x86-64 JIT preserves status and instruction count");
             expect(native.cycle_count == interpreter.cycle_count,
                    "native x86-64 JIT inline commits preserve cycle count");
+            expect(native.branch_instructions_count ==
+                       interpreter.branch_instructions_count,
+                   "native x86-64 JIT direct branches preserve branch count");
             expect(native.regfile.read(R1) == interpreter.regfile.read(R1),
                    "native x86-64 JIT arithmetic matches interpreter");
             expect(native.native_x64_jit_stats.blocks_built > 0 &&
