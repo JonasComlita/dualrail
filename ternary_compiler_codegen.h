@@ -1080,12 +1080,6 @@ public:
                             allocation.diagnostics.begin(),
                             allocation.diagnostics.end());
 
-        for (std::size_t i = 0; i < compile_order.size(); ++i) {
-            const FunctionAst& fn = *compile_order[i];
-            compileFunctionReal(fn, result, allocation, dry_module.functions[i],
-                                value_starts[fn.name]);
-        }
-
         int ir_emitted_functions = 0;
         int target_replay_functions = 0;
         int target_critical_edges_split = 0;
@@ -1094,7 +1088,14 @@ public:
         int target_spill_stores = 0;
         std::vector<std::string> ir_emitted_function_names;
         std::vector<std::string> target_replay_function_names;
-        for (const Function& function : optimized_module.functions) {
+        std::map<std::string, const FunctionAst*> ast_by_name;
+        for (const FunctionAst* fn : compile_order) {
+            ast_by_name[fn->name] = fn;
+        }
+        for (std::size_t function_index = 0;
+             function_index < optimized_module.functions.size();
+             ++function_index) {
+            const Function& function = optimized_module.functions[function_index];
             Function target_function = function;
             target_critical_edges_split +=
                 splitCriticalPhiEdges(target_function);
@@ -1117,12 +1118,37 @@ public:
                     allocation_unit.functions.front(),
                     ir_allocation,
                     ir_assembly)) {
+                result.object.symbols[function.name] = 0;
+                result.object.function_order.push_back(function.name);
+                std::set<std::string> refs;
+                for (const auto& block : function.blocks) {
+                    for (const auto& instr : block.instructions) {
+                        if (instr.opcode == InstrOpcode::Call &&
+                            !instr.symbol.empty()) {
+                            refs.insert(instr.symbol);
+                        }
+                    }
+                }
+                result.object.function_refs[function.name] = std::move(refs);
                 result.object.function_sections[function.name] =
                     std::move(ir_assembly);
                 ++ir_emitted_functions;
                 ir_emitted_function_names.push_back(
                     function.name);
             } else {
+                const auto ast_it = ast_by_name.find(function.name);
+                if (ast_it != ast_by_name.end() && function_index < dry_module.functions.size()) {
+                    // AST emission is now a narrowly scoped compatibility
+                    // fallback for a target-lowering rejection.  Directly
+                    // lowerable functions never enter this path, so their
+                    // object sections are produced solely from optimized SSA.
+                    compileFunctionReal(
+                        *ast_it->second,
+                        result,
+                        allocation,
+                        dry_module.functions[function_index],
+                        value_starts[function.name]);
+                }
                 ++target_replay_functions;
                 target_replay_function_names.push_back(function.name);
             }
