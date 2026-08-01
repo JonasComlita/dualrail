@@ -193,5 +193,14 @@ int main() {
               << (native_third_regression_ok ? "true" : "false")
               << "\n";
 
+    // A measured native backend gate is an acceptance test, not an advisory
+    // log line.  Keep non-x86 hosts portable, but fail CI on x86-64 until the
+    // two-of-three 1.15x speedup and third-workload regression contract is
+    // actually met.
+    if (nativeX64HostAvailable() && !native_gate_passed) {
+        std::cerr << "native x86-64 wall-time gate failed\n";
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

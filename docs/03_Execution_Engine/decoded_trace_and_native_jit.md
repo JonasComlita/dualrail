@@ -37,7 +37,9 @@ therefore remains disabled by default.
 for arithmetic, guarded-memory, and branch workloads. Native execution may
 become a default only after it reaches at least 1.15x on two workloads and is
 no more than 3% slower on the third. Decode-count reduction is diagnostic only,
-not a performance acceptance gate.
+not a performance acceptance gate. On x86-64, a failed wall-time gate returns
+nonzero so a benchmark result cannot be mistaken for acceptance; the current
+helper-backed implementation is intentionally still below that threshold.
 
 Focused parity and safety coverage lives in `tests/test_vm_widths.cpp`,
 including deterministic randomized differential execution, user-mode memory,
