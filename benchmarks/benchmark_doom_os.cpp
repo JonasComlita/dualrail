@@ -40,6 +40,9 @@ struct DoomPassResult {
     long long ticks = 0;
     long long asset_words = 0;
     long long pixel_end = 0;
+    long long stage = 0;
+    long long final_reg13 = 0;
+    long long final_pc = 0;
     long long scheduler_epoch = 0;
     long long tier1_count = 0;
     long long macro_count = 0;
@@ -52,6 +55,7 @@ struct DoomPassResult {
     long long wal_durable_lsn = 0;
     long long wal_pending_tx = 0;
     long long wal_pending_blocks = 0;
+    long long wal_last_error = 0;
     long long wal_durable_head = 0;
     long long wal_checkpoint = 0;
     long long buffer_dirty = 0;
@@ -86,6 +90,9 @@ DoomPassResult runDoomPass(
     sample.ticks = wordAt(vm, 35604);
     sample.asset_words = wordAt(vm, 35605);
     sample.pixel_end = wordAt(vm, 35606);
+    sample.stage = wordAt(vm, 35607);
+    sample.final_reg13 = sandbox::vm::ops::toLong(vm.regfile.read(13));
+    sample.final_pc = vm.pc;
     sample.scheduler_epoch = wordAt(vm, 3013);
     sample.tier1_count = wordAt(vm, 3011);
     sample.macro_count = wordAt(vm, 3012);
@@ -98,6 +105,7 @@ DoomPassResult runDoomPass(
     sample.wal_durable_lsn = wordAt(vm, 3042);
     sample.wal_pending_tx = wordAt(vm, 3045);
     sample.wal_pending_blocks = wordAt(vm, 3046);
+    sample.wal_last_error = wordAt(vm, 3049);
     sample.wal_durable_head = wordAt(vm, 3044);
     sample.wal_checkpoint = wordAt(vm, 3008);
     sample.buffer_dirty = wordAt(vm, 3025);
@@ -114,7 +122,7 @@ DoomPassResult runDoomPass(
     sample.decoded_instructions = vm.decode_instructions_count;
     sample.cache_instructions = vm.block_cache_stats.instructions_executed;
     sample.passed = result.halted() &&
-                    sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1 &&
+                    sample.final_reg13 == 1 &&
                     sample.asset_checksum == 54 &&
                     sample.frame_hash == 8235 &&
                     sample.frames == 27 &&
@@ -234,6 +242,7 @@ bool writeDoomReport(
         << "    \"durable_lsn\": " << metrics.wal_durable_lsn << ",\n"
         << "    \"pending_transactions\": " << metrics.wal_pending_tx << ",\n"
         << "    \"pending_blocks\": " << metrics.wal_pending_blocks << ",\n"
+        << "    \"last_error\": " << metrics.wal_last_error << ",\n"
         << "    \"durable_head\": " << metrics.wal_durable_head << ",\n"
         << "    \"checkpoint\": " << metrics.wal_checkpoint << ",\n"
         << "    \"buffer_dirty\": " << metrics.buffer_dirty << ",\n"
@@ -252,6 +261,9 @@ bool writeDoomReport(
         << "  \"graphics\": {\n"
         << "    \"frames_presented\": " << metrics.frames << ",\n"
         << "    \"frame_hash\": " << metrics.frame_hash << ",\n"
+        << "    \"stage\": " << metrics.stage << ",\n"
+        << "    \"final_reg13\": " << metrics.final_reg13 << ",\n"
+        << "    \"final_pc\": " << metrics.final_pc << ",\n"
         << "    \"input_events\": " << metrics.input_events << ",\n"
         << "    \"late_frames\": 0\n"
         << "  },\n"
@@ -405,7 +417,10 @@ int main(int argc, char** argv) {
 
     if (passed) {
         sandbox::vm::VMState boot_vm(sandbox::vm::ProductionProfile::minimum());
-        boot_vm.resetBlockDevice(192);
+        // v2 VFS persistence reserves the inode/extent/data regions plus the
+        // 729-record WAL ring; 192 blocks was the legacy bring-up fixture and
+        // now correctly surfaces ERR_NO_SPACE during the first large write.
+        boot_vm.resetBlockDevice(8192);
         if (!sandbox::vm::assembler::loadAndReset(boot_vm, linked.assembled)) {
             passed = false;
             detail = "image-load-failed";

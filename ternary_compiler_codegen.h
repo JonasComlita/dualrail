@@ -1467,6 +1467,18 @@ private:
                                !stack_addresses.count(instr.args[0]);
                     });
             });
+        int external_memory_ops = 0;
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if ((instr.opcode == InstrOpcode::Load ||
+                     instr.opcode == InstrOpcode::Store ||
+                     instr.opcode == InstrOpcode::Deref) &&
+                    !instr.args.empty() &&
+                    !stack_addresses.count(instr.args[0])) {
+                    ++external_memory_ops;
+                }
+            }
+        }
         const bool has_call_or_syscall = std::any_of(
             function.blocks.begin(), function.blocks.end(),
             [](const BasicBlock& block) {
@@ -1478,7 +1490,13 @@ private:
                                instr.opcode == InstrOpcode::Syscall;
                     });
             });
-        if (has_external_memory && has_call_or_syscall) return false;
+        // Direct external-memory lowering is intentionally limited to the
+        // small, straight-line raw-pointer primitive.  Larger memory regions
+        // need alias/memory-SSA and call-clobber modeling; retaining them as
+        // explicit AST fallbacks keeps the transition build correct while
+        // those analyses are completed.
+        if (has_external_memory &&
+            (has_call_or_syscall || external_memory_ops > 2)) return false;
         const bool has_frame_memory = std::any_of(
             function.blocks.begin(), function.blocks.end(),
             [](const BasicBlock& block) {
@@ -1492,6 +1510,18 @@ private:
                     });
             });
         if (has_frame_memory) {
+            // r24 is the target emitter's frame-address scratch register.
+            // The allocator palette historically allowed it as a normal
+            // scalar/spill temporary, which can silently clobber a live SSA
+            // value while materializing an alloca address.  Until scratch
+            // registers are modeled as fixed reservations, route conflicting
+            // functions through the checked AST fallback.
+            for (const auto& [value, reg] : allocation.scalar_registers) {
+                (void)value;
+                if (reg == 24 || reg + 1 == 24) return false;
+            }
+        }
+        if (has_frame_memory || has_external_memory) {
             for (const auto& [predecessor, successors] : cfg.successors) {
                 for (const std::string& successor : successors) {
                     if (cfg.index.at(successor) <= cfg.index.at(predecessor))
@@ -5559,8 +5589,7 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
                 ? stateOf(instr.args[index])
                 : LatticeValue{LatticeKind::Overdefined, 0};
         };
-        if (instr.opcode == InstrOpcode::Copy ||
-            instr.opcode == InstrOpcode::Cvt) {
+        if (instr.opcode == InstrOpcode::Copy) {
             return argument(0);
         }
         if (instr.opcode == InstrOpcode::Phi) {
