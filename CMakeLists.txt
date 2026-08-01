@@ -587,3 +587,29 @@ endif()
 message(STATUS "Build Configuration:")
 message(STATUS "  CUDA Enabled: ${ENABLE_CUDA}")
 message(STATUS "  SYCL Enabled: ${ENABLE_SYCL}")
+# ------------------------------------------------------------------------------
+# Deterministic system workload/release gates
+# ------------------------------------------------------------------------------
+if(Python3_Interpreter_FOUND)
+    add_custom_target(system_benchmark_gate
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_system_bench.py
+                --build-dir ${CMAKE_CURRENT_BINARY_DIR}
+                --no-build
+        DEPENDS benchmark_doom_os benchmark_bitnet_os
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL
+    )
+    if(TARGET stage_tos_release)
+        add_custom_target(system_release_gate
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_system_bench.py
+                    --build-dir ${CMAKE_CURRENT_BINARY_DIR}
+                    --no-build
+                    --release
+            DEPENDS system_benchmark_gate stage_tos_release
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            USES_TERMINAL
+        )
+    endif()
+endif()

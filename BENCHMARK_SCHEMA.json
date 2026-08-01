@@ -91,7 +91,55 @@
     "tlb": {"type": "object"},
     "scheduler": {"type": "object"},
     "wal": {"type": "object"},
-    "disk": {"type": "object"}
+    "disk": {"type": "object"},
+    "graphics": {"type": "object"},
+    "compute": {"type": "object"}
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "required": ["workload"],
+        "properties": {
+          "workload": {
+            "required": ["suite"],
+            "properties": {"suite": {"const": "system_benchmarks"}}
+          }
+        }
+      },
+      "then": {
+        "required": ["graphics", "compute"],
+        "properties": {
+          "workload": {"required": ["version", "suite"]},
+          "correctness": {
+            "required": ["passed", "warmup_returncodes", "measured_returncodes", "expected_hash", "observed_hash"],
+            "properties": {
+              "warmup_returncodes": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer"}},
+              "measured_returncodes": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"type": "integer"}},
+              "expected_hash": {"type": "string", "minLength": 1},
+              "observed_hash": {"type": "string", "minLength": 1}
+            }
+          },
+          "timing": {
+            "required": ["scope", "stable"],
+            "properties": {
+              "warmups": {"const": 2},
+              "iterations": {"const": 7},
+              "samples": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"type": "number", "minimum": 0}},
+              "maximum_accepted_cv": {"const": 0.03},
+              "stable": {"type": "boolean"}
+            }
+          },
+          "instruction_mix": {"required": ["dynamic_total"]},
+          "memory": {"required": ["high_water_words"]},
+          "tlb": {"required": ["misses"]},
+          "scheduler": {"required": ["timer_ticks"]},
+          "wal": {"required": ["durable_lsn"]},
+          "disk": {"required": ["read_words"]},
+          "graphics": {"required": ["frames_presented"]},
+          "compute": {"required": ["kernel"]}
+        }
+      }
+    }
+  ]
 }

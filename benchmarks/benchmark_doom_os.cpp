@@ -1,5 +1,6 @@
 #include "ternary_compiler.h"
 #include "ternary_vm.h"
+#include "system_benchmark_support.h"
 
 #include <chrono>
 #include <filesystem>
@@ -27,56 +28,237 @@ long long wordAt(sandbox::vm::VMState& vm, int address) {
         : 0;
 }
 
-double milliseconds(Clock::time_point begin, Clock::time_point end) {
-    return std::chrono::duration<double, std::milli>(end - begin).count();
+struct DoomPassResult {
+    bool passed = false;
+    double seconds = 0.0;
+    int returncode = 1;
+    long long steps = 0;
+    long long asset_checksum = 0;
+    long long frame_hash = 0;
+    long long frames = 0;
+    long long input_events = 0;
+    long long ticks = 0;
+    long long asset_words = 0;
+    long long pixel_end = 0;
+    long long scheduler_epoch = 0;
+    long long tier1_count = 0;
+    long long macro_count = 0;
+    long long tlb_hits = 0;
+    long long tlb_misses = 0;
+    long long span_cache_hits = 0;
+    long long slow_path_faults = 0;
+    long long vfs_lookups = 0;
+    long long wal_next_lsn = 0;
+    long long wal_durable_lsn = 0;
+    long long wal_pending_tx = 0;
+    long long wal_pending_blocks = 0;
+    long long wal_durable_head = 0;
+    long long wal_checkpoint = 0;
+    long long buffer_dirty = 0;
+    long long buffer_flushes = 0;
+    long long buffer_evictions = 0;
+    long long memory_high_water = 0;
+    sandbox::vm::VMTlbStats vm_tlb;
+    sandbox::vm::VMBlockDeviceStats disk;
+    long long disk_allocated_blocks = 0;
+    long long branch_instructions = 0;
+    long long decoded_instructions = 0;
+    long long cache_instructions = 0;
+};
+
+DoomPassResult runDoomPass(
+    const sandbox::vm::VMState& baseline,
+    const std::vector<sandbox::vm::TritWord27>& program) {
+    sandbox::vm::VMState vm = baseline;
+    vm.reset();
+    vm.resetBlockDeviceStats();
+    const auto begin = std::chrono::steady_clock::now();
+    const sandbox::vm::RunResult result = sandbox::vm::run(vm, 100000000);
+    const auto end = std::chrono::steady_clock::now();
+
+    DoomPassResult sample;
+    sample.seconds = std::chrono::duration<double>(end - begin).count();
+    sample.steps = result.steps;
+    sample.asset_checksum = wordAt(vm, 35600);
+    sample.frame_hash = wordAt(vm, 35601);
+    sample.frames = wordAt(vm, 35602);
+    sample.input_events = wordAt(vm, 35603);
+    sample.ticks = wordAt(vm, 35604);
+    sample.asset_words = wordAt(vm, 35605);
+    sample.pixel_end = wordAt(vm, 35606);
+    sample.scheduler_epoch = wordAt(vm, 3013);
+    sample.tier1_count = wordAt(vm, 3011);
+    sample.macro_count = wordAt(vm, 3012);
+    sample.tlb_hits = wordAt(vm, 3036);
+    sample.tlb_misses = wordAt(vm, 3037);
+    sample.span_cache_hits = wordAt(vm, 3038);
+    sample.slow_path_faults = wordAt(vm, 3039);
+    sample.vfs_lookups = wordAt(vm, 3040);
+    sample.wal_next_lsn = wordAt(vm, 3041);
+    sample.wal_durable_lsn = wordAt(vm, 3042);
+    sample.wal_pending_tx = wordAt(vm, 3045);
+    sample.wal_pending_blocks = wordAt(vm, 3046);
+    sample.wal_durable_head = wordAt(vm, 3044);
+    sample.wal_checkpoint = wordAt(vm, 3008);
+    sample.buffer_dirty = wordAt(vm, 3025);
+    sample.buffer_flushes = wordAt(vm, 3026);
+    sample.buffer_evictions = wordAt(vm, 3027);
+    sample.memory_high_water = std::max(
+        sample.pixel_end,
+        static_cast<long long>(vm.dmem.allocatedPages()) *
+            sandbox::vm::SPARSE_VM_PAGE_WORDS);
+    sample.vm_tlb = vm.tlb_stats;
+    sample.disk = vm.blockDeviceStats();
+    sample.disk_allocated_blocks = static_cast<long long>(vm.allocatedDiskBlocks());
+    sample.branch_instructions = vm.branch_instructions_count;
+    sample.decoded_instructions = vm.decode_instructions_count;
+    sample.cache_instructions = vm.block_cache_stats.instructions_executed;
+    sample.passed = result.halted() &&
+                    sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1 &&
+                    sample.asset_checksum == 54 &&
+                    sample.frame_hash == 8235 &&
+                    sample.frames == 27 &&
+                    sample.ticks == 27 &&
+                    sample.input_events == 1 &&
+                    sample.asset_words == 81;
+    sample.returncode = sample.passed ? 0 : 1;
+    (void)program;
+    return sample;
 }
 
-bool writeReport(const std::filesystem::path& path,
-                 bool passed,
-                 const std::string& detail,
-                 double compile_ms,
-                 double run_ms,
-                 long long steps,
-                 long long asset_checksum,
-                 long long frame_hash,
-                 long long frames,
-                 long long ticks,
-                 long long input_events,
-                 long long asset_words,
-                 long long memory_high_water) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out.good()) return false;
+std::string doomCorrectnessHash(long long asset_checksum,
+                                long long frame_hash,
+                                long long frames,
+                                long long ticks,
+                                long long input_events) {
+    return trit::system_benchmark::hex64(trit::system_benchmark::fnv1a64(
+        {asset_checksum, frame_hash, frames, ticks, input_events}));
+}
+
+bool writeDoomReport(
+    const std::filesystem::path& path,
+    bool passed,
+    const std::string& detail,
+    double compile_seconds,
+    double boot_seconds,
+    const std::vector<int>& warmup_returncodes,
+    const std::vector<int>& measured_returncodes,
+    const std::vector<double>& samples,
+    const DoomPassResult& metrics) {
+    const auto timing = trit::system_benchmark::summarizeTiming(samples);
+    const std::string observed_hash = doomCorrectnessHash(
+        metrics.asset_checksum, metrics.frame_hash, metrics.frames,
+        metrics.ticks, metrics.input_events);
+    const std::string expected_hash = doomCorrectnessHash(54, 8235, 27, 27, 1);
+    const auto disk = metrics.disk;
+    std::ostringstream out;
     out << "{\n"
         << "  \"schema\": \"trit.benchmark_result.v1\",\n"
-        << "  \"source\": {\"identity\": \"synthetic-doom-v1\"},\n"
-        << "  \"host\": {\"profile\": \"portable\"},\n"
-        << "  \"build\": {\"profile\": \"current\"},\n"
-        << "  \"workload\": {\"name\": \"doom-class-os\", "
-           "\"frames\": 27, \"asset_words\": 81},\n"
-        << "  \"correctness\": {\"passed\": "
-        << (passed ? "true" : "false")
-        << ", \"detail\": \"" << detail << "\", "
-           "\"asset_checksum\": " << asset_checksum
-        << ", \"frame_hash\": " << frame_hash << "},\n"
-        << "  \"timing\": {\"unit\": \"milliseconds\", "
-           "\"compile\": " << compile_ms << ", \"run\": " << run_ms
-        << ", \"warmups\": 0, \"iterations\": 1, "
-           "\"coefficient_of_variation\": 0.0},\n"
-        << "  \"instruction_mix\": {\"dynamic_total\": " << steps << "},\n"
-        << "  \"memory\": {\"high_water_words\": " << memory_high_water << "},\n"
-        << "  \"tlb\": {},\n"
-        << "  \"scheduler\": {\"timer_ticks\": " << ticks
-        << ", \"input_events\": " << input_events << "},\n"
-        << "  \"wal\": {},\n"
-        << "  \"disk\": {\"read_words\": " << asset_words << "},\n"
-        << "  \"graphics\": {\"frames_presented\": " << frames
-        << ", \"late_frames\": 0}\n"
+        << "  \"captured_at_utc\": "
+        << trit::system_benchmark::jsonString(trit::system_benchmark::utcNow()) << ",\n"
+        << "  \"source\": {\n"
+        << "    \"repository\": \"TernaryStack\",\n"
+        << "    \"commit\": " << trit::system_benchmark::jsonString(
+            trit::system_benchmark::environmentValue("TRIT_BENCH_COMMIT", "unknown")) << ",\n"
+        << "    \"dirty\": " << (trit::system_benchmark::environmentBool("TRIT_BENCH_DIRTY") ? "true" : "false") << ",\n"
+        << "    \"generator\": \"synthetic-doom-v1\"\n"
+        << "  },\n"
+        << "  \"host\": {\n"
+        << "    \"system\": " << trit::system_benchmark::jsonString(trit::system_benchmark::hostSystem()) << ",\n"
+        << "    \"release\": " << trit::system_benchmark::jsonString(trit::system_benchmark::environmentValue("OS_VERSION", "unknown")) << ",\n"
+        << "    \"machine\": " << trit::system_benchmark::jsonString(trit::system_benchmark::environmentValue("PROCESSOR_ARCHITECTURE", "unknown")) << ",\n"
+        << "    \"processor\": " << trit::system_benchmark::jsonString(trit::system_benchmark::hostProcessor()) << ",\n"
+        << "    \"python\": \"not-used-by-native-target\"\n"
+        << "  },\n"
+        << "  \"build\": {\n"
+        << "    \"directory\": " << trit::system_benchmark::jsonString(trit::system_benchmark::environmentValue("TRIT_BUILD_DIR", "build")) << ",\n"
+        << "    \"profile\": \"current-compiler\",\n"
+        << "    \"compiler_seconds\": " << compile_seconds << ",\n"
+        << "    \"backend\": \"cached_block_interpreter\"\n"
+        << "  },\n"
+        << "  \"workload\": {\n"
+        << "    \"name\": \"doom-class-os\",\n"
+        << "    \"suite\": \"system_benchmarks\",\n"
+        << "    \"version\": \"synthetic-doom-v1\",\n"
+        << "    \"frames\": 27,\n"
+        << "    \"asset_words\": 81,\n"
+        << "    \"asset_generator\": \"guest_trit_cycle_neg_one_zero_one\"\n"
+        << "  },\n"
+        << "  \"correctness\": {\n"
+        << "    \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "    \"detail\": " << trit::system_benchmark::jsonString(detail) << ",\n"
+        << "    \"warmup_returncodes\": ";
+    trit::system_benchmark::writeIntArray(out, warmup_returncodes);
+    out << ",\n    \"measured_returncodes\": ";
+    trit::system_benchmark::writeIntArray(out, measured_returncodes);
+    out << ",\n"
+        << "    \"expected_hash\": \"fnv1a64:" << expected_hash << "\",\n"
+        << "    \"observed_hash\": \"fnv1a64:" << observed_hash << "\",\n"
+        << "    \"hashes\": {\"asset\": " << metrics.asset_checksum
+        << ", \"frame\": " << metrics.frame_hash << "}\n"
+        << "  },\n";
+    trit::system_benchmark::writeTiming(out, "guest_workload_pass_after_boot",
+                                        boot_seconds, samples);
+    out << ",\n"
+        << "  \"instruction_mix\": {\n"
+        << "    \"dynamic_total\": " << metrics.steps << ",\n"
+        << "    \"branches\": " << metrics.branch_instructions << ",\n"
+        << "    \"decoded_instructions\": " << metrics.decoded_instructions << ",\n"
+        << "    \"cached_block_instructions\": " << metrics.cache_instructions << "\n"
+        << "  },\n"
+        << "  \"memory\": {\n"
+        << "    \"high_water_words\": " << metrics.memory_high_water << ",\n"
+        << "    \"allocated_pages\": " << metrics.memory_high_water / sandbox::vm::SPARSE_VM_PAGE_WORDS << "\n"
+        << "  },\n"
+        << "  \"tlb\": {\n"
+        << "    \"guest_hits\": " << metrics.tlb_hits << ",\n"
+        << "    \"guest_misses\": " << metrics.tlb_misses << ",\n"
+        << "    \"span_cache_hits\": " << metrics.span_cache_hits << ",\n"
+        << "    \"slow_path_faults\": " << metrics.slow_path_faults << ",\n"
+        << "    \"vm_l1_instruction_hits\": " << metrics.vm_tlb.instruction_l1_hits << ",\n"
+        << "    \"vm_l1_data_hits\": " << metrics.vm_tlb.data_l1_hits << ",\n"
+        << "    \"vm_l2_hits\": " << metrics.vm_tlb.l2_hits << ",\n"
+        << "    \"vm_misses\": " << metrics.vm_tlb.misses << ",\n"
+        << "    \"vm_walks\": " << metrics.vm_tlb.walks << ",\n"
+        << "    \"vm_evictions\": " << metrics.vm_tlb.evictions << "\n"
+        << "  },\n"
+        << "  \"scheduler\": {\n"
+        << "    \"timer_ticks\": " << metrics.ticks << ",\n"
+        << "    \"input_events\": " << metrics.input_events << ",\n"
+        << "    \"epoch\": " << metrics.scheduler_epoch << ",\n"
+        << "    \"tier1_queue_depth\": " << metrics.tier1_count << ",\n"
+        << "    \"macro_queue_depth\": " << metrics.macro_count << "\n"
+        << "  },\n"
+        << "  \"wal\": {\n"
+        << "    \"next_lsn\": " << metrics.wal_next_lsn << ",\n"
+        << "    \"durable_lsn\": " << metrics.wal_durable_lsn << ",\n"
+        << "    \"pending_transactions\": " << metrics.wal_pending_tx << ",\n"
+        << "    \"pending_blocks\": " << metrics.wal_pending_blocks << ",\n"
+        << "    \"durable_head\": " << metrics.wal_durable_head << ",\n"
+        << "    \"checkpoint\": " << metrics.wal_checkpoint << ",\n"
+        << "    \"buffer_dirty\": " << metrics.buffer_dirty << ",\n"
+        << "    \"buffer_flushes\": " << metrics.buffer_flushes << ",\n"
+        << "    \"buffer_evictions\": " << metrics.buffer_evictions << "\n"
+        << "  },\n"
+        << "  \"disk\": {\n"
+        << "    \"read_words\": " << metrics.asset_words << ",\n"
+        << "    \"reads\": " << disk.reads << ",\n"
+        << "    \"writes\": " << disk.writes << ",\n"
+        << "    \"cache_hits\": " << disk.hits << ",\n"
+        << "    \"cache_misses\": " << disk.misses << ",\n"
+        << "    \"flushes\": " << disk.flushes << ",\n"
+        << "    \"allocated_blocks\": " << metrics.disk_allocated_blocks << "\n"
+        << "  },\n"
+        << "  \"graphics\": {\n"
+        << "    \"frames_presented\": " << metrics.frames << ",\n"
+        << "    \"frame_hash\": " << metrics.frame_hash << ",\n"
+        << "    \"input_events\": " << metrics.input_events << ",\n"
+        << "    \"late_frames\": 0\n"
+        << "  },\n"
+        << "  \"compute\": {\"kernel\": \"none\", \"operations\": 0}\n"
         << "}\n";
-    return out.good();
+    return trit::system_benchmark::writeText(path, out.str());
 }
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -95,7 +277,11 @@ int main(int argc, char** argv) {
         const BENCH_BASE: t40 = 35600;
 
         fn main() -> t40 {
-            if kernel_init() <= 0 { return 0; }
+            if kload(BENCH_BASE + 7) == 0 {
+                if kernel_init() <= 0 { return 0; }
+                kstore(BENCH_BASE + 7, 1);
+                return 1;
+            }
             kstore(BENCH_BASE + 7, 1);
             var path: t40 = USER_MEM_BASE + 600;
             kstore(path + 0, 47);
@@ -182,7 +368,7 @@ int main(int argc, char** argv) {
             var visible: t40 = framebuffer_visible_base();
             var frame_hash: t40 = 0;
             i = 0;
-            while 81 - i > 0 {
+            while 27 - i > 0 {
                 frame_hash = frame_hash + (i + 1) * kload(visible + i);
                 i = i + 1;
             }
@@ -211,47 +397,79 @@ int main(int argc, char** argv) {
 
     bool passed = compiled.success && linked.success;
     std::string detail = passed ? "ok" : "compile-or-link-failed";
-    long long steps = 0;
-    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
-    sandbox::vm::RunResult result;
-    const auto run_begin = Clock::now();
-    if (passed) {
-        vm.resetBlockDevice(192);
-        passed = sandbox::vm::assembler::loadAndReset(vm, linked.assembled);
-        if (passed) {
-            result = sandbox::vm::run(vm, 100000000);
-            steps = result.steps;
-            passed = result.halted() &&
-                     sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1;
-            if (!passed) detail = "runtime-correctness-failed";
-        } else {
-            detail = "image-load-failed";
-        }
-    }
-    const auto run_end = Clock::now();
+    std::vector<int> warmup_returncodes;
+    std::vector<int> measured_returncodes;
+    std::vector<double> samples;
+    DoomPassResult metrics;
+    double boot_seconds = 0.0;
 
-    const long long asset_checksum = wordAt(vm, 35600);
-    const long long frame_hash = wordAt(vm, 35601);
-    const long long frames = wordAt(vm, 35602);
-    const long long input_events = wordAt(vm, 35603);
-    const long long ticks = wordAt(vm, 35604);
-    const long long asset_words = wordAt(vm, 35605);
-    const long long high_water = wordAt(vm, 35606);
-    passed = passed && asset_checksum == 54 && frame_hash == 8235 &&
-             frames == 27 && ticks == 27 &&
-             input_events == 1 && asset_words == 81;
-    if (!writeReport(report, passed, detail,
-                     milliseconds(compile_begin, compile_end),
-                     milliseconds(run_begin, run_end),
-                     steps, asset_checksum, frame_hash, frames, ticks,
-                     input_events, asset_words, high_water)) {
+    if (passed) {
+        sandbox::vm::VMState boot_vm(sandbox::vm::ProductionProfile::minimum());
+        boot_vm.resetBlockDevice(192);
+        if (!sandbox::vm::assembler::loadAndReset(boot_vm, linked.assembled)) {
+            passed = false;
+            detail = "image-load-failed";
+        } else {
+            const auto boot_begin = Clock::now();
+            const sandbox::vm::RunResult boot_result =
+                sandbox::vm::run(boot_vm, 100000000);
+            const auto boot_end = Clock::now();
+            boot_seconds = std::chrono::duration<double>(boot_end - boot_begin).count();
+            const bool boot_ok = boot_result.halted() &&
+                sandbox::vm::ops::toLong(boot_vm.regfile.read(13)) == 1 &&
+                wordAt(boot_vm, 35607) == 1;
+            if (!boot_ok) {
+                passed = false;
+                detail = "guest-boot-failed";
+            } else {
+                const sandbox::vm::VMState baseline = boot_vm;
+                for (int iteration = 0;
+                     iteration < trit::system_benchmark::kWarmups +
+                                 trit::system_benchmark::kIterations;
+                     ++iteration) {
+                    DoomPassResult sample = runDoomPass(
+                        baseline, linked.assembled.program);
+                    metrics = sample;
+                    if (iteration < trit::system_benchmark::kWarmups) {
+                        warmup_returncodes.push_back(sample.returncode);
+                    } else {
+                        measured_returncodes.push_back(sample.returncode);
+                        samples.push_back(sample.seconds);
+                    }
+                    if (!sample.passed && detail == "ok") {
+                        detail = "runtime-correctness-failed";
+                    }
+                }
+                const auto timing = trit::system_benchmark::summarizeTiming(samples);
+                passed = passed && timing.stable &&
+                         warmup_returncodes.size() ==
+                             static_cast<std::size_t>(trit::system_benchmark::kWarmups) &&
+                         measured_returncodes.size() ==
+                             static_cast<std::size_t>(trit::system_benchmark::kIterations);
+                if (!timing.stable && detail == "ok") {
+                    detail = "host-timing-unstable";
+                }
+                for (int code : warmup_returncodes) passed = passed && code == 0;
+                for (int code : measured_returncodes) passed = passed && code == 0;
+            }
+        }
+    } else {
+        warmup_returncodes.assign(trit::system_benchmark::kWarmups, 1);
+        measured_returncodes.assign(trit::system_benchmark::kIterations, 1);
+    }
+
+    if (!writeDoomReport(
+            report, passed, detail,
+            std::chrono::duration<double>(compile_end - compile_begin).count(),
+            boot_seconds, warmup_returncodes, measured_returncodes, samples,
+            metrics)) {
         std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
         return 1;
     }
     std::cout << "benchmark_doom_os: " << (passed ? "PASS" : "FAIL")
               << " report=" << report.string()
-              << " frames=" << frames
-              << " frame_hash=" << frame_hash
-              << " stage=" << wordAt(vm, 35607) << "\n";
-    return passed ? 0 : 1;
+              << " frames=" << metrics.frames
+              << " frame_hash=" << metrics.frame_hash
+              << " cv=" << trit::system_benchmark::summarizeTiming(samples).coefficient_of_variation
+              << "\n";    return passed ? 0 : 1;
 }
