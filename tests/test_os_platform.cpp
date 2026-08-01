@@ -682,6 +682,56 @@ void testNativeKernelVfsMountsDiskBackedState() {
                "pending WAL recovery rolls back to synced file contents");
     }
 
+    // Power-loss can tear either a WAL record or the currently active
+    // superblock.  Recovery must stop at the torn record, or select the other
+    // checksummed superblock, without exposing the uncommitted after-image.
+    constexpr int kWalChecksumWord = 11;
+    std::vector<long long> tornRecordImage = pendingVm.blockImage();
+    tornRecordImage[static_cast<std::size_t>(
+        sandbox::os::NATIVE_WAL_DISK_RECORD_BLOCK) *
+        sandbox::vm::STORAGE_BLOCK_WORDS + kWalChecksumWord] = 0;
+    sandbox::vm::VMState tornRecordReaderVm(sandbox::vm::ProductionProfile::minimum());
+    expect(tornRecordReaderVm.loadBlockImage(tornRecordImage),
+           "torn WAL record image loads into rebooted VM");
+    if (readerLinked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(
+                   tornRecordReaderVm, readerLinked.assembled),
+               "torn WAL record recovery reader loads");
+        const auto tornRecordResult = sandbox::vm::run(
+            tornRecordReaderVm, 50000000);
+        dumpNativeRunIfFailed("torn-wal-record-reader", tornRecordResult,
+                              tornRecordReaderVm, readerLinked.assembled.labels);
+        expect(tornRecordResult.halted(),
+               "torn WAL record recovery reader halts");
+        expect(sandbox::vm::ops::toLong(
+                   tornRecordReaderVm.regfile.read(13)) == 1,
+               "torn WAL record is ignored without exposing its after-image");
+    }
+
+    std::vector<long long> tornSuperblockImage = pendingVm.blockImage();
+    tornSuperblockImage[static_cast<std::size_t>(
+        sandbox::os::NATIVE_WAL_DISK_META_BLOCK) *
+        sandbox::vm::STORAGE_BLOCK_WORDS + kWalChecksumWord] = 0;
+    sandbox::vm::VMState tornSuperblockReaderVm(
+        sandbox::vm::ProductionProfile::minimum());
+    expect(tornSuperblockReaderVm.loadBlockImage(tornSuperblockImage),
+           "torn WAL superblock image loads into rebooted VM");
+    if (readerLinked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(
+                   tornSuperblockReaderVm, readerLinked.assembled),
+               "torn WAL superblock recovery reader loads");
+        const auto tornSuperblockResult = sandbox::vm::run(
+            tornSuperblockReaderVm, 50000000);
+        dumpNativeRunIfFailed("torn-wal-superblock-reader",
+                              tornSuperblockResult, tornSuperblockReaderVm,
+                              readerLinked.assembled.labels);
+        expect(tornSuperblockResult.halted(),
+               "torn WAL superblock recovery reader halts");
+        expect(sandbox::vm::ops::toLong(
+                   tornSuperblockReaderVm.regfile.read(13)) == 1,
+               "alternate WAL superblock recovers the synced file state");
+    }
+
     const std::string committed = R"(
         fn seed_persist_path(addr: t40) -> t40 {
             kstore(addr + 0, 47);
