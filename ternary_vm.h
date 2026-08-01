@@ -3269,14 +3269,17 @@ static constexpr int VM_TRACE_JIT_MAX_LENGTH = 64;
 inline void syncTraceJitGeneration(VMState& vm) {
     const std::uint64_t generation = vm.imem.generation();
     if (vm.trace_jit_observed_generation == generation) return;
-    const bool had_entries =
+    const bool had_trace_entries =
         !vm.hot_pc_counts.empty() || !vm.trace_jit_cache.empty() ||
         !vm.trace_jit_unsupported_pcs.empty();
+    const bool had_native_entries = !vm.native_x64_code_cache.empty();
     vm.hot_pc_counts.clear();
     vm.trace_jit_cache.clear();
     vm.trace_jit_unsupported_pcs.clear();
+    vm.native_x64_code_cache.clear();
     vm.trace_jit_observed_generation = generation;
-    if (had_entries) ++vm.trace_jit_stats.invalidations;
+    if (had_trace_entries) ++vm.trace_jit_stats.invalidations;
+    if (had_native_entries) ++vm.native_x64_jit_stats.invalidations;
 }
 
 [[nodiscard]] inline bool traceJitFastPathAvailable(const VMState& vm) {
@@ -3343,6 +3346,23 @@ inline bool classifyTraceJitInstruction(VMTraceJitInstruction& emitted) {
             emitted.branch_target = emitted.pc + iw.offset;
             emitted.ends_trace = true;
             return true;
+        case Opcode::CALL:
+            emitted.op = VMTraceJitOp::Call;
+            emitted.branch_target = emitted.pc + iw.offset;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::RET:
+            emitted.op = VMTraceJitOp::Ret;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::CALLR:
+            emitted.op = VMTraceJitOp::CallR;
+            emitted.ends_trace = true;
+            return true;
+        case Opcode::JMPR:
+            emitted.op = VMTraceJitOp::Jmpr;
+            emitted.ends_trace = true;
+            return true;
         default:
             return false;
     }
@@ -3401,6 +3421,12 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
             op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
             break;
         case VMMicroOpcode::Jmp:
+            op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
+            break;
+        case VMMicroOpcode::Call:
+        case VMMicroOpcode::Ret:
+        case VMMicroOpcode::CallR:
+        case VMMicroOpcode::Jmpr:
             op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
             break;
         case VMMicroOpcode::Unsupported:
@@ -3641,6 +3667,39 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
             next_index = emitted.branch_target_index;
             exit_trace = next_index < 0;
             break;
+        case VMTraceJitOp::Call:
+            vm.regfile.writeLR(ops::fromLong(emitted.pc + 1));
+            pc_next = emitted.branch_target;
+            exit_trace = true;
+            break;
+
+        case VMTraceJitOp::Ret: {
+            const int ret_addr = exec::pcFromValue(vm.regfile.readLR());
+            if (!vm.validateControlTarget(ret_addr)) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            pc_next = ret_addr;
+            exit_trace = true;
+            break;
+        }
+
+        case VMTraceJitOp::CallR:
+        case VMTraceJitOp::Jmpr: {
+            const int dest = exec::pcFromValue(vm.regfile.read(iw.rs1));
+            if (!vm.validateControlTarget(dest)) {
+                vm.pc = emitted.pc;
+                ++vm.trace_jit_stats.interpreter_bailouts;
+                return false;
+            }
+            if (emitted.op == VMTraceJitOp::CallR)
+                vm.regfile.writeLR(ops::fromLong(emitted.pc + 1));
+            pc_next = dest;
+            exit_trace = true;
+            break;
+        }
+
 
         case VMTraceJitOp::Brn:
         case VMTraceJitOp::Brz:
@@ -3755,13 +3814,310 @@ inline int executeTraceJit(VMState& vm, int max_instructions) {
     return executeTraceJitTrace(vm, *trace, max_instructions);
 }
 
+struct VMNativeRunContext {
+    VMState* vm = nullptr;
+    int budget = 0;
+    int executed = 0;
+    int next_pc = 0;
+    int exit_reason = 0;
+};
+
+enum class VMNativeX64ExitReason : int {
+    None = 0,
+    Budget,
+    GuardFailure,
+    Unsupported,
+    BranchExit,
+    VmStopped,
+};
+
+struct VMNativeX64Instruction {
+    int pc = 0;
+    int next_pc = 0;
+    int branch_target = -1;
+    VMMicroOpcode op = VMMicroOpcode::Unsupported;
+    TernaryMode mode = TernaryMode::T40;
+    InstructionWord word{};
+    TernaryValue immediate = TernaryValue::zero(TernaryMode::T40);
+    TernaryValue* destination = nullptr;
+    const TernaryValue* source = nullptr;
+    TernaryMode* destination_mode = nullptr;
+    bool ends_trace = false;
+};
+
+inline int nativeX64SideExit(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction,
+    VMNativeX64ExitReason reason) {
+    if (context == nullptr) return 0;
+    context->exit_reason = static_cast<int>(reason);
+    if (context->vm != nullptr && instruction != nullptr)
+        context->vm->pc = instruction->pc;
+    return 0;
+}
+
+[[nodiscard]] inline bool nativeX64CanStartInstruction(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (context == nullptr || instruction == nullptr || context->vm == nullptr)
+        return false;
+    VMState& vm = *context->vm;
+    if (!vm.isRunning() || vm.power_control != 0 ||
+        context->executed >= context->budget) {
+        context->exit_reason = static_cast<int>(
+            context->executed >= context->budget
+                ? VMNativeX64ExitReason::Budget
+                : VMNativeX64ExitReason::VmStopped);
+        return false;
+    }
+    vm.pc = instruction->pc;
+    return true;
+}
+
+inline int nativeX64CommitInstruction(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (!nativeX64CanStartInstruction(context, instruction)) return 0;
+    VMState& vm = *context->vm;
+    vm.completeInstruction(instruction->next_pc);
+    ++context->executed;
+    context->next_pc = vm.pc;
+    if (instruction->ends_trace) {
+        context->exit_reason = static_cast<int>(
+            VMNativeX64ExitReason::BranchExit);
+        return 0;
+    }
+    if (!vm.isRunning() || vm.power_control != 0 ||
+        vm.pc != instruction->next_pc) {
+        context->exit_reason = static_cast<int>(
+            VMNativeX64ExitReason::VmStopped);
+        return 0;
+    }
+    return 1;
+}
+
+inline int nativeX64DirectArithmetic(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (!nativeX64CanStartInstruction(context, instruction)) return 0;
+    if (instruction->mode != TernaryMode::T40) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::Unsupported);
+    }
+    VMState& vm = *context->vm;
+    const TernaryValue lhs =
+        vm.regfile.readView(instruction->word.rs1, instruction->mode);
+    const TernaryValue rhs =
+        vm.regfile.readView(instruction->word.rs2, instruction->mode);
+    if (lhs.mode != TernaryMode::T40 || rhs.mode != TernaryMode::T40 ||
+        lhs.isInvalid() || rhs.isInvalid()) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+
+    TernaryValue result = TernaryValue::invalid(TernaryMode::T40);
+    switch (instruction->op) {
+        case VMMicroOpcode::Add:
+            result = TernaryValue::fromTriple(native_ops::add(
+                lhs.asTriple(), rhs.asTriple()));
+            break;
+        case VMMicroOpcode::Sub:
+            result = TernaryValue::fromTriple(native_ops::subtract(
+                lhs.asTriple(), rhs.asTriple()));
+            break;
+        case VMMicroOpcode::Mul:
+            result = TernaryValue::fromTriple(native_ops::multiply(
+                lhs.asTriple(), rhs.asTriple()));
+            break;
+        case VMMicroOpcode::Neg:
+            result = TernaryValue::fromTriple(native_ops::negate(
+                lhs.asTriple()));
+            break;
+        case VMMicroOpcode::Abs:
+            result = TernaryValue::fromTriple(native_ops::abs(
+                lhs.asTriple()));
+            break;
+        default:
+            return nativeX64SideExit(
+                context, instruction, VMNativeX64ExitReason::Unsupported);
+    }
+    if (result.isInvalid()) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+    vm.regfile.write(instruction->word.rd, result);
+    return nativeX64CommitInstruction(context, instruction);
+}
+
+inline int nativeX64DirectMemory(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (!nativeX64CanStartInstruction(context, instruction)) return 0;
+    VMState& vm = *context->vm;
+    const TernaryValue base =
+        vm.regfile.readView(instruction->word.rs1, TernaryMode::T40);
+    if (base.mode != TernaryMode::T40 || base.isInvalid()) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+    const long long base_address = ops::toLong(base);
+    const long long immediate = instruction->word.imm;
+    if ((immediate > 0 &&
+         base_address > std::numeric_limits<long long>::max() - immediate) ||
+        (immediate < 0 &&
+         base_address < std::numeric_limits<long long>::min() - immediate)) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+    const long long address = base_address + immediate;
+    if (address < std::numeric_limits<int>::min() ||
+        address > std::numeric_limits<int>::max()) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+
+    int physical_address = 0;
+    int routed_cause = instruction->op == VMMicroOpcode::Load
+        ? OS_CAUSE_LOAD_FAULT
+        : OS_CAUSE_STORE_FAULT;
+    const bool translated = instruction->op == VMMicroOpcode::Load
+        ? vm.translateLoadAddress(
+              static_cast<int>(address), physical_address, routed_cause)
+        : vm.translateStoreAddress(
+              static_cast<int>(address), physical_address, routed_cause);
+    if (!translated) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
+
+    if (instruction->op == VMMicroOpcode::Load) {
+        auto [value, fault] = vm.dmem.load(physical_address);
+        if (fault != MemFaultCode::OK || value.mode != TernaryMode::T40) {
+            return nativeX64SideExit(
+                context, instruction, VMNativeX64ExitReason::GuardFailure);
+        }
+        vm.regfile.write(instruction->word.rd, value);
+    } else {
+        const TernaryValue value =
+            vm.regfile.readPhysical(instruction->word.rs_store);
+        if (value.mode != TernaryMode::T40 ||
+            vm.dmem.store(physical_address, value) != MemFaultCode::OK) {
+            return nativeX64SideExit(
+                context, instruction, VMNativeX64ExitReason::GuardFailure);
+        }
+        vm.noteStoreForReservation(physical_address);
+    }
+    return nativeX64CommitInstruction(context, instruction);
+}
+
+inline int nativeX64DirectControl(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (!nativeX64CanStartInstruction(context, instruction)) return 0;
+    VMState& vm = *context->vm;
+    int next_pc = instruction->next_pc;
+    switch (instruction->op) {
+        case VMMicroOpcode::Jmp:
+            next_pc = instruction->branch_target;
+            break;
+        case VMMicroOpcode::Brn:
+        case VMMicroOpcode::Brz:
+        case VMMicroOpcode::Brp: {
+            ++vm.branch_instructions_count;
+            const int8_t trit0 = readTrit0(
+                vm.regfile.read(instruction->word.rs_branch));
+            const bool taken =
+                (instruction->op == VMMicroOpcode::Brn && trit0 == T_NEG) ||
+                (instruction->op == VMMicroOpcode::Brz && trit0 == T_ZER) ||
+                (instruction->op == VMMicroOpcode::Brp && trit0 == T_POS);
+            if (taken) next_pc = instruction->branch_target;
+            break;
+        }
+        case VMMicroOpcode::Call:
+            vm.regfile.writeLR(ops::fromLong(instruction->pc + 1));
+            next_pc = instruction->branch_target;
+            break;
+        case VMMicroOpcode::Ret: {
+            const int target = exec::pcFromValue(vm.regfile.readLR());
+            if (!vm.validateControlTarget(target)) {
+                return nativeX64SideExit(
+                    context, instruction, VMNativeX64ExitReason::GuardFailure);
+            }
+            next_pc = target;
+            break;
+        }
+        case VMMicroOpcode::CallR:
+        case VMMicroOpcode::Jmpr: {
+            const int target = exec::pcFromValue(
+                vm.regfile.read(instruction->word.rs1));
+            if (!vm.validateControlTarget(target)) {
+                return nativeX64SideExit(
+                    context, instruction, VMNativeX64ExitReason::GuardFailure);
+            }
+            if (instruction->op == VMMicroOpcode::CallR)
+                vm.regfile.writeLR(ops::fromLong(instruction->pc + 1));
+            next_pc = target;
+            break;
+        }
+        default:
+            return nativeX64SideExit(
+                context, instruction, VMNativeX64ExitReason::Unsupported);
+    }
+    vm.completeInstruction(next_pc);
+    ++context->executed;
+    context->next_pc = vm.pc;
+    context->exit_reason = static_cast<int>(
+        VMNativeX64ExitReason::BranchExit);
+    return 0;
+}
+
+[[nodiscard]] inline bool nativeX64TraceDirectlyEligible(
+    const VMState& vm,
+    const VMTraceJitTrace& trace) {
+    if (trace.instructions.empty()) return false;
+    for (const TernaryMode mode : vm.regfile.view_mode) {
+        if (mode != TernaryMode::T40) return false;
+    }
+    for (const VMMicroOp& micro_op : trace.instructions) {
+        switch (micro_op.op) {
+            case VMMicroOpcode::Nop:
+            case VMMicroOpcode::Mov:
+            case VMMicroOpcode::Load:
+            case VMMicroOpcode::Store:
+            case VMMicroOpcode::Jmp:
+            case VMMicroOpcode::Brn:
+            case VMMicroOpcode::Brz:
+            case VMMicroOpcode::Brp:
+            case VMMicroOpcode::Call:
+            case VMMicroOpcode::Ret:
+            case VMMicroOpcode::CallR:
+            case VMMicroOpcode::Jmpr:
+                break;
+            case VMMicroOpcode::Copy:
+            case VMMicroOpcode::Add:
+            case VMMicroOpcode::Sub:
+            case VMMicroOpcode::Mul:
+            case VMMicroOpcode::Neg:
+            case VMMicroOpcode::Abs:
+                if (micro_op.mode != TernaryMode::T40) return false;
+                break;
+            case VMMicroOpcode::MovH:
+            case VMMicroOpcode::Unsupported:
+                return false;
+        }
+    }
+    return true;
+}
+
 struct VMNativeX64CodeBlock {
-    using EntryPoint = int (*)(VMState*, int);
+    using EntryPoint = int (*)(VMNativeRunContext*);
 
     void* allocation = nullptr;
     std::size_t allocation_size = 0;
     std::size_t code_size = 0;
     EntryPoint entry = nullptr;
+    std::vector<VMNativeX64Instruction> lowered;
+    std::size_t direct_instruction_count = 0;
     bool writable = false;
     bool executable = false;
 
@@ -3791,66 +4147,274 @@ struct VMNativeX64CodeBlock {
 #endif
 }
 
-inline int nativeX64DecodedTraceEntry(
-    VMState* vm,
-    int max_instructions,
-    int start_pc) {
-    if (!vm) return 0;
-    const VMDecodedTraceCacheKey key =
-        decodedTraceCacheKey(*vm, start_pc);
-    const auto trace = vm->trace_jit_cache.find(key);
-    if (trace == vm->trace_jit_cache.end()) return 0;
-    return executeTraceJitTrace(
-        *vm, trace->second, max_instructions);
-}
-
-[[nodiscard]] inline std::shared_ptr<VMNativeX64CodeBlock>
-compileNativeX64TraceThunk(int start_pc) {
-#if !defined(_M_X64) && !defined(__x86_64__)
-    (void)start_pc;
-    return {};
-#else
+#if defined(_M_X64) || defined(__x86_64__)
+struct VMNativeX64Emitter {
     std::vector<std::uint8_t> code;
-    auto byte = [&](std::uint8_t value) { code.push_back(value); };
-    auto u32 = [&](std::uint32_t value) {
+    std::vector<std::size_t> exit_jumps;
+
+    void byte(std::uint8_t value) { code.push_back(value); }
+    void u32(std::uint32_t value) {
         for (int shift = 0; shift < 32; shift += 8)
             byte(static_cast<std::uint8_t>(value >> shift));
-    };
-    auto u64 = [&](std::uint64_t value) {
+    }
+    void u64(std::uint64_t value) {
         for (int shift = 0; shift < 64; shift += 8)
             byte(static_cast<std::uint8_t>(value >> shift));
-    };
+    }
+    void movImm64(std::uint8_t reg, std::uint64_t value) {
+        byte(static_cast<std::uint8_t>(0x48 | (reg >= 8 ? 1 : 0)));
+        byte(static_cast<std::uint8_t>(0xB8 + (reg & 7)));
+        u64(value);
+    }
+    void movRegReg(std::uint8_t dst, std::uint8_t src) {
+        byte(static_cast<std::uint8_t>(0x48 |
+            (src >= 8 ? 4 : 0) | (dst >= 8 ? 1 : 0)));
+        byte(0x89);
+        byte(static_cast<std::uint8_t>(0xC0 |
+            ((src & 7) << 3) | (dst & 7)));
+    }
+    void movRegMemDisp(
+        std::uint8_t dst, std::uint8_t base, std::uint32_t displacement) {
+        byte(static_cast<std::uint8_t>(0x48 |
+            (dst >= 8 ? 4 : 0) | (base >= 8 ? 1 : 0)));
+        byte(0x8B);
+        const bool needs_sib = (base & 7) == 4;
+        byte(static_cast<std::uint8_t>(0x80 |
+            ((dst & 7) << 3) | (needs_sib ? 4 : (base & 7))));
+        if (needs_sib) byte(0x24);
+        u32(displacement);
+    }
+    void movMemDispReg(
+        std::uint8_t base, std::uint32_t displacement, std::uint8_t src) {
+        byte(static_cast<std::uint8_t>(0x48 |
+            (src >= 8 ? 4 : 0) | (base >= 8 ? 1 : 0)));
+        byte(0x89);
+        const bool needs_sib = (base & 7) == 4;
+        byte(static_cast<std::uint8_t>(0x80 |
+            ((src & 7) << 3) | (needs_sib ? 4 : (base & 7))));
+        if (needs_sib) byte(0x24);
+        u32(displacement);
+    }
+    void movByteMemImm(
+        std::uint8_t base, std::uint32_t displacement, std::uint8_t value) {
+        if (base >= 8) byte(0x41);
+        byte(0xC6);
+        const bool needs_sib = (base & 7) == 4;
+        byte(static_cast<std::uint8_t>(0x80 |
+            (needs_sib ? 4 : (base & 7))));
+        if (needs_sib) byte(0x24);
+        u32(displacement);
+        byte(value);
+    }
+    void budgetGuard() {
+        movRegMemDisp(
+            0, 12,
+            static_cast<std::uint32_t>(offsetof(VMNativeRunContext, budget)));
+        byte(0x41); byte(0x3B); byte(0x84); byte(0x24);
+        u32(static_cast<std::uint32_t>(
+            offsetof(VMNativeRunContext, executed)));
+        byte(0x0F); byte(0x8E);
+        const std::size_t displacement = code.size();
+        u32(0);
+        exit_jumps.push_back(displacement);
+    }
+    void callHelper(
+        const void* helper,
+        const VMNativeX64Instruction* instruction) {
+#if defined(_WIN32)
+        movRegReg(1, 12);
+        movImm64(2, reinterpret_cast<std::uintptr_t>(instruction));
+#else
+        movRegReg(7, 12);
+        movImm64(6, reinterpret_cast<std::uintptr_t>(instruction));
+#endif
+        movImm64(0, reinterpret_cast<std::uintptr_t>(helper));
+        byte(0xFF); byte(0xD0);
+        byte(0x85); byte(0xC0);
+        byte(0x0F); byte(0x84);
+        const std::size_t displacement = code.size();
+        u32(0);
+        exit_jumps.push_back(displacement);
+    }
+    void patchExits(std::size_t target) {
+        for (const std::size_t displacement : exit_jumps) {
+            const std::int64_t relative =
+                static_cast<std::int64_t>(target) -
+                static_cast<std::int64_t>(displacement + 4);
+            const std::uint32_t encoded =
+                static_cast<std::uint32_t>(relative);
+            for (int shift = 0; shift < 32; shift += 8)
+                code[displacement + static_cast<std::size_t>(shift / 8)] =
+                    static_cast<std::uint8_t>(encoded >> shift);
+        }
+    }
+};
+#endif
 
-#if defined(_WIN32)
-    // Windows x64: rcx=VMState*, edx=max, r8d=specialized start PC.
-    byte(0x41); byte(0xB8); u32(static_cast<std::uint32_t>(start_pc));
+[[nodiscard]] inline std::shared_ptr<VMNativeX64CodeBlock>
+compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
+#if !defined(_M_X64) && !defined(__x86_64__)
+    (void)vm;
+    (void)trace;
+    return {};
 #else
-    // System V x86-64: rdi=VMState*, esi=max, edx=start PC.
-    byte(0xBA); u32(static_cast<std::uint32_t>(start_pc));
-#endif
-    byte(0x48); byte(0xB8);
-    u64(static_cast<std::uint64_t>(
-        reinterpret_cast<std::uintptr_t>(&nativeX64DecodedTraceEntry)));
-#if defined(_WIN32)
-    // Reserve 32-byte shadow space and align the stack for the helper call.
-    byte(0x48); byte(0x83); byte(0xEC); byte(0x28);
-#else
-    byte(0x48); byte(0x83); byte(0xEC); byte(0x08);
-#endif
-    byte(0xFF); byte(0xD0);
-#if defined(_WIN32)
-    byte(0x48); byte(0x83); byte(0xC4); byte(0x28);
-#else
-    byte(0x48); byte(0x83); byte(0xC4); byte(0x08);
-#endif
-    byte(0xC3);
-
+    if (!nativeX64TraceDirectlyEligible(vm, trace)) return {};
     auto block = std::make_shared<VMNativeX64CodeBlock>();
+    block->lowered.reserve(trace.instructions.size());
+    for (const VMMicroOp& micro_op : trace.instructions) {
+        VMNativeX64Instruction instruction;
+        instruction.pc = micro_op.pc;
+        instruction.next_pc = micro_op.pc + 1;
+        instruction.branch_target = micro_op.branch_target;
+        instruction.op = micro_op.op;
+        instruction.mode = micro_op.mode;
+        instruction.word = micro_op.word;
+        instruction.ends_trace = micro_op.ends_trace;
+        if (instruction.op == VMMicroOpcode::Mov) {
+            instruction.immediate = ops::fromLong(instruction.word.imm);
+        } else if (instruction.op == VMMicroOpcode::Copy) {
+            instruction.immediate = TernaryValue::zero(TernaryMode::T40);
+        }
+        if (instruction.word.rd != R0_ZERO &&
+            instruction.word.rd < REG_COUNT) {
+            instruction.destination =
+                &vm.regfile.reg[instruction.word.rd];
+            instruction.destination_mode =
+                &vm.regfile.view_mode[instruction.word.rd];
+        }
+        if (instruction.op == VMMicroOpcode::Copy &&
+            instruction.word.rs1 != R0_ZERO &&
+            instruction.word.rs1 < REG_COUNT) {
+            instruction.source =
+                &vm.regfile.reg[instruction.word.rs1];
+        }
+        block->lowered.push_back(instruction);
+    }
+
+    VMNativeX64Emitter emitter;
+    emitter.code.reserve(128 + block->lowered.size() * 64);
+    emitter.byte(0x41); emitter.byte(0x54);
+#if defined(_WIN32)
+    emitter.movRegReg(12, 1);
+    emitter.byte(0x48); emitter.byte(0x83); emitter.byte(0xEC); emitter.byte(0x20);
+#else
+    emitter.movRegReg(12, 7);
+#endif
+
+    for (const VMNativeX64Instruction& instruction : block->lowered) {
+        switch (instruction.op) {
+            case VMMicroOpcode::Nop:
+            case VMMicroOpcode::Mov:
+            case VMMicroOpcode::Copy:
+                emitter.budgetGuard();
+                if (instruction.op == VMMicroOpcode::Mov &&
+                    instruction.destination != nullptr) {
+                    emitter.movImm64(10, reinterpret_cast<std::uintptr_t>(
+                        instruction.destination));
+                    emitter.movImm64(0, instruction.immediate.bits.lo);
+                    emitter.movMemDispReg(
+                        10, static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, lo)), 0);
+                    emitter.movImm64(0, instruction.immediate.bits.hi);
+                    emitter.movMemDispReg(
+                        10, static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, hi)), 0);
+                    emitter.movByteMemImm(
+                        10, static_cast<std::uint32_t>(offsetof(TernaryValue, mode)),
+                        static_cast<std::uint8_t>(TernaryMode::T40));
+                    emitter.movImm64(10, reinterpret_cast<std::uintptr_t>(
+                        instruction.destination_mode));
+                    emitter.movByteMemImm(
+                        10, 0, static_cast<std::uint8_t>(TernaryMode::T40));
+                } else if (instruction.op == VMMicroOpcode::Copy &&
+                           instruction.destination != nullptr) {
+                    emitter.movImm64(11, reinterpret_cast<std::uintptr_t>(
+                        instruction.destination));
+                    if (instruction.source != nullptr) {
+                        emitter.movImm64(10, reinterpret_cast<std::uintptr_t>(
+                            instruction.source));
+                        emitter.movRegMemDisp(
+                            0, 10, static_cast<std::uint32_t>(
+                                offsetof(TernaryValue, bits) +
+                                offsetof(UInt128, lo)));
+                        emitter.movRegMemDisp(
+                            2, 10, static_cast<std::uint32_t>(
+                                offsetof(TernaryValue, bits) +
+                                offsetof(UInt128, hi)));
+                    } else {
+                        emitter.movImm64(0, instruction.immediate.bits.lo);
+                        emitter.movImm64(2, instruction.immediate.bits.hi);
+                    }
+                    emitter.movMemDispReg(
+                        11, static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, lo)), 0);
+                    emitter.movMemDispReg(
+                        11, static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, hi)), 2);
+                    emitter.movByteMemImm(
+                        11, static_cast<std::uint32_t>(offsetof(TernaryValue, mode)),
+                        static_cast<std::uint8_t>(TernaryMode::T40));
+                    emitter.movImm64(10, reinterpret_cast<std::uintptr_t>(
+                        instruction.destination_mode));
+                    emitter.movByteMemImm(
+                        10, 0, static_cast<std::uint8_t>(TernaryMode::T40));
+                }
+                emitter.callHelper(
+                    reinterpret_cast<const void*>(&nativeX64CommitInstruction),
+                    &instruction);
+                break;
+            case VMMicroOpcode::Add:
+            case VMMicroOpcode::Sub:
+            case VMMicroOpcode::Mul:
+            case VMMicroOpcode::Neg:
+            case VMMicroOpcode::Abs:
+                emitter.callHelper(
+                    reinterpret_cast<const void*>(&nativeX64DirectArithmetic),
+                    &instruction);
+                break;
+            case VMMicroOpcode::Load:
+            case VMMicroOpcode::Store:
+                emitter.callHelper(
+                    reinterpret_cast<const void*>(&nativeX64DirectMemory),
+                    &instruction);
+                break;
+            case VMMicroOpcode::Jmp:
+            case VMMicroOpcode::Brn:
+            case VMMicroOpcode::Brz:
+            case VMMicroOpcode::Brp:
+            case VMMicroOpcode::Call:
+            case VMMicroOpcode::Ret:
+            case VMMicroOpcode::CallR:
+            case VMMicroOpcode::Jmpr:
+                emitter.callHelper(
+                    reinterpret_cast<const void*>(&nativeX64DirectControl),
+                    &instruction);
+                break;
+            case VMMicroOpcode::MovH:
+            case VMMicroOpcode::Unsupported:
+                return {};
+        }
+    }
+
+    const std::size_t epilogue = emitter.code.size();
+    emitter.patchExits(epilogue);
+    emitter.movRegMemDisp(
+        0, 12, static_cast<std::uint32_t>(
+            offsetof(VMNativeRunContext, executed)));
+#if defined(_WIN32)
+    emitter.byte(0x48); emitter.byte(0x83); emitter.byte(0xC4); emitter.byte(0x20);
+#endif
+    emitter.byte(0x41); emitter.byte(0x5C);
+    emitter.byte(0xC3);
+
 #if defined(_WIN32)
     SYSTEM_INFO info{};
     GetSystemInfo(&info);
-    const std::size_t page_size =
-        static_cast<std::size_t>(info.dwPageSize);
+    const std::size_t page_size = static_cast<std::size_t>(info.dwPageSize);
 #else
     const long page_size_long = sysconf(_SC_PAGESIZE);
     const std::size_t page_size = page_size_long > 0
@@ -3858,7 +4422,7 @@ compileNativeX64TraceThunk(int start_pc) {
         : std::size_t{4096};
 #endif
     block->allocation_size =
-        ((code.size() + page_size - 1) / page_size) * page_size;
+        ((emitter.code.size() + page_size - 1) / page_size) * page_size;
 #if defined(_WIN32)
     block->allocation = VirtualAlloc(
         nullptr, block->allocation_size,
@@ -3872,8 +4436,8 @@ compileNativeX64TraceThunk(int start_pc) {
 #endif
     if (!block->allocation) return {};
     block->writable = true;
-    std::memcpy(block->allocation, code.data(), code.size());
-    block->code_size = code.size();
+    std::memcpy(block->allocation, emitter.code.data(), emitter.code.size());
+    block->code_size = emitter.code.size();
 #if defined(_WIN32)
     DWORD previous = 0;
     if (!VirtualProtect(
@@ -3895,9 +4459,9 @@ compileNativeX64TraceThunk(int start_pc) {
 #endif
     block->writable = false;
     block->executable = true;
-    block->entry =
-        reinterpret_cast<VMNativeX64CodeBlock::EntryPoint>(
-            block->allocation);
+    block->direct_instruction_count = block->lowered.size();
+    block->entry = reinterpret_cast<VMNativeX64CodeBlock::EntryPoint>(
+        block->allocation);
     return block;
 #endif
 }
@@ -3920,14 +4484,23 @@ inline int executeNativeX64Jit(
         const long long samples = ++vm.hot_pc_counts[key];
         if (samples < vm.trace_jit_hot_threshold) return 0;
         if (!buildTraceJitTrace(vm, start_pc)) return 0;
+        trace = vm.trace_jit_cache.find(key);
+        if (trace == vm.trace_jit_cache.end()) return 0;
+    }
+    if (!nativeX64TraceDirectlyEligible(vm, trace->second)) {
+        ++vm.native_x64_jit_stats.portable_side_exits;
+        return 0;
     }
 
     auto code = vm.native_x64_code_cache.find(key);
     std::shared_ptr<VMNativeX64CodeBlock> block;
     if (code == vm.native_x64_code_cache.end()) {
         ++vm.native_x64_jit_stats.compilation_attempts;
-        block = compileNativeX64TraceThunk(start_pc);
-        if (!block || !block->isWriteXorExecute()) return 0;
+        block = compileNativeX64Trace(vm, trace->second);
+        if (!block || !block->isWriteXorExecute()) {
+            ++vm.native_x64_jit_stats.portable_side_exits;
+            return 0;
+        }
         vm.native_x64_code_cache.emplace(key, block);
         ++vm.native_x64_jit_stats.blocks_built;
         ++vm.native_x64_jit_stats.wx_transitions;
@@ -3935,16 +4508,20 @@ inline int executeNativeX64Jit(
         block = std::static_pointer_cast<VMNativeX64CodeBlock>(
             code->second);
     }
-    const int executed = block->entry(&vm, max_instructions);
+
+    VMNativeRunContext context;
+    context.vm = &vm;
+    context.budget = max_instructions;
+    const int executed = block->entry(&context);
     if (executed > 0) {
         ++vm.native_x64_jit_stats.blocks_executed;
         vm.native_x64_jit_stats.instructions_executed += executed;
+        vm.native_x64_jit_stats.direct_instructions += executed;
     } else {
         ++vm.native_x64_jit_stats.portable_side_exits;
     }
     return executed;
 }
-
 inline VMStatus stepCore(VMState& vm, int core_id) {
     if (core_id < 0 || core_id >= vm.coreCount()) return vm.status;
     if (vm.active_core >= 0 && vm.active_core < vm.coreCount() && vm.active_core != core_id) {

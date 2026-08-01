@@ -2284,6 +2284,10 @@ enum class VMMicroOpcode : uint8_t {
     Brn,
     Brz,
     Brp,
+    Call,
+    Ret,
+    CallR,
+    Jmpr,
 };
 
 using VMDecodedTraceOp = VMMicroOpcode;
@@ -2424,6 +2428,7 @@ struct VMNativeJitStats {
     long long blocks_built = 0;
     long long blocks_executed = 0;
     long long instructions_executed = 0;
+    long long direct_instructions = 0;
     long long portable_side_exits = 0;
     long long invalidations = 0;
     long long wx_transitions = 0;

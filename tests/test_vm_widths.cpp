@@ -379,15 +379,22 @@ void testVmWidths() {
             expect(native.native_x64_jit_stats.blocks_built > 0 &&
                        native.native_x64_jit_stats.blocks_executed > 0,
                    "native x86-64 JIT builds and executes code blocks");
+            expect(native.native_x64_jit_stats.direct_instructions > 0,
+                   "native x86-64 JIT accounts executed direct lowerings");
             bool all_wx = !native.native_x64_code_cache.empty();
+            bool all_lowered = !native.native_x64_code_cache.empty();
             for (const auto& cached : native.native_x64_code_cache) {
                 const auto block =
                     std::static_pointer_cast<VMNativeX64CodeBlock>(
                         cached.second);
                 all_wx = all_wx && block->isWriteXorExecute();
+                all_lowered = all_lowered &&
+                              block->direct_instruction_count > 0;
             }
             expect(all_wx,
                    "native x86-64 JIT code cache is RX and never left W+X");
+            expect(all_lowered,
+                   "native x86-64 JIT caches only emitted direct blocks");
 
             std::uint32_t random = 0x51A7u;
             for (int sample = 0; sample < 27; ++sample) {
