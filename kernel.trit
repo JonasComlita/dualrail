@@ -88,6 +88,10 @@ const WAL_PENDING_TX_ADDR: t40 = 3045;
 const WAL_PENDING_BLOCK_ADDR: t40 = 3046;
 const WAL_FIRST_PENDING_TICK_ADDR: t40 = 3047;
 const WAL_ACTIVE_SUPER_ADDR: t40 = 3048;
+// Last durable-WAL error, retained for the scheduler/timer paths that cannot
+// return a syscall result directly.  Zero means the most recent sync did not
+// fail; negative values are the storage error returned by the failed phase.
+const WAL_LAST_ERROR_ADDR: t40 = 3049;
 const KCAUSE_TIMER_IRQ: t40 = -1;
 const KCAUSE_SYSCALL: t40 = 7;
 
@@ -1818,6 +1822,7 @@ fn wal_init() -> t40 {
     kstore(WAL_PENDING_BLOCK_ADDR, 0);
     kstore(WAL_FIRST_PENDING_TICK_ADDR, -1);
     kstore(WAL_ACTIVE_SUPER_ADDR, 0);
+    kstore(WAL_LAST_ERROR_ADDR, 0);
     return 1;
 }
 
@@ -1920,10 +1925,12 @@ fn log_commit(txid: t40) -> t40 {
         kstore(WAL_FIRST_PENDING_TICK_ADDR, kload(KERNEL_TICK_ADDR));
     }
     if kload(WAL_PENDING_TX_ADDR) - 27 >= 0 {
-        wal_sync_to_disk();
+        var sync_status: t40 = wal_sync_to_disk();
+        if sync_status < 0 { return sync_status; }
     } else {
         if kload(WAL_PENDING_BLOCK_ADDR) - 27 >= 0 {
-            wal_sync_to_disk();
+            var sync_status: t40 = wal_sync_to_disk();
+            if sync_status < 0 { return sync_status; }
         }
     }
     // The commit LSN is the dependency stamped onto affected frames and
@@ -2254,7 +2261,8 @@ fn attr_insert(object_id: t40, object_type: t40, key: t40, value: t40) -> t40 {
     var ver: t40 = kload(row + ATTR_VERSION) + 1;
     if ver <= 0 { ver = 1; }
     kstore(row + ATTR_VERSION, ver);
-    log_commit(txid);
+    var commit_status: t40 = log_commit(txid);
+    if commit_status < 0 { return commit_status; }
     return slot;
 }
 
@@ -2266,7 +2274,8 @@ fn attr_delete(object_id: t40, object_type: t40, key: t40) -> t40 {
     var row: t40 = attr_row_addr(slot);
     var txid: t40 = log_begin();
     log_write(txid, row + ATTR_VERSION, kload(row + ATTR_VERSION), 0);
-    log_commit(txid);
+    var commit_status: t40 = log_commit(txid);
+    if commit_status < 0 { return commit_status; }
     kclear(row, ATTR_STORE_WORDS);
     return 1;
 }
@@ -3487,7 +3496,8 @@ fn quota_set_limit(quota_id: t40, limit: t40) -> t40 {
     var old_limit: t40 = kload(row + QUOTA_LIMIT);
     var txid: t40 = log_begin();
     log_write(txid, row + QUOTA_LIMIT, old_limit, limit);
-    log_commit(txid);
+    var commit_status: t40 = log_commit(txid);
+    if commit_status < 0 { return commit_status; }
     kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
     return limit;
 }
@@ -3890,7 +3900,8 @@ fn namespace_create(namespace_id: t40, root_inode: t40) -> t40 {
     kstore(row + NS_ID, namespace_id);
     kstore(row + NS_ROOT_INODE, root_inode);
     kstore(row + NS_VERSION, kload(row + NS_VERSION) + 1);
-    log_commit(txid);
+    var commit_status: t40 = log_commit(txid);
+    if commit_status < 0 { return commit_status; }
     return namespace_id;
 }
 
@@ -5083,6 +5094,7 @@ fn vfs_load_used_range_from_disk(dst_addr: t40, word_count: t40, first_block: t4
 
 fn wal_sync_to_disk() -> t40 {
     if vfs_disk_available() <= 0 {
+        kstore(WAL_LAST_ERROR_ADDR, ERR_NO_SPACE);
         return ERR_NO_SPACE;
     }
     var durable_head: t40 = kload(WAL_DURABLE_HEAD_ADDR);
@@ -5091,9 +5103,11 @@ fn wal_sync_to_disk() -> t40 {
     while durable_head - head != 0 {
         var rec: t40 = wal_record_addr(durable_head);
         if wal_record_valid(durable_head) <= 0 {
+            kstore(WAL_LAST_ERROR_ADDR, ERR_INVALID);
             return ERR_INVALID;
         }
         if disk_write_block(WAL_DISK_RECORD_BLOCK + durable_head, rec) - 1 != 0 {
+            kstore(WAL_LAST_ERROR_ADDR, ERR_INVALID);
             return ERR_INVALID;
         }
         last_lsn = kload(rec + WAL_LSN);
@@ -5126,9 +5140,11 @@ fn wal_sync_to_disk() -> t40 {
         super_block = WAL_DISK_SUPER_B_BLOCK;
     }
     if disk_write_block(super_block, VFS_DISK_SCRATCH) - 1 != 0 {
+        kstore(WAL_LAST_ERROR_ADDR, ERR_INVALID);
         return ERR_INVALID;
     }
     if disk_flush() - 1 != 0 {
+        kstore(WAL_LAST_ERROR_ADDR, ERR_INVALID);
         return ERR_INVALID;
     }
     kstore(WAL_DURABLE_HEAD_ADDR, head);
@@ -5138,6 +5154,7 @@ fn wal_sync_to_disk() -> t40 {
     kstore(WAL_PENDING_TX_ADDR, 0);
     kstore(WAL_PENDING_BLOCK_ADDR, 0);
     kstore(WAL_FIRST_PENDING_TICK_ADDR, -1);
+    kstore(WAL_LAST_ERROR_ADDR, 0);
     return 1;
 }
 
