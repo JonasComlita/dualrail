@@ -63,6 +63,8 @@ void testCompileAndRunMatchProgram() {
     }
     expect(compiled.success, "match source compiles");
     expect(compiled.ssa_module.functions.size() == 1, "compile result includes SSA function");
+    expect(compiled.object.metadata.at("object.ssa_is_optimized") == "true",
+           "object publishes optimized SSA as its code-generation source");
     expect(!contains(compiled.assembly, "tsel"),
            "constant pure match folds beyond TSEL during IR emission");
     expect(compiled.optimizer_stats.constant_folds > 0,

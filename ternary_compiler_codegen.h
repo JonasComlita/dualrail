@@ -1143,11 +1143,16 @@ public:
         result.diagnostics = diagnostics_;
         result.ssa_module.diagnostics = diagnostics_;
         result.object.name = ast_.name;
-        result.object.ssa = result.ssa_module;
+        // The object-facing SSA artifact is the module that actually feeds
+        // target lowering.  Keep the pre-optimization dry module available as
+        // `CompileResult.ssa_module` for diagnostics, but never publish it as
+        // the code-generation source of an object.
+        result.object.ssa = result.optimized_module;
         result.object.assembly = result.assembly;
         result.object.metadata["phase"] = "ir-transition-v2";
         result.object.metadata["pipeline"] =
             "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-with-explicit-replay-fallback";
+        result.object.metadata["object.ssa_is_optimized"] = "true";
         result.object.metadata["ssa.admitted_functions"] =
             std::to_string(ssa_admitted_functions);
         result.object.metadata["ssa.cfg_fallback_functions"] =
