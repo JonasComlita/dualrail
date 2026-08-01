@@ -23,7 +23,7 @@ cmake --build build
 | `test_host_runtime` | Run host runtime tests |
 | `stage_tos_release` | Stage release image for smoke testing |
 | `smoke_tos_release` | Run release image smoke test (no SDL) |
-| `ci_production` | Full CI production build (build + all tests) |
+| `ci_production` | Full production gate: tests, architecture contract, system workloads, and staged release when SDL is available |
 
 ---
 
@@ -162,7 +162,9 @@ Exports (from `DEBUGGING.md`):
 - `dmem_snapshot.bin` — raw data memory
 - `imem_disasm.txt` — disassembly of instruction memory
 - `framebuffer_snapshot.txt` — framebuffer as ASCII art
-- `syscall_trace.jsonl` — syscall trace (placeholder; not yet implemented)
+- `syscall_trace.jsonl` — schema-versioned syscall events when tracing is
+  enabled (`--export-diagnostics` enables capture); `tools/trit-replay.ps1`
+  validates and compares captures
 - `process_table.json` — OS process table
 - `diagnostics.json` — summary
 

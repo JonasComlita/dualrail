@@ -55,9 +55,9 @@
         "smoke_tos_release"
       ],
       "open_items": [
-        "Deterministic replay traces",
+        "VM checkpoint/input journaling for execution replay",
         "Framebuffer PNG export",
-        "Per-syscall trace capture"
+        "Full guest diagnostics beyond syscall events"
       ]
     },
     {
@@ -76,9 +76,9 @@
         "trit_ast_dump"
       ],
       "open_items": [
-        "Promote replay/fuzz from placeholder to real trace/fuzz engines",
+        "Promote syscall trace comparison to checkpointed execution replay and fuzz engines",
         "Add guest /bin/doctor and /bin/test commands",
-        "Teach diagnostics to capture full syscall traces",
+        "Teach diagnostics to capture guest checkpoints and external input events",
         "Keep Obsidian vault links and canvas current as docs evolve",
         "Broaden Graphify/Trit graph augmentation beyond files, functions, constants, structs, imports, syscalls, and direct call edges"
       ]
@@ -99,7 +99,7 @@
         "Import or adapt a minimal Doom renderer and redistributable WAD assets",
         "Scale the BitNet workload from the deterministic 27x27 model to sliced and then full model shards",
         "Capture seven-iteration archived baselines on controlled hosts before enforcing timing regressions",
-        "Keep current production gate separate from long-running manual benchmark gates"
+        "Archive controlled-host timing baselines before enforcing tighter workload regressions"
       ]
     },
     {

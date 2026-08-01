@@ -96,8 +96,8 @@
 | SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
 | Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
 | Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
-| Deterministic replay | ❌ Gap | `KNOWN_GAPS.md` |
-| Syscall trace capture | ❌ Gap | `KNOWN_GAPS.md` |
+| Deterministic replay | Partial (trace validation/comparison; no VM rewind) | `KNOWN_GAPS.md` |
+| Syscall trace capture | Schema-versioned capture | `ternary_host_runtime.h` |
 
 ---
 
@@ -105,12 +105,11 @@
 
 See `KNOWN_GAPS.md` for the full list. Top items:
 
-1. Real syscall tracing → `syscall_trace.jsonl`
-2. Deterministic replay engine for `tools/trit-replay.ps1`
-3. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
-4. Fuzz harnesses for malformed images + bad syscall pointers
-5. Crash/power-loss VFS + WAL recovery scenarios
-6. Framebuffer PNG export
-7. App golden output/snapshot tests
-8. Doom-class and BitNet 1.58B-class OS benchmark harnesses
-9. Ternary-native symbolic encodings for text and compact value dumps
+1. VM checkpoint/input journaling for execution replay
+2. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
+3. Fuzz harnesses for malformed images + bad syscall pointers
+4. Crash/power-loss VFS + WAL recovery scenarios
+5. Framebuffer PNG export
+6. App golden output/snapshot tests
+7. Doom-class and BitNet 1.58B-class OS benchmark harnesses
+8. Ternary-native symbolic encodings for text and compact value dumps

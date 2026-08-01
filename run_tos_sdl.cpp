@@ -758,6 +758,7 @@ int main(int argc, char** argv) {
     config.disk_path = disk_path;
     config.profile_name = "minimum";
     config.debug_overlay = true;
+    config.record_syscall_trace = export_diagnostics_on_exit;
 
     sandbox::host::TosRuntime runtime(config);
     std::string error;

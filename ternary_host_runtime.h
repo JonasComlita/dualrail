@@ -93,6 +93,7 @@ struct TosRuntimeConfig {
     std::string profile_name = "minimum";
     bool start_paused = false;
     bool debug_overlay = false;
+    bool record_syscall_trace = false;
 };
 
 enum class TosFramebufferMode {
@@ -1052,6 +1053,8 @@ public:
         paused_ = config_.start_paused;
         boot_generation_ = 1;
         guest_reboot_count_ = 0;
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
         return true;
     }
 
@@ -1069,6 +1072,8 @@ public:
         paused_ = config_.start_paused;
         boot_generation_ = 1;
         guest_reboot_count_ = 0;
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
         return true;
     }
 
@@ -1089,6 +1094,11 @@ public:
 
     void resume() {
         paused_ = false;
+    }
+
+    void setSyscallTraceEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        config_.record_syscall_trace = enabled;
     }
 
     [[nodiscard]] bool paused() const {
@@ -1119,7 +1129,16 @@ public:
         if (!machine_) {
             return {vm::VMStatus::HALTED, 0, 0, isa::TrapCode::TRAP_ILLEGAL_OP, "VM not loaded"};
         }
-        vm::RunResult result = vm::run(*machine_, steps);
+        vm::VMHooks hooks;
+        if (config_.record_syscall_trace) {
+            hooks.onInstruction = [this](const vm::VMState&,
+                                          const vm::VMExecutionRecord& record) {
+                recordSyscall(record);
+            };
+        }
+        vm::RunResult result = vm::run(
+            *machine_, steps,
+            config_.record_syscall_trace ? &hooks : nullptr);
         if (machine_->power_control == 1) {
             std::string error;
             if (!resetMachineLocked(true, &error)) {
@@ -1139,7 +1158,11 @@ public:
     [[nodiscard]] vm::VMStatus stepOnce() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return vm::VMStatus::HALTED;
-        vm::VMStatus status = vm::step(*machine_);
+        vm::VMExecutionRecord record;
+        vm::VMStatus status = vm::step(
+            *machine_,
+            config_.record_syscall_trace ? &record : nullptr);
+        if (config_.record_syscall_trace) recordSyscall(record);
         if (machine_->power_control == 1) {
             std::string error;
             if (!resetMachineLocked(true, &error)) {
@@ -1519,9 +1542,45 @@ public:
                 detail::setError(error, "failed to write syscall_trace.jsonl");
                 return false;
             }
-            out << "{\"event\":\"trace_unavailable\","
-                << "\"reason\":\"runtime does not yet record per-syscall trace events\","
-                << "\"cycles\":" << machine_->cycle_count << "}\n";
+            if (!config_.record_syscall_trace) {
+                out << "{\"schema\":\"trit.syscall_trace.v1\","
+                    << "\"event\":\"trace_disabled\","
+                    << "\"cycles\":" << machine_->cycle_count << "}\n";
+            } else if (syscall_trace_.empty()) {
+                out << "{\"schema\":\"trit.syscall_trace.v1\","
+                    << "\"event\":\"trace_empty\","
+                    << "\"cycles\":" << machine_->cycle_count << "}\n";
+            } else {
+                for (const auto& event : syscall_trace_) {
+                    out << "{\"schema\":\"trit.syscall_trace.v1\","
+                        << "\"sequence\":" << event.sequence << ","
+                        << "\"pc\":" << event.record.pc << ","
+                        << "\"physical_pc\":" << event.record.physical_pc << ","
+                        << "\"syscall_id\":" << event.record.syscall_id << ","
+                        << "\"process_id\":" << event.record.process_id << ","
+                        << "\"before_privilege\":"
+                        << static_cast<int>(event.record.before_privilege) << ","
+                        << "\"after_privilege\":"
+                        << static_cast<int>(event.record.after_privilege) << ","
+                        << "\"args\":[" << event.record.syscall_arg0 << ","
+                        << event.record.syscall_arg1 << ","
+                        << event.record.syscall_arg2 << ","
+                        << event.record.syscall_arg3 << "],"
+                        << "\"results\":[" << event.record.syscall_result0 << ","
+                        << event.record.syscall_result1 << ","
+                        << event.record.syscall_result2 << "],"
+                        << "\"before_status\":"
+                        << static_cast<int>(event.record.before_status) << ","
+                        << "\"after_status\":"
+                        << static_cast<int>(event.record.after_status) << ","
+                        << "\"trap\":" << (event.record.trap_observed ? 1 : 0) << ","
+                        << "\"trap_code\":"
+                        << static_cast<int>(event.record.trap_code) << ","
+                        << "\"trap_cause\":" << event.record.trap_cause << ","
+                        << "\"cycle_before\":" << event.record.cycle_before << ","
+                        << "\"cycle_after\":" << event.record.cycle_after << "}\n";
+                }
+            }
         }
         {
             std::ofstream out(base / "crash_report.txt", std::ios::trunc);
@@ -1583,6 +1642,11 @@ public:
     }
 
 private:
+    struct SyscallTraceEvent {
+        std::uint64_t sequence = 0;
+        vm::VMExecutionRecord record;
+    };
+
     TosRuntimeConfig config_;
     TosBootImage image_;
     std::unique_ptr<vm::VMState> machine_;
@@ -1592,6 +1656,8 @@ private:
     std::atomic<bool> paused_{false};
     std::uint64_t boot_generation_ = 0;
     std::uint64_t guest_reboot_count_ = 0;
+    std::vector<SyscallTraceEvent> syscall_trace_;
+    std::uint64_t syscall_trace_sequence_ = 0;
 
     static const char* privilegeName(isa::PrivilegeMode mode) {
         switch (mode) {
@@ -1626,6 +1692,8 @@ private:
         if (!loadBootImageIntoVm(*machine, image_, config_.disk_path, error)) return false;
         machine_ = std::move(machine);
         paused_ = config_.start_paused;
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
         ++boot_generation_;
         if (guest_reboot) ++guest_reboot_count_;
         return true;
@@ -1667,7 +1735,11 @@ private:
                         const long long chunk =
                             std::min<long long>(8192, target_steps - run_steps);
                         for (long long i = 0; i < chunk && worker_running_; ++i) {
-                            const vm::VMStatus status = vm::step(*machine_);
+                            vm::VMExecutionRecord record;
+                            const vm::VMStatus status = vm::step(
+                                *machine_,
+                                config_.record_syscall_trace ? &record : nullptr);
+                            if (config_.record_syscall_trace) recordSyscall(record);
                             ++chunk_steps;
                             if (machine_->power_control == 1) {
                                 std::string error;
@@ -1698,6 +1770,15 @@ private:
                 std::this_thread::yield();
             }
         }
+    }
+
+    void recordSyscall(const vm::VMExecutionRecord& record) {
+        if (!record.attempted || !record.has_instruction ||
+            record.instruction.opcode != isa::Opcode::SYSCALL) {
+            return;
+        }
+        syscall_trace_.push_back(SyscallTraceEvent{
+            syscall_trace_sequence_++, record});
     }
 };
 

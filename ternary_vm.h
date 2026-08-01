@@ -933,6 +933,15 @@ struct VMExecutionRecord {
     TrapCode trap_code = TrapCode::TRAP_ILLEGAL_OP;
     int trap_cause = 0;
     int syscall_id = -1;
+    long long syscall_arg0 = 0;
+    long long syscall_arg1 = 0;
+    long long syscall_arg2 = 0;
+    long long syscall_arg3 = 0;
+    long long syscall_result0 = 0;
+    long long syscall_result1 = 0;
+    long long syscall_result2 = 0;
+    std::uint64_t cycle_before = 0;
+    std::uint64_t cycle_after = 0;
 };
 
 [[nodiscard]] inline int currentProcessForProfile(const VMState& vm) {
@@ -954,6 +963,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         record->after_status = vm.status;
         record->after_privilege = vm.privilege;
         record->process_id = currentProcessForProfile(vm);
+        record->cycle_before = vm.cycle_count;
     }
 
     struct RecordFinalizer {
@@ -965,6 +975,13 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             record->after_status = vm.status;
             record->after_privilege = vm.privilege;
             record->final_pc = vm.pc;
+            record->cycle_after = vm.cycle_count;
+            if (record->has_instruction &&
+                record->instruction.opcode == Opcode::SYSCALL) {
+                record->syscall_result0 = ops::toLong(vm.regfile.read(13));
+                record->syscall_result1 = ops::toLong(vm.regfile.read(14));
+                record->syscall_result2 = ops::toLong(vm.regfile.read(15));
+            }
             if (record->has_instruction &&
                 record->instruction.opcode == Opcode::SYSCALL &&
                 record->syscall_id < 0) {
@@ -1025,7 +1042,13 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         record->has_instruction = true;
         record->malformed = iw.malformed;
         record->instruction = iw;
-        if (iw.opcode == Opcode::SYSCALL) record->syscall_id = iw.imm;
+        if (iw.opcode == Opcode::SYSCALL) {
+            record->syscall_id = iw.imm;
+            record->syscall_arg0 = ops::toLong(vm.regfile.read(13));
+            record->syscall_arg1 = ops::toLong(vm.regfile.read(14));
+            record->syscall_arg2 = ops::toLong(vm.regfile.read(15));
+            record->syscall_arg3 = ops::toLong(vm.regfile.read(16));
+        }
     }
     if (iw.malformed || iw.opcode == Opcode::RESERVED) {
         vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_ILLEGAL_INSTRUCTION, vm.pc);

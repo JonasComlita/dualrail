@@ -4268,9 +4268,148 @@ def cmd_bench(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """Load and validate the host runtime's deterministic syscall trace.
+
+    The first version of replay is deliberately a host-side validator and
+    comparator.  It gives CI a strict contract for traces before a VM
+    checkpoint/input journal is added: malformed or disabled traces cannot be
+    mistaken for replay evidence, and two runs can be compared byte-for-byte
+    at the event level with canonical JSON.
+    """
+    issues: list[str] = []
+    events: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        return events, [f"{path}: cannot read trace: {exc}"]
+    previous_cycle_after: int | None = None
+    for line_number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            issues.append(f"{path}:{line_number}: invalid JSON: {exc.msg}")
+            continue
+        if not isinstance(event, dict):
+            issues.append(f"{path}:{line_number}: event must be a JSON object")
+            continue
+        if event.get("schema") != "trit.syscall_trace.v1":
+            issues.append(f"{path}:{line_number}: unsupported or missing schema")
+            continue
+        marker = event.get("event")
+        if marker == "trace_disabled":
+            issues.append(f"{path}:{line_number}: trace was disabled during capture")
+            continue
+        if marker == "trace_empty":
+            # An enabled VM may legitimately execute no syscalls.  Keep the
+            # marker in the event stream so comparison distinguishes it from
+            # an accidentally disabled capture.
+            events.append(event)
+            continue
+        required = {
+            "sequence", "pc", "physical_pc", "syscall_id", "process_id",
+            "before_privilege", "after_privilege", "args", "results",
+            "before_status", "after_status", "trap", "trap_code",
+            "trap_cause", "cycle_before", "cycle_after",
+        }
+        missing = sorted(required - event.keys())
+        if missing:
+            issues.append(
+                f"{path}:{line_number}: missing fields: {', '.join(missing)}")
+            continue
+
+        def integer(name: str) -> int | None:
+            value = event.get(name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                issues.append(f"{path}:{line_number}: {name} must be an integer")
+                return None
+            return value
+
+        sequence = integer("sequence")
+        cycle_before = integer("cycle_before")
+        cycle_after = integer("cycle_after")
+        for name in (
+            "pc", "physical_pc", "syscall_id", "process_id",
+            "before_privilege", "after_privilege", "before_status",
+            "after_status", "trap", "trap_code", "trap_cause",
+        ):
+            integer(name)
+        args = event.get("args")
+        results = event.get("results")
+        if (not isinstance(args, list) or len(args) != 4 or
+                any(isinstance(value, bool) or not isinstance(value, int)
+                    for value in args)):
+            issues.append(f"{path}:{line_number}: args must contain four integers")
+        if (not isinstance(results, list) or len(results) != 3 or
+                any(isinstance(value, bool) or not isinstance(value, int)
+                    for value in results)):
+            issues.append(f"{path}:{line_number}: results must contain three integers")
+        if sequence is not None and sequence != len(
+                [item for item in events if "sequence" in item]):
+            issues.append(
+                f"{path}:{line_number}: sequence must be contiguous from zero")
+        if cycle_before is not None and cycle_after is not None:
+            if cycle_after < cycle_before:
+                issues.append(f"{path}:{line_number}: cycle_after precedes cycle_before")
+            if (previous_cycle_after is not None and
+                    cycle_before < previous_cycle_after):
+                issues.append(f"{path}:{line_number}: cycles move backwards")
+            previous_cycle_after = cycle_after
+        events.append(event)
+    if not lines:
+        issues.append(f"{path}: trace is empty; expected a JSONL marker or event")
+    return events, issues
+
+
 def cmd_replay(args: argparse.Namespace) -> int:
-    print("deterministic replay traces are not implemented yet; see KNOWN_GAPS.md", file=sys.stderr)
-    return 2
+    trace = Path(args.trace)
+    events, issues = _load_syscall_trace(trace)
+    comparison: dict[str, Any] | None = None
+    if args.against:
+        other = Path(args.against)
+        other_events, other_issues = _load_syscall_trace(other)
+        issues.extend(other_issues)
+        left = [json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in events]
+        right = [json.dumps(item, sort_keys=True, separators=(",", ":"))
+                 for item in other_events]
+        mismatch = None
+        for index, (lhs, rhs) in enumerate(zip(left, right)):
+            if lhs != rhs:
+                mismatch = index
+                break
+        if mismatch is None and len(left) != len(right):
+            mismatch = min(len(left), len(right))
+        comparison = {
+            "against": str(other),
+            "match": mismatch is None and not other_issues,
+            "mismatch_index": mismatch,
+            "event_count": len(other_events),
+        }
+        if mismatch is not None:
+            issues.append(f"trace differs from {other} at event {mismatch}")
+
+    summary: dict[str, Any] = {
+        "schema": "trit.syscall_trace.v1",
+        "trace": str(trace),
+        "valid": not issues,
+        "event_count": len(events),
+        "issues": issues,
+    }
+    if comparison is not None:
+        summary["comparison"] = comparison
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        state = "valid" if not issues else "invalid"
+        print(f"{trace}: {state}; {len(events)} event(s)")
+        for issue in issues:
+            print(f"error: {issue}", file=sys.stderr)
+        if comparison is not None:
+            print("comparison: " + ("match" if comparison["match"] else "mismatch"))
+    return 0 if not issues else 1
 
 
 def cmd_fuzz(args: argparse.Namespace) -> int:
@@ -4380,8 +4519,17 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--no-build", action="store_true", help="reuse an existing profile harness executable")
     profile.set_defaults(func=cmd_profile)
 
-    replay = sub.add_parser("replay", help="placeholder for future deterministic replay")
-    replay.add_argument("trace", nargs="?")
+    replay = sub.add_parser(
+        "replay",
+        help="validate and compare deterministic syscall traces",
+    )
+    replay.add_argument("trace", help="captured syscall_trace.jsonl")
+    replay.add_argument(
+        "--against",
+        default=None,
+        help="compare this trace with a second capture event-by-event",
+    )
+    replay.add_argument("--json", action="store_true")
     replay.set_defaults(func=cmd_replay)
 
     fuzz = sub.add_parser("fuzz", help="run the current fuzz stand-in")

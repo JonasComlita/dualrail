@@ -4,8 +4,10 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- Implement real syscall tracing behind `syscall_trace.jsonl`.
-- Implement deterministic replay traces for `tools/trit-replay.ps1`.
+- Add VM checkpoints and guest-input journaling for execution replay. The
+  runtime now emits validated syscall events in `syscall_trace.jsonl`, and
+  `tools/trit-replay.ps1` validates or compares those captures, but it does
+  not yet rewind and re-execute a guest.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add fuzz harnesses for malformed image files and bad syscall pointers.
 - Add crash/power-loss scenarios for VFS and WAL recovery.

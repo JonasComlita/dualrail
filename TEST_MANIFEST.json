@@ -55,7 +55,7 @@
     },
     {
       "name": "production",
-      "description": "Current production profile gate mirrored by the CMake ci_production target.",
+      "description": "Authoritative production profile; the CMake ci_production target also runs the architecture contract, synthetic portfolio workloads, and staged release gate when SDL is available.",
       "targets": [
         "test_production_layers",
         "test_production_hardening",

@@ -308,21 +308,6 @@ add_custom_target(production_profile
         test_host_runtime
 )
 
-add_custom_target(ci_production
-    COMMAND $<TARGET_FILE:test_production_layers>
-    COMMAND $<TARGET_FILE:test_production_hardening>
-    COMMAND $<TARGET_FILE:test_os_platform>
-    COMMAND $<TARGET_FILE:test_first_silicon_bringup>
-    COMMAND $<TARGET_FILE:test_migration_v2>
-    COMMAND $<TARGET_FILE:test_redo_wal_v2>
-    COMMAND $<TARGET_FILE:test_scaling_profile_compact>
-    COMMAND $<TARGET_FILE:test_consumer_shell_productization>
-    COMMAND $<TARGET_FILE:test_host_runtime>
-    DEPENDS production_profile
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    USES_TERMINAL
-)
-
 add_executable(tritc tritc.cpp)
 target_compile_features(tritc PUBLIC cxx_std_17)
 target_compile_definitions(tritc PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -612,4 +597,30 @@ if(Python3_Interpreter_FOUND)
             USES_TERMINAL
         )
     endif()
+endif()
+
+# The production gate is deliberately declared after all optional release and
+# workload targets.  This keeps one authoritative command that exercises the
+# architecture contract, core production binaries, synthetic portfolio
+# workloads, and (when SDL is available) the staged release image.
+add_custom_target(ci_production
+    COMMAND $<TARGET_FILE:test_production_layers>
+    COMMAND $<TARGET_FILE:test_production_hardening>
+    COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_first_silicon_bringup>
+    COMMAND $<TARGET_FILE:test_architecture_v2>
+    COMMAND $<TARGET_FILE:test_migration_v2>
+    COMMAND $<TARGET_FILE:test_redo_wal_v2>
+    COMMAND $<TARGET_FILE:test_scaling_profile_compact>
+    COMMAND $<TARGET_FILE:test_consumer_shell_productization>
+    COMMAND $<TARGET_FILE:test_host_runtime>
+    DEPENDS production_profile test_architecture_v2
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+if(TARGET system_benchmark_gate)
+    add_dependencies(ci_production system_benchmark_gate)
+endif()
+if(TARGET system_release_gate)
+    add_dependencies(ci_production system_release_gate)
 endif()

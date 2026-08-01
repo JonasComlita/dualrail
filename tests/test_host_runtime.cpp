@@ -43,6 +43,12 @@ bool fileExists(const std::string& path) {
     return std::filesystem::exists(path);
 }
 
+std::string readTextFile(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in),
+                       std::istreambuf_iterator<char>());
+}
+
 void testBootImageValidation() {
     std::cout << "[1] Host boot image round-trip and validation\n";
 
@@ -147,6 +153,8 @@ void testRuntimeGraphicsResetAndDiagnostics() {
         boot:
             mov r1, 1
             csrw gpu_mode, r1
+            mov r13, 3
+            syscall 19
             mov r1, 14
             mov r2, 50000
             store r1, r2, 0
@@ -169,6 +177,7 @@ void testRuntimeGraphicsResetAndDiagnostics() {
     sandbox::host::TosRuntimeConfig config;
     config.disk_path = disk_path;
     config.profile_name = "compact";
+    config.record_syscall_trace = true;
     sandbox::host::TosRuntime runtime(config);
 
     std::string error;
@@ -202,7 +211,14 @@ void testRuntimeGraphicsResetAndDiagnostics() {
     expect(fileExists(diag_path + "/manifest.txt"), "diagnostics include image manifest");
     expect(fileExists(diag_path + "/manifest.json"), "diagnostics include machine-readable manifest");
     expect(fileExists(diag_path + "/process_table.json"), "diagnostics include process snapshot");
-    expect(fileExists(diag_path + "/syscall_trace.jsonl"), "diagnostics include syscall trace placeholder");
+    expect(fileExists(diag_path + "/syscall_trace.jsonl"), "diagnostics include syscall trace");
+    const std::string syscall_trace = readTextFile(diag_path + "/syscall_trace.jsonl");
+    expect(syscall_trace.find("\"schema\":\"trit.syscall_trace.v1\"") != std::string::npos,
+           "syscall trace declares its schema");
+    expect(syscall_trace.find("\"syscall_id\":19") != std::string::npos,
+           "syscall trace records the syscall id");
+    expect(syscall_trace.find("\"args\":[3,0,0,0]") != std::string::npos,
+           "syscall trace records ABI arguments");
     expect(fileExists(diag_path + "/crash_report.txt"), "diagnostics include crash report");
     expect(fileExists(diag_path + "/framebuffer_snapshot.txt"),
            "diagnostics include framebuffer snapshot");

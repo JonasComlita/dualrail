@@ -30,7 +30,8 @@ The host runtime exports:
 - `guest.log` and `kernel_log.txt`: guest console/syscall log text.
 - `manifest.txt`: legacy text image manifest.
 - `process_table.json`: process slots, states, wait metadata, parent/status/signal fields.
-- `syscall_trace.jsonl`: reserved JSONL stream; currently records a placeholder event.
+- `syscall_trace.jsonl`: schema-versioned syscall events when capture is
+  enabled; disabled/empty captures are explicit markers.
 - `crash_report.txt`: crash-oriented status summary.
 - `framebuffer_snapshot.txt`: framebuffer mode, dimensions, and color words.
 
@@ -46,7 +47,9 @@ The host runtime exports:
 
 ## Current Trace Limits
 
-Per-syscall event tracing and deterministic replay are seeded as tool commands but not implemented as real trace engines yet. See `KNOWN_GAPS.md`.
+The runtime now captures syscall events and `tools/trit-replay.ps1` validates or
+compares them. Full execution replay still needs VM checkpoints and guest-input
+journaling; see `KNOWN_GAPS.md`.
 
 Graphify currently augments `.trit` sources with compiler-AST-derived files,
 functions, constants, structs, imports, syscall nodes, and direct call edges. It

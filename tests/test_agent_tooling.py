@@ -97,6 +97,50 @@ def test_product_runtime_does_not_compile_sources():
     assert "compile" not in cmd_run
 
 
+def test_replay_validates_and_compares_syscall_traces():
+    event = {
+        "schema": "trit.syscall_trace.v1",
+        "sequence": 0,
+        "pc": 7,
+        "physical_pc": 7,
+        "syscall_id": 19,
+        "process_id": 0,
+        "before_privilege": 0,
+        "after_privilege": 0,
+        "args": [3, 0, 0, 0],
+        "results": [4096, 0, 0],
+        "before_status": 0,
+        "after_status": 0,
+        "trap": 0,
+        "trap_code": 0,
+        "trap_cause": 0,
+        "cycle_before": 7,
+        "cycle_after": 8,
+    }
+    with tempfile.TemporaryDirectory() as temp_dir:
+        first = Path(temp_dir) / "first.jsonl"
+        second = Path(temp_dir) / "second.jsonl"
+        first.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        second.write_text(json.dumps(event, sort_keys=True) + "\n", encoding="utf-8")
+        completed = run_tool("replay", str(first), "--against", str(second), "--json")
+        report = json.loads(completed.stdout)
+        assert report["valid"], report
+        assert report["comparison"]["match"], report
+
+        bad = dict(event)
+        bad["sequence"] = 2
+        second.write_text(json.dumps(bad) + "\n", encoding="utf-8")
+        rejected = subprocess.run(
+            [sys.executable, str(TOOL), "replay", str(first), "--against", str(second)],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert rejected.returncode != 0
+        assert "sequence" in rejected.stderr
+
+
 def test_v1_fixture_provenance_and_checksums():
     fixture_root = REPO / "tests" / "fixtures" / "v1"
     manifest = json.loads(
@@ -214,6 +258,7 @@ if __name__ == "__main__":
     test_doctor_json_and_manifests()
     test_boot_image_inspector_when_release_image_exists()
     test_product_runtime_does_not_compile_sources()
+    test_replay_validates_and_compares_syscall_traces()
     test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
     test_treatcode_registry_and_coverage()
