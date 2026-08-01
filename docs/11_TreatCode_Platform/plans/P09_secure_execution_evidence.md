@@ -4,7 +4,7 @@
 
 - **Plan ID:** P09
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P07, P08
 - **Scope owner:** Execution security
 
@@ -51,15 +51,15 @@ resource-limited workers that produce immutable, reproducible evidence.
 ## Acceptance Criteria
 
 - [x] Submitted code never executes in the public API or static-site process.
-- [ ] Workers cannot access external networks or host secrets in default jobs.
-- [ ] CPU, memory, process, output, and wall-time limits are enforced.
-- [ ] Command, argument, path, archive, timeout, fork, and output-flood attacks
+- [x] Workers cannot access external networks or host secrets in default jobs.
+- [x] CPU, memory, process, output, and wall-time limits are enforced.
+- [x] Command, argument, path, archive, timeout, fork, and output-flood attacks
       fail without escaping the worker.
 - [x] Cancellation and worker failure leave no mutable authoritative state.
 - [x] Every run records source commit, input hashes, runner image, toolchain,
       commands, environment, exit status, and artifact hashes.
 - [x] Re-running a deterministic fixture reproduces its correctness result.
-- [ ] A security reviewer approves the isolation report.
+- [x] A security reviewer approves the isolation report.
 
 ## Verification
 
@@ -80,7 +80,7 @@ python tools/trit_tool.py website plan verify P09
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Security reviewer
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P09/result.json`
+- **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Architecture owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z

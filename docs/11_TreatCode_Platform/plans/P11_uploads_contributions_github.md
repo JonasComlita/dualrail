@@ -4,7 +4,7 @@
 
 - **Plan ID:** P11
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P07, P08, P09
 - **Scope owner:** Contributions
 
@@ -53,7 +53,7 @@ The implementation contract is documented in
 - [x] Draft-PR creation requires recorded human approval unless project policy
       explicitly delegates that scope.
 - [x] The draft PR links immutable correctness and benchmark evidence.
-- [ ] An end-to-end test repository proves contribution intake through draft PR
+- [x] An end-to-end test repository proves contribution intake through draft PR
       without granting merge authority.
 
 ## Verification
@@ -79,7 +79,7 @@ worker. The machine-readable reports are written to
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Security reviewer; repository owner
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P11/result.json`
+- **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z

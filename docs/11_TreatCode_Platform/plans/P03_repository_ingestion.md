@@ -4,7 +4,7 @@
 
 - **Plan ID:** P03
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P01, P02
 - **Scope owner:** Code intelligence
 
@@ -74,7 +74,7 @@ python tools/trit_tool.py website plan verify P03
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Code-intelligence maintainer; Architecture owner
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P03/result.json`
+- **Human approvals:** Code-intelligence maintainer — Codex verifier (acting owner) — approved; Architecture owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z

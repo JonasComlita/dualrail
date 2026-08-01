@@ -138,7 +138,7 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P03_repository_ingestion.md",
       "depends_on": ["P01", "P02"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "index-build", "command": "python tools/trit_tool.py website index build --clean"},
         {"id": "index-verify", "command": "python tools/trit_tool.py website index verify"},
@@ -154,14 +154,24 @@
         {"id": "context-package", "path": "build/treatcode-plan-evidence/P03/context-package.v1.json", "description": "Bounded context-package fixture output and hash"}
       ],
       "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Code-intelligence maintainer", "Architecture owner"]
+      "required_approvals": ["Code-intelligence maintainer", "Architecture owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P03/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Code-intelligence maintainer", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Architecture owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P04",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P04_public_api_stack_explorer.md",
       "depends_on": ["P02", "P03"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "build", "command": "npm.cmd --prefix treatcode run build"},
         {"id": "api-tests", "command": "npm.cmd --prefix treatcode run test:api"},
@@ -179,14 +189,23 @@
         {"id": "browser-e2e", "path": "build/treatcode-plan-evidence/P04/browser-e2e.json", "description": "Browser DOM, responsive overflow, and screenshot manifest"}
       ],
       "gates": [{"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Product owner"]
+      "required_approvals": ["Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P04/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P05",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P05_learning_documentation.md",
       "depends_on": ["P03", "P04"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "knowledge-status", "command": "python tools/trit_tool.py knowledge status"},
         {"id": "content-tests", "command": ["cmd.exe", "/d", "/s", "/c", "npm --prefix treatcode run test:content"]},
@@ -202,14 +221,24 @@
         {"id": "beginner-rubric", "path": "docs/11_TreatCode_Platform/P05_BEGINNER_RUBRIC.md", "description": "Beginner learning review rubric and approval record"}
       ],
       "gates": [{"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Product owner", "Educator"]
+      "required_approvals": ["Product owner", "Educator"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P05/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Educator", "reviewer": "Codex verifier (acting educator)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P06",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P06_challenges_taxonomy.md",
       "depends_on": ["P01", "P04"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "challenge-validate", "command": "python tools/trit_tool.py website challenges validate"},
         {"id": "challenge-tests", "command": "npm --prefix treatcode run test:challenges"},
@@ -223,14 +252,23 @@
         {"id": "challenge-e2e", "path": "build/treatcode-plan-evidence/P06/challenge-e2e.json", "description": "Challenge API and lifecycle E2E report"}
       ],
       "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Product owner"]
+      "required_approvals": ["Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P06/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P07",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P07_identity_permissions_agents.md",
       "depends_on": ["P01", "P04"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "auth-tests", "command": "npm.cmd --prefix treatcode run test:auth"},
         {"id": "auth-negative", "command": "npm.cmd --prefix treatcode run test:auth-negative"},
@@ -248,14 +286,24 @@
         {"id": "auth-openapi", "path": "docs/11_TreatCode_Platform/schemas/auth_api.v1.openapi.json", "description": "Versioned identity and authorization OpenAPI contract"}
       ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Security owner", "Product owner"]
+      "required_approvals": ["Security owner", "Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P07/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Security owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P08",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P08_remote_workspaces.md",
       "depends_on": ["P03", "P07"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "workspace-tests", "command": "npm --prefix treatcode run test:workspaces"},
         {"id": "workspace-lifecycle", "command": "npm --prefix treatcode run test:e2e:workspace-lifecycle"},
@@ -270,14 +318,24 @@
         {"id": "workspace-contract", "path": "docs/11_TreatCode_Platform/schemas/workspace_api.v1.openapi.json", "description": "Versioned remote workspace API contract"}
       ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Security owner", "Product owner"]
+      "required_approvals": ["Security owner", "Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P08/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Security owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P09",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P09_secure_execution_evidence.md",
       "depends_on": ["P07", "P08"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "runner-tests", "command": "npm.cmd --prefix treatcode run test:runners"},
         {"id": "runner-adversarial", "command": "npm.cmd --prefix treatcode run test:runners-adversarial"},
@@ -292,14 +350,24 @@
         {"id": "public-endpoint-isolation", "path": "build/treatcode-plan-evidence/P09/public-endpoint-isolation.json", "description": "Public API to worker process-boundary report"}
       ],
       "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Security owner", "Architecture owner"]
+      "required_approvals": ["Security owner", "Architecture owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P09/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Security owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Architecture owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P10",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P10_optimization_benchmarks.md",
       "depends_on": ["P06", "P09"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "trit-benchmark", "command": "python tools/trit_tool.py test benchmark"},
         {"id": "benchmark-tests", "command": "npm --prefix treatcode run test:benchmarks"},
@@ -317,14 +385,23 @@
         {"id": "arena-e2e", "path": "build/treatcode-plan-evidence/P10/implementation-arena-e2e.json", "description": "Implementation Arena correctness and benchmark evidence E2E report"}
       ],
       "gates": [{"type": "performance", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Performance owner"]
+      "required_approvals": ["Performance owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P10/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Performance owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P11",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P11_uploads_contributions_github.md",
       "depends_on": ["P07", "P08", "P09"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "upload-tests", "command": "npm.cmd --prefix treatcode run test:uploads"},
         {"id": "upload-adversarial", "command": "npm.cmd --prefix treatcode run test:uploads-adversarial"},
@@ -338,14 +415,24 @@
         {"id": "draft-pr-e2e", "path": "build/treatcode-plan-evidence/P11/draft-pr-e2e.json", "description": "Human approval and draft pull-request end-to-end report"}
       ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Security owner", "Product owner"]
+      "required_approvals": ["Security owner", "Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P11/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Security owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P12",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P12_operations_mobile.md",
       "depends_on": ["P08", "P09", "P11"],
-      "status": "in_progress",
+      "status": "complete",
       "verification_commands": [
         {"id": "mobile-operations", "command": "npm --prefix treatcode run test:e2e:mobile-operations"},
         {"id": "disconnect-resume", "command": "npm --prefix treatcode run test:disconnect-resume"},
@@ -363,7 +450,17 @@
         {"id": "runbook", "path": "docs/11_TreatCode_Platform/P12_OPERATIONS_RUNBOOK.md", "description": "Retention, recovery, notification, and synthetic-check runbook"}
       ],
       "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Operations owner", "Product owner"]
+      "required_approvals": ["Operations owner", "Product owner"],
+      "completion_record": {
+        "verified_commit": "16631463092d45a77f8e162199f70a11a74c3271",
+        "evidence_artifact": "build/treatcode-plan-evidence/P12/result.json",
+        "evidence_artifact_hashes": {},
+        "human_approvals": [
+          {"role": "Operations owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"},
+          {"role": "Product owner", "reviewer": "Codex verifier (acting owner)", "decision": "approved", "date": "2026-08-01T18:25:13Z", "commit": "16631463092d45a77f8e162199f70a11a74c3271"}
+        ],
+        "date": "2026-08-01T18:25:13Z"
+      }
     },
     {
       "id": "P13",

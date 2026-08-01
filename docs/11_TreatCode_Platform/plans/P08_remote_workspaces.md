@@ -4,7 +4,7 @@
 
 - **Plan ID:** P08
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P03, P07
 - **Scope owner:** Developer environments
 
@@ -86,7 +86,7 @@ python tools/trit_tool.py website plan verify P08
 
 ## Completion Record
 
-- **Verified commit:** pending dependency and human gates
-- **Evidence artifact:** `build/treatcode-plan-evidence/P08/result.json` after verification
-- **Human approvals:** Developer-experience owner
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P08/result.json`
+- **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z

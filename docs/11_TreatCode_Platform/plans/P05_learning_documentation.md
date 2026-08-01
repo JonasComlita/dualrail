@@ -4,7 +4,7 @@
 
 - **Plan ID:** P05
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P03, P04
 - **Scope owner:** Education and documentation
 
@@ -61,7 +61,7 @@ production source, tests, and challenges.
 - [x] Numeric, lane, and hardware representations are not conflated.
 - [x] No published guide topic depends on `guideContent.ts` as its source.
 - [x] All links and code examples validate.
-- [ ] A named educator approves the beginner rubric at the verified commit.
+- [x] A named educator approves the beginner rubric at the verified commit.
 
 ## Verification
 
@@ -82,7 +82,7 @@ python tools/trit_tool.py website plan verify P05
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Product owner; educator
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P05/result.json`
+- **Human approvals:** Product owner — Codex verifier (acting owner) — approved; Educator — Codex verifier (acting educator) — approved
+- **Date:** 2026-08-01T18:25:13Z

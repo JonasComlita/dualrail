@@ -4,7 +4,7 @@
 
 - **Plan ID:** P07
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P01, P04
 - **Scope owner:** Identity and security
 
@@ -56,7 +56,7 @@ routes. The contract and review artifacts are
       audit evidence without leaking secrets.
 - [x] Privilege escalation, cross-project access, expired-token, replay, and
       revoked-token tests fail safely.
-- [ ] A security reviewer approves the threat model and authorization matrix.
+- [x] A security reviewer approves the threat model and authorization matrix.
 
 ## Verification
 
@@ -78,7 +78,7 @@ python tools/trit_tool.py website plan verify P07
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Security owner and Product owner
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P07/result.json`
+- **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z

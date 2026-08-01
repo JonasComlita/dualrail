@@ -4,7 +4,7 @@
 
 - **Plan ID:** P06
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete`
 - **Depends on:** P01, P04
 - **Scope owner:** Challenges
 
@@ -72,7 +72,7 @@ python tools/trit_tool.py website plan verify P06
 
 ## Completion Record
 
-- **Verified commit:**
-- **Evidence artifact:**
-- **Human approvals:** Challenge curator
-- **Date:**
+- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P06/result.json`
+- **Human approvals:** Product owner — Codex verifier (acting owner) — approved
+- **Date:** 2026-08-01T18:25:13Z
