@@ -1,0 +1,129 @@
+; Ternary Stack v2 first-silicon/minimal-kernel bring-up image.
+;
+; This is a v2 diagnostic artifact, not a replacement for the production
+; kernel image. It intentionally keeps the reset, trap, syscall, timer, and
+; WAIT paths small enough to run on a first-silicon monitor while exercising
+; the same numeric page geometry and ABI contracts as the v2 runtime.
+
+.isa 2
+.require mmu wait
+
+.text
+bringup_entry:
+    ; The monitor enters in kernel privilege. Check the v2 discovery CSRs
+    ; before installing the trap vector or entering user mode.
+    csrr r1, isa_version
+    mov r2, 2
+    sub r3, r1, r2
+    brz r3, check_base_page
+    jmp bringup_fail
+
+check_base_page:
+    csrr r1, mmu_base_page_words
+    mov r2, 729
+    sub r3, r1, r2
+    brz r3, check_superpage
+    jmp bringup_fail
+
+check_superpage:
+    csrr r1, mmu_superpage_words
+    mov r2, 19683
+    sub r3, r1, r2
+    brz r3, enter_user
+    jmp bringup_fail
+
+enter_user:
+    mov r1, trap_entry
+    csrw tvec, r1
+
+    ; v2 syscall ABI: arguments and return status/payload/detail use r13-r15.
+    mov r13, 42
+    mov r1, 4                 ; user privilege + interrupts enabled (status 4)
+    csrw status, r1
+    syscall 1                  ; write integer through the trap path
+
+after_write:
+    mov r13, 7                 ; fd argument for the fsync ABI probe
+    syscall 47                 ; inode-specific fsync service id
+
+after_fsync:
+    wait
+
+after_wait:
+    halt
+
+; A separate entry point lets the bring-up monitor validate timer delivery
+; without coupling timer progress to the syscall/WAIT demonstration.
+timer_entry:
+    mov r1, trap_entry
+    csrw tvec, r1
+    mov r1, 1
+    csrw timer_reload, r1
+    mov r1, 3
+    csrw timer_counter, r1
+    csrw timer_enable, r1
+    mov r1, 4                 ; user privilege + interrupts enabled (status 4)
+    csrw status, r1
+timer_user_instruction:
+    nop                         ; timer interrupt is precise at this boundary
+timer_after:
+    halt
+
+trap_entry:
+    csrr r4, cause
+    mov r1, -1
+    sub r5, r4, r1
+    brz r5, timer_trap
+
+    csrr r5, syscall_id
+    mov r1, 1
+    sub r6, r5, r1
+    brz r6, write_trap
+    mov r1, 47
+    sub r6, r5, r1
+    brz r6, fsync_trap
+    jmp bringup_fail
+
+write_trap:
+    ; Console output is kernel-only, but the value came through v2 r13.
+    copy r1, r13
+    csrw console_out, r1
+    mov r13, 1                 ; success status
+    mov r14, 0                 ; success payload
+    mov r15, 0                 ; success detail
+    mov r1, after_write
+    csrw epc, r1
+    eret
+
+fsync_trap:
+    ; The minimal image only proves the syscall ABI/trap return here; the
+    ; production kernel owns the WAL and inode-specific durability semantics.
+    mov r13, 1
+    mov r14, 0
+    mov r15, 0
+    mov r1, after_fsync
+    csrw epc, r1
+    eret
+
+timer_trap:
+    mov r1, 0
+    csrw timer_enable, r1
+    mov r10, 1                ; observable timer-delivery marker
+    mov r13, 1
+    mov r14, 0
+    mov r15, 0
+    mov r1, timer_after
+    csrw epc, r1
+    eret
+
+bringup_fail:
+    mov r10, -1
+    halt
+
+.data
+; These values are deliberately materialized in the image so a monitor can
+; inspect the v2 numeric geometry without relying on host-side constants.
+page_geometry: .word 729, 19683
+.org 729
+text_pte: .pte 1, 1, 1, 0, 1, 1
+data_pte: .pte 2, 1, 1, 1, 0, 1
