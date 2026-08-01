@@ -243,6 +243,45 @@ void testFunctionCallAndWhileLoop() {
     }
 }
 
+void testDirectRawMemoryAddressLowering() {
+    std::cout << "[3c] Direct raw-pointer memory lowering\n";
+    using namespace sandbox::compiler;
+
+    // The pointer is first held in a local scalar, then used as an address.
+    // This must not be mistaken for a stack-frame address by the target
+    // emitter: the store/load pair is an observable external-memory effect.
+    const std::string src = R"(
+        fn main() -> t40 {
+          var ptr: t40 = 120;
+          unsafe {
+            store(ptr, 41);
+            return load(ptr);
+          }
+        }
+    )";
+
+    CompileResult compiled = compileSource("phase7_raw_memory.trit", src);
+    expect(compiled.success, "raw-pointer memory source compiles");
+    expect(compiled.object.metadata.at(
+               "target.ir_emitted_functions") == "1" &&
+               compiled.object.metadata.at(
+                   "target.ast_replay_functions") == "0",
+           "raw-pointer memory emits solely from optimized IR");
+
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "raw-pointer memory executable links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(
+                   vm, linked.assembled),
+               "raw-pointer memory image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "raw-pointer memory image halts");
+        expect(regLong(vm, 13) == 41,
+               "raw-pointer store/load preserves external memory value");
+    }
+}
+
 void testIfElseStatements() {
     std::cout << "[3b] If/else statement lowering\n";
     using namespace sandbox::compiler;
@@ -2242,6 +2281,7 @@ int main() {
     testSideEffectfulMatchKeepsBranchLowering();
     testRuntimeSyscallWrapperAndTupleSwap();
     testFunctionCallAndWhileLoop();
+    testDirectRawMemoryAddressLowering();
     testIfElseStatements();
     testTypeDiagnostics();
     testVerifierAllocatorAndDuplicateSymbols();

@@ -25,6 +25,7 @@ void showUsage() {
     std::cout << "  \033[1;32m--stack <words>\033[0m         Set stack allocation size hint (default: 24)\n";
     std::cout << "  \033[1;32m--dump-ir\033[0m               Print structural SSA IR before lowering\n";
     std::cout << "  \033[1;32m--dump-passes\033[0m           Dump internal compiler optimizer pass telemetry\n";
+    std::cout << "  \033[1;32m--dump-pipeline\033[0m         Dump SSA admission, target-emission, and fallback counts\n";
     std::cout << "  \033[1;32m--steps <count>\033[0m         Set VM execution step limit (default: 1000000)\n";
     std::cout << "  \033[1;32m--input <string>\033[0m        Feed ASCII console input string to the VM in run mode\n";
     std::cout << "  \033[1;32m--input-file <file>\033[0m     Feed console input from a file to the VM in run mode\n";
@@ -266,6 +267,7 @@ int main(int argc, char** argv) {
     bool run_mode = false;
     bool dump_ir = false;
     bool dump_passes = false;
+    bool dump_pipeline = false;
     bool dump_registers = false;
     bool use_ansi = true;
     int step_limit = 1000000;
@@ -349,6 +351,8 @@ int main(int argc, char** argv) {
             dump_ir = true;
         } else if (arg == "--dump-passes") {
             dump_passes = true;
+        } else if (arg == "--dump-pipeline") {
+            dump_pipeline = true;
         } else if (arg == "--dump-registers") {
             dump_registers = true;
         } else if (arg == "--imem") {
@@ -703,6 +707,30 @@ int main(int argc, char** argv) {
         printOptimizerStats(compiled.optimizer_stats, use_ansi);
         printAllocationResult(compiled.allocation, use_ansi);
         std::cout << "\n";
+    }
+
+    if (dump_pipeline) {
+        const auto metadata = [&](const std::string& key) {
+            const auto found = compiled.object.metadata.find(key);
+            return found == compiled.object.metadata.end()
+                ? std::string("<unset>")
+                : found->second;
+        };
+        std::cout << "--- Compiler Pipeline ---\n"
+                  << "  SSA admitted functions:       "
+                  << metadata("ssa.admitted_functions") << "\n"
+                  << "  CFG fallback functions:       "
+                  << metadata("ssa.cfg_fallback_functions") << "\n"
+                  << "  Direct IR-emitted functions:  "
+                  << metadata("target.ir_emitted_functions") << "\n"
+                  << "  AST replay functions:         "
+                  << metadata("target.ast_replay_functions") << "\n"
+                  << "  AST replay function names:    "
+                  << metadata("target.ast_replay_function_names") << "\n"
+                  << "  IR-emitted function names:    "
+                  << metadata("target.ir_emitted_function_names") << "\n"
+                  << "  Pipeline contract:            "
+                  << metadata("pipeline") << "\n\n";
     }
 
     if (assembly_only) {

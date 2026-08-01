@@ -1093,6 +1093,7 @@ public:
         int target_spill_loads = 0;
         int target_spill_stores = 0;
         std::vector<std::string> ir_emitted_function_names;
+        std::vector<std::string> target_replay_function_names;
         for (const Function& function : optimized_module.functions) {
             Function target_function = function;
             target_critical_edges_split +=
@@ -1123,6 +1124,7 @@ public:
                     function.name);
             } else {
                 ++target_replay_functions;
+                target_replay_function_names.push_back(function.name);
             }
         }
         result.assembly.clear();
@@ -1173,6 +1175,15 @@ public:
         result.object.metadata[
             "target.ir_emitted_function_names"] =
             ir_emitted_names.str();
+        std::ostringstream replay_names;
+        for (std::size_t index = 0;
+             index < target_replay_function_names.size(); ++index) {
+            if (index != 0) replay_names << ",";
+            replay_names << target_replay_function_names[index];
+        }
+        result.object.metadata[
+            "target.ast_replay_function_names"] =
+            replay_names.str();
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -1277,16 +1288,6 @@ private:
                             if (instr.args.size() == 1 &&
                                 stack_addresses.count(
                                     instr.args[0])) {
-                                if (instr.type.kind == TypeKind::Pointer) {
-                                    // A by-pointer aggregate parameter is
-                                    // loaded from its frame slot. The loaded
-                                    // pointer remains a valid stack-memory
-                                    // base even though its stored value came
-                                    // from an ABI argument rather than from a
-                                    // local alloca.
-                                    derived = true;
-                                    break;
-                                }
                                 bool saw_store = false;
                                 bool all_stack = true;
                                 for (const BasicBlock& source_block :
@@ -1369,13 +1370,6 @@ private:
                     default:
                         return false;
                 }
-                if ((instr.opcode == InstrOpcode::Load ||
-                     instr.opcode == InstrOpcode::Store ||
-                     instr.opcode == InstrOpcode::Deref) &&
-                    (instr.args.empty() ||
-                     !stack_addresses.count(instr.args[0]))) {
-                    return false;
-                }
                 // Structs and arrays are represented in target IR by scalar
                 // frame addresses and word-wise memory operations. Reject
                 // only values that still require a non-scalar register class
@@ -1413,67 +1407,53 @@ private:
         const ControlFlowGraph cfg =
             buildControlFlowGraph(function);
         if (!cfg.invalid_targets.empty()) return false;
-        const bool has_stack_memory = std::any_of(
-            function.blocks.begin(),
-            function.blocks.end(),
-            [](const BasicBlock& block) {
+        // Memory operations are explicit in the address-based IR. Local
+        // allocas are materialized through frame_offsets below, while
+        // validated raw pointers and aggregate parameters are ordinary
+        // register addresses. Preserve both classes directly, including
+        // loop-carried stack state, instead of falling back to AST replay.
+        const bool has_external_memory = std::any_of(
+            function.blocks.begin(), function.blocks.end(),
+            [&](const BasicBlock& block) {
                 return std::any_of(
-                    block.instructions.begin(),
-                    block.instructions.end(),
-                    [](const Instr& instr) {
-                        return instr.opcode ==
-                                   InstrOpcode::Alloca ||
-                               instr.opcode ==
-                                   InstrOpcode::Load ||
-                               instr.opcode ==
-                                   InstrOpcode::Store ||
-                               instr.opcode ==
-                                   InstrOpcode::Deref;
+                    block.instructions.begin(), block.instructions.end(),
+                    [&](const Instr& instr) {
+                        return (instr.opcode == InstrOpcode::Load ||
+                                instr.opcode == InstrOpcode::Store ||
+                                instr.opcode == InstrOpcode::Deref) &&
+                               !instr.args.empty() &&
+                               !stack_addresses.count(instr.args[0]);
                     });
             });
-        if (has_stack_memory) {
-            const bool has_explicit_frame_address =
-                std::any_of(
-                    function.blocks.begin(),
-                    function.blocks.end(),
-                    [&](const BasicBlock& block) {
-                        return std::any_of(
-                            block.instructions.begin(),
-                            block.instructions.end(),
-                            [&](const Instr& instr) {
-                                if (instr.opcode ==
-                                        InstrOpcode::AddrOf &&
-                                    instr.args.size() == 1 &&
-                                    frame_indices.count(
-                                        instr.args[0]) != 0) {
-                                    return true;
-                                }
-                                // Aggregate parameters are represented as a
-                                // pointer copied through their one-word
-                                // frame slot. Their first memory operation
-                                // can therefore address the alloca directly.
-                                return (instr.opcode == InstrOpcode::Load ||
-                                        instr.opcode == InstrOpcode::Store ||
-                                        instr.opcode == InstrOpcode::Deref) &&
-                                       !instr.args.empty() &&
-                                       frame_indices.count(
-                                           instr.args[0]) != 0;
-                            });
+        const bool has_call_or_syscall = std::any_of(
+            function.blocks.begin(), function.blocks.end(),
+            [](const BasicBlock& block) {
+                return std::any_of(
+                    block.instructions.begin(), block.instructions.end(),
+                    [](const Instr& instr) {
+                        return instr.opcode == InstrOpcode::Call ||
+                               instr.opcode == InstrOpcode::CallR ||
+                               instr.opcode == InstrOpcode::Syscall;
                     });
-            if (!has_explicit_frame_address)
-                return false;
-            for (const auto& [predecessor, successors] :
-                 cfg.successors) {
-                for (const std::string& successor :
-                     successors) {
-                    if (cfg.index.at(successor) <=
-                        cfg.index.at(predecessor)) {
-                        // Loop-carried stack state needs memory-SSA or an
-                        // equally explicit dependence model before direct
-                        // lowering. Keep replay admission visible until that
-                        // verifier and differential suite are in place.
+            });
+        if (has_external_memory && has_call_or_syscall) return false;
+        const bool has_frame_memory = std::any_of(
+            function.blocks.begin(), function.blocks.end(),
+            [](const BasicBlock& block) {
+                return std::any_of(
+                    block.instructions.begin(), block.instructions.end(),
+                    [](const Instr& instr) {
+                        return instr.opcode == InstrOpcode::Alloca ||
+                               instr.opcode == InstrOpcode::Load ||
+                               instr.opcode == InstrOpcode::Store ||
+                               instr.opcode == InstrOpcode::Deref;
+                    });
+            });
+        if (has_frame_memory) {
+            for (const auto& [predecessor, successors] : cfg.successors) {
+                for (const std::string& successor : successors) {
+                    if (cfg.index.at(successor) <= cfg.index.at(predecessor))
                         return false;
-                    }
                 }
             }
         }
