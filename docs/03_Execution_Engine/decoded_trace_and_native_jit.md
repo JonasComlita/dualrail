@@ -23,23 +23,21 @@ faulting PC when a guard fails.
 ## x86-64 backend status
 
 `VMExecutionBackend::NativeX64Jit` is dependency-free and supports Windows x64
-and System V x86-64 calling conventions. Its first stage emits an ABI-correct
-per-trace thunk into RW memory, changes the mapping to RX, flushes the
-instruction cache, and invokes the precise portable micro-op helper. No mapping
-is writable and executable at the same time.
-
-This is an intentionally conservative bootstrap, not the final optimizing
-backend. Arithmetic and guarded memory semantics work through the helper, but
-individual micro-ops are not yet lowered inline to x86-64. The native backend
-therefore remains disabled by default.
+and System V x86-64 calling conventions. It emits ABI-correct code into RW
+memory, changes the mapping to RX, flushes the instruction cache, and never
+keeps a mapping writable and executable at the same time. NOP/MOV/COPY and
+hot internal branch control are emitted inline; arithmetic and guarded memory
+retain precise helper side exits until their data paths are lowered inline.
 
 `test_execution_backends_benchmark` reports seven-run median wall time after two warmups
 for arithmetic, guarded-memory, and branch workloads. Native execution may
 become a default only after it reaches at least 1.15x on two workloads and is
 no more than 3% slower on the third. Decode-count reduction is diagnostic only,
 not a performance acceptance gate. On x86-64, a failed wall-time gate returns
-nonzero so a benchmark result cannot be mistaken for acceptance; the current
-helper-backed implementation is intentionally still below that threshold.
+nonzero so a benchmark result cannot be mistaken for acceptance. The current
+direct branch-loop stage passes the wall-time contract on the measured host,
+but this does not yet authorize the native backend as the default until the
+remaining helper-backed operations are covered.
 
 Focused parity and safety coverage lives in `tests/test_vm_widths.cpp`,
 including deterministic randomized differential execution, user-mode memory,

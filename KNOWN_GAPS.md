@@ -11,10 +11,12 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add fuzz harnesses for malformed image files and bad syscall pointers.
 - Add crash/power-loss scenarios for VFS and WAL recovery.
-- Lower supported micro-ops directly to x86-64 instead of the current
-  helper-backed W^X thunk. The three-workload wall-time gate is now enforced by
-  `test_execution_backends_benchmark` and currently fails on the host until
-  direct lowering is fast enough; native JIT remains disabled by default.
+- Extend the x86-64 backend's direct lowering beyond hot internal branch loops.
+  NOP/MOV/COPY and internal branch control now execute as emitted x86-64, and
+  the three-workload wall-time gate passes on the measured host; arithmetic,
+  guarded memory, and unsupported operations still use precise helper side
+  exits, so native JIT remains disabled by default until those operations are
+  lowered inline as well.
 - Complete the IR-first compiler transition: frontend stack locals must feed
   real `mem2reg`, optimized IR must drive target emission, and spills must be
   rewritten until the interference graph is colorable. A fail-closed
