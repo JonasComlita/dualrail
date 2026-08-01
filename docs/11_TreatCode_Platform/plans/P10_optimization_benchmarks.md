@@ -79,8 +79,8 @@ python tools/trit_tool.py website plan verify P10
 
 ## Completion Record
 
-- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
+- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P10/result.json`
-- **Evidence hashes:** `result.json` content `sha256:accdb7dbc5c725c4dae858aacd33d9440fe55327de98c2deb6faad82ca023692`; `BENCHMARK_PROTOCOL_SCHEMA.json` `sha256:766637edf63a34ef0f6db01e74c7544bbf7bf1009a1f52f666e63378e9c05721`; `BENCHMARK_MANIFEST.json` `sha256:32c78faf64d77a2a615b8d3c4d521270148c2233c7a43f87096ca666c6a4b56f`; `p10-reference.v1.json` `sha256:16e263e885dcbad26771cb46b94f70de79dfaa487b53cc700861e71234c05e47`; `reference-verification.json` `sha256:e3a2a916956ac8100b6aa75f6194a2f9dfa7434b2c5e89ac888c302b98c3f90e`; `benchmark-tests.json` `sha256:b815d2ffd3f282fc5e23a3db2423fbf3a6ab3aa73cc8ba3b2177b52420929dba`; `implementation-arena-e2e.json` `sha256:f713e1f89bc7b2f27345febf03b0d6ab77a5089ee835c88d4b142eb5ff155059`.
+- **Evidence hashes:** `result.json` content `sha256:c4e83d622369647a1c1e4abe8ef388aee0b9403050be92742b1a4d7a0a373d71`; `BENCHMARK_PROTOCOL_SCHEMA.json` `sha256:766637edf63a34ef0f6db01e74c7544bbf7bf1009a1f52f666e63378e9c05721`; `BENCHMARK_MANIFEST.json` `sha256:32c78faf64d77a2a615b8d3c4d521270148c2233c7a43f87096ca666c6a4b56f`; `p10-reference.v1.json` `sha256:16e263e885dcbad26771cb46b94f70de79dfaa487b53cc700861e71234c05e47`; `reference-verification.json` `sha256:ab4e5bc038fee2454dcc3ffacc4377305aa09e325d6f5565f9ee56c078478780`; `benchmark-tests.json` `sha256:b815d2ffd3f282fc5e23a3db2423fbf3a6ab3aa73cc8ba3b2177b52420929dba`; `implementation-arena-e2e.json` `sha256:f713e1f89bc7b2f27345febf03b0d6ab77a5089ee835c88d4b142eb5ff155059`.
 - **Human approvals:** Performance owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:32:55.374369Z
+- **Date:** 2026-08-01T19:41:15.395941Z

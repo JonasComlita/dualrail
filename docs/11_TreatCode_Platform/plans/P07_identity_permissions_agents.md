@@ -78,8 +78,8 @@ python tools/trit_tool.py website plan verify P07
 
 ## Completion Record
 
-- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
+- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P07/result.json`
-- **Evidence hashes:** `result.json` content `sha256:aae7ae6c2c3224ffd89690b352507e9d67d488435d6b8aadf78c7cc78df7ed23`; `auth-positive.json` `sha256:b0ec454ea30411e803df6d227433444bbf2f1b446cef6cb33110ed5f5ed43484`; `auth-negative.json` `sha256:8a8cc779e2c9c11bb48c4e3f8b11b587860a7c1094c593d785776a154240733a`; `api-conformance.json` `sha256:49263790b0eff9282c1ef522232c2bea307e80470ae66524674ac7f9ec8cda73`; `AUTHORIZATION_MATRIX.md` `sha256:654e3a993b403c807f428495419abd8c1c7042b96859582d6fb4dab68a9e8516`; `THREAT_MODEL.md` `sha256:a27b7ee0a4d9fe7074b0a83c9f4f9ac9be7f244f73313c28c454fc31ddb6041f`; `identity_access.v1.schema.json` `sha256:213f4305c49a4cd5196385c7fce12ee175fcddb1d3996066ca9110e50276c548`; `auth_api.v1.openapi.json` `sha256:f42daf376b7a83acbf8ca7d3aed6a67d9db78ea323230c5212fe2d8a5a5bb893`.
+- **Evidence hashes:** `result.json` content `sha256:fec1bff7af43316b3df0bcacf3c1f213021b7ce67608c41b669fba0396ad56b7`; `auth-positive.json` `sha256:b0ec454ea30411e803df6d227433444bbf2f1b446cef6cb33110ed5f5ed43484`; `auth-negative.json` `sha256:8a8cc779e2c9c11bb48c4e3f8b11b587860a7c1094c593d785776a154240733a`; `api-conformance.json` `sha256:49263790b0eff9282c1ef522232c2bea307e80470ae66524674ac7f9ec8cda73`; `AUTHORIZATION_MATRIX.md` `sha256:654e3a993b403c807f428495419abd8c1c7042b96859582d6fb4dab68a9e8516`; `THREAT_MODEL.md` `sha256:a27b7ee0a4d9fe7074b0a83c9f4f9ac9be7f244f73313c28c454fc31ddb6041f`; `identity_access.v1.schema.json` `sha256:213f4305c49a4cd5196385c7fce12ee175fcddb1d3996066ca9110e50276c548`; `auth_api.v1.openapi.json` `sha256:f42daf376b7a83acbf8ca7d3aed6a67d9db78ea323230c5212fe2d8a5a5bb893`.
 - **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:32:19.250143Z
+- **Date:** 2026-08-01T19:40:47.587828Z

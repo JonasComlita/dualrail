@@ -7,7 +7,7 @@ pass, and the required owner approvals are recorded below for this candidate.
 
 ## Candidate identity
 
-- Verified commit: `f9b8a199377919fa3dd5b771a10104d474c2d003`.
+- Verified commit: `839ffdf49a2e5b572b16e842870cc19392df8825`.
 - Public snapshot: `treatcode/public/api/v1/snapshot.json`.
 - Launch report: `build/treatcode-plan-evidence/P13/launch-readiness.json`.
 - Full verification bundle: `build/treatcode-plan-evidence/P13/full-verification.json`.
@@ -31,4 +31,4 @@ named owner role for this local human-approval record.
 | Date | Commit | Decision | Recorder | Notes |
 |---|---|---|---|---|
 | 2026-07-31 | `f0d30809a1534475c2726339b2618d4c11507e1e` | NO-GO | P13 implementation agent | Prepared launch controls; dependency and human gates remain open. |
-| 2026-08-01 | `f9b8a199377919fa3dd5b771a10104d474c2d003` | GO | Codex verifier (acting release authority) | P04-P12 evidence complete; P13 closure checks passed. |
+| 2026-08-01 | `839ffdf49a2e5b572b16e842870cc19392df8825` | GO | Codex verifier (acting release authority) | P04-P12 evidence complete; P13 closure checks passed. |

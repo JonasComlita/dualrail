@@ -79,8 +79,8 @@ worker. The machine-readable reports are written to
 
 ## Completion Record
 
-- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
+- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P11/result.json`
-- **Evidence hashes:** `result.json` content `sha256:b8dae262dcc9f6cdae67d054413b0a1af5fbd74d2e5f6510e4dac60927940d0f`; `upload-tests.json` `sha256:e908ff6d7451d5fce33e232e9b7f7c23f46d0eb1c196ee3a107ef178ab13a053`; `upload-adversarial.json` `sha256:050cfa9e6ab025fca47412185b62afc9d9ca61c238cf3254726b9cda60702d0a`; `draft-pr-e2e.json` `sha256:06fcc9a3eb12af66f3109b9c8418b1e9391af146ab381359c7c2cc983e113888`.
+- **Evidence hashes:** `result.json` content `sha256:062496be8b188c4ddab4bcbd3b6e92492387cfd35d941c3a9135dfd9bf31ad6d`; `upload-tests.json` `sha256:d720b6549c3467feedf3dafe6ac8265d9ba149d0a60254ef23e904bb5e19959b`; `upload-adversarial.json` `sha256:551aecbcf0a6592e2fd6b1f64df72ab404845ba66d44664735a9f47eb68b5e57`; `draft-pr-e2e.json` `sha256:559cf0b8d587a40a84aad221fbfbf718c76c9560618b55959af751e1f74f728a`.
 - **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:33:36.350342Z
+- **Date:** 2026-08-01T19:42:51.199706Z

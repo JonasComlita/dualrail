@@ -74,8 +74,8 @@ python tools/trit_tool.py website plan verify P03
 
 ## Completion Record
 
-- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
+- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P03/result.json`
-- **Evidence hashes:** `result.json` content `sha256:65870111efd182872aed4403e453da2102a903e08c097895837e216df266fcd3`; `index-coverage.json` `sha256:ffb4b1410da7adcd2022248e3bb5ffce6f345693ba2da639aa1fada14ff6e163`; `index-freshness.json` `sha256:2da328eefad8081af21a643fbc5ea7a52b08bc612a819ed4dc3207c494dcdc80`; `determinism.v1.json` `sha256:2dfe23eed6eb6117fa59c610e905e15deccb0a111a9538d0ad382ff974bf4695`; `p03_context_request.v1.json` `sha256:527311f61cb6683d5688e6610e1efea7ee65b4bc705b7066165409500228093e`; `context-package.v1.json` `sha256:0081b2c4090d1225c7b9c70ee6ec3a690c57a5188e6dbda7111e76a7fbb83ad0`.
+- **Evidence hashes:** `result.json` content `sha256:48065dc6d79ee50cc74f3d4276f73301f2ddd770f5a39a64098c4c2f7dff9658`; `index-coverage.json` `sha256:7d2aa239ce6f18c98d61ac9fdd59b6266cccc276d0db3326d99f9cca3712fe53`; `index-freshness.json` `sha256:bd01771383cdcb90ee37416e5ac60f1f1fc70b932a7fe9ee6d075dc07f1cbea9`; `determinism.v1.json` `sha256:16aa20e2232f6b69da84573f688622084b62d6d116700b1f860c2692758a7a25`; `p03_context_request.v1.json` `sha256:527311f61cb6683d5688e6610e1efea7ee65b4bc705b7066165409500228093e`; `context-package.v1.json` `sha256:aebc970ef260db9a0bd2bfc6c8056a03f9ddc0273045585b0d6e6bc4599ab9a6`.
 - **Human approvals:** Code-intelligence maintainer — Codex verifier (acting owner) — approved; Architecture owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:29:51.380784Z
+- **Date:** 2026-08-01T19:38:43.891577Z

@@ -80,8 +80,8 @@ python tools/trit_tool.py website plan verify P09
 
 ## Completion Record
 
-- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
+- **Verified commit:** `839ffdf49a2e5b572b16e842870cc19392df8825`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P09/result.json`
-- **Evidence hashes:** `result.json` content `sha256:a0ccf865815117736b2a35c55dbb3478c4149090cb694154515588433e3703f0`; `runner-tests.json` `sha256:7f5ebb50bfcc603c7bbdf557e90d10bd65307a80ba3e89482198c5242723dc19`; `adversarial-tests.json` `sha256:b772433a3ec698d3198edda3428f6bf45ccd016b54d7102e843ac4524a39c693`; `deterministic-rerun.json` `sha256:ad68fb4cb834f1fe6b5ddba393d0b9cea38f85fd2fef644bf3d1764220d25a17`; `public-endpoint-isolation.json` `sha256:422d94165df0e3231e2675fad370ce4c5ddff18577426c75f26737a494bc7d2b`.
+- **Evidence hashes:** `result.json` content `sha256:39e5804c8b72bddf8878eef2aea6c9e6b961dd2b7fb58a847af9897b1f41f040`; `runner-tests.json` `sha256:7f5ebb50bfcc603c7bbdf557e90d10bd65307a80ba3e89482198c5242723dc19`; `adversarial-tests.json` `sha256:b772433a3ec698d3198edda3428f6bf45ccd016b54d7102e843ac4524a39c693`; `deterministic-rerun.json` `sha256:d4dc4ddf9987826e68c8f9037d36b25053ad0210f012476bc5925b9e2414ded4`; `public-endpoint-isolation.json` `sha256:70458f63483084b60f8501135a6efa54c9de145dc9f38873919e8acf011fef88`.
 - **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Architecture owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:32:49.524430Z
+- **Date:** 2026-08-01T19:41:12.532860Z
