@@ -90,7 +90,8 @@ owner approvals are recorded in the completion record below.
 
 ## Completion Record
 
-- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P12/result.json`
+- **Evidence hashes:** `result.json` content `sha256:e3699ce20a3e181b71f068886bc5c068c529b2224d5de4fd2af311fb8faeb9f8`; `mobile-operations.json` `sha256:e552ba00b7fffe4a251cc5513754b66a1a77ee0d26b456c1038ed55e8d94408d`; `disconnect-resume.json` `sha256:b6b916eab95ef121c70f121df89101935eb2909aa51f56779ff54ac9b0b72211`; `notifications.json` `sha256:a94e4514a1cc72cbcf35167b32a419e9e2da2044a10fb5af5b408e5ad335dffd`; `disaster-recovery.json` `sha256:158df3aad5dd8590feef6532381aa765ab62366a7003adf702d45fe88bcc3800`; `operations-command.json` `sha256:20c89a4c7b9bc376cd48c9caf8bbc4db9e7cd5eb404676df88a0a5e9d5ecb1f9`; `P12_OPERATIONS_RUNBOOK.md` `sha256:0ec18f90ee583cdc135ac62a51d0da7a51d06795b89c03af9e7fd56ebef14fdc`.
 - **Human approvals:** Operations owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:25:13Z
+- **Date:** 2026-08-01T18:33:41.099682Z

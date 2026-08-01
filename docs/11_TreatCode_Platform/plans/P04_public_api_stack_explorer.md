@@ -76,7 +76,8 @@ python tools/trit_tool.py website plan verify P04
 
 ## Completion Record
 
-- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P04/result.json`
+- **Evidence hashes:** `result.json` content `sha256:0b99fe46546f3c3478f3cae715a4ec0ae691b8c87b369009eae89fb99bf57702`; `api-conformance.json` `sha256:b28bdb4c30bf59d37c590ed874623117301d2f0aa4dc7841dc759381380245a0`; `public-route-e2e.json` `sha256:ef1c8f9ce8c85d5bb3e6e270851bee1fe2d084d4ff501d9be0a5d8257883e95a`; `accessibility.json` `sha256:c5335e4e66496fbfe56c4a69fabf74eb49bfcd8b6e868374e13036e5b9a5d2a9`; `bundle-budget.json` `sha256:047d99f6234da4d499a848393bccee33304a888f44eab0d3eddac0090dbdf5c4`; `browser-e2e.json` `sha256:72116bd75684f1daaf1d0877a0552bc40f0b71b820be2708faaf659b531e4896`.
 - **Human approvals:** Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:25:13Z
+- **Date:** 2026-08-01T18:31:45.444262Z

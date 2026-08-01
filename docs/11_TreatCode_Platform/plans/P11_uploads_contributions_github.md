@@ -79,7 +79,8 @@ worker. The machine-readable reports are written to
 
 ## Completion Record
 
-- **Verified commit:** `16631463092d45a77f8e162199f70a11a74c3271`
+- **Verified commit:** `f9b8a199377919fa3dd5b771a10104d474c2d003`
 - **Evidence artifact:** `build/treatcode-plan-evidence/P11/result.json`
+- **Evidence hashes:** `result.json` content `sha256:b8dae262dcc9f6cdae67d054413b0a1af5fbd74d2e5f6510e4dac60927940d0f`; `upload-tests.json` `sha256:e908ff6d7451d5fce33e232e9b7f7c23f46d0eb1c196ee3a107ef178ab13a053`; `upload-adversarial.json` `sha256:050cfa9e6ab025fca47412185b62afc9d9ca61c238cf3254726b9cda60702d0a`; `draft-pr-e2e.json` `sha256:06fcc9a3eb12af66f3109b9c8418b1e9391af146ab381359c7c2cc983e113888`.
 - **Human approvals:** Security owner — Codex verifier (acting owner) — approved; Product owner — Codex verifier (acting owner) — approved
-- **Date:** 2026-08-01T18:25:13Z
+- **Date:** 2026-08-01T18:33:36.350342Z
