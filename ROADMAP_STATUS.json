@@ -33,6 +33,7 @@
       "summary": "Native kernel, VFS, persistent root image, process lifecycle, waits, and app handoff are implemented with production tests.",
       "evidence": [
         "test_os_platform",
+        "test_first_silicon_bringup",
         "test_phase_d_kernel",
         "test_process_handoff",
         "test_production_layers",

@@ -216,9 +216,10 @@
       "evidence_status": "tested",
       "source_refs": [
         {"repository": "trit", "commit": "d168bc8", "path": "bootloader.tasm", "status": "resolved", "role": "reset"},
-        {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_trap_stub.tasm", "status": "resolved", "role": "trap"}
+        {"repository": "trit", "commit": "d168bc8", "path": "native_kernel_trap_stub.tasm", "status": "resolved", "role": "trap"},
+        {"repository": "trit", "commit": "working-tree", "path": "v2_first_silicon_bringup.tasm", "status": "resolved", "role": "first_silicon_bringup"}
       ],
-      "test_refs": ["test_os_platform", "test_host_runtime"],
+      "test_refs": ["test_os_platform", "test_first_silicon_bringup", "test_host_runtime"],
       "decision_ids": ["trit.decision.v2-over-v1-image"]
     },
     {

@@ -41,6 +41,7 @@
       "targets": [
         "test_multiwidth_vm",
         "test_os_platform",
+        "test_first_silicon_bringup",
         "test_migration_v2",
         "test_redo_wal_v2",
         "test_phase_d_kernel",
@@ -59,6 +60,7 @@
         "test_production_layers",
         "test_production_hardening",
         "test_os_platform",
+        "test_first_silicon_bringup",
         "test_architecture_v2",
         "test_migration_v2",
         "test_redo_wal_v2",

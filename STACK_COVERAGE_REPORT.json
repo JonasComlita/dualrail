@@ -230,18 +230,18 @@
     },
     {
       "stack_id": "trit.stack.phase.12.boot-trap",
-      "source_refs": ["bootloader.tasm", "native_kernel_boot.tasm", "native_kernel_trap_stub.tasm"],
+      "source_refs": ["bootloader.tasm", "native_kernel_boot.tasm", "native_kernel_trap_stub.tasm", "v2_first_silicon_bringup.tasm"],
       "contract_ids": ["trit.contract.boot.trap-loader"],
       "capability_ids": ["trit.capability.boot.native-trap-and-loader"],
-      "test_refs": ["test_os_platform", "test_host_runtime"],
+      "test_refs": ["test_os_platform", "test_first_silicon_bringup", "test_host_runtime"],
       "benchmark_refs": [],
       "gap_refs": [],
       "release_refs": ["trit.release.v2-format"],
       "coverage": {
-        "specified": {"status": "complete", "evidence_refs": ["native_kernel_trap_stub.tasm"]},
-        "implemented": {"status": "complete", "evidence_refs": ["native_kernel_boot.tasm"]},
+        "specified": {"status": "complete", "evidence_refs": ["native_kernel_trap_stub.tasm", "v2_first_silicon_bringup.tasm"]},
+        "implemented": {"status": "complete", "evidence_refs": ["native_kernel_boot.tasm", "v2_first_silicon_bringup.tasm"]},
         "integrated": {"status": "complete", "evidence_refs": ["build_tos_image.cpp"]},
-        "tested": {"status": "complete", "evidence_refs": ["test_os_platform", "test_host_runtime"]},
+        "tested": {"status": "complete", "evidence_refs": ["test_os_platform", "test_first_silicon_bringup", "test_host_runtime"]},
         "benchmarked": {"status": "not_available", "evidence_refs": []},
         "released": {"status": "partial", "evidence_refs": ["trit.release.v2-format"]}
       }

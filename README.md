@@ -580,6 +580,7 @@ Current integration note:
 
 #### Track 6.7: Minimal Kernel Bring-Up (Implemented)
 - **Historical Bootable Assembly Artifact**: The v1 `minimal_kernel_bringup.tasm` proof is frozen at Git tag `trit-v1-final`; it was retired from the v2 production tree because it hard-coded 27-word MMU pages.
+- **v2 First-Silicon Bring-Up Artifact**: `v2_first_silicon_bringup.tasm` is the standalone `.isa 2` monitor image for numeric PTE/page geometry, v2 syscall/return registers, trap/ERET, timer, and WAIT acceptance.
 - **Assembler Kernel Support**: Added `.org` for physical text/data placement and `.pte` for raw T40 page-table entries, so kernel images can carry page tables and task contexts without C++ host patching.
 - **Kernel Acceptance Test**: The VM now runs the artifact as a boot image and verifies timer-driven switching between two user tasks with separate physical counters.
 

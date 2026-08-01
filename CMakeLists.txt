@@ -63,6 +63,12 @@ target_compile_features(test_architecture_v2 PUBLIC cxx_std_17)
 target_compile_definitions(test_architecture_v2 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 add_test(NAME test_architecture_v2 COMMAND test_architecture_v2)
 
+add_executable(test_first_silicon_bringup tests/test_first_silicon_bringup.cpp)
+target_compile_features(test_first_silicon_bringup PUBLIC cxx_std_17)
+target_compile_definitions(test_first_silicon_bringup PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_first_silicon_bringup COMMAND test_first_silicon_bringup)
+set_tests_properties(test_first_silicon_bringup PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(test_redo_wal_v2 tests/test_redo_wal_v2.cpp)
 target_compile_features(test_redo_wal_v2 PUBLIC cxx_std_17)
 target_compile_definitions(test_redo_wal_v2 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -294,6 +300,7 @@ add_custom_target(production_profile
         test_production_layers
         test_production_hardening
         test_os_platform
+        test_first_silicon_bringup
         test_migration_v2
         test_redo_wal_v2
         test_scaling_profile_compact
@@ -305,6 +312,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_layers>
     COMMAND $<TARGET_FILE:test_production_hardening>
     COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_first_silicon_bringup>
     COMMAND $<TARGET_FILE:test_migration_v2>
     COMMAND $<TARGET_FILE:test_redo_wal_v2>
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>

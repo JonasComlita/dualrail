@@ -374,8 +374,11 @@ Read:
 1. `bootloader.tasm`
 2. `native_kernel_boot.tasm`
 3. `native_kernel_trap_stub.tasm`
-4. `kernel.trit`
-5. `docs/03_Execution_Engine/binary_loader.md`
+4. `v2_first_silicon_bringup.tasm`
+5. `kernel.trit`
+6. `docs/03_Execution_Engine/binary_loader.md`
+
+The standalone v2 monitor image is covered by `test_first_silicon_bringup`; it is a diagnostic acceptance artifact, not a second production kernel.
 
 The retired v1 `minimal_kernel_bringup.tasm` is available at Git tag
 `trit-v1-final` for historical reproduction, not as a v2 runtime input.
