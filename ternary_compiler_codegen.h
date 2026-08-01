@@ -1137,7 +1137,15 @@ public:
                     function.name);
             } else {
                 const auto ast_it = ast_by_name.find(function.name);
-                if (ast_it != ast_by_name.end() && function_index < dry_module.functions.size()) {
+                if (!options_.allow_ast_replay) {
+                    diagnostics_.push_back(Diagnostic{
+                        DiagnosticSeverity::Error,
+                        "optimized SSA target lowering failed for '" +
+                            function.name +
+                            "' and AST replay is disabled",
+                        SourceSpan{ast_.name, 1, 1, 1}});
+                } else if (ast_it != ast_by_name.end() &&
+                           function_index < dry_module.functions.size()) {
                     // AST emission is now a narrowly scoped compatibility
                     // fallback for a target-lowering rejection.  Directly
                     // lowerable functions never enter this path, so their
@@ -1179,6 +1187,8 @@ public:
         result.object.metadata["pipeline"] =
             "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-with-explicit-replay-fallback";
         result.object.metadata["object.ssa_is_optimized"] = "true";
+        result.object.metadata["target.ast_replay_allowed"] =
+            options_.allow_ast_replay ? "true" : "false";
         result.object.metadata["ssa.admitted_functions"] =
             std::to_string(ssa_admitted_functions);
         result.object.metadata["ssa.cfg_fallback_functions"] =

@@ -22,6 +22,7 @@ void showUsage() {
     std::cout << "  \033[1;32m-o <file>\033[0m               Output compiled ternary executable image\n";
     std::cout << "  \033[1;32m-S\033[0m                      Output assembly text (.tasm) instead of binary executable\n";
     std::cout << "  \033[1;32m-O0 / -O1 / -O2\033[0m         Set optimization level (None, Basic, Aggressive)\n";
+    std::cout << "  \033[1;32m--strict-ssa\033[0m             Reject any function that needs AST replay\n";
     std::cout << "  \033[1;32m--stack <words>\033[0m         Set stack allocation size hint (default: 24)\n";
     std::cout << "  \033[1;32m--dump-ir\033[0m               Print structural SSA IR before lowering\n";
     std::cout << "  \033[1;32m--dump-passes\033[0m           Dump internal compiler optimizer pass telemetry\n";
@@ -312,6 +313,8 @@ int main(int argc, char** argv) {
             comp_options.optimization = OptimizationLevel::Basic;
         } else if (arg == "-O2") {
             comp_options.optimization = OptimizationLevel::Aggressive;
+        } else if (arg == "--strict-ssa") {
+            comp_options.allow_ast_replay = false;
         } else if (arg == "--stack") {
             if (i + 1 < argc) {
                 link_options.stack_hint_words = std::stoi(argv[++i]);

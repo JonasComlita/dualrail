@@ -78,6 +78,10 @@ struct CompilerOptions {
     bool enable_mem2reg = true;
     bool enable_cse = true;
     bool enable_spilling = true;
+    // Keep legacy AST emission available for the transition build, but allow
+    // CI and release tooling to require optimized SSA as the sole target
+    // source while unsupported constructs are being eliminated.
+    bool allow_ast_replay = true;
     bool debug_bounds_checks = false;
     bool dump_pass_pipeline = false;
 };

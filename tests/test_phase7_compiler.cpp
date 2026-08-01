@@ -1527,6 +1527,26 @@ void testSysWriteChar() {
     }
 }
 
+void testStrictSsaRejectsReplayFallback() {
+    std::cout << "[10b] Strict SSA rejects target replay fallback\n";
+    using namespace sandbox::compiler;
+    const std::string src = R"(
+        fn main() -> t40 {
+            var ptr: t40 = 120;
+            unsafe { store(ptr, 41); }
+            sys_write_char(65);
+            return 0;
+        }
+    )";
+    CompilerOptions options;
+    options.allow_ast_replay = false;
+    CompileResult compiled = compileSource("phase7_strict_ssa.trit", src, options);
+    expect(!compiled.success,
+           "strict SSA reports unsupported target lowering instead of replaying AST");
+    expect(hasDiagnostic(compiled.diagnostics, "AST replay is disabled"),
+           "strict SSA diagnostic names the disabled fallback");
+}
+
 void testMatchWildcard() {
     std::cout << "[11] match statement wildcard arm test\n";
     using namespace sandbox::compiler;
@@ -2292,6 +2312,7 @@ int main() {
     testOptimizerAndGraphColoringDetails();
     testConcurrencyFeatures();
     testSysWriteChar();
+    testStrictSsaRejectsReplayFallback();
     testMatchWildcard();
     testConstants();
     testParametricWidthFunctions();
