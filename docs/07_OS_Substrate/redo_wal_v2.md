@@ -30,6 +30,10 @@ A group is flushed when explicitly requested, at 27 transactions, at 27 WAL
 blocks, or on the first timer tick after a commit becomes pending. Home pages
 cannot be written while their required LSN is newer than the durable LSN.
 
+Kernel buffer frames carry their owning inode and page LSN; dirty frames cannot
+be written or evicted while their page LSN is newer than the durable LSN. Each
+inode also tracks the greatest commit LSN required by its dirty data and metadata.
+
 `fsync(fd)` orders durability as:
 
 1. Append and flush WAL through the inode's required LSN.
@@ -37,7 +41,13 @@ cannot be written while their required LSN is newer than the durable LSN.
 3. Issue one data barrier.
 
 Thus ordinary writes issue no stable flush, while a targeted write plus
-`fsync` needs at most one WAL barrier and one data barrier.
+`fsync` needs at most one WAL barrier and one data barrier. The kernel's
+`vfs_fsync` writes only the fd inode's inode row, directory entry/name, extent
+rows, and extent payloads; unrelated dirty inode frames remain dirty.
+
+Checkpointing first makes committed WAL durable, then writes home pages and
+issues their data barrier, appends and durably flushes a checkpoint record, and
+only then advances the WAL tail in a new superblock.
 
 ## Executable recovery oracle
 

@@ -109,14 +109,17 @@ const PH_VERSION: t40 = 3;
 const PH_LRU_CLOCK: t40 = 4;
 const PH_NAMESPACE: t40 = 5;
 
-// Buffer pool — moved to 29000 (clear of HW page table region 19300–27491).
-// 64 frames × 10 words = 640 words → 29000–29639.
+// Buffer pool at 130700 (clear of HW page table and namespace metadata).
+// 64 frames × 11 words = 704 words → 130700–131403.
 const BUFFER_MAX_FRAMES: t40 = 64;
-const BUFFER_FRAME_WORDS: t40 = 10;
+const BUFFER_FRAME_WORDS: t40 = 11;
 const BUFFER_POOL_BASE: t40 = 130700;
 const BF_VALID: t40 = 0;
 const BF_NAMESPACE: t40 = 1;
+// BF_INODE is the owning inode for the frame.  Keep the explicit alias so
+// durability code cannot accidentally treat a logical-page number as owner.
 const BF_INODE: t40 = 2;
+const BF_OWNER_INODE: t40 = 2;
 const BF_LOGICAL_PAGE: t40 = 3;
 const BF_DATA_ADDR: t40 = 4;
 const BF_PIN_COUNT: t40 = 5;
@@ -124,6 +127,7 @@ const BF_DIRTY: t40 = 6;
 const BF_VERSION: t40 = 7;
 const BF_LAST_USED: t40 = 8;
 const BF_REF_BIT: t40 = 9;
+const BF_PAGE_LSN: t40 = 10;
 // Namespace CDC version counters: incremented on every dirty mark.
 // A subscriber polling ns_dirty_version detects any write in O(1).
 const NS_DIRTY_VERSION_BASE: t40 = 130600;
@@ -303,6 +307,10 @@ const VFS_PAYLOAD_WORDS: t40 = 65536;
 
 const VFS_INODE_WORDS: t40 = 8;
 const VFS_INODE_BASE: t40 = 150000;
+// Required LSN is volatile dependency metadata.  It is deliberately kept
+// outside the on-disk inode table; recovery reconstructs it from WAL replay.
+const INODE_REQUIRED_LSN_BASE: t40 = 304500;
+const INODE_REQUIRED_LSN_WORDS: t40 = 2048;
 const INODE_KIND: t40 = 0;
 const INODE_MODE: t40 = 1;
 const INODE_SIZE: t40 = 2;
@@ -815,6 +823,21 @@ fn buffer_pinned_count() -> t40 {
     return count;
 }
 
+fn buffer_frame_writeback_allowed(slot: t40) -> t40 {
+    if slot < 0 { return 0; }
+    if slot - BUFFER_MAX_FRAMES >= 0 { return 0; }
+    var row: t40 = buffer_frame_addr(slot);
+    if kload(row + BF_VALID) <= 0 { return 0; }
+    if kload(row + BF_DIRTY) <= 0 { return 1; }
+    // A VM without a persistent block device has no home-page write to
+    // order.  Real storage must obey page-LSN <= durable-LSN.
+    if vfs_disk_available() <= 0 { return 1; }
+    if kload(row + BF_PAGE_LSN) - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+        return 0;
+    }
+    return 1;
+}
+
 fn buffer_flush_frame(slot: t40) -> t40 {
     if slot < 0 {
         return ERR_INVALID;
@@ -825,6 +848,9 @@ fn buffer_flush_frame(slot: t40) -> t40 {
     var row: t40 = buffer_frame_addr(slot);
     if kload(row + BF_VALID) <= 0 {
         return ERR_INVALID;
+    }
+    if buffer_frame_writeback_allowed(slot) <= 0 {
+        return ERR_AGAIN;
     }
     if kload(row + BF_DIRTY) > 0 {
         kstore(row + BF_DIRTY, 0);
@@ -844,7 +870,8 @@ fn buffer_flush_all() -> t40 {
         var row: t40 = buffer_frame_addr(slot);
         if kload(row + BF_VALID) > 0 {
             if kload(row + BF_DIRTY) > 0 {
-                buffer_flush_frame(slot);
+                var status: t40 = buffer_flush_frame(slot);
+                if status <= 0 { return status; }
                 flushed = flushed + 1;
             }
         }
@@ -853,10 +880,74 @@ fn buffer_flush_all() -> t40 {
     return flushed;
 }
 
+fn buffer_flush_inode(namespace_id: t40, inode: t40) -> t40 {
+    var slot: t40 = 0;
+    var flushed: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if kload(row + BF_NAMESPACE) - namespace_id == 0 {
+                if kload(row + BF_OWNER_INODE) - inode == 0 {
+                    if kload(row + BF_DIRTY) > 0 {
+                        var status: t40 = buffer_flush_frame(slot);
+                        if status <= 0 { return status; }
+                        flushed = flushed + 1;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return flushed;
+}
+
+fn buffer_required_lsn_all() -> t40 {
+    var slot: t40 = 0;
+    var required: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if kload(row + BF_DIRTY) > 0 {
+                if kload(row + BF_PAGE_LSN) - required > 0 {
+                    required = kload(row + BF_PAGE_LSN);
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return required;
+}
+
+fn buffer_page_lsn(slot: t40) -> t40 {
+    if slot < 0 { return ERR_INVALID; }
+    if slot - BUFFER_MAX_FRAMES >= 0 { return ERR_INVALID; }
+    return kload(buffer_frame_addr(slot) + BF_PAGE_LSN);
+}
+
+fn inode_required_lsn_addr(inode: t40) -> t40 {
+    return INODE_REQUIRED_LSN_BASE + inode;
+}
+
+fn inode_required_lsn(inode: t40) -> t40 {
+    if inode < 0 { return 0; }
+    if inode - INODE_REQUIRED_LSN_WORDS >= 0 { return 0; }
+    return kload(inode_required_lsn_addr(inode));
+}
+
+fn inode_track_required_lsn(inode: t40, lsn: t40) -> t40 {
+    if inode < 0 { return ERR_INVALID; }
+    if inode - INODE_REQUIRED_LSN_WORDS >= 0 { return ERR_INVALID; }
+    var addr: t40 = inode_required_lsn_addr(inode);
+    if lsn - kload(addr) > 0 {
+        kstore(addr, lsn);
+    }
+    return kload(addr);
+}
+
 // Clock-hand eviction: two-pass sweep.
 // Pass 1: give referenced frames a second chance (clear ref bit, continue).
-// Pass 2: evict first unpinned+unreferenced frame.
-// This O(n) sweep is correct and cache-friendly for n=64.
+// Pass 2: evict first unpinned+unreferenced frame whose WAL dependency is
+// durable.  This preserves the write-ahead invariant under memory pressure.
 fn buffer_pick_victim() -> t40 {
     var slot: t40 = 0;
     while BUFFER_MAX_FRAMES - slot > 0 {
@@ -873,8 +964,10 @@ fn buffer_pick_victim() -> t40 {
             if kload(row + BF_REF_BIT) > 0 {
                 kstore(row + BF_REF_BIT, 0);
             } else {
-                kstore(BUFFER_CLOCK_HAND_ADDR, kwrap_inc(hand, BUFFER_MAX_FRAMES));
-                return hand;
+                if buffer_frame_writeback_allowed(hand) > 0 {
+                    kstore(BUFFER_CLOCK_HAND_ADDR, kwrap_inc(hand, BUFFER_MAX_FRAMES));
+                    return hand;
+                }
             }
         }
         hand = kwrap_inc(hand, BUFFER_MAX_FRAMES);
@@ -890,16 +983,18 @@ fn buffer_alloc_frame(namespace_id: t40, inode: t40, logical_page: t40, data_add
     }
     var row: t40 = buffer_frame_addr(slot);
     if kload(row + BF_VALID) > 0 {
-        buffer_flush_frame(slot);
+        var flushed: t40 = buffer_flush_frame(slot);
+        if flushed <= 0 { return flushed; }
         kstore(BUFFER_EVICTION_COUNT_ADDR, kload(BUFFER_EVICTION_COUNT_ADDR) + 1);
     }
     kstore(row + BF_VALID, 1);
     kstore(row + BF_NAMESPACE, namespace_id);
-    kstore(row + BF_INODE, inode);
+    kstore(row + BF_OWNER_INODE, inode);
     kstore(row + BF_LOGICAL_PAGE, logical_page);
     kstore(row + BF_DATA_ADDR, data_addr);
     kstore(row + BF_PIN_COUNT, 0);
     kstore(row + BF_DIRTY, 0);
+    kstore(row + BF_PAGE_LSN, 0);
     kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
     kstore(row + BF_LAST_USED, kload(BUFFER_CLOCK_ADDR));
     kstore(row + BF_REF_BIT, 1);
@@ -954,7 +1049,7 @@ fn buffer_ns_touch(ns: t40) -> t40 {
     return v + 1;
 }
 
-fn buffer_mark_dirty(slot: t40) -> t40 {
+fn buffer_mark_dirty(slot: t40, page_lsn: t40) -> t40 {
     if slot < 0 {
         return ERR_INVALID;
     }
@@ -971,6 +1066,9 @@ fn buffer_mark_dirty(slot: t40) -> t40 {
         // Notify namespace CDC: any subscriber watching this namespace's
         // version counter will see a change on next poll.
         buffer_ns_touch(kload(row + BF_NAMESPACE));
+    }
+    if page_lsn - kload(row + BF_PAGE_LSN) > 0 {
+        kstore(row + BF_PAGE_LSN, page_lsn);
     }
     kstore(row + BF_VERSION, kload(row + BF_VERSION) + 1);
     kstore(row + BF_REF_BIT, 1);
@@ -1707,6 +1805,7 @@ fn wal_free_blocks() -> t40 {
 
 fn wal_init() -> t40 {
     kclear(WAL_BASE, WAL_CAPACITY * WAL_RECORD_WORDS);
+    kclear(INODE_REQUIRED_LSN_BASE, INODE_REQUIRED_LSN_WORDS);
     kstore(WAL_HEAD_ADDR, 0);
     kstore(WAL_TAIL_ADDR, 0);
     kstore(WAL_NEXT_TXID_ADDR, 1);
@@ -1784,6 +1883,7 @@ fn log_commit(txid: t40) -> t40 {
     kstore(commit_rec + 1, WAL_VERSION);
     kstore(commit_rec + WAL_GENERATION, kload(WAL_GENERATION_ADDR));
     kstore(commit_rec + WAL_LSN, kload(WAL_NEXT_LSN_ADDR));
+    var commit_lsn: t40 = kload(commit_rec + WAL_LSN);
     kstore(commit_rec + WAL_TXID, txid);
     kstore(commit_rec + WAL_PREV_LSN, previous_lsn);
     kstore(commit_rec + WAL_TYPE, WAL_COMMIT);
@@ -1826,7 +1926,9 @@ fn log_commit(txid: t40) -> t40 {
             wal_sync_to_disk();
         }
     }
-    return changed;
+    // The commit LSN is the dependency stamped onto affected frames and
+    // the owning inode.  Return it rather than the changed-word count.
+    return commit_lsn;
 }
 
 fn log_abort(txid: t40) -> t40 {
@@ -1888,10 +1990,47 @@ fn log_recover() -> t40 {
 
 fn log_checkpoint() -> t40 {
     var cleaned: t40 = wal_used_blocks();
-    wal_sync_to_disk();
+    if vfs_disk_available() <= 0 {
+        // Bring-up/no-device checkpoints cannot be durable, but preserve the
+        // in-memory boundary used by the bootstrap tests.
+        kstore(WAL_CHECKPOINT_ADDR, kload(WAL_DURABLE_LSN_ADDR));
+        kstore(WAL_TAIL_ADDR, kload(WAL_HEAD_ADDR));
+        return cleaned;
+    }
+
+    // 1. Make all committed WAL durable before any home-page write.
+    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    var chosen_lsn: t40 = kload(WAL_DURABLE_LSN_ADDR);
+
+    // 2. Flush pages whose dependency is at or below chosen_lsn and issue the
+    // data barrier before the checkpoint record is appended.
+    if vfs_sync_to_disk() < 0 { return ERR_INVALID; }
+
+    // 3. Append a checkpoint record describing that ordered home-page image.
+    if wal_free_blocks() <= 0 { return ERR_NO_SPACE; }
+    var head: t40 = kload(WAL_HEAD_ADDR);
+    var checkpoint_rec: t40 = wal_record_addr(head);
+    kclear(checkpoint_rec, WAL_RECORD_WORDS);
+    kstore(checkpoint_rec + 0, WAL_MAGIC);
+    kstore(checkpoint_rec + 1, WAL_VERSION);
+    kstore(checkpoint_rec + WAL_GENERATION, kload(WAL_GENERATION_ADDR));
+    kstore(checkpoint_rec + WAL_LSN, kload(WAL_NEXT_LSN_ADDR));
+    kstore(checkpoint_rec + WAL_TXID, 0);
+    kstore(checkpoint_rec + WAL_PREV_LSN, chosen_lsn);
+    kstore(checkpoint_rec + WAL_TYPE, WAL_CHECKPOINT);
+    kstore(checkpoint_rec + WAL_TARGET_KIND, WAL_TARGET_WORD);
+    kstore(checkpoint_rec + WAL_COUNT, 0);
+    wal_record_finalize(head);
+    kstore(WAL_HEAD_ADDR, kwrap_inc(head, WAL_CAPACITY));
+    kstore(WAL_NEXT_LSN_ADDR, kload(WAL_NEXT_LSN_ADDR) + 1);
+    kstore(WAL_PENDING_BLOCK_ADDR, kload(WAL_PENDING_BLOCK_ADDR) + 1);
+
+    // 4. Make the checkpoint record durable, then advance the tail in a new
+    // checksummed superblock.  The second WAL sync is the tail-order barrier.
+    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    kstore(WAL_CHECKPOINT_ADDR, chosen_lsn);
     kstore(WAL_TAIL_ADDR, kload(WAL_HEAD_ADDR));
-    var epoch: t40 = kload(WAL_CHECKPOINT_ADDR);
-    kstore(WAL_CHECKPOINT_ADDR, epoch + 1);
+    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
     return cleaned;
 }
 
@@ -5127,9 +5266,111 @@ fn vfs_load_state_from_disk() -> t40 {
     return 1;
 }
 
+fn vfs_sync_partial_range_to_disk(src_addr: t40, word_count: t40, array_base: t40, first_block: t40) -> t40 {
+    if word_count <= 0 { return 0; }
+    var relative: t40 = src_addr - array_base;
+    if relative < 0 { return ERR_INVALID; }
+    var copied: t40 = 0;
+    while word_count - copied > 0 {
+        var block_index: t40 = relative / STORAGE_BLOCK_WORDS;
+        var block_offset: t40 = relative - block_index * STORAGE_BLOCK_WORDS;
+        var take: t40 = STORAGE_BLOCK_WORDS - block_offset;
+        if take - (word_count - copied) > 0 {
+            take = word_count - copied;
+        }
+        if disk_read_block(first_block + block_index, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        var i: t40 = 0;
+        while take - i > 0 {
+            kstore(VFS_DISK_SCRATCH + block_offset + i, kload(src_addr + copied + i));
+            i = i + 1;
+        }
+        if disk_write_block(first_block + block_index, VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        copied = copied + take;
+        relative = relative + take;
+    }
+    return copied;
+}
+
+fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
+    if inode < 0 { return ERR_INVALID; }
+    if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
+    if vfs_disk_available() <= 0 { return ERR_NO_SPACE; }
+
+    // A targeted home-page write may only follow the WAL barrier for this
+    // inode's dependency.  This also makes direct callers safe.
+    var required_lsn: t40 = inode_required_lsn(inode);
+    if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+        if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    }
+    if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
+    if vfs_sync_partial_range_to_disk(
+            inode_addr(inode), VFS_INODE_WORDS, VFS_INODE_BASE,
+            VFS_DISK_INODE_BLOCK) < 0 {
+        return ERR_INVALID;
+    }
+
+    // A newly created inode is reachable through its directory entry.  Sync
+    // that entry and name, but leave unrelated namespace entries untouched.
+    var dir_slot: t40 = 0;
+    var dir_limit: t40 = kload(VFS_NEXT_DIRENT_ADDR);
+    while dir_limit - dir_slot > 0 {
+        var dir_row: t40 = dirent_addr(dir_slot);
+        if kload(dir_row + DIRENT_NAMESPACE) - namespace_id == 0 {
+            if kload(dir_row + DIRENT_CHILD) - inode == 0 {
+                if vfs_sync_partial_range_to_disk(
+                        dir_row, VFS_DIRENT_WORDS, VFS_DIRENT_BASE,
+                        VFS_DISK_DIRENT_BLOCK) < 0 {
+                    return ERR_INVALID;
+                }
+                if vfs_sync_partial_range_to_disk(
+                        dirent_name_addr(dir_slot), VFS_MAX_NAME_WORDS,
+                        VFS_DIRENT_NAME_BASE, VFS_DISK_DIRENT_NAME_BLOCK) < 0 {
+                    return ERR_INVALID;
+                }
+            }
+        }
+        dir_slot = dir_slot + 1;
+    }
+
+    // Extent rows and their payload blocks are the inode's data and metadata.
+    var extent_slot: t40 = 0;
+    var extent_limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    while extent_limit - extent_slot > 0 {
+        var extent_row: t40 = extent_addr(extent_slot);
+        if kload(extent_row + EXTENT_NAMESPACE) - namespace_id == 0 {
+            if kload(extent_row + EXTENT_INODE) - inode == 0 {
+                if kload(extent_row + EXTENT_VERSION) > 0 {
+                    if vfs_sync_partial_range_to_disk(
+                            extent_row, VFS_EXTENT_WORDS, VFS_EXTENT_BASE,
+                            VFS_DISK_EXTENT_BLOCK) < 0 {
+                        return ERR_INVALID;
+                    }
+                    var data_addr: t40 = kload(extent_row + EXTENT_DATA_ADDR);
+                    var length_words: t40 = kload(extent_row + EXTENT_LENGTH);
+                    if vfs_sync_partial_range_to_disk(
+                            data_addr, length_words, VFS_DATA_BASE,
+                            VFS_DISK_DATA_BLOCK) < 0 {
+                        return ERR_INVALID;
+                    }
+                }
+            }
+        }
+        extent_slot = extent_slot + 1;
+    }
+    return 1;
+}
+
 fn vfs_sync_to_disk() -> t40 {
     if vfs_disk_available() <= 0 {
         return ERR_NO_SPACE;
+    }
+    var required_lsn: t40 = buffer_required_lsn_all();
+    if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+        if wal_sync_to_disk() < 0 { return ERR_INVALID; }
     }
     if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
     var inode_words: t40 = kload(VFS_NEXT_INODE_ADDR) * VFS_INODE_WORDS;
@@ -5143,6 +5384,7 @@ fn vfs_sync_to_disk() -> t40 {
     if vfs_sync_used_range_to_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_sync_used_range_to_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
     if disk_flush() - 1 != 0 { return ERR_INVALID; }
+    if buffer_flush_all() < 0 { return ERR_AGAIN; }
     return 1;
 }
 
@@ -5266,7 +5508,9 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
     kstore(inode_row + INODE_LINKS, 1);
     kstore(inode_row + INODE_VERSION, 1);
     kstore(inode_row + INODE_FLAGS, parent);
-    log_commit(txid);
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 { return commit_lsn; }
+    inode_track_required_lsn(inode, commit_lsn);
     kstore(VFS_NEXT_INODE_ADDR, inode + 1);
     var dir_slot: t40 = vfs_add_dirent(namespace_id, parent, inode, start, len);
     if dir_slot < 0 {
@@ -5309,7 +5553,9 @@ fn vfs_truncate_inode(inode: t40) -> t40 {
     var txid: t40 = log_begin();
     var old_size: t40 = kload(row + INODE_SIZE);
     log_write(txid, row + INODE_SIZE, old_size, 0);
-    log_commit(txid);
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 { return commit_lsn; }
+    inode_track_required_lsn(inode, commit_lsn);
     var slot: t40 = 0;
     while VFS_MAX_EXTENTS - slot > 0 {
         var ex: t40 = extent_addr(slot);
@@ -5639,8 +5885,13 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
             log_write(txid, inode_row + INODE_SIZE, old_size, chunk_end);
             old_size = chunk_end;
         }
-        log_commit(txid);
-        buffer_mark_dirty(buffer_slot);
+        var commit_lsn: t40 = log_commit(txid);
+        if commit_lsn < 0 {
+            buffer_unpin(buffer_slot);
+            return commit_lsn;
+        }
+        buffer_mark_dirty(buffer_slot, commit_lsn);
+        inode_track_required_lsn(inode, commit_lsn);
         buffer_unpin(buffer_slot);
         i = i + chunk;
     }
@@ -5810,20 +6061,26 @@ fn vfs_fsync(pid: t40, fd: t40) -> t40 {
     if fd_is_open_for_pid(pid, fd) <= 0 {
         return ERR_BAD_FD;
     }
+    var fdrow: t40 = fd_addr(fd);
+    var namespace_id: t40 = kload(fdrow + FD_NAMESPACE);
+    var inode: t40 = kload(fdrow + FD_INODE);
     if vfs_disk_available() > 0 {
-        // WAL barrier precedes every home-page write.  vfs_sync_to_disk then
-        // issues the single data barrier for this fsync.
-        var wal_status: t40 = wal_sync_to_disk();
-        if wal_status < 0 {
-            return wal_status;
+        // Flush WAL through this inode's dependency, write only this inode's
+        // data/metadata, then issue exactly one home-page barrier.
+        var required_lsn: t40 = inode_required_lsn(inode);
+        if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+            var wal_status: t40 = wal_sync_to_disk();
+            if wal_status < 0 { return wal_status; }
         }
-        buffer_flush_all();
-        var synced: t40 = vfs_sync_to_disk();
-        if synced < 0 {
-            return synced;
-        }
-        return synced;
+        var synced: t40 = vfs_sync_inode_to_disk(namespace_id, inode);
+        if synced < 0 { return synced; }
+        if disk_flush() - 1 != 0 { return ERR_INVALID; }
+        var flushed: t40 = buffer_flush_inode(namespace_id, inode);
+        if flushed < 0 { return flushed; }
+        return 1;
     }
+    // With no persistent device, there is no home-page ordering obligation;
+    // keep the existing in-memory test/bring-up behavior.
     buffer_flush_all();
     return 1;
 }

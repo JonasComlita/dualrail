@@ -778,8 +778,111 @@ void testNativeKernelVfsMountsDiskBackedState() {
     }
 }
 
+void testNativeKernelInodeFsyncOrdering() {
+    std::cout << "[8] Native kernel inode-scoped fsync ordering\n";
+    using namespace sandbox::compiler;
+
+    const std::string kernel = readTextFile("kernel.trit");
+    const std::string driver = R"(
+        fn seed_alpha(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 97);
+            kstore(addr + 2, 108);
+            kstore(addr + 3, 112);
+            kstore(addr + 4, 104);
+            kstore(addr + 5, 97);
+            kstore(addr + 6, 0);
+            return addr;
+        }
+
+        fn seed_beta(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 98);
+            kstore(addr + 2, 101);
+            kstore(addr + 3, 116);
+            kstore(addr + 4, 97);
+            kstore(addr + 5, 0);
+            return addr;
+        }
+
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var alpha_path: t40 = USER_MEM_BASE;
+            var beta_path: t40 = USER_MEM_BASE + 20;
+            var src: t40 = USER_MEM_BASE + 40;
+            seed_alpha(alpha_path);
+            seed_beta(beta_path);
+            kstore(src + 0, 11);
+            kstore(src + 1, 22);
+            kstore(src + 2, 33);
+            kstore(src + 3, 44);
+
+            var alpha_fd: t40 = vfs_open(1, alpha_path, 2);
+            var beta_fd: t40 = vfs_open(1, beta_path, 2);
+            if alpha_fd < 0 { return -2; }
+            if beta_fd < 0 { return -3; }
+
+            // Establish both directory entries and allocator state as the
+            // durable baseline; only the following writes are dirty.
+            if vfs_sync_to_disk() < 0 { return -4; }
+            if vfs_write(1, alpha_fd, src, 4) - 4 != 0 { return -5; }
+            if vfs_write(1, beta_fd, src, 4) - 4 != 0 { return -6; }
+
+            var alpha_inode: t40 = vfs_lookup(0, alpha_path);
+            var beta_inode: t40 = vfs_lookup(0, beta_path);
+            var alpha_frame: t40 = buffer_find(0, alpha_inode, 0);
+            var beta_frame: t40 = buffer_find(0, beta_inode, 0);
+            if alpha_frame < 0 { return -7; }
+            if beta_frame < 0 { return -8; }
+            if inode_required_lsn(alpha_inode) <= 0 { return -9; }
+            if buffer_page_lsn(alpha_frame) <= 0 { return -10; }
+            if buffer_page_lsn(alpha_frame) - kload(WAL_DURABLE_LSN_ADDR) <= 0 {
+                return -11;
+            }
+            if buffer_flush_frame(alpha_frame) - ERR_AGAIN != 0 { return -12; }
+            if buffer_dirty_count() - 2 != 0 { return -13; }
+
+            if vfs_fsync(1, alpha_fd) - 1 != 0 { return -14; }
+            if kload(buffer_frame_addr(alpha_frame) + BF_DIRTY) != 0 {
+                return -15;
+            }
+            if kload(buffer_frame_addr(beta_frame) + BF_DIRTY) - 1 != 0 {
+                return -16;
+            }
+            if buffer_dirty_count() - 1 != 0 { return -17; }
+            if buffer_page_lsn(alpha_frame) - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+                return -18;
+            }
+            return 1;
+        }
+    )";
+
+    CompileResult compiled = compileSource("native_kernel_inode_fsync_ordering.trit",
+                                           kernel + "\n" + driver);
+    if (!compiled.success) {
+        for (const auto& diagnostic : compiled.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(compiled.success, "inode fsync ordering driver compiles");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "inode fsync ordering driver links");
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
+    vm.resetBlockDevice(8192);
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
+               "inode fsync ordering driver loads");
+        const auto result = sandbox::vm::run(vm, 50000000);
+        dumpNativeRunIfFailed("inode-fsync-ordering", result, vm,
+                              linked.assembled.labels);
+        expect(result.halted(), "inode fsync ordering driver halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1,
+               "inode fsync orders WAL and flushes only the target inode");
+    }
+}
+
 void testNativeVfsImageBuilderBootsKernelRoot() {
-    std::cout << "[8] Native VFS image builder boots kernel root\n";
+    std::cout << "[9] Native VFS image builder boots kernel root\n";
     using namespace sandbox::os;
     using namespace sandbox::compiler;
 
@@ -904,7 +1007,7 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
 }
 
 void testSharedStatusAndCompilerWrappers() {
-    std::cout << "[9] Trit OS T1 status and compiler syscall wrappers\n";
+    std::cout << "[10] Trit OS T1 status and compiler syscall wrappers\n";
     using namespace sandbox::os;
     using namespace sandbox::compiler;
 
@@ -987,6 +1090,7 @@ int main() {
     testRootFilesystemImageBuilder();
     testNativeBioReadsRootFilesystemImage();
     testNativeKernelVfsMountsDiskBackedState();
+    testNativeKernelInodeFsyncOrdering();
     testNativeVfsImageBuilderBootsKernelRoot();
     testSharedStatusAndCompilerWrappers();
 
