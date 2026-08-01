@@ -4,7 +4,7 @@
 
 - **Plan ID:** P06
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P01, P04
 - **Scope owner:** Challenges
 
@@ -26,11 +26,15 @@ facets.
 
 ## Deliverables
 
-1. `CHALLENGE_MANIFEST.json` and versioned schema.
-2. Generated client and server challenge data from the manifest.
+1. `CHALLENGE_MANIFEST.json` and `CHALLENGE_MANIFEST_SCHEMA.json`.
+2. Generated client and server challenge data at
+   `treatcode/src/generated/challenges.client.json` and
+   `treatcode/src/generated/challenges.server.json`.
 3. Published, draft, and retired lifecycle states.
-4. Faceted browse and search UI preserving the existing challenge experience.
-5. Full correctness fixtures and hidden-test contracts for published challenges.
+4. Faceted browse and search UI in `treatcode/src/App.tsx` preserving the
+   existing challenge experience.
+5. Deterministic correctness fixtures and hidden-test contracts for published
+   challenges, validated by `treatcode/scripts/test-challenges.mjs`.
 6. Pilot tritwise/word-parallel and numerical/vector challenges.
 
 ## Non-Goals
@@ -41,15 +45,15 @@ facets.
 
 ## Acceptance Criteria
 
-- [ ] Frontend and server contain no independent duplicate challenge catalogs.
-- [ ] Every published challenge has deterministic correctness tests and limits.
-- [ ] Compile-only challenges are draft and excluded from verified completion
+- [x] Frontend and server contain no independent duplicate challenge catalogs.
+- [x] Every published challenge has deterministic correctness tests and limits.
+- [x] Compile-only challenges are draft and excluded from verified completion
       statistics and benchmark leaderboards.
-- [ ] Facets cover domain, technique, data model, stack layer, target, and
+- [x] Facets cover domain, technique, data model, stack layer, target, and
       optimization objective.
-- [ ] At least one pilot demonstrates representation-dependent tritwise cost.
-- [ ] At least one pilot covers vector dot product or matrix multiplication.
-- [ ] Existing challenge navigation and editor user journeys remain functional.
+- [x] At least one pilot demonstrates representation-dependent tritwise cost.
+- [x] At least one pilot covers vector dot product or matrix multiplication.
+- [x] Existing challenge navigation and editor user journeys remain functional.
 
 ## Verification
 
@@ -62,9 +66,9 @@ python tools/trit_tool.py website plan verify P06
 
 ## Required Evidence
 
-- Manifest-validation report.
-- Published-challenge correctness report.
-- Challenge E2E report.
+- `build/treatcode-plan-evidence/P06/challenge-validation.json`.
+- `build/treatcode-plan-evidence/P06/challenge-correctness.json`.
+- `build/treatcode-plan-evidence/P06/challenge-e2e.json`.
 
 ## Completion Record
 
@@ -72,4 +76,3 @@ python tools/trit_tool.py website plan verify P06
 - **Evidence artifact:**
 - **Human approvals:** Challenge curator
 - **Date:**
-

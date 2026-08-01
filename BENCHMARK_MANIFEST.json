@@ -1,0 +1,159 @@
+{
+  "$schema": "https://treatcode.dev/schemas/benchmark_manifest.v1.schema.json",
+  "version": 1,
+  "schema": "trit.benchmark_manifest.v1",
+  "protocol_schema": "BENCHMARK_PROTOCOL_SCHEMA.json",
+  "protocol": {
+    "id": "p10.reproducible.v1",
+    "correctness_gate": "before_performance",
+    "warmups": 2,
+    "repetitions": 7,
+    "sample_unit": "nanoseconds",
+    "distribution_statistics": ["min", "p50", "p95", "max", "mean", "standard_deviation", "coefficient_of_variation"],
+    "variance": {
+      "maximum_coefficient_of_variation": 0.1,
+      "repeat_envelope_ratio": 0.15
+    },
+    "regression_thresholds": {
+      "wall_time_ns": 0.05,
+      "vm_cycles": 0.05,
+      "instructions": 0.05,
+      "dispatches": 0.1,
+      "memory_read_bytes": 0.05,
+      "memory_write_bytes": 0.05,
+      "code_size_bytes": 0.05,
+      "max_register_pressure": 0.1,
+      "allocations": 0.0,
+      "throughput_ops_per_second": 0.05
+    },
+    "limits": {
+      "wall_time_ms": 5000,
+      "memory_bytes": 268435456,
+      "output_bytes": 1048576,
+      "processes": 1
+    },
+    "same_run_fields": ["protocol_id", "workload_id", "representation_id", "profile_id", "input_hash", "runner_image", "limits"]
+  },
+  "metrics": [
+    {"id": "wall_time_ns", "kind": "time", "unit": "ns", "direction": "lower_is_better", "required": true},
+    {"id": "vm_cycles", "kind": "vm", "unit": "cycles", "direction": "lower_is_better", "required": true},
+    {"id": "instructions", "kind": "execution", "unit": "instructions", "direction": "lower_is_better", "required": true},
+    {"id": "dispatches", "kind": "execution", "unit": "dispatches", "direction": "lower_is_better", "required": true},
+    {"id": "memory_read_bytes", "kind": "memory", "unit": "bytes", "direction": "lower_is_better", "required": true},
+    {"id": "memory_write_bytes", "kind": "memory", "unit": "bytes", "direction": "lower_is_better", "required": true},
+    {"id": "code_size_bytes", "kind": "code_size", "unit": "bytes", "direction": "lower_is_better", "required": true},
+    {"id": "max_register_pressure", "kind": "register_pressure", "unit": "registers", "direction": "lower_is_better", "required": true},
+    {"id": "allocations", "kind": "allocation", "unit": "allocations", "direction": "lower_is_better", "required": true},
+    {"id": "throughput_ops_per_second", "kind": "throughput", "unit": "dot_products_per_second", "direction": "higher_is_better", "required": false},
+    {"id": "hardware_proxy_host_cpu_cycles", "kind": "hardware_proxy", "unit": "cycles", "direction": "lower_is_better", "required": false},
+    {"id": "hardware_proxy_cache_misses", "kind": "hardware_proxy", "unit": "misses", "direction": "lower_is_better", "required": false}
+  ],
+  "target_profiles": [
+    {
+      "id": "binary-host",
+      "execution": "native_binary_host",
+      "authority": "measured",
+      "estimate": false,
+      "hardware_proxies": ["hardware_proxy_host_cpu_cycles", "hardware_proxy_cache_misses"],
+      "runner_image": "host-binary-v1"
+    },
+    {
+      "id": "vm",
+      "execution": "ternary_vm_interpreter",
+      "authority": "measured",
+      "estimate": false,
+      "hardware_proxies": ["hardware_proxy_cache_misses"],
+      "runner_image": "trit-vm-v1"
+    },
+    {
+      "id": "gpu",
+      "execution": "gpu_kernel",
+      "authority": "proxy",
+      "estimate": true,
+      "hardware_proxies": ["hardware_proxy_host_cpu_cycles"],
+      "runner_image": "gpu-proxy-v1"
+    },
+    {
+      "id": "fpga",
+      "execution": "fpga_bitstream",
+      "authority": "proxy",
+      "estimate": true,
+      "hardware_proxies": ["hardware_proxy_host_cpu_cycles"],
+      "runner_image": "fpga-proxy-v1"
+    },
+    {
+      "id": "native-ternary",
+      "execution": "native_ternary_estimate",
+      "authority": "estimate",
+      "estimate": true,
+      "hardware_proxies": [],
+      "runner_image": "native-ternary-model-v1"
+    }
+  ],
+  "workloads": [
+    {
+      "id": "p10-tritwise-sign-inversion",
+      "title": "Tritwise sign inversion",
+      "kind": "tritwise",
+      "objective": "Measure sign inversion without conflating positional, lane/rail, and hardware costs.",
+      "correctness": {
+        "fixture_id": "p10.sign-inversion.v1",
+        "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+      },
+      "representations": [
+        {"id": "positional-numeric", "label": "Positional numeric", "description": "Negate the balanced-ternary positional value."},
+        {"id": "lane-rail", "label": "Lane / rail", "description": "Swap positive and negative rails across packed lanes."},
+        {"id": "implemented-hardware", "label": "Implemented hardware", "description": "Use the currently implemented target instruction path."}
+      ],
+      "required_metrics": ["wall_time_ns", "vm_cycles", "instructions", "dispatches", "memory_read_bytes", "memory_write_bytes", "code_size_bytes", "max_register_pressure", "allocations"],
+      "reference_runs": [
+        "p10-tritwise-sign-inversion/positional-numeric/binary-host",
+        "p10-tritwise-sign-inversion/lane-rail/vm",
+        "p10-tritwise-sign-inversion/implemented-hardware/native-ternary"
+      ]
+    },
+    {
+      "id": "p10-vector-matrix-dot-product",
+      "title": "Vector / matrix dot-product pilot",
+      "kind": "vector_matrix",
+      "objective": "Measure a layout-explicit vector kernel with correctness, throughput, and memory behavior.",
+      "correctness": {
+        "fixture_id": "p10.dot-product.v1",
+        "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "layout": {
+        "name": "row-major contiguous",
+        "dimensions": [27, 27],
+        "precision": "t40 balanced integer",
+        "vector_width": 27,
+        "alignment_bytes": 64
+      },
+      "required_metrics": ["wall_time_ns", "vm_cycles", "instructions", "dispatches", "memory_read_bytes", "memory_write_bytes", "code_size_bytes", "max_register_pressure", "allocations", "throughput_ops_per_second"],
+      "reference_runs": [
+        "p10-vector-matrix-dot-product/binary-host",
+        "p10-vector-matrix-dot-product/vm",
+        "p10-vector-matrix-dot-product/gpu",
+        "p10-vector-matrix-dot-product/fpga",
+        "p10-vector-matrix-dot-product/native-ternary"
+      ]
+    }
+  ],
+  "arena": {
+    "route": "/arena",
+    "api": "/api/benchmarks/p10",
+    "correctness_evidence": "Every candidate comparison is blocked until the selected fixture is equivalent to the reference output.",
+    "benchmark_evidence": "The Arena displays distributions, variance, target profile, and immutable reference provenance; it does not declare a winner from operation counts alone."
+  },
+  "evidence": {
+    "protocol": "BENCHMARK_PROTOCOL_SCHEMA.json",
+    "reference": "benchmarks/reference/p10-reference.v1.json",
+    "verification_command": "python tools/trit_tool.py website benchmarks verify-reference"
+  },
+  "approval": {
+    "required_role": "Performance owner",
+    "status": "pending",
+    "decision": "Protocol is machine-validated; performance-owner approval is still required before authoritative leaderboard use."
+  }
+}

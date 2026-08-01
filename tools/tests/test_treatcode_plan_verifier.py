@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools import trit_tool
 from tools.treatcode_platform import test_schema_fixtures, validate_schema_catalog
@@ -122,6 +123,42 @@ class TreatCodePlanVerifierTests(unittest.TestCase):
         report = self.verify_temp_manifest(manifest)
         self.assertFalse(report["complete"])
         self.assertIn("human_approval_missing", {item["code"] for item in report["issues"]})
+
+    def test_extensionless_windows_commands_use_executable_shims(self) -> None:
+        with patch.object(trit_tool.os, "name", "nt"), patch.object(
+            trit_tool.shutil,
+            "which",
+            side_effect=lambda value: value if value == "npm.cmd" else None,
+        ):
+            self.assertEqual(
+                trit_tool._plan_command_argv("npm --prefix treatcode run test:launch")[0],
+                "npm.cmd",
+            )
+
+    def test_powershell_commands_with_arguments_use_file_mode(self) -> None:
+        with patch.object(
+            trit_tool.shutil,
+            "which",
+            side_effect=lambda value: "C:/Windows/powershell.exe" if value == "powershell" else None,
+        ):
+            self.assertEqual(
+                trit_tool._plan_command_argv("tools/trit-test.ps1 smoke"),
+                [
+                    "C:/Windows/powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    "tools/trit-test.ps1",
+                    "smoke",
+                ],
+            )
+
+    def test_unlaunchable_command_is_recorded_as_a_failed_result(self) -> None:
+        with patch.object(trit_tool.subprocess, "run", side_effect=OSError(193, "not executable")):
+            result = trit_tool.run_command(["npm.ps1"])
+        self.assertEqual(result["returncode"], 126)
+        self.assertIn("not executable", result["stderr"])
 
 
 if __name__ == "__main__":

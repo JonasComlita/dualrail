@@ -4,7 +4,7 @@
 
 - **Plan ID:** P10
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P06, P09
 - **Scope owner:** Performance engineering
 
@@ -45,17 +45,17 @@ results.
 
 ## Acceptance Criteria
 
-- [ ] Correctness equivalence passes before performance comparison.
-- [ ] Baseline and candidate use the same workload, runner profile, limits, and
+- [x] Correctness equivalence passes before performance comparison.
+- [x] Baseline and candidate use the same workload, runner profile, limits, and
       measurement protocol.
-- [ ] Results report distributions and variance, not only the fastest run.
-- [ ] Binary-host, VM, GPU, FPGA, and native-ternary estimates are distinct
+- [x] Results report distributions and variance, not only the fastest run.
+- [x] Binary-host, VM, GPU, FPGA, and native-ternary estimates are distinct
       target profiles.
-- [ ] Tritwise sign inversion reports cost separately for positional numeric,
+- [x] Tritwise sign inversion reports cost separately for positional numeric,
       lane/rail, and implemented hardware targets.
-- [ ] Vector or matrix pilot reports layout, dimensions, precision, correctness,
+- [x] Vector or matrix pilot reports layout, dimensions, precision, correctness,
       throughput, and memory behavior.
-- [ ] Repeating the reference benchmark remains within its declared variance
+- [x] Repeating the reference benchmark remains within its declared variance
       envelope.
 - [ ] Performance owner approves the benchmark protocol.
 
@@ -73,6 +73,8 @@ python tools/trit_tool.py website plan verify P10
 
 - Benchmark protocol and reference results.
 - Repeatability and variance report.
+- `build/treatcode-plan-evidence/P10/benchmark-tests.json`.
+- `build/treatcode-plan-evidence/P10/implementation-arena-e2e.json`.
 - Performance-owner approval.
 
 ## Completion Record
@@ -81,4 +83,3 @@ python tools/trit_tool.py website plan verify P10
 - **Evidence artifact:**
 - **Human approvals:** Performance owner
 - **Date:**
-

@@ -1,0 +1,45 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TreatCode Remote Workspace API",
+    "version": "1.0.0",
+    "description": "Commit-pinned isolated workspace lifecycle, bounded context, and least-privilege handoff API. Authentication and action authorization are delegated to the P07 auth API."
+  },
+  "servers": [{ "url": "/api/workspaces/v1" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/capabilities": { "get": { "operationId": "getWorkspaceCapabilities", "security": [], "responses": { "200": { "description": "Workspace API capabilities" } } } },
+    "/workspaces": {
+      "get": { "operationId": "listWorkspaces", "responses": { "200": { "description": "Accessible workspaces" } } },
+      "post": { "operationId": "createWorkspace", "responses": { "201": { "description": "Provisioned isolated workspace" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" } } }
+    },
+    "/workspaces/{workspaceId}": { "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }], "get": { "operationId": "inspectWorkspace", "responses": { "200": { "$ref": "#/components/responses/Workspace" } } }, "delete": { "operationId": "destroyWorkspace", "responses": { "200": { "$ref": "#/components/responses/Workspace" }, "410": { "$ref": "#/components/responses/Gone" } } } },
+    "/workspaces/{workspaceId}/files": { "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }], "get": { "operationId": "readOrListWorkspaceFiles", "responses": { "200": { "description": "Bounded file listing or file content" } } }, "post": { "operationId": "writeWorkspaceFile", "responses": { "200": { "description": "Updated file checksum and version" }, "409": { "$ref": "#/components/responses/Conflict" } } } },
+    "/workspaces/{workspaceId}/snapshots": { "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }], "get": { "operationId": "listWorkspaceSnapshots", "responses": { "200": { "description": "Persistent snapshot manifests" } } }, "post": { "operationId": "createWorkspaceSnapshot", "responses": { "201": { "description": "Snapshot manifest" } } } },
+    "/workspaces/{workspaceId}/resume": { "post": { "operationId": "resumeWorkspace", "responses": { "200": { "$ref": "#/components/responses/Workspace" } } } },
+    "/workspaces/{workspaceId}/disconnect": { "post": { "operationId": "disconnectWorkspace", "responses": { "200": { "description": "Suspended workspace and optional checkpoint" } } } },
+    "/workspaces/{workspaceId}/export": { "get": { "operationId": "exportWorkspace", "responses": { "200": { "description": "Immutable export manifest" } } }, "post": { "operationId": "checkpointAndExportWorkspace", "responses": { "200": { "description": "Immutable export manifest" } } } },
+    "/workspaces/{workspaceId}/handoff": { "post": { "operationId": "handoffWorkspace", "responses": { "200": { "description": "Granted collaborator scopes" }, "403": { "$ref": "#/components/responses/Forbidden" } } } },
+    "/workspaces/{workspaceId}/context-package": { "post": { "operationId": "createBoundedContextPackage", "responses": { "200": { "description": "Bounded files, source commit, and content hash" }, "413": { "$ref": "#/components/responses/TooLarge" } } } },
+    "/workspaces/{workspaceId}/tasks": { "get": { "operationId": "listWorkspaceTasks", "responses": { "200": { "description": "Scoped tasks" } } }, "post": { "operationId": "createWorkspaceTask", "responses": { "201": { "description": "Scoped task" } } } },
+    "/workspaces/{workspaceId}/tasks/{taskId}/approve": { "post": { "operationId": "approveWorkspaceTask", "responses": { "200": { "description": "Human-approved scoped task" }, "403": { "$ref": "#/components/responses/Forbidden" } } } },
+    "/workspaces/{workspaceId}/checks": { "post": { "operationId": "runWorkspaceCheck", "responses": { "200": { "description": "Doctor or smoke preflight with authoritative checkout proof" } } } },
+    "/workspaces/{workspaceId}/audit": { "get": { "operationId": "getWorkspaceAudit", "responses": { "200": { "description": "Lifecycle, handoff, denial, and destruction audit records" } } } }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer" } },
+    "parameters": { "WorkspaceId": { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^tc:workspace:" } } },
+    "responses": {
+      "Workspace": { "description": "Workspace record", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceEnvelope" } } } },
+      "Unauthorized": { "description": "Authentication required" },
+      "Forbidden": { "description": "Scope or resource authorization denied" },
+      "Conflict": { "description": "Workspace version or lifecycle conflict" },
+      "Gone": { "description": "Destroyed workspace" },
+      "TooLarge": { "description": "Bounded package budget exceeded" }
+    },
+    "schemas": {
+      "WorkspaceEnvelope": { "type": "object", "required": ["schema_version", "request_id", "data"], "properties": { "schema_version": { "const": "treatcode.workspace.api.v1" }, "request_id": { "type": "string" }, "data": { "$ref": "#/components/schemas/Workspace" } } },
+      "Workspace": { "type": "object", "required": ["id", "entity_type", "repository", "base_commit", "commit", "mode", "image", "toolchain", "status"], "properties": { "id": { "type": "string", "pattern": "^tc:workspace:" }, "entity_type": { "const": "workspace" }, "name": { "type": "string" }, "repository": { "type": "string" }, "requested_commit": { "type": "string" }, "base_commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" }, "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" }, "mode": { "const": "isolated" }, "image": { "type": "string" }, "toolchain": { "type": "object" }, "status": { "enum": ["active", "suspended", "destroyed", "lost"] }, "file_version": { "type": "integer", "minimum": 0 }, "last_tree_hash": { "type": ["string", "null"] } } }
+    }
+  }
+}

@@ -97,7 +97,12 @@
         "test_benchmark",
         "test_execution_backends_benchmark"
       ],
-      "manual": true
+      "manual": true,
+      "docs": [
+        "BENCHMARK_MANIFEST.json",
+        "BENCHMARK_PROTOCOL_SCHEMA.json",
+        "benchmarks/reference/p10-reference.v1.json"
+      ]
     },
     {
       "name": "system_benchmarks",

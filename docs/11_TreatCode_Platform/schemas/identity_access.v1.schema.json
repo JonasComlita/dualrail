@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.dev/schemas/identity_access.v1.schema.json",
+  "title": "TreatCode identity and access records",
+  "type": "object",
+  "required": ["schema_version", "identities", "permission_actions", "audit_event"],
+  "properties": {
+    "schema_version": { "const": "treatcode.identity-access.v1" },
+    "identities": { "type": "array", "items": { "$ref": "#/$defs/identity" } },
+    "permission_actions": { "type": "array", "items": { "type": "string", "enum": ["read", "workspace", "edit", "test", "benchmark", "artifact", "branch", "commit", "push", "draft_pr", "review", "merge"] } },
+    "audit_event": { "$ref": "#/$defs/audit_event" }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["id", "kind", "display_name", "roles", "status", "grants"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^tc:identity:[a-z0-9][a-z0-9-]*$" },
+        "kind": { "enum": ["human", "collaborator", "service", "agent"] },
+        "display_name": { "type": "string", "minLength": 1 },
+        "roles": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "status": { "enum": ["active", "revoked"] },
+        "grants": { "type": "array", "items": { "$ref": "#/$defs/grant" } }
+      },
+      "additionalProperties": false
+    },
+    "grant": {
+      "type": "object",
+      "required": ["project_id", "task_id", "actions"],
+      "properties": {
+        "project_id": { "type": "string", "pattern": "^(\\*|tc:project:[a-z0-9][a-z0-9-]*)$" },
+        "task_id": { "type": ["string", "null"], "pattern": "^tc:task:[a-z0-9][a-z0-9-]*$" },
+        "actions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["read", "workspace", "edit", "test", "benchmark", "artifact", "branch", "commit", "push", "draft_pr", "review", "merge"] } }
+      },
+      "additionalProperties": false
+    },
+    "audit_event": {
+      "type": "object",
+      "required": ["schema_version", "event_id", "sequence", "occurred_at", "event_type", "outcome", "actor_id", "credential_id", "project_id", "task_id", "action", "reason_code", "request_nonce_hash", "previous_hash", "record_hash"],
+      "properties": {
+        "schema_version": { "const": "treatcode.auth.audit.v1" },
+        "event_id": { "type": "string", "pattern": "^tc:audit:[a-f0-9]{24}$" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "event_type": { "enum": ["authentication", "authorization", "credential", "audit"] },
+        "outcome": { "enum": ["allowed", "denied"] },
+        "actor_id": { "type": "string", "minLength": 1 },
+        "credential_id": { "type": ["string", "null"] },
+        "project_id": { "type": ["string", "null"] },
+        "task_id": { "type": ["string", "null"] },
+        "action": { "type": "string", "minLength": 1 },
+        "reason_code": { "type": ["string", "null"] },
+        "request_nonce_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "previous_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "record_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

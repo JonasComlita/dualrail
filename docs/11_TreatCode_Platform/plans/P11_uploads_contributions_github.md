@@ -4,7 +4,7 @@
 
 - **Plan ID:** P11
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P07, P08, P09
 - **Scope owner:** Contributions
 
@@ -12,6 +12,8 @@
 
 Accept human or agent contributions through quarantined, provenance-preserving
 uploads and convert validated work into explicitly approved draft pull requests.
+The implementation contract is documented in
+[`CONTRIBUTION_CONTRACT.md`](../CONTRIBUTION_CONTRACT.md).
 
 ## Dependency Evidence Required
 
@@ -41,25 +43,25 @@ uploads and convert validated work into explicitly approved draft pull requests.
 
 ## Acceptance Criteria
 
-- [ ] Interrupted uploads resume without changing the resulting content hash.
-- [ ] Path traversal, archive bombs, forbidden types, oversized content, missing
+- [x] Interrupted uploads resume without changing the resulting content hash.
+- [x] Path traversal, archive bombs, forbidden types, oversized content, missing
       provenance, and unauthorized licenses are rejected.
-- [ ] Uploaded content cannot modify authoritative source before workspace
+- [x] Uploaded content cannot modify authoritative source before workspace
       validation and explicit submission.
-- [ ] Branch, commit, push, draft-PR, and merge permissions are independently
+- [x] Branch, commit, push, draft-PR, and merge permissions are independently
       enforced.
-- [ ] Draft-PR creation requires recorded human approval unless project policy
+- [x] Draft-PR creation requires recorded human approval unless project policy
       explicitly delegates that scope.
-- [ ] The draft PR links immutable correctness and benchmark evidence.
+- [x] The draft PR links immutable correctness and benchmark evidence.
 - [ ] An end-to-end test repository proves contribution intake through draft PR
       without granting merge authority.
 
 ## Verification
 
 ```powershell
-npm --prefix treatcode run test:uploads
-npm --prefix treatcode run test:uploads-adversarial
-npm --prefix treatcode run test:e2e:draft-pr
+npm.cmd --prefix treatcode run test:uploads
+npm.cmd --prefix treatcode run test:uploads-adversarial
+npm.cmd --prefix treatcode run test:e2e:draft-pr
 python tools/trit_tool.py website plan verify P11
 ```
 
@@ -69,10 +71,15 @@ python tools/trit_tool.py website plan verify P11
 - Test-repository draft PR URL.
 - Audit record and evidence hashes.
 
+The current implementation keeps the GitHub boundary behind an injected
+GitHub-App adapter and uses an in-memory test repository for local verification;
+no Git credentials or merge authority are present in the upload or validation
+worker. The machine-readable reports are written to
+`build/treatcode-plan-evidence/P11/`.
+
 ## Completion Record
 
 - **Verified commit:**
 - **Evidence artifact:**
 - **Human approvals:** Security reviewer; repository owner
 - **Date:**
-

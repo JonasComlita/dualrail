@@ -48,6 +48,25 @@ except ModuleNotFoundError:  # package import used by unittest and other host to
         verify_index,
     )
 
+try:
+    from p10_benchmark import (
+        DEFAULT_EVIDENCE_PATH,
+        MANIFEST_PATH as P10_MANIFEST_PATH,
+        REFERENCE_PATH as P10_REFERENCE_PATH,
+        verify_reference as verify_p10_reference,
+    )
+except ModuleNotFoundError:  # package import used by unittest and other host tools
+    from tools.p10_benchmark import (
+        DEFAULT_EVIDENCE_PATH,
+        MANIFEST_PATH as P10_MANIFEST_PATH,
+        REFERENCE_PATH as P10_REFERENCE_PATH,
+        verify_reference as verify_p10_reference,
+    )
+try:
+    from challenge_manifest import validate_challenge_manifest
+except ModuleNotFoundError:  # package import used by unittest and other host tools
+    from tools.challenge_manifest import validate_challenge_manifest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -76,6 +95,8 @@ SPARSE_DISK_RECORD_SIZE = (
 MANIFEST_FILES = [
     "ARCHITECTURE_MANIFEST.json",
     "BENCHMARK_SCHEMA.json",
+    "BENCHMARK_MANIFEST.json",
+    "BENCHMARK_PROTOCOL_SCHEMA.json",
     "ROADMAP_STATUS.json",
     "TEST_MANIFEST.json",
     "SYSCALL_MANIFEST.json",
@@ -86,6 +107,8 @@ MANIFEST_FILES = [
     "CONTRACT_MANIFEST.json",
     "DECISION_MANIFEST.json",
     "STACK_COVERAGE_REPORT.json",
+    "CHALLENGE_MANIFEST.json",
+    "CHALLENGE_MANIFEST_SCHEMA.json",
     "TREATCODE_PLAN_MANIFEST.json",
     "TREATCODE_PLAN_MANIFEST_SCHEMA.json",
 ]
@@ -195,6 +218,18 @@ def run_command(
             "returncode": 124,
             "stdout": exc.stdout or "",
             "stderr": exc.stderr or "command timed out",
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+    except OSError as exc:
+        # Windows can report an installed script shim (for example npm.ps1)
+        # as WinError 193 instead of FileNotFoundError.  Keep command
+        # verification fail-closed while still writing its evidence record.
+        return {
+            "command": args,
+            "cwd": str(cwd),
+            "returncode": 126,
+            "stdout": "",
+            "stderr": str(exc),
             "duration_seconds": round(time.monotonic() - started, 3),
         }
 
@@ -3074,23 +3109,50 @@ def _plan_environment() -> dict[str, Any]:
     return environment
 
 
+def _resolve_plan_executable(argv: list[str]) -> list[str]:
+    """Resolve extensionless commands to executable shims on Windows.
+
+    Plan manifests intentionally use portable commands such as ``npm`` and
+    ``python``.  PowerShell's command lookup prefers ``npm.ps1`` on some
+    Windows installations, but ``subprocess`` cannot execute that script
+    directly.  Prefer the corresponding ``.cmd``/``.exe`` shim and retain the
+    portable command when no resolution is available.
+    """
+
+    if not argv or os.name != "nt":
+        return argv
+    executable = argv[0]
+    if not executable or Path(executable).suffix or any(separator in executable for separator in ("/", "\\")):
+        return argv
+    for suffix in (".cmd", ".exe", ".bat"):
+        candidate = f"{executable}{suffix}"
+        if shutil.which(candidate):
+            return [candidate, *argv[1:]]
+    return argv
+
+
 def _plan_command_argv(command: Any) -> list[str]:
     if isinstance(command, dict):
         command = command.get("command", "")
     if isinstance(command, list):
-        return [str(item) for item in command]
+        argv = [str(item) for item in command]
+        if argv and argv[0].lower().endswith(".ps1"):
+            powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+            return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", *argv]
+        return _resolve_plan_executable(argv)
     text_value = str(command or "").strip()
     if not text_value:
         return []
-    if text_value.lower().endswith(".ps1") and " " not in text_value:
-        powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
-        return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", text_value]
     if text_value.lower().startswith("tools/") and text_value.lower().endswith(".cmd"):
         return ["cmd", "/c", text_value]
     try:
-        return shlex.split(text_value, posix=True)
+        argv = shlex.split(text_value, posix=True)
     except ValueError:
         return [text_value]
+    if argv and argv[0].lower().endswith(".ps1"):
+        powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        return [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", *argv]
+    return _resolve_plan_executable(argv)
 
 
 def _plan_is_self_verification(command: Any, plan_id: str) -> bool:
@@ -3447,6 +3509,85 @@ def cmd_website_plan_verify(args: argparse.Namespace) -> int:
     if args.allow_incomplete and result.get("verification_ok"):
         return 0
     return 1
+
+
+def cmd_website_operations(args: argparse.Namespace) -> int:
+    """Run operations control-plane exercises and persist P12 evidence."""
+
+    if args.operations_action != "disaster-recovery-test":
+        raise RuntimeError(f"unknown website operations action {args.operations_action!r}")
+    npm = "npm.cmd" if platform.system().lower().startswith("win") else "npm"
+    execution = run_command(
+        [npm, "--prefix", "treatcode", "run", "test:disaster-recovery"],
+        cwd=REPO_ROOT,
+        capture=True,
+        timeout=args.timeout,
+    )
+    evidence_path = PLAN_EVIDENCE_DIR / "P12" / "operations-command.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    report = {
+        "schema": "treatcode.operations_command.v1",
+        "command": "npm --prefix treatcode run test:disaster-recovery",
+        "returncode": execution["returncode"],
+        "ok": execution["returncode"] == 0,
+        "duration_seconds": execution["duration_seconds"],
+        "stdout": execution.get("stdout", ""),
+        "stderr": execution.get("stderr", ""),
+        "evidence": "build/treatcode-plan-evidence/P12/disaster-recovery.json",
+    }
+    evidence_path.write_text(canonical_json(report), encoding="utf-8")
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode operations disaster-recovery-test")
+        print(f"[{'ok' if report['ok'] else 'fail'}] backup, restore, and recovery exercise")
+        if report["stdout"].strip():
+            print(report["stdout"].rstrip())
+        if report["stderr"].strip():
+            print(report["stderr"].rstrip(), file=sys.stderr)
+    return int(execution["returncode"])
+
+
+def cmd_website_benchmarks_verify_reference(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).resolve() if args.manifest else P10_MANIFEST_PATH
+    reference_path = Path(args.reference).resolve() if args.reference else P10_REFERENCE_PATH
+    output_path = Path(args.output).resolve() if args.output else DEFAULT_EVIDENCE_PATH
+    report = verify_p10_reference(manifest_path, reference_path, output_path)
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode P10 benchmark reference verification")
+        print(f"[{'ok' if report.get('ok') else 'fail'}] reference protocol")
+        print(f"evidence: {report.get('output', output_path)}")
+        for check in report.get("checks", []):
+            print(f"[ok] {check}")
+        for error in report.get("errors", []):
+            print(f"[fail] {error.get('code')}: {error.get('message')}")
+    return 0 if report.get("ok") else 1
+
+
+def cmd_website_challenges_validate(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).resolve() if getattr(args, "manifest", None) else None
+    report = validate_challenge_manifest(manifest_path) if manifest_path else validate_challenge_manifest()
+    evidence_path = REPO_ROOT / "build" / "treatcode-plan-evidence" / "P06" / "challenge-validation.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(canonical_json(report), encoding="utf-8")
+    if args.json:
+        print_json(report)
+    else:
+        print("TreatCode challenge manifest validation")
+        text_status("challenge manifest", bool(report.get("ok")), f"{report.get('challenges', 0)} entries")
+        lifecycle = report.get("lifecycle_counts", {})
+        print(
+            f"[{'ok' if report.get('ok') else 'fail'}] lifecycle "
+            f"published={lifecycle.get('published', 0)} "
+            f"draft={lifecycle.get('draft', 0)} "
+            f"retired={lifecycle.get('retired', 0)}"
+        )
+        for error in report.get("errors", []):
+            print(f"[fail] {error.get('code')}: {error.get('message')}")
+        print(f"evidence: {evidence_path}")
+    return 0 if report.get("ok") else 1
 
 
 def _repository_index_repo_root(args: argparse.Namespace) -> Path:
@@ -4296,6 +4437,22 @@ def build_parser() -> argparse.ArgumentParser:
     website_plan_verify.add_argument("--json", action="store_true", help="emit JSON report")
     website_plan_verify.set_defaults(func=cmd_website_plan_verify)
 
+    website_operations = website_sub.add_parser("operations", help="run TreatCode operations and recovery exercises")
+    website_operations_sub = website_operations.add_subparsers(dest="operations_action", required=True)
+    website_operations_recovery = website_operations_sub.add_parser("disaster-recovery-test", help="exercise backup, clean restore, and recovery objectives")
+    website_operations_recovery.add_argument("--timeout", type=int, default=300, help="exercise timeout in seconds")
+    website_operations_recovery.add_argument("--json", action="store_true", help="emit JSON report")
+    website_operations_recovery.set_defaults(func=cmd_website_operations)
+
+    website_benchmarks = website_sub.add_parser("benchmarks", help="validate P10 benchmark protocols and reference results")
+    website_benchmarks_sub = website_benchmarks.add_subparsers(dest="benchmarks_command", required=True)
+    website_benchmarks_verify = website_benchmarks_sub.add_parser("verify-reference", help="verify the checked-in P10 reference result")
+    website_benchmarks_verify.add_argument("--manifest", default=None, help="P10 benchmark manifest path")
+    website_benchmarks_verify.add_argument("--reference", default=None, help="P10 reference result path")
+    website_benchmarks_verify.add_argument("--output", default=None, help="verification evidence output path")
+    website_benchmarks_verify.add_argument("--json", action="store_true", help="emit JSON report")
+    website_benchmarks_verify.set_defaults(func=cmd_website_benchmarks_verify_reference)
+
     website_registry = website_sub.add_parser("registry", help="validate stack, capability, contract, and decision registries")
     website_registry_sub = website_registry.add_subparsers(dest="registry_command", required=True)
     website_registry_validate = website_registry_sub.add_parser("validate", help="validate all TreatCode registry manifests")
@@ -4346,6 +4503,13 @@ def build_parser() -> argparse.ArgumentParser:
     website_schemas_fixtures = website_schemas_sub.add_parser("test-fixtures", help="run valid and negative schema fixtures")
     website_schemas_fixtures.add_argument("--json", action="store_true", help="emit JSON report")
     website_schemas_fixtures.set_defaults(func=cmd_website, website_action="schemas_fixtures")
+
+    website_challenges = website_sub.add_parser("challenges", help="validate the versioned challenge manifest")
+    website_challenges_sub = website_challenges.add_subparsers(dest="challenges_command", required=True)
+    website_challenges_validate = website_challenges_sub.add_parser("validate", help="validate challenge lifecycle, facets, contracts, and pilots")
+    website_challenges_validate.add_argument("--manifest", default=None, help="challenge manifest path")
+    website_challenges_validate.add_argument("--json", action="store_true", help="emit JSON report")
+    website_challenges_validate.set_defaults(func=cmd_website_challenges_validate)
 
     return parser
 

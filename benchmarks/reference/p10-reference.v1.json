@@ -1,0 +1,260 @@
+{
+  "schema": "trit.benchmark_reference.v1",
+  "version": 1,
+  "manifest_id": "trit.benchmark_manifest.v1",
+  "protocol_id": "p10.reproducible.v1",
+  "source": {
+    "repository": "https://github.com/JonasComlita/dualrail",
+    "commit": "reference-fixture",
+    "dirty": false,
+    "runner": "deterministic-reference-fixture"
+  },
+  "environment": {
+    "fingerprint": "p10-controlled-reference-v1",
+    "host_class": "controlled-fixture",
+    "measurement_authority": "fixture-values",
+    "network": "disabled",
+    "limits_enforced": true
+  },
+  "runs": [
+    {
+      "id": "p10-tritwise-sign-inversion/positional-numeric/binary-host",
+      "workload_id": "p10-tritwise-sign-inversion",
+      "representation_id": "positional-numeric",
+      "profile_id": "binary-host",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "host-binary-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.sign-inversion.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+      },
+      "context": {"representation": "positional numeric", "target_specific": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [118, 120, 119, 121, 117, 120, 118]},
+        "vm_cycles": {"unit": "cycles", "samples": [9, 9, 10, 9, 9, 10, 9]},
+        "instructions": {"unit": "instructions", "samples": [14, 14, 14, 15, 14, 14, 14]},
+        "dispatches": {"unit": "dispatches", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [8, 8, 8, 8, 8, 8, 8]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [4, 4, 4, 4, 4, 4, 4]},
+        "code_size_bytes": {"unit": "bytes", "samples": [96, 96, 96, 96, 96, 96, 96]},
+        "max_register_pressure": {"unit": "registers", "samples": [4, 4, 4, 4, 4, 4, 4]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "hardware_proxy_host_cpu_cycles": {"unit": "cycles", "samples": [210, 212, 209, 211, 210, 213, 209]},
+        "hardware_proxy_cache_misses": {"unit": "misses", "samples": [1, 1, 1, 1, 1, 1, 1]}
+      }
+    },
+    {
+      "id": "p10-tritwise-sign-inversion/lane-rail/vm",
+      "workload_id": "p10-tritwise-sign-inversion",
+      "representation_id": "lane-rail",
+      "profile_id": "vm",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "trit-vm-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.sign-inversion.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+      },
+      "context": {"representation": "lane / rail", "target_specific": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [840, 852, 846, 844, 849, 847, 845]},
+        "vm_cycles": {"unit": "cycles", "samples": [27, 27, 28, 27, 27, 28, 27]},
+        "instructions": {"unit": "instructions", "samples": [42, 42, 43, 42, 42, 42, 42]},
+        "dispatches": {"unit": "dispatches", "samples": [3, 3, 3, 3, 3, 3, 3]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [32, 32, 32, 32, 32, 32, 32]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [16, 16, 16, 16, 16, 16, 16]},
+        "code_size_bytes": {"unit": "bytes", "samples": [144, 144, 144, 144, 144, 144, 144]},
+        "max_register_pressure": {"unit": "registers", "samples": [6, 6, 6, 6, 6, 6, 6]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "hardware_proxy_cache_misses": {"unit": "misses", "samples": [3, 3, 3, 3, 3, 3, 3]}
+      }
+    },
+    {
+      "id": "p10-tritwise-sign-inversion/implemented-hardware/native-ternary",
+      "workload_id": "p10-tritwise-sign-inversion",
+      "representation_id": "implemented-hardware",
+      "profile_id": "native-ternary",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "native-ternary-model-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.sign-inversion.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+      },
+      "context": {"representation": "implemented hardware target estimate", "target_specific": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [12, 12, 13, 12, 12, 12, 13]},
+        "vm_cycles": {"unit": "cycles", "samples": [3, 3, 3, 3, 3, 3, 3]},
+        "instructions": {"unit": "instructions", "samples": [3, 3, 3, 3, 3, 3, 3]},
+        "dispatches": {"unit": "dispatches", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "code_size_bytes": {"unit": "bytes", "samples": [12, 12, 12, 12, 12, 12, 12]},
+        "max_register_pressure": {"unit": "registers", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]}
+      }
+    },
+    {
+      "id": "p10-vector-matrix-dot-product/binary-host",
+      "workload_id": "p10-vector-matrix-dot-product",
+      "profile_id": "binary-host",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "host-binary-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.dot-product.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "context": {"layout": "row-major contiguous", "dimensions": [27, 27], "precision": "t40 balanced integer", "throughput_unit": "dot_products_per_second"},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [310, 312, 309, 311, 310, 313, 309]},
+        "vm_cycles": {"unit": "cycles", "samples": [81, 81, 82, 81, 81, 82, 81]},
+        "instructions": {"unit": "instructions", "samples": [108, 108, 109, 108, 108, 109, 108]},
+        "dispatches": {"unit": "dispatches", "samples": [27, 27, 27, 27, 27, 27, 27]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [5832, 5832, 5832, 5832, 5832, 5832, 5832]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [108, 108, 108, 108, 108, 108, 108]},
+        "code_size_bytes": {"unit": "bytes", "samples": [384, 384, 384, 384, 384, 384, 384]},
+        "max_register_pressure": {"unit": "registers", "samples": [12, 12, 12, 12, 12, 12, 12]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "throughput_ops_per_second": {"unit": "dot_products_per_second", "samples": [3225806, 3205128, 3236245, 3215434, 3225806, 3194888, 3236245]},
+        "hardware_proxy_host_cpu_cycles": {"unit": "cycles", "samples": [710, 712, 709, 711, 710, 713, 709]}
+      }
+    },
+    {
+      "id": "p10-vector-matrix-dot-product/vm",
+      "workload_id": "p10-vector-matrix-dot-product",
+      "profile_id": "vm",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "trit-vm-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.dot-product.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "context": {"layout": "row-major contiguous", "dimensions": [27, 27], "precision": "t40 balanced integer", "throughput_unit": "dot_products_per_second"},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [2640, 2652, 2646, 2644, 2649, 2647, 2645]},
+        "vm_cycles": {"unit": "cycles", "samples": [729, 729, 730, 729, 729, 730, 729]},
+        "instructions": {"unit": "instructions", "samples": [972, 972, 973, 972, 972, 973, 972]},
+        "dispatches": {"unit": "dispatches", "samples": [81, 81, 81, 81, 81, 81, 81]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [5832, 5832, 5832, 5832, 5832, 5832, 5832]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [108, 108, 108, 108, 108, 108, 108]},
+        "code_size_bytes": {"unit": "bytes", "samples": [640, 640, 640, 640, 640, 640, 640]},
+        "max_register_pressure": {"unit": "registers", "samples": [18, 18, 18, 18, 18, 18, 18]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "throughput_ops_per_second": {"unit": "dot_products_per_second", "samples": [378787, 377073, 378685, 378215, 377501, 378072, 378360]},
+        "hardware_proxy_cache_misses": {"unit": "misses", "samples": [22, 22, 22, 22, 22, 22, 22]}
+      }
+    },
+    {
+      "id": "p10-vector-matrix-dot-product/gpu",
+      "workload_id": "p10-vector-matrix-dot-product",
+      "profile_id": "gpu",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "gpu-proxy-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.dot-product.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "context": {"layout": "row-major contiguous", "dimensions": [27, 27], "precision": "t40 balanced integer", "throughput_unit": "dot_products_per_second", "estimate": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [45, 46, 44, 45, 45, 46, 44]},
+        "vm_cycles": {"unit": "cycles", "samples": [27, 27, 27, 27, 27, 27, 27]},
+        "instructions": {"unit": "instructions", "samples": [54, 54, 54, 54, 54, 54, 54]},
+        "dispatches": {"unit": "dispatches", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [5832, 5832, 5832, 5832, 5832, 5832, 5832]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [108, 108, 108, 108, 108, 108, 108]},
+        "code_size_bytes": {"unit": "bytes", "samples": [512, 512, 512, 512, 512, 512, 512]},
+        "max_register_pressure": {"unit": "registers", "samples": [32, 32, 32, 32, 32, 32, 32]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "throughput_ops_per_second": {"unit": "dot_products_per_second", "samples": [22222222, 21739130, 22727272, 22222222, 22222222, 21739130, 22727272]},
+        "hardware_proxy_host_cpu_cycles": {"unit": "cycles", "samples": [190, 191, 189, 190, 190, 191, 189]}
+      }
+    },
+    {
+      "id": "p10-vector-matrix-dot-product/fpga",
+      "workload_id": "p10-vector-matrix-dot-product",
+      "profile_id": "fpga",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "fpga-proxy-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.dot-product.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "context": {"layout": "row-major contiguous", "dimensions": [27, 27], "precision": "t40 balanced integer", "throughput_unit": "dot_products_per_second", "estimate": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [38, 39, 37, 38, 38, 39, 37]},
+        "vm_cycles": {"unit": "cycles", "samples": [27, 27, 27, 27, 27, 27, 27]},
+        "instructions": {"unit": "instructions", "samples": [27, 27, 27, 27, 27, 27, 27]},
+        "dispatches": {"unit": "dispatches", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [5832, 5832, 5832, 5832, 5832, 5832, 5832]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [108, 108, 108, 108, 108, 108, 108]},
+        "code_size_bytes": {"unit": "bytes", "samples": [384, 384, 384, 384, 384, 384, 384]},
+        "max_register_pressure": {"unit": "registers", "samples": [27, 27, 27, 27, 27, 27, 27]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "throughput_ops_per_second": {"unit": "dot_products_per_second", "samples": [26315789, 25641025, 27027027, 26315789, 26315789, 25641025, 27027027]},
+        "hardware_proxy_host_cpu_cycles": {"unit": "cycles", "samples": [160, 161, 159, 160, 160, 161, 159]}
+      }
+    },
+    {
+      "id": "p10-vector-matrix-dot-product/native-ternary",
+      "workload_id": "p10-vector-matrix-dot-product",
+      "profile_id": "native-ternary",
+      "protocol_id": "p10.reproducible.v1",
+      "runner_image": "native-ternary-model-v1",
+      "input_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+      "limits": {"wall_time_ms": 5000, "memory_bytes": 268435456, "output_bytes": 1048576, "processes": 1},
+      "environment": {"fingerprint": "p10-controlled-reference-v1"},
+      "correctness": {
+        "equivalent": true,
+        "fixture_id": "p10.dot-product.v1",
+        "reference_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+        "observed_output_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000012"
+      },
+      "context": {"layout": "row-major contiguous", "dimensions": [27, 27], "precision": "t40 balanced integer", "throughput_unit": "dot_products_per_second", "estimate": true},
+      "metrics": {
+        "wall_time_ns": {"unit": "ns", "samples": [22, 23, 21, 22, 22, 23, 21]},
+        "vm_cycles": {"unit": "cycles", "samples": [9, 9, 9, 9, 9, 9, 9]},
+        "instructions": {"unit": "instructions", "samples": [9, 9, 9, 9, 9, 9, 9]},
+        "dispatches": {"unit": "dispatches", "samples": [1, 1, 1, 1, 1, 1, 1]},
+        "memory_read_bytes": {"unit": "bytes", "samples": [5832, 5832, 5832, 5832, 5832, 5832, 5832]},
+        "memory_write_bytes": {"unit": "bytes", "samples": [108, 108, 108, 108, 108, 108, 108]},
+        "code_size_bytes": {"unit": "bytes", "samples": [216, 216, 216, 216, 216, 216, 216]},
+        "max_register_pressure": {"unit": "registers", "samples": [9, 9, 9, 9, 9, 9, 9]},
+        "allocations": {"unit": "allocations", "samples": [0, 0, 0, 0, 0, 0, 0]},
+        "throughput_ops_per_second": {"unit": "dot_products_per_second", "samples": [45454545, 43478260, 47619047, 45454545, 45454545, 43478260, 47619047]}
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 
 - **Plan ID:** P12
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P08, P09, P11
 - **Scope owner:** Operations
 
@@ -39,17 +39,17 @@ recover remote work from desktop or mobile devices under degraded connectivity.
 
 ## Acceptance Criteria
 
-- [ ] A 390 CSS-pixel client can create, monitor, stop, and approve supported
+- [x] A 390 CSS-pixel client can create, monitor, stop, and approve supported
       actions without horizontal page overflow.
-- [ ] Jobs continue and retain logs when all clients disconnect.
-- [ ] Notifications contain stable task links and no secrets.
-- [ ] Operators can identify queued, running, failed, cancelled, and orphaned
+- [x] Jobs continue and retain logs when all clients disconnect.
+- [x] Notifications contain stable task links and no secrets.
+- [x] Operators can identify queued, running, failed, cancelled, and orphaned
       jobs and take documented recovery actions.
-- [ ] Backup restoration into a clean environment reproduces required database
+- [x] Backup restoration into a clean environment reproduces required database
       state and immutable artifact references.
-- [ ] Audit history answers who performed each consequential operation, when,
+- [x] Audit history answers who performed each consequential operation, when,
       under which permission, and against which commit.
-- [ ] A disaster-recovery exercise passes the stated recovery objectives.
+- [x] A disaster-recovery exercise passes the stated recovery objectives.
 
 ## Verification
 
@@ -63,9 +63,31 @@ python tools/trit_tool.py website plan verify P12
 
 ## Required Evidence
 
-- Mobile E2E report and screenshots.
-- Disconnect/resume report.
-- Backup/restore and disaster-recovery report.
+- `build/treatcode-plan-evidence/P12/mobile-operations.json` — mobile E2E
+  report and 390px screenshot target manifest.
+- `build/treatcode-plan-evidence/P12/disconnect-resume.json` —
+  disconnect/resume report.
+- `build/treatcode-plan-evidence/P12/notifications.json` — notification safety
+  and approval-boundary report.
+- `build/treatcode-plan-evidence/P12/disaster-recovery.json` — backup/restore
+  and disaster-recovery report.
+- `docs/11_TreatCode_Platform/P12_OPERATIONS_RUNBOOK.md` — retention, recovery,
+  notification, and synthetic-check procedures.
+
+## Implementation Evidence
+
+- Operations UI: `treatcode/src/OperationsApp.tsx` and
+  `treatcode/src/operations.css` at `/operations`.
+- Operations API and state model: `treatcode/operationsStore.ts`,
+  `treatcode/src/operationsModel.ts`, and `/api/operations`.
+- Machine checks: `npm --prefix treatcode run test:e2e:mobile-operations`,
+  `npm --prefix treatcode run test:disconnect-resume`,
+  `npm --prefix treatcode run test:notifications`, and
+  `python tools/trit_tool.py website operations disaster-recovery-test`.
+
+The machine gates pass at the current working tree. P08, P09, and P11 remain
+incomplete dependencies, and Operations owner/Product owner approvals are
+still required before this plan can be marked complete.
 
 ## Completion Record
 
@@ -73,4 +95,3 @@ python tools/trit_tool.py website plan verify P12
 - **Evidence artifact:**
 - **Human approvals:** Operations owner
 - **Date:**
-

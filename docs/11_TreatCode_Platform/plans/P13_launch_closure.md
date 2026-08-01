@@ -4,7 +4,7 @@
 
 - **Plan ID:** P13
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P04, P05, P06, P07, P08, P09, P10, P11, P12
 - **Scope owner:** Release authority
 
@@ -31,6 +31,12 @@ human-and-agent platform without relying on demo data or bypassing evidence.
 3. Security, privacy, licensing, accessibility, and contributor policies.
 4. Final performance, security, recovery, and full-system reports.
 5. Named launch approval and release record.
+
+The controlled launch artifacts are kept under
+`docs/11_TreatCode_Platform/launch/`: the readiness matrix, operational
+procedure, policy bundle, release record, and final performance, security,
+recovery, and full-system reports. The machine-readable launch report and
+verification bundle are written under `build/treatcode-plan-evidence/P13/`.
 
 ## Non-Goals
 
@@ -76,6 +82,5 @@ python tools/trit_tool.py website plan verify P13
 
 - **Verified commit:**
 - **Evidence artifact:**
-- **Human approvals:** Product owner; security owner; operations owner; release authority
+- **Human approvals:** Product owner; architecture owner; security owner; operations owner; release authority
 - **Date:**
-

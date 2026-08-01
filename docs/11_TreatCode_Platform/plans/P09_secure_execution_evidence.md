@@ -4,7 +4,7 @@
 
 - **Plan ID:** P09
 - **Version:** 1
-- **Status:** `not_started`
+- **Status:** `in_progress`
 - **Depends on:** P07, P08
 - **Scope owner:** Execution security
 
@@ -26,15 +26,21 @@ resource-limited workers that produce immutable, reproducible evidence.
 
 ## Deliverables
 
-1. Asynchronous job queue and runner protocol.
-2. Disposable workers with read-only base images, ephemeral writable storage,
+1. `treatcode/src/runner/secure-runner.ts` — asynchronous job queue, bounded
+   process protocol, cancellation, retry, limits, and immutable evidence store.
+2. `treatcode/src/runner/worker.ts` — disposable worker with a fixed Trit
+   compiler/VM command allowlist, read-only base inputs, and ephemeral writable
+   storage.
+3. Disposable workers with read-only base images, ephemeral writable storage,
    disabled network by default, and fixed CPU, memory, process, output, and time
    limits.
-3. Argument-safe process invocation with no user-controlled shell strings.
-4. Cancellation, timeout, retry, and cleanup behavior.
-5. Immutable run records and content-addressed logs, traces, diagnostics, and
+4. Argument-safe process invocation with no user-controlled shell strings.
+5. Cancellation, timeout, retry, and cleanup behavior.
+6. Immutable run records and content-addressed logs, traces, diagnostics, and
    result artifacts.
-6. Isolation and abuse test suite.
+7. `treatcode/scripts/runners.test.ts`,
+   `treatcode/scripts/runners-adversarial.test.ts`, and
+   `treatcode/scripts/isolated-run.test.ts` — isolation and abuse test suite.
 
 ## Non-Goals
 
@@ -44,31 +50,33 @@ resource-limited workers that produce immutable, reproducible evidence.
 
 ## Acceptance Criteria
 
-- [ ] Submitted code never executes in the public API or static-site process.
+- [x] Submitted code never executes in the public API or static-site process.
 - [ ] Workers cannot access external networks or host secrets in default jobs.
 - [ ] CPU, memory, process, output, and wall-time limits are enforced.
 - [ ] Command, argument, path, archive, timeout, fork, and output-flood attacks
       fail without escaping the worker.
-- [ ] Cancellation and worker failure leave no mutable authoritative state.
-- [ ] Every run records source commit, input hashes, runner image, toolchain,
+- [x] Cancellation and worker failure leave no mutable authoritative state.
+- [x] Every run records source commit, input hashes, runner image, toolchain,
       commands, environment, exit status, and artifact hashes.
-- [ ] Re-running a deterministic fixture reproduces its correctness result.
+- [x] Re-running a deterministic fixture reproduces its correctness result.
 - [ ] A security reviewer approves the isolation report.
 
 ## Verification
 
 ```powershell
-npm --prefix treatcode run test:runners
-npm --prefix treatcode run test:runners-adversarial
-npm --prefix treatcode run test:e2e:isolated-run
+npm.cmd --prefix treatcode run test:runners
+npm.cmd --prefix treatcode run test:runners-adversarial
+npm.cmd --prefix treatcode run test:e2e:isolated-run
 python tools/trit_tool.py website plan verify P09
 ```
 
 ## Required Evidence
 
-- Isolation and adversarial-test reports.
-- Deterministic rerun comparison.
-- Security-review approval.
+- `build/treatcode-plan-evidence/P09/runner-tests.json` and
+  `build/treatcode-plan-evidence/P09/adversarial-tests.json`.
+- `build/treatcode-plan-evidence/P09/public-endpoint-isolation.json` and
+  `build/treatcode-plan-evidence/P09/deterministic-rerun.json`.
+- Security-review and architecture-review approval.
 
 ## Completion Record
 
@@ -76,4 +84,3 @@ python tools/trit_tool.py website plan verify P09
 - **Evidence artifact:**
 - **Human approvals:** Security reviewer
 - **Date:**
-

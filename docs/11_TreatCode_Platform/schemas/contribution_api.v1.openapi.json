@@ -1,0 +1,79 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TreatCode Contribution Intake API",
+    "version": "1.0.0",
+    "description": "Quarantine-first uploads, isolated validation, immutable evidence, and human-approved draft pull requests. Merge is never exposed by this API."
+  },
+  "servers": [{ "url": "/api/contributions" }],
+  "security": [{ "treatcodeScopes": [] }],
+  "components": {
+    "securitySchemes": {
+      "treatcodeScopes": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-TreatCode-Scopes",
+        "description": "Comma-separated, task-scoped permissions. The actor, task, project, actor type, and expiry are carried by the authenticated gateway context."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["schema_version", "error"],
+        "properties": {
+          "schema_version": { "const": "treatcode.contribution.v1" },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "details": { "type": "object", "additionalProperties": true } }
+          }
+        }
+      },
+      "UploadSession": {
+        "type": "object",
+        "required": ["schema_version", "id", "status", "totalBytes", "receivedRanges", "quarantine"],
+        "properties": {
+          "schema_version": { "const": "treatcode.contribution.v1" },
+          "id": { "type": "string" },
+          "status": { "enum": ["open", "accepted", "rejected"] },
+          "ownerId": { "type": "string" },
+          "taskId": { "type": "string" },
+          "fileName": { "type": "string" },
+          "totalBytes": { "type": "integer", "minimum": 1 },
+          "receivedBytes": { "type": "integer", "minimum": 0 },
+          "contiguousBytes": { "type": "integer", "minimum": 0 },
+          "receivedRanges": { "type": "array", "items": { "type": "object", "required": ["start", "end"], "properties": { "start": { "type": "integer" }, "end": { "type": "integer" } } } },
+          "contentHash": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+          "quarantine": { "const": true }
+        }
+      },
+      "Evidence": {
+        "type": "object",
+        "required": ["id", "kind", "label", "artifactHash", "immutable"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["correctness", "benchmark", "review", "diagnostic"] },
+          "label": { "type": "string" },
+          "artifactHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "immutable": { "const": true }
+        }
+      }
+    },
+    "parameters": {
+      "uploadId": { "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string" } }
+    }
+  },
+  "paths": {
+    "/capabilities": { "get": { "responses": { "200": { "description": "Contribution policy and independent scopes" } } } },
+    "/uploads": { "post": { "summary": "Create a quarantined resumable upload session", "responses": { "201": { "description": "Upload session" }, "4XX": { "description": "Policy or authorization rejection", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } } } },
+    "/uploads/{uploadId}": { "get": { "parameters": [{ "$ref": "#/components/parameters/uploadId" }], "responses": { "200": { "description": "Upload session" } } } },
+    "/uploads/{uploadId}/chunks": { "put": { "parameters": [{ "$ref": "#/components/parameters/uploadId" }], "summary": "Write one non-overlapping base64 byte range", "responses": { "200": { "description": "Updated upload session" } } } },
+    "/uploads/{uploadId}/finalize": { "post": { "parameters": [{ "$ref": "#/components/parameters/uploadId" }], "summary": "Hash and quarantine-scan the assembled upload", "responses": { "200": { "description": "Accepted or rejected upload" } } } },
+    "/workspaces": { "post": { "summary": "Create an isolated workspace pinned to a commit", "responses": { "201": { "description": "Workspace" } } } },
+    "/workspaces/{workspaceId}/uploads/{uploadId}": { "post": { "summary": "Materialize an accepted upload into the isolated workspace", "responses": { "200": { "description": "Workspace" } } } },
+    "/workspaces/{workspaceId}/validate": { "post": { "summary": "Re-scan materialized files and create a validation artifact", "responses": { "200": { "description": "Validation report" } } } },
+    "/workspaces/{workspaceId}/evidence": { "post": { "summary": "Attach immutable correctness or benchmark evidence", "responses": { "201": { "description": "Evidence" } } } },
+    "/workspaces/{workspaceId}/approval": { "post": { "summary": "Record explicit human draft-PR approval", "responses": { "201": { "description": "Approval" } } } },
+    "/workspaces/{workspaceId}/draft-pr": { "post": { "summary": "Create an approved draft PR through a GitHub App adapter", "responses": { "201": { "description": "Draft PR" } } } }
+  }
+}

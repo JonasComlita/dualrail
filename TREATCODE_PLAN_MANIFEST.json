@@ -209,14 +209,19 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P06_challenges_taxonomy.md",
       "depends_on": ["P01", "P04"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
         {"id": "challenge-validate", "command": "python tools/trit_tool.py website challenges validate"},
         {"id": "challenge-tests", "command": "npm --prefix treatcode run test:challenges"},
         {"id": "challenge-e2e", "command": "npm --prefix treatcode run test:e2e:challenges"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P06"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P06/result.json", "description": "Machine-readable P06 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P06/result.json", "description": "Machine-readable P06 verification result"},
+        {"id": "challenge-validation", "path": "build/treatcode-plan-evidence/P06/challenge-validation.json", "description": "Challenge manifest lifecycle, facet, and pilot validation report"},
+        {"id": "challenge-correctness", "path": "build/treatcode-plan-evidence/P06/challenge-correctness.json", "description": "Published challenge correctness and hidden-fixture report"},
+        {"id": "challenge-e2e", "path": "build/treatcode-plan-evidence/P06/challenge-e2e.json", "description": "Challenge API and lifecycle E2E report"}
+      ],
       "gates": [{"type": "structural", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Product owner"]
     },
@@ -225,14 +230,23 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P07_identity_permissions_agents.md",
       "depends_on": ["P01", "P04"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
-        {"id": "auth-tests", "command": "npm --prefix treatcode run test:auth"},
-        {"id": "auth-negative", "command": "npm --prefix treatcode run test:auth-negative"},
-        {"id": "api-conformance", "command": "npm --prefix treatcode run test:api-conformance"},
+        {"id": "auth-tests", "command": "npm.cmd --prefix treatcode run test:auth"},
+        {"id": "auth-negative", "command": "npm.cmd --prefix treatcode run test:auth-negative"},
+        {"id": "api-conformance", "command": "npm.cmd --prefix treatcode run test:api-conformance"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P07"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P07/result.json", "description": "Machine-readable P07 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P07/result.json", "description": "Machine-readable P07 verification result"},
+        {"id": "positive", "path": "build/treatcode-plan-evidence/P07/auth-positive.json", "description": "Positive identity, scope, expiry, replay, and audit report"},
+        {"id": "negative", "path": "build/treatcode-plan-evidence/P07/auth-negative.json", "description": "Negative authorization and secret non-disclosure report"},
+        {"id": "api-conformance", "path": "build/treatcode-plan-evidence/P07/api-conformance.json", "description": "Versioned auth API and protected-action conformance report"},
+        {"id": "authorization-matrix", "path": "docs/11_TreatCode_Platform/AUTHORIZATION_MATRIX.md", "description": "Independent permission matrix and denial contract"},
+        {"id": "threat-model", "path": "docs/11_TreatCode_Platform/THREAT_MODEL.md", "description": "P07 threat model and security controls"},
+        {"id": "identity-schema", "path": "docs/11_TreatCode_Platform/schemas/identity_access.v1.schema.json", "description": "Identity, grant, and audit record schema"},
+        {"id": "auth-openapi", "path": "docs/11_TreatCode_Platform/schemas/auth_api.v1.openapi.json", "description": "Versioned identity and authorization OpenAPI contract"}
+      ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Security owner", "Product owner"]
     },
@@ -241,14 +255,20 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P08_remote_workspaces.md",
       "depends_on": ["P03", "P07"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
         {"id": "workspace-tests", "command": "npm --prefix treatcode run test:workspaces"},
         {"id": "workspace-lifecycle", "command": "npm --prefix treatcode run test:e2e:workspace-lifecycle"},
         {"id": "workspace-handoff", "command": "npm --prefix treatcode run test:e2e:workspace-handoff"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P08"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P08/result.json", "description": "Machine-readable P08 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P08/result.json", "description": "Machine-readable P08 verification result"},
+        {"id": "workspace-report", "path": "build/treatcode-plan-evidence/P08/workspace-report.json", "description": "Provisioning, bounded context, isolated checks, and destruction lifecycle report"},
+        {"id": "snapshot-resume", "path": "build/treatcode-plan-evidence/P08/snapshot-resume.json", "description": "Snapshot tree-hash and disconnect/resume recovery comparison"},
+        {"id": "handoff-audit", "path": "build/treatcode-plan-evidence/P08/handoff-destruction-audit.json", "description": "Least-privilege handoff, denied destruction, revocation, and destruction audit report"},
+        {"id": "workspace-contract", "path": "docs/11_TreatCode_Platform/schemas/workspace_api.v1.openapi.json", "description": "Versioned remote workspace API contract"}
+      ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Security owner", "Product owner"]
     },
@@ -257,14 +277,20 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P09_secure_execution_evidence.md",
       "depends_on": ["P07", "P08"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
-        {"id": "runner-tests", "command": "npm --prefix treatcode run test:runners"},
-        {"id": "runner-adversarial", "command": "npm --prefix treatcode run test:runners-adversarial"},
-        {"id": "isolated-e2e", "command": "npm --prefix treatcode run test:e2e:isolated-run"},
+        {"id": "runner-tests", "command": "npm.cmd --prefix treatcode run test:runners"},
+        {"id": "runner-adversarial", "command": "npm.cmd --prefix treatcode run test:runners-adversarial"},
+        {"id": "isolated-e2e", "command": "npm.cmd --prefix treatcode run test:e2e:isolated-run"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P09"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P09/result.json", "description": "Machine-readable P09 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P09/result.json", "description": "Machine-readable P09 verification result"},
+        {"id": "runner-tests", "path": "build/treatcode-plan-evidence/P09/runner-tests.json", "description": "Queue, retry, cancellation, and immutable-record report"},
+        {"id": "adversarial-tests", "path": "build/treatcode-plan-evidence/P09/adversarial-tests.json", "description": "Argument, timeout, output, and environment abuse report"},
+        {"id": "deterministic-rerun", "path": "build/treatcode-plan-evidence/P09/deterministic-rerun.json", "description": "Deterministic correctness rerun comparison"},
+        {"id": "public-endpoint-isolation", "path": "build/treatcode-plan-evidence/P09/public-endpoint-isolation.json", "description": "Public API to worker process-boundary report"}
+      ],
       "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Security owner", "Architecture owner"]
     },
@@ -273,7 +299,7 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P10_optimization_benchmarks.md",
       "depends_on": ["P06", "P09"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
         {"id": "trit-benchmark", "command": "python tools/trit_tool.py test benchmark"},
         {"id": "benchmark-tests", "command": "npm --prefix treatcode run test:benchmarks"},
@@ -281,23 +307,36 @@
         {"id": "reference", "command": "python tools/trit_tool.py website benchmarks verify-reference"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P10"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P10/result.json", "description": "Machine-readable P10 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P10/result.json", "description": "Machine-readable P10 verification result"},
+        {"id": "protocol", "path": "BENCHMARK_PROTOCOL_SCHEMA.json", "description": "Versioned benchmark protocol schema"},
+        {"id": "manifest", "path": "BENCHMARK_MANIFEST.json", "description": "Authoritative P10 workload, target, metric, and threshold manifest"},
+        {"id": "reference", "path": "benchmarks/reference/p10-reference.v1.json", "description": "Controlled reference distributions and correctness fixtures"},
+        {"id": "reference-verification", "path": "build/treatcode-plan-evidence/P10/reference-verification.json", "description": "Reference repeatability, variance, profile, and correctness report"},
+        {"id": "benchmark-tests", "path": "build/treatcode-plan-evidence/P10/benchmark-tests.json", "description": "P10 benchmark protocol test report"},
+        {"id": "arena-e2e", "path": "build/treatcode-plan-evidence/P10/implementation-arena-e2e.json", "description": "Implementation Arena correctness and benchmark evidence E2E report"}
+      ],
       "gates": [{"type": "performance", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Architecture owner"]
+      "required_approvals": ["Performance owner"]
     },
     {
       "id": "P11",
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P11_uploads_contributions_github.md",
       "depends_on": ["P07", "P08", "P09"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
-        {"id": "upload-tests", "command": "npm --prefix treatcode run test:uploads"},
-        {"id": "upload-adversarial", "command": "npm --prefix treatcode run test:uploads-adversarial"},
-        {"id": "draft-pr-e2e", "command": "npm --prefix treatcode run test:e2e:draft-pr"},
+        {"id": "upload-tests", "command": "npm.cmd --prefix treatcode run test:uploads"},
+        {"id": "upload-adversarial", "command": "npm.cmd --prefix treatcode run test:uploads-adversarial"},
+        {"id": "draft-pr-e2e", "command": "npm.cmd --prefix treatcode run test:e2e:draft-pr"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P11"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P11/result.json", "description": "Machine-readable P11 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P11/result.json", "description": "Machine-readable P11 verification result"},
+        {"id": "upload-tests", "path": "build/treatcode-plan-evidence/P11/upload-tests.json", "description": "Resumable upload and isolated workspace report"},
+        {"id": "upload-adversarial", "path": "build/treatcode-plan-evidence/P11/upload-adversarial.json", "description": "Upload quarantine and archive abuse report"},
+        {"id": "draft-pr-e2e", "path": "build/treatcode-plan-evidence/P11/draft-pr-e2e.json", "description": "Human approval and draft pull-request end-to-end report"}
+      ],
       "gates": [{"type": "security", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Security owner", "Product owner"]
     },
@@ -306,7 +345,7 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P12_operations_mobile.md",
       "depends_on": ["P08", "P09", "P11"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
         {"id": "mobile-operations", "command": "npm --prefix treatcode run test:e2e:mobile-operations"},
         {"id": "disconnect-resume", "command": "npm --prefix treatcode run test:disconnect-resume"},
@@ -314,7 +353,15 @@
         {"id": "disaster-recovery", "command": "python tools/trit_tool.py website operations disaster-recovery-test"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P12"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P12/result.json", "description": "Machine-readable P12 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P12/result.json", "description": "Machine-readable P12 verification result"},
+        {"id": "mobile-report", "path": "build/treatcode-plan-evidence/P12/mobile-operations.json", "description": "Mobile operations E2E report and 390px screenshot target manifest"},
+        {"id": "disconnect-report", "path": "build/treatcode-plan-evidence/P12/disconnect-resume.json", "description": "Disconnect and server-continuation report"},
+        {"id": "notifications-report", "path": "build/treatcode-plan-evidence/P12/notifications.json", "description": "Notification safety, preference, and approval-boundary report"},
+        {"id": "disaster-recovery-report", "path": "build/treatcode-plan-evidence/P12/disaster-recovery.json", "description": "Backup, clean-restore, and disaster-recovery report"},
+        {"id": "operations-command", "path": "build/treatcode-plan-evidence/P12/operations-command.json", "description": "Python operations command wrapper report"},
+        {"id": "runbook", "path": "docs/11_TreatCode_Platform/P12_OPERATIONS_RUNBOOK.md", "description": "Retention, recovery, notification, and synthetic-check runbook"}
+      ],
       "gates": [{"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
       "required_approvals": ["Operations owner", "Product owner"]
     },
@@ -323,7 +370,7 @@
       "version": 1,
       "plan_file": "docs/11_TreatCode_Platform/plans/P13_launch_closure.md",
       "depends_on": ["P04", "P05", "P06", "P07", "P08", "P09", "P10", "P11", "P12"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification_commands": [
         {"id": "doctor", "command": "tools/trit-doctor.ps1"},
         {"id": "smoke", "command": "tools/trit-test.ps1 smoke"},
@@ -333,9 +380,21 @@
         {"id": "plans-validate", "command": "python tools/trit_tool.py website plans validate"},
         {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P13"}
       ],
-      "evidence": [{"id": "result", "path": "build/treatcode-plan-evidence/P13/result.json", "description": "Machine-readable P13 verification result"}],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P13/result.json", "description": "Machine-readable P13 verification result"},
+        {"id": "launch-readiness", "path": "build/treatcode-plan-evidence/P13/launch-readiness.json", "description": "Public claims, dependency, policy, and no-demo launch gate report"},
+        {"id": "full-verification", "path": "build/treatcode-plan-evidence/P13/full-verification.json", "description": "P13 command and artifact bundle manifest"},
+        {"id": "readiness-matrix", "path": "docs/11_TreatCode_Platform/launch/LAUNCH_READINESS_MATRIX.md", "description": "Launch readiness matrix"},
+        {"id": "operations", "path": "docs/11_TreatCode_Platform/launch/DEPLOYMENT_ROLLBACK_INCIDENT_SUPPORT.md", "description": "Deployment, rollback, incident, and support procedure"},
+        {"id": "policies", "path": "docs/11_TreatCode_Platform/launch/POLICIES.md", "description": "Security, privacy, licensing, accessibility, and contributor policies"},
+        {"id": "release-record", "path": "docs/11_TreatCode_Platform/launch/RELEASE_RECORD.md", "description": "Explicit go/no-go release record"},
+        {"id": "performance-report", "path": "docs/11_TreatCode_Platform/launch/reports/PERFORMANCE.md", "description": "Final performance report"},
+        {"id": "security-report", "path": "docs/11_TreatCode_Platform/launch/reports/SECURITY.md", "description": "Final security report"},
+        {"id": "recovery-report", "path": "docs/11_TreatCode_Platform/launch/reports/RECOVERY.md", "description": "Final recovery report"},
+        {"id": "full-system-report", "path": "docs/11_TreatCode_Platform/launch/reports/FULL_SYSTEM.md", "description": "Final full-system report"}
+      ],
       "gates": [{"type": "structural", "required": true}, {"type": "security", "required": true}, {"type": "correctness", "required": true}, {"type": "human", "required": true}],
-      "required_approvals": ["Product owner", "Architecture owner", "Security owner"]
+      "required_approvals": ["Product owner", "Architecture owner", "Security owner", "Operations owner", "Release authority"]
     }
   ]
 }
