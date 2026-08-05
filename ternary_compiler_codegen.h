@@ -5017,6 +5017,42 @@ inline void addInterferenceEdge(
         }
     }
 
+    // Function parameters are materialized by one parallel ABI move set at
+    // the start of the emitted function.  Their SSA lifetimes can be
+    // disjoint (for example, when the frontend first stores each parameter
+    // into a local), but the ABI sources are all consumed before any of those
+    // moves execute.  Keep parameters of the same register class interfering
+    // so the allocator cannot assign two simultaneous ABI arguments to one
+    // destination register and silently overwrite an earlier argument.
+    for (const auto& fn : module.functions) {
+        std::vector<ValueId> parameters;
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.opcode == InstrOpcode::Param &&
+                    instr.def >= 0 && !frameValues.count(instr.def)) {
+                    parameters.push_back(instr.def);
+                }
+            }
+        }
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+            for (std::size_t j = i + 1; j < parameters.size(); ++j) {
+                const ValueId lhs = parameters[i];
+                const ValueId rhs = parameters[j];
+                const auto lhs_type = valueTypes.find(lhs);
+                const auto rhs_type = valueTypes.find(rhs);
+                if (lhs_type == valueTypes.end() ||
+                    rhs_type == valueTypes.end()) {
+                    continue;
+                }
+                if ((lhs_type->second.kind == TypeKind::Vector) !=
+                    (rhs_type->second.kind == TypeKind::Vector)) {
+                    continue;
+                }
+                addInterferenceEdge(graph, lhs, rhs);
+            }
+        }
+    }
+
     auto registerWidth = [&](ValueId value) {
         auto type = valueTypes.find(value);
         if (type == valueTypes.end()) return 1;
