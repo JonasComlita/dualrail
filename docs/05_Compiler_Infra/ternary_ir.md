@@ -134,8 +134,12 @@ The optimizer tracks its work via `OptimizerStats`:
 | Copy propagation | `copy_props` |
 | Strength reduction | `strength_reductions` |
 | Common subexpression elimination | `cse_hits` |
+| Global value numbering | `gvn_hits` |
 | Dead instruction elimination | `dead_instrs` |
 | Branch simplification | `branch_simplifications` |
+| Loop invariant code motion | `licm_hoists` |
+| Redundant induction-variable simplification | `induction_simplifications` |
+| Cost-controlled branch-to-TSEL conversion | `tsel_conversions` |
 | Swap optimization | `swaps` |
 
 ---

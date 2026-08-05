@@ -134,6 +134,7 @@ struct OptimizerStats {
     int branch_simplifications = 0;
     int licm_hoists = 0;
     int induction_simplifications = 0;
+    int tsel_conversions = 0;
     int swaps = 0;
 };
 

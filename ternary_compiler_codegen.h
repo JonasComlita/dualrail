@@ -7,7 +7,9 @@
 #include "ternary_compiler_ast.h"
 #include "ternary_compiler_cfg.h"
 #include "ternary_compiler_parser.h"
+#include <array>
 #include <deque>
+#include <iterator>
 
 namespace sandbox {
 namespace compiler {
@@ -1031,6 +1033,7 @@ public:
             destination.licm_hoists += source.licm_hoists;
             destination.induction_simplifications +=
                 source.induction_simplifications;
+            destination.tsel_conversions += source.tsel_conversions;
             destination.swaps += source.swaps;
         };
         int ssa_admitted_functions = 0;
@@ -4282,7 +4285,7 @@ private:
             }
             ExprCode arg = emitExpr(expr.args[i], argument_type, ctx);
             if (isAggregateType(argument_type) && !arg.address) {
-                diag("aggregate arguments are passed by pointer in v1", expr.args[i]->span);
+                diag("aggregate arguments are passed by pointer in the v2 ABI", expr.args[i]->span);
             }
             const int width = isAggregateType(argument_type)
                 ? 1
@@ -5081,6 +5084,68 @@ private:
             return false;
     }
 }
+
+// Costs used by transforms that trade control flow for eager computation.
+// Keep this table exhaustive: a transform must have a target cost for every
+// instruction it selects before it is allowed to rewrite the CFG.  The
+// values are relative v2 instruction costs, not host-cycle promises.
+struct TargetCostTable {
+    static constexpr int unavailable = -1;
+    static constexpr int branch3 = 3; // brn, brz, and the fall-through jump
+    static constexpr int jump = 1;
+    static constexpr int tsel = 1;
+
+    [[nodiscard]] static constexpr int instruction(InstrOpcode opcode) {
+        switch (opcode) {
+            case InstrOpcode::Alloca: return 2;
+            case InstrOpcode::Param: return 0;
+            case InstrOpcode::Const: return 1;
+            case InstrOpcode::Copy: return 1;
+            case InstrOpcode::Add:
+            case InstrOpcode::Sub:
+            case InstrOpcode::Mul:
+            case InstrOpcode::Cvt:
+            case InstrOpcode::Cmp:
+            case InstrOpcode::FieldAddr:
+            case InstrOpcode::IndexAddr:
+            case InstrOpcode::AddrOf:
+                return 1;
+            case InstrOpcode::Div:
+            case InstrOpcode::Tmod:
+                return 4;
+            case InstrOpcode::Tsel:
+                return tsel;
+            case InstrOpcode::Phi:
+                return 0;
+            case InstrOpcode::Deref:
+            case InstrOpcode::Load:
+            case InstrOpcode::Store:
+            case InstrOpcode::SpillLoad:
+            case InstrOpcode::SpillStore:
+                return 3;
+            case InstrOpcode::Syscall:
+            case InstrOpcode::Call:
+            case InstrOpcode::CallR:
+                return 8;
+            case InstrOpcode::Wait:
+            case InstrOpcode::TlbInv:
+            case InstrOpcode::Fence:
+            case InstrOpcode::Tldr:
+            case InstrOpcode::Tstr:
+            case InstrOpcode::Csrr:
+            case InstrOpcode::Csrw:
+            case InstrOpcode::Csrrw:
+                return 5;
+            case InstrOpcode::Ret:
+                return 1;
+            case InstrOpcode::Swap:
+                return 2;
+            case InstrOpcode::Nop:
+                return 0;
+        }
+        return unavailable;
+    }
+};
 
 // Constant branch folding is only valid when eliminating the other arms
 // cannot erase an observable operation. A side effect may be in a successor
@@ -6257,6 +6322,494 @@ inline int runLoopInvariantCodeMotion(Function& fn) {
     return hoisted;
 }
 
+// Simplify redundant loop induction variables without changing arithmetic
+// overflow or trap behavior.  Two header phis are equivalent when they have
+// the same preheader value and the same constant Add/Sub recurrence.  Uses of
+// the redundant phi and its backedge chain can then use the canonical IV;
+// ordinary SSA DCE removes the duplicate recurrence.  A zero-step recurrence
+// is handled as the degenerate form of the same proof.
+inline int runInductionSimplification(Function& fn) {
+    const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+    if (fn.blocks.empty() || !cfg.invalid_targets.empty()) return 0;
+    const DominanceInfo dominance = computeDominance(fn, cfg);
+
+    struct StepSignature {
+        InstrOpcode opcode = InstrOpcode::Nop;
+        long long constant = 0;
+        TypeRef type = TypeRef::unknown();
+        bool valid = false;
+    };
+    struct Candidate {
+        ValueId phi = -1;
+        ValueId initial = -1;
+        ValueId backedge = -1;
+        ValueId step = -1;
+        StepSignature signature;
+        std::set<std::string> loop;
+    };
+
+    std::map<ValueId, const Instr*> definitions;
+    std::map<ValueId, std::string> defining_blocks;
+    std::map<ValueId, TypeRef> defining_types;
+    std::map<ValueId, ValueId> copies;
+    std::map<ValueId, long long> constants;
+    for (const BasicBlock& block : fn.blocks) {
+        for (const Instr& instr : block.instructions) {
+            if (instr.def < 0) continue;
+            definitions[instr.def] = &instr;
+            defining_blocks[instr.def] = block.name;
+            defining_types[instr.def] = instr.type;
+            if (instr.opcode == InstrOpcode::Copy &&
+                instr.args.size() == 1 && instr.args.front() >= 0) {
+                copies[instr.def] = instr.args.front();
+            }
+            if (instr.opcode == InstrOpcode::Const) {
+                constants[instr.def] = instr.imm;
+            }
+        }
+    }
+    auto resolve = [&](ValueId value) {
+        std::set<ValueId> seen;
+        while (value >= 0 && copies.count(value) &&
+               !seen.count(value)) {
+            seen.insert(value);
+            value = copies.at(value);
+        }
+        return value;
+    };
+    auto sameValue = [&](ValueId lhs, ValueId rhs) {
+        lhs = resolve(lhs);
+        rhs = resolve(rhs);
+        if (lhs == rhs) return true;
+        const auto left_constant = constants.find(lhs);
+        const auto right_constant = constants.find(rhs);
+        return left_constant != constants.end() &&
+               right_constant != constants.end() &&
+               defining_types.count(lhs) && defining_types.count(rhs) &&
+               sameType(defining_types.at(lhs), defining_types.at(rhs)) &&
+               left_constant->second == right_constant->second;
+    };
+    auto copyChain = [&](ValueId value) {
+        std::vector<ValueId> chain;
+        std::set<ValueId> seen;
+        while (value >= 0 && !seen.count(value)) {
+            chain.push_back(value);
+            seen.insert(value);
+            const auto next = copies.find(value);
+            if (next == copies.end()) break;
+            value = next->second;
+        }
+        return chain;
+    };
+
+    // Find natural loops using the same backedge/dominance proof as LICM.
+    std::vector<std::pair<std::string, std::set<std::string>>> loops;
+    for (const std::string& latch : cfg.order) {
+        for (const std::string& header : cfg.successors.at(latch)) {
+            if (!dominance.dominates(header, latch)) continue;
+            std::set<std::string> loop{header, latch};
+            std::vector<std::string> work{latch};
+            while (!work.empty()) {
+                const std::string block = work.back();
+                work.pop_back();
+                for (const std::string& predecessor :
+                     cfg.predecessors.at(block)) {
+                    if (loop.insert(predecessor).second &&
+                        predecessor != header) {
+                        work.push_back(predecessor);
+                    }
+                }
+            }
+            loops.push_back({header, std::move(loop)});
+        }
+    }
+
+    std::vector<Candidate> candidates;
+    for (const auto& loop_entry : loops) {
+        const std::string& header = loop_entry.first;
+        const std::set<std::string>& loop = loop_entry.second;
+        const BasicBlock& block = fn.blocks[cfg.index.at(header)];
+        for (const Instr& phi : block.instructions) {
+            if (phi.opcode != InstrOpcode::Phi || phi.def < 0 ||
+                phi.phi_incoming.size() != 2) {
+                if (phi.opcode != InstrOpcode::Phi) break;
+                continue;
+            }
+            ValueId initial = -1;
+            ValueId backedge = -1;
+            int outside = 0;
+            int inside = 0;
+            for (const auto& incoming : phi.phi_incoming) {
+                if (loop.count(incoming.first)) {
+                    backedge = incoming.second;
+                    ++inside;
+                } else {
+                    initial = incoming.second;
+                    ++outside;
+                }
+            }
+            if (outside != 1 || inside != 1 || initial < 0 ||
+                backedge < 0) {
+                continue;
+            }
+            const ValueId resolved_backedge = resolve(backedge);
+            const auto step_definition = definitions.find(resolved_backedge);
+            if (step_definition == definitions.end()) continue;
+            const Instr& step = *step_definition->second;
+            if (step.opcode != InstrOpcode::Add &&
+                step.opcode != InstrOpcode::Sub) {
+                continue;
+            }
+            if (step.args.size() != 2 || step.def < 0 ||
+                !loop.count(defining_blocks[step.def])) {
+                continue;
+            }
+            ValueId constant_value = -1;
+            bool uses_phi = false;
+            if (step.opcode == InstrOpcode::Sub) {
+                uses_phi = sameValue(step.args[0], phi.def);
+                constant_value = step.args[1];
+            } else {
+                const bool lhs_phi = sameValue(step.args[0], phi.def);
+                const bool rhs_phi = sameValue(step.args[1], phi.def);
+                if (lhs_phi == rhs_phi) continue;
+                uses_phi = true;
+                constant_value = lhs_phi ? step.args[1] : step.args[0];
+            }
+            const ValueId resolved_constant = resolve(constant_value);
+            const auto constant = constants.find(resolved_constant);
+            if (!uses_phi || constant == constants.end()) continue;
+            candidates.push_back(Candidate{
+                phi.def,
+                initial,
+                backedge,
+                resolved_backedge,
+                StepSignature{step.opcode, constant->second, phi.type, true},
+                loop});
+        }
+    }
+
+    std::map<ValueId, ValueId> replacements;
+    int simplified = 0;
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        const Candidate& canonical = candidates[i];
+        if (replacements.count(canonical.phi)) continue;
+        for (std::size_t j = i + 1; j < candidates.size(); ++j) {
+            const Candidate& redundant = candidates[j];
+            if (replacements.count(redundant.phi) ||
+                canonical.loop != redundant.loop ||
+                !dominance.dominates(
+                    defining_blocks.at(canonical.step),
+                    defining_blocks.at(redundant.step)) ||
+                !sameType(canonical.signature.type,
+                          redundant.signature.type) ||
+                canonical.signature.opcode != redundant.signature.opcode ||
+                canonical.signature.constant !=
+                    redundant.signature.constant ||
+                !sameValue(canonical.initial, redundant.initial)) {
+                continue;
+            }
+            replacements[redundant.phi] = canonical.phi;
+            for (ValueId value : copyChain(redundant.backedge))
+                replacements[value] = canonical.step;
+            ++simplified;
+        }
+    }
+
+    // A zero-step recurrence has no changing induction state.  Replace both
+    // the IV and its backedge chain with the preheader value, preserving the
+    // exact arithmetic operation until DCE removes the now-dead chain.
+    for (const Candidate& candidate : candidates) {
+        if (replacements.count(candidate.phi) ||
+            candidate.signature.constant != 0) {
+            continue;
+        }
+        replacements[candidate.phi] = candidate.initial;
+        for (ValueId value : copyChain(candidate.backedge))
+            replacements[value] = candidate.initial;
+        ++simplified;
+    }
+    if (replacements.empty()) return 0;
+
+    auto resolveReplacement = [&](ValueId value) {
+        std::set<ValueId> seen;
+        while (value >= 0 && replacements.count(value) &&
+               !seen.count(value)) {
+            seen.insert(value);
+            value = replacements.at(value);
+        }
+        return value;
+    };
+    for (BasicBlock& block : fn.blocks) {
+        for (Instr& instr : block.instructions) {
+            for (ValueId& argument : instr.args)
+                argument = resolveReplacement(argument);
+            for (auto& incoming : instr.phi_incoming)
+                incoming.second = resolveReplacement(incoming.second);
+        }
+        block.terminator.condition =
+            resolveReplacement(block.terminator.condition);
+    }
+    return simplified;
+}
+
+// Convert a small pure branch diamond to target TSELs only when the v2 cost
+// table predicts no increase in dynamic work.  Arm instructions are moved
+// into the branch block (and therefore execute eagerly), so only
+// speculatable operations with known target costs are eligible.  The arm
+// blocks are removed only when they have no other predecessors and the merge
+// has no other predecessors; this keeps the resulting SSA and phi dominance
+// proof closed.
+inline int runCostControlledTselConversion(Function& fn) {
+    int converted = 0;
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        const ControlFlowGraph cfg = buildControlFlowGraph(fn);
+        if (fn.blocks.empty() || !cfg.invalid_targets.empty()) break;
+        const DominanceInfo dominance = computeDominance(fn, cfg);
+        std::map<ValueId, std::string> defining_block;
+        std::map<ValueId, int> defining_index;
+        std::map<ValueId, TypeRef> defining_type;
+        for (const BasicBlock& block : fn.blocks) {
+            for (std::size_t index = 0;
+                 index < block.instructions.size(); ++index) {
+                const Instr& instr = block.instructions[index];
+                if (instr.def < 0) continue;
+                defining_block[instr.def] = block.name;
+                defining_index[instr.def] = static_cast<int>(index);
+                defining_type[instr.def] = instr.type;
+            }
+        }
+
+        for (const BasicBlock& branch_snapshot : fn.blocks) {
+            if (branch_snapshot.terminator.kind !=
+                    TerminatorKind::Branch3 ||
+                branch_snapshot.terminator.condition < 0) {
+                continue;
+            }
+            const std::string branch_name = branch_snapshot.name;
+            const std::array<std::string, 3> outcomes = {
+                branch_snapshot.terminator.target_neg,
+                branch_snapshot.terminator.target_zero,
+                branch_snapshot.terminator.target_pos};
+            std::vector<std::string> arms;
+            for (const std::string& arm : outcomes) {
+                if (arm.empty() ||
+                    std::find(arms.begin(), arms.end(), arm) == arms.end()) {
+                    arms.push_back(arm);
+                }
+            }
+            if (arms.size() < 2 || arms.size() > 3) continue;
+
+            std::string merge_name;
+            bool valid_arms = true;
+            for (const std::string& arm_name : arms) {
+                const auto arm_index = cfg.index.find(arm_name);
+                if (arm_index == cfg.index.end() ||
+                    arm_name == branch_name ||
+                    cfg.predecessors.at(arm_name).size() != 1 ||
+                    !cfg.predecessors.at(arm_name).count(branch_name)) {
+                    valid_arms = false;
+                    break;
+                }
+                const BasicBlock& arm =
+                    fn.blocks[static_cast<std::size_t>(arm_index->second)];
+                if (arm.terminator.kind != TerminatorKind::Jump ||
+                    arm.terminator.target.empty()) {
+                    valid_arms = false;
+                    break;
+                }
+                if (merge_name.empty()) merge_name = arm.terminator.target;
+                if (merge_name != arm.terminator.target) {
+                    valid_arms = false;
+                    break;
+                }
+            }
+            if (!valid_arms || merge_name == branch_name) continue;
+            const auto merge_index = cfg.index.find(merge_name);
+            if (merge_index == cfg.index.end()) continue;
+            std::set<std::string> expected_predecessors(
+                arms.begin(), arms.end());
+            if (cfg.predecessors.at(merge_name) != expected_predecessors)
+                continue;
+            const BasicBlock& merge_snapshot =
+                fn.blocks[static_cast<std::size_t>(merge_index->second)];
+
+            std::vector<const Instr*> phis;
+            for (const Instr& instr : merge_snapshot.instructions) {
+                if (instr.opcode != InstrOpcode::Phi) break;
+                phis.push_back(&instr);
+            }
+            if (phis.empty()) continue;
+
+            std::map<ValueId, std::pair<std::string, int>> arm_definition_site;
+            long long sum_arm_cost = 0;
+            long long max_arm_cost = 0;
+            for (const std::string& arm_name : arms) {
+                const BasicBlock& arm =
+                    fn.blocks[cfg.index.at(arm_name)];
+                long long arm_cost = 0;
+                for (std::size_t index = 0;
+                     index < arm.instructions.size(); ++index) {
+                    const Instr& instr = arm.instructions[index];
+                    const int cost =
+                        TargetCostTable::instruction(instr.opcode);
+                    if (instr.def < 0 || cost == TargetCostTable::unavailable ||
+                        instr.opcode == InstrOpcode::Param ||
+                        !isSpeculatableInstruction(instr)) {
+                        valid_arms = false;
+                        break;
+                    }
+                    arm_definition_site[instr.def] = {
+                        arm_name, static_cast<int>(index)};
+                    arm_cost += cost;
+                }
+                if (!valid_arms) break;
+                sum_arm_cost += arm_cost;
+                max_arm_cost = std::max(max_arm_cost, arm_cost);
+            }
+            if (!valid_arms) continue;
+
+            // A source from an arm must be defined earlier in that same arm;
+            // every other source must dominate the branch block itself.
+            auto sourceAvailableAtBranch = [&](ValueId value) {
+                if (value < 0) return true;
+                const auto found = defining_block.find(value);
+                if (found == defining_block.end()) return false;
+                if (found->second == branch_name) {
+                    return defining_index.at(value) <
+                        static_cast<int>(branch_snapshot.instructions.size());
+                }
+                return dominance.dominates(found->second, branch_name);
+            };
+            for (const std::string& arm_name : arms) {
+                const BasicBlock& arm =
+                    fn.blocks[cfg.index.at(arm_name)];
+                for (std::size_t index = 0;
+                     index < arm.instructions.size() && valid_arms; ++index) {
+                    for (ValueId argument : arm.instructions[index].args) {
+                        if (argument < 0) continue;
+                        const auto local = arm_definition_site.find(argument);
+                        if (local != arm_definition_site.end()) {
+                            if (local->second.first != arm_name ||
+                                local->second.second >=
+                                    static_cast<int>(index)) {
+                                valid_arms = false;
+                                break;
+                            }
+                        } else if (!sourceAvailableAtBranch(argument)) {
+                            valid_arms = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!valid_arms) continue;
+
+            std::vector<std::array<ValueId, 3>> phi_values;
+            for (const Instr* phi : phis) {
+                std::map<std::string, ValueId> incoming;
+                for (const auto& edge : phi->phi_incoming)
+                    incoming[edge.first] = edge.second;
+                if (incoming.size() != expected_predecessors.size()) {
+                    valid_arms = false;
+                    break;
+                }
+                std::array<ValueId, 3> selected = {-1, -1, -1};
+                for (std::size_t outcome = 0; outcome < outcomes.size();
+                     ++outcome) {
+                    const auto value = incoming.find(outcomes[outcome]);
+                    if (value == incoming.end() || value->second < 0) {
+                        valid_arms = false;
+                        break;
+                    }
+                    selected[outcome] = value->second;
+                    const auto source_type =
+                        defining_type.find(value->second);
+                    const auto arm_source =
+                        arm_definition_site.find(value->second);
+                    const bool source_is_valid =
+                        arm_source != arm_definition_site.end()
+                            ? arm_source->second.first == outcomes[outcome]
+                            : sourceAvailableAtBranch(value->second);
+                    if (source_type == defining_type.end() ||
+                        !sameType(source_type->second, phi->type) ||
+                        !source_is_valid) {
+                        valid_arms = false;
+                        break;
+                    }
+                }
+                if (!valid_arms || !isNumericLike(phi->type) ||
+                    usesWideT50Pair(phi->type)) {
+                    valid_arms = false;
+                    break;
+                }
+                phi_values.push_back(selected);
+            }
+            if (!valid_arms) continue;
+
+            const long long branch_cost =
+                TargetCostTable::branch3 + TargetCostTable::jump +
+                max_arm_cost;
+            const long long tsel_cost =
+                TargetCostTable::jump +
+                static_cast<long long>(phis.size()) *
+                    TargetCostTable::tsel + sum_arm_cost;
+            if (tsel_cost > branch_cost) continue;
+
+            const auto branch_index = cfg.index.at(branch_name);
+            BasicBlock& branch = fn.blocks[branch_index];
+            std::vector<Instr> moved;
+            for (const std::string& arm_name : arms) {
+                BasicBlock& arm = fn.blocks[cfg.index.at(arm_name)];
+                for (Instr& instr : arm.instructions)
+                    moved.push_back(std::move(instr));
+            }
+            branch.instructions.insert(
+                branch.instructions.end(),
+                std::make_move_iterator(moved.begin()),
+                std::make_move_iterator(moved.end()));
+            for (std::size_t index = 0; index < phis.size(); ++index) {
+                Instr tsel = *phis[index];
+                tsel.opcode = InstrOpcode::Tsel;
+                tsel.args = {
+                    branch_snapshot.terminator.condition,
+                    phi_values[index][0],
+                    phi_values[index][1],
+                    phi_values[index][2]};
+                tsel.phi_incoming.clear();
+                tsel.effect = Effect::Pure;
+                branch.instructions.push_back(std::move(tsel));
+            }
+            branch.terminator.kind = TerminatorKind::Jump;
+            branch.terminator.target = merge_name;
+            branch.terminator.condition = -1;
+
+            BasicBlock& merge = fn.blocks[cfg.index.at(merge_name)];
+            const auto first_non_phi = std::find_if(
+                merge.instructions.begin(), merge.instructions.end(),
+                [](const Instr& instr) {
+                    return instr.opcode != InstrOpcode::Phi;
+                });
+            merge.instructions.erase(merge.instructions.begin(),
+                                     first_non_phi);
+            fn.blocks.erase(
+                std::remove_if(
+                    fn.blocks.begin(), fn.blocks.end(),
+                    [&](const BasicBlock& block) {
+                        return std::find(arms.begin(), arms.end(),
+                                         block.name) != arms.end();
+                    }),
+                fn.blocks.end());
+            ++converted;
+            progress = true;
+            break;
+        }
+    }
+    return converted;
+}
+
 [[nodiscard]] inline OptimizerStats optimizeModule(
     Module& module,
     OptimizationLevel level,
@@ -6271,7 +6824,13 @@ inline int runLoopInvariantCodeMotion(Function& fn) {
             stats.mem2reg_promotions += promoted.promoted_allocas;
         }
         if (fn.cfg_complete) {
+            stats.induction_simplifications +=
+                runInductionSimplification(fn);
             stats.copy_props += runGlobalCopyPropagation(fn);
+            if (level == OptimizationLevel::Aggressive) {
+                stats.tsel_conversions +=
+                    runCostControlledTselConversion(fn);
+            }
         }
         if (fn.cfg_complete &&
             level == OptimizationLevel::Aggressive && options.enable_cse) {

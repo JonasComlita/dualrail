@@ -824,6 +824,332 @@ void optimizerStatsSpillsCoalesce(TestContext& ctx) {
               "allocator coalesces non-interfering moves");
 }
 
+void optimizerAdvancedDifferential(TestContext& ctx) {
+    const std::string branch_src = R"(
+        fn main() -> t40 {
+            let selector: t40 = 1;
+            var result: t40 = 0;
+            if selector > 0 {
+                result = 4;
+            } else {
+                result = 9;
+            }
+            return result;
+        }
+    )";
+    CompilerOptions o0_options;
+    o0_options.optimization = OptimizationLevel::None;
+    o0_options.allow_ast_replay = false;
+    CompileResult o0 = compileSource(
+        "next_optimizer_branch_o0.trit", branch_src, o0_options);
+    if (!expectCompileOk(ctx, o0,
+                         "branch O0 source compiles from SSA")) return;
+    CompilerOptions o1_options = o0_options;
+    o1_options.optimization = OptimizationLevel::Aggressive;
+    CompileResult o1 = compileSource(
+        "next_optimizer_branch_o1.trit", branch_src, o1_options);
+    if (!expectCompileOk(ctx, o1,
+                         "branch optimized source compiles from SSA")) return;
+    LinkResult o0_link = linkModules({o0.object});
+    LinkResult o1_link = linkModules({o1.object});
+    if (!expectLinkOk(ctx, o0_link, "branch O0 links") ||
+        !expectLinkOk(ctx, o1_link, "branch optimized links")) return;
+    sandbox::vm::VMState o0_vm(256, 256);
+    sandbox::vm::VMState o1_vm(256, 256);
+    const bool o0_ran = loadAndRun(ctx, o0_vm, o0_link, 512,
+                                   "branch O0 runtime");
+    const bool o1_ran = loadAndRun(ctx, o1_vm, o1_link, 512,
+                                   "branch optimized runtime");
+    if (o0_ran && o1_ran) {
+        ctx.equal(regLong(o0_vm, 13), 4LL,
+                  "branch O0 selects the positive arm");
+        ctx.equal(regLong(o1_vm, 13), regLong(o0_vm, 13),
+                  "branch O0 and optimized results agree");
+    }
+
+    Module tsel;
+    tsel.name = "tsel_diamond";
+    Function tsel_fn;
+    tsel_fn.name = "tsel_diamond";
+    BasicBlock tsel_entry;
+    tsel_entry.name = "entry";
+    tsel_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Const, TypeRef::trit(), {}, 1});
+    tsel_entry.terminator.kind = TerminatorKind::Branch3;
+    tsel_entry.terminator.condition = 1;
+    tsel_entry.terminator.target_neg = "neg";
+    tsel_entry.terminator.target_zero = "zero";
+    tsel_entry.terminator.target_pos = "pos";
+    BasicBlock tsel_neg;
+    tsel_neg.name = "neg";
+    tsel_neg.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, -1});
+    tsel_neg.terminator.kind = TerminatorKind::Jump;
+    tsel_neg.terminator.target = "merge";
+    BasicBlock tsel_zero;
+    tsel_zero.name = "zero";
+    tsel_zero.instructions.push_back(
+        Instr{3, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 0});
+    tsel_zero.terminator.kind = TerminatorKind::Jump;
+    tsel_zero.terminator.target = "merge";
+    BasicBlock tsel_pos;
+    tsel_pos.name = "pos";
+    tsel_pos.instructions.push_back(
+        Instr{4, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 1});
+    tsel_pos.terminator.kind = TerminatorKind::Jump;
+    tsel_pos.terminator.target = "merge";
+    BasicBlock tsel_merge;
+    tsel_merge.name = "merge";
+    Instr tsel_phi;
+    tsel_phi.def = 5;
+    tsel_phi.opcode = InstrOpcode::Phi;
+    tsel_phi.type = TypeRef::numeric(sandbox::ir::Type::T40);
+    tsel_phi.phi_incoming = {{"neg", 2}, {"zero", 3}, {"pos", 4}};
+    tsel_merge.instructions.push_back(tsel_phi);
+    tsel_merge.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T40), {5}});
+    tsel_merge.terminator.kind = TerminatorKind::Return;
+    tsel_fn.blocks = {tsel_entry, tsel_neg, tsel_zero, tsel_pos, tsel_merge};
+    tsel.functions.push_back(tsel_fn);
+    const OptimizerStats tsel_stats =
+        optimizeModule(tsel, OptimizationLevel::Aggressive, o1_options);
+    ctx.check(tsel_stats.tsel_conversions == 1,
+              "cost table selects a three-way pure TSEL conversion");
+    ctx.check(verifyModule(tsel).empty(),
+              "converted TSEL diamond passes SSA verification");
+    ctx.check(std::any_of(
+                  tsel.functions[0].blocks.front().instructions.begin(),
+                  tsel.functions[0].blocks.front().instructions.end(),
+                  [](const Instr& instr) {
+                      return instr.opcode == InstrOpcode::Tsel;
+                  }),
+              "converted diamond contains a target TSEL");
+
+    Module redundant_iv;
+    redundant_iv.name = "redundant_iv";
+    Function redundant_iv_fn;
+    redundant_iv_fn.name = "redundant_iv";
+    redundant_iv_fn.return_type =
+        TypeRef::numeric(sandbox::ir::Type::T40);
+    BasicBlock redundant_entry;
+    redundant_entry.name = "entry";
+    redundant_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 0});
+    redundant_entry.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 1});
+    redundant_entry.terminator.kind = TerminatorKind::Jump;
+    redundant_entry.terminator.target = "header";
+    BasicBlock redundant_header;
+    redundant_header.name = "header";
+    Instr iv_a;
+    iv_a.def = 3;
+    iv_a.opcode = InstrOpcode::Phi;
+    iv_a.type = TypeRef::numeric(sandbox::ir::Type::T40);
+    iv_a.phi_incoming = {{"entry", 1}, {"body", 6}};
+    redundant_header.instructions.push_back(iv_a);
+    Instr iv_b = iv_a;
+    iv_b.def = 4;
+    iv_b.phi_incoming = {{"entry", 1}, {"body", 7}};
+    redundant_header.instructions.push_back(iv_b);
+    redundant_header.instructions.push_back(
+        Instr{5, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T1), {}, -1});
+    redundant_header.terminator.kind = TerminatorKind::Branch3;
+    redundant_header.terminator.condition = 5;
+    redundant_header.terminator.target_neg = "exit";
+    redundant_header.terminator.target_zero = "exit";
+    redundant_header.terminator.target_pos = "body";
+    BasicBlock redundant_body;
+    redundant_body.name = "body";
+    redundant_body.instructions.push_back(
+        Instr{6, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {3, 2}});
+    redundant_body.instructions.push_back(
+        Instr{7, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {4, 2}});
+    redundant_body.terminator.kind = TerminatorKind::Jump;
+    redundant_body.terminator.target = "header";
+    BasicBlock redundant_exit;
+    redundant_exit.name = "exit";
+    Instr redundant_ret;
+    redundant_ret.opcode = InstrOpcode::Ret;
+    redundant_ret.type = TypeRef::numeric(sandbox::ir::Type::T40);
+    redundant_ret.args = {3};
+    redundant_ret.effect = Effect::Control;
+    redundant_exit.instructions.push_back(redundant_ret);
+    redundant_exit.terminator.kind = TerminatorKind::Return;
+    redundant_iv_fn.blocks = {
+        redundant_entry, redundant_header, redundant_body, redundant_exit};
+    redundant_iv.functions.push_back(redundant_iv_fn);
+    const OptimizerStats redundant_stats = optimizeModule(
+        redundant_iv, OptimizationLevel::Aggressive, o1_options);
+    ctx.check(redundant_stats.induction_simplifications >= 1,
+              "optimizer eliminates an equivalent nonzero-step induction variable");
+    ctx.check(verifyModule(redundant_iv).empty(),
+              "redundant-IV rewrite passes SSA verification");
+    bool redundant_phi_survived = false;
+    for (const Instr& instr : redundant_iv.functions[0].blocks[1].instructions)
+        redundant_phi_survived = redundant_phi_survived || instr.def == 4;
+    ctx.check(!redundant_phi_survived,
+              "redundant induction phi is removed after canonicalization");
+
+    const std::string equivalent_iv_src = R"(
+        fn main() -> t40 {
+            var i: t40 = 0;
+            var j: t40 = 0;
+            while 5 - i > 0 {
+                i = i + 1;
+                j = j + 1;
+            }
+            return i * 10 + j;
+        }
+    )";
+    CompileResult equivalent_iv_o0 = compileSource(
+        "next_optimizer_equivalent_iv_o0.trit", equivalent_iv_src,
+        o0_options);
+    CompileResult equivalent_iv_o1 = compileSource(
+        "next_optimizer_equivalent_iv_o1.trit", equivalent_iv_src,
+        o1_options);
+    if (!expectCompileOk(ctx, equivalent_iv_o0,
+                         "equivalent-IV O0 source compiles") ||
+        !expectCompileOk(ctx, equivalent_iv_o1,
+                         "equivalent-IV optimized source compiles")) return;
+    ctx.check(equivalent_iv_o1.optimizer_stats.induction_simplifications >= 1,
+              "optimized source removes a redundant nonzero-step IV");
+    LinkResult equivalent_iv_o0_link = linkModules({equivalent_iv_o0.object});
+    LinkResult equivalent_iv_o1_link = linkModules({equivalent_iv_o1.object});
+    if (!expectLinkOk(ctx, equivalent_iv_o0_link,
+                      "equivalent-IV O0 links") ||
+        !expectLinkOk(ctx, equivalent_iv_o1_link,
+                      "equivalent-IV optimized links")) return;
+    sandbox::vm::VMState equivalent_iv_o0_vm(256, 256);
+    sandbox::vm::VMState equivalent_iv_o1_vm(256, 256);
+    const bool equivalent_iv_o0_ran = loadAndRun(
+        ctx, equivalent_iv_o0_vm, equivalent_iv_o0_link, 4096,
+        "equivalent-IV O0 runtime");
+    const bool equivalent_iv_o1_ran = loadAndRun(
+        ctx, equivalent_iv_o1_vm, equivalent_iv_o1_link, 4096,
+        "equivalent-IV optimized runtime");
+    if (equivalent_iv_o0_ran && equivalent_iv_o1_ran) {
+        ctx.equal(regLong(equivalent_iv_o0_vm, 13), 55LL,
+                  "equivalent-IV O0 loop executes five backedges");
+        ctx.equal(regLong(equivalent_iv_o1_vm, 13),
+                  regLong(equivalent_iv_o0_vm, 13),
+                  "equivalent-IV O0 and optimized results agree");
+    }
+
+    const std::string induction_src = R"(
+        fn main() -> t40 {
+            var i: t40 = 0;
+            while i > 0 {
+                i = i + 0;
+            }
+            return i;
+        }
+    )";
+    CompileResult induction_o0 = compileSource(
+        "next_optimizer_induction_o0.trit", induction_src, o0_options);
+    CompileResult induction_o1 = compileSource(
+        "next_optimizer_induction_o1.trit", induction_src, o1_options);
+    if (!expectCompileOk(ctx, induction_o0,
+                         "induction O0 source compiles") ||
+        !expectCompileOk(ctx, induction_o1,
+                         "induction optimized source compiles")) return;
+    ctx.check(induction_o1.optimizer_stats.induction_simplifications >= 1,
+              "optimizer simplifies a redundant zero-step induction variable");
+    LinkResult induction_o0_link = linkModules({induction_o0.object});
+    LinkResult induction_o1_link = linkModules({induction_o1.object});
+    if (!expectLinkOk(ctx, induction_o0_link, "induction O0 links") ||
+        !expectLinkOk(ctx, induction_o1_link,
+                      "induction optimized links")) return;
+    sandbox::vm::VMState induction_o0_vm(256, 256);
+    sandbox::vm::VMState induction_o1_vm(256, 256);
+    const bool induction_o0_ran = loadAndRun(
+        ctx, induction_o0_vm, induction_o0_link, 512,
+        "induction O0 runtime");
+    const bool induction_o1_ran = loadAndRun(
+        ctx, induction_o1_vm, induction_o1_link, 512,
+        "induction optimized runtime");
+    if (induction_o0_ran && induction_o1_ran) {
+        ctx.equal(regLong(induction_o1_vm, 13), 0LL,
+                  "zero-step induction loop preserves its initial value");
+        ctx.equal(regLong(induction_o1_vm, 13),
+                  regLong(induction_o0_vm, 13),
+                  "induction O0 and optimized results agree");
+    }
+
+    Module call_live;
+    call_live.name = "call_live";
+    Function call_live_fn;
+    call_live_fn.name = "call_live";
+    BasicBlock call_live_block;
+    call_live_block.name = "entry";
+    call_live_block.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 7});
+    Instr call;
+    call.opcode = InstrOpcode::Call;
+    call.symbol = "sink";
+    call.effect = Effect::Control;
+    call_live_block.instructions.push_back(call);
+    call_live_block.instructions.push_back(
+        Instr{2, InstrOpcode::Copy,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1}});
+    call_live_block.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T40), {2}});
+    call_live_block.terminator.kind = TerminatorKind::Return;
+    call_live_fn.blocks.push_back(call_live_block);
+    call_live.functions.push_back(call_live_fn);
+    AllocationResult call_live_allocation = allocateRegisters(call_live);
+    ctx.check(call_live_allocation.success,
+              "allocator colors values live across a call");
+    ctx.check(call_live_allocation.scalar_registers.count(1) != 0,
+              "call-live value receives a physical register");
+    if (call_live_allocation.scalar_registers.count(1)) {
+        const int reg = call_live_allocation.scalar_registers.at(1);
+        ctx.check(reg >= 1 && reg <= 12,
+                  "call-live scalar uses a callee-saved register");
+        ctx.check(!call_live_allocation.caller_saved_live_across_calls.count(reg),
+                  "call-live scalar is not reported caller-saved");
+    }
+
+    Module wide;
+    wide.name = "wide_pair";
+    Function wide_fn;
+    wide_fn.name = "wide_pair";
+    BasicBlock wide_block;
+    wide_block.name = "entry";
+    wide_block.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T50), {}, 7});
+    wide_block.instructions.push_back(call);
+    wide_block.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T50), {1}});
+    wide_block.terminator.kind = TerminatorKind::Return;
+    wide_fn.blocks.push_back(wide_block);
+    wide.functions.push_back(wide_fn);
+    AllocationResult wide_allocation = allocateRegisters(wide);
+    ctx.check(wide_allocation.success,
+              "allocator colors T50 values live across a call");
+    ctx.check(wide_allocation.scalar_registers.count(1) != 0,
+              "T50 call-live value receives a physical register");
+    if (wide_allocation.scalar_registers.count(1)) {
+        const int reg = wide_allocation.scalar_registers.at(1);
+        ctx.check(reg >= 1 && reg <= 11 && reg + 1 <= 12,
+                  "T50 call-live value receives an adjacent callee pair");
+    }
+    ctx.check(verifyModule(call_live).empty() && verifyModule(wide).empty(),
+              "allocator call-live and T50 fixtures pass SSA verification");
+}
+
 void concurrencyAtomicRuntime(TestContext& ctx) {
     {
         const std::string src = R"(
@@ -1155,6 +1481,8 @@ int main() {
          "compiler.pipeline_contract", ownershipMoveAutodrop},
         {"compiler.optimizer.stats_spills_coalesce",
          "compiler.pipeline_contract", optimizerStatsSpillsCoalesce},
+        {"compiler.optimizer.advanced_differential",
+         "compiler.pipeline_contract", optimizerAdvancedDifferential},
         {"compiler.concurrency.atomic_order_runtime",
          "compiler.pipeline_contract", concurrencyAtomicRuntime},
         {"compiler.codegen.register_allocation_runtime",
