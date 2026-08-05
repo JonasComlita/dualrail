@@ -65,8 +65,8 @@ void testCompileAndRunMatchProgram() {
     expect(compiled.ssa_module.functions.size() == 1, "compile result includes SSA function");
     expect(compiled.object.metadata.at("object.ssa_is_optimized") == "true",
            "object publishes optimized SSA as its code-generation source");
-    expect(!contains(compiled.assembly, "tsel"),
-           "constant pure match folds beyond TSEL during IR emission");
+    expect(contains(compiled.assembly, "tsel"),
+           "constant pure match retains branch-free TSEL lowering");
     expect(compiled.optimizer_stats.constant_folds > 0,
            "constant pure match is folded by the SSA optimizer");
     expect(!contains(compiled.assembly, "brn"), "pure match avoids negative branch");
@@ -164,8 +164,8 @@ void testRuntimeSyscallWrapperAndTupleSwap() {
     expect(compiled.object.metadata.at(
                "target.ast_replay_functions") == "0",
            "tuple swap and runtime wrappers emit solely from optimized IR");
-    expect(!contains(compiled.assembly, "swap"),
-           "SSA value renaming eliminates a redundant physical SWAP");
+    expect(contains(compiled.assembly, "swap"),
+           "tuple swap lowers through the SSA Swap memory operation");
     expect(contains(compiled.assembly, "syscall 1"), "sys_write_int wrapper emits syscall 1");
     expect(contains(compiled.assembly, "copy r13"), "syscall wrapper uses r13 ABI");
 

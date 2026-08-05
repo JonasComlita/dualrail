@@ -119,6 +119,21 @@ void pureMatchTselLowering(TestContext& ctx) {
     ctx.equal(static_cast<int>(compiled.ssa_module.functions.size()), 1,
               "compile result includes one SSA function");
     ctx.check(compiled.allocation.success, "register allocation succeeds");
+    ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "pure match target section is emitted from optimized SSA");
+    ctx.check(std::any_of(
+                  compiled.optimized_module.functions.front().blocks.begin(),
+                  compiled.optimized_module.functions.front().blocks.end(),
+                  [](const BasicBlock& block) {
+                      return std::any_of(
+                          block.instructions.begin(),
+                          block.instructions.end(),
+                          [](const Instr& instr) {
+                              return instr.opcode == InstrOpcode::Tsel;
+                          });
+                  }),
+              "optimized SSA retains the TSEL operation");
     ctx.contains(compiled.assembly, "tsel",
                  "pure match return lowers to TSEL");
     ctx.check(!contains(compiled.assembly, "brn"),
@@ -139,10 +154,35 @@ void pureMatchTselLowering(TestContext& ctx) {
               "linker reports exact text pages");
 
     sandbox::vm::VMState vm(256, 256);
-    if (loadAndRun(ctx, vm, linked, 256, "pure match")) {
+    const bool optimized_ran =
+        loadAndRun(ctx, vm, linked, 256, "pure match");
+    if (optimized_ran) {
         ctx.equal(regLong(vm, 13), 7LL, "main return value reaches r13");
         ctx.equal(vm.branch_instructions_count, 0LL,
                   "pure match executes without conditional branches");
+    }
+
+    CompilerOptions unoptimized_options;
+    unoptimized_options.optimization = OptimizationLevel::None;
+    CompileResult unoptimized = compileSource(
+        "next_match_pure_o0.trit", src, unoptimized_options);
+    if (expectCompileOk(ctx, unoptimized,
+                        "pure match O0 source compiles")) {
+        LinkResult unoptimized_link = linkModules({unoptimized.object});
+        if (expectLinkOk(ctx, unoptimized_link,
+                         "pure match O0 executable links")) {
+            sandbox::vm::VMState unoptimized_vm(256, 256);
+            const bool unoptimized_ran =
+                loadAndRun(ctx, unoptimized_vm, unoptimized_link, 256,
+                           "pure match O0");
+            if (optimized_ran && unoptimized_ran) {
+                ctx.equal(regLong(unoptimized_vm, 13), regLong(vm, 13),
+                          "optimized and O0 pure match results agree");
+                ctx.equal(unoptimized_vm.branch_instructions_count,
+                          vm.branch_instructions_count,
+                          "optimized and O0 pure match branch counts agree");
+            }
+        }
     }
 }
 
@@ -172,6 +212,9 @@ void sideEffectMatchBranchLowering(TestContext& ctx) {
                          "side-effectful match source compiles")) {
         return;
     }
+    ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "side-effectful match target section is emitted from optimized SSA");
     ctx.contains(compiled.assembly, "brn",
                  "side-effectful match emits negative branch");
     ctx.contains(compiled.assembly, "brz",
@@ -185,13 +228,37 @@ void sideEffectMatchBranchLowering(TestContext& ctx) {
         return;
     }
     sandbox::vm::VMState vm(256, 256);
-    if (loadAndRun(ctx, vm, linked, 256, "side-effectful match")) {
+    const bool optimized_ran =
+        loadAndRun(ctx, vm, linked, 256, "side-effectful match");
+    if (optimized_ran) {
         ctx.equal(regLong(vm, 13), 0LL,
                   "selected match arm return value reaches r13");
         ctx.equal(vm.syscall_buffer, std::string("0"),
                   "only selected arm performs its side effect");
         ctx.check(vm.branch_instructions_count > 0,
                   "side-effectful match executes conditional branches");
+    }
+
+    CompilerOptions unoptimized_options;
+    unoptimized_options.optimization = OptimizationLevel::None;
+    CompileResult unoptimized = compileSource(
+        "next_match_side_effects_o0.trit", src, unoptimized_options);
+    if (expectCompileOk(ctx, unoptimized,
+                        "side-effectful match O0 source compiles")) {
+        LinkResult unoptimized_link = linkModules({unoptimized.object});
+        if (expectLinkOk(ctx, unoptimized_link,
+                         "side-effectful match O0 executable links")) {
+            sandbox::vm::VMState unoptimized_vm(256, 256);
+            const bool unoptimized_ran =
+                loadAndRun(ctx, unoptimized_vm, unoptimized_link, 256,
+                           "side-effectful match O0");
+            if (optimized_ran && unoptimized_ran) {
+                ctx.equal(regLong(unoptimized_vm, 13), regLong(vm, 13),
+                          "optimized and O0 side-effectful match results agree");
+                ctx.equal(unoptimized_vm.syscall_buffer, vm.syscall_buffer,
+                          "optimized and O0 side-effectful match effects agree");
+            }
+        }
     }
 }
 
@@ -209,6 +276,23 @@ void runtimeTupleSwapSyscallRuntime(TestContext& ctx) {
 
     CompileResult compiled = compileSource("next_runtime_swap.trit", src);
     if (!expectCompileOk(ctx, compiled, "runtime source compiles")) return;
+    ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "tuple swap target section is emitted from optimized SSA");
+    ctx.check(std::any_of(
+                  compiled.optimized_module.functions.front().blocks.begin(),
+                  compiled.optimized_module.functions.front().blocks.end(),
+                  [](const BasicBlock& block) {
+                      return std::any_of(
+                          block.instructions.begin(),
+                          block.instructions.end(),
+                          [](const Instr& instr) {
+                              return instr.opcode == InstrOpcode::Swap &&
+                                  instr.args.size() == 2 &&
+                                  instr.def < 0;
+                          });
+                  }),
+              "optimized SSA retains Swap as an address-based memory operation");
     ctx.contains(compiled.assembly, "swap", "tuple swap lowers to SWAP");
     ctx.contains(compiled.assembly, "syscall 1",
                  "sys_write_int wrapper emits syscall 1");
@@ -218,10 +302,34 @@ void runtimeTupleSwapSyscallRuntime(TestContext& ctx) {
     LinkResult linked = linkModules({compiled.object});
     if (!expectLinkOk(ctx, linked, "runtime executable links")) return;
     sandbox::vm::VMState vm(256, 256);
-    if (loadAndRun(ctx, vm, linked, 256, "runtime wrapper")) {
+    const bool optimized_ran =
+        loadAndRun(ctx, vm, linked, 256, "runtime wrapper");
+    if (optimized_ran) {
         ctx.equal(vm.syscall_buffer, std::string("22\n"),
                   "console oracle observes write/newline");
         ctx.equal(regLong(vm, 13), 11LL, "tuple swap changes returned value");
+    }
+
+    CompilerOptions unoptimized_options;
+    unoptimized_options.optimization = OptimizationLevel::None;
+    CompileResult unoptimized = compileSource(
+        "next_runtime_swap_o0.trit", src, unoptimized_options);
+    if (expectCompileOk(ctx, unoptimized,
+                        "runtime O0 source compiles")) {
+        LinkResult unoptimized_link = linkModules({unoptimized.object});
+        if (expectLinkOk(ctx, unoptimized_link,
+                         "runtime O0 executable links")) {
+            sandbox::vm::VMState unoptimized_vm(256, 256);
+            const bool unoptimized_ran =
+                loadAndRun(ctx, unoptimized_vm, unoptimized_link, 256,
+                           "runtime wrapper O0");
+            if (optimized_ran && unoptimized_ran) {
+                ctx.equal(regLong(unoptimized_vm, 13), regLong(vm, 13),
+                          "optimized and O0 tuple swap results agree");
+                ctx.equal(unoptimized_vm.syscall_buffer, vm.syscall_buffer,
+                          "optimized and O0 tuple swap effects agree");
+            }
+        }
     }
 }
 

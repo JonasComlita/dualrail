@@ -17,13 +17,14 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Complete the IR-first compiler transition for the remaining unsupported
   cases: optimized SSA now drives promoted and address-taken local frame
   memory (including loop-carried accesses), small scalar external-memory
-  regions beside calls, calls with outgoing stack arguments, and the allocator reserves the
-  frame-address scratch register across spill rewrites. Aggregate/vector
-  values and several complex kernel control/data-flow regions still need
-  memory-SSA aliasing, aggregate lowering, and call-clobber proofs. A
-  fail-closed `--strict-ssa` mode rejects unsupported target lowering; the
-  default transition build still permits the explicitly reported replay set
-  until those functions are lowered.
+  regions beside calls, calls with outgoing stack arguments, branch-preserving
+  side-effectful matches, branch-free `TSEL` matches, scalar tuple swaps, and
+  the allocator reserves target scratch registers across spill rewrites.
+  Aggregate/vector values and several complex kernel control/data-flow regions
+  still need memory-SSA aliasing, aggregate lowering, and call-clobber proofs.
+  A fail-closed `--strict-ssa` mode rejects unsupported target lowering; the
+  default transition build still permits only the explicitly reported replay
+  set until those functions are lowered.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

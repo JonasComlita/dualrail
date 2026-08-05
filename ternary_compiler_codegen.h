@@ -1406,6 +1406,7 @@ private:
                     case InstrOpcode::Csrr:
                     case InstrOpcode::Csrw:
                     case InstrOpcode::Csrrw:
+                    case InstrOpcode::Swap:
                     case InstrOpcode::Ret:
                     case InstrOpcode::Nop:
                         break;
@@ -1462,9 +1463,18 @@ private:
                     [&](const Instr& instr) {
                         return (instr.opcode == InstrOpcode::Load ||
                                 instr.opcode == InstrOpcode::Store ||
-                                instr.opcode == InstrOpcode::Deref) &&
+                                instr.opcode == InstrOpcode::Deref ||
+                                instr.opcode == InstrOpcode::Swap) &&
                                !instr.args.empty() &&
-                               !stack_addresses.count(instr.args[0]);
+                               (instr.opcode == InstrOpcode::Swap
+                                    ? std::any_of(
+                                          instr.args.begin(),
+                                          instr.args.end(),
+                                          [&](ValueId address) {
+                                              return !stack_addresses.count(
+                                                  address);
+                                          })
+                                    : !stack_addresses.count(instr.args[0]));
                     });
             });
         int external_memory_ops = 0;
@@ -1472,9 +1482,17 @@ private:
             for (const Instr& instr : block.instructions) {
                 if ((instr.opcode == InstrOpcode::Load ||
                      instr.opcode == InstrOpcode::Store ||
-                     instr.opcode == InstrOpcode::Deref) &&
+                     instr.opcode == InstrOpcode::Deref ||
+                     instr.opcode == InstrOpcode::Swap) &&
                     !instr.args.empty() &&
-                    !stack_addresses.count(instr.args[0])) {
+                    (instr.opcode == InstrOpcode::Swap
+                         ? std::any_of(
+                               instr.args.begin(),
+                               instr.args.end(),
+                               [&](ValueId address) {
+                                   return !stack_addresses.count(address);
+                               })
+                         : !stack_addresses.count(instr.args[0]))) {
                     ++external_memory_ops;
                 }
             }
@@ -1999,6 +2017,57 @@ private:
                         << " " << regName(source)
                         << ", " << regName(address)
                         << ", " << instr.aux << "\n";
+                    break;
+                }
+                case InstrOpcode::Swap: {
+                    const bool scalar_type =
+                        instr.type.kind == TypeKind::Numeric ||
+                        instr.type.kind == TypeKind::Lane ||
+                        instr.type.kind == TypeKind::Trit;
+                    if (instr.args.size() != 2 || !scalar_type ||
+                        usesWideT50Pair(instr.type)) {
+                        return false;
+                    }
+                    auto emitSwapMemory = [&](const char* operation,
+                                              ValueId address,
+                                              int value_register) {
+                        const auto frame = frame_offsets.find(address);
+                        if (frame != frame_offsets.end()) {
+                            out << "    "
+                                << scalarMemoryMnemonic(
+                                       operation, instr.type)
+                                << " r" << value_register
+                                << ", sp, " << frame->second
+                                << "\n";
+                            return true;
+                        }
+                        int address_register = -1;
+                        if (!registerFor(address, address_register) ||
+                            address_register == 13 ||
+                            address_register == 14) {
+                            return false;
+                        }
+                        out << "    "
+                            << scalarMemoryMnemonic(
+                                   operation, instr.type)
+                            << " r" << value_register
+                            << ", " << regName(address_register)
+                            << ", 0\n";
+                        return true;
+                    };
+                    if (!emitSwapMemory(
+                            "load", instr.args[0], 13) ||
+                        !emitSwapMemory(
+                            "load", instr.args[1], 14)) {
+                        return false;
+                    }
+                    out << "    swap r13, r14\n";
+                    if (!emitSwapMemory(
+                            "store", instr.args[0], 13) ||
+                        !emitSwapMemory(
+                            "store", instr.args[1], 14)) {
+                        return false;
+                    }
                     break;
                 }
                 case InstrOpcode::SpillLoad:
@@ -3435,6 +3504,21 @@ private:
         }
         if (!sameType(a->second.type, b->second.type)) {
             diag("tuple swap requires matching local types", stmt.span);
+        }
+        if (ctx.dry_run) {
+            // Tuple swap is a memory operation in SSA: its operands are the
+            // two address values, and target lowering owns the temporary
+            // registers and architectural SWAP instruction. Keeping the
+            // operation as one ordered IR node avoids replaying the AST or
+            // pretending that a two-cell update is a single SSA result.
+            Instr swap;
+            swap.opcode = InstrOpcode::Swap;
+            swap.type = a->second.type;
+            swap.args = {a->second.ir_address, b->second.ir_address};
+            swap.effect = Effect::WriteMem;
+            swap.span = stmt.span;
+            if (ctx.block) ctx.block->instructions.push_back(std::move(swap));
+            return;
         }
         int ra = ctx.acquire();
         int rb = ctx.acquire();
@@ -4909,6 +4993,36 @@ private:
     }
 }
 
+// Constant branch folding is only valid when eliminating the other arms
+// cannot erase an observable operation. A side effect may be in a successor
+// several blocks away, so walk each arm's reachable region before replacing
+// a Branch3 with a Jump.
+[[nodiscard]] inline bool branchRegionHasObservableEffects(
+    const Function& function,
+    const ControlFlowGraph& cfg,
+    const BasicBlock& block) {
+    std::vector<std::string> work = {
+        block.terminator.target_neg,
+        block.terminator.target_zero,
+        block.terminator.target_pos};
+    std::set<std::string> visited;
+    while (!work.empty()) {
+        const std::string current = work.back();
+        work.pop_back();
+        if (current.empty() || !visited.insert(current).second) continue;
+        const auto index = cfg.index.find(current);
+        if (index == cfg.index.end()) continue;
+        const BasicBlock& successor =
+            function.blocks[static_cast<std::size_t>(index->second)];
+        for (const Instr& instr : successor.instructions) {
+            if (instr.effect != Effect::Pure) return true;
+        }
+        for (const std::string& next : cfg.successors.at(current))
+            work.push_back(next);
+    }
+    return false;
+}
+
 inline void addInterferenceEdge(
     std::map<ValueId, std::set<ValueId>>& graph,
     ValueId a,
@@ -4934,8 +5048,11 @@ inline void addInterferenceEdge(
     // addresses and adjusts the stack pointer. Keep it out of every
     // allocator palette, including spill-rewrite temporaries, so frame
     // memory lowering cannot clobber a live SSA value.
+    // r13/r14 are reserved by direct SSA tuple-swap lowering as its two
+    // memory temporaries. They remain available for the ABI at calls and
+    // syscalls, but no allocated SSA value may be live in them at a Swap.
     const std::vector<int> spillTemporaryColors =
-        {13, 14, 15, 16, 17, 18};
+        {15, 16, 17, 18};
 
     std::map<ValueId, TypeRef> valueTypes;
     std::map<ValueId, std::set<ValueId>> graph;
@@ -5675,16 +5792,12 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
         }
         const LatticeValue lhs = argument(0);
         const LatticeValue rhs = argument(1);
-        if (instr.opcode == InstrOpcode::Tsel && instr.args.size() == 4) {
-            const LatticeValue condition = argument(0);
-            if (condition.kind != LatticeKind::Constant)
-                return condition.kind == LatticeKind::Overdefined
-                    ? LatticeValue{LatticeKind::Overdefined, 0}
-                    : LatticeValue{};
-            const std::size_t selected = condition.value < 0 ? 1 :
-                condition.value > 0 ? 3 : 2;
-            return stateOf(instr.args[selected]);
-        }
+        if (instr.opcode == InstrOpcode::Tsel)
+            // TSEL is an intentional v2 target operation. Preserve it in
+            // optimized SSA even when all four operands are currently
+            // constant so branch-free match lowering remains observable and
+            // target emission does not regress to a replay path.
+            return LatticeValue{LatticeKind::Overdefined, 0};
         if (lhs.kind != LatticeKind::Constant ||
             rhs.kind != LatticeKind::Constant) {
             return lhs.kind == LatticeKind::Overdefined ||
@@ -5770,7 +5883,9 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
                 break;
             case TerminatorKind::Branch3: {
                 const LatticeValue condition = stateOf(block.terminator.condition);
-                if (condition.kind == LatticeKind::Constant) {
+                if (condition.kind == LatticeKind::Constant &&
+                    !branchRegionHasObservableEffects(
+                        fn, cfg, block)) {
                     markExecutable(condition.value < 0
                         ? block.terminator.target_neg
                         : condition.value > 0
@@ -5807,7 +5922,8 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
         }
         if (block.terminator.kind == TerminatorKind::Branch3) {
             const LatticeValue condition = stateOf(block.terminator.condition);
-            if (condition.kind == LatticeKind::Constant) {
+            if (condition.kind == LatticeKind::Constant &&
+                !branchRegionHasObservableEffects(fn, cfg, block)) {
                 block.terminator.kind = TerminatorKind::Jump;
                 block.terminator.target = condition.value < 0
                     ? block.terminator.target_neg
@@ -6188,7 +6304,8 @@ inline int runLoopInvariantCodeMotion(Function& fn) {
                 if (instr.opcode == InstrOpcode::Swap) ++stats.swaps;
             }
             if (block.terminator.kind == TerminatorKind::Branch3 &&
-                finalConstants.count(block.terminator.condition)) {
+                finalConstants.count(block.terminator.condition) &&
+                !branchRegionHasObservableEffects(fn, cfg, block)) {
                 const long long value = finalConstants[block.terminator.condition];
                 block.terminator.kind = TerminatorKind::Jump;
                 block.terminator.target = value < 0 ? block.terminator.target_neg :

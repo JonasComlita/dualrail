@@ -59,6 +59,10 @@ enum class InstrOpcode : uint8_t {
     Call,
     CallR,
     Ret,
+    // Exchange the scalar values stored at two address operands. The
+    // operation has no SSA result; its observable result is the two memory
+    // updates, and target lowering may use the architectural SWAP instruction
+    // for the temporary registers.
     Swap,
     Nop,
 };

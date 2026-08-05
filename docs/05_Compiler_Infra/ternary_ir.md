@@ -68,7 +68,7 @@ struct Instr {
 | `Call` | Direct function call |
 | `CallR` | Indirect function call |
 | `Ret` | Return from function |
-| `Swap` | Swap two values |
+| `Swap` | Ordered swap of two scalar memory cells; address operands are lowered through the v2 `SWAP` instruction |
 | `Nop` | No operation |
 
 ### `Effect` (Side-effect classification)
