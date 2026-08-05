@@ -4409,7 +4409,8 @@ def _load_checkpoint_metadata(path: Path) -> list[str]:
         metadata = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return [f"{path}: invalid checkpoint metadata: {exc}"]
-    if not isinstance(metadata, dict) or metadata.get("schema") != "trit.runtime_checkpoint.v1":
+    if not isinstance(metadata, dict) or metadata.get("schema") not in (
+            "trit.runtime_checkpoint.v1", "trit.runtime_checkpoint.v2"):
         return [f"{path}: unsupported or missing checkpoint schema"]
     if not isinstance(metadata.get("available"), bool):
         return [f"{path}: available must be boolean"]
@@ -4420,6 +4421,20 @@ def _load_checkpoint_metadata(path: Path) -> list[str]:
         value = metadata.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             issues.append(f"{path}: {name} must be a non-negative integer")
+    if metadata.get("schema") == "trit.runtime_checkpoint.v2":
+        for field in ("state_file", "disk_file", "journal_file", "boot_image"):
+            value = metadata.get(field)
+            if not isinstance(value, str) or not value:
+                issues.append(f"{path}: {field} must be a non-empty relative path")
+                continue
+            target = (path.parent / value).resolve()
+            try:
+                target.relative_to(path.parent.resolve())
+            except ValueError:
+                issues.append(f"{path}: {field} escapes the checkpoint bundle")
+                continue
+            if not target.is_file():
+                issues.append(f"{target}: checkpoint bundle file is missing")
     return issues
 
 
@@ -4481,6 +4496,44 @@ def cmd_replay(args: argparse.Namespace) -> int:
         summary["artifacts"] = artifact_summary
     if comparison is not None:
         summary["comparison"] = comparison
+    if args.execute:
+        if not requested.is_dir():
+            issues.append("--execute requires a checkpoint bundle directory")
+        elif issues:
+            # Do not execute a bundle that already failed structural validation.
+            pass
+        else:
+            executable = find_executable(default_build_dir(args.build_dir),
+                                          "trit_checkpoint_replay")
+            if executable is None:
+                issues.append("trit_checkpoint_replay is not built; build the helper first")
+            else:
+                command = [str(executable), str(requested),
+                           "--steps", str(args.steps), "--json"]
+                if args.require_halt:
+                    command.append("--require-halt")
+                completed = subprocess.run(
+                    command,
+                    cwd=REPO_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                try:
+                    execution = json.loads(completed.stdout)
+                except json.JSONDecodeError:
+                    execution = {
+                        "ok": False,
+                        "returncode": completed.returncode,
+                        "stdout": completed.stdout,
+                        "stderr": completed.stderr,
+                    }
+                summary["execution"] = execution
+                if completed.returncode != 0 or not execution.get("ok", False):
+                    issues.append("checkpoint replay execution failed")
+                elif completed.stderr:
+                    summary["execution_stderr"] = completed.stderr
+    summary["valid"] = not issues
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
@@ -4610,6 +4663,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="compare this trace with a second capture event-by-event",
     )
+    replay.add_argument(
+        "--execute",
+        action="store_true",
+        help="restore and replay a checkpoint bundle in the native helper process",
+    )
+    replay.add_argument("--build-dir", default=None,
+                        help="CMake build directory containing trit_checkpoint_replay")
+    replay.add_argument("--steps", type=int, default=100000,
+                        help="maximum replay steps when --execute is used")
+    replay.add_argument("--require-halt", action="store_true",
+                        help="fail --execute unless replay reaches HALTED")
     replay.add_argument("--json", action="store_true")
     replay.set_defaults(func=cmd_replay)
 

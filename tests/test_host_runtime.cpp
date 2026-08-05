@@ -437,6 +437,31 @@ void testRuntimeCheckpointAndInputReplay() {
     expect(journal.find("trit.input_journal.v1") != std::string::npos &&
                journal.find("\"text\":\"A\"") != std::string::npos,
            "input journal declares schema and records text events");
+
+    const std::string bundle_path =
+        buildPath("host_runtime_checkpoint_bundle");
+    std::filesystem::remove_all(bundle_path);
+    expect(runtime.exportCheckpointBundle(bundle_path, &error),
+           "runtime exports a self-contained checkpoint bundle");
+    expect(fileExists(bundle_path + "/vm_state.bin") &&
+               fileExists(bundle_path + "/disk.tdisk") &&
+               fileExists(bundle_path + "/input_journal.bin") &&
+               fileExists(bundle_path + "/input_journal.jsonl") &&
+               fileExists(bundle_path + "/syscall_trace.jsonl") &&
+               fileExists(bundle_path + "/boot.tboot"),
+           "checkpoint bundle contains state, disk, journal, trace, and boot image");
+
+    sandbox::host::TosRuntime separate(config);
+    expect(separate.restoreCheckpointBundle(bundle_path, &error),
+           "fresh runtime restores a file-backed checkpoint bundle");
+    expect(separate.hasCheckpoint(),
+           "file-backed restore recreates the checkpoint boundary");
+    const auto separateReplay = separate.replayFromCheckpoint(32, &error);
+    expect(separateReplay.halted(),
+           "fresh runtime replays from the file-backed checkpoint");
+    auto separateFrame = separate.readFramebuffer();
+    expect(!separateFrame.glyphs.empty() && separateFrame.glyphs[0] == 'A',
+           "file-backed replay preserves journaled input ordering");
 }
 
 } // namespace

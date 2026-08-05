@@ -4,12 +4,12 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- Add file-backed rewind/re-execution to the replay CLI. The runtime now
-  captures complete in-memory VM checkpoints, journals keyboard/text/mouse
-  events with cycle stamps, exports both artifacts, and can restore/re-execute
-  from the last checkpoint. `tools/trit-replay.ps1` validates a complete
-  diagnostics bundle and compares syscall traces; it does not yet restore a
-  checkpoint in a separate process.
+- Add differential and fuzz harnesses around the standalone checkpoint replay
+  process. The runtime now captures complete VM state, a sparse disk snapshot,
+  boot image, binary/JSONL input journal, and syscall trace; a fresh
+  `TosRuntime` and the `trit_checkpoint_replay` process restore the bundle and
+  re-execute it. `tools/trit_tool.py replay --execute` validates and runs the
+  process-level path.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add fuzz harnesses for malformed image files and bad syscall pointers.
 - Add crash/power-loss scenarios for VFS and WAL recovery.

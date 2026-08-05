@@ -55,7 +55,7 @@
         "smoke_tos_release"
       ],
       "open_items": [
-        "File-backed checkpoint restore and separate-process execution replay",
+        "Differential/fuzz coverage for checkpoint replay and malformed inputs",
         "Framebuffer PNG export",
         "Full guest diagnostics beyond syscall events"
       ]
@@ -76,7 +76,7 @@
         "trit_ast_dump"
       ],
       "open_items": [
-        "Promote checkpoint restore to a separate-process replay engine and fuzz harnesses",
+        "Add differential/fuzz coverage around the separate-process replay engine",
         "Add guest /bin/doctor and /bin/test commands",
         "Extend diagnostics with guest checkpoints and external input event provenance",
         "Keep Obsidian vault links and canvas current as docs evolve",

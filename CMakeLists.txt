@@ -268,6 +268,20 @@ add_executable(test_host_runtime tests/test_host_runtime.cpp)
 target_compile_features(test_host_runtime PUBLIC cxx_std_17)
 target_compile_definitions(test_host_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(trit_checkpoint_replay tools/trit_checkpoint_replay.cpp)
+target_compile_features(trit_checkpoint_replay PUBLIC cxx_std_17)
+target_compile_definitions(trit_checkpoint_replay PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_test(NAME test_host_runtime
+         COMMAND test_host_runtime
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_checkpoint_replay_process
+         COMMAND trit_checkpoint_replay
+                 ${CMAKE_CURRENT_BINARY_DIR}/host_runtime_checkpoint_bundle
+                 --steps 32 --require-halt --json
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(test_checkpoint_replay_process PROPERTIES DEPENDS test_host_runtime)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(generate_architecture_contract
@@ -306,6 +320,7 @@ add_custom_target(production_profile
         test_scaling_profile_compact
         test_consumer_shell_productization
         test_host_runtime
+        trit_checkpoint_replay
 )
 
 add_executable(tritc tritc.cpp)
@@ -614,6 +629,9 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>
     COMMAND $<TARGET_FILE:test_host_runtime>
+    COMMAND $<TARGET_FILE:trit_checkpoint_replay>
+            "${CMAKE_CURRENT_BINARY_DIR}/host_runtime_checkpoint_bundle"
+            --steps 32 --require-halt
     DEPENDS production_profile test_architecture_v2
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL

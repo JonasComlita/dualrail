@@ -96,7 +96,7 @@
 | SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
 | Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
 | Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
-| Deterministic replay | Partial (checkpoint/input rewind in runtime; no file-backed restore) | `KNOWN_GAPS.md` |
+| Deterministic replay | Partial (file-backed bundle and standalone process replay; differential/fuzz coverage pending) | `KNOWN_GAPS.md` |
 | Syscall trace capture | Schema-versioned capture | `ternary_host_runtime.h` |
 
 ---
@@ -105,7 +105,7 @@
 
 See `KNOWN_GAPS.md` for the full list. Top items:
 
-1. File-backed checkpoint restore and separate-process execution replay
+1. Differential/fuzz coverage for checkpoint replay and malformed inputs
 2. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
 3. Fuzz harnesses for malformed images + bad syscall pointers
 4. Crash/power-loss VFS + WAL recovery scenarios

@@ -209,6 +209,575 @@ inline bool readString(const std::vector<std::uint8_t>& in,
     return true;
 }
 
+// Checkpoint state files are deliberately a small, versioned binary format.
+// They contain architectural values and materialized memory only; decoded
+// instruction/native-code caches are rebuilt after restore.  Keeping this
+// format separate from tBoot/tDisk lets a replay bundle restore a live VM
+// without pretending that a host C++ object layout is portable.
+struct CheckpointWriter {
+    std::ofstream file;
+    bool ok = false;
+
+    explicit CheckpointWriter(const std::filesystem::path& path)
+        : file(path, std::ios::binary | std::ios::trunc), ok(file.good()) {}
+
+    template <typename T>
+    void pod(const T& value) {
+        if (!ok) return;
+        file.write(reinterpret_cast<const char*>(&value), sizeof(T));
+        ok = file.good();
+    }
+
+    void bytes(const char* data, std::size_t size) {
+        if (!ok) return;
+        if (size > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            ok = false;
+            return;
+        }
+        file.write(data, static_cast<std::streamsize>(size));
+        ok = file.good();
+    }
+
+    void string(const std::string& value) {
+        const std::uint64_t size = static_cast<std::uint64_t>(value.size());
+        pod(size);
+        bytes(value.data(), value.size());
+    }
+
+    void finish() {
+        if (!ok) return;
+        file.flush();
+        ok = file.good();
+    }
+};
+
+struct CheckpointReader {
+    std::ifstream file;
+    bool ok = false;
+
+    explicit CheckpointReader(const std::filesystem::path& path)
+        : file(path, std::ios::binary), ok(file.good()) {}
+
+    template <typename T>
+    bool pod(T& value) {
+        if (!ok) return false;
+        file.read(reinterpret_cast<char*>(&value), sizeof(T));
+        ok = file.good();
+        return ok;
+    }
+
+    bool bytes(char* data, std::size_t size) {
+        if (!ok || size > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+            ok = false;
+            return false;
+        }
+        file.read(data, static_cast<std::streamsize>(size));
+        ok = file.good();
+        return ok;
+    }
+
+    bool string(std::string& value) {
+        std::uint64_t size = 0;
+        if (!pod(size) || size > (1ULL << 30)) return false;
+        value.resize(static_cast<std::size_t>(size));
+        return bytes(value.data(), value.size());
+    }
+};
+
+inline constexpr std::uint64_t kCheckpointStateMagic =
+    0x3156535043545254ULL; // "TRTCPV S1" (little-endian marker)
+inline constexpr std::uint32_t kCheckpointStateVersion = 1;
+
+inline void writeCheckpointValue(CheckpointWriter& writer,
+                                 const vm::TernaryValue& value) {
+    writer.pod(static_cast<std::uint8_t>(value.mode));
+    writer.pod(value.bits.lo);
+    writer.pod(value.bits.hi);
+}
+
+inline bool readCheckpointValue(CheckpointReader& reader,
+                                vm::TernaryValue& value) {
+    std::uint8_t mode = 0;
+    if (!reader.pod(mode) || mode > static_cast<std::uint8_t>(TernaryMode::L50)) {
+        return false;
+    }
+    value.mode = static_cast<TernaryMode>(mode);
+    return reader.pod(value.bits.lo) && reader.pod(value.bits.hi);
+}
+
+inline void writeCheckpointProfile(CheckpointWriter& writer,
+                                   const vm::ProductionProfile& profile) {
+    writer.pod(profile.cores);
+    writer.pod(profile.ram_words);
+    writer.pod(profile.instruction_words);
+    writer.pod(profile.disk_blocks);
+    writer.pod(profile.framebuffer_words);
+    writer.pod(profile.framebuffer_width);
+    writer.pod(profile.framebuffer_height);
+    writer.pod(profile.max_processes);
+    writer.pod(profile.max_files);
+    writer.pod(profile.max_windows);
+    writer.pod(profile.hardware_page_words);
+    writer.pod(profile.cluster_words);
+    writer.pod(profile.ram_bytes);
+    writer.pod(profile.disk_bytes);
+}
+
+inline bool readCheckpointProfile(CheckpointReader& reader,
+                                  vm::ProductionProfile& profile) {
+    return reader.pod(profile.cores) && reader.pod(profile.ram_words) &&
+           reader.pod(profile.instruction_words) && reader.pod(profile.disk_blocks) &&
+           reader.pod(profile.framebuffer_words) && reader.pod(profile.framebuffer_width) &&
+           reader.pod(profile.framebuffer_height) && reader.pod(profile.max_processes) &&
+           reader.pod(profile.max_files) && reader.pod(profile.max_windows) &&
+           reader.pod(profile.hardware_page_words) && reader.pod(profile.cluster_words) &&
+           reader.pod(profile.ram_bytes) && reader.pod(profile.disk_bytes);
+}
+
+inline void writeCheckpointTlbEntry(CheckpointWriter& writer,
+                                    const vm::TlbEntry& entry) {
+    writer.pod(static_cast<std::uint8_t>(entry.valid));
+    writer.pod(static_cast<std::uint8_t>(entry.global));
+    writer.pod(entry.asid);
+    writer.pod(entry.translation_root);
+    writer.pod(static_cast<std::uint8_t>(entry.instruction_space));
+    writer.pod(entry.vpn);
+    writer.pod(entry.page_words);
+    writer.pod(entry.ppn);
+    writer.pod(static_cast<std::uint8_t>(entry.user));
+    writer.pod(static_cast<std::uint8_t>(entry.read));
+    writer.pod(static_cast<std::uint8_t>(entry.write));
+    writer.pod(static_cast<std::uint8_t>(entry.execute));
+    writer.pod(static_cast<std::uint8_t>(entry.accessed));
+    writer.pod(static_cast<std::uint8_t>(entry.dirty));
+    writer.pod(entry.replacement_stamp);
+}
+
+inline bool readCheckpointTlbEntry(CheckpointReader& reader,
+                                   vm::TlbEntry& entry) {
+    std::uint8_t valid = 0;
+    std::uint8_t global = 0;
+    std::uint8_t instruction = 0;
+    std::uint8_t user = 0;
+    std::uint8_t read = 0;
+    std::uint8_t write = 0;
+    std::uint8_t execute = 0;
+    std::uint8_t accessed = 0;
+    std::uint8_t dirty = 0;
+    if (!reader.pod(valid) || !reader.pod(global) || !reader.pod(entry.asid) ||
+        !reader.pod(entry.translation_root) || !reader.pod(instruction) ||
+        !reader.pod(entry.vpn) || !reader.pod(entry.page_words) ||
+        !reader.pod(entry.ppn) || !reader.pod(user) || !reader.pod(read) ||
+        !reader.pod(write) || !reader.pod(execute) || !reader.pod(accessed) ||
+        !reader.pod(dirty) || !reader.pod(entry.replacement_stamp)) {
+        return false;
+    }
+    entry.valid = valid != 0;
+    entry.global = global != 0;
+    entry.instruction_space = instruction != 0;
+    entry.user = user != 0;
+    entry.read = read != 0;
+    entry.write = write != 0;
+    entry.execute = execute != 0;
+    entry.accessed = accessed != 0;
+    entry.dirty = dirty != 0;
+    return true;
+}
+
+inline void writeCheckpointTlbStats(CheckpointWriter& writer,
+                                    const vm::VMTlbStats& stats) {
+    writer.pod(stats.instruction_l1_hits);
+    writer.pod(stats.data_l1_hits);
+    writer.pod(stats.l2_hits);
+    writer.pod(stats.misses);
+    writer.pod(stats.walks);
+    writer.pod(stats.evictions);
+    writer.pod(stats.superpage_hits);
+    writer.pod(stats.shootdowns);
+}
+
+inline bool readCheckpointTlbStats(CheckpointReader& reader,
+                                   vm::VMTlbStats& stats) {
+    return reader.pod(stats.instruction_l1_hits) &&
+           reader.pod(stats.data_l1_hits) && reader.pod(stats.l2_hits) &&
+           reader.pod(stats.misses) && reader.pod(stats.walks) &&
+           reader.pod(stats.evictions) && reader.pod(stats.superpage_hits) &&
+           reader.pod(stats.shootdowns);
+}
+
+inline bool writeCheckpointState(const std::filesystem::path& path,
+                                 const vm::VMState& state,
+                                 std::string* error = nullptr) {
+    CheckpointWriter writer(path);
+    if (!writer.ok) {
+        setError(error, "failed to open checkpoint state: " + path.string());
+        return false;
+    }
+    writer.pod(kCheckpointStateMagic);
+    writer.pod(kCheckpointStateVersion);
+    writer.pod(static_cast<std::int32_t>(state.imem.size()));
+    writer.pod(static_cast<std::int32_t>(state.dmem.size()));
+    writer.pod(static_cast<std::uint8_t>(state.imem.isSparse()));
+    writer.pod(static_cast<std::uint8_t>(state.dmem.isSparse()));
+    writer.pod(static_cast<std::int32_t>(state.block_device.blockCount()));
+    writeCheckpointProfile(writer, state.profile);
+
+    std::uint64_t imem_count = 0;
+    state.imem.forEachNonZero([&](int, const isa::TritWord27&) { ++imem_count; });
+    writer.pod(imem_count);
+    state.imem.forEachNonZero([&](int address, const isa::TritWord27& word) {
+        writer.pod(static_cast<std::int32_t>(address));
+        writer.pod(word.bits);
+    });
+    std::uint64_t dmem_count = 0;
+    state.dmem.forEachNonZero([&](int, const vm::TernaryValue&) { ++dmem_count; });
+    writer.pod(dmem_count);
+    state.dmem.forEachNonZero([&](int address, const vm::TernaryValue& value) {
+        writer.pod(static_cast<std::int32_t>(address));
+        writeCheckpointValue(writer, value);
+    });
+
+    for (int index = 0; index < isa::REG_COUNT; ++index) {
+        writeCheckpointValue(writer, state.regfile.reg[static_cast<std::size_t>(index)]);
+        writer.pod(static_cast<std::uint8_t>(state.regfile.view_mode[static_cast<std::size_t>(index)]));
+    }
+    writer.pod(static_cast<std::int32_t>(state.pc));
+    writer.pod(static_cast<std::uint8_t>(state.status));
+    writeCheckpointValue(writer, state.trap_reg);
+    writer.pod(state.required_features);
+    writer.pod(state.supported_features);
+    writer.pod(state.asid);
+    for (const auto& entry : state.instruction_tlb) writeCheckpointTlbEntry(writer, entry);
+    for (const auto& entry : state.data_tlb) writeCheckpointTlbEntry(writer, entry);
+    for (const auto& entry : state.unified_l2_tlb) writeCheckpointTlbEntry(writer, entry);
+    writer.pod(state.tlb_stats.instruction_l1_hits);
+    writer.pod(state.tlb_stats.data_l1_hits);
+    writer.pod(state.tlb_stats.l2_hits);
+    writer.pod(state.tlb_stats.misses);
+    writer.pod(state.tlb_stats.walks);
+    writer.pod(state.tlb_stats.evictions);
+    writer.pod(state.tlb_stats.superpage_hits);
+    writer.pod(state.tlb_stats.shootdowns);
+    writer.pod(state.tlb_replacement_clock);
+    writer.pod(state.vector_length);
+    for (const auto& reg : state.vregfile.reg) {
+        const std::uint64_t lane_count = static_cast<std::uint64_t>(reg.lane.size());
+        writer.pod(lane_count);
+        for (const auto& value : reg.lane) writeCheckpointValue(writer, value);
+    }
+    const std::uint64_t fault_count = static_cast<std::uint64_t>(state.vector_faults.fault_valid.size());
+    writer.pod(fault_count);
+    for (std::size_t index = 0; index < state.vector_faults.fault_valid.size(); ++index) {
+        writer.pod(state.vector_faults.fault_valid[index]);
+        const std::uint8_t trap = index < state.vector_faults.fault_class.size()
+            ? static_cast<std::uint8_t>(state.vector_faults.fault_class[index]) : 0;
+        writer.pod(trap);
+    }
+    writer.pod(state.vector_faults.first_failing_lane);
+    writeCheckpointValue(writer, state.accumulator);
+    writer.string(state.syscall_buffer);
+    const std::uint64_t input_count = static_cast<std::uint64_t>(state.console_input.size());
+    writer.pod(input_count);
+    for (long long value : state.console_input) writer.pod(value);
+
+    writer.pod(static_cast<std::uint8_t>(state.privilege));
+    writer.pod(static_cast<std::uint8_t>(state.previous_privilege));
+    writer.pod(static_cast<std::uint8_t>(state.interrupt_enable));
+    writer.pod(static_cast<std::uint8_t>(state.previous_interrupt_enable));
+    writer.pod(static_cast<std::uint8_t>(state.trap_routing_enabled));
+    writer.pod(state.epc); writer.pod(state.cause); writer.pod(state.tvec); writer.pod(state.scratch);
+    writer.pod(state.cycle_count); writer.pod(state.branch_instructions_count);
+    writer.pod(state.decode_instructions_count); writer.pod(state.timer_reload);
+    writer.pod(state.timer_counter);
+    writer.pod(static_cast<std::uint8_t>(state.timer_enable));
+    writer.pod(static_cast<std::uint8_t>(state.timer_pending));
+    writer.pod(state.user_imem_base); writer.pod(state.user_imem_limit);
+    writer.pod(state.user_dmem_base); writer.pod(state.user_dmem_limit);
+    writer.pod(state.syscall_id);
+    writer.pod(static_cast<std::uint8_t>(state.console_char_mode));
+    writer.pod(static_cast<std::uint8_t>(state.mmu_enable));
+    writer.pod(state.mouse_x); writer.pod(state.mouse_y); writer.pod(state.mouse_btn);
+    writer.pod(state.gpu_x1); writer.pod(state.gpu_y1); writer.pod(state.gpu_x2);
+    writer.pod(state.gpu_y2); writer.pod(state.gpu_color); writer.pod(state.gpu_page);
+    writer.pod(state.gpu_mode); writer.pod(state.sprite_x); writer.pod(state.sprite_y);
+    writer.pod(state.sprite_attr); writer.pod(state.block_index); writer.pod(state.block_addr);
+    writer.pod(state.block_status); writer.pod(state.power_control);
+    writer.pod(state.user_imem_ptbr); writer.pod(state.user_imem_pages);
+    writer.pod(state.user_dmem_ptbr); writer.pod(state.user_dmem_pages);
+    writer.pod(state.page_fault_addr); writer.pod(state.page_fault_access);
+    writer.pod(static_cast<std::uint8_t>(state.atomic_reservation_valid));
+    writer.pod(state.atomic_reservation_addr); writer.pod(state.standalone_heap_break);
+    writer.pod(state.active_core);
+    const std::uint64_t core_count = static_cast<std::uint64_t>(state.coreCount());
+    writer.pod(core_count);
+    for (const auto& core : state.cores) writer.pod(core.current_process);
+    const std::uint64_t queue_count = static_cast<std::uint64_t>(state.core_run_queues.size());
+    writer.pod(queue_count);
+    for (const auto& queue : state.core_run_queues) {
+        writer.pod(static_cast<std::uint64_t>(queue.size()));
+        for (int pid : queue) writer.pod(pid);
+    }
+    writer.pod(static_cast<std::uint64_t>(state.global_run_queue.size()));
+    for (int pid : state.global_run_queue) writer.pod(pid);
+    writer.pod(static_cast<std::uint8_t>(state.execution_backend));
+    writer.pod(static_cast<std::uint8_t>(state.block_cache_enabled));
+    writer.pod(state.trace_jit_hot_threshold);
+    writer.pod(state.executable_mapping_generation);
+    writer.pod(state.mmu_generation);
+    writer.finish();
+    if (!writer.ok) {
+        setError(error, "failed to write checkpoint state: " + path.string());
+        return false;
+    }
+    return true;
+}
+
+inline bool readCheckpointState(const std::filesystem::path& path,
+                                std::unique_ptr<vm::VMState>& output,
+                                std::string* error = nullptr) {
+    CheckpointReader reader(path);
+    if (!reader.ok) {
+        setError(error, "failed to open checkpoint state: " + path.string());
+        return false;
+    }
+    std::uint64_t magic = 0;
+    std::uint32_t version = 0;
+    std::int32_t imem_size = 0;
+    std::int32_t dmem_size = 0;
+    std::uint8_t imem_sparse = 0;
+    std::uint8_t dmem_sparse = 0;
+    std::int32_t block_count = 0;
+    vm::ProductionProfile profile;
+    if (!reader.pod(magic) || !reader.pod(version) || magic != kCheckpointStateMagic ||
+        version != kCheckpointStateVersion || !reader.pod(imem_size) ||
+        !reader.pod(dmem_size) || !reader.pod(imem_sparse) || !reader.pod(dmem_sparse) ||
+        !reader.pod(block_count) || imem_size < 0 || dmem_size < 0 || block_count <= 0 ||
+        !readCheckpointProfile(reader, profile)) {
+        setError(error, "checkpoint state header is invalid");
+        return false;
+    }
+    auto machine = std::make_unique<vm::VMState>(profile);
+    machine->imem.resize(imem_size, imem_sparse ? vm::MemoryBacking::Sparse : vm::MemoryBacking::Dense);
+    machine->dmem.resize(dmem_size, dmem_sparse ? vm::MemoryBacking::Sparse : vm::MemoryBacking::Dense);
+    machine->resetBlockDevice(block_count);
+    std::uint64_t count = 0;
+    if (!reader.pod(count) || count > 100000000ULL) {
+        setError(error, "checkpoint instruction record count is invalid");
+        return false;
+    }
+    for (std::uint64_t index = 0; index < count; ++index) {
+        std::int32_t address = 0;
+        std::uint64_t bits = 0;
+        if (!reader.pod(address) || !reader.pod(bits) ||
+            machine->imem.write(address, isa::TritWord27{bits}) != vm::MemFaultCode::OK) {
+            setError(error, "checkpoint instruction memory is invalid");
+            return false;
+        }
+    }
+    if (!reader.pod(count) || count > 100000000ULL) {
+        setError(error, "checkpoint data record count is invalid");
+        return false;
+    }
+    for (std::uint64_t index = 0; index < count; ++index) {
+        std::int32_t address = 0;
+        vm::TernaryValue value;
+        if (!reader.pod(address) || !readCheckpointValue(reader, value) ||
+            machine->dmem.store(address, value) != vm::MemFaultCode::OK) {
+            setError(error, "checkpoint data memory is invalid");
+            return false;
+        }
+    }
+    for (int index = 0; index < isa::REG_COUNT; ++index) {
+        vm::TernaryValue value;
+        std::uint8_t mode = 0;
+        if (!readCheckpointValue(reader, value) || !reader.pod(mode) ||
+            mode > static_cast<std::uint8_t>(TernaryMode::L50)) {
+            setError(error, "checkpoint register file is invalid");
+            return false;
+        }
+        machine->regfile.reg[static_cast<std::size_t>(index)] = value;
+        machine->regfile.view_mode[static_cast<std::size_t>(index)] =
+            static_cast<TernaryMode>(mode);
+    }
+    std::uint8_t status = 0;
+    if (!reader.pod(machine->pc) || !reader.pod(status) ||
+        status > static_cast<std::uint8_t>(vm::VMStatus::WAITING) ||
+        !readCheckpointValue(reader, machine->trap_reg) ||
+        !reader.pod(machine->required_features) || !reader.pod(machine->supported_features) ||
+        !reader.pod(machine->asid)) {
+        setError(error, "checkpoint control state is invalid");
+        return false;
+    }
+    machine->status = static_cast<vm::VMStatus>(status);
+    for (auto& entry : machine->instruction_tlb) if (!readCheckpointTlbEntry(reader, entry)) return false;
+    for (auto& entry : machine->data_tlb) if (!readCheckpointTlbEntry(reader, entry)) return false;
+    for (auto& entry : machine->unified_l2_tlb) if (!readCheckpointTlbEntry(reader, entry)) return false;
+    if (!reader.pod(machine->tlb_stats.instruction_l1_hits) ||
+        !reader.pod(machine->tlb_stats.data_l1_hits) || !reader.pod(machine->tlb_stats.l2_hits) ||
+        !reader.pod(machine->tlb_stats.misses) || !reader.pod(machine->tlb_stats.walks) ||
+        !reader.pod(machine->tlb_stats.evictions) || !reader.pod(machine->tlb_stats.superpage_hits) ||
+        !reader.pod(machine->tlb_stats.shootdowns) || !reader.pod(machine->tlb_replacement_clock) ||
+        !reader.pod(machine->vector_length)) {
+        setError(error, "checkpoint MMU/vector header is invalid");
+        return false;
+    }
+    machine->vregfile.reset(machine->vector_length);
+    for (auto& reg : machine->vregfile.reg) {
+        std::uint64_t lane_count = 0;
+        if (!reader.pod(lane_count) || lane_count > 4096ULL) return false;
+        reg.lane.assign(static_cast<std::size_t>(lane_count), vm::TernaryValue::zero());
+        for (auto& value : reg.lane) if (!readCheckpointValue(reader, value)) return false;
+    }
+    std::uint64_t fault_count = 0;
+    if (!reader.pod(fault_count) || fault_count > 4096ULL) return false;
+    machine->vector_faults.fault_valid.assign(static_cast<std::size_t>(fault_count), 0);
+    machine->vector_faults.fault_class.assign(static_cast<std::size_t>(fault_count), isa::TrapCode::TRAP_MEM_FAULT);
+    for (std::size_t index = 0; index < static_cast<std::size_t>(fault_count); ++index) {
+        std::uint8_t trap = 0;
+        if (!reader.pod(machine->vector_faults.fault_valid[index]) || !reader.pod(trap)) return false;
+        machine->vector_faults.fault_class[index] = static_cast<isa::TrapCode>(trap);
+    }
+    if (!reader.pod(machine->vector_faults.first_failing_lane) ||
+        !readCheckpointValue(reader, machine->accumulator) ||
+        !reader.string(machine->syscall_buffer)) return false;
+    if (!reader.pod(count) || count > 100000000ULL) return false;
+    machine->console_input.resize(static_cast<std::size_t>(count));
+    for (long long& value : machine->console_input) if (!reader.pod(value)) return false;
+
+    std::uint8_t privilege = 0, previous_privilege = 0, interrupt = 0,
+                 previous_interrupt = 0, trap_routing = 0, timer_enable = 0,
+                 timer_pending = 0, char_mode = 0, mmu_enable = 0,
+                 atomic_valid = 0, backend = 0, cache_enabled = 0;
+    if (!reader.pod(privilege) || !reader.pod(previous_privilege) ||
+        !reader.pod(interrupt) || !reader.pod(previous_interrupt) ||
+        !reader.pod(trap_routing) || !reader.pod(machine->epc) || !reader.pod(machine->cause) ||
+        !reader.pod(machine->tvec) || !reader.pod(machine->scratch) ||
+        !reader.pod(machine->cycle_count) || !reader.pod(machine->branch_instructions_count) ||
+        !reader.pod(machine->decode_instructions_count) || !reader.pod(machine->timer_reload) ||
+        !reader.pod(machine->timer_counter) || !reader.pod(timer_enable) ||
+        !reader.pod(timer_pending) || !reader.pod(machine->user_imem_base) ||
+        !reader.pod(machine->user_imem_limit) || !reader.pod(machine->user_dmem_base) ||
+        !reader.pod(machine->user_dmem_limit) || !reader.pod(machine->syscall_id) ||
+        !reader.pod(char_mode) || !reader.pod(mmu_enable) || !reader.pod(machine->mouse_x) ||
+        !reader.pod(machine->mouse_y) || !reader.pod(machine->mouse_btn) || !reader.pod(machine->gpu_x1) ||
+        !reader.pod(machine->gpu_y1) || !reader.pod(machine->gpu_x2) || !reader.pod(machine->gpu_y2) ||
+        !reader.pod(machine->gpu_color) || !reader.pod(machine->gpu_page) || !reader.pod(machine->gpu_mode) ||
+        !reader.pod(machine->sprite_x) || !reader.pod(machine->sprite_y) || !reader.pod(machine->sprite_attr) ||
+        !reader.pod(machine->block_index) || !reader.pod(machine->block_addr) || !reader.pod(machine->block_status) ||
+        !reader.pod(machine->power_control) || !reader.pod(machine->user_imem_ptbr) || !reader.pod(machine->user_imem_pages) ||
+        !reader.pod(machine->user_dmem_ptbr) || !reader.pod(machine->user_dmem_pages) || !reader.pod(machine->page_fault_addr) ||
+        !reader.pod(machine->page_fault_access) || !reader.pod(atomic_valid) || !reader.pod(machine->atomic_reservation_addr) ||
+        !reader.pod(machine->standalone_heap_break) || !reader.pod(machine->active_core)) return false;
+    machine->privilege = static_cast<isa::PrivilegeMode>(privilege);
+    machine->previous_privilege = static_cast<isa::PrivilegeMode>(previous_privilege);
+    machine->interrupt_enable = interrupt != 0;
+    machine->previous_interrupt_enable = previous_interrupt != 0;
+    machine->trap_routing_enabled = trap_routing != 0;
+    machine->timer_enable = timer_enable != 0;
+    machine->timer_pending = timer_pending != 0;
+    machine->console_char_mode = char_mode != 0;
+    machine->mmu_enable = mmu_enable != 0;
+    machine->atomic_reservation_valid = atomic_valid != 0;
+    if (!reader.pod(count) || count > 256ULL) return false;
+    machine->configureCores(static_cast<int>(std::max<std::uint64_t>(1, count)));
+    for (std::uint64_t index = 0; index < count; ++index) {
+        if (!reader.pod(machine->cores[static_cast<std::size_t>(index)].current_process)) return false;
+    }
+    std::uint64_t queue_count = 0;
+    if (!reader.pod(queue_count) || queue_count > 256ULL) return false;
+    machine->core_run_queues.assign(static_cast<std::size_t>(machine->coreCount()), {});
+    for (std::uint64_t index = 0; index < queue_count && index < static_cast<std::uint64_t>(machine->coreCount()); ++index) {
+        std::uint64_t depth = 0;
+        if (!reader.pod(depth) || depth > 1000000ULL) return false;
+        for (std::uint64_t item = 0; item < depth; ++item) { int pid = 0; if (!reader.pod(pid)) return false; machine->core_run_queues[static_cast<std::size_t>(index)].push_back(pid); }
+    }
+    if (!reader.pod(count) || count > 1000000ULL) return false;
+    machine->global_run_queue.clear();
+    for (std::uint64_t item = 0; item < count; ++item) { int pid = 0; if (!reader.pod(pid)) return false; machine->global_run_queue.push_back(pid); }
+    if (!reader.pod(backend) || !reader.pod(cache_enabled) || !reader.pod(machine->trace_jit_hot_threshold) ||
+        !reader.pod(machine->executable_mapping_generation) || !reader.pod(machine->mmu_generation) ||
+        backend > static_cast<std::uint8_t>(vm::VMExecutionBackend::NativeX64Jit)) return false;
+    machine->execution_backend = static_cast<vm::VMExecutionBackend>(backend);
+    machine->block_cache_enabled = cache_enabled != 0;
+    machine->invalidateBlockCache();
+    machine->invalidateTraceJit();
+    output = std::move(machine);
+    if (!reader.ok) {
+        setError(error, "checkpoint state is truncated");
+        return false;
+    }
+    return true;
+}
+
+inline constexpr std::uint64_t kCheckpointJournalMagic =
+    0x314c4e52504a5254ULL; // "TRR PNRL1"
+
+inline bool writeCheckpointJournal(
+    const std::filesystem::path& path,
+    const std::vector<TosInputJournalEvent>& events,
+    std::string* error = nullptr) {
+    CheckpointWriter writer(path);
+    if (!writer.ok) {
+        setError(error, "failed to open checkpoint journal: " + path.string());
+        return false;
+    }
+    writer.pod(kCheckpointJournalMagic);
+    writer.pod(kCheckpointStateVersion);
+    writer.pod(static_cast<std::uint64_t>(events.size()));
+    for (const auto& event : events) {
+        writer.pod(event.sequence);
+        writer.pod(event.cycle);
+        writer.pod(static_cast<std::uint8_t>(event.kind));
+        writer.pod(event.value0);
+        writer.pod(event.value1);
+        writer.pod(event.value2);
+        writer.string(event.text);
+    }
+    writer.finish();
+    if (!writer.ok) {
+        setError(error, "failed to write checkpoint journal: " + path.string());
+        return false;
+    }
+    return true;
+}
+
+inline bool readCheckpointJournal(
+    const std::filesystem::path& path,
+    std::vector<TosInputJournalEvent>& events,
+    std::string* error = nullptr) {
+    CheckpointReader reader(path);
+    std::uint64_t magic = 0;
+    std::uint32_t version = 0;
+    std::uint64_t count = 0;
+    if (!reader.ok || !reader.pod(magic) || !reader.pod(version) ||
+        !reader.pod(count) || magic != kCheckpointJournalMagic ||
+        version != kCheckpointStateVersion || count > 100000000ULL) {
+        setError(error, "checkpoint journal header is invalid");
+        return false;
+    }
+    events.clear();
+    events.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t index = 0; index < count; ++index) {
+        TosInputJournalEvent event;
+        std::uint8_t kind = 0;
+        if (!reader.pod(event.sequence) || !reader.pod(event.cycle) ||
+            !reader.pod(kind) || kind < static_cast<std::uint8_t>(TosInputEventKind::KeyboardWord) ||
+            kind > static_cast<std::uint8_t>(TosInputEventKind::Mouse) ||
+            !reader.pod(event.value0) || !reader.pod(event.value1) ||
+            !reader.pod(event.value2) || !reader.string(event.text)) {
+            setError(error, "checkpoint journal is truncated or invalid");
+            return false;
+        }
+        event.kind = static_cast<TosInputEventKind>(kind);
+        if (event.sequence != index) {
+            setError(error, "checkpoint journal sequence is not contiguous");
+            return false;
+        }
+        events.push_back(std::move(event));
+    }
+    return reader.ok;
+}
+
 inline std::uint64_t fnv1a(const std::vector<std::uint8_t>& data) {
     std::uint64_t hash = 1469598103934665603ULL;
     for (std::uint8_t byte : data) {
@@ -1402,6 +1971,211 @@ public:
         result.final_pc = machine_->pc;
         result.description = "checkpoint replay";
         return result;
+    }
+
+    // Persist a complete architectural checkpoint and its input journal.
+    // The resulting directory is self-contained and can be opened by a fresh
+    // TosRuntime instance (or another process) without access to the original
+    // mutable disk backing file.
+    [[nodiscard]] bool exportCheckpointBundle(
+        const std::string& directory,
+        std::string* error = nullptr) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!machine_ || !checkpoint_) {
+            detail::setError(error, "runtime has no checkpoint to export");
+            return false;
+        }
+        std::error_code ec;
+        const std::filesystem::path base(directory);
+        std::filesystem::create_directories(base, ec);
+        if (ec) {
+            detail::setError(error, "failed to create checkpoint bundle: " + ec.message());
+            return false;
+        }
+        if (!writeBootImageFile((base / "boot.tboot").string(), image_, error) ||
+            !detail::writeCheckpointState(base / "vm_state.bin",
+                                           checkpoint_->vm.state, error) ||
+            !checkpoint_->vm.state.block_device.writeSnapshotFile(
+                (base / "disk.tdisk").string()) ||
+            !detail::writeCheckpointJournal(base / "input_journal.bin",
+                                             input_journal_, error)) {
+            if (error && error->empty()) {
+                detail::setError(error, "failed to write checkpoint bundle payload");
+            }
+            return false;
+        }
+        {
+            std::ofstream journal(base / "input_journal.jsonl", std::ios::trunc);
+            if (!journal.good()) {
+                detail::setError(error, "failed to write checkpoint input journal");
+                return false;
+            }
+            for (const auto& event : input_journal_) {
+                journal << "{\"schema\":\"trit.input_journal.v1\","
+                        << "\"sequence\":" << event.sequence << ","
+                        << "\"cycle\":" << event.cycle << ","
+                        << "\"kind\":" << static_cast<int>(event.kind) << ","
+                        << "\"value0\":" << event.value0 << ","
+                        << "\"value1\":" << event.value1 << ","
+                        << "\"value2\":" << event.value2 << ",\"text\":\"";
+                for (char ch : event.text) {
+                    if (ch == '\\' || ch == '"') journal << '\\';
+                    if (ch == '\n') journal << "\\n";
+                    else if (ch == '\r') journal << "\\r";
+                    else journal << ch;
+                }
+                journal << "\"}\n";
+            }
+            if (!journal.good()) {
+                detail::setError(error, "failed to write checkpoint input journal");
+                return false;
+            }
+        }
+        {
+            std::ofstream trace(base / "syscall_trace.jsonl", std::ios::trunc);
+            if (!trace.good()) {
+                detail::setError(error, "failed to write checkpoint syscall trace");
+                return false;
+            }
+            if (syscall_trace_.empty()) {
+                trace << "{\"schema\":\"trit.syscall_trace.v1\","
+                      << "\"event\":\"trace_empty\",\"cycles\":"
+                      << machine_->cycle_count << "}\n";
+            } else {
+                for (const auto& event : syscall_trace_) {
+                    trace << "{\"schema\":\"trit.syscall_trace.v1\","
+                          << "\"sequence\":" << event.sequence
+                          << ",\"pc\":" << event.record.pc
+                          << ",\"physical_pc\":" << event.record.physical_pc
+                          << ",\"syscall_id\":" << event.record.syscall_id
+                          << ",\"process_id\":" << event.record.process_id
+                          << ",\"before_privilege\":"
+                          << static_cast<int>(event.record.before_privilege)
+                          << ",\"after_privilege\":"
+                          << static_cast<int>(event.record.after_privilege)
+                          << ",\"args\":[" << event.record.syscall_arg0 << ","
+                          << event.record.syscall_arg1 << "," << event.record.syscall_arg2
+                          << "," << event.record.syscall_arg3 << "],\"results\":["
+                          << event.record.syscall_result0 << "," << event.record.syscall_result1
+                          << "," << event.record.syscall_result2 << "],\"before_status\":"
+                          << static_cast<int>(event.record.before_status)
+                          << ",\"after_status\":"
+                          << static_cast<int>(event.record.after_status)
+                          << ",\"trap\":" << (event.record.trap_observed ? 1 : 0)
+                          << ",\"trap_code\":"
+                          << static_cast<int>(event.record.trap_code)
+                          << ",\"trap_cause\":" << event.record.trap_cause
+                          << ",\"cycle_before\":" << event.record.cycle_before
+                          << ",\"cycle_after\":" << event.record.cycle_after << "}\n";
+                }
+            }
+            if (!trace.good()) {
+                detail::setError(error, "failed to write checkpoint syscall trace");
+                return false;
+            }
+        }
+        {
+            detail::CheckpointWriter metadata(base / "checkpoint.bin");
+            if (!metadata.ok) {
+                detail::setError(error, "failed to open checkpoint metadata");
+                return false;
+            }
+            metadata.pod(detail::kCheckpointStateMagic);
+            metadata.pod(detail::kCheckpointStateVersion);
+            metadata.pod(checkpoint_->sequence);
+            metadata.pod(static_cast<std::uint64_t>(checkpoint_->input_event_count));
+            metadata.pod(checkpoint_->vm.cycle);
+            metadata.pod(static_cast<std::int32_t>(checkpoint_->vm.pc));
+            metadata.pod(boot_generation_);
+            metadata.pod(guest_reboot_count_);
+            metadata.finish();
+            if (!metadata.ok) {
+                detail::setError(error, "failed to write checkpoint metadata");
+                return false;
+            }
+        }
+        {
+            std::ofstream metadata(base / "checkpoint.json", std::ios::trunc);
+            if (!metadata.good()) {
+                detail::setError(error, "failed to write checkpoint.json");
+                return false;
+            }
+            metadata << "{\n"
+                      << "  \"schema\":\"trit.runtime_checkpoint.v2\",\n"
+                      << "  \"available\":true,\n"
+                      << "  \"sequence\":" << checkpoint_->sequence << ",\n"
+                      << "  \"input_event_count\":" << checkpoint_->input_event_count << ",\n"
+                      << "  \"cycle\":" << checkpoint_->vm.cycle << ",\n"
+                      << "  \"pc\":" << checkpoint_->vm.pc << ",\n"
+                      << "  \"state_file\":\"vm_state.bin\",\n"
+                      << "  \"disk_file\":\"disk.tdisk\",\n"
+                      << "  \"journal_file\":\"input_journal.bin\",\n"
+                      << "  \"boot_image\":\"boot.tboot\"\n"
+                      << "}\n";
+            if (!metadata.good()) {
+                detail::setError(error, "failed to write checkpoint.json");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Load a checkpoint bundle produced by exportCheckpointBundle.  This is
+    // the file-backed/separate-process restore path: no live VM or original
+    // disk backing path is consulted.  After restore, replayFromCheckpoint()
+    // can continue with journaled events that occurred after the checkpoint.
+    [[nodiscard]] bool restoreCheckpointBundle(
+        const std::string& directory,
+        std::string* error = nullptr) {
+        shutdownWorkerOnly();
+        const std::filesystem::path base(directory);
+        TosBootImage image;
+        if (!readBootImageFile((base / "boot.tboot").string(), image, error)) return false;
+        std::vector<TosInputJournalEvent> journal;
+        if (!detail::readCheckpointJournal(base / "input_journal.bin", journal, error)) return false;
+        detail::CheckpointReader metadata(base / "checkpoint.bin");
+        std::uint64_t magic = 0, sequence = 0, input_count = 0,
+                      cycle = 0, boot_generation = 0, reboot_count = 0;
+        std::uint32_t version = 0;
+        std::int32_t pc = 0;
+        if (!metadata.ok || !metadata.pod(magic) || !metadata.pod(version) ||
+            magic != detail::kCheckpointStateMagic || version != detail::kCheckpointStateVersion ||
+            !metadata.pod(sequence) || !metadata.pod(input_count) || !metadata.pod(cycle) ||
+            !metadata.pod(pc) || !metadata.pod(boot_generation) || !metadata.pod(reboot_count) ||
+            input_count > journal.size()) {
+            detail::setError(error, "checkpoint metadata is invalid");
+            return false;
+        }
+        std::unique_ptr<vm::VMState> machine;
+        if (!detail::readCheckpointState(base / "vm_state.bin", machine, error) || !machine) return false;
+        if (machine->pc != pc || machine->cycle_count < 0 ||
+            static_cast<std::uint64_t>(machine->cycle_count) != cycle) {
+            detail::setError(error, "checkpoint state does not match metadata");
+            return false;
+        }
+        if (!machine->attachBlockBackingFile((base / "disk.tdisk").string())) {
+            detail::setError(error, "checkpoint disk snapshot failed validation");
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        image_ = std::move(image);
+        config_.boot_image_path = (base / "boot.tboot").string();
+        config_.disk_path = (base / "disk.tdisk").string();
+        machine_ = std::move(machine);
+        paused_ = config_.start_paused;
+        boot_generation_ = boot_generation;
+        guest_reboot_count_ = reboot_count;
+        input_journal_ = std::move(journal);
+        next_input_sequence_ = input_journal_.size();
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
+        auto checkpoint = std::make_shared<TosRuntimeCheckpoint>();
+        checkpoint->sequence = sequence;
+        checkpoint->input_event_count = static_cast<std::size_t>(input_count);
+        checkpoint->vm = vm::captureCheckpoint(*machine_);
+        checkpoint_ = std::move(checkpoint);
+        next_checkpoint_sequence_ = sequence + 1;
+        return true;
     }
 
     [[nodiscard]] bool exportDiagnostics(const std::string& directory,

@@ -1054,6 +1054,30 @@ struct TernaryMemory {
         return newest;
     }
 
+    // Enumerate only materialized, non-zero words.  This is intentionally
+    // sparse-aware so checkpoint and diagnostic writers never scan a
+    // production-sized virtual address space one word at a time.
+    template <typename Callback>
+    void forEachNonZero(Callback&& callback) const {
+        const TernaryValue zero = TernaryValue::zero();
+        if (!sparse_) {
+            for (int address = 0; address < capacity; ++address) {
+                if (words[address] != zero) callback(address, words[address]);
+            }
+            return;
+        }
+        for (const auto& entry : sparse_pages_) {
+            const int base = entry.first * SPARSE_VM_PAGE_WORDS;
+            const auto& page = entry.second;
+            const int limit = std::min<int>(
+                static_cast<int>(page.size()), capacity - base);
+            for (int offset = 0; offset < limit; ++offset) {
+                const TernaryValue& value = page[static_cast<std::size_t>(offset)];
+                if (value != zero) callback(base + offset, value);
+            }
+        }
+    }
+
 private:
     bool sparse_ = false;
     std::unordered_map<int, std::vector<TernaryValue>> sparse_pages_;
@@ -1329,6 +1353,27 @@ struct TernaryInstructionMemory {
     [[nodiscard]] bool isSparse() const { return sparse_; }
     [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
     [[nodiscard]] std::uint64_t generation() const { return generation_; }
+
+    template <typename Callback>
+    void forEachNonZero(Callback&& callback) const {
+        const TritWord27 zero{};
+        if (!sparse_) {
+            for (int address = 0; address < capacity; ++address) {
+                if (words[address].bits != zero.bits) callback(address, words[address]);
+            }
+            return;
+        }
+        for (const auto& entry : sparse_pages_) {
+            const int base = entry.first * SPARSE_VM_PAGE_WORDS;
+            const auto& page = entry.second;
+            const int limit = std::min<int>(
+                static_cast<int>(page.size()), capacity - base);
+            for (int offset = 0; offset < limit; ++offset) {
+                const TritWord27& value = page[static_cast<std::size_t>(offset)];
+                if (value.bits != zero.bits) callback(base + offset, value);
+            }
+        }
+    }
 
 private:
     bool sparse_ = false;
@@ -1872,6 +1917,17 @@ public:
         if (backing_path_.empty()) return true;
         if (!force && !shouldCompactBacking()) return flushBackingFile();
         return rewriteCompactBacking();
+    }
+
+    // Write the current sparse block set to an independent canonical tDisk
+    // v2 file.  Unlike compactBackingFile this never changes the live backing
+    // path, so it is safe to use for an immutable VM checkpoint bundle.
+    [[nodiscard]] bool writeSnapshotFile(const std::string& path) const {
+        std::vector<int> indices;
+        indices.reserve(blocks_.size());
+        for (const auto& block : blocks_) indices.push_back(block.first);
+        std::sort(indices.begin(), indices.end());
+        return writeCompactBackingTo(std::filesystem::path(path), indices);
     }
 
 private:

@@ -166,8 +166,10 @@ Exports (from `DEBUGGING.md`):
   enabled (`--export-diagnostics` enables capture); `tools/trit-replay.ps1`
   validates and compares captures
 - `input_journal.jsonl` — cycle-stamped keyboard, text, and mouse input
-- `checkpoint.json` — metadata for the last in-memory VM checkpoint; a runtime
-  checkpoint can be restored and replayed through the host API
+- `checkpoint.json` — metadata for the last VM checkpoint. The host API can
+  export a self-contained bundle (`vm_state.bin`, `disk.tdisk`, `boot.tboot`,
+  binary/JSONL journals and trace) and restore it into a fresh runtime before
+  replay.
 - `process_table.json` — OS process table
 - `diagnostics.json` — summary
 

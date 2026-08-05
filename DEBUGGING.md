@@ -33,7 +33,9 @@ The host runtime exports:
 - `syscall_trace.jsonl`: schema-versioned syscall events when capture is
   enabled; disabled/empty captures are explicit markers.
 - `input_journal.jsonl`: cycle-stamped keyboard, text, and mouse events.
-- `checkpoint.json`: metadata for the last in-memory VM checkpoint.
+- `checkpoint.json`: metadata for the last in-memory checkpoint; a
+  `TosRuntime::exportCheckpointBundle` directory additionally contains
+  `vm_state.bin`, `disk.tdisk`, `boot.tboot`, and binary/JSONL replay streams.
 - `crash_report.txt`: crash-oriented status summary.
 - `framebuffer_snapshot.txt`: framebuffer mode, dimensions, and color words.
 
@@ -51,9 +53,12 @@ The host runtime exports:
 
 The runtime captures syscall events, VM checkpoints, and cycle-stamped guest
 input. `tools/trit-replay.ps1` validates or compares a complete diagnostics
-bundle, while `TosRuntime::replayFromCheckpoint` performs in-process rewind and
-re-execution. A separate-process/file-backed restore is still open; see
-`KNOWN_GAPS.md`.
+bundle, and `TosRuntime::exportCheckpointBundle` plus
+`restoreCheckpointBundle` provide file-backed restore into a fresh runtime
+before `replayFromCheckpoint` performs rewind and re-execution. The
+`trit_checkpoint_replay` helper (also exposed as
+`tools/trit_tool.py replay --execute`) exercises the same bundle in a fresh
+process; differential and fuzz coverage remains open in `KNOWN_GAPS.md`.
 
 Graphify currently augments `.trit` sources with compiler-AST-derived files,
 functions, constants, structs, imports, syscall nodes, and direct call edges. It
