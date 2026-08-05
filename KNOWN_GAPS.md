@@ -21,12 +21,14 @@ These are intentionally visible so agents can pick useful work without asking fo
   lowered inline as well.
 - Complete the IR-first compiler transition for the remaining unsupported
   cases: optimized SSA now drives promoted and address-taken local frame
-  memory (including loop-carried accesses), and the allocator reserves the
-  frame-address scratch register across spill rewrites. External memory mixed
-  with calls or larger memory regions still needs memory-SSA/call-clobber
-  lowering. A fail-closed `--strict-ssa` mode rejects unsupported target
-  lowering; the default transition build still permits the explicitly
-  reported replay set until those functions are lowered.
+  memory (including loop-carried accesses), arbitrary scalar external memory,
+  calls with outgoing stack arguments, and the allocator reserves the
+  frame-address scratch register across spill rewrites. Aggregate/vector
+  values and several complex kernel control/data-flow regions still need
+  memory-SSA aliasing, aggregate lowering, and call-clobber proofs. A
+  fail-closed `--strict-ssa` mode rejects unsupported target lowering; the
+  default transition build still permits the explicitly reported replay set
+  until those functions are lowered.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

@@ -1490,13 +1490,16 @@ private:
                                instr.opcode == InstrOpcode::Syscall;
                     });
             });
-        // Direct external-memory lowering is intentionally limited to the
-        // small, straight-line raw-pointer primitive.  Larger memory regions
-        // need alias/memory-SSA and call-clobber modeling; retaining them as
-        // explicit AST fallbacks keeps the transition build correct while
-        // those analyses are completed.
+        // A single scalar external store/load is safe beside a call because
+        // the allocator models caller clobbers. Larger aliased regions need
+        // memory-SSA and a call-clobber proof; keep those explicit fallbacks
+        // until that analysis is available so the default build remains
+        // correct rather than silently miscompiling pointer-heavy code.
         if (has_external_memory &&
-            (has_call_or_syscall || external_memory_ops > 2)) return false;
+            (external_memory_ops > 2 ||
+             (has_call_or_syscall && external_memory_ops > 1))) {
+            return false;
+        }
         struct EdgeMove {
             int destination = -1;
             int source = -1;
@@ -1547,10 +1550,10 @@ private:
                 return false;
             const int width =
                 usesWideT50Pair(instr.type) ? 2 : 1;
-            if (instr.aux < 0 ||
-                instr.aux + width > kRegisterArgCount) {
+            if (instr.aux < 0) {
                 return false;
             }
+            if (instr.aux + width > kRegisterArgCount) continue;
             const int source = 13 + instr.aux;
             if (destination != source) {
                 edge_moves[
@@ -1593,23 +1596,17 @@ private:
                     }
                     const int width =
                         usesWideT50Pair(type->second) ? 2 : 1;
-                    if (argument_word + width >
-                        kRegisterArgCount) {
-                        // Stack arguments need a dedicated outgoing-call
-                        // area. Keep the explicit replay fallback until the
-                        // spill-frame layout owns that area.
-                        return false;
-                    }
-                    const int destination =
-                        13 + argument_word;
-                    if (destination != source) {
-                        edge_moves[callMoveKey(block, instr)]
-                            .push_back(
-                                EdgeMove{
-                                    destination,
-                                    source,
-                                    type->second,
-                                    false});
+                    if (argument_word + width <= kRegisterArgCount) {
+                        const int destination = 13 + argument_word;
+                        if (destination != source) {
+                            edge_moves[callMoveKey(block, instr)]
+                                .push_back(
+                                    EdgeMove{
+                                        destination,
+                                        source,
+                                        type->second,
+                                        false});
+                        }
                     }
                     argument_word += width;
                 }
@@ -1717,6 +1714,32 @@ private:
         auto widthOf = [](const TypeRef& type) {
             return usesWideT50Pair(type) ? 2 : 1;
         };
+        // Parameters beyond r13-r18 are loaded from the caller's temporary
+        // outgoing area. The caller subtracts that area immediately before
+        // the call, so after this prologue subtracts its own frame the
+        // incoming words are at [sp + frame_words + stack_word].
+        int parameter_register_word = 0;
+        int parameter_stack_word = 0;
+        for (const Instr& parameter : function.blocks.front().instructions) {
+            if (parameter.opcode != InstrOpcode::Param) continue;
+            const int width = widthOf(parameter.type);
+            if (parameter_register_word + width <= kRegisterArgCount) {
+                parameter_register_word += width;
+                continue;
+            }
+            int destination = -1;
+            if (!registerFor(parameter.def, destination)) return false;
+            const int scratch = width == 2 ? 23 : 24;
+            out << "    " << scalarMemoryMnemonic("load", parameter.type)
+                << " r" << scratch << ", sp, "
+                << (frame_words + parameter_stack_word) << "\n";
+            if (destination != scratch) {
+                out << "    copy" << (width == 2 ? ".t50" : "")
+                    << " " << regName(destination) << ", r" << scratch
+                    << "\n";
+            }
+            parameter_stack_word += width;
+        }
         auto rangesOverlap = [](
             int lhs, int lhs_width,
             int rhs, int rhs_width) {
@@ -2180,12 +2203,44 @@ private:
                     break;
                 }
                 case InstrOpcode::Call: {
+                    int argument_word = 0;
+                    int stack_word_count = 0;
+                    for (ValueId argument : instr.args) {
+                        const TypeRef type = valueType(argument);
+                        const int width = widthOf(type);
+                        if (argument_word + width > kRegisterArgCount)
+                            stack_word_count += width;
+                        argument_word += width;
+                    }
+                    if (stack_word_count > 0) {
+                        out << "    mov.t40 r24, " << stack_word_count << "\n";
+                        out << "    sub.t40 sp, sp, r24\n";
+                        argument_word = 0;
+                        int stack_word = 0;
+                        for (ValueId argument : instr.args) {
+                            const TypeRef type = valueType(argument);
+                            const int width = widthOf(type);
+                            int source = -1;
+                            if (!registerFor(argument, source)) return false;
+                            if (argument_word + width > kRegisterArgCount) {
+                                out << "    " << scalarMemoryMnemonic("store", type)
+                                    << " r" << source << ", sp, " << stack_word
+                                    << "\n";
+                                stack_word += width;
+                            }
+                            argument_word += width;
+                        }
+                    }
                     if (!emitParallelMoveSet(
                             edge_moves[
                                 callMoveKey(block, instr)])) {
                         return false;
                     }
                     out << "    call " << instr.symbol << "\n";
+                    if (stack_word_count > 0) {
+                        out << "    mov.t40 r24, " << stack_word_count << "\n";
+                        out << "    add.t40 sp, sp, r24\n";
+                    }
                     if (destination != 13) {
                         out << "    copy"
                             << (usesWideT50Pair(instr.type)

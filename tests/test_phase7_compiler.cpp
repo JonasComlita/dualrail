@@ -190,12 +190,16 @@ void testFunctionCallAndWhileLoop() {
           return x + 1;
         }
 
+        fn sum7(a: t40, b: t40, c: t40, d: t40, e: t40, f: t40, g: t40) -> t40 {
+          return a + b + c + d + e + f + g;
+        }
+
         fn main() -> t40 {
           var i: t40 = 0;
           while (3 - i > 0) {
             i = inc(i);
           }
-          return i;
+          return i + sum7(1, 2, 3, 4, 5, 6, 7);
         }
     )";
 
@@ -210,7 +214,9 @@ void testFunctionCallAndWhileLoop() {
     expect(compiled.object.metadata.at(
                "target.ast_replay_functions") == "0",
            "ordinary scalar calls and loop phis emit solely from optimized IR");
-    expect(contains(compiled.assembly, "call inc"), "direct function call lowers to CALL");
+        expect(contains(compiled.assembly, "call inc"), "direct function call lowers to CALL");
+    expect(contains(compiled.assembly, "call sum7"),
+           "stack-passed function call lowers to CALL");
     expect(contains(compiled.assembly, "brn"), "while lowers cold negative exit branch");
     expect(contains(compiled.assembly, "brz"), "while lowers cold zero exit branch");
     expect(!contains(compiled.assembly, "brp"), "while positive path falls through");
@@ -241,7 +247,8 @@ void testFunctionCallAndWhileLoop() {
             std::cout << "Assembly:\n" << compiled.assembly << "\n";
         }
         expect(result.halted(), "call/loop image halts");
-        expect(regLong(vm, 13) == 3, "while loop and direct call produce expected result");
+        expect(regLong(vm, 13) == 31,
+               "while loop and stack-passed direct call produce expected result");
     }
 }
 
@@ -1613,8 +1620,8 @@ void testSysWriteChar() {
     }
 }
 
-void testStrictSsaRejectsReplayFallback() {
-    std::cout << "[10b] Strict SSA rejects target replay fallback\n";
+void testStrictSsaLowersExternalMemory() {
+    std::cout << "[10b] Strict SSA lowers external memory beside a syscall\n";
     using namespace sandbox::compiler;
     const std::string src = R"(
         fn main() -> t40 {
@@ -1627,10 +1634,21 @@ void testStrictSsaRejectsReplayFallback() {
     CompilerOptions options;
     options.allow_ast_replay = false;
     CompileResult compiled = compileSource("phase7_strict_ssa.trit", src, options);
-    expect(!compiled.success,
-           "strict SSA reports unsupported target lowering instead of replaying AST");
-    expect(hasDiagnostic(compiled.diagnostics, "AST replay is disabled"),
-           "strict SSA diagnostic names the disabled fallback");
+    expect(compiled.success,
+           "strict SSA lowers external memory without replaying the AST");
+    expect(compiled.object.metadata.at("target.ast_replay_functions") == "0",
+           "external memory plus syscall emits solely from optimized SSA");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "strict SSA external-memory image links");
+    sandbox::vm::VMState vm(256, 256);
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
+               "strict SSA external-memory image loads");
+        const auto result = sandbox::vm::run(vm, 256);
+        expect(result.halted(), "strict SSA external-memory image halts");
+        expect(vm.syscall_buffer == "A",
+               "strict SSA preserves ordered memory and syscall effects");
+    }
 }
 
 void testMatchWildcard() {
@@ -2398,7 +2416,7 @@ int main() {
     testOptimizerAndGraphColoringDetails();
     testConcurrencyFeatures();
     testSysWriteChar();
-    testStrictSsaRejectsReplayFallback();
+    testStrictSsaLowersExternalMemory();
     testMatchWildcard();
     testConstants();
     testParametricWidthFunctions();
