@@ -17,12 +17,14 @@ These are intentionally visible so agents can pick useful work without asking fo
   guarded memory, and unsupported operations still use precise helper side
   exits, so native JIT remains disabled by default until those operations are
   lowered inline as well.
-- Complete the IR-first compiler transition: frontend stack locals must feed
-  real `mem2reg`, optimized IR must drive target emission, and spills must be
-  rewritten until the interference graph is colorable. A fail-closed
-  `--strict-ssa` mode now rejects unsupported target lowering; the default
-  transition build still permits the explicitly reported replay set until
-  those functions are lowered.
+- Complete the IR-first compiler transition for the remaining unsupported
+  cases: optimized SSA now drives promoted and address-taken local frame
+  memory (including loop-carried accesses), and the allocator reserves the
+  frame-address scratch register across spill rewrites. External memory mixed
+  with calls or larger memory regions still needs memory-SSA/call-clobber
+  lowering. A fail-closed `--strict-ssa` mode rejects unsupported target
+  lowering; the default transition build still permits the explicitly
+  reported replay set until those functions are lowered.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

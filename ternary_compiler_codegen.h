@@ -1497,38 +1497,6 @@ private:
         // those analyses are completed.
         if (has_external_memory &&
             (has_call_or_syscall || external_memory_ops > 2)) return false;
-        const bool has_frame_memory = std::any_of(
-            function.blocks.begin(), function.blocks.end(),
-            [](const BasicBlock& block) {
-                return std::any_of(
-                    block.instructions.begin(), block.instructions.end(),
-                    [](const Instr& instr) {
-                        return instr.opcode == InstrOpcode::Alloca ||
-                               instr.opcode == InstrOpcode::Load ||
-                               instr.opcode == InstrOpcode::Store ||
-                               instr.opcode == InstrOpcode::Deref;
-                    });
-            });
-        if (has_frame_memory) {
-            // r24 is the target emitter's frame-address scratch register.
-            // The allocator palette historically allowed it as a normal
-            // scalar/spill temporary, which can silently clobber a live SSA
-            // value while materializing an alloca address.  Until scratch
-            // registers are modeled as fixed reservations, route conflicting
-            // functions through the checked AST fallback.
-            for (const auto& [value, reg] : allocation.scalar_registers) {
-                (void)value;
-                if (reg == 24 || reg + 1 == 24) return false;
-            }
-        }
-        if (has_frame_memory || has_external_memory) {
-            for (const auto& [predecessor, successors] : cfg.successors) {
-                for (const std::string& successor : successors) {
-                    if (cfg.index.at(successor) <= cfg.index.at(predecessor))
-                        return false;
-                }
-            }
-        }
         struct EdgeMove {
             int destination = -1;
             int source = -1;
@@ -4907,8 +4875,12 @@ inline void addInterferenceEdge(
     };
     const std::vector<int> calleePreferred = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     const std::vector<int> vectorColors = {0, 1, 2, 3, 4, 5, 6, 7};
+    // r24 is reserved by the target emitter while it materializes frame
+    // addresses and adjusts the stack pointer. Keep it out of every
+    // allocator palette, including spill-rewrite temporaries, so frame
+    // memory lowering cannot clobber a live SSA value.
     const std::vector<int> spillTemporaryColors =
-        {13, 14, 15, 16, 17, 18, 24};
+        {13, 14, 15, 16, 17, 18};
 
     std::map<ValueId, TypeRef> valueTypes;
     std::map<ValueId, std::set<ValueId>> graph;

@@ -1285,6 +1285,44 @@ void testOptimizerAndGraphColoringDetails() {
 
     {
         const std::string source = R"(
+            fn main() -> t40 {
+              var value: t40 = 0;
+              var i: t40 = 0;
+              let p = &value;
+              while 3 - i > 0 {
+                *p = *p + 1;
+                i = i + 1;
+              }
+              return *p;
+            }
+        )";
+        CompileResult compiled =
+            compileSource("source_loop_frame_memory.trit", source);
+        expect(compiled.success,
+               "source loop with address-taken local compiles");
+        expect(compiled.object.metadata.at(
+                   "target.ir_emitted_functions") == "1" &&
+                   compiled.object.metadata.at(
+                       "target.ast_replay_functions") == "0",
+               "loop-carried frame memory lowers through optimized SSA");
+        LinkResult linked = linkModules({compiled.object});
+        expect(linked.success,
+               "source loop frame-memory image links");
+        sandbox::vm::VMState vm(256, 256);
+        if (linked.success) {
+            expect(sandbox::vm::assembler::loadAndReset(
+                       vm, linked.assembled),
+                   "source loop frame-memory image loads");
+            const auto run = sandbox::vm::run(vm, 512);
+            expect(run.halted(),
+                   "source loop frame-memory image halts");
+            expect(regLong(vm, 13) == 3,
+                   "loop-carried frame memory preserves value semantics");
+        }
+    }
+
+    {
+        const std::string source = R"(
             fn choose(x: t40) -> t40 {
               var a: t40 = 1;
               var b: t40 = 2;
