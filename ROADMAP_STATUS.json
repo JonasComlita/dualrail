@@ -55,7 +55,7 @@
         "smoke_tos_release"
       ],
       "open_items": [
-        "Differential replay fuzzing and randomized bad-pointer coverage",
+        "Randomized malformed-pointer coverage",
         "Framebuffer PNG export",
         "Full guest diagnostics beyond syscall events"
       ]
@@ -76,7 +76,6 @@
         "trit_ast_dump"
       ],
       "open_items": [
-        "Add differential replay fuzzing around the separate-process replay engine",
         "Add randomized syscall coverage for malformed pointers",
         "Add guest /bin/doctor and /bin/test commands",
         "Extend diagnostics with guest checkpoints and external input event provenance",

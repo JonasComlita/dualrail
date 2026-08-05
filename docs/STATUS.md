@@ -96,7 +96,7 @@
 | SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
 | Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
 | Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
-| Deterministic replay | Partial (file-backed bundle, standalone process replay, and structural restore fuzzing; differential replay-result fuzzing pending) | `KNOWN_GAPS.md` |
+| Deterministic replay | Partial (file-backed bundle, standalone process replay, differential result comparison, and structural restore fuzzing; guest diagnostics remain) | `KNOWN_GAPS.md` |
 | Syscall trace capture | Schema-versioned capture | `ternary_host_runtime.h` |
 
 ---
@@ -105,7 +105,7 @@
 
 See `KNOWN_GAPS.md` for the full list. Top items:
 
-1. Differential replay fuzzing and randomized bad-pointer coverage
+1. Randomized malformed-pointer coverage
 2. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
 3. Crash/power-loss VFS + WAL recovery scenarios
 4. Framebuffer PNG export
