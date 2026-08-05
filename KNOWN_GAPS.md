@@ -4,14 +4,6 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- Differential replay-result validation is implemented for the standalone
-  checkpoint replay process. The runtime captures complete VM state, a sparse
-  disk snapshot, boot image, binary/JSONL input journal, and syscall trace; a
-  fresh `TosRuntime` and the `trit_checkpoint_replay` process restore the bundle
-  and re-execute it. `tools/trit_tool.py replay --execute --against` compares
-  normalized deterministic results while structural malformed `.tboot`/`.tdisk`
-  and checkpoint-restore fuzzing remain fail-closed. Randomized malformed guest
-  pointer coverage is tracked separately below.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add a dedicated syscall harness for randomized malformed pointers; the
   structural image validator harness does not exercise guest pointer faults.
