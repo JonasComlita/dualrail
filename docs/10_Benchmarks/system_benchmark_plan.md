@@ -11,9 +11,9 @@ The benchmark pair is intentionally asymmetric:
   throughput, vector/kernel performance, accelerator paths, and long-running
   process stability.
 
-These are manual future gates. They do not replace the current `production`
-suite until the harnesses are deterministic, packaged, and runnable in ordinary
-agent environments.
+The deterministic synthetic pair is part of the current `production` and
+release gates. Larger external Doom/BitNet assets remain follow-on workload
+profiles, not prerequisites for this compact correctness and stability gate.
 
 ## Benchmark Suite Contract
 

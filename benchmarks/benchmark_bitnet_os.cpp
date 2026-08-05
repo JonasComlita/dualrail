@@ -17,7 +17,10 @@ namespace {
 using Clock = std::chrono::steady_clock;
 static constexpr std::uint64_t kExpectedTokenChecksum =
     3733740397087088829ULL;
-static constexpr int kComputeRepetitions = 729;
+// Keep each measured sample long enough that host scheduling jitter is a
+// small part of the result.  The model and token shape remain the compact
+// 27x27/27 deterministic fixture; repetitions model sustained inference.
+static constexpr int kComputeRepetitions = 6561;
 
 std::vector<long long> makeModel() {
     std::vector<long long> model(27 * 27);

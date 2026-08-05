@@ -29,6 +29,11 @@ stable, and report useful performance telemetry.
 6. **Implemented:** the manual CMake/manifest target emits
    `build/benchmarks/bitnet-os.json`.
 
+The deterministic portfolio repeats the compact inference kernel 6,561 times
+per measured sample. This keeps the 3% coefficient-of-variation gate focused
+on sustained compute rather than a few milliseconds of setup jitter while
+preserving the same model and token checksums.
+
 ## Correctness Checks
 
 - deterministic prompt and token count
