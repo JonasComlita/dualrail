@@ -3841,6 +3841,10 @@ struct VMNativeRunContext {
     VMState* vm = nullptr;
     int budget = 0;
     int executed = 0;
+    // Counts only instructions whose architectural commit was emitted into
+    // the native block.  Helper-backed instructions still contribute to
+    // `executed`, but are deliberately excluded from this measurement.
+    int direct_executed = 0;
     int next_pc = 0;
     int exit_reason = 0;
 };
@@ -4148,6 +4152,7 @@ struct VMNativeX64CodeBlock {
     EntryPoint entry = nullptr;
     std::vector<VMNativeX64Instruction> lowered;
     std::size_t direct_instruction_count = 0;
+    std::size_t helper_instruction_count = 0;
     bool writable = false;
     bool executable = false;
 
@@ -4168,6 +4173,41 @@ struct VMNativeX64CodeBlock {
         return allocation != nullptr && executable && !writable;
     }
 };
+
+// Keep the static lowering inventory honest.  Arithmetic and memory are
+// intentionally eligible for a native block so that their helpers can guard
+// and side-exit precisely, but they are not emitted as host instructions.
+[[nodiscard]] inline bool nativeX64InstructionIsDirect(
+    const VMNativeX64Instruction& instruction,
+    std::size_t block_length) {
+    switch (instruction.op) {
+        case VMMicroOpcode::Nop:
+        case VMMicroOpcode::Mov:
+        case VMMicroOpcode::Copy:
+            return true;
+        case VMMicroOpcode::Jmp:
+        case VMMicroOpcode::Brn:
+        case VMMicroOpcode::Brz:
+        case VMMicroOpcode::Brp:
+            return instruction.branch_target_index >= 0 &&
+                   instruction.branch_target_index < block_length;
+        case VMMicroOpcode::Add:
+        case VMMicroOpcode::Sub:
+        case VMMicroOpcode::Mul:
+        case VMMicroOpcode::Neg:
+        case VMMicroOpcode::Abs:
+        case VMMicroOpcode::Load:
+        case VMMicroOpcode::Store:
+        case VMMicroOpcode::Call:
+        case VMMicroOpcode::Ret:
+        case VMMicroOpcode::CallR:
+        case VMMicroOpcode::Jmpr:
+        case VMMicroOpcode::MovH:
+        case VMMicroOpcode::Unsupported:
+            return false;
+    }
+    return false;
+}
 
 [[nodiscard]] inline bool nativeX64HostAvailable() {
 #if defined(_M_X64) || defined(__x86_64__)
@@ -4270,7 +4310,9 @@ struct VMNativeX64Emitter {
     void commitSimple(int next_pc) {
         // r12 holds VMNativeRunContext*.  Use r11 for VMState* and r10 for
         // the next PC; neither value survives into the C++ side because this
-        // path does not make a helper call.
+        // path does not make a helper call.  Keep a separate direct counter
+        // so helper-backed arithmetic/memory does not look like native code
+        // in the JIT measurements.
         movRegMemDisp(
             11, 12,
             static_cast<std::uint32_t>(offsetof(VMNativeRunContext, vm)));
@@ -4287,6 +4329,11 @@ struct VMNativeX64Emitter {
         addMemDispImm8(
             12,
             static_cast<std::uint32_t>(offsetof(VMNativeRunContext, executed)),
+            1);
+        addMemDispImm8(
+            12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, direct_executed)),
             1);
     }
     void movByteMemImm(
@@ -4431,6 +4478,12 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
 #endif
 
     for (const VMNativeX64Instruction& instruction : block->lowered) {
+        if (nativeX64InstructionIsDirect(
+                instruction, block->lowered.size())) {
+            ++block->direct_instruction_count;
+        } else {
+            ++block->helper_instruction_count;
+        }
         instruction_offsets.push_back(emitter.code.size());
         switch (instruction.op) {
             case VMMicroOpcode::Nop:
@@ -4678,7 +4731,6 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
 #endif
     block->writable = false;
     block->executable = true;
-    block->direct_instruction_count = block->lowered.size();
     block->entry = reinterpret_cast<VMNativeX64CodeBlock::EntryPoint>(
         block->allocation);
     return block;
@@ -4735,7 +4787,7 @@ inline int executeNativeX64Jit(
     if (executed > 0) {
         ++vm.native_x64_jit_stats.blocks_executed;
         vm.native_x64_jit_stats.instructions_executed += executed;
-        vm.native_x64_jit_stats.direct_instructions += executed;
+        vm.native_x64_jit_stats.direct_instructions += context.direct_executed;
     } else {
         ++vm.native_x64_jit_stats.portable_side_exits;
     }

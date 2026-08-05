@@ -29,6 +29,25 @@ keeps a mapping writable and executable at the same time. NOP/MOV/COPY and
 hot internal branch control are emitted inline; arithmetic and guarded memory
 retain precise helper side exits until their data paths are lowered inline.
 
+The code-block inventory distinguishes these paths explicitly:
+`VMNativeX64CodeBlock::direct_instruction_count` counts only micro-ops whose
+architectural commit is emitted into x86-64, while
+`helper_instruction_count` counts arithmetic, memory, and non-local control
+micro-ops that call a C++ helper. Runtime
+`native_x64_jit_stats.direct_instructions` is likewise incremented only by
+inline commits; helper instructions still count toward the architectural
+instruction total.
+
+Arithmetic is T40 floating ternary arithmetic: add/subtract align and round
+mantissas, multiply normalizes a product, and all operations must preserve
+overflow/underflow encodings. Guarded memory must perform privilege/MMU
+translation, sparse-page access, memory-fault routing, and reservation
+invalidation. These are not equivalent to a handful of host integer
+instructions, so the helper paths remain intentional. A helper validates its
+operands, sets the faulting PC, and returns a side exit before the portable
+interpreter resumes; focused tests compare status, trap code, PC, cycle count,
+and instruction count for invalid arithmetic and out-of-range memory.
+
 `test_execution_backends_benchmark` reports seven-run median wall time after two warmups
 for arithmetic, guarded-memory, and branch workloads. Native execution may
 become a default only after it reaches at least 1.15x on two workloads and is

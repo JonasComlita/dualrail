@@ -388,6 +388,8 @@ void testVmWidths() {
                    "native x86-64 JIT accounts executed direct lowerings");
             bool all_wx = !native.native_x64_code_cache.empty();
             bool all_lowered = !native.native_x64_code_cache.empty();
+            bool all_lowerings_accounted = !native.native_x64_code_cache.empty();
+            bool saw_helper_backed_lowering = false;
             for (const auto& cached : native.native_x64_code_cache) {
                 const auto block =
                     std::static_pointer_cast<VMNativeX64CodeBlock>(
@@ -395,11 +397,24 @@ void testVmWidths() {
                 all_wx = all_wx && block->isWriteXorExecute();
                 all_lowered = all_lowered &&
                               block->direct_instruction_count > 0;
+                all_lowerings_accounted = all_lowerings_accounted &&
+                    block->direct_instruction_count +
+                            block->helper_instruction_count ==
+                        block->lowered.size();
+                saw_helper_backed_lowering = saw_helper_backed_lowering ||
+                    block->helper_instruction_count > 0;
             }
             expect(all_wx,
                    "native x86-64 JIT code cache is RX and never left W+X");
             expect(all_lowered,
                    "native x86-64 JIT caches only emitted direct blocks");
+            expect(all_lowerings_accounted,
+                   "native x86-64 JIT accounts direct and helper lowerings");
+            expect(saw_helper_backed_lowering,
+                   "native x86-64 JIT marks arithmetic/control data helpers");
+            expect(native.native_x64_jit_stats.direct_instructions <
+                       native.native_x64_jit_stats.instructions_executed,
+                   "native x86-64 JIT direct count excludes helper instructions");
 
             std::uint32_t random = 0x51A7u;
             for (int sample = 0; sample < 27; ++sample) {
@@ -447,6 +462,73 @@ void testVmWidths() {
             expect(native.native_x64_jit_stats.blocks_built == 0,
                    "non-x86 hosts keep native backend unavailable");
         }
+    }
+
+    {
+        // Arithmetic and memory remain helper-backed.  Force each helper to
+        // side-exit before any inline commit, then let the portable
+        // interpreter own the trap so PC, cycle, and step accounting stay
+        // identical to the oracle.
+        auto compareNativeHelperExit = [&](const std::string& label,
+                                            const std::vector<TritWord27>& program,
+                                            const std::function<void(VMState&)>& setup) {
+            VMState interpreter(32, 16);
+            VMState native(32, 16);
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   label + " programs load");
+            setup(interpreter);
+            setup(native);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+
+            const auto interpreter_result = sandbox::vm::run(interpreter, 16);
+            const auto native_result = sandbox::vm::run(native, 16);
+            if (!nativeX64HostAvailable()) {
+                expect(native.native_x64_jit_stats.blocks_built == 0,
+                       label + " skips native code on non-x86 host");
+                return;
+            }
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps,
+                   label + " preserves trap and instruction count");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count,
+                   label + " preserves fault PC and cycle count");
+            expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                   label + " records helper side exit");
+            bool saw_helper = false;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                saw_helper = saw_helper || block->helper_instruction_count > 0;
+            }
+            expect(saw_helper, label + " cache identifies helper lowering");
+            expect(native.native_x64_jit_stats.direct_instructions == 0,
+                   label + " does not miscount helper instruction as direct");
+        };
+
+        compareNativeHelperExit(
+            "native arithmetic helper trap",
+            assembleOrThrow(R"(
+                add r3, r1, r2
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.write(R1, TernaryValue::invalid(TernaryMode::T40));
+            });
+        compareNativeHelperExit(
+            "native memory helper trap",
+            assembleOrThrow(R"(
+                load r2, r1, 0
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.write(R1, sandbox::vm::ops::fromLong(99));
+            });
     }
 
     {
