@@ -4442,6 +4442,78 @@ def _load_checkpoint_metadata(path: Path) -> list[str]:
     return issues
 
 
+_REPLAY_RESULT_FIELDS = (
+    "ok",
+    "status",
+    "steps",
+    "pc",
+    "cycles",
+    "require_halt",
+)
+
+
+def _compare_replay_results(
+    left: dict[str, Any], right: dict[str, Any]
+) -> dict[str, Any]:
+    """Compare the deterministic architectural result of two replays.
+
+    The helper's description and error text are intentionally excluded: they
+    are diagnostic prose and may include bundle-specific paths.  The fields
+    below are the result contract that describes the replay outcome and must
+    agree when two independently restored bundles are equivalent.
+    """
+    mismatches: list[dict[str, Any]] = []
+    for field in _REPLAY_RESULT_FIELDS:
+        left_value = left.get(field)
+        right_value = right.get(field)
+        if left_value != right_value:
+            mismatches.append(
+                {"field": field, "left": left_value, "right": right_value}
+            )
+    return {
+        "match": not mismatches,
+        "fields": list(_REPLAY_RESULT_FIELDS),
+        "mismatches": mismatches,
+    }
+
+
+def _run_checkpoint_replay(
+    executable: Path,
+    bundle: Path,
+    steps: int,
+    require_halt: bool,
+) -> tuple[dict[str, Any], bool, str]:
+    """Run the standalone replay helper and preserve a stable result shape.
+
+    ``safe`` only means that the process returned one of the documented
+    restore/replay statuses and emitted a JSON object.  The caller still
+    checks the helper's ``ok`` field so a trapped replay remains a failure.
+    """
+    command = [str(executable), str(bundle), "--steps", str(steps), "--json"]
+    if require_halt:
+        command.append("--require-halt")
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    try:
+        candidate = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        candidate = None
+    if not isinstance(candidate, dict):
+        candidate = {
+            "ok": False,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+    safe_return = completed.returncode in (0, 3, 4)
+    return candidate, safe_return, completed.stderr
+
+
 def cmd_replay(args: argparse.Namespace) -> int:
     requested = Path(args.trace)
     trace = requested / "syscall_trace.jsonl" if requested.is_dir() else requested
@@ -4501,42 +4573,66 @@ def cmd_replay(args: argparse.Namespace) -> int:
     if comparison is not None:
         summary["comparison"] = comparison
     if args.execute:
+        # Keep structural validation separate from replay execution.  A trace
+        # mismatch (or malformed bundle) must never be hidden by a helper run.
+        structural_issue_count = len(issues)
+        executable: Path | None = None
         if not requested.is_dir():
             issues.append("--execute requires a checkpoint bundle directory")
         elif issues:
             # Do not execute a bundle that already failed structural validation.
             pass
         else:
-            executable = find_executable(default_build_dir(args.build_dir),
-                                          "trit_checkpoint_replay")
+            executable = find_executable(
+                default_build_dir(args.build_dir), "trit_checkpoint_replay"
+            )
             if executable is None:
                 issues.append("trit_checkpoint_replay is not built; build the helper first")
             else:
-                command = [str(executable), str(requested),
-                           "--steps", str(args.steps), "--json"]
-                if args.require_halt:
-                    command.append("--require-halt")
-                completed = subprocess.run(
-                    command,
-                    cwd=REPO_ROOT,
-                    text=True,
-                    capture_output=True,
-                    check=False,
+                execution, safe_return, execution_stderr = _run_checkpoint_replay(
+                    executable, requested, args.steps, args.require_halt
                 )
-                try:
-                    execution = json.loads(completed.stdout)
-                except json.JSONDecodeError:
-                    execution = {
-                        "ok": False,
-                        "returncode": completed.returncode,
-                        "stdout": completed.stdout,
-                        "stderr": completed.stderr,
-                    }
                 summary["execution"] = execution
-                if completed.returncode != 0 or not execution.get("ok", False):
+                if not safe_return or not execution.get("ok", False):
                     issues.append("checkpoint replay execution failed")
-                elif completed.stderr:
-                    summary["execution_stderr"] = completed.stderr
+                elif execution_stderr:
+                    summary["execution_stderr"] = execution_stderr
+
+        # ``--against`` historically compared only JSONL traces.  When both
+        # operands are complete bundles, --execute now performs the same
+        # replay in a second process and compares deterministic result fields.
+        # This catches a replay that emits an identical trace but diverges in
+        # final VM state (or in its halt/trap outcome).
+        if (
+            requested.is_dir()
+            and args.against
+            and Path(args.against).is_dir()
+            and structural_issue_count == 0
+            and executable is not None
+        ):
+            other_bundle = Path(args.against)
+            against_execution, against_safe, against_stderr = _run_checkpoint_replay(
+                executable, other_bundle, args.steps, args.require_halt
+            )
+            summary["execution_against"] = against_execution
+            if not against_safe or not against_execution.get("ok", False):
+                issues.append("checkpoint replay against-bundle execution failed")
+            elif against_stderr:
+                summary["execution_against_stderr"] = against_stderr
+            if "execution" in summary:
+                execution_comparison = _compare_replay_results(
+                    summary["execution"], against_execution
+                )
+                summary["execution_comparison"] = execution_comparison
+                if not execution_comparison["match"]:
+                    fields = ", ".join(
+                        mismatch["field"]
+                        for mismatch in execution_comparison["mismatches"]
+                    )
+                    issues.append(
+                        "checkpoint replay result differs from "
+                        f"{other_bundle} ({fields})"
+                    )
     summary["valid"] = not issues
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
@@ -4948,7 +5044,10 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument(
         "--against",
         default=None,
-        help="compare this trace with a second capture event-by-event",
+        help=(
+            "compare this trace with a second capture event-by-event; with "
+            "--execute and two bundle directories, also compare replay results"
+        ),
     )
     replay.add_argument(
         "--execute",

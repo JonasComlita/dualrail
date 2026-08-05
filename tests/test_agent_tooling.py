@@ -1,8 +1,13 @@
+import argparse
+import contextlib
 import hashlib
+import io
 import json
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -168,6 +173,93 @@ def test_replay_validates_and_compares_syscall_traces():
         report = json.loads(completed.stdout)
         assert report["valid"], report
         assert report["artifacts"]["input_event_count"] == 1
+
+
+def test_replay_compares_separate_process_results():
+    event = {
+        "schema": "trit.syscall_trace.v1",
+        "sequence": 0,
+        "pc": 7,
+        "physical_pc": 7,
+        "syscall_id": 19,
+        "process_id": 0,
+        "before_privilege": 0,
+        "after_privilege": 0,
+        "args": [3, 0, 0, 0],
+        "results": [4096, 0, 0],
+        "before_status": 0,
+        "after_status": 0,
+        "trap": 0,
+        "trap_code": 0,
+        "trap_cause": 0,
+        "cycle_before": 7,
+        "cycle_after": 8,
+    }
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        left = root / "left"
+        right = root / "right"
+        for bundle in (left, right):
+            bundle.mkdir()
+            (bundle / "syscall_trace.jsonl").write_text(
+                json.dumps(event) + "\n", encoding="utf-8"
+            )
+            (bundle / "input_journal.jsonl").write_text("", encoding="utf-8")
+            (bundle / "checkpoint.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "trit.runtime_checkpoint.v1",
+                        "available": True,
+                        "sequence": 0,
+                        "input_event_count": 0,
+                        "cycle": 0,
+                        "pc": 0,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+        def fake_run(command, **_kwargs):
+            # The helper's deterministic result differs only for the second
+            # bundle, allowing the test to exercise the differential failure
+            # path without requiring a native build.
+            bundle = Path(command[1])
+            pc = 12 if bundle.name == "right" else 11
+            payload = {
+                "ok": True,
+                "status": "halted",
+                "steps": 4,
+                "pc": pc,
+                "cycles": 9,
+                "require_halt": False,
+                "description": "checkpoint replay",
+            }
+            return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+        args = argparse.Namespace(
+            trace=str(left),
+            against=str(right),
+            execute=True,
+            build_dir=str(root / "build"),
+            steps=32,
+            require_halt=False,
+            json=True,
+        )
+        output = io.StringIO()
+        with patch.object(
+            trit_tool, "find_executable", return_value=root / "fake-helper"
+        ), patch.object(
+            trit_tool.subprocess, "run", side_effect=fake_run
+        ), contextlib.redirect_stdout(output):
+            assert trit_tool.cmd_replay(args) == 1
+        report = json.loads(output.getvalue())
+        assert not report["valid"], report
+        assert report["execution_comparison"]["match"] is False
+        assert report["execution_comparison"]["mismatches"] == [
+            {"field": "pc", "left": 11, "right": 12}
+        ]
 
 
 def test_structural_fuzz_is_deterministic_and_fail_closed():
@@ -337,6 +429,7 @@ if __name__ == "__main__":
     test_boot_image_inspector_when_release_image_exists()
     test_product_runtime_does_not_compile_sources()
     test_replay_validates_and_compares_syscall_traces()
+    test_replay_compares_separate_process_results()
     test_structural_fuzz_is_deterministic_and_fail_closed()
     test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
