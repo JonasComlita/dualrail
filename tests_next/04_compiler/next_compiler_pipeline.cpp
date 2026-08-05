@@ -602,6 +602,22 @@ void aggregateStructArrayRuntime(TestContext& ctx) {
                   "struct fields, array stores, and aggregate params execute");
     }
 
+    CompilerOptions o0_options;
+    o0_options.optimization = OptimizationLevel::None;
+    o0_options.allow_ast_replay = false;
+    CompileResult o0 = compileSource("next_aggregates_o0.trit", src, o0_options);
+    if (!expectCompileOk(ctx, o0, "aggregate O0 source compiles")) return;
+    ctx.equal(o0.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "aggregate O0 emits from optimized SSA");
+    LinkResult o0_link = linkModules({o0.object});
+    if (!expectLinkOk(ctx, o0_link, "aggregate O0 executable links")) return;
+    sandbox::vm::VMState o0_vm(256, 256);
+    if (loadAndRun(ctx, o0_vm, o0_link, 512, "aggregate O0 runtime")) {
+        ctx.equal(regLong(o0_vm, 13), regLong(vm, 13),
+                  "aggregate optimized and O0 results agree");
+    }
+
     const std::string bounds_src = R"(
         fn main() -> t40 {
           var xs: [t40; 2] = [1, 2];
@@ -1014,6 +1030,96 @@ void pointerValidArmPromotion(TestContext& ctx) {
     }
 }
 
+void externalMemoryCallDifferential(TestContext& ctx) {
+    const std::string src = R"(
+        fn identity(x: t40) -> t40 {
+            return x;
+        }
+
+        fn main() -> t40 {
+            var ptr: t40 = 120;
+            unsafe {
+                store(ptr, 41);
+                let first: t40 = load(ptr);
+                let through_call: t40 = identity(first);
+                store(ptr, through_call + 1);
+                let second: t40 = load(ptr);
+                return second;
+            }
+        }
+    )";
+
+    CompilerOptions optimized_options;
+    optimized_options.allow_ast_replay = false;
+    CompileResult optimized = compileSource(
+        "next_external_memory_call_o1.trit", src, optimized_options);
+    if (!expectCompileOk(ctx, optimized,
+                         "external-memory call O1 source compiles")) {
+        return;
+    }
+    ctx.equal(optimized.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "external-memory call O1 emits from optimized SSA");
+    LinkResult optimized_link = linkModules({optimized.object});
+    if (!expectLinkOk(ctx, optimized_link,
+                      "external-memory call O1 links")) {
+        return;
+    }
+    sandbox::vm::VMState optimized_vm(256, 256);
+    if (!loadAndRun(ctx, optimized_vm, optimized_link, 512,
+                    "external-memory call O1 runtime")) {
+        return;
+    }
+
+    CompilerOptions unoptimized_options = optimized_options;
+    unoptimized_options.optimization = OptimizationLevel::None;
+    CompileResult unoptimized = compileSource(
+        "next_external_memory_call_o0.trit", src, unoptimized_options);
+    if (!expectCompileOk(ctx, unoptimized,
+                         "external-memory call O0 source compiles")) {
+        return;
+    }
+    ctx.equal(unoptimized.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "external-memory call O0 emits from optimized SSA");
+    LinkResult unoptimized_link = linkModules({unoptimized.object});
+    if (!expectLinkOk(ctx, unoptimized_link,
+                      "external-memory call O0 links")) {
+        return;
+    }
+    sandbox::vm::VMState unoptimized_vm(256, 256);
+    if (loadAndRun(ctx, unoptimized_vm, unoptimized_link, 512,
+                   "external-memory call O0 runtime")) {
+        ctx.equal(regLong(optimized_vm, 13), 42LL,
+                  "external-memory call O1 preserves ordered alias effects");
+        ctx.equal(regLong(unoptimized_vm, 13), 42LL,
+                  "external-memory call O0 preserves ordered alias effects");
+        ctx.equal(regLong(optimized_vm, 13), regLong(unoptimized_vm, 13),
+                  "external-memory call optimized and O0 results agree");
+    }
+}
+
+void vectorTargetBoundary(TestContext& ctx) {
+    const std::string src = R"(
+        fn identity(v: vec<t20>) -> vec<t20> {
+            return v;
+        }
+
+        fn main() -> t40 {
+            return 0;
+        }
+    )";
+    CompilerOptions options;
+    options.allow_ast_replay = false;
+    CompileResult compiled = compileSource(
+        "next_vector_target_boundary.trit", src, options);
+    ctx.check(!compiled.success,
+              "strict SSA rejects vector lowering without an ABI");
+    ctx.check(hasDiagnostic(compiled.diagnostics,
+                            "optimized SSA target lowering failed"),
+              "vector strict-SSA diagnostic identifies target boundary");
+}
+
 } // namespace
 
 int main() {
@@ -1061,6 +1167,10 @@ int main() {
          "compiler.pipeline_contract", matchWildcardFallback},
         {"compiler.pointer.valid_arm_promotion",
          "compiler.pipeline_contract", pointerValidArmPromotion},
+        {"compiler.memory.external_call_differential",
+         "compiler.pipeline_contract", externalMemoryCallDifferential},
+        {"compiler.vector.target_boundary",
+         "compiler.pipeline_contract", vectorTargetBoundary},
     };
     return tests_next::runCases("next_compiler_pipeline", cases);
 }

@@ -223,3 +223,23 @@ struct CompileResult {
 ```
 
 `assembly` is the final textual `.tasm` assembly before linking.
+
+## SSA target-emission boundaries
+
+The target emitter is fail-closed: a function is sent to the compatibility AST
+replay path only when verified/allocated SSA cannot represent an operation
+without changing its ABI or effect semantics.  Aggregate locals and aggregate
+parameters use scalar frame addresses and word-wise `LOAD`/`STORE` operations;
+aggregate call arguments are therefore passed as the validated pointer value
+already present in the IR.  Unknown pointer aliases remain ordered
+`ReadMem`/`WriteMem` effects.  When a call or syscall crosses an external-memory
+access, target emission rechecks that every live address carrier has a
+callee-saved scalar allocation; otherwise strict SSA rejects the function.
+
+The remaining intentional boundary is vector-valued compiler source lowering:
+the frontend type model and allocator know about `vec<T>`, but this compiler
+pipeline has no authoritative vector function-call/return ABI or aggregate
+vector spill layout.  Vector values consequently remain fail-closed and are
+reported as replay-backed (or rejected with `allow_ast_replay = false`) until
+that ABI is specified.  This is not a scalarization or an implicit replay
+permission.

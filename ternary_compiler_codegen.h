@@ -1198,6 +1198,10 @@ public:
             std::to_string(ir_emitted_functions);
         result.object.metadata["target.ast_replay_functions"] =
             std::to_string(target_replay_functions);
+        result.object.metadata["target.memory_alias_model"] =
+            "ordered-effects-with-call-carrier-proof";
+        result.object.metadata["target.vector_lowering"] =
+            "fail-closed-no-authoritative-call-abi";
         result.object.metadata["target.critical_edges_split"] =
             std::to_string(target_critical_edges_split);
         result.object.metadata[
@@ -1477,23 +1481,76 @@ private:
                                     : !stack_addresses.count(instr.args[0]));
                     });
             });
-        int external_memory_ops = 0;
+        std::set<ValueId> external_address_values;
         for (const BasicBlock& block : function.blocks) {
             for (const Instr& instr : block.instructions) {
-                if ((instr.opcode == InstrOpcode::Load ||
-                     instr.opcode == InstrOpcode::Store ||
-                     instr.opcode == InstrOpcode::Deref ||
-                     instr.opcode == InstrOpcode::Swap) &&
-                    !instr.args.empty() &&
-                    (instr.opcode == InstrOpcode::Swap
-                         ? std::any_of(
-                               instr.args.begin(),
-                               instr.args.end(),
-                               [&](ValueId address) {
-                                   return !stack_addresses.count(address);
-                               })
-                         : !stack_addresses.count(instr.args[0]))) {
-                    ++external_memory_ops;
+                if (instr.opcode == InstrOpcode::Load ||
+                    instr.opcode == InstrOpcode::Store ||
+                    instr.opcode == InstrOpcode::Deref) {
+                    if (!instr.args.empty() &&
+                        !stack_addresses.count(instr.args[0])) {
+                        external_address_values.insert(instr.args[0]);
+                    }
+                } else if (instr.opcode == InstrOpcode::Swap) {
+                    for (ValueId address : instr.args) {
+                        if (!stack_addresses.count(address))
+                            external_address_values.insert(address);
+                    }
+                }
+            }
+        }
+        // Preserve the carrier set through address arithmetic and merges. Raw
+        // unsafe pointers are represented as numeric values in the frontend,
+        // so a type-only pointer test would miss them.
+        bool external_address_changed = true;
+        while (external_address_changed) {
+            external_address_changed = false;
+            for (const BasicBlock& block : function.blocks) {
+                for (const Instr& instr : block.instructions) {
+                    if (instr.def < 0 ||
+                        external_address_values.count(instr.def)) {
+                        continue;
+                    }
+                    bool derived = false;
+                    switch (instr.opcode) {
+                        case InstrOpcode::AddrOf:
+                        case InstrOpcode::Copy:
+                        case InstrOpcode::Cvt:
+                        case InstrOpcode::Add:
+                        case InstrOpcode::Sub:
+                        case InstrOpcode::FieldAddr:
+                        case InstrOpcode::IndexAddr:
+                            derived = std::any_of(
+                                instr.args.begin(), instr.args.end(),
+                                [&](ValueId arg) {
+                                    return external_address_values.count(arg) != 0;
+                                });
+                            break;
+                        case InstrOpcode::Phi:
+                            derived = std::any_of(
+                                instr.phi_incoming.begin(),
+                                instr.phi_incoming.end(),
+                                [&](const auto& incoming) {
+                                    return external_address_values.count(
+                                               incoming.second) != 0;
+                                });
+                            break;
+                        case InstrOpcode::Tsel:
+                            derived = std::any_of(
+                                instr.args.begin() +
+                                    std::min<std::size_t>(1, instr.args.size()),
+                                instr.args.end(),
+                                [&](ValueId arg) {
+                                    return external_address_values.count(arg) != 0;
+                                });
+                            break;
+                        default:
+                            break;
+                    }
+                    if (derived) {
+                        external_address_values.insert(instr.def);
+                        external_address_changed = true;
+                    }
                 }
             }
         }
@@ -1508,15 +1565,47 @@ private:
                                instr.opcode == InstrOpcode::Syscall;
                     });
             });
-        // A single scalar external store/load is safe beside a call because
-        // the allocator models caller clobbers. Larger aliased regions need
-        // memory-SSA and a call-clobber proof; keep those explicit fallbacks
-        // until that analysis is available so the default build remains
-        // correct rather than silently miscompiling pointer-heavy code.
-        if (has_external_memory &&
-            (external_memory_ops > 2 ||
-             (has_call_or_syscall && external_memory_ops > 1))) {
-            return false;
+        // Loads and stores are effectful IR nodes and are therefore never
+        // CSE'd or speculated. Unknown aliases remain ordered memory effects;
+        // the only additional proof required at a call boundary is that an
+        // address carrier live after the call is in a callee-saved register.
+        // This replaces the old operation-count replay heuristic with an
+        // explicit memory-SSA/call-clobber check.
+        if (has_external_memory && has_call_or_syscall) {
+            const BlockLiveness liveness = computeBlockLiveness(function, cfg);
+            auto calleeSavedScalar = [&](ValueId value) {
+                const auto found = allocation.scalar_registers.find(value);
+                if (found == allocation.scalar_registers.end()) return false;
+                return found->second >= 1 && found->second <= 12;
+            };
+            for (const BasicBlock& block : function.blocks) {
+                std::set<ValueId> live =
+                    liveness.live_out.count(block.name)
+                        ? liveness.live_out.at(block.name)
+                        : std::set<ValueId>{};
+                if (block.terminator.condition >= 0)
+                    live.insert(block.terminator.condition);
+                for (auto it = block.instructions.rbegin();
+                     it != block.instructions.rend(); ++it) {
+                    const Instr& instr = *it;
+                    if (instr.opcode == InstrOpcode::Call ||
+                        instr.opcode == InstrOpcode::CallR ||
+                        instr.opcode == InstrOpcode::Syscall) {
+                        for (ValueId value : live) {
+                            if (external_address_values.count(value) != 0 &&
+                                !calleeSavedScalar(value)) {
+                                // Spill rewriting should have materialized a
+                                // fresh load around the call. A remaining
+                                // spilled carrier has no safe target form.
+                                return false;
+                            }
+                        }
+                    }
+                    if (instr.def >= 0) live.erase(instr.def);
+                    for (ValueId arg : instr.args)
+                        if (arg >= 0) live.insert(arg);
+                }
+            }
         }
         struct EdgeMove {
             int destination = -1;
