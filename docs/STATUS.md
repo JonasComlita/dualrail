@@ -96,7 +96,7 @@
 | SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
 | Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
 | Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
-| Deterministic replay | Partial (file-backed bundle and standalone process replay; differential/fuzz coverage pending) | `KNOWN_GAPS.md` |
+| Deterministic replay | Partial (file-backed bundle and standalone process replay; differential replay fuzzing pending; structural image fuzz available) | `KNOWN_GAPS.md` |
 | Syscall trace capture | Schema-versioned capture | `ternary_host_runtime.h` |
 
 ---
@@ -105,11 +105,10 @@
 
 See `KNOWN_GAPS.md` for the full list. Top items:
 
-1. Differential/fuzz coverage for checkpoint replay and malformed inputs
+1. Differential replay fuzzing and randomized bad-pointer coverage
 2. Guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`
-3. Fuzz harnesses for malformed images + bad syscall pointers
-4. Crash/power-loss VFS + WAL recovery scenarios
-5. Framebuffer PNG export
-6. App golden output/snapshot tests
-7. Doom-class and BitNet 1.58B-class OS benchmark harnesses
-8. Ternary-native symbolic encodings for text and compact value dumps
+3. Crash/power-loss VFS + WAL recovery scenarios
+4. Framebuffer PNG export
+5. App golden output/snapshot tests
+6. Doom-class and BitNet 1.58B-class OS benchmark harnesses
+7. Ternary-native symbolic encodings for text and compact value dumps

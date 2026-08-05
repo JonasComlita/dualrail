@@ -170,6 +170,49 @@ def test_replay_validates_and_compares_syscall_traces():
         assert report["artifacts"]["input_event_count"] == 1
 
 
+def test_structural_fuzz_is_deterministic_and_fail_closed():
+    boot = REPO / "build" / "ternary-os.tboot"
+    disk = REPO / "build" / "ternary-os.tdisk"
+    if not boot.exists() or not disk.exists():
+        return
+    completed = run_tool(
+        "fuzz",
+        "--boot-image",
+        str(boot),
+        "--disk-image",
+        str(disk),
+        "--iterations",
+        "12",
+        "--seed",
+        "12345",
+        "--skip-tests",
+        "--json",
+    )
+    report = json.loads(completed.stdout)
+    assert report["ok"], report
+    assert report["schema"] == "trit.structural_fuzz.v1"
+    assert report["inputs"]["boot"]["rejected_cases"] >= 1
+    assert report["inputs"]["disk"]["rejected_cases"] >= 1
+
+    repeated = json.loads(
+        run_tool(
+            "fuzz",
+            "--boot-image",
+            str(boot),
+            "--disk-image",
+            str(disk),
+            "--iterations",
+            "12",
+            "--seed",
+            "12345",
+            "--skip-tests",
+            "--json",
+        ).stdout
+    )
+    assert report["inputs"]["boot"]["cases"] == repeated["inputs"]["boot"]["cases"]
+    assert report["inputs"]["disk"]["cases"] == repeated["inputs"]["disk"]["cases"]
+
+
 def test_v1_fixture_provenance_and_checksums():
     fixture_root = REPO / "tests" / "fixtures" / "v1"
     manifest = json.loads(
@@ -288,6 +331,7 @@ if __name__ == "__main__":
     test_boot_image_inspector_when_release_image_exists()
     test_product_runtime_does_not_compile_sources()
     test_replay_validates_and_compares_syscall_traces()
+    test_structural_fuzz_is_deterministic_and_fail_closed()
     test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
     test_treatcode_registry_and_coverage()

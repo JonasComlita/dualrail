@@ -192,7 +192,7 @@ tools/
 ├── trit-export-diagnostics.ps1 # Export diagnostics bundle
 ├── trit-bench.ps1            # Run benchmarks
 ├── trit-replay.ps1           # Validate diagnostics and compare traces
-└── trit-fuzz.ps1             # Fuzz harness (placeholder)
+└── trit-fuzz.ps1             # Deterministic malformed-image harness + smoke
 ```
 
 ---

@@ -9,9 +9,11 @@ These are intentionally visible so agents can pick useful work without asking fo
   boot image, binary/JSONL input journal, and syscall trace; a fresh
   `TosRuntime` and the `trit_checkpoint_replay` process restore the bundle and
   re-execute it. `tools/trit_tool.py replay --execute` validates and runs the
-  process-level path.
+  process-level path. Structural malformed `.tboot`/`.tdisk` fuzzing is now
+  deterministic and fail-closed; differential replay fuzzing remains open.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
-- Add fuzz harnesses for malformed image files and bad syscall pointers.
+- Add a dedicated syscall harness for randomized malformed pointers; the
+  structural image validator harness does not exercise guest pointer faults.
 - Add crash/power-loss scenarios for VFS and WAL recovery.
 - Extend the x86-64 backend's direct lowering beyond hot internal branch loops.
   NOP/MOV/COPY and internal branch control now execute as emitted x86-64, and
@@ -21,8 +23,8 @@ These are intentionally visible so agents can pick useful work without asking fo
   lowered inline as well.
 - Complete the IR-first compiler transition for the remaining unsupported
   cases: optimized SSA now drives promoted and address-taken local frame
-  memory (including loop-carried accesses), arbitrary scalar external memory,
-  calls with outgoing stack arguments, and the allocator reserves the
+  memory (including loop-carried accesses), small scalar external-memory
+  regions beside calls, calls with outgoing stack arguments, and the allocator reserves the
   frame-address scratch register across spill rewrites. Aggregate/vector
   values and several complex kernel control/data-flow regions still need
   memory-SSA aliasing, aggregate lowering, and call-clobber proofs. A

@@ -9,11 +9,14 @@ stable command names documented in AGENTS.md.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import hashlib
+import io
 import json
 import os
 import platform
+import random
 import re
 import shlex
 import shutil
@@ -21,6 +24,7 @@ import statistics
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from urllib.parse import unquote
 from pathlib import Path
@@ -4547,11 +4551,215 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_fuzz(args: argparse.Namespace) -> int:
-    print("dedicated fuzz harnesses are not implemented yet; running smoke tests instead")
-    args.suites = ["smoke"]
-    args.all = False
-    args.list = False
-    return cmd_test(args)
+    """Run deterministic, bounded malformed-input checks before optional smoke.
+
+    This is intentionally a structural harness rather than a statistical fuzzer:
+    it makes the image validators consume reproducible truncations, header
+    mutations, record mutations, and tails, and treats an uncaught exception as
+    a failure.  The parser is allowed to accept recoverable tails, so the gate
+    focuses on safety and stable result shape rather than rejecting every byte
+    mutation.
+    """
+
+    iterations = max(1, min(int(args.iterations), 4096))
+    rng = random.Random(int(args.seed))
+    build_dir = default_build_dir(args.build_dir)
+
+    def choose_seed(explicit: str | None, names: list[Path]) -> Path | None:
+        if explicit:
+            candidate = Path(explicit).resolve()
+            return candidate if candidate.is_file() else None
+        for candidate in names:
+            if candidate.is_file():
+                return candidate.resolve()
+        return None
+
+    boot_seed = choose_seed(
+        args.boot_image,
+        [
+            REPO_ROOT / "build" / "release" / "TernaryOS" / "ternary-os.tboot",
+            build_dir / "ternary-os.tboot",
+        ],
+    )
+    disk_seed = choose_seed(
+        args.disk_image,
+        [
+            REPO_ROOT / "build" / "release" / "TernaryOS" / "ternary-os.tdisk",
+            build_dir / "ternary-os.tdisk",
+        ],
+    )
+
+    report: dict[str, Any] = {
+        "schema": "trit.structural_fuzz.v1",
+        "ok": True,
+        "seed": int(args.seed),
+        "iterations": iterations,
+        "build_dir": str(build_dir),
+        "inputs": {},
+        "failures": [],
+    }
+
+    def mutate(raw: bytes, kind: str, iteration: int) -> tuple[bytes, str]:
+        data = bytearray(raw)
+        operators = (
+            "truncate",
+            "flip",
+            "zero_range",
+            "append",
+            "header_field",
+            "record_field",
+        )
+        operator = operators[iteration % len(operators)]
+        if not data:
+            return b"\x00", "empty_seed_replacement"
+        if operator == "truncate":
+            # Include a zero-length case and a partial-header case early.
+            end = 0 if iteration == 0 else rng.randrange(1, len(data))
+            return bytes(data[:end]), f"truncate:{end}"
+        if operator == "flip":
+            index = rng.randrange(len(data))
+            data[index] ^= 1 << rng.randrange(8)
+            return bytes(data), f"flip:{index}"
+        if operator == "zero_range":
+            start = rng.randrange(len(data))
+            width = min(rng.randrange(1, 33), len(data) - start)
+            data[start : start + width] = b"\x00" * width
+            return bytes(data), f"zero:{start}+{width}"
+        if operator == "append":
+            width = 1 + rng.randrange(65)
+            return bytes(data) + rng.randbytes(width), f"append:{width}"
+        if operator == "header_field":
+            if kind == "boot" and len(data) >= 24:
+                field = (iteration // len(operators)) % 3
+                offset = (0, 8, 16)[field]
+                current = struct.unpack_from("<Q", data, offset)[0]
+                struct.pack_into("<Q", data, offset, current ^ (1 << (iteration % 61)))
+                return bytes(data), f"boot_header:{offset}"
+            if kind == "disk" and len(data) >= SPARSE_DISK_HEADER.size:
+                field = (iteration // len(operators)) % 4
+                offset, fmt = (
+                    (0, "<Q"),
+                    (8, "<I"),
+                    (12, "<I"),
+                    (32, "<i"),
+                )[field]
+                current = struct.unpack_from(fmt, data, offset)[0]
+                bits = struct.calcsize(fmt) * 8
+                struct.pack_into(fmt, data, offset, current ^ (1 << (iteration % (bits - 1))))
+                return bytes(data), f"disk_header:{offset}"
+            return bytes(data[: max(0, len(data) - 1)]), "short_header"
+        # Corrupt a record index or a word while preserving the surrounding file.
+        if kind == "disk" and len(data) >= SPARSE_DISK_LEGACY_HEADER.size + SPARSE_DISK_RECORD_SIZE:
+            header_size = (
+                SPARSE_DISK_HEADER.size
+                if len(data) >= SPARSE_DISK_HEADER.size
+                and struct.unpack_from("<Q", data, 0)[0] == SPARSE_DISK_MAGIC
+                else SPARSE_DISK_LEGACY_HEADER.size
+            )
+            record_count = max(1, (len(data) - header_size) // SPARSE_DISK_RECORD_SIZE)
+            record = rng.randrange(record_count)
+            base = header_size + record * SPARSE_DISK_RECORD_SIZE
+            if iteration % 2:
+                struct.pack_into("<i", data, base, -1 if iteration % 4 else 0x7FFFFFFF)
+                return bytes(data), f"disk_record_index:{record}"
+            word_offset = base + SPARSE_DISK_RECORD_HEADER.size + rng.randrange(STORAGE_BLOCK_WORDS) * SPARSE_DISK_WORD.size
+            current = struct.unpack_from("<Q", data, word_offset)[0]
+            struct.pack_into("<Q", data, word_offset, current ^ (1 << (iteration % 63)))
+            return bytes(data), f"disk_record_word:{record}"
+        index = rng.randrange(len(data))
+        data[index] ^= 0xFF
+        return bytes(data), f"fallback_flip:{index}"
+
+    def exercise(seed_path: Path | None, kind: str) -> None:
+        if seed_path is None:
+            report["inputs"][kind] = {"available": False}
+            report["failures"].append(f"no {kind} seed image was found")
+            return
+        try:
+            raw = seed_path.read_bytes()
+        except OSError as exc:
+            report["inputs"][kind] = {"available": False, "path": str(seed_path)}
+            report["failures"].append(f"{kind} seed could not be read: {exc}")
+            return
+        if not raw:
+            report["inputs"][kind] = {"available": False, "path": str(seed_path)}
+            report["failures"].append(f"{kind} seed is empty")
+            return
+        cases: list[dict[str, Any]] = []
+        with tempfile.TemporaryDirectory(prefix=f"trit-{kind}-fuzz-") as temp_dir:
+            target = Path(temp_dir) / seed_path.name
+            for iteration in range(iterations):
+                mutated, mutation = mutate(raw, kind, iteration)
+                target.write_bytes(mutated)
+                try:
+                    inspected = (
+                        inspect_boot_image(target)
+                        if kind == "boot"
+                        else inspect_sparse_disk(target)
+                    )
+                    if not isinstance(inspected, dict) or not isinstance(inspected.get("issues"), list):
+                        raise ValueError("validator returned an invalid result shape")
+                    cases.append(
+                        {
+                            "iteration": iteration,
+                            "mutation": mutation,
+                            "ok": bool(inspected.get("ok")),
+                            "issue_count": len(inspected.get("issues", [])),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - this is the crash gate
+                    report["failures"].append(
+                        f"{kind} iteration {iteration} ({mutation}) raised {type(exc).__name__}: {exc}"
+                    )
+        report["inputs"][kind] = {
+            "available": True,
+            "path": str(seed_path),
+            "bytes": len(raw),
+            "cases": cases,
+            "accepted_cases": sum(1 for case in cases if case["ok"]),
+            "rejected_cases": sum(1 for case in cases if not case["ok"]),
+        }
+
+    exercise(boot_seed, "boot")
+    exercise(disk_seed, "disk")
+    report["ok"] = not report["failures"]
+
+    if not args.skip_tests:
+        args.suites = ["smoke"]
+        args.all = False
+        args.list = False
+        if args.json:
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                test_rc = cmd_test(args)
+            try:
+                report["smoke"] = json.loads(captured.getvalue())
+            except json.JSONDecodeError:
+                report["smoke"] = {"ok": test_rc == 0, "output": captured.getvalue()}
+        else:
+            test_rc = cmd_test(args)
+            report["smoke"] = {"ok": test_rc == 0}
+        if test_rc != 0:
+            report["ok"] = False
+
+    if args.json:
+        print_json(report)
+    else:
+        print(
+            f"structural fuzz: {'ok' if report['ok'] else 'fail'} "
+            f"seed={report['seed']} iterations={iterations}"
+        )
+        for kind, details in report["inputs"].items():
+            if details.get("available"):
+                print(
+                    f"- {kind}: rejected={details['rejected_cases']} "
+                    f"accepted={details['accepted_cases']}"
+                )
+            else:
+                print(f"- {kind}: unavailable")
+        for failure in report["failures"]:
+            print(f"[error] {failure}", file=sys.stderr)
+    return 0 if report["ok"] else 1
 
 
 def add_build_dir(parser: argparse.ArgumentParser) -> None:
@@ -4677,8 +4885,18 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--json", action="store_true")
     replay.set_defaults(func=cmd_replay)
 
-    fuzz = sub.add_parser("fuzz", help="run the current fuzz stand-in")
+    fuzz = sub.add_parser("fuzz", help="run deterministic malformed-image checks")
     add_test_options(fuzz)
+    fuzz.add_argument("--iterations", type=int, default=64,
+                      help="mutations per image kind (default: 64)")
+    fuzz.add_argument("--seed", type=int, default=0x54524954,
+                      help="deterministic mutation seed")
+    fuzz.add_argument("--boot-image", default=None,
+                      help="explicit .tboot seed; otherwise use the release/build image")
+    fuzz.add_argument("--disk-image", default=None,
+                      help="explicit .tdisk seed; otherwise use the release/build image")
+    fuzz.add_argument("--skip-tests", action="store_true",
+                      help="skip the smoke suite after structural fuzzing")
     fuzz.set_defaults(func=cmd_fuzz)
 
     knowledge = sub.add_parser("knowledge", help="manage Obsidian and Graphify knowledge artifacts")

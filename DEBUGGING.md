@@ -58,7 +58,9 @@ bundle, and `TosRuntime::exportCheckpointBundle` plus
 before `replayFromCheckpoint` performs rewind and re-execution. The
 `trit_checkpoint_replay` helper (also exposed as
 `tools/trit_tool.py replay --execute`) exercises the same bundle in a fresh
-process; differential and fuzz coverage remains open in `KNOWN_GAPS.md`.
+process. Run `python tools/trit_tool.py fuzz --skip-tests` for deterministic,
+fail-closed malformed `.tboot`/`.tdisk` validation; differential replay and
+randomized bad-pointer coverage remain open in `KNOWN_GAPS.md`.
 
 Graphify currently augments `.trit` sources with compiler-AST-derived files,
 functions, constants, structs, imports, syscall nodes, and direct call edges. It
