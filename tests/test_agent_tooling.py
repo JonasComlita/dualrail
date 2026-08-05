@@ -193,6 +193,8 @@ def test_structural_fuzz_is_deterministic_and_fail_closed():
     assert report["schema"] == "trit.structural_fuzz.v1"
     assert report["inputs"]["boot"]["rejected_cases"] >= 1
     assert report["inputs"]["disk"]["rejected_cases"] >= 1
+    if report["inputs"]["checkpoint_replay"].get("available"):
+        assert report["inputs"]["checkpoint_replay"]["rejected_cases"] >= 1
 
     repeated = json.loads(
         run_tool(
@@ -211,6 +213,10 @@ def test_structural_fuzz_is_deterministic_and_fail_closed():
     )
     assert report["inputs"]["boot"]["cases"] == repeated["inputs"]["boot"]["cases"]
     assert report["inputs"]["disk"]["cases"] == repeated["inputs"]["disk"]["cases"]
+    assert (
+        report["inputs"]["checkpoint_replay"]["cases"] ==
+        repeated["inputs"]["checkpoint_replay"]["cases"]
+    )
 
 
 def test_v1_fixture_provenance_and_checksums():

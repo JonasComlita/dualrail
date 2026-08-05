@@ -4647,6 +4647,12 @@ def cmd_fuzz(args: argparse.Namespace) -> int:
                 bits = struct.calcsize(fmt) * 8
                 struct.pack_into(fmt, data, offset, current ^ (1 << (iteration % (bits - 1))))
                 return bytes(data), f"disk_header:{offset}"
+            if kind == "checkpoint" and len(data) >= 20:
+                # magic + version precede the logical IMEM/DMEM dimensions.
+                offset = 12 if iteration % 2 == 0 else 16
+                current = struct.unpack_from("<i", data, offset)[0]
+                struct.pack_into("<i", data, offset, current ^ (1 << (iteration % 30)))
+                return bytes(data), f"checkpoint_header:{offset}"
             return bytes(data[: max(0, len(data) - 1)]), "short_header"
         # Corrupt a record index or a word while preserving the surrounding file.
         if kind == "disk" and len(data) >= SPARSE_DISK_LEGACY_HEADER.size + SPARSE_DISK_RECORD_SIZE:
@@ -4722,6 +4728,79 @@ def cmd_fuzz(args: argparse.Namespace) -> int:
 
     exercise(boot_seed, "boot")
     exercise(disk_seed, "disk")
+
+    checkpoint_explicit = bool(args.checkpoint_bundle)
+    checkpoint_seed = (
+        Path(args.checkpoint_bundle).resolve()
+        if checkpoint_explicit
+        else (build_dir / "host_runtime_checkpoint_bundle").resolve()
+    )
+    helper = find_executable(build_dir, "trit_checkpoint_replay")
+    checkpoint_report: dict[str, Any] = {
+        "available": False,
+        "path": str(checkpoint_seed),
+        "cases": [],
+    }
+    if checkpoint_seed.is_dir() and (checkpoint_seed / "vm_state.bin").is_file() and helper:
+        try:
+            state_bytes = (checkpoint_seed / "vm_state.bin").read_bytes()
+            with tempfile.TemporaryDirectory(prefix="trit-checkpoint-fuzz-") as temp_dir:
+                bundle = Path(temp_dir) / "bundle"
+                shutil.copytree(checkpoint_seed, bundle)
+                state_path = bundle / "vm_state.bin"
+                for iteration in range(iterations):
+                    mutated, mutation = mutate(state_bytes, "checkpoint", iteration)
+                    state_path.write_bytes(mutated)
+                    command_result = run_command(
+                        [str(helper), "--bundle", str(bundle), "--steps", "32", "--json"],
+                        cwd=REPO_ROOT,
+                        capture=True,
+                        timeout=min(max(5, int(args.timeout)), 60),
+                    )
+                    parsed: dict[str, Any] | None = None
+                    try:
+                        candidate = json.loads(command_result["stdout"])
+                        if isinstance(candidate, dict):
+                            parsed = candidate
+                    except json.JSONDecodeError:
+                        parsed = None
+                    safe_return = command_result["returncode"] in (0, 3, 4)
+                    if not safe_return or parsed is None:
+                        report["failures"].append(
+                            "checkpoint iteration "
+                            f"{iteration} ({mutation}) exited unsafely: "
+                            f"rc={command_result['returncode']} "
+                            f"stderr={command_result['stderr'][:240]}"
+                        )
+                    checkpoint_report["cases"].append(
+                        {
+                            "iteration": iteration,
+                            "mutation": mutation,
+                            "returncode": command_result["returncode"],
+                            "ok": bool(parsed.get("ok")) if parsed else False,
+                        }
+                    )
+            checkpoint_report.update(
+                {
+                    "available": True,
+                    "bytes": len(state_bytes),
+                    "accepted_cases": sum(
+                        1 for case in checkpoint_report["cases"] if case["ok"]
+                    ),
+                    "rejected_cases": sum(
+                        1 for case in checkpoint_report["cases"] if not case["ok"]
+                    ),
+                }
+            )
+        except OSError as exc:
+            report["failures"].append(f"checkpoint fuzz setup failed: {exc}")
+    elif checkpoint_explicit:
+        report["failures"].append(
+            "explicit checkpoint bundle is missing or trit_checkpoint_replay is unavailable"
+        )
+    else:
+        checkpoint_report["skipped"] = True
+    report["inputs"]["checkpoint_replay"] = checkpoint_report
     report["ok"] = not report["failures"]
 
     if not args.skip_tests:
@@ -4895,6 +4974,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="explicit .tboot seed; otherwise use the release/build image")
     fuzz.add_argument("--disk-image", default=None,
                       help="explicit .tdisk seed; otherwise use the release/build image")
+    fuzz.add_argument("--checkpoint-bundle", default=None,
+                      help="explicit checkpoint bundle; otherwise fuzz the standard build bundle when present")
     fuzz.add_argument("--skip-tests", action="store_true",
                       help="skip the smoke suite after structural fuzzing")
     fuzz.set_defaults(func=cmd_fuzz)

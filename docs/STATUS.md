@@ -96,7 +96,7 @@
 | SDL host runner | ✅ Stable | `run_tos_sdl.cpp` |
 | Diagnostics export | ✅ Stable | `tools/trit_tool.py` |
 | Image inspector | ✅ Stable | `tools/trit-inspect-image.ps1` |
-| Deterministic replay | Partial (file-backed bundle and standalone process replay; differential replay fuzzing pending; structural image fuzz available) | `KNOWN_GAPS.md` |
+| Deterministic replay | Partial (file-backed bundle, standalone process replay, and structural restore fuzzing; differential replay-result fuzzing pending) | `KNOWN_GAPS.md` |
 | Syscall trace capture | Schema-versioned capture | `ternary_host_runtime.h` |
 
 ---

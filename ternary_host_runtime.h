@@ -278,7 +278,7 @@ struct CheckpointReader {
 
     bool string(std::string& value) {
         std::uint64_t size = 0;
-        if (!pod(size) || size > (1ULL << 30)) return false;
+        if (!pod(size) || size > (64ULL << 20)) return false;
         value.resize(static_cast<std::size_t>(size));
         return bytes(value.data(), value.size());
     }
@@ -332,6 +332,33 @@ inline bool readCheckpointProfile(CheckpointReader& reader,
            reader.pod(profile.max_files) && reader.pod(profile.max_windows) &&
            reader.pod(profile.hardware_page_words) && reader.pod(profile.cluster_words) &&
            reader.pod(profile.ram_bytes) && reader.pod(profile.disk_bytes);
+}
+
+inline bool checkpointProfileSane(const vm::ProductionProfile& profile) {
+    // Checkpoint bundles may be supplied by diagnostics tooling, so reject
+    // dimensions that could allocate an unbounded host object before restore
+    // has validated any architectural state.  The largest shipped profile is
+    // below these limits (4 GiB of ternary RAM and a 64 GiB sparse disk).
+    constexpr int kMaxWords = 1 << 29;
+    constexpr int kMaxBlocks = 1 << 29;
+    constexpr int kMaxFramebufferDimension = 16384;
+    return profile.cores >= 1 && profile.cores <= 256 &&
+           profile.ram_words > 0 && profile.ram_words <= kMaxWords &&
+           profile.instruction_words > 0 &&
+           profile.instruction_words <= kMaxWords &&
+           profile.disk_blocks > 0 && profile.disk_blocks <= kMaxBlocks &&
+           profile.framebuffer_words > 0 &&
+           profile.framebuffer_width > 0 &&
+           profile.framebuffer_width <= kMaxFramebufferDimension &&
+           profile.framebuffer_height > 0 &&
+           profile.framebuffer_height <= kMaxFramebufferDimension &&
+           profile.max_processes > 0 && profile.max_processes <= 1'000'000 &&
+           profile.max_files > 0 && profile.max_files <= 1'000'000 &&
+           profile.max_windows > 0 && profile.max_windows <= 1'000'000 &&
+           profile.hardware_page_words > 0 &&
+           profile.hardware_page_words <= (1 << 20) &&
+           profile.cluster_words > 0 && profile.cluster_words <= (1 << 20) &&
+           profile.ram_bytes > 0 && profile.disk_bytes > 0;
 }
 
 inline void writeCheckpointTlbEntry(CheckpointWriter& writer,
@@ -535,6 +562,7 @@ inline bool writeCheckpointState(const std::filesystem::path& path,
 inline bool readCheckpointState(const std::filesystem::path& path,
                                 std::unique_ptr<vm::VMState>& output,
                                 std::string* error = nullptr) {
+    try {
     CheckpointReader reader(path);
     if (!reader.ok) {
         setError(error, "failed to open checkpoint state: " + path.string());
@@ -551,8 +579,11 @@ inline bool readCheckpointState(const std::filesystem::path& path,
     if (!reader.pod(magic) || !reader.pod(version) || magic != kCheckpointStateMagic ||
         version != kCheckpointStateVersion || !reader.pod(imem_size) ||
         !reader.pod(dmem_size) || !reader.pod(imem_sparse) || !reader.pod(dmem_sparse) ||
-        !reader.pod(block_count) || imem_size < 0 || dmem_size < 0 || block_count <= 0 ||
-        !readCheckpointProfile(reader, profile)) {
+        !reader.pod(block_count) || imem_size <= 0 || dmem_size <= 0 ||
+        block_count <= 0 || !readCheckpointProfile(reader, profile) ||
+        !checkpointProfileSane(profile) ||
+        imem_size > (1 << 29) || dmem_size > (1 << 29) ||
+        block_count > (1 << 29) || imem_sparse > 1 || dmem_sparse > 1) {
         setError(error, "checkpoint state header is invalid");
         return false;
     }
@@ -707,6 +738,15 @@ inline bool readCheckpointState(const std::filesystem::path& path,
         return false;
     }
     return true;
+    } catch (const std::exception& exc) {
+        setError(error, std::string("checkpoint state restore failed: ") + exc.what());
+        output.reset();
+        return false;
+    } catch (...) {
+        setError(error, "checkpoint state restore failed with an unknown exception");
+        output.reset();
+        return false;
+    }
 }
 
 inline constexpr std::uint64_t kCheckpointJournalMagic =

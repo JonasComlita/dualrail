@@ -10,7 +10,9 @@ These are intentionally visible so agents can pick useful work without asking fo
   `TosRuntime` and the `trit_checkpoint_replay` process restore the bundle and
   re-execute it. `tools/trit_tool.py replay --execute` validates and runs the
   process-level path. Structural malformed `.tboot`/`.tdisk` fuzzing is now
-  deterministic and fail-closed; differential replay fuzzing remains open.
+  deterministic and fail-closed, and the same harness now probes the
+  standalone checkpoint restore process; differential replay-result fuzzing
+  remains open.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add a dedicated syscall harness for randomized malformed pointers; the
   structural image validator harness does not exercise guest pointer faults.

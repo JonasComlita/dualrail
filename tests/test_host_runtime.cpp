@@ -1,5 +1,6 @@
 #include "ternary_host_runtime.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -462,6 +463,29 @@ void testRuntimeCheckpointAndInputReplay() {
     auto separateFrame = separate.readFramebuffer();
     expect(!separateFrame.glyphs.empty() && separateFrame.glyphs[0] == 'A',
            "file-backed replay preserves journaled input ordering");
+
+    // A diagnostics bundle is an input boundary, not trusted executable
+    // state.  Corrupt a logical memory dimension and require a clean restore
+    // failure rather than an allocation or process-level exception.
+    const std::string state_path = bundle_path + "/vm_state.bin";
+    const std::string state_backup = readTextFile(state_path);
+    {
+        std::fstream state(state_path, std::ios::binary | std::ios::in |
+                                      std::ios::out);
+        const std::int32_t hostile_size = 0x7fffffff;
+        state.seekp(12, std::ios::beg); // magic + version
+        state.write(reinterpret_cast<const char*>(&hostile_size),
+                    sizeof(hostile_size));
+    }
+    expect(!separate.restoreCheckpointBundle(bundle_path, &error),
+           "checkpoint restore rejects hostile memory dimensions");
+    {
+        std::ofstream restored(state_path, std::ios::binary | std::ios::trunc);
+        restored.write(state_backup.data(),
+                       static_cast<std::streamsize>(state_backup.size()));
+    }
+    expect(separate.restoreCheckpointBundle(bundle_path, &error),
+           "checkpoint bundle remains restorable after rejected corruption");
 }
 
 } // namespace
