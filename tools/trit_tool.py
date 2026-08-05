@@ -4271,11 +4271,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
 def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     """Load and validate the host runtime's deterministic syscall trace.
 
-    The first version of replay is deliberately a host-side validator and
-    comparator.  It gives CI a strict contract for traces before a VM
-    checkpoint/input journal is added: malformed or disabled traces cannot be
-    mistaken for replay evidence, and two runs can be compared byte-for-byte
-    at the event level with canonical JSON.
+    Malformed or disabled traces cannot be mistaken for replay evidence, and
+    two runs can be compared byte-for-byte at the event level.  A diagnostics
+    directory may be passed instead of a JSONL file; in that form the paired
+    VM checkpoint and guest-input journal are validated as well.
     """
     issues: list[str] = []
     events: list[dict[str, Any]] = []
@@ -4363,12 +4362,92 @@ def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     return events, issues
 
 
+def _load_input_journal(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    issues: list[str] = []
+    events: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        return events, [f"{path}: cannot read input journal: {exc}"]
+    for line_number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            issues.append(f"{path}:{line_number}: invalid JSON: {exc.msg}")
+            continue
+        if not isinstance(event, dict) or event.get("schema") != "trit.input_journal.v1":
+            issues.append(f"{path}:{line_number}: unsupported or missing schema")
+            continue
+        sequence = event.get("sequence")
+        cycle = event.get("cycle")
+        kind = event.get("kind")
+        if (isinstance(sequence, bool) or not isinstance(sequence, int) or
+                sequence != len(events)):
+            issues.append(f"{path}:{line_number}: sequence must be contiguous from zero")
+        # A restore/replay boundary legitimately moves the VM cycle backwards;
+        # only the event type and non-negative integer shape are invariant in
+        # the journal itself.
+        if (isinstance(cycle, bool) or not isinstance(cycle, int) or
+                cycle < 0):
+            issues.append(f"{path}:{line_number}: cycle must be a non-negative integer")
+        if kind not in (1, 2, 3):
+            issues.append(f"{path}:{line_number}: kind must be keyboard, text, or mouse")
+        for name in ("value0", "value1", "value2"):
+            value = event.get(name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                issues.append(f"{path}:{line_number}: {name} must be an integer")
+        if not isinstance(event.get("text", ""), str):
+            issues.append(f"{path}:{line_number}: text must be a string")
+        events.append(event)
+    return events, issues
+
+
+def _load_checkpoint_metadata(path: Path) -> list[str]:
+    try:
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"{path}: invalid checkpoint metadata: {exc}"]
+    if not isinstance(metadata, dict) or metadata.get("schema") != "trit.runtime_checkpoint.v1":
+        return [f"{path}: unsupported or missing checkpoint schema"]
+    if not isinstance(metadata.get("available"), bool):
+        return [f"{path}: available must be boolean"]
+    if not metadata["available"]:
+        return []
+    issues: list[str] = []
+    for name in ("sequence", "input_event_count", "cycle", "pc"):
+        value = metadata.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            issues.append(f"{path}: {name} must be a non-negative integer")
+    return issues
+
+
 def cmd_replay(args: argparse.Namespace) -> int:
-    trace = Path(args.trace)
+    requested = Path(args.trace)
+    trace = requested / "syscall_trace.jsonl" if requested.is_dir() else requested
     events, issues = _load_syscall_trace(trace)
+    artifact_summary: dict[str, Any] = {}
+    if requested.is_dir():
+        journal = requested / "input_journal.jsonl"
+        checkpoint = requested / "checkpoint.json"
+        if not journal.is_file():
+            issues.append(f"{journal}: missing input journal")
+        else:
+            input_events, input_issues = _load_input_journal(journal)
+            issues.extend(input_issues)
+            artifact_summary["input_event_count"] = len(input_events)
+        if not checkpoint.is_file():
+            issues.append(f"{checkpoint}: missing checkpoint metadata")
+        else:
+            checkpoint_issues = _load_checkpoint_metadata(checkpoint)
+            issues.extend(checkpoint_issues)
+            artifact_summary["checkpoint_metadata"] = str(checkpoint)
     comparison: dict[str, Any] | None = None
     if args.against:
-        other = Path(args.against)
+        requested_other = Path(args.against)
+        other = (requested_other / "syscall_trace.jsonl"
+                 if requested_other.is_dir() else requested_other)
         other_events, other_issues = _load_syscall_trace(other)
         issues.extend(other_issues)
         left = [json.dumps(item, sort_keys=True, separators=(",", ":"))
@@ -4398,6 +4477,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
         "event_count": len(events),
         "issues": issues,
     }
+    if artifact_summary:
+        summary["artifacts"] = artifact_summary
     if comparison is not None:
         summary["comparison"] = comparison
     if args.json:

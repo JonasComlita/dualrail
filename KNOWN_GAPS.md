@@ -4,10 +4,12 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- Add VM checkpoints and guest-input journaling for execution replay. The
-  runtime now emits validated syscall events in `syscall_trace.jsonl`, and
-  `tools/trit-replay.ps1` validates or compares those captures, but it does
-  not yet rewind and re-execute a guest.
+- Add file-backed rewind/re-execution to the replay CLI. The runtime now
+  captures complete in-memory VM checkpoints, journals keyboard/text/mouse
+  events with cycle stamps, exports both artifacts, and can restore/re-execute
+  from the last checkpoint. `tools/trit-replay.ps1` validates a complete
+  diagnostics bundle and compares syscall traces; it does not yet restore a
+  checkpoint in a separate process.
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add fuzz harnesses for malformed image files and bad syscall pointers.
 - Add crash/power-loss scenarios for VFS and WAL recovery.

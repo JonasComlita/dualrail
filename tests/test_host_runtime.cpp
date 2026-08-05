@@ -373,7 +373,70 @@ void testGuestRequestedColdRebootPreservesDisk() {
                                   std::istreambuf_iterator<char>());
     expect(diagnostics.find("boot_generation=2") != std::string::npos &&
                diagnostics.find("guest_reboot_count=1") != std::string::npos,
-           "diagnostics record the completed guest reboot boundary");
+               "diagnostics record the completed guest reboot boundary");
+}
+
+void testRuntimeCheckpointAndInputReplay() {
+    std::cout << "[6] Runtime checkpoints and guest-input replay\n";
+
+    const sandbox::host::TosBootImage image = assembleImage(R"(
+        .text
+        boot:
+            csrr r1, console_in
+            mov r2, 60000
+            store r1, r2, 0
+            halt
+    )");
+
+    const std::string diag_path =
+        buildPath("host_runtime_checkpoint_diagnostics");
+    std::filesystem::remove_all(diag_path);
+    sandbox::host::TosRuntimeConfig config;
+    config.record_syscall_trace = true;
+    sandbox::host::TosRuntime runtime(config);
+    std::string error;
+    expect(runtime.loadImage(image, &error),
+           "checkpoint runtime loads image");
+    expect(runtime.captureCheckpoint(&error),
+           "runtime captures an instruction-boundary checkpoint");
+    expect(runtime.hasCheckpoint(),
+           "runtime reports an available checkpoint");
+
+    runtime.pushTextInput("A");
+    expect(runtime.runForSteps(32).halted(),
+           "checkpoint fixture executes first input");
+    auto first = runtime.readFramebuffer();
+    expect(!first.glyphs.empty() && first.glyphs[0] == 'A',
+           "first input reaches guest state");
+
+    runtime.pushTextInput("B");
+    const auto replay = runtime.replayFromCheckpoint(32, &error);
+    expect(replay.halted(),
+           "checkpoint replay re-executes to the same terminal state");
+    auto replayed = runtime.readFramebuffer();
+    expect(!replayed.glyphs.empty() && replayed.glyphs[0] == 'A',
+           "checkpoint replay injects journaled input deterministically");
+
+    expect(runtime.restoreCheckpoint(&error),
+           "runtime restores the captured checkpoint");
+    runtime.pushTextInput("C");
+    expect(runtime.runForSteps(32).halted(),
+           "restored checkpoint accepts new input");
+    auto restored = runtime.readFramebuffer();
+    expect(!restored.glyphs.empty() && restored.glyphs[0] == 'C',
+           "restored checkpoint discards post-checkpoint guest state");
+
+    expect(runtime.exportDiagnostics(diag_path, &error),
+           "checkpoint runtime exports replay diagnostics");
+    expect(fileExists(diag_path + "/checkpoint.json"),
+           "diagnostics include checkpoint metadata");
+    expect(fileExists(diag_path + "/input_journal.jsonl"),
+           "diagnostics include guest input journal");
+    const std::string journal =
+        readTextFile(diag_path + "/input_journal.jsonl");
+    expect(journal.find("trit.input_journal.v1") != std::string::npos &&
+               journal.find("\"text\":\"A\"") != std::string::npos,
+           "input journal declares schema and records text events");
 }
 
 } // namespace
@@ -386,6 +449,7 @@ int main() {
     testRuntimeGraphicsResetAndDiagnostics();
     testRuntimeSeparateDiskRequiredAndPreserved();
     testGuestRequestedColdRebootPreservesDisk();
+    testRuntimeCheckpointAndInputReplay();
 
     if (g_failures != 0) {
         std::cout << "\n" << g_failures << " host runtime failure(s)\n";

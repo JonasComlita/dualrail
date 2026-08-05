@@ -140,6 +140,30 @@ struct TosRuntimeSnapshot {
     std::uint64_t guest_reboot_count = 0;
 };
 
+enum class TosInputEventKind : std::uint8_t {
+    KeyboardWord = 1,
+    Text = 2,
+    Mouse = 3,
+};
+
+struct TosInputJournalEvent {
+    std::uint64_t sequence = 0;
+    std::uint64_t cycle = 0;
+    TosInputEventKind kind = TosInputEventKind::KeyboardWord;
+    long long value0 = 0;
+    long long value1 = 0;
+    long long value2 = 0;
+    std::string text;
+};
+
+struct TosRuntimeCheckpoint {
+    static constexpr const char* kSchema = "trit.runtime_checkpoint.v1";
+
+    std::uint64_t sequence = 0;
+    std::size_t input_event_count = 0;
+    vm::VMCheckpoint vm;
+};
+
 namespace detail {
 
 inline void setError(std::string* error, const std::string& message) {
@@ -1055,6 +1079,10 @@ public:
         guest_reboot_count_ = 0;
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
+        checkpoint_.reset();
+        next_checkpoint_sequence_ = 0;
+        input_journal_.clear();
+        next_input_sequence_ = 0;
         return true;
     }
 
@@ -1074,6 +1102,10 @@ public:
         guest_reboot_count_ = 0;
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
+        checkpoint_.reset();
+        next_checkpoint_sequence_ = 0;
+        input_journal_.clear();
+        next_input_sequence_ = 0;
         return true;
     }
 
@@ -1176,12 +1208,32 @@ public:
 
     void pushKeyboardInput(long long word) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (machine_) machine_->enqueueConsoleInput(word);
+        if (!machine_) return;
+        machine_->enqueueConsoleInput(word);
+        input_journal_.push_back(TosInputJournalEvent{
+            next_input_sequence_++,
+            static_cast<std::uint64_t>(std::max<long long>(
+                0, machine_->cycle_count)),
+            TosInputEventKind::KeyboardWord,
+            word,
+            0,
+            0,
+            {}});
     }
 
     void pushTextInput(const std::string& text) {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (machine_) machine_->enqueueConsoleAscii(text);
+        if (!machine_) return;
+        machine_->enqueueConsoleAscii(text);
+        input_journal_.push_back(TosInputJournalEvent{
+            next_input_sequence_++,
+            static_cast<std::uint64_t>(std::max<long long>(
+                0, machine_->cycle_count)),
+            TosInputEventKind::Text,
+            0,
+            0,
+            0,
+            text});
     }
 
     void updateMouseState(long long x, long long y, long long buttons) {
@@ -1190,6 +1242,15 @@ public:
         machine_->mouse_x = x;
         machine_->mouse_y = y;
         machine_->mouse_btn = buttons;
+        input_journal_.push_back(TosInputJournalEvent{
+            next_input_sequence_++,
+            static_cast<std::uint64_t>(std::max<long long>(
+                0, machine_->cycle_count)),
+            TosInputEventKind::Mouse,
+            x,
+            y,
+            buttons,
+            {}});
     }
 
     [[nodiscard]] TosFramebufferSnapshot readFramebuffer() const {
@@ -1242,6 +1303,105 @@ public:
         out.boot_generation = boot_generation_;
         out.guest_reboot_count = guest_reboot_count_;
         return out;
+    }
+
+    // Capture the complete machine at an instruction boundary.  The copy is
+    // independent of the live runtime and can be restored after a crash or
+    // used as the starting point for deterministic input replay.
+    [[nodiscard]] bool captureCheckpoint(std::string* error = nullptr) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!machine_) {
+            detail::setError(error, "runtime has no loaded VM image");
+            return false;
+        }
+        auto checkpoint = std::make_shared<TosRuntimeCheckpoint>();
+        checkpoint->sequence = next_checkpoint_sequence_++;
+        checkpoint->input_event_count = input_journal_.size();
+        checkpoint->vm = vm::captureCheckpoint(*machine_);
+        checkpoint_ = std::move(checkpoint);
+        return true;
+    }
+
+    [[nodiscard]] bool hasCheckpoint() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return checkpoint_ != nullptr;
+    }
+
+    [[nodiscard]] TosRuntimeCheckpoint checkpointMetadata() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!checkpoint_) return TosRuntimeCheckpoint{};
+        TosRuntimeCheckpoint metadata;
+        metadata.sequence = checkpoint_->sequence;
+        metadata.input_event_count = checkpoint_->input_event_count;
+        metadata.vm.cycle = checkpoint_->vm.cycle;
+        metadata.vm.pc = checkpoint_->vm.pc;
+        return metadata;
+    }
+
+    [[nodiscard]] bool restoreCheckpoint(std::string* error = nullptr) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!checkpoint_) {
+            detail::setError(error, "runtime has no checkpoint");
+            return false;
+        }
+        if (!machine_ ||
+            !vm::restoreCheckpoint(*machine_, checkpoint_->vm)) {
+            detail::setError(error, "checkpoint state failed architectural validation");
+            return false;
+        }
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
+        return true;
+    }
+
+    // Restore the last checkpoint and re-execute while injecting host input at
+    // the cycle at which it was originally observed.  Events already present
+    // in the checkpoint's input queue are part of the copied VM state and are
+    // therefore not duplicated.
+    [[nodiscard]] vm::RunResult replayFromCheckpoint(
+        int max_steps,
+        std::string* error = nullptr) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!checkpoint_) {
+            detail::setError(error, "runtime has no checkpoint");
+            return {vm::VMStatus::HALTED, 0, 0,
+                    isa::TrapCode::TRAP_ILLEGAL_OP,
+                    "runtime has no checkpoint"};
+        }
+        if (!machine_ ||
+            !vm::restoreCheckpoint(*machine_, checkpoint_->vm)) {
+            detail::setError(error, "checkpoint state failed architectural validation");
+            return {vm::VMStatus::TRAPPED, 0, machine_ ? machine_->pc : 0,
+                    isa::TrapCode::TRAP_ILLEGAL_OP,
+                    "checkpoint state failed architectural validation"};
+        }
+        syscall_trace_.clear();
+        syscall_trace_sequence_ = 0;
+
+        std::size_t next_event = checkpoint_->input_event_count;
+        int steps = 0;
+        while (machine_->isRunning() && machine_->power_control == 0 &&
+               (max_steps < 0 || steps < max_steps)) {
+            while (next_event < input_journal_.size() &&
+                   input_journal_[next_event].cycle <=
+                       static_cast<std::uint64_t>(std::max<long long>(
+                           0, machine_->cycle_count))) {
+                applyInputEventLocked(input_journal_[next_event]);
+                ++next_event;
+            }
+            vm::VMExecutionRecord record;
+            const vm::VMStatus status = vm::step(
+                *machine_, config_.record_syscall_trace ? &record : nullptr);
+            if (config_.record_syscall_trace) recordSyscall(record);
+            ++steps;
+            if (status != vm::VMStatus::RUNNING) break;
+        }
+        vm::RunResult result;
+        result.status = machine_->status;
+        result.steps = steps;
+        result.final_pc = machine_->pc;
+        result.description = "checkpoint replay";
+        return result;
     }
 
     [[nodiscard]] bool exportDiagnostics(const std::string& directory,
@@ -1583,6 +1743,47 @@ public:
             }
         }
         {
+            std::ofstream out(base / "input_journal.jsonl", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write input_journal.jsonl");
+                return false;
+            }
+            for (const TosInputJournalEvent& event : input_journal_) {
+                out << "{\"schema\":\"trit.input_journal.v1\","
+                    << "\"sequence\":" << event.sequence << ","
+                    << "\"cycle\":" << event.cycle << ","
+                    << "\"kind\":" << static_cast<int>(event.kind) << ","
+                    << "\"value0\":" << event.value0 << ","
+                    << "\"value1\":" << event.value1 << ","
+                    << "\"value2\":" << event.value2 << ",\"text\":\"";
+                for (const char ch : event.text) {
+                    if (ch == '\\' || ch == '\"') out << '\\';
+                    if (ch == '\n') out << "\\n";
+                    else if (ch == '\r') out << "\\r";
+                    else out << ch;
+                }
+                out << "\"}\n";
+            }
+        }
+        {
+            std::ofstream out(base / "checkpoint.json", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write checkpoint.json");
+                return false;
+            }
+            out << "{\n  \"schema\":\""
+                << TosRuntimeCheckpoint::kSchema << "\",\n"
+                << "  \"available\":" << (checkpoint_ ? "true" : "false");
+            if (checkpoint_) {
+                out << ",\n  \"sequence\":" << checkpoint_->sequence
+                    << ",\n  \"input_event_count\":"
+                    << checkpoint_->input_event_count
+                    << ",\n  \"cycle\":" << checkpoint_->vm.cycle
+                    << ",\n  \"pc\":" << checkpoint_->vm.pc;
+            }
+            out << "\n}\n";
+        }
+        {
             std::ofstream out(base / "crash_report.txt", std::ios::trunc);
             if (!out.good()) {
                 detail::setError(error, "failed to write crash_report.txt");
@@ -1658,6 +1859,10 @@ private:
     std::uint64_t guest_reboot_count_ = 0;
     std::vector<SyscallTraceEvent> syscall_trace_;
     std::uint64_t syscall_trace_sequence_ = 0;
+    std::shared_ptr<TosRuntimeCheckpoint> checkpoint_;
+    std::uint64_t next_checkpoint_sequence_ = 0;
+    std::vector<TosInputJournalEvent> input_journal_;
+    std::uint64_t next_input_sequence_ = 0;
 
     static const char* privilegeName(isa::PrivilegeMode mode) {
         switch (mode) {
@@ -1678,6 +1883,23 @@ private:
         if (machine_) (void)machine_->compactBlockBackingFile(false);
     }
 
+    void applyInputEventLocked(const TosInputJournalEvent& event) {
+        if (!machine_) return;
+        switch (event.kind) {
+            case TosInputEventKind::KeyboardWord:
+                machine_->enqueueConsoleInput(event.value0);
+                break;
+            case TosInputEventKind::Text:
+                machine_->enqueueConsoleAscii(event.text);
+                break;
+            case TosInputEventKind::Mouse:
+                machine_->mouse_x = event.value0;
+                machine_->mouse_y = event.value1;
+                machine_->mouse_btn = event.value2;
+                break;
+        }
+    }
+
     bool resetMachineLocked(bool guest_reboot, std::string* error) {
         if (!machine_) {
             detail::setError(error, "runtime has no loaded VM image");
@@ -1694,6 +1916,10 @@ private:
         paused_ = config_.start_paused;
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
+        checkpoint_.reset();
+        next_checkpoint_sequence_ = 0;
+        input_journal_.clear();
+        next_input_sequence_ = 0;
         ++boot_generation_;
         if (guest_reboot) ++guest_reboot_count_;
         return true;

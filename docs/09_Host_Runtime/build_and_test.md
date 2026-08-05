@@ -165,6 +165,9 @@ Exports (from `DEBUGGING.md`):
 - `syscall_trace.jsonl` — schema-versioned syscall events when tracing is
   enabled (`--export-diagnostics` enables capture); `tools/trit-replay.ps1`
   validates and compares captures
+- `input_journal.jsonl` — cycle-stamped keyboard, text, and mouse input
+- `checkpoint.json` — metadata for the last in-memory VM checkpoint; a runtime
+  checkpoint can be restored and replayed through the host API
 - `process_table.json` — OS process table
 - `diagnostics.json` — summary
 

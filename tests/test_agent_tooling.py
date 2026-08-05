@@ -140,6 +140,35 @@ def test_replay_validates_and_compares_syscall_traces():
         assert rejected.returncode != 0
         assert "sequence" in rejected.stderr
 
+    with tempfile.TemporaryDirectory() as temp_dir:
+        diagnostics = Path(temp_dir)
+        (diagnostics / "syscall_trace.jsonl").write_text(
+            json.dumps(event) + "\n", encoding="utf-8")
+        (diagnostics / "input_journal.jsonl").write_text(
+            json.dumps({
+                "schema": "trit.input_journal.v1",
+                "sequence": 0,
+                "cycle": 0,
+                "kind": 2,
+                "value0": 0,
+                "value1": 0,
+                "value2": 0,
+                "text": "A",
+            }) + "\n", encoding="utf-8")
+        (diagnostics / "checkpoint.json").write_text(
+            json.dumps({
+                "schema": "trit.runtime_checkpoint.v1",
+                "available": True,
+                "sequence": 0,
+                "input_event_count": 0,
+                "cycle": 0,
+                "pc": 0,
+            }) + "\n", encoding="utf-8")
+        completed = run_tool("replay", str(diagnostics), "--json")
+        report = json.loads(completed.stdout)
+        assert report["valid"], report
+        assert report["artifacts"]["input_event_count"] == 1
+
 
 def test_v1_fixture_provenance_and_checksums():
     fixture_root = REPO / "tests" / "fixtures" / "v1"

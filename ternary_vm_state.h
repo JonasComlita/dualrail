@@ -4189,6 +4189,46 @@ struct VMState {
     }
 };
 
+// A deterministic, in-memory VM checkpoint.  The checkpoint owns a complete
+// architectural state copy (registers, memories, MMU/TLB state, queues, and
+// the sparse block device) so restoring it does not depend on the live VM's
+// mutable caches or backing-file cursor.  Decoded/native code caches are
+// intentionally discarded: they are derived state and may contain pointers
+// into the pre-checkpoint machine.
+struct VMCheckpoint {
+    static constexpr const char* kSchema = "trit.vm_checkpoint.v1";
+
+    std::uint64_t cycle = 0;
+    int pc = 0;
+    VMState state;
+
+    VMCheckpoint() = default;
+
+    explicit VMCheckpoint(const VMState& source)
+        : cycle(static_cast<std::uint64_t>(std::max<long long>(
+              0, source.cycle_count))),
+          pc(source.pc),
+          state(source) {
+        state.invalidateBlockCache();
+        state.invalidateTraceJit();
+    }
+};
+
+[[nodiscard]] inline VMCheckpoint captureCheckpoint(const VMState& vm) {
+    return VMCheckpoint(vm);
+}
+
+inline bool restoreCheckpoint(VMState& vm, const VMCheckpoint& checkpoint) {
+    vm = checkpoint.state;
+    // Assignment copies the architectural state, but all decoded/native
+    // artifacts must be rebuilt against this VM instance before execution.
+    vm.invalidateBlockCache();
+    vm.invalidateTraceJit();
+    return vm.pc == checkpoint.pc &&
+           static_cast<std::uint64_t>(std::max<long long>(
+               0, vm.cycle_count)) == checkpoint.cycle;
+}
+
 // =============================================================================
 // SECTION 10 — Program Loading Helpers
 // =============================================================================

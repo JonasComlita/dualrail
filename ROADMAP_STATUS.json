@@ -55,7 +55,7 @@
         "smoke_tos_release"
       ],
       "open_items": [
-        "VM checkpoint/input journaling for execution replay",
+        "File-backed checkpoint restore and separate-process execution replay",
         "Framebuffer PNG export",
         "Full guest diagnostics beyond syscall events"
       ]
@@ -76,9 +76,9 @@
         "trit_ast_dump"
       ],
       "open_items": [
-        "Promote syscall trace comparison to checkpointed execution replay and fuzz engines",
+        "Promote checkpoint restore to a separate-process replay engine and fuzz harnesses",
         "Add guest /bin/doctor and /bin/test commands",
-        "Teach diagnostics to capture guest checkpoints and external input events",
+        "Extend diagnostics with guest checkpoints and external input event provenance",
         "Keep Obsidian vault links and canvas current as docs evolve",
         "Broaden Graphify/Trit graph augmentation beyond files, functions, constants, structs, imports, syscalls, and direct call edges"
       ]

@@ -191,7 +191,7 @@ tools/
 ├── trit-run.ps1              # Run release image (SDL)
 ├── trit-export-diagnostics.ps1 # Export diagnostics bundle
 ├── trit-bench.ps1            # Run benchmarks
-├── trit-replay.ps1           # Validate/compare syscall traces
+├── trit-replay.ps1           # Validate diagnostics and compare traces
 └── trit-fuzz.ps1             # Fuzz harness (placeholder)
 ```
 
