@@ -6350,14 +6350,18 @@ inline int runInductionSimplification(Function& fn) {
 
     std::map<ValueId, const Instr*> definitions;
     std::map<ValueId, std::string> defining_blocks;
+    std::map<ValueId, int> defining_indices;
     std::map<ValueId, TypeRef> defining_types;
     std::map<ValueId, ValueId> copies;
     std::map<ValueId, long long> constants;
     for (const BasicBlock& block : fn.blocks) {
-        for (const Instr& instr : block.instructions) {
+        for (std::size_t index = 0;
+             index < block.instructions.size(); ++index) {
+            const Instr& instr = block.instructions[index];
             if (instr.def < 0) continue;
             definitions[instr.def] = &instr;
             defining_blocks[instr.def] = block.name;
+            defining_indices[instr.def] = static_cast<int>(index);
             defining_types[instr.def] = instr.type;
             if (instr.opcode == InstrOpcode::Copy &&
                 instr.args.size() == 1 && instr.args.front() >= 0) {
@@ -6492,26 +6496,44 @@ inline int runInductionSimplification(Function& fn) {
     std::map<ValueId, ValueId> replacements;
     int simplified = 0;
     for (std::size_t i = 0; i < candidates.size(); ++i) {
-        const Candidate& canonical = candidates[i];
-        if (replacements.count(canonical.phi)) continue;
+        const Candidate& current = candidates[i];
+        if (replacements.count(current.phi)) continue;
         for (std::size_t j = i + 1; j < candidates.size(); ++j) {
-            const Candidate& redundant = candidates[j];
-            if (replacements.count(redundant.phi) ||
-                canonical.loop != redundant.loop ||
-                !dominance.dominates(
-                    defining_blocks.at(canonical.step),
-                    defining_blocks.at(redundant.step)) ||
-                !sameType(canonical.signature.type,
-                          redundant.signature.type) ||
-                canonical.signature.opcode != redundant.signature.opcode ||
-                canonical.signature.constant !=
-                    redundant.signature.constant ||
-                !sameValue(canonical.initial, redundant.initial)) {
+            const Candidate* canonical = &current;
+            const Candidate* redundant = &candidates[j];
+            const std::string& current_step_block =
+                defining_blocks.at(current.step);
+            const std::string& other_step_block =
+                defining_blocks.at(candidates[j].step);
+            if (current_step_block == other_step_block &&
+                defining_indices.at(current.step) >
+                    defining_indices.at(candidates[j].step)) {
+                std::swap(canonical, redundant);
+            }
+            const std::string& canonical_step_block =
+                defining_blocks.at(canonical->step);
+            const std::string& redundant_step_block =
+                defining_blocks.at(redundant->step);
+            const bool canonical_step_dominates =
+                dominance.dominates(canonical_step_block,
+                                     redundant_step_block) &&
+                (canonical_step_block != redundant_step_block ||
+                 defining_indices.at(canonical->step) <
+                     defining_indices.at(redundant->step));
+            if (replacements.count(redundant->phi) ||
+                canonical->loop != redundant->loop ||
+                !canonical_step_dominates ||
+                !sameType(canonical->signature.type,
+                          redundant->signature.type) ||
+                canonical->signature.opcode != redundant->signature.opcode ||
+                canonical->signature.constant !=
+                    redundant->signature.constant ||
+                !sameValue(canonical->initial, redundant->initial)) {
                 continue;
             }
-            replacements[redundant.phi] = canonical.phi;
-            for (ValueId value : copyChain(redundant.backedge))
-                replacements[value] = canonical.step;
+            replacements[redundant->phi] = canonical->phi;
+            for (ValueId value : copyChain(redundant->backedge))
+                replacements[value] = canonical->step;
             ++simplified;
         }
     }
