@@ -68,6 +68,7 @@ struct DoomPassResult {
     long long branch_instructions = 0;
     long long decoded_instructions = 0;
     long long cache_instructions = 0;
+    long long decoded_trace_instructions = 0;
 };
 
 DoomPassResult runDoomPass(
@@ -75,6 +76,12 @@ DoomPassResult runDoomPass(
     const std::vector<sandbox::vm::TritWord27>& program) {
     sandbox::vm::VMState vm = baseline;
     vm.reset();
+    // The system portfolio measures the portable decoded-trace executor's
+    // steady state rather than paying the interpreter decode cost for every
+    // 27-frame pass.  This is still the same v2 VM semantics and keeps the
+    // workload useful on non-x86 hosts where native JIT emission is absent.
+    vm.setExecutionBackend(sandbox::vm::VMExecutionBackend::DecodedTraceExecutor);
+    vm.setTraceJitHotThreshold(4);
     vm.resetBlockDeviceStats();
     const auto begin = std::chrono::steady_clock::now();
     const sandbox::vm::RunResult result = sandbox::vm::run(vm, 100000000);
@@ -121,6 +128,7 @@ DoomPassResult runDoomPass(
     sample.branch_instructions = vm.branch_instructions_count;
     sample.decoded_instructions = vm.decode_instructions_count;
     sample.cache_instructions = vm.block_cache_stats.instructions_executed;
+    sample.decoded_trace_instructions = vm.trace_jit_stats.instructions_executed;
     sample.passed = result.halted() &&
                     sample.final_reg13 == 1 &&
                     sample.asset_checksum == 54 &&
@@ -182,7 +190,7 @@ bool writeDoomReport(
         << "    \"directory\": " << trit::system_benchmark::jsonString(trit::system_benchmark::environmentValue("TRIT_BUILD_DIR", "build")) << ",\n"
         << "    \"profile\": \"current-compiler\",\n"
         << "    \"compiler_seconds\": " << compile_seconds << ",\n"
-        << "    \"backend\": \"cached_block_interpreter\"\n"
+        << "    \"backend\": \"decoded_trace_executor\"\n"
         << "  },\n"
         << "  \"workload\": {\n"
         << "    \"name\": \"doom-class-os\",\n"
@@ -212,7 +220,8 @@ bool writeDoomReport(
         << "    \"dynamic_total\": " << metrics.steps << ",\n"
         << "    \"branches\": " << metrics.branch_instructions << ",\n"
         << "    \"decoded_instructions\": " << metrics.decoded_instructions << ",\n"
-        << "    \"cached_block_instructions\": " << metrics.cache_instructions << "\n"
+        << "    \"cached_block_instructions\": " << metrics.cache_instructions << ",\n"
+        << "    \"decoded_trace_instructions\": " << metrics.decoded_trace_instructions << "\n"
         << "  },\n"
         << "  \"memory\": {\n"
         << "    \"high_water_words\": " << metrics.memory_high_water << ",\n"
