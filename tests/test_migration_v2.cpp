@@ -141,8 +141,16 @@ void testTemplateMigration() {
         " --legacy-boot " + quote(template_boot) +
         " --v2-boot-template " + quote(template_boot) +
         " --out-boot " + quote(output / "must-not-exist.tboot");
+    // This invocation is expected to fail: the standalone migrator must not
+    // treat an already-v2 source as a legacy input.  Keep the production gate
+    // console clean while preserving the non-zero exit assertion.
+#if defined(_WIN32)
+    const std::string null_stderr = " 2>NUL";
+#else
+    const std::string null_stderr = " 2>/dev/null";
+#endif
     expect(
-        std::system(reject_v2_source.c_str()) != 0,
+        std::system((reject_v2_source + null_stderr).c_str()) != 0,
         "migrator rejects a non-legacy source and aliased template input");
 }
 
