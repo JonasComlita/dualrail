@@ -25,38 +25,43 @@ faulting PC when a guard fails.
 `VMExecutionBackend::NativeX64Jit` is dependency-free and supports Windows x64
 and System V x86-64 calling conventions. It emits ABI-correct code into RW
 memory, changes the mapping to RX, flushes the instruction cache, and never
-keeps a mapping writable and executable at the same time. NOP/MOV/COPY and
-hot internal branch control are emitted inline; arithmetic and guarded memory
-retain precise helper side exits until their data paths are lowered inline.
+keeps a mapping writable and executable at the same time. NOP/MOV/COPY, the
+scalar T40 Add/Sub/TCmp subset, and hot internal branch control are emitted
+inline; multiply/negate/abs and guarded memory retain precise helper side
+exits until their data paths are lowered inline.
 
 The code-block inventory distinguishes these paths explicitly:
 `VMNativeX64CodeBlock::direct_instruction_count` counts only micro-ops whose
 architectural commit is emitted into x86-64, while
-`helper_instruction_count` counts arithmetic, memory, and non-local control
-micro-ops that call a C++ helper. Runtime
+`helper_instruction_count` counts helper-backed arithmetic (multiply/negate/abs),
+memory, and non-local control micro-ops that call a C++ helper. Runtime
 `native_x64_jit_stats.direct_instructions` is likewise incremented only by
 inline commits; helper instructions still count toward the architectural
 instruction total.
 
 Arithmetic is T40 floating ternary arithmetic: add/subtract align and round
 mantissas, multiply normalizes a product, and all operations must preserve
-overflow/underflow encodings. Guarded memory must perform privilege/MMU
+overflow/underflow encodings. The inline scalar Add/Sub path decodes only
+genuinely integral normalized T40 values and side-exits before commit for
+fractional, special, or out-of-range values; portable T40 arithmetic remains
+the authority for those cases. Guarded memory must perform privilege/MMU
 translation, sparse-page access, memory-fault routing, and reservation
-invalidation. These are not equivalent to a handful of host integer
-instructions, so the helper paths remain intentional. A helper validates its
+invalidation. These semantics are not equivalent to unchecked host integer
+instructions, so the guarded subset and helper paths remain intentional. A helper validates its
 operands, sets the faulting PC, and returns a side exit before the portable
 interpreter resumes; focused tests compare status, trap code, PC, cycle count,
 and instruction count for invalid arithmetic and out-of-range memory.
 
 `test_execution_backends_benchmark` reports seven-run median wall time after two warmups
-for arithmetic, guarded-memory, and branch workloads. Native execution may
+for arithmetic, guarded-memory, and branch workloads; the acceptance gate also
+requires each seven-sample coefficient of variation to stay below 3%. Native execution may
 become a default only after it reaches at least 1.15x on two workloads and is
 no more than 3% slower on the third. Decode-count reduction is diagnostic only,
 not a performance acceptance gate. On x86-64, a failed wall-time gate returns
-nonzero so a benchmark result cannot be mistaken for acceptance. The current
-direct branch-loop stage passes the wall-time contract on the measured host,
-but this does not yet authorize the native backend as the default until the
-remaining helper-backed operations are covered.
+nonzero so a benchmark result cannot be mistaken for acceptance. The native
+backend remains opt-in until the measured wall-time and stability contract is
+genuinely satisfied; helper-backed multiply/negate/abs and memory operations
+are not eligible for default-on claims.
 
 Focused parity and safety coverage lives in `tests/test_vm_widths.cpp`,
 including deterministic randomized differential execution, user-mode memory,

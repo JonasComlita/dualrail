@@ -8,12 +8,13 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add a dedicated syscall harness for randomized malformed pointers; the
   structural image validator harness does not exercise guest pointer faults.
 - Add crash/power-loss scenarios for VFS and WAL recovery.
-- Extend the x86-64 backend's direct lowering beyond hot internal branch loops.
-  NOP/MOV/COPY and internal branch control now execute as emitted x86-64, and
-  the three-workload wall-time gate passes on the measured host; arithmetic,
-  guarded memory, and unsupported operations still use precise helper side
-  exits, so native JIT remains disabled by default until those operations are
-  lowered inline as well.
+- Extend the x86-64 backend's direct lowering beyond the current scalar subset
+  and hot internal branch loops. NOP/MOV/COPY, T40 Add/Sub/TCmp, and internal
+  branch control now execute as emitted x86-64 with guarded portable fallback;
+  multiply/negate/abs, guarded memory, and unsupported operations still use
+  precise helper side exits. Native JIT remains disabled by default until the
+  measured wall-time and stability gate is genuinely satisfied and the
+  remaining helper-backed hot operations are lowered inline.
 - Complete the IR-first compiler transition for the remaining unsupported
   cases: optimized SSA now drives promoted and address-taken local frame
   memory (including loop-carried accesses), small scalar external-memory

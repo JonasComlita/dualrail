@@ -2329,6 +2329,7 @@ enum class VMMicroOpcode : uint8_t {
     Mov,
     MovH,
     Copy,
+    TCmp,
     Add,
     Sub,
     Mul,

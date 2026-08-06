@@ -410,11 +410,11 @@ void testVmWidths() {
                    "native x86-64 JIT caches only emitted direct blocks");
             expect(all_lowerings_accounted,
                    "native x86-64 JIT accounts direct and helper lowerings");
-            expect(saw_helper_backed_lowering,
-                   "native x86-64 JIT marks arithmetic/control data helpers");
-            expect(native.native_x64_jit_stats.direct_instructions <
+            expect(!saw_helper_backed_lowering,
+                   "native x86-64 JIT emits the arithmetic/control hot loop directly");
+            expect(native.native_x64_jit_stats.direct_instructions ==
                        native.native_x64_jit_stats.instructions_executed,
-                   "native x86-64 JIT direct count excludes helper instructions");
+                   "native x86-64 JIT direct count covers the inline hot loop");
 
             std::uint32_t random = 0x51A7u;
             for (int sample = 0; sample < 27; ++sample) {
@@ -465,13 +465,313 @@ void testVmWidths() {
     }
 
     {
-        // Arithmetic and memory remain helper-backed.  Force each helper to
-        // side-exit before any inline commit, then let the portable
-        // interpreter own the trap so PC, cycle, and step accounting stay
-        // identical to the oracle.
+        // The scalar native subset must execute the ordinary normalized T40
+        // integer encodings directly.  In particular, fromIntT40(1) has a
+        // non-32 exponent after normalization, so parity alone is not enough:
+        // the cached Add/Sub/TCmp lowerings and their raw output bits are
+        // checked for every boundary corpus entry.
+        const auto arithmetic_program = assembleOrThrow(R"(
+            add  r3, r1, r2
+            sub  r4, r1, r2
+            tcmp r5, r1, r2
+            halt
+        )");
+        struct IntPair { long long a; long long b; };
+        const long long mantissa_max = static_cast<long long>(
+            (native_ops::detail::pow3(33).toUint64() - 1) / 2);
+        std::vector<IntPair> cases = {
+            {0, 0}, {1, 0}, {-1, 0}, {2, -2}, {27, -27},
+            {-27, 2}, {1, 27}, {-2, -27},
+            {mantissa_max, 0}, {-mantissa_max, 0},
+            {mantissa_max, 1}, {mantissa_max, mantissa_max},
+            {-mantissa_max, -1}, {-mantissa_max, -mantissa_max},
+        };
+        std::uint32_t random = 0xC001D00Du;
+        for (int sample = 0; sample < 32; ++sample) {
+            random = random * 1664525u + 1013904223u;
+            const long long a = static_cast<long long>(random % 55u) - 27;
+            random = random * 1664525u + 1013904223u;
+            const long long b = static_cast<long long>(random % 55u) - 27;
+            cases.push_back({a, b});
+        }
+
+        for (const IntPair values : cases) {
+            VMState interpreter(32, 64);
+            VMState native(32, 64);
+            expect(loadAndReset(interpreter, arithmetic_program) &&
+                       loadAndReset(native, arithmetic_program),
+                   "native scalar boundary programs load");
+            const Triple a_value = native_ops::fromIntT40(values.a);
+            const Triple b_value = native_ops::fromIntT40(values.b);
+            interpreter.regfile.write(
+                R1, TernaryValue::fromTriple(a_value));
+            interpreter.regfile.write(
+                R2, TernaryValue::fromTriple(b_value));
+            native.regfile.write(R1, TernaryValue::fromTriple(a_value));
+            native.regfile.write(R2, TernaryValue::fromTriple(b_value));
+            expect(native.regfile.reg[R1].bits.lo == a_value.data &&
+                       native.regfile.reg[R2].bits.lo == b_value.data,
+                   "native scalar inputs preserve fromIntT40 raw bits");
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result =
+                sandbox::vm::run(interpreter, 32);
+            const auto native_result = sandbox::vm::run(native, 32);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps,
+                   "native scalar status and accounting parity");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count,
+                   "native scalar PC and cycle parity");
+            for (const std::uint8_t reg : {R3, R4, R5}) {
+                expect(native.regfile.reg[reg].bits.lo ==
+                           interpreter.regfile.reg[reg].bits.lo &&
+                           native.regfile.reg[reg].bits.hi ==
+                           interpreter.regfile.reg[reg].bits.hi &&
+                           native.regfile.view_mode[reg] ==
+                           interpreter.regfile.view_mode[reg],
+                       "native scalar raw result parity");
+            }
+            const Triple expected_add = native_ops::add(
+                a_value, b_value);
+            const Triple expected_sub = native_ops::subtract(
+                a_value, b_value);
+            const int8_t expected_cmp = native_ops::compare(
+                a_value, b_value);
+            expect(native.regfile.reg[R3].bits.lo == expected_add.data,
+                   "native ADD matches authoritative T40 raw result");
+            expect(native.regfile.reg[R4].bits.lo == expected_sub.data,
+                   "native SUB matches authoritative T40 raw result");
+            expect(native.regfile.reg[R5].bits.lo ==
+                       native_ops::fromIntT40(expected_cmp).data,
+                   "native TCMP matches authoritative T1 physical result");
+
+            if (nativeX64HostAvailable()) {
+                bool saw_add = false;
+                bool saw_sub = false;
+                bool saw_tcmp = false;
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                        const bool direct = nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                        saw_add = saw_add ||
+                            (instruction.op == VMMicroOpcode::Add && direct);
+                        saw_sub = saw_sub ||
+                            (instruction.op == VMMicroOpcode::Sub && direct);
+                        saw_tcmp = saw_tcmp ||
+                            (instruction.op == VMMicroOpcode::TCmp && direct);
+                    }
+                }
+                expect(saw_add && saw_sub && saw_tcmp,
+                       "native scalar cache marks ADD/SUB/TCMP as direct");
+                expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                       "ordinary scalar values stay on direct native path");
+            }
+        }
+    }
+
+    {
+        // Native blocks are tied to IMEM generation just like decoded traces:
+        // an instruction write must retire the old RX allocation before the
+        // next native dispatch can compile a replacement.
+        VMState invalidation(64, 64);
+        const auto program = assembleOrThrow(R"(
+            mov r1, 0
+            mov r2, 1
+        loop:
+            add r1, r1, r2
+            jmp loop
+        )");
+        expect(loadAndReset(invalidation, program),
+               "native invalidation fixture loads");
+        invalidation.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        invalidation.setDecodedTraceHotThreshold(1);
+        const auto warm_result = sandbox::vm::run(invalidation, 12);
+        expect(warm_result.timeout(),
+               "native invalidation fixture reaches the step limit");
+        if (nativeX64HostAvailable()) {
+            expect(!invalidation.native_x64_code_cache.empty() &&
+                       invalidation.native_x64_jit_stats.blocks_built > 0,
+                   "native invalidation fixture builds an RX block");
+            const auto old_generation = invalidation.imem.generation();
+            const auto old_invalidations =
+                invalidation.native_x64_jit_stats.invalidations;
+            expect(invalidation.imem.write(0, program[0]) == MemFaultCode::OK &&
+                       invalidation.imem.generation() != old_generation,
+                   "native invalidation write bumps IMEM generation");
+            invalidation.pc = 0;
+            invalidation.status = VMStatus::RUNNING;
+            const auto rerun = sandbox::vm::run(invalidation, 1);
+            expect(rerun.timeout() && rerun.steps == 1,
+                   "native invalidation rerun dispatches one instruction");
+            expect(invalidation.native_x64_jit_stats.invalidations >
+                       old_invalidations,
+                   "native invalidation retires stale code cache entries");
+        }
+    }
+
+    {
+        // Invalid and non-integral T40 payloads must take a precise guard
+        // exit, then let the portable path own the architectural trap/result.
+        const auto program = assembleOrThrow(R"(
+            add r3, r1, r2
+            halt
+        )");
+        auto compareGuardExit = [&](const std::string& label,
+                                     const TernaryValue& lhs,
+                                     const TernaryValue& rhs) {
+            VMState interpreter(32, 32);
+            VMState native(32, 32);
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   label + " programs load");
+            interpreter.regfile.write(R1, lhs);
+            interpreter.regfile.write(R2, rhs);
+            native.regfile.write(R1, lhs);
+            native.regfile.write(R2, rhs);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result =
+                sandbox::vm::run(interpreter, 16);
+            const auto native_result = sandbox::vm::run(native, 16);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps,
+                   label + " guard preserves status and steps");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count,
+                   label + " guard preserves PC and cycle");
+            if (nativeX64HostAvailable()) {
+                expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                       label + " records precise native guard exit");
+                expect(native.native_x64_jit_stats.direct_instructions == 0,
+                       label + " does not count the guarded instruction committed");
+            }
+        };
+        compareGuardExit(
+            "invalid T40 scalar guard",
+            TernaryValue::invalid(TernaryMode::T40),
+            TernaryValue::fromTriple(native_ops::fromIntT40(1)));
+        compareGuardExit(
+            "fractional T40 scalar guard",
+            TernaryValue::fromTriple(native_ops::divide(
+                native_ops::fromIntT40(1), native_ops::fromIntT40(2))),
+            TernaryValue::fromTriple(native_ops::fromIntT40(1)));
+    }
+
+    {
+        // Exercise all three direct branch predicates with zero and ordinary
+        // signed T40 values, plus an invalid guard-failure case.
+        struct BranchCase {
+            const char* mnemonic;
+            long long value;
+            bool taken;
+        };
+        const std::vector<BranchCase> branches = {
+            {"brn", -1, true}, {"brn", 0, false}, {"brn", 1, false},
+            {"brz", -1, false}, {"brz", 0, true}, {"brz", 1, false},
+            {"brp", -1, false}, {"brp", 0, false}, {"brp", 1, true},
+        };
+        for (const BranchCase branch : branches) {
+            const auto program = assembleOrThrow(
+                std::string{ "loop:\n    nop\n    " } +
+                branch.mnemonic + R"( r1, loop
+                    halt
+                )");
+            VMState interpreter(32, 32);
+            VMState native(32, 32);
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   "native branch predicate programs load");
+            const TernaryValue value = TernaryValue::fromTriple(
+                native_ops::fromIntT40(branch.value));
+            interpreter.regfile.write(R1, value);
+            native.regfile.write(R1, value);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result =
+                sandbox::vm::run(interpreter, 8);
+            const auto native_result = sandbox::vm::run(native, 8);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.steps == interpreter_result.steps,
+                   "native branch status and steps parity");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count &&
+                       native.branch_instructions_count ==
+                           interpreter.branch_instructions_count,
+                   "native branch PC/cycle/count parity");
+            expect((native_result.status == VMStatus::RUNNING) ==
+                       branch.taken,
+                   "native branch taken outcome parity");
+            if (nativeX64HostAvailable()) {
+                bool saw_direct_branch = false;
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                        saw_direct_branch = saw_direct_branch ||
+                            ((instruction.op == VMMicroOpcode::Brn ||
+                              instruction.op == VMMicroOpcode::Brz ||
+                              instruction.op == VMMicroOpcode::Brp) &&
+                             nativeX64InstructionIsDirect(
+                                 instruction, block->lowered.size()));
+                    }
+                }
+                expect(saw_direct_branch,
+                       "native branch predicate is emitted directly");
+                expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                       "valid branch predicates stay on native path");
+            }
+        }
+
+        const auto invalid_program = assembleOrThrow(R"(
+        loop:
+            nop
+            brp r1, loop
+            halt
+        )");
+        VMState interpreter(32, 32);
+        VMState native(32, 32);
+        expect(loadAndReset(interpreter, invalid_program) &&
+                   loadAndReset(native, invalid_program),
+               "native invalid branch programs load");
+        const TernaryValue invalid = TernaryValue::invalid(TernaryMode::T40);
+        interpreter.regfile.write(R1, invalid);
+        native.regfile.write(R1, invalid);
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 8);
+        const auto native_result = sandbox::vm::run(native, 8);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count,
+               "invalid branch guard preserves precise state");
+        if (nativeX64HostAvailable()) {
+            expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                   "invalid branch records precise guard exit");
+        }
+    }
+
+    {
+        // Direct arithmetic guards and helper-backed memory both side-exit
+        // before an unsafe commit.  The portable interpreter owns the trap
+        // so PC, cycle, and step accounting stay identical to the oracle.
         auto compareNativeHelperExit = [&](const std::string& label,
                                             const std::vector<TritWord27>& program,
-                                            const std::function<void(VMState&)>& setup) {
+                                            const std::function<void(VMState&)>& setup,
+                                            bool expect_helper) {
             VMState interpreter(32, 16);
             VMState native(32, 16);
             expect(loadAndReset(interpreter, program) &&
@@ -506,7 +806,8 @@ void testVmWidths() {
                         cached.second);
                 saw_helper = saw_helper || block->helper_instruction_count > 0;
             }
-            expect(saw_helper, label + " cache identifies helper lowering");
+            expect(saw_helper == expect_helper,
+                   label + " cache identifies the expected lowering");
             expect(native.native_x64_jit_stats.direct_instructions == 0,
                    label + " does not miscount helper instruction as direct");
         };
@@ -519,7 +820,8 @@ void testVmWidths() {
             )"),
             [](VMState& vm) {
                 vm.regfile.write(R1, TernaryValue::invalid(TernaryMode::T40));
-            });
+            },
+            false);
         compareNativeHelperExit(
             "native memory helper trap",
             assembleOrThrow(R"(
@@ -528,7 +830,8 @@ void testVmWidths() {
             )"),
             [](VMState& vm) {
                 vm.regfile.write(R1, sandbox::vm::ops::fromLong(99));
-            });
+            },
+            true);
     }
 
     {
