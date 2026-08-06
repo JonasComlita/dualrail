@@ -304,6 +304,11 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_system_benchmark_contract.py
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_compiler_corpus_gate
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tools/compiler_corpus_gate.py
+                     --binary $<TARGET_FILE:test_compiler_corpus_gate>
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_custom_target(agent_doctor
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_tool.py doctor
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -350,6 +355,10 @@ target_compile_definitions(test_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASS
 add_executable(test_execution_backends_benchmark tests/test_execution_backends_benchmark.cpp)
 target_compile_features(test_execution_backends_benchmark PUBLIC cxx_std_17)
 target_compile_definitions(test_execution_backends_benchmark PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_compiler_corpus_gate tests/test_compiler_corpus.cpp)
+target_compile_features(test_compiler_corpus_gate PUBLIC cxx_std_17)
+target_compile_definitions(test_compiler_corpus_gate PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
 add_executable(test_malloc_micro tests/test_malloc_micro.cpp)
 target_compile_features(test_malloc_micro PUBLIC cxx_std_17)
@@ -597,6 +606,14 @@ message(STATUS "  SYCL Enabled: ${ENABLE_SYCL}")
 # Deterministic system workload/release gates
 # ------------------------------------------------------------------------------
 if(Python3_Interpreter_FOUND)
+    add_custom_target(compiler_corpus_gate
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/compiler_corpus_gate.py
+                --binary $<TARGET_FILE:test_compiler_corpus_gate>
+        DEPENDS test_compiler_corpus_gate
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        USES_TERMINAL
+    )
     add_custom_target(system_benchmark_gate
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_system_bench.py
@@ -642,6 +659,9 @@ add_custom_target(ci_production
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
 )
+if(TARGET compiler_corpus_gate)
+    add_dependencies(ci_production compiler_corpus_gate)
+endif()
 if(TARGET system_benchmark_gate)
     add_dependencies(ci_production system_benchmark_gate)
 endif()

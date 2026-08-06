@@ -30,9 +30,14 @@
       "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
       "targets": [
         "test_phase7_compiler",
+        "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",
         "test_layer1_hal"
+      ],
+      "docs": [
+        "COMPILER_CORPUS_SCHEMA.json",
+        "docs/05_Compiler_Infra/compiler_corpus_gate.md"
       ]
     },
     {
@@ -66,7 +71,8 @@
         "test_redo_wal_v2",
         "test_scaling_profile_compact",
         "test_consumer_shell_productization",
-        "test_host_runtime"
+        "test_host_runtime",
+        "test_compiler_corpus_gate"
       ]
     },
     {
