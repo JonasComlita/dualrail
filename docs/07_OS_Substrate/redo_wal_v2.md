@@ -48,10 +48,13 @@ Thus ordinary writes issue no stable flush, while a targeted write plus
 `vfs_fsync` writes only the fd inode's inode row, directory entry/name, extent
 rows, and extent payloads; unrelated dirty inode frames remain dirty.
 
-Appending into a file that needs a new extent logs the extent row and allocator
-cursors in the same transaction as payload and inode-size after-images. The
-allocator is not advanced in the cache until the logical commit, so a durable
-redo commit can recreate the extent before a home-page checkpoint.
+Appending into a file that needs a new extent logs the complete extent row and
+allocator cursors in the same transaction as payload, inode-size, and mtime
+after-images. The standalone allocation and growth helpers use that same
+transactional reservation path; the allocator is not advanced in the cache
+until the logical commit, so a durable redo commit can recreate the extent
+before a home-page checkpoint. A write that runs out of WAL space reports the
+number of committed words and advances the descriptor by exactly that amount.
 
 Create/mkdir now use one WAL transaction for the inode row, inode cursor,
 directory row/name, and directory cursor; create timestamps are part of that
@@ -63,14 +66,11 @@ fields in their control-plane rows rather than mutating unlogged companion
 fields after commit.
 
 The following paths remain intentionally outside this completed atomic slice:
-the standalone `vfs_alloc_extent_at`/`vfs_ensure_extent` helpers still mutate
-their rows directly (the write path has its own transactional allocator path),
-and truncate/unlink do not reclaim allocator cursors or compact directory
-slots. Write does not yet update inode mtime, there is no rename operation, and
-quota usage/physical-page allocation are volatile reconciliation state. The
-namespace/quota tables are restored from WAL rather than included in the VFS
-home-page image; a future format revision should give them explicit home-page
-coverage.
+truncate/unlink do not reclaim allocator cursors or compact directory slots;
+there is no rename operation; and quota usage/physical-page allocation are
+volatile reconciliation state. The namespace/quota tables are restored from
+WAL rather than included in the VFS home-page image; a future format revision
+should give them explicit home-page coverage.
 
 Checkpointing first makes committed WAL durable, then writes home pages and
 issues their data barrier, appends and durably flushes a checkpoint record, and

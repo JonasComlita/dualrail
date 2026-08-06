@@ -5058,10 +5058,17 @@ fn vfs_extent_count(inode: t40) -> t40 {
     return count;
 }
 
-fn vfs_alloc_extent_at(namespace_id: t40, inode: t40, logical_start: t40, length_words: t40) -> t40 {
+// Record a complete extent reservation in the caller's transaction.  This is
+// the only path that advances the extent/data cursors: log_write records
+// after-images and log_commit publishes them atomically, while log_abort (or a
+// failed log_write) leaves both the row and cursors untouched.
+fn vfs_reserve_extent_tx(txid: t40, namespace_id: t40, inode: t40,
+                         logical_start: t40, length_words: t40) -> t40 {
     if length_words <= 0 {
         return ERR_INVALID;
     }
+    if inode < 0 { return ERR_INVALID; }
+    if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
     var next: t40 = kload(VFS_NEXT_EXTENT_ADDR);
     if next - VFS_MAX_EXTENTS >= 0 {
         return ERR_NO_SPACE;
@@ -5071,29 +5078,72 @@ fn vfs_alloc_extent_at(namespace_id: t40, inode: t40, logical_start: t40, length
         return ERR_NO_SPACE;
     }
     var row: t40 = extent_addr(next);
-    kstore(row + EXTENT_NAMESPACE, namespace_id);
-    kstore(row + EXTENT_INODE, inode);
-    kstore(row + EXTENT_LOGICAL_START, logical_start);
-    kstore(row + EXTENT_LENGTH, length_words);
-    kstore(row + EXTENT_DATA_ADDR, data);
-    kstore(row + EXTENT_VERSION, 1);
-    kstore(VFS_NEXT_EXTENT_ADDR, next + 1);
-    kstore(VFS_NEXT_DATA_ADDR, data + length_words);
+    var logged: t40 = log_write(txid, row + EXTENT_NAMESPACE,
+                                 kload(row + EXTENT_NAMESPACE), namespace_id);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + EXTENT_INODE,
+                       kload(row + EXTENT_INODE), inode);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + EXTENT_LOGICAL_START,
+                       kload(row + EXTENT_LOGICAL_START), logical_start);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + EXTENT_LENGTH,
+                       kload(row + EXTENT_LENGTH), length_words);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + EXTENT_DATA_ADDR,
+                       kload(row + EXTENT_DATA_ADDR), data);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + EXTENT_VERSION,
+                       kload(row + EXTENT_VERSION), 1);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, VFS_NEXT_EXTENT_ADDR,
+                       kload(VFS_NEXT_EXTENT_ADDR), next + 1);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, VFS_NEXT_DATA_ADDR,
+                       kload(VFS_NEXT_DATA_ADDR), data + length_words);
+    if logged < 0 { return logged; }
     return next;
 }
 
-// Undo a speculative extent reservation when the WAL transaction cannot be
-// assembled.  Extent rows and allocator cursors are volatile until their
-// after-images have committed; leaving them advanced after a log error would
-// make a later checkpoint publish an orphaned allocation.
-fn vfs_restore_extent_allocation(slot: t40, old_next_extent: t40, old_next_data: t40) -> t40 {
-    if slot >= 0 {
-        var row: t40 = extent_addr(slot);
-        kclear(row, VFS_EXTENT_WORDS);
+// Grow an extent only when it is the most recently allocated extent.  A
+// non-tail extent cannot be enlarged in place without overlapping a later
+// allocation; callers receive ERR_NO_SPACE and no state is changed.
+fn vfs_grow_extent_tx(txid: t40, slot: t40, needed_words: t40) -> t40 {
+    if slot < 0 { return ERR_INVALID; }
+    if slot - VFS_MAX_EXTENTS >= 0 { return ERR_INVALID; }
+    if needed_words <= 0 { return ERR_INVALID; }
+    var row: t40 = extent_addr(slot);
+    if kload(row + EXTENT_VERSION) <= 0 { return ERR_NOT_FOUND; }
+    var old_length: t40 = kload(row + EXTENT_LENGTH);
+    if old_length - needed_words >= 0 { return slot; }
+    var data_end: t40 = kload(row + EXTENT_DATA_ADDR) + old_length;
+    var next_data: t40 = kload(VFS_NEXT_DATA_ADDR);
+    if data_end - next_data != 0 { return ERR_NO_SPACE; }
+    if next_data + needed_words - old_length - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+        return ERR_NO_SPACE;
     }
-    kstore(VFS_NEXT_EXTENT_ADDR, old_next_extent);
-    kstore(VFS_NEXT_DATA_ADDR, old_next_data);
-    return 1;
+    var logged: t40 = log_write(txid, row + EXTENT_LENGTH,
+                                 old_length, needed_words);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, VFS_NEXT_DATA_ADDR, next_data,
+                       next_data + needed_words - old_length);
+    if logged < 0 { return logged; }
+    return slot;
+}
+
+fn vfs_alloc_extent_at(namespace_id: t40, inode: t40, logical_start: t40, length_words: t40) -> t40 {
+    var txid: t40 = log_begin();
+    var slot: t40 = vfs_reserve_extent_tx(txid, namespace_id, inode,
+                                          logical_start, length_words);
+    if slot < 0 {
+        log_abort(txid);
+        return slot;
+    }
+    var committed: t40 = log_commit(txid);
+    if committed < 0 { return committed; }
+    var tracked: t40 = inode_track_required_lsn(inode, committed);
+    if tracked < 0 { return tracked; }
+    return slot;
 }
 
 fn vfs_alloc_extent(namespace_id: t40, inode: t40, length_words: t40) -> t40 {
@@ -5101,24 +5151,39 @@ fn vfs_alloc_extent(namespace_id: t40, inode: t40, length_words: t40) -> t40 {
 }
 
 fn vfs_ensure_extent(namespace_id: t40, inode: t40, needed_words: t40) -> t40 {
+    if needed_words <= 0 { return ERR_INVALID; }
     var slot: t40 = vfs_find_extent(inode);
     if slot >= 0 {
-        var row: t40 = extent_addr(slot);
-        var length_words: t40 = kload(row + EXTENT_LENGTH);
-        if length_words - needed_words >= 0 {
+        var existing_row: t40 = extent_addr(slot);
+        if kload(existing_row + EXTENT_LENGTH) - needed_words >= 0 {
             return slot;
         }
-        kstore(row + EXTENT_LENGTH, needed_words);
-        return slot;
     }
-    return vfs_alloc_extent(namespace_id, inode, needed_words);
+    var txid: t40 = log_begin();
+    if slot >= 0 {
+        var grown: t40 = vfs_grow_extent_tx(txid, slot, needed_words);
+        if grown < 0 {
+            log_abort(txid);
+            return grown;
+        }
+    } else {
+        slot = vfs_reserve_extent_tx(txid, namespace_id, inode, 0,
+                                     needed_words);
+        if slot < 0 {
+            log_abort(txid);
+            return slot;
+        }
+    }
+    var committed: t40 = log_commit(txid);
+    if committed < 0 { return committed; }
+    var tracked: t40 = inode_track_required_lsn(inode, committed);
+    if tracked < 0 { return tracked; }
+    return slot;
 }
 
 fn vfs_ensure_extent_covering(namespace_id: t40, inode: t40, logical_word: t40, remaining_words: t40) -> t40 {
     var slot: t40 = vfs_find_extent_covering(inode, logical_word);
-    if slot >= 0 {
-        return slot;
-    }
+    if slot >= 0 { return slot; }
     var length_words: t40 = remaining_words;
     if length_words - STORAGE_BLOCK_WORDS > 0 {
         length_words = STORAGE_BLOCK_WORDS;
@@ -6209,6 +6274,16 @@ fn vfs_read_inode_kernel(namespace_id: t40, inode: t40, offset: t40, dst_addr: t
     return to_read;
 }
 
+fn vfs_write_partial_result(fdrow: t40, offset: t40, written: t40, status: t40) -> t40 {
+    if written <= 0 {
+        return status;
+    }
+    var version: t40 = kacq(fdrow + FD_VERSION);
+    kstore(fdrow + FD_OFFSET, offset + written);
+    kcas(fdrow + FD_VERSION, version, version + 1);
+    return written;
+}
+
 fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
     if fd_is_open_for_pid(pid, fd) <= 0 {
         return ERR_BAD_FD;
@@ -6241,9 +6316,6 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
     while count_words - i > 0 {
         var logical_word: t40 = offset + i;
         var remaining: t40 = count_words - i;
-        // Resolve the extent without mutating allocator state.  A missing
-        // extent is described by after-images in the same transaction as its
-        // payload and inode size, so a durable commit can never orphan data.
         var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
         var new_extent: t40 = 0;
         var existing_ex: t40 = 0;
@@ -6253,14 +6325,14 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
         if extent_slot < 0 {
             extent_slot = kload(VFS_NEXT_EXTENT_ADDR);
             if extent_slot - VFS_MAX_EXTENTS >= 0 {
-                return ERR_NO_SPACE;
+                return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
             }
             if length_words - STORAGE_BLOCK_WORDS > 0 {
                 length_words = STORAGE_BLOCK_WORDS;
             }
             data = kload(VFS_NEXT_DATA_ADDR);
             if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
-                return ERR_NO_SPACE;
+                return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
             }
             new_extent = 1;
         } else {
@@ -6276,98 +6348,58 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
         if chunk - window > 0 {
             chunk = window;
         }
-        var metadata_records: t40 = 0;
-        if new_extent > 0 {
-            // Six extent fields plus the two allocator cursors, in addition to
-            // the optional inode-size record and the commit record.
-            metadata_records = 8;
-        }
-        var log_room: t40 = wal_free_blocks() - 2 - metadata_records;
+        // Reserve six extent fields and two cursors for a new extent, one
+        // mtime field, one possible size field, and the commit record.  The
+        // extra size slot is conservative when overwriting existing data and
+        // ensures a failed transaction never consumes a partial reservation.
+        var extent_records: t40 = 0;
+        if new_extent > 0 { extent_records = 8; }
+        var log_room: t40 = wal_free_blocks() - extent_records - 3;
         if log_room <= 0 {
-            return ERR_NO_SPACE;
+            return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
         }
         if chunk - log_room > 0 {
             chunk = log_room;
         }
-        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word, data + in_extent);
+        var buffer_slot: t40 = buffer_pin(namespace_id, inode, logical_word,
+                                           data + in_extent);
         if buffer_slot < 0 {
-            return buffer_slot;
+            return vfs_write_partial_result(fdrow, offset, i, buffer_slot);
         }
         var txid: t40 = log_begin();
         if new_extent > 0 {
-            var extent_logged: t40 = log_write(txid, ex + EXTENT_NAMESPACE, 0, namespace_id);
-            if extent_logged < 0 {
+            var extent_slot_logged: t40 = vfs_reserve_extent_tx(
+                txid, namespace_id, inode, start, length_words);
+            if extent_slot_logged < 0 {
                 log_abort(txid);
                 buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, ex + EXTENT_INODE, 0, inode);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, ex + EXTENT_LOGICAL_START, 0, start);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, ex + EXTENT_LENGTH, 0, length_words);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, ex + EXTENT_DATA_ADDR, 0, data);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, ex + EXTENT_VERSION, 0, 1);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, VFS_NEXT_EXTENT_ADDR,
-                                      kload(VFS_NEXT_EXTENT_ADDR),
-                                      extent_slot + 1);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
-            }
-            extent_logged = log_write(txid, VFS_NEXT_DATA_ADDR,
-                                      kload(VFS_NEXT_DATA_ADDR),
-                                      data + length_words);
-            if extent_logged < 0 {
-                log_abort(txid);
-                buffer_unpin(buffer_slot);
-                return extent_logged;
+                return vfs_write_partial_result(fdrow, offset, i,
+                                                 extent_slot_logged);
             }
         }
         var j: t40 = 0;
         while chunk - j > 0 {
-            var src_phys: t40 = user_translate_slot_dmem_addr(process_slot, src_addr + i + j, 0);
+            var src_phys: t40 = user_translate_slot_dmem_addr(
+                process_slot, src_addr + i + j, 0);
             if src_phys < 0 {
                 log_abort(txid);
                 buffer_unpin(buffer_slot);
-                return src_phys;
+                return vfs_write_partial_result(fdrow, offset, i, src_phys);
             }
-            var copy_chunk: t40 = MMU_PAGE_WORDS - user_page_offset(src_addr + i + j);
+            var copy_chunk: t40 = MMU_PAGE_WORDS -
+                                  user_page_offset(src_addr + i + j);
             if copy_chunk - (chunk - j) > 0 {
                 copy_chunk = chunk - j;
             }
             var copy_i: t40 = 0;
             while copy_chunk - copy_i > 0 {
                 var dst: t40 = data + in_extent + j + copy_i;
-                var logged: t40 = log_write(txid, dst, kload(dst), kload(src_phys + copy_i));
+                var logged: t40 = log_write(txid, dst, kload(dst),
+                                            kload(src_phys + copy_i));
                 if logged < 0 {
                     log_abort(txid);
                     buffer_unpin(buffer_slot);
-                    return logged;
+                    return vfs_write_partial_result(fdrow, offset, i, logged);
                 }
                 copy_i = copy_i + 1;
             }
@@ -6375,36 +6407,45 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
         }
         var chunk_end: t40 = logical_word + chunk;
         if chunk_end - old_size > 0 {
-            var logged_size: t40 = log_write(txid, inode_row + INODE_SIZE, old_size, chunk_end);
+            var logged_size: t40 = log_write(txid, inode_row + INODE_SIZE,
+                                             old_size, chunk_end);
             if logged_size < 0 {
                 log_abort(txid);
                 buffer_unpin(buffer_slot);
-                return logged_size;
+                return vfs_write_partial_result(fdrow, offset, i, logged_size);
             }
             old_size = chunk_end;
+        }
+        var logged_mtime: t40 = log_write(
+            txid, inode_row + INODE_MTIME, kload(inode_row + INODE_MTIME),
+            kload(KERNEL_TICK_ADDR));
+        if logged_mtime < 0 {
+            log_abort(txid);
+            buffer_unpin(buffer_slot);
+            return vfs_write_partial_result(fdrow, offset, i, logged_mtime);
         }
         var commit_lsn: t40 = log_commit(txid);
         if commit_lsn < 0 {
             buffer_unpin(buffer_slot);
-            return commit_lsn;
+            return vfs_write_partial_result(fdrow, offset, i, commit_lsn);
         }
+        // The WAL commit has published this chunk.  Count it before the
+        // post-commit cache bookkeeping so any later failure is reported as a
+        // precise short write and the descriptor offset can be advanced.
+        i = i + chunk;
         var marked: t40 = buffer_mark_dirty(buffer_slot, commit_lsn);
         if marked < 0 {
             buffer_unpin(buffer_slot);
-            return marked;
+            return vfs_write_partial_result(fdrow, offset, i, marked);
         }
         var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
         if tracked < 0 {
             buffer_unpin(buffer_slot);
-            return tracked;
+            return vfs_write_partial_result(fdrow, offset, i, tracked);
         }
         buffer_unpin(buffer_slot);
-        i = i + chunk;
     }
-    var version: t40 = kacq(fdrow + FD_VERSION);
-    kstore(fdrow + FD_OFFSET, offset + count_words);
-    kcas(fdrow + FD_VERSION, version, version + 1);
-    return count_words;
+    return vfs_write_partial_result(fdrow, offset, i, i);
 }
 
 fn vfs_stat(namespace_id: t40, path_addr: t40, out_addr: t40) -> t40 {

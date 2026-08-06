@@ -540,6 +540,7 @@ void testNativeKernelVfsMountsDiskBackedState() {
             kstore(src + 1, 22);
             kstore(src + 2, -33);
             kstore(src + 3, 44);
+            kstore(KERNEL_TICK_ADDR, 77);
             var fd: t40 = vfs_open(1, path, 2);
             if fd < 0 { return -2; }
             if vfs_write(1, fd, src, 4) - 4 != 0 { return -3; }
@@ -591,13 +592,21 @@ void testNativeKernelVfsMountsDiskBackedState() {
             var path: t40 = USER_MEM_BASE;
             var dst: t40 = USER_MEM_BASE + 64;
             seed_persist_path(path);
+            var inode: t40 = vfs_lookup(0, path);
+            if inode < 0 { return -8; }
+            if kload(inode_addr(inode) + INODE_MTIME) - 77 != 0 {
+                return -9;
+            }
+            if vfs_find_extent_covering(inode, 100) - ERR_NOT_FOUND != 0 {
+                return -16;
+            }
             var fd: t40 = vfs_open(1, path, 0);
-            if fd < 0 { return -2; }
-            if vfs_read(1, fd, dst, 4) - 4 != 0 { return -3; }
-            if kload(dst + 0) - 11 != 0 { return -4; }
-            if kload(dst + 1) - 22 != 0 { return -5; }
-            if kload(dst + 2) + 33 != 0 { return -6; }
-            if kload(dst + 3) - 44 != 0 { return -7; }
+            if fd < 0 { return -10; }
+            if vfs_read(1, fd, dst, 4) - 4 != 0 { return -11; }
+            if kload(dst + 0) - 11 != 0 { return -12; }
+            if kload(dst + 1) - 22 != 0 { return -13; }
+            if kload(dst + 2) + 33 != 0 { return -14; }
+            if kload(dst + 3) - 44 != 0 { return -15; }
             return 1;
         }
     )";
@@ -643,12 +652,18 @@ void testNativeKernelVfsMountsDiskBackedState() {
             seed_persist_path(path);
             var inode: t40 = vfs_lookup(0, path);
             if inode < 0 { return -2; }
-            var slot: t40 = vfs_find_extent_covering(inode, 0);
-            if slot < 0 { return -3; }
-            var payload: t40 = kload(extent_addr(slot) + EXTENT_DATA_ADDR);
+            var old_next_extent: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+            var old_next_data: t40 = kload(VFS_NEXT_DATA_ADDR);
             var tx: t40 = log_begin();
-            log_write(tx, payload, kload(payload), 99);
-            if wal_sync_to_disk() - 1 != 0 { return -4; }
+            var slot: t40 = vfs_reserve_extent_tx(tx, 0, inode, 100, 3);
+            if slot < 0 { return -3; }
+            if kload(VFS_NEXT_EXTENT_ADDR) - old_next_extent != 0 {
+                return -4;
+            }
+            if kload(VFS_NEXT_DATA_ADDR) - old_next_data != 0 {
+                return -5;
+            }
+            if wal_sync_to_disk() - 1 != 0 { return -6; }
             return 1;
         }
     )";
@@ -878,6 +893,124 @@ void testNativeKernelVfsMountsDiskBackedState() {
     }
 }
 
+void testNativeExtentReservationTransactions() {
+    std::cout << "[8] Native extent reservation transactions\n";
+    using namespace sandbox::compiler;
+    const std::string kernel = readTextFile("kernel.trit");
+    const std::string driver = R"(
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var path: t40 = USER_MEM_BASE;
+            kstore(path + 0, 47);
+            kstore(path + 1, 112);
+            kstore(path + 2, 97);
+            kstore(path + 3, 114);
+            kstore(path + 4, 116);
+            kstore(path + 5, 105);
+            kstore(path + 6, 97);
+            kstore(path + 7, 108);
+            kstore(path + 8, 0);
+            var src: t40 = USER_MEM_BASE + 32;
+            kstore(src + 0, 11);
+            kstore(src + 1, 22);
+            kstore(src + 2, 33);
+            kstore(src + 3, 44);
+            kstore(src + 4, 55);
+            kstore(src + 5, 66);
+            kstore(src + 6, 77);
+            kstore(src + 7, 88);
+            var partial_fd: t40 = vfs_open(1, path, 2);
+            if partial_fd < 0 { return -2; }
+            wal_init();
+            kstore(WAL_TAIL_ADDR, 0);
+            kstore(WAL_HEAD_ADDR, WAL_CAPACITY - 15);
+            var partial: t40 = vfs_write(1, partial_fd, src, 8);
+            if partial - 3 != 0 { return -3; }
+            if kload(fd_addr(partial_fd) + FD_OFFSET) - 3 != 0 {
+                return -4;
+            }
+            wal_init();
+            var inode: t40 = 77;
+            var slot: t40 = vfs_alloc_extent_at(0, inode, 12, 4);
+            if slot < 0 { return -5; }
+            var row: t40 = extent_addr(slot);
+            if kload(row + EXTENT_NAMESPACE) != 0 { return -6; }
+            if kload(row + EXTENT_INODE) - inode != 0 { return -7; }
+            if kload(row + EXTENT_LOGICAL_START) - 12 != 0 { return -8; }
+            if kload(row + EXTENT_LENGTH) - 4 != 0 { return -9; }
+            if inode_required_lsn(inode) <= 0 { return -10; }
+            var data_before_growth: t40 = kload(VFS_NEXT_DATA_ADDR);
+            var required_before_growth: t40 = inode_required_lsn(inode);
+            if vfs_ensure_extent(0, inode, 8) - slot != 0 { return -11; }
+            if kload(row + EXTENT_LENGTH) - 8 != 0 { return -12; }
+            if inode_required_lsn(inode) - required_before_growth <= 0 {
+                return -13;
+            }
+            if kload(VFS_NEXT_DATA_ADDR) - data_before_growth - 4 != 0 {
+                return -14;
+            }
+            var next_extent: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+            var next_data: t40 = kload(VFS_NEXT_DATA_ADDR);
+            if vfs_ensure_extent_covering(0, inode, 13, 1) - slot != 0 {
+                return -15;
+            }
+            if kload(VFS_NEXT_EXTENT_ADDR) - next_extent != 0 {
+                return -16;
+            }
+            if kload(VFS_NEXT_DATA_ADDR) - next_data != 0 { return -17; }
+
+            // Leave exactly one WAL slot free.  The first extent after-image
+            // can be staged, but the complete row/cursor transaction cannot;
+            // abort must leave the candidate row and cursors unchanged.
+            wal_init();
+            var abort_slot: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+            var abort_data: t40 = kload(VFS_NEXT_DATA_ADDR);
+            kstore(WAL_TAIL_ADDR, 1);
+            kstore(WAL_HEAD_ADDR, WAL_CAPACITY - 1);
+            var aborted: t40 = vfs_alloc_extent_at(0, inode, 40, 3);
+            if aborted - ERR_NO_SPACE != 0 { return -18; }
+            if kload(VFS_NEXT_EXTENT_ADDR) - abort_slot != 0 { return -19; }
+            if kload(VFS_NEXT_DATA_ADDR) - abort_data != 0 { return -20; }
+            if kload(extent_addr(abort_slot) + EXTENT_VERSION) != 0 {
+                return -21;
+            }
+
+            // With no WAL space at all, reservation fails before the first
+            // after-image and must have the same nonmutation guarantee.
+            wal_init();
+            abort_slot = kload(VFS_NEXT_EXTENT_ADDR);
+            abort_data = kload(VFS_NEXT_DATA_ADDR);
+            kstore(WAL_TAIL_ADDR, 0);
+            kstore(WAL_HEAD_ADDR, WAL_CAPACITY - 1);
+            var full: t40 = vfs_alloc_extent_at(0, inode, 50, 2);
+            if full - ERR_NO_SPACE != 0 { return -22; }
+            if kload(VFS_NEXT_EXTENT_ADDR) - abort_slot != 0 { return -23; }
+            if kload(VFS_NEXT_DATA_ADDR) - abort_data != 0 { return -24; }
+            if kload(extent_addr(abort_slot) + EXTENT_VERSION) != 0 {
+                return -25;
+            }
+            wal_init();
+            return 1;
+        }
+    )";
+    CompileResult compiled = compileSource("native_extent_reservation_transactions.trit",
+                                           kernel + "\n" + driver);
+    expect(compiled.success, "extent reservation transaction driver compiles");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "extent reservation transaction driver links");
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
+               "extent reservation transaction driver loads");
+        const auto result = sandbox::vm::run(vm, 50000000);
+        dumpNativeRunIfFailed("extent-reservation-transactions", result, vm,
+                              linked.assembled.labels);
+        expect(result.halted(), "extent reservation transaction driver halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1,
+               "extent helpers publish through WAL and preserve state on failure");
+    }
+}
+
 void testNativeKernelInodeFsyncOrdering() {
     std::cout << "[8] Native kernel inode-scoped fsync ordering\n";
     using namespace sandbox::compiler;
@@ -925,8 +1058,10 @@ void testNativeKernelInodeFsyncOrdering() {
             // Establish both directory entries and allocator state as the
             // durable baseline; only the following writes are dirty.
             if vfs_sync_to_disk() < 0 { return -4; }
-            if vfs_write(1, alpha_fd, src, 3) - 3 != 0 { return -5; }
-            if vfs_write(1, beta_fd, src, 3) - 3 != 0 { return -6; }
+            // Two words keep both commits below the 27-block group-flush
+            // threshold now that each write also logs inode mtime.
+            if vfs_write(1, alpha_fd, src, 2) - 2 != 0 { return -5; }
+            if vfs_write(1, beta_fd, src, 2) - 2 != 0 { return -6; }
 
             var alpha_inode: t40 = vfs_lookup(0, alpha_path);
             var beta_inode: t40 = vfs_lookup(0, beta_path);
@@ -1241,6 +1376,7 @@ int main() {
     testRootFilesystemImageBuilder();
     testNativeBioReadsRootFilesystemImage();
     testNativeKernelVfsMountsDiskBackedState();
+    testNativeExtentReservationTransactions();
     testNativeKernelInodeFsyncOrdering();
     testNativeWalErrorPropagation();
     testNativeVfsImageBuilderBootsKernelRoot();
