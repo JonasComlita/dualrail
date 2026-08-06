@@ -765,13 +765,14 @@ void testVmWidths() {
     }
 
     {
-        // Direct arithmetic guards and helper-backed memory both side-exit
-        // before an unsafe commit.  The portable interpreter owns the trap
-        // so PC, cycle, and step accounting stay identical to the oracle.
-        auto compareNativeHelperExit = [&](const std::string& label,
-                                            const std::vector<TritWord27>& program,
-                                            const std::function<void(VMState&)>& setup,
-                                            bool expect_helper) {
+        // Direct arithmetic guards and guarded dense-memory lowerings both
+        // side-exit before an unsafe commit.  The portable interpreter owns
+        // the trap so PC, cycle, and step accounting stay identical to the
+        // oracle.
+        auto compareNativeGuardExit = [&](const std::string& label,
+                                           const std::vector<TritWord27>& program,
+                                           const std::function<void(VMState&)>& setup,
+                                           bool expect_helper) {
             VMState interpreter(32, 16);
             VMState native(32, 16);
             expect(loadAndReset(interpreter, program) &&
@@ -812,7 +813,7 @@ void testVmWidths() {
                    label + " does not miscount helper instruction as direct");
         };
 
-        compareNativeHelperExit(
+        compareNativeGuardExit(
             "native arithmetic helper trap",
             assembleOrThrow(R"(
                 add r3, r1, r2
@@ -822,8 +823,8 @@ void testVmWidths() {
                 vm.regfile.write(R1, TernaryValue::invalid(TernaryMode::T40));
             },
             false);
-        compareNativeHelperExit(
-            "native memory helper trap",
+        compareNativeGuardExit(
+            "native memory guard trap",
             assembleOrThrow(R"(
                 load r2, r1, 0
                 halt
@@ -831,7 +832,7 @@ void testVmWidths() {
             [](VMState& vm) {
                 vm.regfile.write(R1, sandbox::vm::ops::fromLong(99));
             },
-            true);
+            false);
     }
 
     {
@@ -871,6 +872,17 @@ void testVmWidths() {
         std::vector<PointerCase> cases;
         cases.push_back({"valid", sandbox::vm::ops::fromLong(4), 0, true, 4242,
                          TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"valid-negative-immediate",
+                         sandbox::vm::ops::fromLong(5), -1, true, 4242,
+                         TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"fractional-truncate",
+                         TernaryValue::fromTriple(native_ops::divide(
+                             native_ops::fromIntT40(1),
+                             native_ops::fromIntT40(2))),
+                         0, true, 111, TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"tagged-t5",
+                         TernaryValue::fromT5(native_ops::fromIntT5(4)),
+                         0, true, 4242, TrapCode::TRAP_ILLEGAL_OP});
         cases.push_back({"invalid-t40", TernaryValue::invalid(TernaryMode::T40),
                          0, false, 0, TrapCode::TRAP_ILLEGAL_OP});
         cases.push_back({"invalid-l40", TernaryValue::invalid(TernaryMode::L40),
@@ -987,6 +999,413 @@ void testVmWidths() {
                            label + " backend fault metadata parity");
                 }
             }
+        }
+    }
+
+    {
+        // Dense identity-mapped T40 memory is emitted directly on x86-64.
+        // Compare both payloads and TernaryMemory page generations with the
+        // interpreter, then exercise the same block across a fixed-seed
+        // boundary corpus of valid addresses/values.
+        const auto program = assembleOrThrow(R"(
+            store r2, r1, 0
+            load r3, r1, 0
+            halt
+        )");
+        std::vector<std::pair<int, long long>> cases = {
+            {0, 0}, {1, 1}, {27, -27}, {28, 42}, {63, -63},
+            {728, 17}, {729, -18}, {1457, 19},
+        };
+        std::uint32_t seed = 0xD1CECAFEu;
+        for (int sample = 0; sample < 27; ++sample) {
+            seed = seed * 1664525u + 1013904223u;
+            const int address = static_cast<int>(seed % 64u);
+            seed = seed * 1664525u + 1013904223u;
+            const long long value = static_cast<long long>(seed % 101u) - 50;
+            cases.push_back({address, value});
+        }
+        for (const auto [address, value] : cases) {
+            VMState oracle(32, 1458);
+            VMState native(32, 1458);
+            expect(loadAndReset(oracle, program) &&
+                       loadAndReset(native, program),
+                   "native direct memory differential programs load");
+            oracle.regfile.write(R1, sandbox::vm::ops::fromLong(address));
+            native.regfile.write(R1, sandbox::vm::ops::fromLong(address));
+            oracle.regfile.write(R2, sandbox::vm::ops::fromLong(value));
+            native.regfile.write(R2, sandbox::vm::ops::fromLong(value));
+            expect(oracle.dmem.store(0, sandbox::vm::ops::fromLong(7)) ==
+                       MemFaultCode::OK &&
+                       native.dmem.store(0, sandbox::vm::ops::fromLong(7)) ==
+                       MemFaultCode::OK,
+                   "native direct memory seeds sentinel");
+            oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto oracle_result = sandbox::vm::run(oracle, 16);
+            const auto native_result = sandbox::vm::run(native, 16);
+            expect(native_result.status == oracle_result.status &&
+                       native_result.steps == oracle_result.steps &&
+                       native.pc == oracle.pc &&
+                       native.cycle_count == oracle.cycle_count,
+                   "native direct memory status/PC/cycle parity");
+            expect(native.regfile.read(R3) == oracle.regfile.read(R3) &&
+                       loadPhysLong(native, 0) == loadPhysLong(oracle, 0),
+                   "native direct memory payload parity");
+            expect(native.dmem.generation() == oracle.dmem.generation() &&
+                       native.dmem.pageGenerationForAddress(0) ==
+                           oracle.dmem.pageGenerationForAddress(0) &&
+                       native.dmem.pageGenerationForAddress(address) ==
+                           oracle.dmem.pageGenerationForAddress(address),
+                   "native direct store preserves DMEM generations");
+            if (nativeX64HostAvailable()) {
+                bool saw_load = false;
+                bool saw_store = false;
+                bool saw_helper = false;
+                bool all_wx = !native.native_x64_code_cache.empty();
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    all_wx = all_wx && block->isWriteXorExecute();
+                    saw_helper = saw_helper || block->helper_instruction_count > 0;
+                    for (const auto& instruction : block->lowered) {
+                        const bool direct = nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                        saw_load = saw_load ||
+                            (instruction.op == VMMicroOpcode::Load && direct);
+                        saw_store = saw_store ||
+                            (instruction.op == VMMicroOpcode::Store && direct);
+                    }
+                }
+                expect(saw_load && saw_store,
+                       "native direct memory cache marks LOAD/STORE direct");
+                expect(!saw_helper,
+                       "native direct memory fixture has no helper lowering");
+                expect(all_wx,
+                       "native direct memory blocks remain write-xor-execute");
+                expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                       "native direct memory valid cases stay inline");
+            }
+        }
+    }
+
+    {
+        // Sparse backing is deliberately outside the raw-pointer lowering;
+        // the same trace must side-exit before touching a null dense pointer,
+        // then let the portable path preserve sparse page materialization.
+        const auto program = assembleOrThrow(R"(
+            store r2, r1, 0
+            load r3, r1, 0
+            halt
+        )");
+        const int sparse_words = SPARSE_MEMORY_DENSE_LIMIT_WORDS + 1;
+        VMState oracle(32, sparse_words);
+        VMState native(32, sparse_words);
+        expect(loadAndReset(oracle, program) &&
+                   loadAndReset(native, program),
+               "native sparse-memory programs load");
+        for (VMState* vm : {&oracle, &native}) {
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(729));
+            vm->regfile.write(R2, sandbox::vm::ops::fromLong(37));
+        }
+        expect(oracle.dmem.isSparse() && native.dmem.isSparse(),
+               "native sparse-memory fixture uses sparse backing");
+        oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto oracle_result = sandbox::vm::run(oracle, 8);
+        const auto native_result = sandbox::vm::run(native, 8);
+        expect(native_result.status == oracle_result.status &&
+                   native_result.steps == oracle_result.steps &&
+                   native.regfile.read(R3) == oracle.regfile.read(R3) &&
+                   native.dmem.allocatedPages() == oracle.dmem.allocatedPages(),
+               "native sparse-memory side-exit parity");
+        if (nativeX64HostAvailable()) {
+            expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native sparse memory explicitly side-exits");
+        }
+    }
+
+    {
+        // Non-kernel identity mappings use the same dense inline lowering,
+        // while MMU-enabled state is explicitly side-exited before memory
+        // access.  The latter still resumes through the exact interpreter
+        // translation/trap path.
+        const auto program = assembleOrThrow(R"(
+            store r2, r1, 0
+            load r3, r1, 0
+            halt
+        )");
+
+        VMState user_oracle(32, 64);
+        VMState user_native(32, 64);
+        expect(loadAndReset(user_oracle, program) &&
+                   loadAndReset(user_native, program),
+               "native user-memory programs load");
+        for (VMState* vm : {&user_oracle, &user_native}) {
+            vm->privilege = PrivilegeMode::User;
+            vm->mmu_enable = false;
+            vm->user_imem_base = 0;
+            vm->user_imem_limit = static_cast<int>(program.size());
+            vm->user_dmem_base = 4;
+            vm->user_dmem_limit = 16;
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(8));
+            vm->regfile.write(R2, sandbox::vm::ops::fromLong(17));
+        }
+        user_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        user_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        user_native.setDecodedTraceHotThreshold(1);
+        const auto user_oracle_result = sandbox::vm::run(user_oracle, 16);
+        const auto user_native_result = sandbox::vm::run(user_native, 16);
+        expect(user_native_result.status == user_oracle_result.status &&
+                   user_native_result.steps == user_oracle_result.steps &&
+                   user_native.regfile.read(R3) == user_oracle.regfile.read(R3),
+               "native user identity memory parity");
+        if (nativeX64HostAvailable()) {
+            expect(user_native.native_x64_jit_stats.portable_side_exits == 0,
+                   "native user identity memory stays inline");
+        }
+
+        VMState mmu_oracle(32, 64);
+        VMState mmu_native(32, 64);
+        expect(loadAndReset(mmu_oracle, program) &&
+                   loadAndReset(mmu_native, program),
+               "native MMU-memory programs load");
+        for (VMState* vm : {&mmu_oracle, &mmu_native}) {
+            vm->privilege = PrivilegeMode::Kernel;
+            vm->mmu_enable = true;
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(8));
+            vm->regfile.write(R2, sandbox::vm::ops::fromLong(17));
+        }
+        mmu_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        mmu_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        mmu_native.setDecodedTraceHotThreshold(1);
+        const auto mmu_oracle_result = sandbox::vm::run(mmu_oracle, 16);
+        const auto mmu_native_result = sandbox::vm::run(mmu_native, 16);
+        expect(mmu_native_result.status == mmu_oracle_result.status &&
+                   mmu_native_result.steps == mmu_oracle_result.steps &&
+                   mmu_native.regfile.read(R3) == mmu_oracle.regfile.read(R3),
+               "native MMU-memory side-exit parity");
+        if (nativeX64HostAvailable()) {
+            expect(mmu_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native MMU memory explicitly side-exits");
+        }
+
+        VMState tagged_oracle(32, 64);
+        VMState tagged_native(32, 64);
+        expect(loadAndReset(tagged_oracle, program) &&
+                   loadAndReset(tagged_native, program),
+               "native tagged-source memory programs load");
+        for (VMState* vm : {&tagged_oracle, &tagged_native}) {
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(8));
+            // Bypass RegFile::write deliberately: this models a hostile
+            // physical register payload whose tag is not canonical T40.
+            vm->regfile.reg[R2] = TernaryValue::fromT5(
+                native_ops::fromIntT5(23));
+            vm->regfile.view_mode[R2] = TernaryMode::T5;
+            expect(vm->dmem.store(8, sandbox::vm::ops::fromLong(7)) ==
+                       MemFaultCode::OK,
+                   "native tagged-source memory seeds value");
+        }
+        tagged_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        tagged_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        tagged_native.setDecodedTraceHotThreshold(1);
+        const auto tagged_oracle_result = sandbox::vm::run(tagged_oracle, 8);
+        const auto tagged_native_result = sandbox::vm::run(tagged_native, 8);
+        expect(tagged_native_result.status == tagged_oracle_result.status &&
+                   tagged_native_result.steps == tagged_oracle_result.steps &&
+                   tagged_native.dmem.load(8).first ==
+                       tagged_oracle.dmem.load(8).first &&
+                   tagged_native.dmem.generation() ==
+                       tagged_oracle.dmem.generation() &&
+                   tagged_native.dmem.pageGenerationForAddress(8) ==
+                       tagged_oracle.dmem.pageGenerationForAddress(8),
+               "native tagged-source store preserves portable payload");
+        if (nativeX64HostAvailable()) {
+            expect(tagged_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native tagged-source store side-exits before mode rewrite");
+        }
+
+        const auto tagged_address_program = assembleOrThrow(R"(
+            load r3, r1, 0
+            halt
+        )");
+        VMState tagged_address_oracle(32, 64);
+        VMState tagged_address_native(32, 64);
+        expect(loadAndReset(tagged_address_oracle, tagged_address_program) &&
+                   loadAndReset(tagged_address_native, tagged_address_program),
+               "native tagged-physical-address programs load");
+        for (VMState* vm : {&tagged_address_oracle, &tagged_address_native}) {
+            // Keep the view tag T40 while making the physical payload hostile;
+            // read() therefore returns the T5 payload and the portable path
+            // interprets it with T5 semantics.
+            vm->regfile.reg[R1] = TernaryValue::fromT5(
+                native_ops::fromIntT5(4));
+            vm->regfile.view_mode[R1] = TernaryMode::T40;
+            expect(vm->dmem.store(4, sandbox::vm::ops::fromLong(31)) ==
+                       MemFaultCode::OK,
+                   "native tagged-physical-address seeds value");
+        }
+        tagged_address_oracle.setExecutionBackend(
+            VMExecutionBackend::Interpreter);
+        tagged_address_native.setExecutionBackend(
+            VMExecutionBackend::NativeX64Jit);
+        tagged_address_native.setDecodedTraceHotThreshold(1);
+        const auto tagged_address_oracle_result = sandbox::vm::run(
+            tagged_address_oracle, 8);
+        const auto tagged_address_native_result = sandbox::vm::run(
+            tagged_address_native, 8);
+        expect(tagged_address_native_result.status ==
+                   tagged_address_oracle_result.status &&
+                   tagged_address_native_result.steps ==
+                       tagged_address_oracle_result.steps &&
+                   tagged_address_native.regfile.read(R3) ==
+                       tagged_address_oracle.regfile.read(R3),
+               "native tagged physical address preserves fallback semantics");
+        if (nativeX64HostAvailable()) {
+            expect(tagged_address_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native tagged physical address side-exits before decode");
+        }
+
+        const auto tagged_memory_program = assembleOrThrow(R"(
+            load r3, r1, 0
+            halt
+        )");
+        VMState tagged_memory_oracle(32, 64);
+        VMState tagged_memory_native(32, 64);
+        expect(loadAndReset(tagged_memory_oracle, tagged_memory_program) &&
+                   loadAndReset(tagged_memory_native, tagged_memory_program),
+               "native tagged-memory programs load");
+        for (VMState* vm : {&tagged_memory_oracle, &tagged_memory_native}) {
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(4));
+            expect(vm->dmem.store(4, TernaryValue::fromT5(
+                       native_ops::fromIntT5(13))) == MemFaultCode::OK,
+                   "native tagged-memory seeds value");
+        }
+        tagged_memory_oracle.setExecutionBackend(
+            VMExecutionBackend::Interpreter);
+        tagged_memory_native.setExecutionBackend(
+            VMExecutionBackend::NativeX64Jit);
+        tagged_memory_native.setDecodedTraceHotThreshold(1);
+        const auto tagged_memory_oracle_result = sandbox::vm::run(
+            tagged_memory_oracle, 8);
+        const auto tagged_memory_native_result = sandbox::vm::run(
+            tagged_memory_native, 8);
+        expect(tagged_memory_native_result.status ==
+                   tagged_memory_oracle_result.status &&
+                   tagged_memory_native_result.steps ==
+                       tagged_memory_oracle_result.steps &&
+                   tagged_memory_native.regfile.read(R3) ==
+                       tagged_memory_oracle.regfile.read(R3),
+               "native tagged-memory load preserves fallback semantics");
+        if (nativeX64HostAvailable()) {
+            expect(tagged_memory_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native tagged-memory load side-exits before rewrite");
+        }
+
+        VMState bad_limit_oracle(32, 64);
+        VMState bad_limit_native(32, 64);
+        expect(loadAndReset(bad_limit_oracle, program) &&
+                   loadAndReset(bad_limit_native, program),
+               "native signed user-bound memory programs load");
+        for (VMState* vm : {&bad_limit_oracle, &bad_limit_native}) {
+            vm->privilege = PrivilegeMode::User;
+            vm->mmu_enable = false;
+            vm->user_imem_base = 0;
+            vm->user_imem_limit = static_cast<int>(program.size());
+            vm->user_dmem_base = 0;
+            vm->user_dmem_limit = -1;
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(8));
+            vm->regfile.write(R2, sandbox::vm::ops::fromLong(29));
+            expect(vm->dmem.store(8, sandbox::vm::ops::fromLong(7)) ==
+                       MemFaultCode::OK,
+                   "native signed user-bound memory seeds value");
+        }
+        bad_limit_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        bad_limit_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        bad_limit_native.setDecodedTraceHotThreshold(1);
+        const auto bad_limit_oracle_result = sandbox::vm::run(
+            bad_limit_oracle, 8);
+        const auto bad_limit_native_result = sandbox::vm::run(
+            bad_limit_native, 8);
+        expect(bad_limit_native_result.status ==
+                   bad_limit_oracle_result.status &&
+                   bad_limit_native_result.trap_code ==
+                       bad_limit_oracle_result.trap_code &&
+                   bad_limit_native_result.steps ==
+                       bad_limit_oracle_result.steps &&
+                   bad_limit_native.dmem.load(8).first ==
+                       bad_limit_oracle.dmem.load(8).first,
+               "native negative user limit preserves memory fault parity");
+        if (nativeX64HostAvailable()) {
+            expect(bad_limit_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native negative user limit side-exits before store");
+        }
+
+        VMState reservation_oracle(32, 64);
+        VMState reservation_native(32, 64);
+        expect(loadAndReset(reservation_oracle, program) &&
+                   loadAndReset(reservation_native, program),
+               "native reservation-memory programs load");
+        for (VMState* vm : {&reservation_oracle, &reservation_native}) {
+            vm->regfile.write(R1, sandbox::vm::ops::fromLong(8));
+            vm->regfile.write(R2, sandbox::vm::ops::fromLong(23));
+            vm->atomic_reservation_valid = true;
+            vm->atomic_reservation_addr = 8;
+        }
+        reservation_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        reservation_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        reservation_native.setDecodedTraceHotThreshold(1);
+        const auto reservation_oracle_result =
+            sandbox::vm::run(reservation_oracle, 16);
+        const auto reservation_native_result =
+            sandbox::vm::run(reservation_native, 16);
+        expect(reservation_native_result.status ==
+                   reservation_oracle_result.status &&
+                   reservation_native_result.steps ==
+                   reservation_oracle_result.steps &&
+                   !reservation_native.atomic_reservation_valid &&
+                   !reservation_oracle.atomic_reservation_valid,
+               "native reservation store preserves invalidation semantics");
+        if (nativeX64HostAvailable()) {
+            expect(reservation_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native reservation store side-exits before mutation");
+        }
+
+        const auto wide_program = assembleOrThrow(R"(
+            load r1, r3, 0
+            halt
+        )");
+        VMState wide_oracle(32, 64);
+        VMState wide_native(32, 64);
+        expect(loadAndReset(wide_oracle, wide_program) &&
+                   loadAndReset(wide_native, wide_program),
+               "native wide-destination memory programs load");
+        for (VMState* vm : {&wide_oracle, &wide_native}) {
+            vm->regfile.write(R3, sandbox::vm::ops::fromLong(0));
+            vm->regfile.write(R1, TernaryValue::fromLongTriple(
+                native_ops::fromInt(7)));
+            expect(vm->dmem.store(0, sandbox::vm::ops::fromLong(19)) ==
+                       MemFaultCode::OK,
+                   "native wide-destination memory seeds value");
+        }
+        wide_oracle.setExecutionBackend(VMExecutionBackend::Interpreter);
+        wide_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        wide_native.setDecodedTraceHotThreshold(1);
+        const auto wide_oracle_result = sandbox::vm::run(wide_oracle, 8);
+        const auto wide_native_result = sandbox::vm::run(wide_native, 8);
+        expect(wide_native_result.status == wide_oracle_result.status &&
+                   wide_native.regfile.reg[R1] == wide_oracle.regfile.reg[R1] &&
+                   wide_native.regfile.reg[R2] == wide_oracle.regfile.reg[R2] &&
+                   wide_native.regfile.view_mode[R1] ==
+                       wide_oracle.regfile.view_mode[R1] &&
+                   wide_native.regfile.view_mode[R2] ==
+                       wide_oracle.regfile.view_mode[R2],
+               "native wide destination preserves pair write semantics");
+        if (nativeX64HostAvailable()) {
+            expect(wide_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native wide destination side-exits before pair mutation");
         }
     }
 

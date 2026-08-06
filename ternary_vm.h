@@ -3938,6 +3938,18 @@ struct VMNativeRunContext {
         long long* cycle_count = nullptr;
         long long* branch_instructions_count = nullptr;
         TernaryValue* registers = nullptr;
+        // Dense DMEM fast-path state.  `dmem_words == nullptr` denotes sparse
+        // backing, which must stay on the portable/helper path.
+        TernaryValue* dmem_words = nullptr;
+        long long dmem_capacity = 0;
+        std::uint64_t* dmem_write_generation = nullptr;
+        std::uint64_t* dmem_page_generations = nullptr;
+        long long dmem_page_count = 0;
+        long long privilege = 0;
+        long long mmu_enable = 0;
+        long long user_dmem_base = 0;
+        long long user_dmem_limit = 0;
+        long long atomic_reservation_valid = 0;
     } state;
     VMState* vm = nullptr;
     int budget = 0;
@@ -3952,11 +3964,22 @@ struct VMNativeRunContext {
 
 [[nodiscard]] inline VMNativeRunContext::StateAccess
 nativeX64StateAccess(VMState& vm) {
+    const auto dmem = vm.dmem.nativeDenseStoreAccess();
     return VMNativeRunContext::StateAccess{
         &vm.pc,
         &vm.cycle_count,
         &vm.branch_instructions_count,
         vm.regfile.reg.data(),
+        dmem.words,
+        static_cast<long long>(dmem.capacity),
+        dmem.write_generation,
+        dmem.page_generations,
+        static_cast<long long>(dmem.page_count),
+        static_cast<long long>(static_cast<int8_t>(vm.privilege)),
+        vm.mmu_enable ? 1LL : 0LL,
+        static_cast<long long>(vm.user_dmem_base),
+        static_cast<long long>(vm.user_dmem_limit),
+        vm.atomic_reservation_valid ? 1LL : 0LL,
     };
 }
 
@@ -3981,6 +4004,11 @@ struct VMNativeX64Instruction {
     TernaryValue* destination = nullptr;
     const TernaryValue* source = nullptr;
     const TernaryValue* source2 = nullptr;
+    const TernaryValue* address_source = nullptr;
+    const TernaryMode* address_mode = nullptr;
+    const TernaryValue* store_source = nullptr;
+    int expected_privilege = 0;
+    const TernaryMode* destination_previous_mode = nullptr;
     TernaryMode* destination_mode = nullptr;
     bool ends_trace = false;
 };
@@ -4096,26 +4124,19 @@ inline int nativeX64DirectArithmetic(
 inline int nativeX64DirectMemory(
     VMNativeRunContext* context,
     const VMNativeX64Instruction* instruction) {
+    // Portable/helper remainder for MMU, sparse, tagged, fractional, or
+    // otherwise ineligible memory.  Keep the shared checked-address helper
+    // authoritative so a native guard exit observes identical operand and
+    // overflow classification before translation/trap routing.
     if (!nativeX64CanStartInstruction(context, instruction)) return 0;
     VMState& vm = *context->vm;
-    const TernaryValue base =
-        vm.regfile.readView(instruction->word.rs1, TernaryMode::T40);
-    if (base.mode != TernaryMode::T40 || base.isInvalid()) {
-        return nativeX64SideExit(
-            context, instruction, VMNativeX64ExitReason::GuardFailure);
-    }
-    const long long base_address = ops::toLong(base);
-    const long long immediate = instruction->word.imm;
-    if ((immediate > 0 &&
-         base_address > std::numeric_limits<long long>::max() - immediate) ||
-        (immediate < 0 &&
-         base_address < std::numeric_limits<long long>::min() - immediate)) {
-        return nativeX64SideExit(
-            context, instruction, VMNativeX64ExitReason::GuardFailure);
-    }
-    const long long address = base_address + immediate;
-    if (address < std::numeric_limits<int>::min() ||
-        address > std::numeric_limits<int>::max()) {
+    int address = 0;
+    const ScalarMemoryAddressStatus address_status =
+        checkedScalarMemoryAddress(
+            vm.regfile.read(instruction->word.rs1),
+            instruction->word.imm,
+            address);
+    if (address_status != ScalarMemoryAddressStatus::Valid) {
         return nativeX64SideExit(
             context, instruction, VMNativeX64ExitReason::GuardFailure);
     }
@@ -4126,9 +4147,9 @@ inline int nativeX64DirectMemory(
         : OS_CAUSE_STORE_FAULT;
     const bool translated = instruction->op == VMMicroOpcode::Load
         ? vm.translateLoadAddress(
-              static_cast<int>(address), physical_address, routed_cause)
+              address, physical_address, routed_cause)
         : vm.translateStoreAddress(
-              static_cast<int>(address), physical_address, routed_cause);
+              address, physical_address, routed_cause);
     if (!translated) {
         return nativeX64SideExit(
             context, instruction, VMNativeX64ExitReason::GuardFailure);
@@ -4298,9 +4319,10 @@ struct VMNativeX64CodeBlock {
 };
 
 // Keep the static lowering inventory honest.  The scalar T40 Add/Sub/TCmp
-// subset and in-trace control flow are emitted as host instructions; the
-// remaining arithmetic and memory operations stay helper-backed so their
-// guards and side exits retain the portable architectural semantics.
+// subset, guarded dense identity-memory LOAD/STORE subset, and in-trace
+// control flow are emitted as host instructions; remaining arithmetic and
+// MMU/sparse/tagged memory cases stay helper-backed so their guards and side
+// exits retain the portable architectural semantics.
 [[nodiscard]] inline bool nativeX64InstructionIsDirect(
     const VMNativeX64Instruction& instruction,
     std::size_t block_length) {
@@ -4328,8 +4350,6 @@ struct VMNativeX64CodeBlock {
         case VMMicroOpcode::Mul:
         case VMMicroOpcode::Neg:
         case VMMicroOpcode::Abs:
-        case VMMicroOpcode::Load:
-        case VMMicroOpcode::Store:
         case VMMicroOpcode::Call:
         case VMMicroOpcode::Ret:
         case VMMicroOpcode::CallR:
@@ -4337,6 +4357,15 @@ struct VMNativeX64CodeBlock {
         case VMMicroOpcode::MovH:
         case VMMicroOpcode::Unsupported:
             return false;
+        case VMMicroOpcode::Load:
+        case VMMicroOpcode::Store:
+            // Memory lowerings contain an explicit identity/dense/T40 guard
+            // and side-exit to the portable path for MMU, sparse, tagged,
+            // fractional, permission, or faulting cases.
+            return instruction.address_source != nullptr &&
+                   instruction.address_mode != nullptr &&
+                   (instruction.op != VMMicroOpcode::Store ||
+                    instruction.store_source != nullptr);
     }
     return false;
 }
@@ -4413,6 +4442,19 @@ struct VMNativeX64Emitter {
         byte(static_cast<std::uint8_t>(0x48 |
             (dst >= 8 ? 4 : 0) | (base >= 8 ? 1 : 0)));
         byte(0x8B);
+        const bool needs_sib = (base & 7) == 4;
+        byte(static_cast<std::uint8_t>(0x80 |
+            ((dst & 7) << 3) | (needs_sib ? 4 : (base & 7))));
+        if (needs_sib) byte(0x24);
+        u32(displacement);
+    }
+    void movzxRegMemByte(
+        std::uint8_t dst, std::uint8_t base, std::uint32_t displacement) {
+        // MOVZX r64, byte ptr [base + disp32].  A 32-bit destination write
+        // zero-extends, so the explicit REX.W bit is intentionally omitted.
+        byte(static_cast<std::uint8_t>(0x40 |
+            (dst >= 8 ? 4 : 0) | (base >= 8 ? 1 : 0)));
+        byte(0x0F); byte(0xB6);
         const bool needs_sib = (base & 7) == 4;
         byte(static_cast<std::uint8_t>(0x80 |
             ((dst & 7) << 3) | (needs_sib ? 4 : (base & 7))));
@@ -4611,6 +4653,226 @@ struct VMNativeX64Emitter {
             static_cast<std::uint32_t>(offsetof(VMNativeRunContext, exit_reason)),
             10);
     }
+    void emitGuardT40Mode(
+        const TernaryMode* mode,
+        std::vector<std::size_t>& guard_jumps) {
+        if (mode == nullptr) {
+            guard_jumps.push_back(jmpRel32());
+            return;
+        }
+        movImm64(10, reinterpret_cast<std::uintptr_t>(mode));
+        movzxRegMemByte(0, 10, 0);
+        movImm64(10, static_cast<std::uint64_t>(TernaryMode::T40));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+    }
+    void emitGuardDestinationPair(
+        TernaryMode* destination_mode,
+        const TernaryMode* previous_mode,
+        std::vector<std::size_t>& guard_jumps) {
+        auto guardWide = [&](const TernaryMode* mode) {
+            if (mode == nullptr) return;
+            movImm64(10, reinterpret_cast<std::uintptr_t>(mode));
+            movzxRegMemByte(0, 10, 0);
+            movImm64(10, static_cast<std::uint64_t>(TernaryMode::T50));
+            cmpRegReg(0, 10);
+            guard_jumps.push_back(jccRel32(0x84)); // je
+            movImm64(10, static_cast<std::uint64_t>(TernaryMode::L50));
+            cmpRegReg(0, 10);
+            guard_jumps.push_back(jccRel32(0x84)); // je
+        };
+        // `RegFile::write(T40)` clears a wide pair before committing.  Keep
+        // that mutation on the portable path whenever either half is live;
+        // ordinary single-width tags can be overwritten in place.
+        guardWide(destination_mode);
+        guardWide(previous_mode);
+    }
+    void emitLoadRawT40(
+        const TernaryValue* source,
+        std::vector<std::size_t>& guard_jumps) {
+        if (source == nullptr) {
+            guard_jumps.push_back(jmpRel32());
+            return;
+        }
+        const std::uint64_t kPow3T40 =
+            native_ops::detail::pow3(40).toUint64();
+        movImm64(10, reinterpret_cast<std::uintptr_t>(source));
+        // Register storage is normally canonical T40, but callers can
+        // construct a VMState with a tagged/non-canonical physical payload.
+        // The portable STORE preserves that payload, so side-exit before
+        // rewriting its mode to T40 in the inline lowering.
+        movzxRegMemByte(
+            8, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, mode)));
+        // R9 retains the page index for the generation update below.
+        movImm64(0, static_cast<std::uint64_t>(TernaryMode::T40));
+        cmpRegReg(8, 0);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+        movRegMemDisp(
+            0, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, bits) + offsetof(UInt128, lo)));
+        movRegMemDisp(
+            2, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, bits) + offsetof(UInt128, hi)));
+        testRegReg(2, 2);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+        movImm64(10, kPow3T40);
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x83)); // jae
+    }
+    void emitNativeMemoryStateGuards(
+        const VMNativeX64Instruction& instruction,
+        bool store,
+        std::vector<std::size_t>& guard_jumps) {
+        // The inline lowering is intentionally identity-only.  MMU walks,
+        // TLB permission checks, page-fault metadata, and sparse/device
+        // backing all remain owned by the portable helper/interpreter.
+        movRegMemDisp(
+            0, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, mmu_enable)));
+        testRegReg(0, 0);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+
+        movRegMemDisp(
+            0, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, privilege)));
+        movImm64(
+            10,
+            static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(instruction.expected_privilege)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, dmem_words)));
+        testRegReg(11, 11);
+        guard_jumps.push_back(jccRel32(0x84)); // je
+
+        if (store) {
+            movRegMemDisp(
+                0, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             dmem_write_generation)));
+            testRegReg(0, 0);
+            guard_jumps.push_back(jccRel32(0x84)); // je
+            movRegMemDisp(
+                0, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             dmem_page_generations)));
+            testRegReg(0, 0);
+            guard_jumps.push_back(jccRel32(0x84)); // je
+            // A live reservation may need to be cleared only when its
+            // address matches the store.  Side-exit for all such stores so
+            // the portable path preserves both matching and non-matching
+            // reservation semantics without mutating before the exit.
+            movRegMemDisp(
+                0, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             atomic_reservation_valid)));
+            testRegReg(0, 0);
+            guard_jumps.push_back(jccRel32(0x85)); // jne
+        }
+    }
+    void emitNativeMemoryAddress(
+        const VMNativeX64Instruction& instruction,
+        std::vector<std::size_t>& guard_jumps) {
+        emitGuardT40Mode(instruction.address_mode, guard_jumps);
+        emitLoadT40Integer(instruction.address_source, guard_jumps);
+        movImm64(
+            10,
+            static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(instruction.word.imm)));
+        addRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x80)); // jo
+
+        // checkedScalarMemoryAddress rejects every negative/out-of-int
+        // result before translation.  The dense capacity check below also
+        // rejects values above INT_MAX, but keep the signed lower bound
+        // explicit so the side-exit contract remains auditable.
+        testRegReg(0, 0);
+        guard_jumps.push_back(jccRel32(0x8C)); // jl
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, dmem_capacity)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x83)); // jae
+
+        if (instruction.expected_privilege !=
+            static_cast<int>(static_cast<int8_t>(PrivilegeMode::Kernel))) {
+            movRegMemDisp(
+                10, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             user_dmem_base)));
+            cmpRegReg(0, 10);
+            guard_jumps.push_back(jccRel32(0x8C)); // jl
+            movRegMemDisp(
+                10, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             user_dmem_limit)));
+            cmpRegReg(0, 10);
+            // Match the portable signed `address >= user_dmem_limit` check;
+            // a malformed negative limit must not pass via an unsigned JAE.
+            guard_jumps.push_back(jccRel32(0x8D)); // jge
+        }
+    }
+    void emitNativeDenseWordPointer() {
+        // rax holds the checked physical address.  Convert the word index to
+        // a byte offset and add it to the dense DMEM base in r11.
+        movImm64(10, static_cast<std::uint64_t>(sizeof(TernaryValue)));
+        imulRegReg(0, 10);
+        addRegReg(11, 0);
+    }
+    void emitNativeStoreGeneration() {
+        // Mirror TernaryMemory::noteStore()/nextGeneration() exactly:
+        // UINT64_MAX wraps to 1, then the returned generation is ++ => 2;
+        // otherwise the counter increments once and the page receives the
+        // same value.  All pointers and page bounds were guarded before the
+        // raw word write, so this bookkeeping cannot side-exit.
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess,
+                         dmem_write_generation)));
+        movRegMemDisp(0, 10, 0);
+        movImm64(11, std::numeric_limits<std::uint64_t>::max());
+        cmpRegReg(0, 11);
+        const std::size_t not_max = jccRel32(0x85); // jne
+        movImm64(0, 1);
+        patchRelative(not_max, code.size());
+        addRegImm8(0, 1);
+        movMemDispReg(10, 0, 0);
+
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess,
+                         dmem_page_generations)));
+        movImm64(10, sizeof(std::uint64_t));
+        imulRegReg(9, 10);
+        addRegReg(11, 9);
+        movMemDispReg(11, 0, 0);
+    }
     void emitLoadT40Integer(
         const TernaryValue* source,
         std::vector<std::size_t>& guard_jumps) {
@@ -4628,9 +4890,24 @@ struct VMNativeX64Emitter {
         const std::uint64_t kExponentMidpoint = 1093;
 
         movImm64(10, reinterpret_cast<std::uintptr_t>(source));
+        // `emitLoadT40Integer` decodes the canonical physical T40 payload;
+        // a hostile tagged register must take the portable path instead of
+        // reinterpreting its narrower bits as a T40 address/operand.  Keep
+        // R8 untouched because callers use it to retain the first operand.
+        movzxRegMemByte(
+            11, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, mode)));
+        movImm64(9, static_cast<std::uint64_t>(TernaryMode::T40));
+        cmpRegReg(11, 9);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
         movRegMemDisp(
             0, 10, static_cast<std::uint32_t>(
                 offsetof(TernaryValue, bits) + offsetof(UInt128, lo)));
+        movRegMemDisp(
+            11, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, bits) + offsetof(UInt128, hi)));
+        testRegReg(11, 11);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
         testRegReg(0, 0);
         const std::size_t zero_jump = jccRel32(0x84); // je
 
@@ -4871,6 +5148,8 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
         instruction.mode = micro_op.mode;
         instruction.word = micro_op.word;
         instruction.ends_trace = micro_op.ends_trace;
+        instruction.expected_privilege =
+            static_cast<int>(static_cast<int8_t>(vm.privilege));
         if (instruction.op == VMMicroOpcode::Mov) {
             instruction.immediate = ops::fromLong(instruction.word.imm);
         } else if (instruction.op == VMMicroOpcode::Copy ||
@@ -4883,6 +5162,10 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                 &vm.regfile.reg[instruction.word.rd];
             instruction.destination_mode =
                 &vm.regfile.view_mode[instruction.word.rd];
+            if (instruction.word.rd > 0) {
+                instruction.destination_previous_mode =
+                    &vm.regfile.view_mode[instruction.word.rd - 1];
+            }
         }
         if (instruction.op == VMMicroOpcode::Copy &&
             instruction.word.rs1 != R0_ZERO &&
@@ -4901,6 +5184,19 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
              instruction.op == VMMicroOpcode::TCmp) &&
             instruction.word.rs2 < REG_COUNT) {
             instruction.source2 = &vm.regfile.reg[instruction.word.rs2];
+        }
+        if ((instruction.op == VMMicroOpcode::Load ||
+             instruction.op == VMMicroOpcode::Store) &&
+            instruction.word.rs1 < REG_COUNT) {
+            instruction.address_source =
+                &vm.regfile.reg[instruction.word.rs1];
+            instruction.address_mode =
+                &vm.regfile.view_mode[instruction.word.rs1];
+        }
+        if (instruction.op == VMMicroOpcode::Store &&
+            instruction.word.rs_store < REG_COUNT) {
+            instruction.store_source =
+                &vm.regfile.reg[instruction.word.rs_store];
         }
         block->lowered.push_back(instruction);
     }
@@ -5083,11 +5379,121 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     &instruction);
                 break;
             case VMMicroOpcode::Load:
-            case VMMicroOpcode::Store:
-                emitter.callHelper(
-                    reinterpret_cast<const void*>(&nativeX64DirectMemory),
-                    &instruction);
+            case VMMicroOpcode::Store: {
+                if (!nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectMemory),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                const bool store = instruction.op == VMMicroOpcode::Store;
+                emitter.emitNativeMemoryStateGuards(
+                    instruction, store, guard_jumps);
+                if (!store) {
+                    emitter.emitGuardDestinationPair(
+                        instruction.destination_mode,
+                        instruction.destination_previous_mode,
+                        guard_jumps);
+                }
+                emitter.emitNativeMemoryAddress(instruction, guard_jumps);
+
+                if (store) {
+                    // Preserve the page index for the dense generation update
+                    // while using rax for the byte offset below.
+                    emitter.movRegReg(8, 0);
+                    emitter.movRegReg(9, 0);
+                    emitter.movImm64(10, SPARSE_VM_PAGE_WORDS);
+                    emitter.clearRdx();
+                    emitter.divReg(10);
+                    emitter.movRegReg(9, 0);
+                    emitter.movRegReg(0, 8);
+                    emitter.movRegMemDisp(
+                        10, 12,
+                        static_cast<std::uint32_t>(
+                            offsetof(VMNativeRunContext, state) +
+                            offsetof(VMNativeRunContext::StateAccess,
+                                     dmem_page_count)));
+                    emitter.cmpRegReg(9, 10);
+                    guard_jumps.push_back(emitter.jccRel32(0x83)); // jae
+                }
+
+                emitter.movRegMemDisp(
+                    11, 12,
+                    static_cast<std::uint32_t>(
+                        offsetof(VMNativeRunContext, state) +
+                        offsetof(VMNativeRunContext::StateAccess,
+                                 dmem_words)));
+                emitter.emitNativeDenseWordPointer();
+
+                if (store) {
+                    // Load the canonical physical T40 source only after all
+                    // address/state guards have passed; an invalid source
+                    // side-exits before the destination word is touched.
+                    emitter.emitLoadRawT40(
+                        instruction.store_source, guard_jumps);
+                    emitter.movMemDispReg(
+                        11,
+                        static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, lo)),
+                        0);
+                    emitter.movMemDispReg(
+                        11,
+                        static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, hi)),
+                        2);
+                    emitter.movByteMemImm(
+                        11,
+                        static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, mode)),
+                        static_cast<std::uint8_t>(TernaryMode::T40));
+                    emitter.emitNativeStoreGeneration();
+                } else {
+                    const std::uint64_t kPow3T40 =
+                        native_ops::detail::pow3(40).toUint64();
+                    emitter.movzxRegMemByte(
+                        10, 11,
+                        static_cast<std::uint32_t>(offsetof(
+                            TernaryValue, mode)));
+                    emitter.movImm64(
+                        0, static_cast<std::uint64_t>(TernaryMode::T40));
+                    emitter.cmpRegReg(10, 0);
+                    guard_jumps.push_back(emitter.jccRel32(0x85)); // jne
+                    emitter.movRegMemDisp(
+                        0, 11,
+                        static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, lo)));
+                    emitter.movRegMemDisp(
+                        2, 11,
+                        static_cast<std::uint32_t>(
+                            offsetof(TernaryValue, bits) +
+                            offsetof(UInt128, hi)));
+                    emitter.testRegReg(2, 2);
+                    guard_jumps.push_back(emitter.jccRel32(0x85)); // jne
+                    emitter.movImm64(10, kPow3T40);
+                    emitter.cmpRegReg(0, 10);
+                    guard_jumps.push_back(emitter.jccRel32(0x83)); // jae
+                    emitter.emitStoreT40Result(
+                        instruction.destination,
+                        instruction.destination_mode);
+                }
+
+                emitter.commitSimple(instruction.next_pc);
+                const std::size_t skip_guard = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                emitter.patchRelative(skip_guard, emitter.code.size());
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
                 break;
+            }
             case VMMicroOpcode::Jmp:
                 if (instruction.branch_target_index >= 0 &&
                     instruction.branch_target_index <

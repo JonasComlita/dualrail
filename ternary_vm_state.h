@@ -803,6 +803,19 @@ enum class MemoryBacking : uint8_t {
 };
 
 struct TernaryMemory {
+    // Native x64 JITs may use this contract for a guarded dense-word store.
+    // The pointers intentionally expose only the state needed to mirror the
+    // ordinary dense `store()` bookkeeping; sparse pages and their cache stay
+    // on the portable path.  Callers must validate `words`, `capacity`, and
+    // `page_count` before writing, exactly as `store()` does.
+    struct NativeDenseStoreAccess {
+        TernaryValue* words = nullptr;
+        int capacity = 0;
+        std::uint64_t* write_generation = nullptr;
+        std::uint64_t* page_generations = nullptr;
+        int page_count = 0;
+    };
+
     TernaryValue* words = nullptr; // Non-null only for dense compatibility mode.
     int capacity = 0;
     VMStateAllocator* allocator = &defaultVMStateAllocator();
@@ -1034,6 +1047,23 @@ struct TernaryMemory {
     [[nodiscard]] bool isSparse() const { return sparse_; }
     [[nodiscard]] std::size_t allocatedPages() const { return sparse_pages_.size(); }
     [[nodiscard]] std::uint64_t generation() const { return write_generation_; }
+
+    // Return writable generation pointers only for dense memory.  The native
+    // emitter updates one word and then applies `nextGeneration()` to the
+    // corresponding dense page, matching `store()`/`noteStore()` without a
+    // C++ helper call.  `densePageGenerations()` repairs a stale vector size
+    // before its pointer is published; this is never used for sparse memory.
+    [[nodiscard]] NativeDenseStoreAccess nativeDenseStoreAccess() {
+        if (sparse_) return {};
+        auto& generations = densePageGenerations();
+        return {
+            words,
+            capacity,
+            &write_generation_,
+            generations.empty() ? nullptr : generations.data(),
+            static_cast<int>(generations.size()),
+        };
+    }
 
     [[nodiscard]] std::uint64_t pageGenerationForAddress(int addr) const {
         if (addr < 0 || addr >= capacity) return 0;
