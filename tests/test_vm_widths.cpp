@@ -854,6 +854,143 @@ void testVmWidths() {
     }
 
     {
+        // Scalar pointers are tagged values, not unchecked host integers.
+        // Keep a fixed-seed corpus of invalid T40 payloads, representable
+        // out-of-range addresses, and ordinary controls in lock-step across
+        // the portable, decoded, and native fallback paths. A fault must
+        // leave the destination and memory untouched at the faulting PC.
+        struct PointerCase {
+            std::string label;
+            TernaryValue base;
+            int immediate = 0;
+            bool valid = false;
+            long long expected_value = 0;
+            TrapCode trap = TrapCode::TRAP_MEM_FAULT;
+        };
+
+        std::vector<PointerCase> cases;
+        cases.push_back({"valid", sandbox::vm::ops::fromLong(4), 0, true, 4242,
+                         TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"invalid-t40", TernaryValue::invalid(TernaryMode::T40),
+                         0, false, 0, TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"invalid-l40", TernaryValue::invalid(TernaryMode::L40),
+                         0, false, 0, TrapCode::TRAP_ILLEGAL_OP});
+        cases.push_back({"negative-oob", sandbox::vm::ops::fromLong(-1), 0, false, 0,
+                         TrapCode::TRAP_MEM_FAULT});
+        cases.push_back({"positive-oob", sandbox::vm::ops::fromLong(64), 0, false, 0,
+                         TrapCode::TRAP_MEM_FAULT});
+
+        std::uint32_t fuzz_seed = 0x5eed1234u;
+        for (int sample = 0; sample < 36; ++sample) {
+            fuzz_seed = fuzz_seed * 1664525u + 1013904223u;
+            const bool high = (fuzz_seed & 1u) != 0;
+            const long long magnitude =
+                2147483648LL + static_cast<long long>(fuzz_seed % 1000000u);
+            fuzz_seed = fuzz_seed * 1664525u + 1013904223u;
+            const int immediate = high
+                ? static_cast<int>(fuzz_seed % 97u) + 1
+                : -static_cast<int>(fuzz_seed % 97u) - 1;
+            cases.push_back({
+                "seeded-" + std::to_string(sample),
+                sandbox::vm::ops::fromLong(high ? magnitude : -magnitude), immediate, false,
+                0, TrapCode::TRAP_MEM_FAULT});
+        }
+
+        struct PointerSnapshot {
+            RunResult result;
+            TernaryValue destination;
+            long long memory_zero = 0;
+            long long memory_four = 0;
+            int cause = 0;
+            int page_fault_addr = 0;
+            int page_fault_access = 0;
+        };
+
+        auto runPointerCase = [&](const PointerCase& pointer,
+                                  bool store,
+                                  VMExecutionBackend backend) {
+            const std::string source = store
+                ? "mov r2, 321\nstore r2, r1, " +
+                      std::to_string(pointer.immediate) + "\nhalt\n"
+                : "load r2, r1, " + std::to_string(pointer.immediate) +
+                      "\nhalt\n";
+            VMState vm(32, 64);
+            const auto program = assembleV2TestOrThrow(source);
+            expect(loadAndReset(vm, program),
+                   pointer.label + (store ? " store" : " load") +
+                       " pointer program loads");
+            vm.setExecutionBackend(backend);
+            if (backend != VMExecutionBackend::Interpreter) {
+                vm.setTraceJitHotThreshold(1);
+            }
+            vm.regfile.write(R1, pointer.base);
+            vm.regfile.write(R2, sandbox::vm::ops::fromLong(321));
+            expect(vm.dmem.store(0, sandbox::vm::ops::fromLong(111)) == MemFaultCode::OK,
+                   pointer.label + " seeds zero sentinel");
+            expect(vm.dmem.store(4, sandbox::vm::ops::fromLong(4242)) == MemFaultCode::OK,
+                   pointer.label + " seeds valid sentinel");
+            PointerSnapshot snapshot;
+            snapshot.result = sandbox::vm::run(vm, 8);
+            snapshot.destination = vm.regfile.read(R2);
+            snapshot.memory_zero = loadPhysLong(vm, 0);
+            snapshot.memory_four = loadPhysLong(vm, 4);
+            snapshot.cause = vm.cause;
+            snapshot.page_fault_addr = vm.page_fault_addr;
+            snapshot.page_fault_access = vm.page_fault_access;
+            return snapshot;
+        };
+
+        for (const PointerCase& pointer : cases) {
+            for (const bool store : {false, true}) {
+                const std::string label = pointer.label +
+                    (store ? " STORE" : " LOAD");
+                const PointerSnapshot oracle =
+                    runPointerCase(pointer, store, VMExecutionBackend::Interpreter);
+                const PointerSnapshot decoded =
+                    runPointerCase(pointer, store,
+                                   VMExecutionBackend::DecodedTraceExecutor);
+                const PointerSnapshot native =
+                    runPointerCase(pointer, store,
+                                   VMExecutionBackend::NativeX64Jit);
+
+                const bool expected_trap = !pointer.valid;
+                expect(oracle.result.trapped() == expected_trap,
+                       label + " interpreter trap classification");
+                if (pointer.valid) {
+                    expect(oracle.result.halted() &&
+                               sandbox::vm::ops::toLong(oracle.destination) ==
+                                   (store ? 321 : pointer.expected_value),
+                           label + " interpreter valid result");
+                } else {
+                    expect(oracle.result.trap_code == pointer.trap,
+                           label + " interpreter trap code");
+                    expect(oracle.destination == sandbox::vm::ops::fromLong(321),
+                           label + " interpreter leaves destination unchanged");
+                    expect(oracle.memory_zero == 111 && oracle.memory_four == 4242,
+                           label + " interpreter leaves sentinels unchanged");
+                }
+
+                for (const auto& candidate : {decoded, native}) {
+                    expect(candidate.result.status == oracle.result.status &&
+                               candidate.result.trap_code == oracle.result.trap_code &&
+                               candidate.result.steps == oracle.result.steps,
+                           label + " backend status/trap/steps parity");
+                    expect(candidate.result.final_pc == oracle.result.final_pc,
+                           label + " backend final PC parity");
+                    expect(candidate.destination == oracle.destination &&
+                               candidate.memory_zero == oracle.memory_zero &&
+                               candidate.memory_four == oracle.memory_four,
+                           label + " backend state/memory parity");
+                    expect(candidate.cause == oracle.cause &&
+                               candidate.page_fault_addr == oracle.page_fault_addr &&
+                               candidate.page_fault_access == oracle.page_fault_access,
+                           label + " backend fault metadata parity");
+                }
+            }
+        }
+    }
+
+    {
         VMState vm(32, 64);
         auto program = assembleOrThrow(R"(
             mov.t5  r1, -5

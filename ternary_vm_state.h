@@ -4010,6 +4010,7 @@ struct VMState {
     [[nodiscard]] bool translateFetchAddress(int virtual_pc, int& physical_pc, int& routed_cause) {
         if (privilege == PrivilegeMode::Kernel) {
             if (!imem.inRange(virtual_pc)) {
+                setPageFault(virtual_pc, OS_PAGE_ACCESS_FETCH);
                 routed_cause = OS_CAUSE_FETCH_FAULT;
                 return false;
             }
@@ -4018,6 +4019,7 @@ struct VMState {
         }
         if (!mmu_enable) {
             if (!canFetch(virtual_pc)) {
+                setPageFault(virtual_pc, OS_PAGE_ACCESS_FETCH);
                 routed_cause = OS_CAUSE_FETCH_FAULT;
                 return false;
             }
@@ -4042,6 +4044,7 @@ struct VMState {
     [[nodiscard]] bool translateLoadAddress(int virtual_addr, int& physical_addr, int& routed_cause) {
         if (privilege == PrivilegeMode::Kernel) {
             if (!dmem.inRange(virtual_addr)) {
+                setPageFault(virtual_addr, OS_PAGE_ACCESS_LOAD);
                 routed_cause = OS_CAUSE_LOAD_FAULT;
                 return false;
             }
@@ -4050,6 +4053,7 @@ struct VMState {
         }
         if (!mmu_enable) {
             if (!canLoad(virtual_addr)) {
+                setPageFault(virtual_addr, OS_PAGE_ACCESS_LOAD);
                 routed_cause = OS_CAUSE_LOAD_FAULT;
                 return false;
             }
@@ -4074,6 +4078,7 @@ struct VMState {
     [[nodiscard]] bool translateStoreAddress(int virtual_addr, int& physical_addr, int& routed_cause) {
         if (privilege == PrivilegeMode::Kernel) {
             if (!dmem.inRange(virtual_addr)) {
+                setPageFault(virtual_addr, OS_PAGE_ACCESS_STORE);
                 routed_cause = OS_CAUSE_STORE_FAULT;
                 return false;
             }
@@ -4082,6 +4087,7 @@ struct VMState {
         }
         if (!mmu_enable) {
             if (!canStore(virtual_addr)) {
+                setPageFault(virtual_addr, OS_PAGE_ACCESS_STORE);
                 routed_cause = OS_CAUSE_STORE_FAULT;
                 return false;
             }

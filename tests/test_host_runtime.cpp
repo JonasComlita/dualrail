@@ -233,8 +233,59 @@ void testRuntimeGraphicsResetAndDiagnostics() {
            "reset returns VM to cold text mode before guest runs");
 }
 
+void testRuntimeGuestFaultDiagnostics() {
+    std::cout << "[4] Guest page-fault diagnostics and stable trap metadata\n";
+
+    const sandbox::host::TosBootImage image = assembleImage(R"(
+        .text
+        boot:
+            mov r1, handler
+            csrw tvec, r1
+            mov r1, -8
+            csrw status, r1
+            mov r1, 2000001
+            load r2, r1, 0
+            halt
+        handler:
+            csrr r4, cause
+            csrr r5, page_fault_addr
+            csrr r6, page_fault_access
+            halt
+    )");
+
+    const std::string diag_path = buildPath("host_runtime_guest_fault_diagnostics");
+    std::filesystem::remove_all(diag_path);
+
+    sandbox::host::TosRuntimeConfig config;
+    config.profile_name = "compact";
+    sandbox::host::TosRuntime runtime(config);
+    std::string error;
+    expect(runtime.loadImage(image, &error),
+           "runtime loads guest fault image");
+    const auto result = runtime.runForSteps(32);
+    expect(result.halted(),
+           "guest load fault routes to a diagnostic handler instead of host failure");
+    const auto snapshot = runtime.snapshot();
+    expect(snapshot.status == sandbox::vm::VMStatus::HALTED,
+           "guest fault handler leaves runtime in a stable halted state");
+    expect(runtime.exportDiagnostics(diag_path, &error),
+           "runtime exports guest fault diagnostics");
+
+    const std::string crash = readTextFile(diag_path + "/crash_report.txt");
+    expect(crash.find("status=HALTED") != std::string::npos &&
+               crash.find("cause=3") != std::string::npos &&
+               crash.find("page_fault_addr=2000001") != std::string::npos &&
+               crash.find("page_fault_access=0") != std::string::npos,
+           "guest-visible page-fault cause/address/access are stable in diagnostics");
+    const std::string state = readTextFile(diag_path + "/vm_state.txt");
+    expect(state.find("pc=") != std::string::npos &&
+               state.find("status=HALTED") != std::string::npos &&
+               state.find("cause=3") != std::string::npos,
+           "VM state diagnostics preserve terminal PC/status/cause");
+}
+
 void testRuntimeSeparateDiskRequiredAndPreserved() {
-    std::cout << "[4] Runtime boots from separate mutable sparse disk\n";
+    std::cout << "[5] Runtime boots from separate mutable sparse disk\n";
 
     sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -297,7 +348,7 @@ void testRuntimeSeparateDiskRequiredAndPreserved() {
 }
 
 void testGuestRequestedColdRebootPreservesDisk() {
-    std::cout << "[5] Guest-requested cold reboot boundary and disk preservation\n";
+    std::cout << "[6] Guest-requested cold reboot boundary and disk preservation\n";
 
     sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -378,7 +429,7 @@ void testGuestRequestedColdRebootPreservesDisk() {
 }
 
 void testRuntimeCheckpointAndInputReplay() {
-    std::cout << "[6] Runtime checkpoints and guest-input replay\n";
+    std::cout << "[7] Runtime checkpoints and guest-input replay\n";
 
     const sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -496,6 +547,7 @@ int main() {
     testBootImageValidation();
     testRuntimeTextFramebufferAndInput();
     testRuntimeGraphicsResetAndDiagnostics();
+    testRuntimeGuestFaultDiagnostics();
     testRuntimeSeparateDiskRequiredAndPreserved();
     testGuestRequestedColdRebootPreservesDisk();
     testRuntimeCheckpointAndInputReplay();

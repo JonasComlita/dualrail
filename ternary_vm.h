@@ -900,6 +900,40 @@ inline void writeVectorScatter(
 
 } // namespace exec
 
+// Scalar memory addresses are architectural integers, even though their
+// source register is a tagged ternary value. Keep this check shared by the
+// portable and decoded paths so an invalid T40 payload cannot silently turn
+// into address zero, and a saturated value cannot wrap when the immediate is
+// added before the VM's int-addressed memories are consulted.
+enum class ScalarMemoryAddressStatus : uint8_t {
+    Valid,
+    InvalidOperand,
+    OutOfRange,
+};
+
+[[nodiscard]] inline ScalarMemoryAddressStatus checkedScalarMemoryAddress(
+    const TernaryValue& base_value,
+    int immediate,
+    int& out_address) {
+    if (!isNumericMode(base_value.mode) || base_value.isInvalid()) {
+        return ScalarMemoryAddressStatus::InvalidOperand;
+    }
+
+    const long long base = ops::toLong(base_value);
+    const long long offset = static_cast<long long>(immediate);
+    if ((offset > 0 && base > std::numeric_limits<long long>::max() - offset) ||
+        (offset < 0 && base < std::numeric_limits<long long>::min() - offset)) {
+        return ScalarMemoryAddressStatus::OutOfRange;
+    }
+    const long long address = base + offset;
+    if (address < std::numeric_limits<int>::min() ||
+        address > std::numeric_limits<int>::max()) {
+        return ScalarMemoryAddressStatus::OutOfRange;
+    }
+    out_address = static_cast<int>(address);
+    return ScalarMemoryAddressStatus::Valid;
+}
+
 // =============================================================================
 // SECTION 2 — Single-Step Executor
 // =============================================================================
@@ -1841,12 +1875,18 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
 
         case Opcode::LOAD: {
             // I-type: Rd ← dmem[Rs1 + imm16]
-            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(vm.regfile.read(iw.rs1), iw.imm, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            long long base   = ops::toLong(vm.regfile.read(iw.rs1));
-            int       addr   = static_cast<int>(base + iw.imm);
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_LOAD_FAULT, vm.pc);
+                return vm.status;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_LOAD_FAULT;
             if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
@@ -1866,12 +1906,18 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             // I-type: dmem[Rs1 + imm16] ← rs_store
             // rs_store is the SOURCE register (the value to store).
             // Rs1 is the BASE ADDRESS register.
-            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(vm.regfile.read(iw.rs1), iw.imm, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            long long base = ops::toLong(vm.regfile.read(iw.rs1));
-            int       addr = static_cast<int>(base + iw.imm);
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_STORE_FAULT, vm.pc);
+                return vm.status;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_STORE_FAULT;
             if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
@@ -1894,11 +1940,18 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             (void)order;
             if (!okOrder) return vm.status;
             TernaryValue addrValue = vm.regfile.read(iw.rs1);
-            if (!isNumericMode(addrValue.mode) || addrValue.isInvalid()) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(addrValue, 0, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            const int addr = static_cast<int>(ops::toLong(addrValue));
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_LOAD_FAULT, vm.pc);
+                return vm.status;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_LOAD_FAULT;
             if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
@@ -1920,11 +1973,18 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             (void)order;
             if (!okOrder) return vm.status;
             TernaryValue addrValue = vm.regfile.read(iw.rs1);
-            if (!isNumericMode(addrValue.mode) || addrValue.isInvalid()) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(addrValue, 0, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            const int addr = static_cast<int>(ops::toLong(addrValue));
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_STORE_FAULT, vm.pc);
+                return vm.status;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_STORE_FAULT;
             if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
@@ -3179,12 +3239,18 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
         }
 
         case VMDecodedOp::Load: {
-            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(vm.regfile.read(iw.rs1), iw.imm, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return;
             }
-            long long base = ops::toLong(vm.regfile.read(iw.rs1));
-            int addr = static_cast<int>(base + iw.imm);
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_LOAD_FAULT, vm.pc);
+                return;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_LOAD_FAULT;
             if (!vm.translateLoadAddress(addr, physical_addr, cause)) {
@@ -3201,12 +3267,18 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
         }
 
         case VMDecodedOp::Store: {
-            if (!isNumericMode(vm.regfile.read(iw.rs1).mode)) {
+            int addr = 0;
+            const ScalarMemoryAddressStatus address_status =
+                checkedScalarMemoryAddress(vm.regfile.read(iw.rs1), iw.imm, addr);
+            if (address_status == ScalarMemoryAddressStatus::InvalidOperand) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return;
             }
-            long long base = ops::toLong(vm.regfile.read(iw.rs1));
-            int addr = static_cast<int>(base + iw.imm);
+            if (address_status == ScalarMemoryAddressStatus::OutOfRange) {
+                vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                                 OS_CAUSE_STORE_FAULT, vm.pc);
+                return;
+            }
             int physical_addr = addr;
             int cause = OS_CAUSE_STORE_FAULT;
             if (!vm.translateStoreAddress(addr, physical_addr, cause)) {
