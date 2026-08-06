@@ -1547,17 +1547,22 @@ void vectorTargetBoundary(TestContext& ctx) {
         }
     )";
     CompilerOptions options;
-    options.allow_ast_replay = false;
+    // Deliberately leave the legacy compatibility flag enabled to prove that
+    // target rejection cannot silently re-enter AST assembly emission.
+    options.allow_ast_replay = true;
     CompileResult compiled = compileSource(
         "next_vector_target_boundary.trit", src, options);
     ctx.check(!compiled.success,
               "strict SSA rejects vector lowering without an ABI");
     ctx.check(hasDiagnostic(compiled.diagnostics,
-                            "optimized SSA target lowering failed"),
+                            "optimized SSA target lowering rejected"),
               "vector strict-SSA diagnostic identifies target boundary");
-    ctx.contains(compiled.object.metadata.at("target.ast_replay_reasons"),
+    ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "vector rejection never replays AST assembly");
+    ctx.contains(compiled.object.metadata.at("target.rejection_reasons"),
                  "vector-valued function lowering",
-                 "vector replay boundary records the missing ABI contract");
+                 "vector rejection records the missing ABI contract");
 }
 
 } // namespace

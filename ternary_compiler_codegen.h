@@ -1041,19 +1041,16 @@ public:
 
         Module dry_module;
         dry_module.name = ast_.name;
-        std::map<std::string, int> value_starts;
         int next_module_value = 1;
         for (const FunctionAst* fn : compile_order) {
-            value_starts[fn->name] = next_module_value;
             Function dry = compileFunctionDry(*fn, next_module_value);
             next_module_value = dry.ir_value_ceiling;
             dry_module.functions.push_back(std::move(dry));
         }
 
-        // Keep allocation keyed to the address IR until target emission is
-        // fully IR-driven.  The optimized copy is exposed and verified now,
-        // but must not silently remove values still consumed by the legacy
-        // target replay.
+        // The optimized module is the sole object-code source. A function that
+        // cannot satisfy the SSA verifier remains available for diagnostics,
+        // but is rejected instead of entering a compatibility code path.
         Module optimized_module;
         optimized_module.name = dry_module.name;
         auto accumulateOptimizerStats = [](
@@ -1076,7 +1073,7 @@ public:
             destination.swaps += source.swaps;
         };
         int ssa_admitted_functions = 0;
-        int cfg_fallback_functions = 0;
+        int ssa_rejected_functions = 0;
         for (const Function& source_function : dry_module.functions) {
             Module candidate;
             candidate.name = dry_module.name;
@@ -1087,6 +1084,8 @@ public:
             if (candidate_diagnostics.empty()) {
                 if (candidate.functions.front().cfg_complete)
                     ++ssa_admitted_functions;
+                else
+                    ++ssa_rejected_functions;
                 optimized_module.functions.push_back(
                     std::move(candidate.functions.front()));
                 accumulateOptimizerStats(
@@ -1101,42 +1100,22 @@ public:
                 if (index != 0) candidate_reason << ", ";
                 candidate_reason << candidate_diagnostics[index].message;
             }
-            cfg_replay_reasons_[source_function.name] =
+            cfg_rejection_reasons_[source_function.name] =
                 "optimized SSA verification: " + candidate_reason.str();
-
-            // A structurally incomplete frontend CFG must not enter mem2reg or
-            // global SSA transforms. Keep it explicit and run only the
-            // conservative block-local portfolio until its builder is fixed.
-            Module fallback;
-            fallback.name = dry_module.name;
-            fallback.functions.push_back(source_function);
-            fallback.functions.front().cfg_complete = false;
-            const OptimizerStats fallback_stats = optimizeModule(
-                fallback, options_.optimization, options_);
-            const auto fallback_diagnostics = verifyModule(fallback);
             diagnostics_.insert(
                 diagnostics_.end(),
-                fallback_diagnostics.begin(),
-                fallback_diagnostics.end());
+                candidate_diagnostics.begin(),
+                candidate_diagnostics.end());
+            candidate.functions.front().cfg_complete = false;
             optimized_module.functions.push_back(
-                std::move(fallback.functions.front()));
-            accumulateOptimizerStats(
-                result.optimizer_stats, fallback_stats);
-            ++cfg_fallback_functions;
+                std::move(candidate.functions.front()));
+            accumulateOptimizerStats(result.optimizer_stats, candidate_stats);
+            ++ssa_rejected_functions;
         }
         auto verifier_diagnostics = verifyModule(optimized_module);
         diagnostics_.insert(diagnostics_.end(),
                             verifier_diagnostics.begin(),
                             verifier_diagnostics.end());
-        // Keep the dry allocation only for the compatibility AST emitter.
-        // The public result below is populated from the optimized functions
-        // that actually reach SSA target emission.
-        AllocationResult dry_allocation =
-            allocateRegisters(dry_module, options_);
-        diagnostics_.insert(diagnostics_.end(),
-                            dry_allocation.diagnostics.begin(),
-                            dry_allocation.diagnostics.end());
-
         AllocationResult target_allocation;
         target_allocation.success = true;
         auto accumulateAllocation = [](
@@ -1175,18 +1154,14 @@ public:
         };
 
         int ir_emitted_functions = 0;
-        int target_replay_functions = 0;
+        int target_rejected_functions = 0;
         int target_critical_edges_split = 0;
         int target_spill_rewrite_rounds = 0;
         int target_spill_loads = 0;
         int target_spill_stores = 0;
         std::vector<std::string> ir_emitted_function_names;
-        std::vector<std::string> target_replay_function_names;
-        std::vector<std::string> target_replay_reasons;
-        std::map<std::string, const FunctionAst*> ast_by_name;
-        for (const FunctionAst* fn : compile_order) {
-            ast_by_name[fn->name] = fn;
-        }
+        std::vector<std::string> target_rejected_function_names;
+        std::vector<std::string> target_rejection_reasons;
         for (std::size_t function_index = 0;
              function_index < optimized_module.functions.size();
              ++function_index) {
@@ -1232,63 +1207,39 @@ public:
                 ir_emitted_function_names.push_back(
                     function.name);
             } else {
-                const auto ast_it = ast_by_name.find(function.name);
-                const std::string boundary =
-                    targetLoweringBoundary(function);
-                if (!boundary.empty()) {
-                    diagnostics_.push_back(Diagnostic{
-                        DiagnosticSeverity::Error,
-                        "optimized SSA target lowering failed for '" +
-                            function.name + "': " + boundary,
-                        SourceSpan{ast_.name, 1, 1, 1}});
-                } else if (!options_.allow_ast_replay) {
-                    diagnostics_.push_back(Diagnostic{
-                        DiagnosticSeverity::Error,
-                        "optimized SSA target lowering failed for '" +
-                            function.name +
-                            "' and AST replay is disabled",
-                        SourceSpan{ast_.name, 1, 1, 1}});
-                } else if (ast_it != ast_by_name.end() &&
-                           function_index < dry_module.functions.size()) {
-                    // AST emission is now a narrowly scoped compatibility
-                    // fallback for a target-lowering rejection.  Directly
-                    // lowerable functions never enter this path, so their
-                    // object sections are produced solely from optimized SSA.
-                    compileFunctionReal(
-                        *ast_it->second,
-                        result,
-                        dry_allocation,
-                        dry_module.functions[function_index],
-                        value_starts[function.name]);
-                }
-                ++target_replay_functions;
-                target_replay_function_names.push_back(function.name);
-                std::string replay_reason = boundary;
-                if (replay_reason.empty() && !function.cfg_complete) {
-                    replay_reason =
+                std::string rejection_reason = targetLoweringBoundary(function);
+                if (rejection_reason.empty() && !function.cfg_complete) {
+                    rejection_reason =
                         "SSA admission/optimization rejected the function";
-                    const auto cfg_reason =
-                        cfg_replay_reasons_.find(function.name);
-                    if (cfg_reason != cfg_replay_reasons_.end()) {
-                        replay_reason += ":" + cfg_reason->second;
+                    const auto cfg_reason = cfg_rejection_reasons_.find(
+                        function.name);
+                    if (cfg_reason != cfg_rejection_reasons_.end()) {
+                        rejection_reason += ":" + cfg_reason->second;
                     }
                 }
-                if (replay_reason.empty() && !ir_allocation.success) {
-                    replay_reason = "optimized SSA allocation failed";
+                if (rejection_reason.empty() && !ir_allocation.success) {
+                    rejection_reason = "optimized SSA allocation failed";
                     if (!ir_allocation.diagnostics.empty()) {
-                        replay_reason += ":" +
+                        rejection_reason += ":" +
                             ir_allocation.diagnostics.front().message;
                     }
                 }
-                if (replay_reason.empty()) {
-                    replay_reason =
+                if (rejection_reason.empty()) {
+                    rejection_reason =
                         "optimized SSA target emitter rejected the "
                         "representable function";
                 }
-                std::replace(replay_reason.begin(), replay_reason.end(),
+                std::replace(rejection_reason.begin(), rejection_reason.end(),
                              ';', ',');
-                target_replay_reasons.push_back(
-                    function.name + ":" + replay_reason);
+                diagnostics_.push_back(Diagnostic{
+                    DiagnosticSeverity::Error,
+                    "optimized SSA target lowering rejected for '" +
+                        function.name + "': " + rejection_reason,
+                    SourceSpan{ast_.name, 1, 1, 1}});
+                ++target_rejected_functions;
+                target_rejected_function_names.push_back(function.name);
+                target_rejection_reasons.push_back(
+                    function.name + ":" + rejection_reason);
             }
         }
         result.assembly.clear();
@@ -1315,18 +1266,19 @@ public:
         result.object.assembly = result.assembly;
         result.object.metadata["phase"] = "ir-transition-v2";
         result.object.metadata["pipeline"] =
-            "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-with-explicit-replay-fallback";
+            "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-only-fail-closed";
         result.object.metadata["object.ssa_is_optimized"] = "true";
         result.object.metadata["target.ast_replay_allowed"] =
-            options_.allow_ast_replay ? "true" : "false";
+            "false";
         result.object.metadata["ssa.admitted_functions"] =
             std::to_string(ssa_admitted_functions);
-        result.object.metadata["ssa.cfg_fallback_functions"] =
-            std::to_string(cfg_fallback_functions);
+        result.object.metadata["ssa.rejected_functions"] =
+            std::to_string(ssa_rejected_functions);
         result.object.metadata["target.ir_emitted_functions"] =
             std::to_string(ir_emitted_functions);
-        result.object.metadata["target.ast_replay_functions"] =
-            std::to_string(target_replay_functions);
+        result.object.metadata["target.ast_replay_functions"] = "0";
+        result.object.metadata["target.rejected_functions"] =
+            std::to_string(target_rejected_functions);
         result.object.metadata["target.memory_alias_model"] =
             "ordered-effects-with-call-carrier-proof";
         result.object.metadata["target.vector_lowering"] =
@@ -1361,23 +1313,24 @@ public:
         result.object.metadata[
             "target.ir_emitted_function_names"] =
             ir_emitted_names.str();
-        std::ostringstream replay_names;
+        std::ostringstream rejected_names;
         for (std::size_t index = 0;
-             index < target_replay_function_names.size(); ++index) {
-            if (index != 0) replay_names << ",";
-            replay_names << target_replay_function_names[index];
+             index < target_rejected_function_names.size(); ++index) {
+            if (index != 0) rejected_names << ",";
+            rejected_names << target_rejected_function_names[index];
         }
         result.object.metadata[
-            "target.ast_replay_function_names"] =
-            replay_names.str();
-        std::ostringstream replay_reasons;
+            "target.rejected_function_names"] = rejected_names.str();
+        result.object.metadata["target.ast_replay_function_names"] = "";
+        std::ostringstream rejection_reasons;
         for (std::size_t index = 0;
-             index < target_replay_reasons.size(); ++index) {
-            if (index != 0) replay_reasons << ";";
-            replay_reasons << target_replay_reasons[index];
+             index < target_rejection_reasons.size(); ++index) {
+            if (index != 0) rejection_reasons << ";";
+            rejection_reasons << target_rejection_reasons[index];
         }
-        result.object.metadata["target.ast_replay_reasons"] =
-            replay_reasons.str();
+        result.object.metadata["target.rejection_reasons"] =
+            rejection_reasons.str();
+        result.object.metadata["target.ast_replay_reasons"] = "";
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
@@ -1421,7 +1374,7 @@ private:
     ModuleAst ast_;
     CompilerOptions options_;
     LayoutTable layout_table_;
-    std::map<std::string, std::string> cfg_replay_reasons_;
+    std::map<std::string, std::string> cfg_rejection_reasons_;
     std::vector<Diagnostic> diagnostics_;
     std::map<std::string, TypeRef> function_returns_;
     std::map<std::string, std::vector<TypeRef>> function_params_;
@@ -2817,68 +2770,10 @@ private:
                 if (index != 0) reason << ", ";
                 reason << cfg_diagnostics[index].message;
             }
-            cfg_replay_reasons_[fn.name] =
+            cfg_rejection_reasons_[fn.name] =
                 "frontend CFG verification: " + reason.str();
         }
         return dry_ctx.ir;
-    }
-
-    void compileFunctionReal(const FunctionAst& fn,
-                             CompileResult& result,
-                             const AllocationResult& allocation,
-                             const Function& allocated_fn,
-                             int start_value) {
-        FunctionContext ctx;
-        ctx.ast = &fn;
-        ctx.ir.name = fn.name;
-        ctx.ir.params = fn.params;
-        ctx.ir.return_type = fn.return_type;
-        ctx.ir.blocks.push_back(BasicBlock{fn.name + "_entry", {}, {}});
-        ctx.block = &ctx.ir.blocks.back();
-        ctx.function_returns = function_returns_;
-        ctx.function_params = function_params_;
-        ctx.layouts = &layout_table_;
-        ctx.options = &options_;
-        ctx.diagnostics = &diagnostics_;
-        ctx.constants = module_constants_;  // Populate with module-level constants
-        ctx.dry_run = false;
-        ctx.allocation = &allocation;
-        ctx.next_value = start_value;
-
-        collectLocals(fn, ctx);
-        materializeLocalAllocas(ctx);
-        ctx.callee_saved_regs = getCalleeSavedUsed(allocation, allocated_fn);
-        ctx.return_slot_offset = ctx.next_local_offset + static_cast<int>(ctx.callee_saved_regs.size());
-        ctx.call_arg_slot_base =
-            ctx.return_slot_offset +
-            std::max(1, typeSizeWords(fn.return_type, layout_table_));
-        const auto scratch_it = function_call_scratch_areas_.find(fn.name);
-        const int scratch_areas = scratch_it == function_call_scratch_areas_.end()
-            ? 0
-            : std::min(kCallArgScratchAreas, std::max(0, scratch_it->second));
-        ctx.frame_words =
-            align9(std::max(1, ctx.call_arg_slot_base + kCallArgScratchWords * scratch_areas));
-        emitFunctionPrologue(fn, ctx);
-        ctx.scope_vars.push_back({});
-        emitStatements(fn.body, ctx);
-        emitDefaultReturn(ctx);
-        ctx.scope_vars.pop_back();
-
-        result.assembly += ctx.asm_out.str();
-        ctx.ir.ir_value_ceiling = ctx.next_value;
-        std::set<std::string> refs;
-        for (const auto& block : ctx.ir.blocks) {
-            for (const auto& instr : block.instructions) {
-                if (instr.opcode == InstrOpcode::Call && !instr.symbol.empty()) {
-                    refs.insert(instr.symbol);
-                }
-            }
-        }
-        result.ssa_module.functions.push_back(ctx.ir);
-        result.object.symbols[fn.name] = 0;
-        result.object.function_order.push_back(fn.name);
-        result.object.function_sections[fn.name] = ctx.asm_out.str();
-        result.object.function_refs[fn.name] = std::move(refs);
     }
 
     [[nodiscard]] static int align9(int value) {
@@ -3746,16 +3641,22 @@ private:
             ctx.block->terminator.target_pos = pos;
         }
 
-        emitArm(posName, pos, end, stmt, cond, ctx);
-        emitArm(negName, neg, end, stmt, cond, ctx);
-        emitArm(zeroName, zero, end, stmt, cond, ctx);
+        bool has_fallthrough = false;
+        has_fallthrough = emitArm(posName, pos, end, stmt, cond, ctx) ||
+                          has_fallthrough;
+        has_fallthrough = emitArm(negName, neg, end, stmt, cond, ctx) ||
+                          has_fallthrough;
+        has_fallthrough = emitArm(zeroName, zero, end, stmt, cond, ctx) ||
+                          has_fallthrough;
         ctx.release(cond.reg);
-        ctx.ir.blocks.push_back(BasicBlock{end, {}, {}});
-        ctx.block = &ctx.ir.blocks.back();
-        ctx.raw(end + ":");
+        if (has_fallthrough) {
+            ctx.ir.blocks.push_back(BasicBlock{end, {}, {}});
+            ctx.block = &ctx.ir.blocks.back();
+            ctx.raw(end + ":");
+        }
     }
 
-    void emitArm(
+    [[nodiscard]] bool emitArm(
         const std::string& name,
         const std::string& label,
         const std::string& end,
@@ -3803,12 +3704,14 @@ private:
             emitDrops(ctx.scope_vars.back(), ctx);
             ctx.scope_vars.pop_back();
         }
-        ctx.line("jmp " + end);
         if (ctx.block &&
             ctx.block->terminator.kind == TerminatorKind::None) {
+            ctx.line("jmp " + end);
             ctx.block->terminator.kind = TerminatorKind::Jump;
             ctx.block->terminator.target = end;
+            return true;
         }
+        return false;
     }
 
     void emitTupleSwap(const Stmt& stmt, FunctionContext& ctx) {
@@ -5520,14 +5423,26 @@ inline void addInterferenceEdge(
     // r13/r14 are reserved by direct SSA tuple-swap lowering as its two
     // memory temporaries. They remain available for the ABI at calls and
     // syscalls, but no allocated SSA value may be live in them at a Swap.
-    const std::vector<int> spillTemporaryColors =
-        {15, 16, 17, 18};
+    // Spill loads/stores are short-lived target temporaries. They may use the
+    // ordinary scalar colors when they do not cross a call, which prevents a
+    // complex parser function from repeatedly spilling its own rewrite loads.
+    // Values that do cross a call are routed through calleePreferred below.
+    const std::vector<int> spillTemporaryColors = {
+        15, 16, 17, 18, 19, 20, 21, 22, 23,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    // A rewritten call result is consumed immediately by its spill store.
+    // The target already returns calls in r13, so reserving that register
+    // for this short-lived value avoids recursively spilling the result.
+    const std::vector<int> callTemporaryColors = {
+        13, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
     std::map<ValueId, TypeRef> valueTypes;
     std::map<ValueId, std::set<ValueId>> graph;
     std::set<std::pair<ValueId, ValueId>> moveEdges;
     std::set<ValueId> liveAcrossCalls;
     std::set<ValueId> spillTemporaries;
+    std::set<ValueId> callSpillTemporaries;
     std::set<ValueId> frameValues;
     for (const Function& fn : module.functions) {
         for (const BasicBlock& block : fn.blocks) {
@@ -5580,6 +5495,9 @@ inline void addInterferenceEdge(
                     valueTypes[instr.def] = instr.type;
                     if (instr.spill_temporary)
                         spillTemporaries.insert(instr.def);
+                    if (instr.spill_temporary &&
+                        instr.opcode == InstrOpcode::Call)
+                        callSpillTemporaries.insert(instr.def);
                     graph[instr.def];
                     for (ValueId value : live) addInterferenceEdge(graph, instr.def, value);
                     live.erase(instr.def);
@@ -5655,7 +5573,9 @@ inline void addInterferenceEdge(
     auto effectiveColorCount = [&](ValueId value) {
         if (valueTypes[value].kind == TypeKind::Vector)
             return static_cast<int>(vectorColors.size());
-        if (spillTemporaries.count(value))
+        if (callSpillTemporaries.count(value))
+            return static_cast<int>(callTemporaryColors.size());
+        if (spillTemporaries.count(value) && !liveAcrossCalls.count(value))
             return static_cast<int>(spillTemporaryColors.size());
         if (liveAcrossCalls.count(value))
             return static_cast<int>(calleePreferred.size());
@@ -5803,8 +5723,11 @@ inline void addInterferenceEdge(
         std::map<ValueId, int>& colors = vector ? result.vector_registers
                                                 : result.scalar_registers;
         const std::vector<int>& base_palette = vector ? vectorColors :
-            (spillTemporaries.count(value) ? spillTemporaryColors :
-             (liveAcrossCalls.count(value) ? calleePreferred : scalarColors));
+            (callSpillTemporaries.count(value)
+                 ? callTemporaryColors :
+             (spillTemporaries.count(value) && !liveAcrossCalls.count(value)
+                 ? spillTemporaryColors :
+             (liveAcrossCalls.count(value) ? calleePreferred : scalarColors)));
         std::vector<int> pair_palette;
         const std::vector<int>* palette_ptr = &base_palette;
         if (!vector && registerWidth(value) == 2) {
@@ -6015,6 +5938,7 @@ inline void addInterferenceEdge(
                     if (current_slots.count(phi.def)) {
                         const ValueId original = phi.def;
                         phi.def = next_value++;
+                        phi.spill_temporary = true;
                         phi_stores.push_back(
                             makeStore(original, phi.def, phi.span));
                     }

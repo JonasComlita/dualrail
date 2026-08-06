@@ -22,11 +22,11 @@ void showUsage() {
     std::cout << "  \033[1;32m-o <file>\033[0m               Output compiled ternary executable image\n";
     std::cout << "  \033[1;32m-S\033[0m                      Output assembly text (.tasm) instead of binary executable\n";
     std::cout << "  \033[1;32m-O0 / -O1 / -O2\033[0m         Set optimization level (None, Basic, Aggressive)\n";
-    std::cout << "  \033[1;32m--strict-ssa\033[0m             Reject any function that needs AST replay\n";
+    std::cout << "  \033[1;32m--strict-ssa\033[0m             Enforce the optimized-SSA-only target contract\n";
     std::cout << "  \033[1;32m--stack <words>\033[0m         Set stack allocation size hint (default: 24)\n";
     std::cout << "  \033[1;32m--dump-ir\033[0m               Print structural SSA IR before lowering\n";
     std::cout << "  \033[1;32m--dump-passes\033[0m           Dump internal compiler optimizer pass telemetry\n";
-    std::cout << "  \033[1;32m--dump-pipeline\033[0m         Dump SSA admission, target-emission, and fallback counts\n";
+    std::cout << "  \033[1;32m--dump-pipeline\033[0m         Dump SSA admission, target-emission, and rejection counts\n";
     std::cout << "  \033[1;32m--steps <count>\033[0m         Set VM execution step limit (default: 1000000)\n";
     std::cout << "  \033[1;32m--input <string>\033[0m        Feed ASCII console input string to the VM in run mode\n";
     std::cout << "  \033[1;32m--input-file <file>\033[0m     Feed console input from a file to the VM in run mode\n";
@@ -722,8 +722,8 @@ int main(int argc, char** argv) {
         std::cout << "--- Compiler Pipeline ---\n"
                   << "  SSA admitted functions:       "
                   << metadata("ssa.admitted_functions") << "\n"
-                  << "  CFG fallback functions:       "
-                  << metadata("ssa.cfg_fallback_functions") << "\n"
+                  << "  SSA rejected functions:       "
+                  << metadata("ssa.rejected_functions") << "\n"
                   << "  Direct IR-emitted functions:  "
                   << metadata("target.ir_emitted_functions") << "\n"
                   << "  AST replay functions:         "
@@ -732,6 +732,10 @@ int main(int argc, char** argv) {
                   << metadata("target.ast_replay_function_names") << "\n"
                   << "  AST replay reasons:           "
                   << metadata("target.ast_replay_reasons") << "\n"
+                  << "  Target rejected functions:    "
+                  << metadata("target.rejected_functions") << "\n"
+                  << "  Target rejection reasons:    "
+                  << metadata("target.rejection_reasons") << "\n"
                   << "  IR-emitted function names:    "
                   << metadata("target.ir_emitted_function_names") << "\n"
                   << "  Pipeline contract:            "

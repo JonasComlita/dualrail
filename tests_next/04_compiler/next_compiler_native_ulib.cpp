@@ -96,6 +96,61 @@ std::string nativeParserSource() {
            readTritFile("tcl_parser.trit") + "\n";
 }
 
+void compilerModulesAreSsaOnlyAtBothOptimizationLevels(TestContext& ctx) {
+    const std::vector<std::string> modules = {
+        "kernel.trit", "apps/os_sdk.trit", "ulib.trit"};
+    const std::vector<OptimizationLevel> levels = {
+        OptimizationLevel::None, OptimizationLevel::Aggressive};
+    for (const std::string& module : modules) {
+        const std::string source = readTritFile(module);
+        ctx.check(!source.empty(), module + " loads for SSA-only validation");
+        if (source.empty()) continue;
+        for (const OptimizationLevel level : levels) {
+            CompilerOptions options;
+            options.optimization = level;
+            // This must not re-enable a production AST assembly path.
+            options.allow_ast_replay = true;
+            const std::string level_name =
+                level == OptimizationLevel::None ? "O0" : "O1";
+            const std::string label = module + " " + level_name;
+            CompileResult compiled = compileSource(
+                "next_ssa_only_" + level_name + "_" + module,
+                source,
+                options);
+            if (!expectCompileOk(ctx, compiled,
+                                 label + " compiles from optimized SSA")) {
+                continue;
+            }
+            ctx.equal(compiled.object.metadata.at(
+                          "target.ast_replay_functions"),
+                      std::string("0"),
+                      label + " has zero AST replay functions");
+            ctx.equal(compiled.object.metadata.at(
+                          "target.ast_replay_function_names"),
+                      std::string(),
+                      label + " has no AST replay function names");
+            ctx.equal(compiled.object.metadata.at(
+                          "target.rejected_functions"),
+                      std::string("0"),
+                      label + " has no target-rejected functions");
+            ctx.equal(compiled.object.metadata.at(
+                          "ssa.rejected_functions"),
+                      std::string("0"),
+                      label + " admits every function into SSA");
+            ctx.equal(compiled.object.metadata.at(
+                          "target.ir_emitted_functions"),
+                      compiled.object.metadata.at("ssa.admitted_functions"),
+                      label + " emits every admitted function from IR");
+            if (module == "ulib.trit") {
+                ctx.contains(compiled.object.metadata.at(
+                                 "target.ir_emitted_function_names"),
+                             "tst_find",
+                             label + " emits tst_find from optimized SSA");
+            }
+        }
+    }
+}
+
 std::string asciiStores(const std::string& text) {
     std::ostringstream out;
     out << "                unsafe {\n"
@@ -445,6 +500,9 @@ void ulibSplitBufferRuntime(TestContext& ctx) {
 int main() {
     sandbox::LongTriple::initPowTable();
     const std::vector<TestCase> cases = {
+        {"compiler.pipeline.ssa_only_system_modules",
+         "compiler.pipeline_contract",
+         compilerModulesAreSsaOnlyAtBothOptimizationLevels},
         {"compiler.ulib.raw_heap_autodrop_runtime",
          "compiler.pipeline_contract", ulibRawHeapAutodropRuntime},
         {"compiler.native_parser.guard_acceptance",
