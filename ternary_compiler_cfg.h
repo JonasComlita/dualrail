@@ -327,6 +327,21 @@ struct Mem2RegResult {
     if (function.blocks.empty() || !cfg.invalid_targets.empty()) return result;
     DominanceInfo dominance = computeDominance(function, cfg);
 
+    // The frontend may retain dead blocks after an early return or a
+    // side-effectful match arm. They are valid in the address IR, but they
+    // are not part of the entry-reachable SSA graph. Do not place mem2reg
+    // phis from their dominance frontiers or remove an alloca still referenced
+    // only by one of those blocks.
+    std::set<std::string> reachable;
+    std::vector<std::string> reach_worklist = {cfg.order.front()};
+    while (!reach_worklist.empty()) {
+        const std::string block = reach_worklist.back();
+        reach_worklist.pop_back();
+        if (!reachable.insert(block).second) continue;
+        for (const std::string& successor : cfg.successors.at(block))
+            reach_worklist.push_back(successor);
+    }
+
     struct Candidate {
         ValueId address = -1;
         TypeRef value_type = TypeRef::unknown();
@@ -334,6 +349,7 @@ struct Mem2RegResult {
     };
     std::map<ValueId, Candidate> candidates;
     for (const BasicBlock& block : function.blocks) {
+        if (!reachable.count(block.name)) continue;
         for (const Instr& instr : block.instructions) {
             if (instr.opcode != InstrOpcode::Alloca || instr.def < 0) continue;
             candidates[instr.def] = Candidate{instr.def, instr.type, {}};
@@ -343,12 +359,17 @@ struct Mem2RegResult {
 
     std::set<ValueId> escaped;
     for (const BasicBlock& block : function.blocks) {
+        const bool block_reachable = reachable.count(block.name) != 0;
         if (candidates.count(block.terminator.condition))
             escaped.insert(block.terminator.condition);
         for (const Instr& instr : block.instructions) {
             for (std::size_t index = 0; index < instr.args.size(); ++index) {
                 const ValueId argument = instr.args[index];
                 if (!candidates.count(argument)) continue;
+                if (!block_reachable) {
+                    escaped.insert(argument);
+                    continue;
+                }
                 const bool plain_load =
                     instr.opcode == InstrOpcode::Load && index == 0;
                 const bool plain_store =
@@ -443,6 +464,38 @@ struct Mem2RegResult {
                 if (instr.opcode == InstrOpcode::Store &&
                     instr.args.size() == 2 && instr.args[0] == address)
                     assigned = true;
+            }
+            if (!safe) break;
+        }
+        // A phi is only meaningful when every incoming edge already has a
+        // defined value. The lighter load-before-store check above can miss a
+        // value that is first assigned inside a loop and then needs an entry
+        // edge at the loop header. Reject that alloca instead of publishing a
+        // partial phi that fails SSA verification or would require an undef
+        // ABI value.
+        std::set<std::string> phi_blocks;
+        std::set<std::string> frontier_work = it->second.definition_blocks;
+        while (!frontier_work.empty()) {
+            const std::string block_name = *frontier_work.begin();
+            frontier_work.erase(frontier_work.begin());
+            for (const std::string& frontier :
+                 dominance.frontier[block_name]) {
+                if (!phi_blocks.insert(frontier).second) continue;
+                if (!reachable.count(frontier)) {
+                    safe = false;
+                    continue;
+                }
+                if (!it->second.definition_blocks.count(frontier))
+                    frontier_work.insert(frontier);
+            }
+        }
+        for (const std::string& phi_block : phi_blocks) {
+            for (const std::string& predecessor :
+                 cfg.predecessors.at(phi_block)) {
+                if (!assigned_out[predecessor]) {
+                    safe = false;
+                    break;
+                }
             }
             if (!safe) break;
         }

@@ -730,6 +730,8 @@ int main(int argc, char** argv) {
                   << metadata("target.ast_replay_functions") << "\n"
                   << "  AST replay function names:    "
                   << metadata("target.ast_replay_function_names") << "\n"
+                  << "  AST replay reasons:           "
+                  << metadata("target.ast_replay_reasons") << "\n"
                   << "  IR-emitted function names:    "
                   << metadata("target.ir_emitted_function_names") << "\n"
                   << "  Pipeline contract:            "

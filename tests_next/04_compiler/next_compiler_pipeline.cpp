@@ -740,6 +740,19 @@ void ownershipMoveAutodrop(TestContext& ctx) {
                              "live owned value at return compiles")) {
             return;
         }
+        ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+                  std::string("0"),
+                  "owned scalar target section is emitted from optimized SSA");
+        bool has_ir_drop = false;
+        for (const auto& block : compiled.optimized_module.functions.front().blocks) {
+            for (const auto& instr : block.instructions) {
+                has_ir_drop = has_ir_drop ||
+                    (instr.opcode == InstrOpcode::Call &&
+                     instr.symbol == "free");
+            }
+        }
+        ctx.check(has_ir_drop,
+                  "owned return cleanup is represented as an SSA free call");
         ctx.contains(compiled.assembly, "call free",
                      "auto-drop inserts a free call before returning");
 
@@ -822,6 +835,74 @@ void optimizerStatsSpillsCoalesce(TestContext& ctx) {
     AllocationResult coalesced = allocateRegisters(moves);
     ctx.check(coalesced.coalesced_moves >= 1,
               "allocator coalesces non-interfering moves");
+
+    Module gvn_diamond;
+    gvn_diamond.name = "gvn_diamond";
+    Function gvn_fn;
+    gvn_fn.name = "gvn_diamond";
+    gvn_fn.return_type =
+        TypeRef::numeric(sandbox::ir::Type::T40);
+    BasicBlock gvn_entry;
+    gvn_entry.name = "entry";
+    gvn_entry.instructions.push_back(
+        Instr{1, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 7});
+    gvn_entry.instructions.push_back(
+        Instr{2, InstrOpcode::Const,
+              TypeRef::numeric(sandbox::ir::Type::T40), {}, 11});
+    gvn_entry.instructions.push_back(
+        Instr{3, InstrOpcode::Const, TypeRef::trit(), {}, 1});
+    gvn_entry.terminator.kind = TerminatorKind::Branch3;
+    gvn_entry.terminator.condition = 3;
+    gvn_entry.terminator.target_neg = "sibling";
+    gvn_entry.terminator.target_zero = "sibling";
+    gvn_entry.terminator.target_pos = "dominator";
+
+    BasicBlock gvn_dominator;
+    gvn_dominator.name = "dominator";
+    gvn_dominator.instructions.push_back(
+        Instr{4, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1, 2}});
+    gvn_dominator.terminator.kind = TerminatorKind::Jump;
+    gvn_dominator.terminator.target = "child";
+
+    BasicBlock gvn_sibling;
+    gvn_sibling.name = "sibling";
+    gvn_sibling.instructions.push_back(
+        Instr{5, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1, 2}});
+    gvn_sibling.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T40), {5}});
+    gvn_sibling.terminator.kind = TerminatorKind::Return;
+
+    BasicBlock gvn_child;
+    gvn_child.name = "child";
+    gvn_child.instructions.push_back(
+        Instr{6, InstrOpcode::Add,
+              TypeRef::numeric(sandbox::ir::Type::T40), {1, 2}});
+    gvn_child.instructions.push_back(
+        Instr{-1, InstrOpcode::Ret,
+              TypeRef::numeric(sandbox::ir::Type::T40), {6}});
+    gvn_child.terminator.kind = TerminatorKind::Return;
+    // Keep the sibling before the dominated child in the block order. This
+    // is the regression shape where a single-entry availability map loses
+    // the dominator's expression.
+    gvn_fn.blocks = {
+        gvn_entry, gvn_dominator, gvn_sibling, gvn_child};
+    gvn_diamond.functions.push_back(gvn_fn);
+    ctx.check(verifyModule(gvn_diamond).empty(),
+              "cross-block GVN fixture passes SSA verification");
+    const int gvn_hits =
+        runGlobalValueNumbering(gvn_diamond.functions.front());
+    ctx.check(gvn_hits == 1,
+              "GVN retains a dominator across a sibling block");
+    const auto& gvn_child_instr =
+        gvn_diamond.functions.front().blocks.back().instructions.front();
+    ctx.check(gvn_child_instr.opcode == InstrOpcode::Copy &&
+                  gvn_child_instr.args.size() == 1 &&
+                  gvn_child_instr.args.front() == 4,
+              "GVN rewrites the dominated duplicate to the dominator value");
 }
 
 void optimizerAdvancedDifferential(TestContext& ctx) {
@@ -1166,6 +1247,19 @@ void concurrencyAtomicRuntime(TestContext& ctx) {
                              "atomic increment source compiles")) {
             return;
         }
+        ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+                  std::string("0"),
+                  "shared scalar target section is emitted from optimized SSA");
+        bool has_atomic_ir = false;
+        for (const auto& block : compiled.optimized_module.functions.front().blocks) {
+            for (const auto& instr : block.instructions) {
+                has_atomic_ir = has_atomic_ir ||
+                    instr.opcode == InstrOpcode::Tldr ||
+                    instr.opcode == InstrOpcode::Tstr;
+            }
+        }
+        ctx.check(has_atomic_ir,
+                  "atomic load/store remain explicit SSA target operations");
 
         LinkResult linked = linkModules({compiled.object});
         if (!expectLinkOk(ctx, linked,
@@ -1211,6 +1305,23 @@ void registerAllocationRuntime(TestContext& ctx) {
                          "register allocation source compiles")) {
         return;
     }
+    ctx.equal(compiled.object.metadata.at("target.ast_replay_functions"),
+              std::string("0"),
+              "register allocation target section is emitted from optimized SSA");
+    ctx.check(compiled.allocation.success,
+              "published allocation is the successful target allocation");
+    ctx.equal(
+        std::stoi(compiled.object.metadata.at("target.interference_edges")),
+        compiled.allocation.interference_edges,
+        "target interference metadata matches published allocation");
+    ctx.equal(
+        std::stoi(compiled.object.metadata.at("target.coalesced_moves")),
+        compiled.allocation.coalesced_moves,
+        "target coalescing metadata matches published allocation");
+    ctx.equal(
+        std::stoi(compiled.object.metadata.at("target.callee_saved_registers")),
+        static_cast<int>(compiled.allocation.callee_saved_used.size()),
+        "target callee-save metadata matches published allocation");
     bool saves_callee = false;
     bool restores_callee = false;
     for (int reg = 1; reg <= 12; ++reg) {
@@ -1444,6 +1555,9 @@ void vectorTargetBoundary(TestContext& ctx) {
     ctx.check(hasDiagnostic(compiled.diagnostics,
                             "optimized SSA target lowering failed"),
               "vector strict-SSA diagnostic identifies target boundary");
+    ctx.contains(compiled.object.metadata.at("target.ast_replay_reasons"),
+                 "vector-valued function lowering",
+                 "vector replay boundary records the missing ABI contract");
 }
 
 } // namespace

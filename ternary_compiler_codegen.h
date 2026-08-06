@@ -708,6 +708,45 @@ struct LocalInfo {
            type.scalar == ir::Type::T50;
 }
 
+// The scalar target ABI represents pointers and ownership/reference handles as
+// one T40 word.  Shared<T> is likewise an address handle, but its atomic
+// payload must still be a scalar word; an aggregate or vector payload would
+// require an explicit layout/atomic ABI that this compiler does not have.
+[[nodiscard]] inline bool isTargetScalarWordType(const TypeRef& type) {
+    switch (type.kind) {
+        case TypeKind::Void:
+            return true;
+        case TypeKind::Numeric:
+        case TypeKind::Lane:
+        case TypeKind::Trit:
+        case TypeKind::Pointer:
+            return true;
+        case TypeKind::Owned:
+        case TypeKind::Borrow:
+        case TypeKind::BorrowMut:
+            return type.element && type.element->kind == TypeKind::Pointer;
+        case TypeKind::Shared:
+            return type.element &&
+                   isTargetScalarWordType(*type.element) &&
+                   !usesWideT50Pair(*type.element);
+        default:
+            return false;
+    }
+}
+
+[[nodiscard]] inline bool isTargetAtomicWordType(const TypeRef& type) {
+    return isTargetScalarWordType(type) && !usesWideT50Pair(type);
+}
+
+[[nodiscard]] inline bool isTargetAbiBoundaryType(const TypeRef& type) {
+    if (type.kind == TypeKind::Vector) return true;
+    return (type.kind == TypeKind::Owned ||
+            type.kind == TypeKind::Borrow ||
+            type.kind == TypeKind::BorrowMut ||
+            type.kind == TypeKind::Shared) &&
+           !isTargetScalarWordType(type);
+}
+
 [[nodiscard]] inline std::string scalarMemoryMnemonic(
         const char* operation,
         const TypeRef& type) {
@@ -1055,6 +1094,16 @@ public:
                 continue;
             }
 
+            std::ostringstream candidate_reason;
+            const std::size_t candidate_limit =
+                std::min<std::size_t>(candidate_diagnostics.size(), 2);
+            for (std::size_t index = 0; index < candidate_limit; ++index) {
+                if (index != 0) candidate_reason << ", ";
+                candidate_reason << candidate_diagnostics[index].message;
+            }
+            cfg_replay_reasons_[source_function.name] =
+                "optimized SSA verification: " + candidate_reason.str();
+
             // A structurally incomplete frontend CFG must not enter mem2reg or
             // global SSA transforms. Keep it explicit and run only the
             // conservative block-local portfolio until its builder is fixed.
@@ -1079,10 +1128,51 @@ public:
         diagnostics_.insert(diagnostics_.end(),
                             verifier_diagnostics.begin(),
                             verifier_diagnostics.end());
-        AllocationResult allocation = allocateRegisters(dry_module, options_);
+        // Keep the dry allocation only for the compatibility AST emitter.
+        // The public result below is populated from the optimized functions
+        // that actually reach SSA target emission.
+        AllocationResult dry_allocation =
+            allocateRegisters(dry_module, options_);
         diagnostics_.insert(diagnostics_.end(),
-                            allocation.diagnostics.begin(),
-                            allocation.diagnostics.end());
+                            dry_allocation.diagnostics.begin(),
+                            dry_allocation.diagnostics.end());
+
+        AllocationResult target_allocation;
+        target_allocation.success = true;
+        auto accumulateAllocation = [](
+            AllocationResult& destination,
+            const AllocationResult& source) {
+            destination.success = destination.success && source.success;
+            destination.scalar_registers.insert(
+                source.scalar_registers.begin(),
+                source.scalar_registers.end());
+            destination.vector_registers.insert(
+                source.vector_registers.begin(),
+                source.vector_registers.end());
+            destination.spill_slots.insert(
+                source.spill_slots.begin(),
+                source.spill_slots.end());
+            destination.spills += source.spills;
+            destination.callee_saved_used.insert(
+                source.callee_saved_used.begin(),
+                source.callee_saved_used.end());
+            destination.caller_saved_live_across_calls.insert(
+                source.caller_saved_live_across_calls.begin(),
+                source.caller_saved_live_across_calls.end());
+            destination.coalesced_moves += source.coalesced_moves;
+            destination.simplify_steps += source.simplify_steps;
+            destination.freeze_steps += source.freeze_steps;
+            destination.spill_candidates += source.spill_candidates;
+            destination.interference_edges += source.interference_edges;
+            destination.spill_rewrite_rounds +=
+                source.spill_rewrite_rounds;
+            destination.spill_loads += source.spill_loads;
+            destination.spill_stores += source.spill_stores;
+            destination.diagnostics.insert(
+                destination.diagnostics.end(),
+                source.diagnostics.begin(),
+                source.diagnostics.end());
+        };
 
         int ir_emitted_functions = 0;
         int target_replay_functions = 0;
@@ -1092,6 +1182,7 @@ public:
         int target_spill_stores = 0;
         std::vector<std::string> ir_emitted_function_names;
         std::vector<std::string> target_replay_function_names;
+        std::vector<std::string> target_replay_reasons;
         std::map<std::string, const FunctionAst*> ast_by_name;
         for (const FunctionAst* fn : compile_order) {
             ast_by_name[fn->name] = fn;
@@ -1110,6 +1201,7 @@ public:
             const AllocationResult ir_allocation =
                 allocateRegistersWithSpillRewrite(
                     allocation_unit, options_, 8);
+            accumulateAllocation(target_allocation, ir_allocation);
             target_spill_rewrite_rounds +=
                 ir_allocation.spill_rewrite_rounds;
             target_spill_loads +=
@@ -1141,7 +1233,15 @@ public:
                     function.name);
             } else {
                 const auto ast_it = ast_by_name.find(function.name);
-                if (!options_.allow_ast_replay) {
+                const std::string boundary =
+                    targetLoweringBoundary(function);
+                if (!boundary.empty()) {
+                    diagnostics_.push_back(Diagnostic{
+                        DiagnosticSeverity::Error,
+                        "optimized SSA target lowering failed for '" +
+                            function.name + "': " + boundary,
+                        SourceSpan{ast_.name, 1, 1, 1}});
+                } else if (!options_.allow_ast_replay) {
                     diagnostics_.push_back(Diagnostic{
                         DiagnosticSeverity::Error,
                         "optimized SSA target lowering failed for '" +
@@ -1157,12 +1257,38 @@ public:
                     compileFunctionReal(
                         *ast_it->second,
                         result,
-                        allocation,
+                        dry_allocation,
                         dry_module.functions[function_index],
                         value_starts[function.name]);
                 }
                 ++target_replay_functions;
                 target_replay_function_names.push_back(function.name);
+                std::string replay_reason = boundary;
+                if (replay_reason.empty() && !function.cfg_complete) {
+                    replay_reason =
+                        "SSA admission/optimization rejected the function";
+                    const auto cfg_reason =
+                        cfg_replay_reasons_.find(function.name);
+                    if (cfg_reason != cfg_replay_reasons_.end()) {
+                        replay_reason += ":" + cfg_reason->second;
+                    }
+                }
+                if (replay_reason.empty() && !ir_allocation.success) {
+                    replay_reason = "optimized SSA allocation failed";
+                    if (!ir_allocation.diagnostics.empty()) {
+                        replay_reason += ":" +
+                            ir_allocation.diagnostics.front().message;
+                    }
+                }
+                if (replay_reason.empty()) {
+                    replay_reason =
+                        "optimized SSA target emitter rejected the "
+                        "representable function";
+                }
+                std::replace(replay_reason.begin(), replay_reason.end(),
+                             ';', ',');
+                target_replay_reasons.push_back(
+                    function.name + ":" + replay_reason);
             }
         }
         result.assembly.clear();
@@ -1176,7 +1302,7 @@ public:
 
         result.ssa_module = dry_module;
         result.optimized_module = optimized_module;
-        result.allocation = allocation;
+        result.allocation = target_allocation;
         result.success = diagnostics_.empty();
         result.diagnostics = diagnostics_;
         result.ssa_module.diagnostics = diagnostics_;
@@ -1205,6 +1331,17 @@ public:
             "ordered-effects-with-call-carrier-proof";
         result.object.metadata["target.vector_lowering"] =
             "fail-closed-no-authoritative-call-abi";
+        result.object.metadata["target.scalar_wrapper_lowering"] =
+            "owned-borrow-shared-scalar-word";
+        result.object.metadata["target.interference_edges"] =
+            std::to_string(target_allocation.interference_edges);
+        result.object.metadata["target.coalesced_moves"] =
+            std::to_string(target_allocation.coalesced_moves);
+        result.object.metadata["target.callee_saved_registers"] =
+            std::to_string(target_allocation.callee_saved_used.size());
+        result.object.metadata["target.caller_saved_live_across_calls"] =
+            std::to_string(
+                target_allocation.caller_saved_live_across_calls.size());
         result.object.metadata["target.critical_edges_split"] =
             std::to_string(target_critical_edges_split);
         result.object.metadata[
@@ -1233,14 +1370,58 @@ public:
         result.object.metadata[
             "target.ast_replay_function_names"] =
             replay_names.str();
+        std::ostringstream replay_reasons;
+        for (std::size_t index = 0;
+             index < target_replay_reasons.size(); ++index) {
+            if (index != 0) replay_reasons << ";";
+            replay_reasons << target_replay_reasons[index];
+        }
+        result.object.metadata["target.ast_replay_reasons"] =
+            replay_reasons.str();
         result.object.metadata["packing.9trit"] = "reserved";
         return result;
     }
 
 private:
+    [[nodiscard]] static std::string targetLoweringBoundary(
+        const Function& function) {
+        if (function.return_type.kind == TypeKind::Vector) {
+            return "vector-valued function lowering requires an "
+                   "authoritative vector call/return ABI and aggregate "
+                   "spill layout";
+        }
+        for (const auto& parameter : function.params) {
+            if (parameter.second.kind == TypeKind::Vector) {
+                return "vector-valued function lowering requires an "
+                       "authoritative vector call/return ABI and aggregate "
+                       "spill layout";
+            }
+            if (isTargetAbiBoundaryType(parameter.second)) {
+                return "type '" + parameter.second.str() +
+                       "' has no authoritative scalar target representation";
+            }
+        }
+        for (const BasicBlock& block : function.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.type.kind == TypeKind::Vector) {
+                    return "vector-valued function lowering requires an "
+                           "authoritative vector call/return ABI and "
+                           "aggregate spill layout";
+                }
+                if (isTargetAbiBoundaryType(instr.type)) {
+                    return "type '" + instr.type.str() +
+                           "' has no authoritative scalar target "
+                           "representation";
+                }
+            }
+        }
+        return {};
+    }
+
     ModuleAst ast_;
     CompilerOptions options_;
     LayoutTable layout_table_;
+    std::map<std::string, std::string> cfg_replay_reasons_;
     std::vector<Diagnostic> diagnostics_;
     std::map<std::string, TypeRef> function_returns_;
     std::map<std::string, std::vector<TypeRef>> function_params_;
@@ -1421,12 +1602,16 @@ private:
                         return false;
                 }
                 // Structs and arrays are represented in target IR by scalar
-                // frame addresses and word-wise memory operations. Reject
-                // only values that still require a non-scalar register class
-                // or ownership lowering here.
-                if (instr.type.kind == TypeKind::Vector ||
-                    instr.type.kind == TypeKind::Owned ||
-                    instr.type.kind == TypeKind::Shared) {
+                // frame addresses and word-wise memory operations. Ownership
+                // and shared handles are also one-word scalar addresses when
+                // their payload is scalar/pointer-shaped. Keep vector values
+                // and any wrapper without that contract fail-closed.
+                if (!isTargetScalarWordType(instr.type) &&
+                    (instr.type.kind == TypeKind::Vector ||
+                     instr.type.kind == TypeKind::Owned ||
+                     instr.type.kind == TypeKind::Borrow ||
+                     instr.type.kind == TypeKind::BorrowMut ||
+                     instr.type.kind == TypeKind::Shared)) {
                     return false;
                 }
             }
@@ -1700,8 +1885,7 @@ private:
                         type->second.kind == TypeKind::Vector ||
                         type->second.kind == TypeKind::Struct ||
                         type->second.kind == TypeKind::Array ||
-                        type->second.kind == TypeKind::Owned ||
-                        type->second.kind == TypeKind::Shared) {
+                        !isTargetScalarWordType(type->second)) {
                         return false;
                     }
                     const int width =
@@ -1748,8 +1932,7 @@ private:
                         type->second.kind == TypeKind::Vector ||
                         type->second.kind == TypeKind::Struct ||
                         type->second.kind == TypeKind::Array ||
-                        type->second.kind == TypeKind::Owned ||
-                        type->second.kind == TypeKind::Shared) {
+                        !isTargetScalarWordType(type->second)) {
                         return false;
                     }
                     const int destination =
@@ -2623,8 +2806,19 @@ private:
         Module cfg_probe;
         cfg_probe.name = ast_.name;
         cfg_probe.functions.push_back(dry_ctx.ir);
-        if (!verifyModule(cfg_probe).empty()) {
+        const std::vector<Diagnostic> cfg_diagnostics =
+            verifyModule(cfg_probe);
+        if (!cfg_diagnostics.empty()) {
             dry_ctx.ir.cfg_complete = false;
+            std::ostringstream reason;
+            const std::size_t limit =
+                std::min<std::size_t>(cfg_diagnostics.size(), 2);
+            for (std::size_t index = 0; index < limit; ++index) {
+                if (index != 0) reason << ", ";
+                reason << cfg_diagnostics[index].message;
+            }
+            cfg_replay_reasons_[fn.name] =
+                "frontend CFG verification: " + reason.str();
         }
         return dry_ctx.ir;
     }
@@ -2904,8 +3098,38 @@ private:
             auto it = ctx.locals.find(name);
             if (it != ctx.locals.end()) {
                 if (it->second.type.kind == TypeKind::Owned && ctx.moved_vars.count(name) == 0) {
-                    ctx.line("load r13, sp, " + std::to_string(it->second.offset));
-                    ctx.line("call free");
+                    if (ctx.dry_run) {
+                        // Ownership cleanup is part of the function's effect
+                        // sequence, not a target-only epilogue detail. Keep
+                        // the load and free call in SSA so optimized target
+                        // emission cannot silently leak a live owned value.
+                        const int scratch = ctx.acquire();
+                        const ValueId loaded = ctx.value(
+                            InstrOpcode::Load,
+                            it->second.type,
+                            ctx.ast ? ctx.ast->span : SourceSpan{},
+                            scratch);
+                        if (ctx.block && !ctx.block->instructions.empty()) {
+                            ctx.block->instructions.back().args = {
+                                it->second.ir_address};
+                        }
+                        const ValueId freed = ctx.value(
+                            InstrOpcode::Call,
+                            TypeRef::numeric(ir::Type::T40),
+                            ctx.ast ? ctx.ast->span : SourceSpan{},
+                            scratch);
+                        if (ctx.block && !ctx.block->instructions.empty()) {
+                            Instr& call = ctx.block->instructions.back();
+                            call.symbol = "free";
+                            call.args = {loaded};
+                            call.effect = Effect::Control;
+                        }
+                        (void)freed;
+                        ctx.release(scratch);
+                    } else {
+                        ctx.line("load r13, sp, " + std::to_string(it->second.offset));
+                        ctx.line("call free");
+                    }
                     ctx.moved_vars.insert(name);
                 }
             }
@@ -4413,30 +4637,52 @@ private:
 
     [[nodiscard]] ExprCode emitAtomicOp(const Expr& expr, TypeRef expected, FunctionContext& ctx) {
         if (expr.text == "shared_alloc") {
+            if (expr.args.size() != 1) {
+                diag("shared_alloc requires exactly one initial value argument",
+                     expr.span);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
             ExprCode val = emitExpr(expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
-            
-            ctx.line("mov.t40 r13, 1");
-            ctx.line("syscall 19");
-            
             int rAddr = ctx.acquire();
-            ctx.line("copy r" + std::to_string(rAddr) + ", r13");
             TypeRef sharedType = TypeRef::shared(val.type, MemoryOrder::AcquireRelease);
-            ValueId syscall_id = ctx.value(InstrOpcode::Syscall, sharedType, expr.span, rAddr);
-            
-            ValueId final_id = -1;
-            auto it = ctx.reg_to_value.find(rAddr);
-            if (it != ctx.reg_to_value.end()) {
-                final_id = it->second;
+            if (!isTargetAtomicWordType(val.type)) {
+                diag("shared_alloc requires a one-word scalar payload; "
+                     "aggregate, wide, and vector payloads have no atomic ABI",
+                     expr.span);
+                ctx.release(rAddr);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
             }
 
-            ctx.line("store r" + std::to_string(val.reg) + ", r" + std::to_string(rAddr) + ", 0");
-            ctx.value(InstrOpcode::Store, val.type, expr.span);
-            if (ctx.block && !ctx.block->instructions.empty()) {
-                ctx.block->instructions.back().args = {final_id, val.value};
+            ValueId syscall_id = -1;
+            if (ctx.dry_run) {
+                ExprCode words = emitImmediate(
+                    1, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+                syscall_id = ctx.value(
+                    InstrOpcode::Syscall, sharedType, expr.span, rAddr);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    Instr& syscall = ctx.block->instructions.back();
+                    syscall.aux = runtime::sys_sbrk;
+                    syscall.args = {words.value};
+                    syscall.effect = Effect::Syscall;
+                }
+                ctx.release(words.reg);
+
+                ctx.value(InstrOpcode::Store, val.type, expr.span);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    Instr& store = ctx.block->instructions.back();
+                    store.def = -1;
+                    store.args = {syscall_id, val.value};
+                    store.effect = Effect::WriteMem;
+                }
+            } else {
+                ctx.line("mov.t40 r13, 1");
+                ctx.line("syscall " + std::to_string(runtime::sys_sbrk));
+                ctx.line("copy r" + std::to_string(rAddr) + ", r13");
             }
             ctx.release(val.reg);
-            
-            return ExprCode{rAddr, sharedType, false, final_id};
+            return ExprCode{rAddr, sharedType, false, syscall_id};
         }
         if (expr.text == "atomic_load") {
             ExprCode addr = emitExpr(expr.args[0], TypeRef::unknown(), ctx);
@@ -4449,6 +4695,11 @@ private:
             ctx.release(addr.reg);
 
             TypeRef elemType = addr.type.element ? *addr.type.element : TypeRef::numeric(ir::Type::T40);
+            if (!isTargetAtomicWordType(elemType)) {
+                diag("atomic_load requires a one-word scalar shared payload; "
+                     "aggregate, wide, and vector payloads have no atomic ABI",
+                     expr.span);
+            }
 
             Instr instr;
             instr.def = ctx.next_value++;
@@ -4463,11 +4714,75 @@ private:
             return ExprCode{out, elemType, false, instr.def};
         }
         if (expr.text == "atomic_store") {
+            if (expr.args.size() != 3) {
+                diag("atomic_store requires shared pointer, value, and memory order arguments",
+                     expr.span);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
             ExprCode addr = emitExpr(expr.args[0], TypeRef::unknown(), ctx);
             TypeRef elemType = addr.type.element ? *addr.type.element : TypeRef::numeric(ir::Type::T40);
+            if (!isTargetAtomicWordType(elemType)) {
+                diag("atomic_store requires a one-word scalar shared payload; "
+                     "aggregate, wide, and vector payloads have no atomic ABI",
+                     expr.span);
+            }
             ExprCode val = emitExpr(expr.args[1], elemType, ctx);
             int order = isa::ATOMIC_ORDER_ACQ_REL;
             (void)extractInteger(expr.args[2], order);
+
+            if (ctx.dry_run) {
+                const std::string loop = ctx.label("atomic_store_loop");
+                const std::string done = ctx.label("atomic_store_done");
+                if (ctx.block) {
+                    ctx.block->terminator.kind = TerminatorKind::Jump;
+                    ctx.block->terminator.target = loop;
+                }
+
+                ctx.ir.blocks.push_back(BasicBlock{loop, {}, {}});
+                ctx.block = &ctx.ir.blocks.back();
+                const ValueId current = ctx.value(
+                    InstrOpcode::Tldr, elemType, expr.span);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    Instr& load = ctx.block->instructions.back();
+                    load.aux = order;
+                    load.args = {addr.value};
+                    load.effect = Effect::Atomic;
+                }
+                const ValueId status = ctx.value(
+                    InstrOpcode::Tstr,
+                    TypeRef::numeric(ir::Type::T1),
+                    expr.span);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    Instr& store = ctx.block->instructions.back();
+                    store.aux = order;
+                    store.args = {addr.value, val.value, current};
+                    store.effect = Effect::Atomic;
+                }
+                const ExprCode zero = emitImmediate(
+                    0, TypeRef::trit(), expr.span, ctx);
+                const ValueId compare = ctx.value(
+                    InstrOpcode::Cmp,
+                    TypeRef::numeric(ir::Type::T1),
+                    expr.span);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    ctx.block->instructions.back().args = {
+                        status, zero.value};
+                }
+                ctx.block->terminator.kind = TerminatorKind::Branch3;
+                ctx.block->terminator.condition = compare;
+                ctx.block->terminator.target_neg = loop;
+                ctx.block->terminator.target_zero = loop;
+                ctx.block->terminator.target_pos = done;
+
+                ctx.ir.blocks.push_back(BasicBlock{done, {}, {}});
+                ctx.block = &ctx.ir.blocks.back();
+                ctx.release(addr.reg);
+                ctx.release(val.reg);
+                ctx.release(zero.reg);
+                return emitImmediate(
+                    0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
 
             std::string L_loop = ctx.label("atomic_store_loop");
             
@@ -5873,7 +6188,6 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
     if (fn.blocks.empty()) return 0;
     const ControlFlowGraph cfg = buildControlFlowGraph(fn);
     if (!cfg.invalid_targets.empty()) return 0;
-
     enum class LatticeKind : uint8_t { Unknown, Constant, Overdefined };
     struct LatticeValue {
         LatticeKind kind = LatticeKind::Unknown;
@@ -6190,7 +6504,12 @@ inline int runGlobalCopyPropagation(Function& fn) {
 inline int runGlobalValueNumbering(Function& fn) {
     const ControlFlowGraph cfg = buildControlFlowGraph(fn);
     const DominanceInfo dominance = computeDominance(fn, cfg);
-    std::map<std::string, std::pair<ValueId, std::string>> available;
+    // Keep every reaching definition for an expression. A single map entry
+    // is unsound as an availability cache: a definition visited in one
+    // sibling block can overwrite an earlier definition from a dominator and
+    // make the expression appear unavailable to a later dominated block.
+    std::map<std::string,
+             std::vector<std::pair<ValueId, std::string>>> available;
     int hits = 0;
     for (BasicBlock& block : fn.blocks) {
         for (Instr& instr : block.instructions) {
@@ -6203,14 +6522,24 @@ inline int runGlobalValueNumbering(Function& fn) {
             }
             const std::string key = instrKey(instr);
             const auto found = available.find(key);
-            if (found != available.end() &&
-                dominance.dominates(found->second.second, block.name)) {
-                instr.opcode = InstrOpcode::Copy;
-                instr.args = {found->second.first};
-                instr.effect = Effect::Pure;
-                ++hits;
-            } else {
-                available[key] = {instr.def, block.name};
+            bool rewritten = false;
+            if (found != available.end()) {
+                // Prefer the most recently discovered candidate, but only
+                // after proving that its block dominates this use.
+                for (auto candidate = found->second.rbegin();
+                     candidate != found->second.rend(); ++candidate) {
+                    if (!dominance.dominates(candidate->second, block.name))
+                        continue;
+                    instr.opcode = InstrOpcode::Copy;
+                    instr.args = {candidate->first};
+                    instr.effect = Effect::Pure;
+                    ++hits;
+                    rewritten = true;
+                    break;
+                }
+            }
+            if (!rewritten) {
+                available[key].push_back({instr.def, block.name});
             }
         }
     }
@@ -6863,6 +7192,15 @@ inline int runCostControlledTselConversion(Function& fn) {
         }
         const ControlFlowGraph cfg = buildControlFlowGraph(fn);
         const BlockLiveness liveness = computeBlockLiveness(fn, cfg);
+        const bool has_phi_nodes = std::any_of(
+            fn.blocks.begin(), fn.blocks.end(),
+            [](const BasicBlock& block) {
+                return std::any_of(
+                    block.instructions.begin(), block.instructions.end(),
+                    [](const Instr& instr) {
+                        return instr.opcode == InstrOpcode::Phi;
+                    });
+            });
         for (auto& block : fn.blocks) {
             std::map<ValueId, long long> constants;
             for (auto& instr : block.instructions) {
@@ -6975,6 +7313,7 @@ inline int runCostControlledTselConversion(Function& fn) {
             }
             if (block.terminator.kind == TerminatorKind::Branch3 &&
                 finalConstants.count(block.terminator.condition) &&
+                !has_phi_nodes &&
                 !branchRegionHasObservableEffects(fn, cfg, block)) {
                 const long long value = finalConstants[block.terminator.condition];
                 block.terminator.kind = TerminatorKind::Jump;
