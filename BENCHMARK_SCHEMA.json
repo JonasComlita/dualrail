@@ -93,7 +93,8 @@
     "wal": {"type": "object"},
     "disk": {"type": "object"},
     "graphics": {"type": "object"},
-    "compute": {"type": "object"}
+    "compute": {"type": "object"},
+    "probe": {"type": "boolean"}
   },
   "additionalProperties": true,
   "allOf": [
@@ -105,6 +106,9 @@
             "required": ["suite"],
             "properties": {"suite": {"const": "system_benchmarks"}}
           }
+        },
+        "not": {
+          "properties": {"probe": {"const": true}}
         }
       },
       "then": {
@@ -138,6 +142,124 @@
           "disk": {"required": ["read_words"]},
           "graphics": {"required": ["frames_presented"]},
           "compute": {"required": ["kernel"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["workload"],
+        "properties": {
+          "workload": {
+            "required": ["name"],
+            "properties": {"name": {"const": "doom-class-os"}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "required": ["profile", "frames", "asset_words", "asset_shards", "input_events"],
+            "properties": {
+              "frames": {"type": "integer", "minimum": 1},
+              "asset_words": {"type": "integer", "minimum": 1},
+              "asset_shards": {"type": "integer", "minimum": 1},
+              "input_events": {"type": "integer", "minimum": 0}
+            }
+          },
+          "correctness": {
+            "required": ["asset_words", "io_operations"],
+            "properties": {
+              "asset_words": {"type": "integer", "minimum": 1},
+              "io_operations": {"type": "integer", "minimum": 1}
+            }
+          },
+          "scheduler": {
+            "required": ["timer_ticks", "input_events"]
+          },
+          "disk": {
+            "required": ["read_words"]
+          },
+          "graphics": {
+            "required": ["frames_presented", "draw_calls", "present_calls", "input_trace_hash"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["probe", "workload"],
+        "properties": {
+          "probe": {"const": true},
+          "workload": {
+            "required": ["suite", "profile"],
+            "properties": {
+              "suite": {"const": "system_benchmarks"},
+              "profile": {"const": "probe"}
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["graphics", "compute"],
+        "properties": {
+          "workload": {"required": ["version", "suite", "profile"]},
+          "correctness": {
+            "required": ["passed", "warmup_returncodes", "measured_returncodes", "expected_hash", "observed_hash"],
+            "properties": {
+              "warmup_returncodes": {"type": "array", "maxItems": 0, "items": {"type": "integer"}},
+              "measured_returncodes": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "integer"}}
+            }
+          },
+          "timing": {
+            "required": ["scope", "stable"],
+            "properties": {
+              "warmups": {"const": 0},
+              "iterations": {"const": 1},
+              "samples": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "number", "minimum": 0}},
+              "maximum_accepted_cv": {"const": 0.03},
+              "stable": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["workload"],
+        "properties": {
+          "workload": {
+            "required": ["name"],
+            "properties": {"name": {"const": "bitnet-class-os"}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "required": ["profile", "model_words", "model_shards", "shard_words", "tokens", "compute_repetitions"],
+            "properties": {
+              "model_words": {"type": "integer", "minimum": 1},
+              "model_shards": {"type": "integer", "minimum": 1},
+              "shard_words": {"type": "integer", "minimum": 1},
+              "tokens": {"type": "integer", "minimum": 1},
+              "compute_repetitions": {"type": "integer", "minimum": 1}
+            }
+          },
+          "correctness": {
+            "required": ["model_shards_read"]
+          },
+          "memory": {
+            "required": ["high_water_words", "pressure_pages"]
+          },
+          "disk": {
+            "required": ["read_words", "read_shards"]
+          },
+          "instruction_mix": {
+            "required": ["dynamic_total", "vector_kernel_dynamic", "vector_kernel_invocations", "vector_lanes_processed"]
+          },
+          "compute": {
+            "required": ["kernel", "tokens_generated", "sustained_tokens", "vector_kernel_invocations"]
+          }
         }
       }
     }

@@ -298,6 +298,10 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME test_agent_tooling
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_tooling.py
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_system_benchmark_contract
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_system_benchmark_contract.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_custom_target(agent_doctor
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/trit_tool.py doctor
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

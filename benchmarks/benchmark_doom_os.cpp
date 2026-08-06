@@ -2,16 +2,31 @@
 #include "ternary_vm.h"
 #include "system_benchmark_support.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+static constexpr int kAssetChunkWords = 81;
+// The bounded profile is deliberately small enough that a complete guest pass
+// stays below the 60-second host budget.  The sustained profile below keeps
+// the heavier 81-frame/729-word trace opt-in.
+static constexpr int kGateFrames = 7;
+static constexpr int kGateAssetWords = 81;
+static constexpr int kGateInputEvents = 2;
+static constexpr int kLargeFrames = 81;
+static constexpr int kLargeAssetWords = 729;
+static constexpr int kLargeInputEvents = 3;
+static constexpr long long kMaximumSampleSeconds = 60;
 
 std::string readText(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -37,8 +52,14 @@ struct DoomPassResult {
     long long frame_hash = 0;
     long long frames = 0;
     long long input_events = 0;
+    long long input_trace_hash = 0;
     long long ticks = 0;
     long long asset_words = 0;
+    long long asset_read_operations = 0;
+    long long asset_write_operations = 0;
+    long long io_operations = 0;
+    long long draw_calls = 0;
+    long long present_calls = 0;
     long long pixel_end = 0;
     long long stage = 0;
     long long final_reg13 = 0;
@@ -73,7 +94,14 @@ struct DoomPassResult {
 
 DoomPassResult runDoomPass(
     const sandbox::vm::VMState& baseline,
-    const std::vector<sandbox::vm::TritWord27>& program) {
+    const std::vector<sandbox::vm::TritWord27>& program,
+    int expected_frames,
+    int expected_asset_words,
+    long long expected_asset_checksum,
+    int expected_input_events,
+    long long expected_frame_hash,
+    long long expected_input_trace_hash,
+    int max_steps) {
     sandbox::vm::VMState vm = baseline;
     vm.reset();
     // The system portfolio measures the portable decoded-trace executor's
@@ -84,7 +112,7 @@ DoomPassResult runDoomPass(
     vm.setTraceJitHotThreshold(4);
     vm.resetBlockDeviceStats();
     const auto begin = std::chrono::steady_clock::now();
-    const sandbox::vm::RunResult result = sandbox::vm::run(vm, 100000000);
+    const sandbox::vm::RunResult result = sandbox::vm::run(vm, max_steps);
     const auto end = std::chrono::steady_clock::now();
 
     DoomPassResult sample;
@@ -94,8 +122,14 @@ DoomPassResult runDoomPass(
     sample.frame_hash = wordAt(vm, 35601);
     sample.frames = wordAt(vm, 35602);
     sample.input_events = wordAt(vm, 35603);
+    sample.input_trace_hash = wordAt(vm, 35608);
     sample.ticks = wordAt(vm, 35604);
     sample.asset_words = wordAt(vm, 35605);
+    sample.asset_read_operations = wordAt(vm, 35609);
+    sample.asset_write_operations = wordAt(vm, 35610);
+    sample.io_operations = wordAt(vm, 35611);
+    sample.draw_calls = wordAt(vm, 35612);
+    sample.present_calls = wordAt(vm, 35613);
     sample.pixel_end = wordAt(vm, 35606);
     sample.stage = wordAt(vm, 35607);
     sample.final_reg13 = sandbox::vm::ops::toLong(vm.regfile.read(13));
@@ -131,12 +165,18 @@ DoomPassResult runDoomPass(
     sample.decoded_trace_instructions = vm.trace_jit_stats.instructions_executed;
     sample.passed = result.halted() &&
                     sample.final_reg13 == 1 &&
-                    sample.asset_checksum == 54 &&
-                    sample.frame_hash == 8235 &&
-                    sample.frames == 27 &&
-                    sample.ticks == 27 &&
-                    sample.input_events == 1 &&
-                    sample.asset_words == 81;
+                    sample.asset_checksum == expected_asset_checksum &&
+                    (expected_frame_hash == 0 || sample.frame_hash == expected_frame_hash) &&
+                    sample.frames == expected_frames &&
+                    sample.ticks == expected_frames &&
+                    sample.input_events == expected_input_events &&
+                    sample.input_trace_hash == expected_input_trace_hash &&
+                    sample.asset_words == expected_asset_words &&
+                    sample.asset_read_operations == expected_asset_words / kAssetChunkWords &&
+                    sample.asset_write_operations == 1 &&
+                    sample.io_operations == expected_asset_words / kAssetChunkWords + 1 &&
+                    sample.draw_calls == expected_frames &&
+                    sample.present_calls == expected_frames;
     sample.returncode = sample.passed ? 0 : 1;
     (void)program;
     return sample;
@@ -146,9 +186,39 @@ std::string doomCorrectnessHash(long long asset_checksum,
                                 long long frame_hash,
                                 long long frames,
                                 long long ticks,
-                                long long input_events) {
+                                long long input_events,
+                                long long input_trace_hash,
+                                long long asset_words,
+                                long long io_operations) {
     return trit::system_benchmark::hex64(trit::system_benchmark::fnv1a64(
-        {asset_checksum, frame_hash, frames, ticks, input_events}));
+        {asset_checksum, frame_hash, frames, ticks, input_events,
+         input_trace_hash, asset_words, io_operations}));
+}
+
+void writeBenchmarkTiming(std::ostringstream& out,
+                          const std::string& scope,
+                          double bootstrap_seconds,
+                          const std::vector<double>& samples,
+                          int warmups,
+                          int iterations) {
+    const auto timing = trit::system_benchmark::summarizeTiming(samples);
+    out << "\"timing\": {\n"
+        << "    \"unit\": \"seconds\",\n"
+        << "    \"scope\": " << trit::system_benchmark::jsonString(scope) << ",\n"
+        << "    \"bootstrap_seconds\": " << std::setprecision(12)
+        << bootstrap_seconds << ",\n"
+        << "    \"warmups\": " << warmups << ",\n"
+        << "    \"iterations\": " << iterations << ",\n"
+        << "    \"samples\": ";
+    trit::system_benchmark::writeSamples(out, samples);
+    out << ",\n"
+        << "    \"median\": " << timing.median << ",\n"
+        << "    \"mean\": " << timing.mean << ",\n"
+        << "    \"standard_deviation\": " << timing.standard_deviation << ",\n"
+        << "    \"coefficient_of_variation\": " << timing.coefficient_of_variation << ",\n"
+        << "    \"maximum_accepted_cv\": " << trit::system_benchmark::kMaximumAcceptedCv << ",\n"
+        << "    \"stable\": " << (timing.stable ? "true" : "false") << "\n"
+        << "  }";
 }
 
 bool writeDoomReport(
@@ -157,15 +227,29 @@ bool writeDoomReport(
     const std::string& detail,
     double compile_seconds,
     double boot_seconds,
+    int frames,
+    int asset_words,
+    int asset_shards,
+    long long expected_asset_checksum,
+    int input_event_count,
+    long long expected_frame_hash,
+    long long expected_input_trace_hash,
     const std::vector<int>& warmup_returncodes,
     const std::vector<int>& measured_returncodes,
     const std::vector<double>& samples,
-    const DoomPassResult& metrics) {
+    const DoomPassResult& metrics,
+    int warmups,
+    int iterations,
+    bool probe_profile) {
     const auto timing = trit::system_benchmark::summarizeTiming(samples);
     const std::string observed_hash = doomCorrectnessHash(
         metrics.asset_checksum, metrics.frame_hash, metrics.frames,
-        metrics.ticks, metrics.input_events);
-    const std::string expected_hash = doomCorrectnessHash(54, 8235, 27, 27, 1);
+        metrics.ticks, metrics.input_events, metrics.input_trace_hash,
+        metrics.asset_words, metrics.io_operations);
+    const std::string expected_hash = doomCorrectnessHash(
+        expected_asset_checksum,
+        expected_frame_hash, frames, frames, input_event_count,
+        expected_input_trace_hash, asset_words, asset_shards + 1);
     const auto disk = metrics.disk;
     std::ostringstream out;
     out << "{\n"
@@ -177,7 +261,7 @@ bool writeDoomReport(
         << "    \"commit\": " << trit::system_benchmark::jsonString(
             trit::system_benchmark::environmentValue("TRIT_BENCH_COMMIT", "unknown")) << ",\n"
         << "    \"dirty\": " << (trit::system_benchmark::environmentBool("TRIT_BENCH_DIRTY") ? "true" : "false") << ",\n"
-        << "    \"generator\": \"synthetic-doom-v1\"\n"
+        << "    \"generator\": \"synthetic-doom-v2\"\n"
         << "  },\n"
         << "  \"host\": {\n"
         << "    \"system\": " << trit::system_benchmark::jsonString(trit::system_benchmark::hostSystem()) << ",\n"
@@ -195,9 +279,13 @@ bool writeDoomReport(
         << "  \"workload\": {\n"
         << "    \"name\": \"doom-class-os\",\n"
         << "    \"suite\": \"system_benchmarks\",\n"
-        << "    \"version\": \"synthetic-doom-v1\",\n"
-        << "    \"frames\": 27,\n"
-        << "    \"asset_words\": 81,\n"
+        << "    \"version\": \"synthetic-doom-v2\",\n"
+        << "    \"profile\": " << trit::system_benchmark::jsonString(
+            probe_profile ? "probe" : (asset_shards > 3 ? "large-sustained" : "bounded-gate")) << ",\n"
+        << "    \"frames\": " << frames << ",\n"
+        << "    \"asset_words\": " << asset_words << ",\n"
+        << "    \"asset_shards\": " << asset_shards << ",\n"
+        << "    \"input_events\": " << input_event_count << ",\n"
         << "    \"asset_generator\": \"guest_trit_cycle_neg_one_zero_one\"\n"
         << "  },\n"
         << "  \"correctness\": {\n"
@@ -211,10 +299,13 @@ bool writeDoomReport(
         << "    \"expected_hash\": \"fnv1a64:" << expected_hash << "\",\n"
         << "    \"observed_hash\": \"fnv1a64:" << observed_hash << "\",\n"
         << "    \"hashes\": {\"asset\": " << metrics.asset_checksum
-        << ", \"frame\": " << metrics.frame_hash << "}\n"
+        << ", \"frame\": " << metrics.frame_hash
+        << ", \"input_trace\": " << metrics.input_trace_hash << "},\n"
+        << "    \"asset_words\": " << metrics.asset_words << ",\n"
+        << "    \"io_operations\": " << metrics.io_operations << "\n"
         << "  },\n";
-    trit::system_benchmark::writeTiming(out, "guest_workload_pass_after_boot",
-                                        boot_seconds, samples);
+    writeBenchmarkTiming(out, "guest_workload_pass_after_boot",
+                         boot_seconds, samples, warmups, iterations);
     out << ",\n"
         << "  \"instruction_mix\": {\n"
         << "    \"dynamic_total\": " << metrics.steps << ",\n"
@@ -274,9 +365,13 @@ bool writeDoomReport(
         << "    \"final_reg13\": " << metrics.final_reg13 << ",\n"
         << "    \"final_pc\": " << metrics.final_pc << ",\n"
         << "    \"input_events\": " << metrics.input_events << ",\n"
+        << "    \"input_trace_hash\": " << metrics.input_trace_hash << ",\n"
+        << "    \"draw_calls\": " << metrics.draw_calls << ",\n"
+        << "    \"present_calls\": " << metrics.present_calls << ",\n"
         << "    \"late_frames\": 0\n"
         << "  },\n"
-        << "  \"compute\": {\"kernel\": \"none\", \"operations\": 0}\n"
+        << "  \"compute\": {\"kernel\": \"none\", \"operations\": 0},\n"
+        << "  \"probe\": " << (probe_profile ? "true" : "false") << "\n"
         << "}\n";
     return trit::system_benchmark::writeText(path, out.str());
 }
@@ -294,7 +389,24 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const std::string driver = R"(
+    const bool probe_profile =
+        trit::system_benchmark::environmentBool("TRIT_BENCH_PROBE");
+    const bool large_profile =
+        trit::system_benchmark::environmentValue(
+            "TRIT_BENCH_PROFILE", "bounded-gate") == "large-sustained" && !probe_profile;
+    const int frames = probe_profile ? 1 : (large_profile ? kLargeFrames : kGateFrames);
+    const int asset_words = probe_profile ? kAssetChunkWords
+        : (large_profile ? kLargeAssetWords : kGateAssetWords);
+    const int asset_shards = asset_words / kAssetChunkWords;
+    const int input_event_count = probe_profile ? 0
+        : (large_profile ? kLargeInputEvents : kGateInputEvents);
+    const long long expected_asset_checksum = 2LL * (asset_words / 3);
+    const long long expected_frame_hash = probe_profile ? 1683
+        : (large_profile ? 21843 : 3195);
+    const long long expected_input_trace_hash = probe_profile ? 0
+        : (large_profile ? 8719 : 2213);
+
+    std::string driver = R"(
         const BENCH_BASE: t40 = 35600;
 
         fn main() -> t40 {
@@ -321,7 +433,7 @@ int main(int argc, char** argv) {
             var i: t40 = 0;
             var trit: t40 = -1;
             var source_hash: t40 = 0;
-            while 81 - i > 0 {
+            while @ASSET_WORDS@ - i > 0 {
                 kstore(asset + i, trit);
                 source_hash = source_hash + (i + 1) * trit;
                 trit = trit + 1;
@@ -331,23 +443,32 @@ int main(int argc, char** argv) {
             var fd: t40 = vfs_open(1, path, 3);
             if fd < 0 { return 0; }
             kstore(BENCH_BASE + 7, 2);
-            if vfs_write(1, fd, asset, 81) - 81 != 0 { return 0; }
+            if vfs_write(1, fd, asset, @ASSET_WORDS@) - @ASSET_WORDS@ != 0 { return 0; }
             kstore(BENCH_BASE + 7, 3);
+            var asset_write_operations: t40 = 1;
+            var asset_read_operations: t40 = 0;
+            var io_operations: t40 = 1;
             vfs_close(1, fd);
             fd = vfs_open(1, path, 0);
             if fd < 0 { return 0; }
-            if vfs_read(1, fd, loaded, 81) - 81 != 0 { return 0; }
+            var read_offset: t40 = 0;
+            while @ASSET_WORDS@ - read_offset > 0 {
+                if vfs_read(1, fd, loaded + read_offset, @ASSET_CHUNK_WORDS@) - @ASSET_CHUNK_WORDS@ != 0 { return 0; }
+                read_offset = read_offset + @ASSET_CHUNK_WORDS@;
+                asset_read_operations = asset_read_operations + 1;
+                io_operations = io_operations + 1;
+            }
             kstore(BENCH_BASE + 7, 4);
             vfs_close(1, fd);
 
             i = 0;
             var loaded_hash: t40 = 0;
-            while 81 - i > 0 {
+            while @ASSET_WORDS@ - i > 0 {
                 loaded_hash = loaded_hash + (i + 1) * kload(loaded + i);
                 i = i + 1;
             }
             if loaded_hash - source_hash != 0 { return 0; }
-            if loaded_hash - 54 != 0 { return 0; }
+            if loaded_hash - @ASSET_CHECKSUM@ != 0 { return 0; }
             kstore(BENCH_BASE + 7, 5);
             if framebuffer_init(27, 18) <= 0 { return 0; }
             kstore(BENCH_BASE + 7, 6);
@@ -363,8 +484,11 @@ int main(int argc, char** argv) {
 
             var frame: t40 = 0;
             var input_events: t40 = 0;
+            var input_trace_hash: t40 = 0;
+            var draw_calls: t40 = 0;
+            var present_calls: t40 = 0;
             var asset_index: t40 = 0;
-            while 27 - frame > 0 {
+            while @DOOM_FRAMES@ - frame > 0 {
                 i = 0;
                 while 27 - i > 0 {
                     var value: t40 = kload(loaded + asset_index) + 1;
@@ -372,15 +496,15 @@ int main(int argc, char** argv) {
                     kstore(pixels + i * 3 + 1, value + i);
                     kstore(pixels + i * 3 + 2, frame + i);
                     asset_index = asset_index + 1;
-                    if asset_index - 81 >= 0 { asset_index = 0; }
+                    if asset_index - @ASSET_WORDS@ >= 0 { asset_index = 0; }
                     i = i + 1;
                 }
-                if frame - 9 == 0 {
-                    if window_route_input(EVENT_KIND_KEY, 75, 0, 0) - window == 0 {
-                        input_events = input_events + 1;
-                    }
-                }
+                @FIRST_INPUT_EVENT@
+                @SECOND_INPUT_EVENT@
+                @EXTRA_INPUT_EVENT@
+                draw_calls = draw_calls + 1;
                 if window_present(1, window) <= 0 { return 0; }
+                present_calls = present_calls + 1;
                 kernel_timer_tick();
                 frame = frame + 1;
             }
@@ -398,14 +522,76 @@ int main(int argc, char** argv) {
             kstore(BENCH_BASE + 2, kload(COMPOSITOR_FRAME_COUNT_ADDR));
             kstore(BENCH_BASE + 3, input_events);
             kstore(BENCH_BASE + 4, kload(KERNEL_TICK_ADDR));
-            kstore(BENCH_BASE + 5, 81);
+            kstore(BENCH_BASE + 5, @ASSET_WORDS@);
             kstore(BENCH_BASE + 6, pixels + 243);
-            if kload(COMPOSITOR_FRAME_COUNT_ADDR) - 27 != 0 { return 0; }
-            if kload(KERNEL_TICK_ADDR) - 27 != 0 { return 0; }
-            if input_events - 1 != 0 { return 0; }
+            kstore(BENCH_BASE + 8, input_trace_hash);
+            kstore(BENCH_BASE + 9, asset_read_operations);
+            kstore(BENCH_BASE + 10, asset_write_operations);
+            kstore(BENCH_BASE + 11, io_operations);
+            kstore(BENCH_BASE + 12, draw_calls);
+            kstore(BENCH_BASE + 13, present_calls);
+            if kload(COMPOSITOR_FRAME_COUNT_ADDR) - @DOOM_FRAMES@ != 0 { return 0; }
+            if kload(KERNEL_TICK_ADDR) - @DOOM_FRAMES@ != 0 { return 0; }
+            if input_events - @INPUT_EVENTS@ != 0 { return 0; }
             return 1;
         }
     )";
+    const std::string extra_input_event = large_profile ? R"(
+                if frame - 63 == 0 {
+                    if window_route_input(EVENT_KIND_KEY, 80, 0, 0) - window == 0 {
+                        input_events = input_events + 1;
+                        input_trace_hash = input_trace_hash + 5120;
+                    }
+                }
+)" : "";
+    const std::string first_input_event = probe_profile ? "" :
+        (large_profile ? R"(
+                if frame - 9 == 0 {
+                    if window_route_input(EVENT_KIND_KEY, 75, 0, 0) - window == 0 {
+                        input_events = input_events + 1;
+                        input_trace_hash = input_trace_hash + 750;
+                    }
+                }
+)" : R"(
+                if frame - 2 == 0 {
+                    if window_route_input(EVENT_KIND_KEY, 75, 0, 0) - window == 0 {
+                        input_events = input_events + 1;
+                        input_trace_hash = input_trace_hash + 750;
+                    }
+                }
+)");
+    const std::string second_input_event = large_profile ? R"(
+                if frame - 36 == 0 {
+                    if window_route_input(EVENT_KIND_KEY, 77, 0, 0) - window == 0 {
+                        input_events = input_events + 1;
+                        input_trace_hash = input_trace_hash + 2849;
+                    }
+                }
+)" : R"(
+                if frame - 6 == 0 {
+                    if window_route_input(EVENT_KIND_KEY, 77, 0, 0) - window == 0 {
+                        input_events = input_events + 1;
+                        input_trace_hash = input_trace_hash + 1463;
+                    }
+                }
+)";
+    const auto replace = [](std::string& text,
+                            const std::string& token,
+                            const std::string& value) {
+        std::size_t offset = 0;
+        while ((offset = text.find(token, offset)) != std::string::npos) {
+            text.replace(offset, token.size(), value);
+            offset += value.size();
+        }
+    };
+    replace(driver, "@DOOM_FRAMES@", std::to_string(frames));
+    replace(driver, "@ASSET_WORDS@", std::to_string(asset_words));
+    replace(driver, "@ASSET_CHUNK_WORDS@", std::to_string(kAssetChunkWords));
+    replace(driver, "@ASSET_CHECKSUM@", std::to_string(expected_asset_checksum));
+    replace(driver, "@INPUT_EVENTS@", std::to_string(input_event_count));
+    replace(driver, "@FIRST_INPUT_EVENT@", first_input_event);
+    replace(driver, "@SECOND_INPUT_EVENT@", second_input_event);
+    replace(driver, "@EXTRA_INPUT_EVENT@", extra_input_event);
 
     const auto compile_begin = Clock::now();
     const auto compiled = sandbox::compiler::compileSource(
@@ -423,6 +609,13 @@ int main(int argc, char** argv) {
     std::vector<double> samples;
     DoomPassResult metrics;
     double boot_seconds = 0.0;
+    const int warmups = trit::system_benchmark::environmentBool("TRIT_BENCH_PROBE")
+        ? 0 : trit::system_benchmark::kWarmups;
+    const int iterations = trit::system_benchmark::environmentBool("TRIT_BENCH_PROBE")
+        ? 1 : trit::system_benchmark::kIterations;
+    const int max_steps = probe_profile ? 30000000
+        : (large_profile ? 100000000 : 50000000);
+    bool sample_budget_exceeded = false;
 
     if (passed) {
         sandbox::vm::VMState boot_vm(sandbox::vm::ProductionProfile::minimum());
@@ -448,29 +641,36 @@ int main(int argc, char** argv) {
             } else {
                 const sandbox::vm::VMState baseline = boot_vm;
                 for (int iteration = 0;
-                     iteration < trit::system_benchmark::kWarmups +
-                                 trit::system_benchmark::kIterations;
+                     iteration < warmups + iterations;
                      ++iteration) {
                     DoomPassResult sample = runDoomPass(
-                        baseline, linked.assembled.program);
+                        baseline, linked.assembled.program,
+                        frames, asset_words, expected_asset_checksum,
+                        input_event_count, expected_frame_hash,
+                        expected_input_trace_hash, max_steps);
                     metrics = sample;
-                    if (iteration < trit::system_benchmark::kWarmups) {
+                    if (iteration < warmups) {
                         warmup_returncodes.push_back(sample.returncode);
                     } else {
                         measured_returncodes.push_back(sample.returncode);
                         samples.push_back(sample.seconds);
+                    }
+                    if (sample.seconds > static_cast<double>(kMaximumSampleSeconds)) {
+                        sample_budget_exceeded = true;
+                        if (detail == "ok") detail = "sample-time-budget-exceeded";
+                        break;
                     }
                     if (!sample.passed && detail == "ok") {
                         detail = "runtime-correctness-failed";
                     }
                 }
                 const auto timing = trit::system_benchmark::summarizeTiming(samples);
-                passed = passed && timing.stable &&
+                passed = passed && (probe_profile || timing.stable) &&
                          warmup_returncodes.size() ==
-                             static_cast<std::size_t>(trit::system_benchmark::kWarmups) &&
+                             static_cast<std::size_t>(warmups) &&
                          measured_returncodes.size() ==
-                             static_cast<std::size_t>(trit::system_benchmark::kIterations);
-                if (!timing.stable && detail == "ok") {
+                             static_cast<std::size_t>(iterations);
+                if (!probe_profile && !timing.stable && detail == "ok") {
                     detail = "host-timing-unstable";
                 }
                 for (int code : warmup_returncodes) passed = passed && code == 0;
@@ -478,15 +678,19 @@ int main(int argc, char** argv) {
             }
         }
     } else {
-        warmup_returncodes.assign(trit::system_benchmark::kWarmups, 1);
-        measured_returncodes.assign(trit::system_benchmark::kIterations, 1);
+        warmup_returncodes.assign(warmups, 1);
+        measured_returncodes.assign(iterations, 1);
     }
 
+    if (sample_budget_exceeded) passed = false;
     if (!writeDoomReport(
             report, passed, detail,
             std::chrono::duration<double>(compile_end - compile_begin).count(),
-            boot_seconds, warmup_returncodes, measured_returncodes, samples,
-            metrics)) {
+            boot_seconds, frames, asset_words, asset_shards,
+            expected_asset_checksum, input_event_count, expected_frame_hash,
+            expected_input_trace_hash, warmup_returncodes,
+            measured_returncodes, samples, metrics, warmups, iterations,
+            probe_profile)) {
         std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
         return 1;
     }

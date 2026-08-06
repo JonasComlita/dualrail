@@ -18,21 +18,30 @@ stable, and report useful performance telemetry.
 ## Milestones
 
 1. Keep the host BitNet runner as the reference result.
-2. **Implemented:** `benchmark_bitnet_os` uses a deterministic 27x27 ternary
-   model and a frozen 27-token output checksum.
-3. **Implemented:** package the model in the OS VFS, reboot, and validate exact
-   readback before inference.
+2. **Implemented:** `benchmark_bitnet_os` builds a deterministic sliced model:
+   three 729-word ternary shards by default (nine in the opt-in sustained
+   profile), with a frozen model checksum and per-shard token output checksum.
+3. **Implemented:** package every shard as a separate VFS file, reboot, read
+   every shard back, and validate exact ordering and checksums before inference.
 4. **Implemented baseline:** hosted OS packaging plus a v2 VM vector-kernel
-   portfolio and allocation-pressure probe.
-5. **Implemented baseline:** record package/load/kernel times, vector dynamic
-   instructions, tokens per second, high-water words, disk words, and checksums.
+   portfolio, vector invocation/lane counters, and a 4-page allocation-pressure
+   probe (96 pages in the sustained profile).
+5. **Implemented baseline:** record package/load/kernel times, shard read counts,
+   vector dynamic instructions, sustained token throughput, high-water words,
+   disk words, and checksums.
 6. **Implemented:** the manual CMake/manifest target emits
    `build/benchmarks/bitnet-os.json`.
 
-The deterministic portfolio repeats the compact inference kernel 6,561 times
-per measured sample. This keeps the 3% coefficient-of-variation gate focused
-on sustained compute rather than a few milliseconds of setup jitter while
-preserving the same model and token checksums.
+The bounded portfolio performs 243 repetitions across three shards (729
+vector-kernel invocations per measured sample). Set
+`TRIT_BENCH_PROFILE=large-sustained` for nine shards and 729 repetitions. Both
+profiles keep the total sustained kernel work deterministic while exercising
+shard loading and memory pressure; timing is accepted only when the seven
+measured samples have CV <3%.
+
+The host harness runs one bounded probe first. The probe uses one shard and one
+repetition, must complete in at most 60 seconds per sample, and is not treated
+as evidence for the two-warmup/seven-sample CV gate.
 
 ## Correctness Checks
 
@@ -50,12 +59,17 @@ preserving the same model and token checksums.
 - `tokens_generated`
 - `memory_high_water_words`
 - `disk_read_words`
+- `model_shards_read`
+- `read_shards`
 - `disk_read_ms`
 - `kernel_compute_ms`
+- `vector_kernel_invocations`
+- `vector_lanes_processed`
+- `sustained_tokens`
 - `accelerator_compute_ms`
 
 ## Non-Goals For The First Slice
 
 - full 1.58B model inside the guest before smaller slices work
-- CI gating
+- host-specific throughput budgets without an archived controlled-host baseline
 - host/GPU parity claims without reproducible baselines

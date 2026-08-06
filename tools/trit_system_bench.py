@@ -22,6 +22,9 @@ SCHEMA = ROOT / "BENCHMARK_SCHEMA.json"
 WARMUPS = 2
 ITERATIONS = 7
 MAX_CV = 0.03
+MAX_SAMPLE_SECONDS = 60.0
+PROBE_TIMEOUT_SECONDS = 180
+WORKLOAD_TIMEOUT_SECONDS = 900
 WORKLOADS = {
     "doom": ("benchmark_doom_os", "doom-os.json", "doom-class-os"),
     "bitnet": ("benchmark_bitnet_os", "bitnet-os.json", "bitnet-class-os"),
@@ -116,9 +119,102 @@ def validate_report(path: Path, expected_name: str) -> dict[str, Any]:
     cv = timing.get("coefficient_of_variation")
     if not isinstance(cv, (int, float)) or cv >= MAX_CV or timing.get("stable") is not True:
         issues.append("timing is unstable or exceeds the 3% CV gate")
+    if isinstance(samples, list) and any(
+            isinstance(item, (int, float)) and item > MAX_SAMPLE_SECONDS
+            for item in samples):
+        issues.append(
+            f"timing.samples exceed the {MAX_SAMPLE_SECONDS:.0f}-second per-sample budget")
     for section in ("instruction_mix", "memory", "tlb", "scheduler", "wal", "disk", "graphics", "compute"):
         if not isinstance(report.get(section), dict) or not report[section]:
             issues.append(f"{section} metrics must be a non-empty object")
+    if expected_name == "doom-class-os":
+        required_workload = ("profile", "frames", "asset_words", "asset_shards", "input_events")
+        for key in required_workload:
+            if key not in workload:
+                issues.append(f"doom workload is missing {key}")
+        graphics = report.get("graphics", {})
+        scheduler = report.get("scheduler", {})
+        correctness = report.get("correctness", {})
+        if graphics.get("frames_presented") != workload.get("frames"):
+            issues.append("doom graphics.frames_presented must match workload.frames")
+        if graphics.get("draw_calls") != workload.get("frames"):
+            issues.append("doom graphics.draw_calls must match workload.frames")
+        if graphics.get("present_calls") != workload.get("frames"):
+            issues.append("doom graphics.present_calls must match workload.frames")
+        if scheduler.get("timer_ticks") != workload.get("frames"):
+            issues.append("doom scheduler.timer_ticks must match workload.frames")
+        if scheduler.get("input_events") != workload.get("input_events"):
+            issues.append("doom scheduler.input_events must match workload.input_events")
+        if correctness.get("asset_words") != workload.get("asset_words"):
+            issues.append("doom correctness.asset_words must match workload.asset_words")
+        if not isinstance(correctness.get("io_operations"), int) or correctness.get("io_operations", 0) < 2:
+            issues.append("doom correctness.io_operations must record write and read operations")
+    elif expected_name == "bitnet-class-os":
+        required_workload = ("profile", "model_words", "model_shards", "shard_words", "tokens", "compute_repetitions")
+        for key in required_workload:
+            if key not in workload:
+                issues.append(f"bitnet workload is missing {key}")
+        correctness = report.get("correctness", {})
+        memory = report.get("memory", {})
+        disk = report.get("disk", {})
+        instruction_mix = report.get("instruction_mix", {})
+        compute = report.get("compute", {})
+        if workload.get("model_words") != workload.get("model_shards", 0) * workload.get("shard_words", 0):
+            issues.append("bitnet workload.model_words must equal model_shards * shard_words")
+        if correctness.get("model_shards_read") != workload.get("model_shards"):
+            issues.append("bitnet correctness.model_shards_read must match model_shards")
+        if disk.get("read_words") != workload.get("model_words"):
+            issues.append("bitnet disk.read_words must match model_words")
+        if disk.get("read_shards") != workload.get("model_shards"):
+            issues.append("bitnet disk.read_shards must match model_shards")
+        if not isinstance(memory.get("pressure_pages"), int) or memory.get("pressure_pages", 0) < 1:
+            issues.append("bitnet memory.pressure_pages must be positive")
+        if not isinstance(instruction_mix.get("vector_kernel_invocations"), int) or instruction_mix.get("vector_kernel_invocations", 0) < 1:
+            issues.append("bitnet instruction_mix.vector_kernel_invocations must be positive")
+        if compute.get("sustained_tokens", 0) != workload.get("tokens", 0) * workload.get("compute_repetitions", 0):
+            issues.append("bitnet compute.sustained_tokens must match tokens * compute_repetitions")
+    return {"path": str(path), "ok": not issues, "issues": issues,
+            "workload": workload, "timing": timing, "correctness": correctness}
+
+
+def validate_probe_report(path: Path, expected_name: str) -> dict[str, Any]:
+    """Validate the single-pass bounded probe without applying the 2+7 gate."""
+    report, error = load_json(path)
+    issues: list[str] = []
+    if error:
+        return {"path": str(path), "ok": False, "issues": [error]}
+    assert report is not None
+    if report.get("schema") != "trit.benchmark_result.v1":
+        issues.append("schema must be trit.benchmark_result.v1")
+    if report.get("probe") is not True:
+        issues.append("report.probe must be true for a bounded probe")
+    workload = report.get("workload", {})
+    if workload.get("suite") != "system_benchmarks":
+        issues.append("workload.suite must be system_benchmarks")
+    if workload.get("name") != expected_name:
+        issues.append(f"workload.name must be {expected_name}")
+    if workload.get("profile") != "probe":
+        issues.append("workload.profile must be probe")
+    correctness = report.get("correctness", {})
+    if correctness.get("passed") is not True:
+        issues.append("correctness.passed is false")
+    if not correctness.get("expected_hash") or correctness.get("expected_hash") != correctness.get("observed_hash"):
+        issues.append("correctness hashes do not match")
+    if correctness.get("warmup_returncodes") != []:
+        issues.append("probe warmup return codes must be an empty array")
+    if correctness.get("measured_returncodes") != [0]:
+        issues.append("probe measured return codes must contain one zero")
+    timing = report.get("timing", {})
+    if timing.get("unit") != "seconds":
+        issues.append("timing.unit must be seconds")
+    if timing.get("warmups") != 0 or timing.get("iterations") != 1:
+        issues.append("probe timing must record zero warmups and one iteration")
+    samples = timing.get("samples")
+    if not isinstance(samples, list) or len(samples) != 1 or not isinstance(samples[0], (int, float)):
+        issues.append("probe timing.samples must contain one numeric sample")
+    elif samples[0] < 0 or samples[0] > MAX_SAMPLE_SECONDS:
+        issues.append(
+            f"probe sample must be between 0 and {MAX_SAMPLE_SECONDS:.0f} seconds")
     return {"path": str(path), "ok": not issues, "issues": issues,
             "workload": workload, "timing": timing, "correctness": correctness}
 
@@ -144,9 +240,38 @@ def run_workload(name: str, build: Path, output_dir: Path, no_build: bool) -> di
         "TRIT_BUILD_DIR": str(build),
     })
     report_path = output_dir / filename
+    probe_path = output_dir / f"{Path(filename).stem}.probe.json"
+    probe_path.unlink(missing_ok=True)
+    report_path.unlink(missing_ok=True)
+    probe_env = dict(env)
+    probe_env["TRIT_BENCH_PROBE"] = "1"
+    probe_result = run_command(
+        [str(binary), str(probe_path)], timeout=PROBE_TIMEOUT_SECONDS, env=probe_env)
+    probe_validation = validate_probe_report(probe_path, expected_name) if probe_path.exists() else {
+        "path": str(probe_path), "ok": False, "issues": ["probe report was not written"]
+    }
+    probe_attempt = {
+        "returncode": probe_result["returncode"],
+        "stdout": probe_result["stdout"],
+        "stderr": probe_result["stderr"],
+        "validation": probe_validation,
+    }
+    if probe_result["returncode"] != 0 or not probe_validation["ok"]:
+        return {
+            "name": name,
+            "ok": False,
+            "binary": str(binary),
+            "probe": probe_attempt,
+            "issues": [
+                "bounded probe failed; full 2-warmup/7-sample gate was not started",
+                *probe_validation.get("issues", []),
+            ],
+        }
+    env.pop("TRIT_BENCH_PROBE", None)
     attempts: list[dict[str, Any]] = []
     for attempt in range(1, 4):
-        result = run_command([str(binary), str(report_path)], timeout=1200, env=env)
+        result = run_command([str(binary), str(report_path)],
+                             timeout=WORKLOAD_TIMEOUT_SECONDS, env=env)
         validation = validate_report(report_path, expected_name) if report_path.exists() else {
             "path": str(report_path), "ok": False, "issues": ["report was not written"]
         }
@@ -159,13 +284,16 @@ def run_workload(name: str, build: Path, output_dir: Path, no_build: bool) -> di
         }
         attempts.append(attempt_result)
         if result["returncode"] == 0 and validation["ok"]:
-            return {"name": name, "ok": True, "binary": str(binary), "attempts": attempts,
+            return {"name": name, "ok": True, "binary": str(binary),
+                    "probe": probe_attempt, "attempts": attempts,
                     "report": validation}
-        retryable = any("unstable" in issue.lower() or "timing" in issue.lower()
+        retryable = any(("unstable" in issue.lower() or "timing" in issue.lower()) and
+                        "budget" not in issue.lower()
                         for issue in validation.get("issues", []))
         if not retryable:
             break
-    return {"name": name, "ok": False, "binary": str(binary), "attempts": attempts,
+    return {"name": name, "ok": False, "binary": str(binary),
+            "probe": probe_attempt, "attempts": attempts,
             "report": attempts[-1]["validation"]}
 
 

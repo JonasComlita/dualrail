@@ -18,15 +18,19 @@ timers, asset loading, memory allocation, and diagnostics.
 
 ## Milestones
 
-1. **Implemented:** `benchmark_doom_os` runs a small Doom-like kernel workload
-   that loads a deterministic WAD-like file through VFS, renders 27 frames,
-   routes fixed input, advances timer ticks, and checks a frozen frame hash.
+1. **Implemented:** `benchmark_doom_os` runs a deterministic Doom-like kernel
+   workload that writes one synthetic WAD-like asset, reads it back in 81-word
+   chunks, renders 7 frames by default, routes a fixed two-event input trace,
+   advances one timer tick per frame, and checks frozen asset/frame/input hashes.
 2. **Implemented baseline:** emit machine-readable compile/run time, dynamic
-   instructions, frame/timer/input counts, VFS words, memory high-water mark,
-   and correctness hashes.
-3. Port or adapt a minimal Doom renderer/game loop.
-4. Package shareware-compatible or test WAD assets into `.tdisk`.
-5. **Implemented:** the manual CMake/manifest target emits
+   instructions, frame/timer/input counts, draw/present calls, chunked I/O
+   counters, VFS words, memory high-water mark, and correctness hashes.
+3. **Implemented sustained profile:** set `TRIT_BENCH_PROFILE=large-sustained`
+   for 81 frames, 729 asset words, nine read chunks, and a three-event trace.
+   This profile is intentionally opt-in so the bounded gate remains practical.
+4. Port or adapt a minimal Doom renderer/game loop.
+5. Package shareware-compatible or test WAD assets into `.tdisk`.
+6. **Implemented:** the manual CMake/manifest target emits
    `build/benchmarks/doom-os.json`.
 
 ## Correctness Checks
@@ -47,11 +51,21 @@ timers, asset loading, memory allocation, and diagnostics.
 - `input_to_present_ms`
 - `asset_load_ms`
 - `disk_read_words`
+- `asset_read_operations`
+- `io_operations`
 - `memory_high_water_words`
+- `draw_calls`
+- `present_calls`
+- `input_trace_hash`
+
+The host harness runs one bounded probe first (one frame, no input events),
+requires its guest pass to stay at or below 60 seconds, and starts the full
+two-warmup/seven-sample CV gate only after that probe passes. The 81-frame,
+729-word workload is explicit opt-in via `TRIT_BENCH_PROFILE=large-sustained`.
 
 ## Non-Goals For The First Slice
 
 - perfect Doom compatibility
 - audio synchronization
 - multiplayer/network support
-- CI gating
+- host-specific frame-time budgets without an archived controlled-host baseline

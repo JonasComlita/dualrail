@@ -12,8 +12,11 @@ The benchmark pair is intentionally asymmetric:
   process stability.
 
 The deterministic synthetic pair is part of the current `production` and
-release gates. Larger external Doom/BitNet assets remain follow-on workload
-profiles, not prerequisites for this compact correctness and stability gate.
+release gates. The bounded gate uses a 7-frame Doom trace and three 729-word
+BitNet slices; `TRIT_BENCH_PROFILE=large-sustained` enables the larger 81-frame
+and nine-slice profile for optimization comparisons. Larger external Doom/BitNet
+assets remain follow-on workload profiles, not prerequisites for this compact
+correctness and stability gate.
 
 ## Benchmark Suite Contract
 
@@ -35,12 +38,20 @@ Each benchmark should emit a JSON artifact with:
 - host profile and build profile
 - workload inputs
 - pass/fail correctness result
+- fixed input/model/asset trace hashes
 - load time
 - steady-state throughput
 - memory high-water mark
 - disk IO counters when relevant
 - scheduler/frame/timer counters when relevant
+- vector-kernel and sustained execution counters when relevant
 - diagnostics path when failure occurs
+
+The host harness runs one `TRIT_BENCH_PROBE=1` pass first. A probe is a single
+correctness sample and must stay at or below 60 seconds on the controlled host;
+only then does the gate spend the full two warmups plus seven measured samples.
+The sustained profiles are explicit opt-in and are never selected by the
+bounded gate by accident.
 
 The artifact format should be stable enough for regression comparison.
 
@@ -51,7 +62,9 @@ The artifact format should be stable enough for regression comparison.
 3. Add host-side metric extraction and JSON reports.
 4. Add manual CMake targets.
 5. Add baseline capture tooling.
-6. Only after repeatability is proven, consider CI or release-gate use.
+6. Only after repeatability is proven, consider CI or release-gate use. Host
+   timing budgets require archived controlled-host baselines; the current gate
+   only accepts seven-sample evidence with CV below 3%.
 
 ## Authority
 

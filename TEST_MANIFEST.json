@@ -113,6 +113,9 @@
         "benchmark_doom_os",
         "benchmark_bitnet_os"
       ],
+      "ctest_tests": [
+        "test_system_benchmark_contract"
+      ],
       "manual": true,
       "status": "active",
       "docs": [
