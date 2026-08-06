@@ -29,6 +29,8 @@ inline constexpr std::uint32_t TOS_BOOT_FORMAT_VERSION =
     architecture::v2::TBOOT_WRITE_VERSION;
 inline constexpr std::uint64_t TOS_SPARSE_DISK_MAGIC =
     0x54524954535032ULL; // "TRITSP2"
+inline constexpr std::uint64_t TOS_LEGACY_SPARSE_DISK_MAGIC =
+    0x54524954535031ULL; // "TRITSP1" (offline migration input only)
 inline constexpr std::uint32_t TOS_SPARSE_DISK_VERSION =
     architecture::v2::TDISK_WRITE_VERSION;
 inline constexpr int TOS_IMAGE_SECTION_EXECUTABLE = 1 << 0;
@@ -1566,7 +1568,35 @@ inline bool loadBootImageIntoVm(vm::VMState& machine,
             }
         }
         if (!machine.attachBlockBackingFile(disk_path)) {
-            detail::setError(error, "failed to attach sparse disk backing: " + disk_path);
+            // Keep the production rejection actionable without teaching the
+            // live VM how to mount historical formats. The standalone
+            // migrator owns those readers and emits a fresh tDisk v2 image.
+            std::uint64_t magic = 0;
+            std::uint32_t version = 0;
+            std::ifstream disk(disk_path, std::ios::binary);
+            disk.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+            if (magic == TOS_LEGACY_SPARSE_DISK_MAGIC) {
+                detail::setError(
+                    error,
+                    "legacy tDisk v1 is rejected by the v2 runtime; use "
+                    "migrate_tos_artifacts for offline conversion: " +
+                        disk_path);
+            } else if (magic == TOS_SPARSE_DISK_MAGIC) {
+                disk.read(reinterpret_cast<char*>(&version), sizeof(version));
+                detail::setError(
+                    error,
+                    "tDisk version " + std::to_string(version) +
+                        " is not supported by the v2 runtime; use "
+                        "migrate_tos_artifacts for offline conversion: " +
+                        disk_path);
+            } else {
+                detail::setError(
+                    error,
+                    "unsupported or corrupt tDisk backing; production runtime "
+                    "accepts only checksummed tDisk v2 (use "
+                    "migrate_tos_artifacts for legacy inputs): " +
+                        disk_path);
+            }
             return false;
         }
     } else if (!image.rootfs_words.empty()) {

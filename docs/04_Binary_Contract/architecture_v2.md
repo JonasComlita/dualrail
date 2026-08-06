@@ -69,7 +69,7 @@
 | `EXT` | 80 |
 
 Direct opcodes 38–79 are reserved.
-Optional v1 operations use opcode 80 and their v1 opcode number as the extension selector.
+Opcode 80 is the v2 extension escape; no v1 operation encoding is accepted by production assemblers or VMs.
 
 ## PTE v2
 

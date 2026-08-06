@@ -206,7 +206,7 @@ def render_doc(data: dict) -> str:
         [
             "",
             f"Direct opcodes {isa['reserved_direct_first']}–{isa['reserved_direct_last']} are reserved.",
-            "Optional v1 operations use opcode 80 and their v1 opcode number as the extension selector.",
+            "Opcode 80 is the v2 extension escape; no v1 operation encoding is accepted by production assemblers or VMs.",
             "",
             "## PTE v2",
             "",

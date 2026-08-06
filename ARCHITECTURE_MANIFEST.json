@@ -236,14 +236,18 @@
   "formats": {
     "tboot_write_version": 3,
     "tboot_read_versions": [
-      1,
-      2,
       3
+    ],
+    "tboot_offline_migration_versions": [
+      1,
+      2
     ],
     "tdisk_write_version": 2,
     "tdisk_read_versions": [
-      1,
       2
+    ],
+    "tdisk_offline_migration_versions": [
+      1
     ]
   },
   "generation": {

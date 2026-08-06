@@ -79,6 +79,16 @@ void testTemplateMigration() {
             legacy_boot.string(), migrated, &error) &&
             error.find("migrate_tos_artifacts") != std::string::npos,
         "production runtime rejects legacy boot with migration guidance");
+    sandbox::host::TosRuntimeConfig legacy_disk_config;
+    legacy_disk_config.boot_image_path = template_boot.string();
+    legacy_disk_config.disk_path = legacy_disk.string();
+    sandbox::host::TosRuntime legacy_disk_runtime(legacy_disk_config);
+    error.clear();
+    expect(
+        !legacy_disk_runtime.loadImage(&error) &&
+            error.find("legacy tDisk v1") != std::string::npos &&
+            error.find("migrate_tos_artifacts") != std::string::npos,
+        "production runtime rejects a live legacy disk mount with migration guidance");
     error.clear();
     expect(
         sandbox::host::readBootImageFile(

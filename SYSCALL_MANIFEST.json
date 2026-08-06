@@ -63,7 +63,7 @@
       "name": "reserved_6",
       "group": "reserved",
       "status": "permanently_reserved",
-      "notes": "Transition kernel dispatches the legacy desktop exec handoff only when the current process records ISA v1."
+      "notes": "Production v2 dispatch rejects service 6 with ERR_INVALID/detail=6; legacy desktop exec behavior is retired and available only through historical/offline migration artifacts."
     },
     {
       "id": 7,

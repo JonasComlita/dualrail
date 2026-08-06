@@ -228,6 +228,12 @@ const WAL_HEADER_WORDS: t40 = 12;
 const WAL_PAYLOAD_WORDS: t40 = 15;
 const WAL_CAPACITY: t40 = 729;
 const WAL_BASE: t40 = 680000;
+// Active transactions are normally tracked in O(1) by txid.  The table is
+// deliberately bounded; a modulo collision falls back to the historical
+// validated ring scan so correctness is preserved under arbitrary nesting.
+const WAL_TX_TRACKER_CAPACITY: t40 = 243;
+const WAL_TX_TRACKER_KEY_BASE: t40 = 679000;
+const WAL_TX_TRACKER_LSN_BASE: t40 = 679243;
 const WAL_MAGIC: t40 = 170171;
 const WAL_VERSION: t40 = 2;
 const WAL_GENERATION: t40 = 2;
@@ -1771,6 +1777,81 @@ fn wal_record_addr(slot: t40) -> t40 {
     return WAL_BASE + slot * WAL_RECORD_WORDS;
 }
 
+fn wal_tx_tracker_slot(txid: t40) -> t40 {
+    if txid < 0 {
+        return ERR_INVALID;
+    }
+    var slot: t40 = txid;
+    while slot - WAL_TX_TRACKER_CAPACITY >= 0 {
+        slot = slot - WAL_TX_TRACKER_CAPACITY;
+    }
+    return slot;
+}
+
+fn wal_tx_tracker_key_addr(slot: t40) -> t40 {
+    return WAL_TX_TRACKER_KEY_BASE + slot;
+}
+
+fn wal_tx_tracker_lsn_addr(slot: t40) -> t40 {
+    return WAL_TX_TRACKER_LSN_BASE + slot;
+}
+
+fn wal_tx_tracker_begin(txid: t40) -> t40 {
+    var slot: t40 = wal_tx_tracker_slot(txid);
+    if slot < 0 {
+        return 0;
+    }
+    var key_addr: t40 = wal_tx_tracker_key_addr(slot);
+    var current: t40 = kload(key_addr);
+    if current - txid == 0 {
+        return 1;
+    }
+    if current != 0 {
+        // A live modulo collision is intentionally left untracked. Callers
+        // use the full ring scan for this transaction instead.
+        return 0;
+    }
+    kstore(key_addr, txid);
+    kstore(wal_tx_tracker_lsn_addr(slot), 0);
+    return 1;
+}
+
+fn wal_tx_tracker_last_lsn(txid: t40) -> t40 {
+    var slot: t40 = wal_tx_tracker_slot(txid);
+    if slot < 0 {
+        return ERR_NOT_FOUND;
+    }
+    if kload(wal_tx_tracker_key_addr(slot)) - txid != 0 {
+        return ERR_NOT_FOUND;
+    }
+    return kload(wal_tx_tracker_lsn_addr(slot));
+}
+
+fn wal_tx_tracker_set_lsn(txid: t40, lsn: t40) -> t40 {
+    var slot: t40 = wal_tx_tracker_slot(txid);
+    if slot < 0 {
+        return 0;
+    }
+    if kload(wal_tx_tracker_key_addr(slot)) - txid != 0 {
+        return 0;
+    }
+    kstore(wal_tx_tracker_lsn_addr(slot), lsn);
+    return 1;
+}
+
+fn wal_tx_tracker_clear(txid: t40) -> t40 {
+    var slot: t40 = wal_tx_tracker_slot(txid);
+    if slot < 0 {
+        return 0;
+    }
+    if kload(wal_tx_tracker_key_addr(slot)) - txid != 0 {
+        return 0;
+    }
+    kstore(wal_tx_tracker_key_addr(slot), 0);
+    kstore(wal_tx_tracker_lsn_addr(slot), 0);
+    return 1;
+}
+
 fn wal_record_checksum(slot: t40) -> t40 {
     var rec: t40 = wal_record_addr(slot);
     var sum: t40 = 17;
@@ -1822,6 +1903,8 @@ fn wal_free_blocks() -> t40 {
 
 fn wal_init() -> t40 {
     kclear(WAL_BASE, WAL_CAPACITY * WAL_RECORD_WORDS);
+    kclear(WAL_TX_TRACKER_KEY_BASE, WAL_TX_TRACKER_CAPACITY);
+    kclear(WAL_TX_TRACKER_LSN_BASE, WAL_TX_TRACKER_CAPACITY);
     kclear(INODE_REQUIRED_LSN_BASE, INODE_REQUIRED_LSN_WORDS);
     kstore(WAL_HEAD_ADDR, 0);
     kstore(WAL_TAIL_ADDR, 0);
@@ -1842,6 +1925,7 @@ fn wal_init() -> t40 {
 fn log_begin() -> t40 {
     var txid: t40 = kload(WAL_NEXT_TXID_ADDR);
     kstore(WAL_NEXT_TXID_ADDR, txid + 1);
+    wal_tx_tracker_begin(txid);
     return txid;
 }
 
@@ -1851,22 +1935,28 @@ fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
     }
     var head: t40 = kload(WAL_HEAD_ADDR);
     var rec: t40 = wal_record_addr(head);
-    var previous_lsn: t40 = 0;
-    var prior_slot: t40 = kload(WAL_TAIL_ADDR);
-    var prior_head: t40 = kload(WAL_HEAD_ADDR);
-    while prior_slot - prior_head != 0 {
-        var prior_rec: t40 = wal_record_addr(prior_slot);
-        if wal_record_valid(prior_slot) > 0 {
-            if kload(prior_rec + WAL_TXID) - txid == 0 {
-                if kload(prior_rec + WAL_TYPE) - WAL_DATA == 0 {
-                    var prior_lsn: t40 = kload(prior_rec + WAL_LSN);
-                    if prior_lsn - previous_lsn > 0 {
-                        previous_lsn = prior_lsn;
+    var previous_lsn: t40 = wal_tx_tracker_last_lsn(txid);
+    if previous_lsn < 0 {
+        // A live modulo collision (or a legacy transaction started before
+        // tracker initialization) falls back to the fully validated ring
+        // scan, preserving the original chain semantics.
+        previous_lsn = 0;
+        var prior_slot: t40 = kload(WAL_TAIL_ADDR);
+        var prior_head: t40 = kload(WAL_HEAD_ADDR);
+        while prior_slot - prior_head != 0 {
+            var prior_rec: t40 = wal_record_addr(prior_slot);
+            if wal_record_valid(prior_slot) > 0 {
+                if kload(prior_rec + WAL_TXID) - txid == 0 {
+                    if kload(prior_rec + WAL_TYPE) - WAL_DATA == 0 {
+                        var prior_lsn: t40 = kload(prior_rec + WAL_LSN);
+                        if prior_lsn - previous_lsn > 0 {
+                            previous_lsn = prior_lsn;
+                        }
                     }
                 }
             }
+            prior_slot = kwrap_inc(prior_slot, WAL_CAPACITY);
         }
-        prior_slot = kwrap_inc(prior_slot, WAL_CAPACITY);
     }
     kclear(rec, WAL_RECORD_WORDS);
     kstore(rec + 0, WAL_MAGIC);
@@ -1882,6 +1972,7 @@ fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
     kstore(rec + WAL_COUNT, 1);
     kstore(rec + WAL_HEADER_WORDS, new_data);
     wal_record_finalize(head);
+    wal_tx_tracker_set_lsn(txid, kload(rec + WAL_LSN));
     kstore(WAL_HEAD_ADDR, kwrap_inc(head, WAL_CAPACITY));
     kstore(WAL_NEXT_LSN_ADDR, kload(WAL_NEXT_LSN_ADDR) + 1);
     kstore(WAL_PENDING_BLOCK_ADDR, kload(WAL_PENDING_BLOCK_ADDR) + 1);
@@ -1892,23 +1983,28 @@ fn log_commit(txid: t40) -> t40 {
     if wal_free_blocks() <= 0 {
         return ERR_NO_SPACE;
     }
-    var previous_lsn: t40 = 0;
-    var slot: t40 = kload(WAL_TAIL_ADDR);
-    var scan_head: t40 = kload(WAL_HEAD_ADDR);
+    var previous_lsn: t40 = wal_tx_tracker_last_lsn(txid);
     var changed: t40 = 0;
-    while slot - scan_head != 0 {
-        var rec: t40 = wal_record_addr(slot);
-        if wal_record_valid(slot) > 0 {
-            if kload(rec + WAL_TXID) - txid == 0 {
-                if kload(rec + WAL_TYPE) - WAL_DATA == 0 {
-                    var record_lsn: t40 = kload(rec + WAL_LSN);
-                    if record_lsn - previous_lsn > 0 {
-                        previous_lsn = record_lsn;
+    if previous_lsn < 0 {
+        // Preserve correctness for a modulo-colliding active transaction by
+        // validating and scanning the complete live ring.
+        previous_lsn = 0;
+        var slot: t40 = kload(WAL_TAIL_ADDR);
+        var scan_head: t40 = kload(WAL_HEAD_ADDR);
+        while slot - scan_head != 0 {
+            var rec: t40 = wal_record_addr(slot);
+            if wal_record_valid(slot) > 0 {
+                if kload(rec + WAL_TXID) - txid == 0 {
+                    if kload(rec + WAL_TYPE) - WAL_DATA == 0 {
+                        var record_lsn: t40 = kload(rec + WAL_LSN);
+                        if record_lsn - previous_lsn > 0 {
+                            previous_lsn = record_lsn;
+                        }
                     }
                 }
             }
+            slot = kwrap_inc(slot, WAL_CAPACITY);
         }
-        slot = kwrap_inc(slot, WAL_CAPACITY);
     }
 
     var head: t40 = kload(WAL_HEAD_ADDR);
@@ -1925,6 +2021,7 @@ fn log_commit(txid: t40) -> t40 {
     kstore(commit_rec + WAL_TARGET_KIND, WAL_TARGET_WORD);
     kstore(commit_rec + WAL_COUNT, 0);
     wal_record_finalize(head);
+    wal_tx_tracker_clear(txid);
     kstore(WAL_HEAD_ADDR, kwrap_inc(head, WAL_CAPACITY));
     kstore(WAL_NEXT_LSN_ADDR, kload(WAL_NEXT_LSN_ADDR) + 1);
     kstore(WAL_PENDING_BLOCK_ADDR, kload(WAL_PENDING_BLOCK_ADDR) + 1);
@@ -1954,13 +2051,20 @@ fn log_commit(txid: t40) -> t40 {
     if kload(WAL_FIRST_PENDING_TICK_ADDR) < 0 {
         kstore(WAL_FIRST_PENDING_TICK_ADDR, kload(KERNEL_TICK_ADDR));
     }
-    if kload(WAL_PENDING_TX_ADDR) - 27 >= 0 {
-        var sync_status: t40 = wal_sync_to_disk();
-        if sync_status < 0 { return sync_status; }
-    } else {
-        if kload(WAL_PENDING_BLOCK_ADDR) - 27 >= 0 {
+    // A bring-up kernel without a block device still needs to make forward
+    // progress in its in-memory WAL.  Only attempt the periodic durable sync
+    // when a persistent VFS device is actually available; otherwise
+    // wal_sync_to_disk() would report ERR_NO_SPACE at the threshold and make
+    // ordinary metadata transactions fail even though the ring has capacity.
+    if vfs_disk_available() > 0 {
+        if kload(WAL_PENDING_TX_ADDR) - 27 >= 0 {
             var sync_status: t40 = wal_sync_to_disk();
             if sync_status < 0 { return sync_status; }
+        } else {
+            if kload(WAL_PENDING_BLOCK_ADDR) - 27 >= 0 {
+                var sync_status: t40 = wal_sync_to_disk();
+                if sync_status < 0 { return sync_status; }
+            }
         }
     }
     // The commit LSN is the dependency stamped onto affected frames and
@@ -1987,6 +2091,7 @@ fn log_abort(txid: t40) -> t40 {
         }
         slot = kwrap_inc(slot, WAL_CAPACITY);
     }
+    wal_tx_tracker_clear(txid);
     return changed;
 }
 
@@ -7352,31 +7457,7 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         return kernel_set_return(1, 0, 0);
     }
     if service - 6 == 0 {
-        var path_addr: t40 = 10000;
-        unsafe {
-            store(path_addr + 0, 47);   // /
-            store(path_addr + 1, 98);   // b
-            store(path_addr + 2, 105);  // i
-            store(path_addr + 3, 110);  // n
-            store(path_addr + 4, 47);   // /
-            store(path_addr + 5, 100);  // d
-            store(path_addr + 6, 101);  // e
-            store(path_addr + 7, 115);  // s
-            store(path_addr + 8, 107);  // k
-            store(path_addr + 9, 116);  // t
-            store(path_addr + 10, 111); // o
-            store(path_addr + 11, 112); // p
-            store(path_addr + 12, 0);   // \0
-        }
-        var parent_slot: t40 = process_find_pid(pid);
-        var loaded: t40 = exec_process(parent_slot, path_addr);
-        if loaded < 0 {
-            var spin: t40 = 1;
-            while spin > 0 {
-                spin = 1;
-            }
-        }
-        return kernel_set_return(1, loaded, 0);
+        return kernel_set_return(ERR_INVALID, 0, 6);
     }
     if service - 7 == 0 {
         return kernel_set_return(1, pid, 0);
@@ -7919,12 +8000,8 @@ fn kernel_dispatch(cause_value: t40) -> t40 {
         var arg1: t40 = kload(ctx + 19);
         var arg2: t40 = kload(ctx + 20);
         var arg3: t40 = kload(ctx + 21);
-        var status: t40 = ERR_INVALID;
-        if service - 6 == 0 {
-            status = kernel_set_return(ERR_INVALID, 0, 6);
-        } else {
-            status = kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
-        }
+        var status: t40 =
+            kernel_syscall_dispatch(pid, service, arg0, arg1, arg2, arg3);
         if status - SYS_BLOCKED == 0 {
             kernel_schedule_next();
             return status;

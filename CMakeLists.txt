@@ -109,7 +109,9 @@ target_compile_definitions(test_migration_v2
         TRIT_MIGRATE_TOS_ARTIFACTS_PATH="$<TARGET_FILE:migrate_tos_artifacts>"
 )
 add_dependencies(test_migration_v2 build_tos_image migrate_tos_artifacts)
-add_test(NAME test_migration_v2 COMMAND test_migration_v2)
+add_test(NAME test_migration_v2
+         COMMAND test_migration_v2
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(test_bitnet_loading PUBLIC cxx_std_17)
 target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 

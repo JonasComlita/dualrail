@@ -217,7 +217,10 @@ void testPhaseDKernelEndToEnd() {
             var ok: t40 = 1;
             ok = expect_eq(kernel_init(), 1, ok);
             ok = expect_eq(bootstrap_bitmap_is_sized(), 1, ok);
-
+            kernel_syscall_dispatch(1, 6, 0, 0, 0, 0);
+            ok = expect_eq(kload(SYS_STATUS_ADDR), ERR_INVALID, ok);
+            ok = expect_eq(kload(SYS_PAYLOAD_ADDR), 0, ok);
+            ok = expect_eq(kload(SYS_DETAIL_ADDR), 6, ok);
             var before_allocs: t40 = bootstrap_allocated_count();
             var ppn: t40 = alloc_bootstrap_page();
             ok = expect_eq(bootstrap_allocated_count(), before_allocs + 1, ok);
@@ -378,6 +381,11 @@ void testPhaseDKernelEndToEnd() {
             seed_exec_desc(exec_desc, 700, 2, 1, 24);
 
             ok = expect_eq(vfs_create(0, dir_path, KIND_DIR), 1, ok);
+            // The no-disk bring-up path may accumulate more than the normal
+            // periodic-sync threshold in memory, but an explicit durable sync
+            // still reports the missing backing device.
+            ok = expect_pos(kload(WAL_PENDING_BLOCK_ADDR) - 27, ok);
+            ok = expect_eq(wal_sync_to_disk(), ERR_NO_SPACE, ok);
             var fd: t40 = vfs_open(1, path, 2);
             var alpha_inode: t40 = vfs_lookup(0, path);
             ok = expect_eq(vfs_lookup(0, dot_path), alpha_inode, ok);
