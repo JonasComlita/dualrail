@@ -746,19 +746,48 @@ void testNativeKernelVfsMountsDiskBackedState() {
             return addr;
         }
 
+        fn seed_append_path(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 97);
+            kstore(addr + 2, 112);
+            kstore(addr + 3, 112);
+            kstore(addr + 4, 101);
+            kstore(addr + 5, 110);
+            kstore(addr + 6, 100);
+            kstore(addr + 7, 0);
+            return addr;
+        }
+
         fn main() -> t40 {
             if kernel_init() - 1 != 0 { return -1; }
             var path: t40 = USER_MEM_BASE;
+            var append_path: t40 = USER_MEM_BASE + 32;
+            var src: t40 = USER_MEM_BASE + 64;
             seed_persist_path(path);
+            seed_append_path(append_path);
+            kstore(src + 0, 55);
+            kstore(src + 1, 66);
+            kstore(src + 2, 77);
+            kstore(src + 3, 88);
+            var append_fd: t40 = vfs_open(1, append_path, 2);
+            if append_fd < 0 {
+                return kload(inode_addr(0) + INODE_KIND) - 100;
+            }
+            // Persist the newly-created empty inode first.  The following
+            // write allocates its first extent and then exposes only its WAL;
+            // reboot recovery must reconstruct the extent and allocator
+            // cursors before reading the file.
+            if vfs_sync_to_disk() < 0 { return -3; }
             var inode: t40 = vfs_lookup(0, path);
-            if inode < 0 { return -2; }
+            if inode < 0 { return -4; }
             var slot: t40 = vfs_find_extent_covering(inode, 0);
-            if slot < 0 { return -3; }
+            if slot < 0 { return -5; }
             var payload: t40 = kload(extent_addr(slot) + EXTENT_DATA_ADDR);
             var tx: t40 = log_begin();
             log_write(tx, payload, kload(payload), 77);
-            if log_commit(tx) <= 0 { return -4; }
-            if wal_sync_to_disk() - 1 != 0 { return -5; }
+            if log_commit(tx) <= 0 { return -6; }
+            if vfs_write(1, append_fd, src, 4) - 4 != 0 { return -7; }
+            if wal_sync_to_disk() - 1 != 0 { return -8; }
             return 1;
         }
     )";
@@ -793,9 +822,22 @@ void testNativeKernelVfsMountsDiskBackedState() {
             return addr;
         }
 
+        fn seed_append_path(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 97);
+            kstore(addr + 2, 112);
+            kstore(addr + 3, 112);
+            kstore(addr + 4, 101);
+            kstore(addr + 5, 110);
+            kstore(addr + 6, 100);
+            kstore(addr + 7, 0);
+            return addr;
+        }
+
         fn main() -> t40 {
             if kernel_init() - 1 != 0 { return -1; }
             var path: t40 = USER_MEM_BASE;
+            var append_path: t40 = USER_MEM_BASE + 32;
             var dst: t40 = USER_MEM_BASE + 64;
             seed_persist_path(path);
             var fd: t40 = vfs_open(1, path, 0);
@@ -805,6 +847,14 @@ void testNativeKernelVfsMountsDiskBackedState() {
             if kload(dst + 1) - 22 != 0 { return -5; }
             if kload(dst + 2) + 33 != 0 { return -6; }
             if kload(dst + 3) - 44 != 0 { return -7; }
+            seed_append_path(append_path);
+            var append_fd: t40 = vfs_open(1, append_path, 0);
+            if append_fd < 0 { return -8; }
+            if vfs_read(1, append_fd, dst, 4) - 4 != 0 { return -9; }
+            if kload(dst + 0) - 55 != 0 { return -10; }
+            if kload(dst + 1) - 66 != 0 { return -11; }
+            if kload(dst + 2) - 77 != 0 { return -12; }
+            if kload(dst + 3) - 88 != 0 { return -13; }
             return 1;
         }
     )";
@@ -875,8 +925,8 @@ void testNativeKernelInodeFsyncOrdering() {
             // Establish both directory entries and allocator state as the
             // durable baseline; only the following writes are dirty.
             if vfs_sync_to_disk() < 0 { return -4; }
-            if vfs_write(1, alpha_fd, src, 4) - 4 != 0 { return -5; }
-            if vfs_write(1, beta_fd, src, 4) - 4 != 0 { return -6; }
+            if vfs_write(1, alpha_fd, src, 3) - 3 != 0 { return -5; }
+            if vfs_write(1, beta_fd, src, 3) - 3 != 0 { return -6; }
 
             var alpha_inode: t40 = vfs_lookup(0, alpha_path);
             var beta_inode: t40 = vfs_lookup(0, beta_path);

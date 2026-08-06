@@ -160,6 +160,22 @@ void testCrashInjectionMatrix() {
             "append crash recovers complete old or new state");
     }
 
+    // A power loss while a WAL record is being copied can leave a durable
+    // record prefix behind, but the old superblock is still authoritative.
+    {
+        Wal wal(words);
+        for (int i = 0; i < words; ++i)
+            expect(wal.seed(i, old_state[static_cast<std::size_t>(i)]),
+                   "record-write crash seed succeeds");
+        const long long tx = wal.begin();
+        expect(wal.write(tx, Wal::TargetKind::Data, 9, 0, new_state) &&
+                   wal.commit(tx),
+               "record-write crash transaction commits logically");
+        (void)wal.flushWal(Wal::CrashPoint::AfterWalRecordWrite);
+        expectOldOrNew(wal.snapshot(), old_state, old_state,
+                       "record-write crash keeps the old superblock state");
+    }
+
     Wal durable_log(words);
     for (int i = 0; i < words; ++i)
         expect(durable_log.seed(
@@ -198,6 +214,7 @@ void testCrashInjectionMatrix() {
     }
 
     for (Wal::CrashPoint point : {
+             Wal::CrashPoint::AfterWalRecordWrite,
              Wal::CrashPoint::AfterWalBarrier,
              Wal::CrashPoint::AfterPageWrite,
              Wal::CrashPoint::AfterDataBarrier,
@@ -212,7 +229,8 @@ void testCrashInjectionMatrix() {
                    stage_tx, Wal::TargetKind::Data, 5, 0, new_state) &&
                    wal.commit(stage_tx),
                "barrier crash transaction commits logically");
-        if (point == Wal::CrashPoint::AfterWalBarrier ||
+        if (point == Wal::CrashPoint::AfterWalRecordWrite ||
+            point == Wal::CrashPoint::AfterWalBarrier ||
             point == Wal::CrashPoint::AfterSuperblockSwitch) {
             (void)wal.flushWal(point);
         } else if (point == Wal::CrashPoint::AfterPageWrite ||
@@ -227,6 +245,48 @@ void testCrashInjectionMatrix() {
     }
 }
 
+void testCommitRequiresCompleteDataChain() {
+    using Wal = sandbox::os::RedoWalV2;
+    constexpr int words = 31;
+    std::vector<long long> old_state(words);
+    std::vector<long long> new_state(words);
+    for (int i = 0; i < words; ++i) {
+        old_state[static_cast<std::size_t>(i)] = 10 + i;
+        new_state[static_cast<std::size_t>(i)] = 1000 + i;
+    }
+
+    // Build an older valid record that can stand in for a torn data slot.
+    Wal stale_source(words);
+    for (int i = 0; i < words; ++i)
+        expect(stale_source.seed(i, old_state[static_cast<std::size_t>(i)]),
+               "chain baseline seed succeeds");
+    (void)stale_source.begin(); // reserve txid 1 so stale_tx differs from tx
+    const long long stale_tx = stale_source.begin();
+    expect(stale_source.writeWord(stale_tx, 30, 777) &&
+               stale_source.commit(stale_tx) && stale_source.flushWal(),
+           "chain baseline transaction is durable");
+
+    Wal durable(words);
+    for (int i = 0; i < words; ++i)
+        expect(durable.seed(i, old_state[static_cast<std::size_t>(i)]),
+               "chain new-state seed succeeds");
+    const long long tx = durable.begin();
+    expect(durable.write(tx, Wal::TargetKind::Data, 3, 0, new_state) &&
+               durable.commit(tx) && durable.flushWal(),
+           "chain new-state transaction is durable");
+
+    // Keep the new transaction's second data record and commit, but replace
+    // its first data record with an older valid record.  A checksum-only
+    // recovery would replay the suffix and expose a hybrid state.
+    auto hybrid = durable.snapshot();
+    hybrid.ring[0] = stale_source.snapshot().ring[0];
+    Wal recovered(words);
+    expect(recovered.recover(hybrid),
+           "stale-valid WAL slot still has a recoverable boundary");
+    expect(isEntireState(recovered, old_state),
+           "incomplete committed chain is discarded as one old state");
+}
+
 } // namespace
 
 int main() {
@@ -239,6 +299,8 @@ int main() {
     testAbortGroupingTimerAndSuperblocks();
     std::cout << "[4] v2 redo crash-injection matrix\n";
     testCrashInjectionMatrix();
+    std::cout << "[5] v2 redo WAL complete-transaction chain\n";
+    testCommitRequiresCompleteDataChain();
     if (failures == 0) {
         std::cout << "Redo WAL v2 tests passed\n";
         return 0;

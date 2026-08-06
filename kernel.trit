@@ -948,6 +948,19 @@ fn inode_track_required_lsn(inode: t40, lsn: t40) -> t40 {
     return kload(addr);
 }
 
+fn inode_required_lsn_all() -> t40 {
+    var inode: t40 = 0;
+    var required: t40 = 0;
+    while VFS_MAX_INODES - inode > 0 {
+        var lsn: t40 = inode_required_lsn(inode);
+        if lsn - required > 0 {
+            required = lsn;
+        }
+        inode = inode + 1;
+    }
+    return required;
+}
+
 // Clock-hand eviction: two-pass sweep.
 // Pass 1: give referenced frames a second chance (clear ref bit, continue).
 // Pass 2: evict first unpinned+unreferenced frame whose WAL dependency is
@@ -1838,13 +1851,30 @@ fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
     }
     var head: t40 = kload(WAL_HEAD_ADDR);
     var rec: t40 = wal_record_addr(head);
+    var previous_lsn: t40 = 0;
+    var prior_slot: t40 = kload(WAL_TAIL_ADDR);
+    var prior_head: t40 = kload(WAL_HEAD_ADDR);
+    while prior_slot - prior_head != 0 {
+        var prior_rec: t40 = wal_record_addr(prior_slot);
+        if wal_record_valid(prior_slot) > 0 {
+            if kload(prior_rec + WAL_TXID) - txid == 0 {
+                if kload(prior_rec + WAL_TYPE) - WAL_DATA == 0 {
+                    var prior_lsn: t40 = kload(prior_rec + WAL_LSN);
+                    if prior_lsn - previous_lsn > 0 {
+                        previous_lsn = prior_lsn;
+                    }
+                }
+            }
+        }
+        prior_slot = kwrap_inc(prior_slot, WAL_CAPACITY);
+    }
     kclear(rec, WAL_RECORD_WORDS);
     kstore(rec + 0, WAL_MAGIC);
     kstore(rec + 1, WAL_VERSION);
     kstore(rec + WAL_GENERATION, kload(WAL_GENERATION_ADDR));
     kstore(rec + WAL_LSN, kload(WAL_NEXT_LSN_ADDR));
     kstore(rec + WAL_TXID, txid);
-    kstore(rec + WAL_PREV_LSN, 0);
+    kstore(rec + WAL_PREV_LSN, previous_lsn);
     kstore(rec + WAL_TYPE, WAL_DATA);
     kstore(rec + WAL_TARGET_KIND, WAL_TARGET_WORD);
     kstore(rec + WAL_TARGET_ID, 0);
@@ -1969,24 +1999,61 @@ fn log_recover() -> t40 {
         if wal_record_valid(commit_slot) > 0 {
             if kload(commit_rec + WAL_TYPE) - WAL_COMMIT == 0 {
                 var txid: t40 = kload(commit_rec + WAL_TXID);
+                var commit_previous_lsn: t40 = kload(commit_rec + WAL_PREV_LSN);
                 var data_slot: t40 = kload(WAL_TAIL_ADDR);
+                var chain_valid: t40 = 1;
+                var have_data: t40 = 0;
+                var last_lsn: t40 = 0;
                 while data_slot - scan_head != 0 {
-                    var data_rec: t40 = wal_record_addr(data_slot);
+                    var data_rec_check: t40 = wal_record_addr(data_slot);
                     if wal_record_valid(data_slot) > 0 {
-                        if kload(data_rec + WAL_TXID) - txid == 0 {
-                            if kload(data_rec + WAL_TYPE) - WAL_DATA == 0 {
-                                var target: t40 = kload(data_rec + WAL_OFFSET);
-                                var count: t40 = kload(data_rec + WAL_COUNT);
-                                var i: t40 = 0;
-                                while count - i > 0 {
-                                    kstore(target + i, kload(data_rec + WAL_HEADER_WORDS + i));
-                                    i = i + 1;
+                        if kload(data_rec_check + WAL_TXID) - txid == 0 {
+                            if kload(data_rec_check + WAL_TYPE) - WAL_DATA == 0 {
+                                var record_lsn: t40 = kload(data_rec_check + WAL_LSN);
+                                var record_previous_lsn: t40 = kload(data_rec_check + WAL_PREV_LSN);
+                                if have_data <= 0 {
+                                    if record_previous_lsn != 0 {
+                                        chain_valid = 0;
+                                    }
+                                } else {
+                                    if record_previous_lsn - last_lsn != 0 {
+                                        chain_valid = 0;
+                                    }
                                 }
-                                changed = changed + count;
+                                have_data = 1;
+                                last_lsn = record_lsn;
                             }
                         }
                     }
                     data_slot = kwrap_inc(data_slot, WAL_CAPACITY);
+                }
+                if have_data <= 0 {
+                    if commit_previous_lsn != 0 { chain_valid = 0; }
+                } else {
+                    if commit_previous_lsn - last_lsn != 0 {
+                        chain_valid = 0;
+                    }
+                }
+                if chain_valid > 0 {
+                    data_slot = kload(WAL_TAIL_ADDR);
+                    while data_slot - scan_head != 0 {
+                        var data_rec_apply: t40 = wal_record_addr(data_slot);
+                        if wal_record_valid(data_slot) > 0 {
+                            if kload(data_rec_apply + WAL_TXID) - txid == 0 {
+                                if kload(data_rec_apply + WAL_TYPE) - WAL_DATA == 0 {
+                                    var target: t40 = kload(data_rec_apply + WAL_OFFSET);
+                                    var count: t40 = kload(data_rec_apply + WAL_COUNT);
+                                    var i: t40 = 0;
+                                    while count - i > 0 {
+                                        kstore(target + i, kload(data_rec_apply + WAL_HEADER_WORDS + i));
+                                        i = i + 1;
+                                    }
+                                    changed = changed + count;
+                                }
+                            }
+                        }
+                        data_slot = kwrap_inc(data_slot, WAL_CAPACITY);
+                    }
                 }
             }
         }
@@ -2006,12 +2073,14 @@ fn log_checkpoint() -> t40 {
     }
 
     // 1. Make all committed WAL durable before any home-page write.
-    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    var wal_status: t40 = wal_sync_to_disk();
+    if wal_status < 0 { return wal_status; }
     var chosen_lsn: t40 = kload(WAL_DURABLE_LSN_ADDR);
 
     // 2. Flush pages whose dependency is at or below chosen_lsn and issue the
     // data barrier before the checkpoint record is appended.
-    if vfs_sync_to_disk() < 0 { return ERR_INVALID; }
+    var home_status: t40 = vfs_sync_to_disk();
+    if home_status < 0 { return home_status; }
 
     // 3. Append a checkpoint record describing that ordered home-page image.
     if wal_free_blocks() <= 0 { return ERR_NO_SPACE; }
@@ -2034,10 +2103,12 @@ fn log_checkpoint() -> t40 {
 
     // 4. Make the checkpoint record durable, then advance the tail in a new
     // checksummed superblock.  The second WAL sync is the tail-order barrier.
-    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    wal_status = wal_sync_to_disk();
+    if wal_status < 0 { return wal_status; }
     kstore(WAL_CHECKPOINT_ADDR, chosen_lsn);
     kstore(WAL_TAIL_ADDR, kload(WAL_HEAD_ADDR));
-    if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+    wal_status = wal_sync_to_disk();
+    if wal_status < 0 { return wal_status; }
     return cleaned;
 }
 
@@ -2126,7 +2197,11 @@ fn log_write_range(txid: t40, base_addr: t40, count_words: t40) -> t40 {
     var i: t40 = 0;
     while count_words - i > 0 {
         var addr: t40 = base_addr + i;
-        log_write(txid, addr, kload(addr), kload(addr));
+        var logged: t40 = log_write(txid, addr, kload(addr), kload(addr));
+        if logged < 0 {
+            log_abort(txid);
+            return logged;
+        }
         i = i + 1;
     }
     return count_words;
@@ -2253,7 +2328,11 @@ fn attr_insert(object_id: t40, object_type: t40, key: t40, value: t40) -> t40 {
     }
     var row: t40 = attr_row_addr(slot);
     var txid: t40 = log_begin();
-    log_write(txid, row + ATTR_VALUE, kload(row + ATTR_VALUE), value);
+    var logged: t40 = log_write(txid, row + ATTR_VALUE, kload(row + ATTR_VALUE), value);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     kstore(row + ATTR_OBJECT_ID, object_id);
     kstore(row + ATTR_OBJECT_TYPE, object_type);
     kstore(row + ATTR_KEY, key);
@@ -2273,7 +2352,11 @@ fn attr_delete(object_id: t40, object_type: t40, key: t40) -> t40 {
     if slot < 0 { return slot; }
     var row: t40 = attr_row_addr(slot);
     var txid: t40 = log_begin();
-    log_write(txid, row + ATTR_VERSION, kload(row + ATTR_VERSION), 0);
+    var logged: t40 = log_write(txid, row + ATTR_VERSION, kload(row + ATTR_VERSION), 0);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     var commit_status: t40 = log_commit(txid);
     if commit_status < 0 { return commit_status; }
     kclear(row, ATTR_STORE_WORDS);
@@ -3495,10 +3578,20 @@ fn quota_set_limit(quota_id: t40, limit: t40) -> t40 {
     var row: t40 = quota_addr(quota_id);
     var old_limit: t40 = kload(row + QUOTA_LIMIT);
     var txid: t40 = log_begin();
-    log_write(txid, row + QUOTA_LIMIT, old_limit, limit);
+    var logged: t40 = log_write(txid, row + QUOTA_LIMIT, old_limit, limit);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, row + QUOTA_VERSION,
+                       kload(row + QUOTA_VERSION),
+                       kload(row + QUOTA_VERSION) + 1);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     var commit_status: t40 = log_commit(txid);
     if commit_status < 0 { return commit_status; }
-    kstore(row + QUOTA_VERSION, kload(row + QUOTA_VERSION) + 1);
     return limit;
 }
 
@@ -3896,10 +3989,30 @@ fn namespace_create(namespace_id: t40, root_inode: t40) -> t40 {
     }
     var row: t40 = namespace_addr(namespace_id);
     var txid: t40 = log_begin();
-    log_write(txid, row + NS_ACTIVE, kload(row + NS_ACTIVE), 1);
-    kstore(row + NS_ID, namespace_id);
-    kstore(row + NS_ROOT_INODE, root_inode);
-    kstore(row + NS_VERSION, kload(row + NS_VERSION) + 1);
+    var logged: t40 = log_write(txid, row + NS_ACTIVE, kload(row + NS_ACTIVE), 1);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, row + NS_ID,
+                       kload(row + NS_ID), namespace_id);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, row + NS_ROOT_INODE,
+                       kload(row + NS_ROOT_INODE), root_inode);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, row + NS_VERSION,
+                       kload(row + NS_VERSION),
+                       kload(row + NS_VERSION) + 1);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     var commit_status: t40 = log_commit(txid);
     if commit_status < 0 { return commit_status; }
     return namespace_id;
@@ -4864,6 +4977,20 @@ fn vfs_alloc_extent_at(namespace_id: t40, inode: t40, logical_start: t40, length
     return next;
 }
 
+// Undo a speculative extent reservation when the WAL transaction cannot be
+// assembled.  Extent rows and allocator cursors are volatile until their
+// after-images have committed; leaving them advanced after a log error would
+// make a later checkpoint publish an orphaned allocation.
+fn vfs_restore_extent_allocation(slot: t40, old_next_extent: t40, old_next_data: t40) -> t40 {
+    if slot >= 0 {
+        var row: t40 = extent_addr(slot);
+        kclear(row, VFS_EXTENT_WORDS);
+    }
+    kstore(VFS_NEXT_EXTENT_ADDR, old_next_extent);
+    kstore(VFS_NEXT_DATA_ADDR, old_next_data);
+    return 1;
+}
+
 fn vfs_alloc_extent(namespace_id: t40, inode: t40, length_words: t40) -> t40 {
     return vfs_alloc_extent_at(namespace_id, inode, 0, length_words);
 }
@@ -5189,7 +5316,32 @@ fn wal_load_from_disk() -> t40 {
     var valid_a: t40 = wal_super_valid(super_copy);
     var valid_b: t40 = wal_super_valid(VFS_DISK_SCRATCH);
     if valid_a <= 0 {
-        if valid_b <= 0 { return ERR_INVALID; }
+        if valid_b <= 0 {
+            // Release images intentionally start with an empty WAL region;
+            // distinguish that format state from a torn WAL by requiring the
+            // entire ring to be zero before bootstrapping fresh metadata.
+            var empty_slot: t40 = 0;
+            var empty_wal: t40 = 1;
+            while WAL_CAPACITY - empty_slot > 0 {
+                if disk_read_block(WAL_DISK_RECORD_BLOCK + empty_slot,
+                                   wal_record_addr(empty_slot)) - 1 != 0 {
+                    return ERR_INVALID;
+                }
+                var empty_word: t40 = 0;
+                while WAL_RECORD_WORDS - empty_word > 0 {
+                    if kload(wal_record_addr(empty_slot) + empty_word) != 0 {
+                        empty_wal = 0;
+                    }
+                    empty_word = empty_word + 1;
+                }
+                empty_slot = empty_slot + 1;
+            }
+            if empty_wal > 0 {
+                wal_init();
+                return 1;
+            }
+            return ERR_INVALID;
+        }
         chosen = VFS_DISK_SCRATCH;
         active = 1;
     } else {
@@ -5199,6 +5351,32 @@ fn wal_load_from_disk() -> t40 {
                 active = 1;
             }
         }
+    }
+
+    // Reject a checksummed but structurally impossible superblock.  A power
+    // loss can preserve an old checksum word alongside a newer torn field;
+    // selecting such a boundary would let stale ring slots masquerade as a
+    // committed transaction.
+    if kload(chosen + 2) <= 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 3) < 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 3) - WAL_CAPACITY >= 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 4) < 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 4) - WAL_CAPACITY >= 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 5) - kload(chosen + 6) < 0 {
+        return ERR_INVALID;
+    }
+    if kload(chosen + 10) - kload(chosen + 5) <= 0 {
+        return ERR_INVALID;
     }
 
     kstore(WAL_GENERATION_ADDR, kload(chosen + 2));
@@ -5216,6 +5394,7 @@ fn wal_load_from_disk() -> t40 {
 
     var slot: t40 = kload(WAL_TAIL_ADDR);
     var head: t40 = kload(WAL_HEAD_ADDR);
+    var previous_lsn: t40 = kload(WAL_CHECKPOINT_ADDR);
     while slot - head != 0 {
         if disk_read_block(WAL_DISK_RECORD_BLOCK + slot, wal_record_addr(slot)) - 1 != 0 {
             return ERR_INVALID;
@@ -5225,6 +5404,13 @@ fn wal_load_from_disk() -> t40 {
             kstore(WAL_DURABLE_HEAD_ADDR, slot);
             return 1;
         }
+        var record_lsn: t40 = kload(wal_record_addr(slot) + WAL_LSN);
+        if record_lsn - previous_lsn <= 0 {
+            kstore(WAL_HEAD_ADDR, slot);
+            kstore(WAL_DURABLE_HEAD_ADDR, slot);
+            return 1;
+        }
+        previous_lsn = record_lsn;
         slot = kwrap_inc(slot, WAL_CAPACITY);
     }
     return 1;
@@ -5289,8 +5475,12 @@ fn vfs_sync_partial_range_to_disk(src_addr: t40, word_count: t40, array_base: t4
     if relative < 0 { return ERR_INVALID; }
     var copied: t40 = 0;
     while word_count - copied > 0 {
-        var block_index: t40 = relative / STORAGE_BLOCK_WORDS;
-        var block_offset: t40 = relative - block_index * STORAGE_BLOCK_WORDS;
+        var block_index: t40 = 0;
+        var block_offset: t40 = relative;
+        while block_offset - STORAGE_BLOCK_WORDS >= 0 {
+            block_offset = block_offset - STORAGE_BLOCK_WORDS;
+            block_index = block_index + 1;
+        }
         var take: t40 = STORAGE_BLOCK_WORDS - block_offset;
         if take - (word_count - copied) > 0 {
             take = word_count - copied;
@@ -5321,7 +5511,8 @@ fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
     // inode's dependency.  This also makes direct callers safe.
     var required_lsn: t40 = inode_required_lsn(inode);
     if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
-        if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+        var wal_status: t40 = wal_sync_to_disk();
+        if wal_status < 0 { return wal_status; }
     }
     if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
     if vfs_sync_partial_range_to_disk(
@@ -5386,8 +5577,13 @@ fn vfs_sync_to_disk() -> t40 {
         return ERR_NO_SPACE;
     }
     var required_lsn: t40 = buffer_required_lsn_all();
+    var inode_required: t40 = inode_required_lsn_all();
+    if inode_required - required_lsn > 0 {
+        required_lsn = inode_required;
+    }
     if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
-        if wal_sync_to_disk() < 0 { return ERR_INVALID; }
+        var wal_status: t40 = wal_sync_to_disk();
+        if wal_status < 0 { return wal_status; }
     }
     if vfs_sync_state_to_disk() - 1 != 0 { return ERR_INVALID; }
     var inode_words: t40 = kload(VFS_NEXT_INODE_ADDR) * VFS_INODE_WORDS;
@@ -5438,18 +5634,35 @@ fn vfs_format(device_id: t40) -> t40 {
     kstore(root + INODE_LINKS, 1);
     kstore(root + INODE_VERSION, 1);
     kstore(root + INODE_FLAGS, 0);
-    log_checkpoint();
+    var checkpoint_status: t40 = log_checkpoint();
+    if checkpoint_status < 0 { return checkpoint_status; }
     return 1;
 }
 
 fn vfs_mount(namespace_id: t40, device_id: t40) -> t40 {
-    if vfs_load_from_disk() > 0 {
-        if wal_load_from_disk() > 0 {
+    var loaded: t40 = vfs_load_from_disk();
+    if loaded > 0 {
+        var wal_loaded: t40 = wal_load_from_disk();
+        if wal_loaded > 0 {
             log_recover();
-            vfs_sync_to_disk();
-            log_checkpoint();
+            var synced: t40 = vfs_sync_to_disk();
+            if synced < 0 { return synced; }
+            var checkpointed: t40 = log_checkpoint();
+            if checkpointed < 0 { return checkpointed; }
+        } else if wal_loaded < 0 {
+            return wal_loaded;
         }
         return 1;
+    }
+    if loaded < 0 {
+        if loaded - ERR_NO_SPACE != 0 {
+            // A zeroed device has no VFS superblock yet and is formatted on
+            // first mount.  Preserve hard failures for a non-zero malformed
+            // superblock so recovery errors are not silently hidden.
+            if kload(VFS_DISK_SCRATCH + 0) != 0 {
+                return loaded;
+            }
+        }
     }
     if kload(VFS_MAGIC_ADDR) - KERNEL_MAGIC == 0 {
         return 1;
@@ -5457,13 +5670,14 @@ fn vfs_mount(namespace_id: t40, device_id: t40) -> t40 {
     var formatted: t40 = vfs_format(device_id);
     if formatted > 0 {
         if vfs_disk_available() > 0 {
-            vfs_sync_to_disk();
+            var synced: t40 = vfs_sync_to_disk();
+            if synced < 0 { return synced; }
         }
     }
     return formatted;
 }
 
-fn vfs_add_dirent(namespace_id: t40, parent: t40, child: t40, name_start: t40, name_len: t40) -> t40 {
+fn vfs_add_dirent(txid: t40, namespace_id: t40, parent: t40, child: t40, name_start: t40, name_len: t40) -> t40 {
     if name_len <= 0 {
         return ERR_INVALID;
     }
@@ -5476,18 +5690,35 @@ fn vfs_add_dirent(namespace_id: t40, parent: t40, child: t40, name_start: t40, n
     }
     var h: t40 = vfs_component_hash(name_start, name_len);
     var row: t40 = dirent_addr(slot);
-    kstore(row + DIRENT_NAMESPACE, namespace_id);
-    kstore(row + DIRENT_PARENT, parent);
-    kstore(row + DIRENT_HASH, h);
-    kstore(row + DIRENT_NAME_LEN, name_len);
-    kstore(row + DIRENT_CHILD, child);
-    kstore(row + DIRENT_VERSION, 1);
+    var logged: t40 = log_write(txid, row + DIRENT_NAMESPACE,
+                                 kload(row + DIRENT_NAMESPACE), namespace_id);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + DIRENT_PARENT,
+                       kload(row + DIRENT_PARENT), parent);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + DIRENT_HASH,
+                       kload(row + DIRENT_HASH), h);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + DIRENT_NAME_LEN,
+                       kload(row + DIRENT_NAME_LEN), name_len);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + DIRENT_CHILD,
+                       kload(row + DIRENT_CHILD), child);
+    if logged < 0 { return logged; }
+    logged = log_write(txid, row + DIRENT_VERSION,
+                       kload(row + DIRENT_VERSION), 1);
+    if logged < 0 { return logged; }
     var i: t40 = 0;
     while name_len - i > 0 {
-        kstore(dirent_name_addr(slot) + i, kload(name_start + i));
+        logged = log_write(txid, dirent_name_addr(slot) + i,
+                           kload(dirent_name_addr(slot) + i),
+                           kload(name_start + i));
+        if logged < 0 { return logged; }
         i = i + 1;
     }
-    kstore(VFS_NEXT_DIRENT_ADDR, slot + 1);
+    logged = log_write(txid, VFS_NEXT_DIRENT_ADDR,
+                       kload(VFS_NEXT_DIRENT_ADDR), slot + 1);
+    if logged < 0 { return logged; }
     return slot;
 }
 
@@ -5519,20 +5750,44 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
     }
     var txid: t40 = log_begin();
     var inode_row: t40 = inode_addr(inode);
-    log_write(txid, inode_row + INODE_KIND, 0, kind);
-    kstore(inode_row + INODE_MODE, 1);
-    kstore(inode_row + INODE_SIZE, 0);
-    kstore(inode_row + INODE_LINKS, 1);
-    kstore(inode_row + INODE_VERSION, 1);
-    kstore(inode_row + INODE_FLAGS, parent);
-    var commit_lsn: t40 = log_commit(txid);
-    if commit_lsn < 0 { return commit_lsn; }
-    inode_track_required_lsn(inode, commit_lsn);
-    kstore(VFS_NEXT_INODE_ADDR, inode + 1);
-    var dir_slot: t40 = vfs_add_dirent(namespace_id, parent, inode, start, len);
+    var logged: t40 = log_write(txid, inode_row + INODE_KIND, 0, kind);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, inode_row + INODE_MODE,
+                       kload(inode_row + INODE_MODE), 1);
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_SIZE,
+                       kload(inode_row + INODE_SIZE), 0);
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_LINKS,
+                       kload(inode_row + INODE_LINKS), 1);
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_VERSION,
+                       kload(inode_row + INODE_VERSION), 1);
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_CTIME,
+                       kload(inode_row + INODE_CTIME), kload(KERNEL_TICK_ADDR));
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_MTIME,
+                       kload(inode_row + INODE_MTIME), kload(KERNEL_TICK_ADDR));
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, inode_row + INODE_FLAGS,
+                       kload(inode_row + INODE_FLAGS), parent);
+    if logged < 0 { log_abort(txid); return logged; }
+    logged = log_write(txid, VFS_NEXT_INODE_ADDR,
+                       kload(VFS_NEXT_INODE_ADDR), inode + 1);
+    if logged < 0 { log_abort(txid); return logged; }
+    var dir_slot: t40 = vfs_add_dirent(txid, namespace_id, parent, inode, start, len);
     if dir_slot < 0 {
+        log_abort(txid);
         return dir_slot;
     }
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 { return commit_lsn; }
+    var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
+    if tracked < 0 { return tracked; }
     return inode;
 }
 
@@ -5566,22 +5821,47 @@ fn fd_alloc(pid: t40) -> t40 {
 }
 
 fn vfs_truncate_inode(inode: t40) -> t40 {
+    if inode < 0 { return ERR_INVALID; }
+    if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
     var row: t40 = inode_addr(inode);
     var txid: t40 = log_begin();
     var old_size: t40 = kload(row + INODE_SIZE);
-    log_write(txid, row + INODE_SIZE, old_size, 0);
-    var commit_lsn: t40 = log_commit(txid);
-    if commit_lsn < 0 { return commit_lsn; }
-    inode_track_required_lsn(inode, commit_lsn);
+    var logged: t40 = log_write(txid, row + INODE_SIZE, old_size, 0);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     var slot: t40 = 0;
     while VFS_MAX_EXTENTS - slot > 0 {
         var ex: t40 = extent_addr(slot);
         if kload(ex + EXTENT_INODE) - inode == 0 {
-            kstore(ex + EXTENT_LENGTH, 0);
-            kstore(ex + EXTENT_VERSION, 0);
+            if kload(ex + EXTENT_VERSION) > 0 {
+                logged = log_write(txid, ex + EXTENT_LENGTH,
+                                   kload(ex + EXTENT_LENGTH), 0);
+                if logged < 0 {
+                    log_abort(txid);
+                    return logged;
+                }
+                logged = log_write(txid, ex + EXTENT_VERSION,
+                                   kload(ex + EXTENT_VERSION), 0);
+                if logged < 0 {
+                    log_abort(txid);
+                    return logged;
+                }
+            }
         }
         slot = slot + 1;
     }
+    logged = log_write(txid, row + INODE_MTIME,
+                       kload(row + INODE_MTIME), kload(KERNEL_TICK_ADDR));
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 { return commit_lsn; }
+    var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
+    if tracked < 0 { return tracked; }
     return 1;
 }
 
@@ -5603,7 +5883,8 @@ fn vfs_open(pid: t40, path_addr: t40, mode: t40) -> t40 {
         return inode;
     }
     if mode - 3 == 0 {
-        vfs_truncate_inode(inode);
+        var truncated: t40 = vfs_truncate_inode(inode);
+        if truncated < 0 { return truncated; }
     }
     var kind: t40 = kload(inode_addr(inode) + INODE_KIND);
     if kind - KIND_DIR == 0 {
@@ -5855,21 +6136,51 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
     while count_words - i > 0 {
         var logical_word: t40 = offset + i;
         var remaining: t40 = count_words - i;
-        var extent_slot: t40 = vfs_ensure_extent_covering(namespace_id, inode, logical_word, remaining);
+        // Resolve the extent without mutating allocator state.  A missing
+        // extent is described by after-images in the same transaction as its
+        // payload and inode size, so a durable commit can never orphan data.
+        var extent_slot: t40 = vfs_find_extent_covering(inode, logical_word);
+        var new_extent: t40 = 0;
+        var existing_ex: t40 = 0;
+        var start: t40 = logical_word;
+        var length_words: t40 = remaining;
+        var data: t40 = 0;
         if extent_slot < 0 {
-            return extent_slot;
+            extent_slot = kload(VFS_NEXT_EXTENT_ADDR);
+            if extent_slot - VFS_MAX_EXTENTS >= 0 {
+                return ERR_NO_SPACE;
+            }
+            if length_words - STORAGE_BLOCK_WORDS > 0 {
+                length_words = STORAGE_BLOCK_WORDS;
+            }
+            data = kload(VFS_NEXT_DATA_ADDR);
+            if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+                return ERR_NO_SPACE;
+            }
+            new_extent = 1;
+        } else {
+            existing_ex = extent_addr(extent_slot);
+            start = kload(existing_ex + EXTENT_LOGICAL_START);
+            length_words = kload(existing_ex + EXTENT_LENGTH);
+            data = kload(existing_ex + EXTENT_DATA_ADDR);
         }
         var ex: t40 = extent_addr(extent_slot);
-        var start: t40 = kload(ex + EXTENT_LOGICAL_START);
-        var length_words: t40 = kload(ex + EXTENT_LENGTH);
-        var data: t40 = kload(ex + EXTENT_DATA_ADDR);
         var in_extent: t40 = logical_word - start;
         var window: t40 = length_words - in_extent;
         var chunk: t40 = remaining;
         if chunk - window > 0 {
             chunk = window;
         }
-        var log_room: t40 = WAL_CAPACITY - 2;
+        var metadata_records: t40 = 0;
+        if new_extent > 0 {
+            // Six extent fields plus the two allocator cursors, in addition to
+            // the optional inode-size record and the commit record.
+            metadata_records = 8;
+        }
+        var log_room: t40 = wal_free_blocks() - 2 - metadata_records;
+        if log_room <= 0 {
+            return ERR_NO_SPACE;
+        }
         if chunk - log_room > 0 {
             chunk = log_room;
         }
@@ -5878,10 +6189,65 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
             return buffer_slot;
         }
         var txid: t40 = log_begin();
+        if new_extent > 0 {
+            var extent_logged: t40 = log_write(txid, ex + EXTENT_NAMESPACE, 0, namespace_id);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, ex + EXTENT_INODE, 0, inode);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, ex + EXTENT_LOGICAL_START, 0, start);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, ex + EXTENT_LENGTH, 0, length_words);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, ex + EXTENT_DATA_ADDR, 0, data);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, ex + EXTENT_VERSION, 0, 1);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, VFS_NEXT_EXTENT_ADDR,
+                                      kload(VFS_NEXT_EXTENT_ADDR),
+                                      extent_slot + 1);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+            extent_logged = log_write(txid, VFS_NEXT_DATA_ADDR,
+                                      kload(VFS_NEXT_DATA_ADDR),
+                                      data + length_words);
+            if extent_logged < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return extent_logged;
+            }
+        }
         var j: t40 = 0;
         while chunk - j > 0 {
             var src_phys: t40 = user_translate_slot_dmem_addr(process_slot, src_addr + i + j, 0);
             if src_phys < 0 {
+                log_abort(txid);
                 buffer_unpin(buffer_slot);
                 return src_phys;
             }
@@ -5892,14 +6258,24 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
             var copy_i: t40 = 0;
             while copy_chunk - copy_i > 0 {
                 var dst: t40 = data + in_extent + j + copy_i;
-                log_write(txid, dst, kload(dst), kload(src_phys + copy_i));
+                var logged: t40 = log_write(txid, dst, kload(dst), kload(src_phys + copy_i));
+                if logged < 0 {
+                    log_abort(txid);
+                    buffer_unpin(buffer_slot);
+                    return logged;
+                }
                 copy_i = copy_i + 1;
             }
             j = j + copy_chunk;
         }
         var chunk_end: t40 = logical_word + chunk;
         if chunk_end - old_size > 0 {
-            log_write(txid, inode_row + INODE_SIZE, old_size, chunk_end);
+            var logged_size: t40 = log_write(txid, inode_row + INODE_SIZE, old_size, chunk_end);
+            if logged_size < 0 {
+                log_abort(txid);
+                buffer_unpin(buffer_slot);
+                return logged_size;
+            }
             old_size = chunk_end;
         }
         var commit_lsn: t40 = log_commit(txid);
@@ -5907,8 +6283,16 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
             buffer_unpin(buffer_slot);
             return commit_lsn;
         }
-        buffer_mark_dirty(buffer_slot, commit_lsn);
-        inode_track_required_lsn(inode, commit_lsn);
+        var marked: t40 = buffer_mark_dirty(buffer_slot, commit_lsn);
+        if marked < 0 {
+            buffer_unpin(buffer_slot);
+            return marked;
+        }
+        var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
+        if tracked < 0 {
+            buffer_unpin(buffer_slot);
+            return tracked;
+        }
         buffer_unpin(buffer_slot);
         i = i + chunk;
     }
@@ -6098,7 +6482,8 @@ fn vfs_fsync(pid: t40, fd: t40) -> t40 {
     }
     // With no persistent device, there is no home-page ordering obligation;
     // keep the existing in-memory test/bring-up behavior.
-    buffer_flush_all();
+    var flushed: t40 = buffer_flush_all();
+    if flushed < 0 { return flushed; }
     return 1;
 }
 
@@ -7821,10 +8206,47 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
     var row: t40 = inode_addr(inode);
     if kload(row + INODE_KIND) - KIND_DIR == 0 { return ERR_IS_DIR; }
     var links: t40 = kload(row + INODE_LINKS) - 1;
-    kstore(row + INODE_LINKS, links);
+    var txid: t40 = log_begin();
+    var logged: t40 = log_write(txid, row + INODE_LINKS,
+                                kload(row + INODE_LINKS), links);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
     if links <= 0 {
-        vfs_truncate_inode(inode);
-        kstore(row + INODE_VERSION, 0);
+        logged = log_write(txid, row + INODE_SIZE,
+                           kload(row + INODE_SIZE), 0);
+        if logged < 0 {
+            log_abort(txid);
+            return logged;
+        }
+        logged = log_write(txid, row + INODE_VERSION,
+                           kload(row + INODE_VERSION), 0);
+        if logged < 0 {
+            log_abort(txid);
+            return logged;
+        }
+        var extent_slot: t40 = 0;
+        while VFS_MAX_EXTENTS - extent_slot > 0 {
+            var extent_row: t40 = extent_addr(extent_slot);
+            if kload(extent_row + EXTENT_INODE) - inode == 0 {
+                if kload(extent_row + EXTENT_VERSION) > 0 {
+                    logged = log_write(txid, extent_row + EXTENT_LENGTH,
+                                       kload(extent_row + EXTENT_LENGTH), 0);
+                    if logged < 0 {
+                        log_abort(txid);
+                        return logged;
+                    }
+                    logged = log_write(txid, extent_row + EXTENT_VERSION,
+                                       kload(extent_row + EXTENT_VERSION), 0);
+                    if logged < 0 {
+                        log_abort(txid);
+                        return logged;
+                    }
+                }
+            }
+            extent_slot = extent_slot + 1;
+        }
     }
     var slot: t40 = 0;
     var dirent_limit: t40 = vfs_dirent_limit();
@@ -7832,12 +8254,32 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
         var dr: t40 = dirent_addr(slot);
         if kload(dr + DIRENT_CHILD) - inode == 0 {
             if kload(dr + DIRENT_NAMESPACE) - namespace_id == 0 {
-                kstore(dr + DIRENT_CHILD, 0);
-                kstore(dr + DIRENT_VERSION, 0);
+                logged = log_write(txid, dr + DIRENT_CHILD,
+                                   kload(dr + DIRENT_CHILD), 0);
+                if logged < 0 {
+                    log_abort(txid);
+                    return logged;
+                }
+                logged = log_write(txid, dr + DIRENT_VERSION,
+                                   kload(dr + DIRENT_VERSION), 0);
+                if logged < 0 {
+                    log_abort(txid);
+                    return logged;
+                }
             }
         }
         slot = slot + 1;
     }
+    logged = log_write(txid, row + INODE_MTIME,
+                       kload(row + INODE_MTIME), kload(KERNEL_TICK_ADDR));
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 { return commit_lsn; }
+    var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
+    if tracked < 0 { return tracked; }
     return 1;
 }
 
@@ -7880,7 +8322,8 @@ fn kernel_init() -> t40 {
     pte_table_init();
     process_create(0, 1, 0, 1, 0, 0);
     process_set_caps(0, APP_CAP_SYSTEM);
-    vfs_mount(0, 0);
+    var mounted: t40 = vfs_mount(0, 0);
+    if mounted < 0 { return mounted; }
     // Tag the kernel process in attr_store so rel_join_proc_attr works from boot.
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_CREATED_TXID, 0);
     attr_insert(1, ATTR_TYPE_PROCESS, ATTR_KEY_DESIRED_STATE, PROC_RUNNABLE);

@@ -44,6 +44,11 @@ public:
         BeforeWalAppend,
         AfterDataAppend,
         AfterCommitAppend,
+        // A power loss while the WAL writer is copying records to stable
+        // media, before the superblock is published.  The old superblock must
+        // remain the recovery boundary even if a prefix of records reached
+        // the ring.
+        AfterWalRecordWrite,
         AfterWalBarrier,
         AfterPageWrite,
         AfterDataBarrier,
@@ -233,6 +238,7 @@ public:
         for (int index : appended_) {
             durable_ring_[static_cast<std::size_t>(index)] =
                 volatile_ring_[static_cast<std::size_t>(index)];
+            if (crash == CrashPoint::AfterWalRecordWrite) return false;
         }
         if (crash == CrashPoint::AfterCommitAppend) return false;
 
@@ -359,7 +365,7 @@ public:
         active_superblock_ = chosen;
 
         std::map<long long, std::vector<Block>> data_by_tx;
-        std::set<long long> committed;
+        std::map<long long, Block> commit_by_tx;
         int cursor = tail_;
         long long previous_lsn = checkpoint_lsn_;
         while (cursor != head_) {
@@ -374,16 +380,45 @@ public:
             if (type == RecordType::Data) {
                 data_by_tx[block[4]].push_back(block);
             } else if (type == RecordType::Commit) {
-                committed.insert(block[4]);
+                // A transaction has one commit record.  If a damaged/stale
+                // ring image contains a duplicate, keep the first one at the
+                // durable boundary and do not let a later record manufacture
+                // a second commit decision.
+                commit_by_tx.emplace(block[4], block);
             }
             cursor = (cursor + 1) % kRingBlocks;
         }
 
         std::vector<Block> replay;
-        for (long long txid : committed) {
+        for (const auto& [txid, commit] : commit_by_tx) {
             const auto found = data_by_tx.find(txid);
-            if (found == data_by_tx.end()) continue;
-            replay.insert(replay.end(), found->second.begin(), found->second.end());
+            if (found == data_by_tx.end()) {
+                // Empty transactions are legal, but a commit that claims a
+                // non-zero predecessor is necessarily missing data records.
+                if (commit[5] != 0) continue;
+                continue;
+            }
+            std::vector<Block> data = found->second;
+            std::sort(data.begin(), data.end(),
+                      [](const Block& a, const Block& b) {
+                          return a[3] < b[3];
+                      });
+
+            // The per-transaction previous-LSN chain is the atomicity proof:
+            // a durable commit is replayable only when every data record is
+            // present and linked, and the commit points at the final record.
+            // This rejects a realistic power-loss image where an old valid
+            // record occupies a torn data slot while a later commit survived.
+            long long expected_previous = 0;
+            for (const Block& block : data) {
+                if (block[5] != expected_previous) {
+                    data.clear();
+                    break;
+                }
+                expected_previous = block[3];
+            }
+            if (data.empty() || commit[5] != expected_previous) continue;
+            replay.insert(replay.end(), data.begin(), data.end());
         }
         std::sort(replay.begin(), replay.end(),
                   [](const Block& a, const Block& b) { return a[3] < b[3]; });
@@ -558,10 +593,12 @@ private:
     static bool validSuperblock(const Block& block) {
         return block[0] == kMagic &&
                block[1] == kVersion &&
+               block[2] > 0 &&
                block[7] == kRingBlocks &&
                block[8] == kBlockWords &&
                block[3] >= 0 && block[3] < kRingBlocks &&
                block[4] >= 0 && block[4] < kRingBlocks &&
+               block[5] >= block[6] &&
                block[11] == checksum(block);
     }
 };

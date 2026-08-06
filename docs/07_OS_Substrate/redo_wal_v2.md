@@ -17,7 +17,10 @@ generate WAL traffic.
 
 The header fields are magic, version, generation, LSN, transaction ID,
 previous LSN, record type, target kind, target ID, target offset, word count,
-and checksum. Recovery stops at the first invalid or torn record.
+and checksum. Recovery stops at the first invalid or torn record. A commit is
+replayed only when its data records form a complete previous-LSN chain ending
+at the commit; a stale valid block cannot supply a suffix of another
+transaction.
 
 ## Commit and flush ordering
 
@@ -44,6 +47,30 @@ Thus ordinary writes issue no stable flush, while a targeted write plus
 `fsync` needs at most one WAL barrier and one data barrier. The kernel's
 `vfs_fsync` writes only the fd inode's inode row, directory entry/name, extent
 rows, and extent payloads; unrelated dirty inode frames remain dirty.
+
+Appending into a file that needs a new extent logs the extent row and allocator
+cursors in the same transaction as payload and inode-size after-images. The
+allocator is not advanced in the cache until the logical commit, so a durable
+redo commit can recreate the extent before a home-page checkpoint.
+
+Create/mkdir now use one WAL transaction for the inode row, inode cursor,
+directory row/name, and directory cursor; create timestamps are part of that
+after-image. Truncate and unlink likewise log inode size/link state, directory
+tombstones, extent tombstones, and mtime before committing. `vfs_sync_to_disk`
+also includes the greatest outstanding inode dependency when enforcing the
+no-steal durable-LSN rule. `quota_set_limit` and `namespace_create` log all
+fields in their control-plane rows rather than mutating unlogged companion
+fields after commit.
+
+The following paths remain intentionally outside this completed atomic slice:
+the standalone `vfs_alloc_extent_at`/`vfs_ensure_extent` helpers still mutate
+their rows directly (the write path has its own transactional allocator path),
+and truncate/unlink do not reclaim allocator cursors or compact directory
+slots. Write does not yet update inode mtime, there is no rename operation, and
+quota usage/physical-page allocation are volatile reconciliation state. The
+namespace/quota tables are restored from WAL rather than included in the VFS
+home-page image; a future format revision should give them explicit home-page
+coverage.
 
 Checkpointing first makes committed WAL durable, then writes home pages and
 issues their data barrier, appends and durably flushes a checkpoint record, and
