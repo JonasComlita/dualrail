@@ -577,6 +577,281 @@ void testVmWidths() {
     }
 
     {
+        // Raw T40 NEG/ABS lowerings operate on the canonical positional
+        // mantissa, so fractional values and exponent boundaries must remain
+        // bit-for-bit identical to the authoritative native_ops result.
+        const auto unary_program = assembleOrThrow(R"(
+            neg r2, r1
+            abs r3, r1
+            halt
+        )");
+        const std::uint64_t pow3_mantissa =
+            native_ops::detail::pow3(33).toUint64();
+        const std::uint64_t pow3_t40 =
+            native_ops::detail::pow3(40).toUint64();
+        const auto rawT40 = [&](std::uint64_t mantissa, int exponent) {
+            const std::uint64_t exponent_code =
+                static_cast<std::uint64_t>(exponent + 1093);
+            return TernaryValue::fromTriple(Triple{
+                exponent_code * pow3_mantissa + mantissa});
+        };
+
+        std::vector<std::pair<std::string, TernaryValue>> unary_cases = {
+            {"canonical +0", TernaryValue::zero(TernaryMode::T40)},
+            {"canonical -0", TernaryValue::fromTriple(
+                sandbox::ops::fromDouble(-0.0))},
+            {"mantissa low", rawT40(1, -1093)},
+            {"mantissa midpoint-1", rawT40(
+                (pow3_mantissa - 1) / 2 - 1, 0)},
+            {"mantissa midpoint", rawT40(
+                (pow3_mantissa - 1) / 2, 0)},
+            {"mantissa midpoint+1", rawT40(
+                (pow3_mantissa - 1) / 2 + 1, 0)},
+            {"mantissa high", rawT40(pow3_mantissa - 1, 1093)},
+            {"minimum exponent", rawT40(
+                (pow3_mantissa - 1) / 2 + 1, -1093)},
+            {"maximum exponent", rawT40(
+                (pow3_mantissa - 1) / 2 - 1, 1093)},
+            {"maximum valid raw", TernaryValue::fromTriple(
+                Triple{pow3_t40 - 1})},
+            {"overflow sentinel", TernaryValue::fromTriple(Triple::Overflow)},
+            {"underflow sentinel", TernaryValue::fromTriple(Triple::Underflow)},
+            {"invalid raw", TernaryValue::fromTriple(Triple{pow3_t40})},
+        };
+        std::uint64_t random = 0xA11CE40D5EEDu;
+        for (int sample = 0; sample < 48; ++sample) {
+            random = random * 6364136223846793005ULL + 1442695040888963407ULL;
+            const std::uint64_t mantissa = random % pow3_mantissa;
+            random = random * 6364136223846793005ULL + 1442695040888963407ULL;
+            const int exponent = static_cast<int>(random % 2187ULL) - 1093;
+            unary_cases.push_back({
+                "random raw " + std::to_string(sample),
+                rawT40(mantissa, exponent)});
+        }
+
+        const auto compareUnary = [&](const std::string& label,
+                                      const TernaryValue& input,
+                                      bool hostile_mode) {
+            VMState interpreter(32, 32);
+            VMState native(32, 32);
+            expect(loadAndReset(interpreter, unary_program) &&
+                       loadAndReset(native, unary_program),
+                   label + " unary programs load");
+            // Seed the physical word directly for hostile-mode coverage;
+            // ordinary writes canonicalize their physical mode to T40.
+            if (hostile_mode) {
+                const TernaryValue tagged = TernaryValue::fromT5(
+                    native_ops::fromIntT5(3));
+                interpreter.regfile.reg[R1] = tagged;
+                native.regfile.reg[R1] = tagged;
+            } else {
+                interpreter.regfile.reg[R1] = input;
+                native.regfile.reg[R1] = input;
+            }
+            interpreter.regfile.view_mode[R1] = TernaryMode::T40;
+            native.regfile.view_mode[R1] = TernaryMode::T40;
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+
+            const auto interpreter_result = sandbox::vm::run(interpreter, 16);
+            const auto native_result = sandbox::vm::run(native, 16);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps,
+                   label + " unary status and accounting parity");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count,
+                   label + " unary PC/cycle parity");
+            for (const std::uint8_t reg : {R1, R2, R3}) {
+                expect(native.regfile.reg[reg] == interpreter.regfile.reg[reg] &&
+                           native.regfile.view_mode[reg] ==
+                               interpreter.regfile.view_mode[reg],
+                       label + " unary raw register parity");
+            }
+
+            if (nativeX64HostAvailable()) {
+                bool saw_neg_direct = false;
+                bool saw_abs_direct = false;
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                        const bool direct = nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                        saw_neg_direct = saw_neg_direct ||
+                            (instruction.op == VMMicroOpcode::Neg && direct);
+                        saw_abs_direct = saw_abs_direct ||
+                            (instruction.op == VMMicroOpcode::Abs && direct);
+                    }
+                }
+                expect(saw_neg_direct && saw_abs_direct,
+                       label + " cache classifies NEG/ABS as direct");
+                const bool valid_raw =
+                    !hostile_mode && input.mode == TernaryMode::T40 &&
+                    input.bits.hi == 0 && input.bits.lo < pow3_t40;
+                if (valid_raw) {
+                    expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                           label + " valid raw NEG/ABS stays direct");
+                    expect(native.native_x64_jit_stats.direct_instructions >= 2,
+                           label + " valid raw NEG/ABS counts direct commits");
+                } else {
+                    expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                           label + " invalid/tagged/special raw side-exits");
+                }
+            }
+        };
+
+        for (const auto& test_case : unary_cases)
+            compareUnary(test_case.first, test_case.second, false);
+        compareUnary("hostile physical T5 tag", TernaryValue::zero(), true);
+    }
+
+    {
+        // MUL directly lowers the exact integral subset and guards signed
+        // host overflow, fractional operands, specials, and invalid words.
+        const auto mul_program = assembleOrThrow(R"(
+            mul r3, r1, r2
+            halt
+        )");
+        const auto compareMul = [&](const std::string& label,
+                                    const TernaryValue& lhs,
+                                    const TernaryValue& rhs,
+                                    bool expect_direct) {
+            VMState interpreter(32, 32);
+            VMState native(32, 32);
+            expect(loadAndReset(interpreter, mul_program) &&
+                       loadAndReset(native, mul_program),
+                   label + " mul programs load");
+            interpreter.regfile.write(R1, lhs);
+            interpreter.regfile.write(R2, rhs);
+            native.regfile.write(R1, lhs);
+            native.regfile.write(R2, rhs);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result = sandbox::vm::run(interpreter, 16);
+            const auto native_result = sandbox::vm::run(native, 16);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps,
+                   label + " mul status and accounting parity");
+            expect(native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count &&
+                       native.regfile.reg[R3] == interpreter.regfile.reg[R3] &&
+                       native.regfile.view_mode[R3] ==
+                           interpreter.regfile.view_mode[R3],
+                   label + " mul raw result parity");
+            if (nativeX64HostAvailable()) {
+                bool saw_mul_direct = false;
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                        saw_mul_direct = saw_mul_direct ||
+                            (instruction.op == VMMicroOpcode::Mul &&
+                             nativeX64InstructionIsDirect(
+                                 instruction, block->lowered.size()));
+                    }
+                }
+                expect(saw_mul_direct,
+                       label + " cache classifies MUL as direct-capable");
+                if (expect_direct) {
+                    expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                           label + " exact integral MUL stays direct");
+                    expect(native.native_x64_jit_stats.direct_instructions > 0,
+                           label + " exact integral MUL counts direct commit");
+                } else {
+                    expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                           label + " guarded MUL side-exits to portable path");
+                }
+            }
+        };
+
+        const long long max_long = std::numeric_limits<long long>::max();
+        const long long min_long = std::numeric_limits<long long>::min();
+        compareMul("MUL zero", sandbox::vm::ops::fromLong(0),
+                   sandbox::vm::ops::fromLong(-17), true);
+        compareMul("MUL signed small", sandbox::vm::ops::fromLong(-27),
+                   sandbox::vm::ops::fromLong(14), true);
+        compareMul("MUL int64 max by one", TernaryValue::fromTriple(
+                       native_ops::fromIntT40(max_long)),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(1)), true);
+        compareMul("MUL int64 min by one", TernaryValue::fromTriple(
+                       native_ops::fromIntT40(min_long)),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(1)), true);
+        compareMul("MUL signed overflow", TernaryValue::fromTriple(
+                       native_ops::fromIntT40(max_long)),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(2)), false);
+        compareMul("MUL min times negative one", TernaryValue::fromTriple(
+                       native_ops::fromIntT40(min_long)),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(-1)), true);
+        compareMul("MUL min times negative two", TernaryValue::fromTriple(
+                       native_ops::fromIntT40(min_long)),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(-2)), false);
+        compareMul("MUL fractional fallback", TernaryValue::fromTriple(
+                       native_ops::divide(native_ops::fromIntT40(1),
+                                          native_ops::fromIntT40(2))),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(7)), false);
+        compareMul("MUL special fallback", TernaryValue::fromTriple(
+                       Triple::Overflow),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(1)), false);
+        compareMul("MUL invalid fallback", TernaryValue::invalid(
+                       TernaryMode::T40),
+                   TernaryValue::fromTriple(native_ops::fromIntT40(1)), false);
+    }
+
+    {
+        // A direct T40 write must side-exit before invalidating a live T50/L50
+        // pair, matching TernaryRegisterFile::write for every direct scalar
+        // arithmetic opcode (including the newly lowered NEG/ABS/MUL).
+        const std::vector<std::string> wide_ops = {
+            "add r1, r3, r4", "sub r1, r3, r4", "mul r1, r3, r4",
+            "neg r1, r3", "abs r1, r3", "tcmp r1, r3, r4",
+        };
+        for (const std::string& operation : wide_ops) {
+            VMState interpreter(32, 32);
+            VMState native(32, 32);
+            const auto program = assembleOrThrow(operation + "\nhalt\n");
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   operation + " wide-pair program loads");
+            for (VMState* vm : {&interpreter, &native}) {
+                vm->regfile.write(R1, TernaryValue::fromLongTriple(
+                    native_ops::fromInt(7)));
+                vm->regfile.write(R3, TernaryValue::fromTriple(
+                    native_ops::fromIntT40(-6)));
+                vm->regfile.write(R4, TernaryValue::fromTriple(
+                    native_ops::fromIntT40(2)));
+            }
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result = sandbox::vm::run(interpreter, 8);
+            const auto native_result = sandbox::vm::run(native, 8);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.steps == interpreter_result.steps &&
+                       native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count,
+                   operation + " wide-pair status/PC parity");
+            for (const std::uint8_t reg : {R1, R2, R3, R4}) {
+                expect(native.regfile.reg[reg] == interpreter.regfile.reg[reg] &&
+                           native.regfile.view_mode[reg] ==
+                               interpreter.regfile.view_mode[reg],
+                       operation + " wide-pair register parity");
+            }
+            if (nativeX64HostAvailable()) {
+                expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                       operation + " wide-pair side-exits before mutation");
+            }
+        }
+    }
+
+    {
         // Native blocks are tied to IMEM generation just like decoded traces:
         // an instruction write must retire the old RX allocation before the
         // next native dispatch can compile a replacement.

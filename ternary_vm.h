@@ -4318,7 +4318,7 @@ struct VMNativeX64CodeBlock {
     }
 };
 
-// Keep the static lowering inventory honest.  The scalar T40 Add/Sub/TCmp
+// Keep the static lowering inventory honest.  The scalar T40 arithmetic
 // subset, guarded dense identity-memory LOAD/STORE subset, and in-trace
 // control flow are emitted as host instructions; remaining arithmetic and
 // MMU/sparse/tagged memory cases stay helper-backed so their guards and side
@@ -4348,8 +4348,13 @@ struct VMNativeX64CodeBlock {
                    instruction.source != nullptr &&
                    instruction.source2 != nullptr;
         case VMMicroOpcode::Mul:
+            return instruction.mode == TernaryMode::T40 &&
+                   instruction.source != nullptr &&
+                   instruction.source2 != nullptr;
         case VMMicroOpcode::Neg:
         case VMMicroOpcode::Abs:
+            return instruction.mode == TernaryMode::T40 &&
+                   instruction.source != nullptr;
         case VMMicroOpcode::Call:
         case VMMicroOpcode::Ret:
         case VMMicroOpcode::CallR:
@@ -4719,6 +4724,90 @@ struct VMNativeX64Emitter {
         movImm64(10, kPow3T40);
         cmpRegReg(0, 10);
         guard_jumps.push_back(jccRel32(0x83)); // jae
+    }
+    void emitLoadRawT40Unary(
+        const TernaryValue* source,
+        bool absolute,
+        std::vector<std::size_t>& guard_jumps) {
+        if (source == nullptr) {
+            guard_jumps.push_back(jmpRel32());
+            return;
+        }
+
+        const std::uint64_t kPow3Mantissa =
+            native_ops::detail::pow3(33).toUint64();
+        const std::uint64_t kPow3T40 =
+            native_ops::detail::pow3(40).toUint64();
+        const std::uint64_t kMantissaMidpoint =
+            (kPow3Mantissa - 1) / 2;
+
+        // T40's lower 33 positional trits are the signed mantissa and the
+        // upper seven trits are the exponent.  Negating a valid value flips
+        // each balanced mantissa trit, which is the positional complement
+        // `3^33 - 1 - mantissa`; the exponent is intentionally untouched.
+        // This operates on the raw canonical word, so fractional values are
+        // exact instead of being rounded through a host integer conversion.
+        movImm64(10, reinterpret_cast<std::uintptr_t>(source));
+        movzxRegMemByte(
+            11, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, mode)));
+        movImm64(9, static_cast<std::uint64_t>(TernaryMode::T40));
+        cmpRegReg(11, 9);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+        movRegMemDisp(
+            0, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, bits) + offsetof(UInt128, lo)));
+        movRegMemDisp(
+            11, 10, static_cast<std::uint32_t>(
+                offsetof(TernaryValue, bits) + offsetof(UInt128, hi)));
+        testRegReg(11, 11);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+        movImm64(10, kPow3T40);
+        cmpRegReg(0, 10);
+        // This rejects invalid payloads and the overflow/underflow sentinels
+        // before they can be mistaken for positional T40 data.
+        guard_jumps.push_back(jccRel32(0x83)); // jae
+
+        // Keep the original raw word for ABS's non-negative path.
+        movRegReg(8, 0);
+        testRegReg(0, 0);
+        const std::size_t zero_jump = jccRel32(0x84); // je
+
+        movImm64(10, kPow3Mantissa);
+        clearRdx();
+        divReg(10); // RAX=exponent code, RDX=raw mantissa
+
+        auto emitNegatedParts = [&]() {
+            movImm64(10, kPow3Mantissa - 1);
+            subRegReg(10, 2);
+            movRegReg(9, 0); // preserve exponent code
+            movImm64(11, kPow3Mantissa);
+            imulRegReg(9, 11);
+            addRegReg(9, 10);
+            movRegReg(0, 9);
+        };
+
+        if (absolute) {
+            movImm64(10, kMantissaMidpoint);
+            cmpRegReg(2, 10);
+            const std::size_t nonnegative_jump = jccRel32(0x83); // jae
+            emitNegatedParts();
+            const std::size_t negative_done_jump = jmpRel32();
+            const std::size_t nonnegative_label = code.size();
+            movRegReg(0, 8);
+            const std::size_t nonnegative_done = code.size();
+            patchRelative(nonnegative_jump, nonnegative_label);
+            patchRelative(negative_done_jump, nonnegative_done);
+        } else {
+            emitNegatedParts();
+        }
+
+        const std::size_t skip_zero_jump = jmpRel32();
+        const std::size_t zero_label = code.size();
+        movImm64(0, 0);
+        const std::size_t end = code.size();
+        patchRelative(zero_jump, zero_label);
+        patchRelative(skip_zero_jump, end);
     }
     void emitNativeMemoryStateGuards(
         const VMNativeX64Instruction& instruction,
@@ -5175,12 +5264,16 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
         }
         if ((instruction.op == VMMicroOpcode::Add ||
              instruction.op == VMMicroOpcode::Sub ||
+             instruction.op == VMMicroOpcode::Mul ||
+             instruction.op == VMMicroOpcode::Neg ||
+             instruction.op == VMMicroOpcode::Abs ||
              instruction.op == VMMicroOpcode::TCmp) &&
             instruction.word.rs1 < REG_COUNT) {
             instruction.source = &vm.regfile.reg[instruction.word.rs1];
         }
         if ((instruction.op == VMMicroOpcode::Add ||
              instruction.op == VMMicroOpcode::Sub ||
+             instruction.op == VMMicroOpcode::Mul ||
              instruction.op == VMMicroOpcode::TCmp) &&
             instruction.word.rs2 < REG_COUNT) {
             instruction.source2 = &vm.regfile.reg[instruction.word.rs2];
@@ -5299,6 +5392,10 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                 }
                 emitter.budgetGuard();
                 std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
                 emitter.emitLoadT40Integer(
                     instruction.source, guard_jumps);
                 emitter.movRegReg(8, 0);
@@ -5345,6 +5442,10 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                 }
                 emitter.budgetGuard();
                 std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
                 emitter.emitLoadT40Integer(
                     instruction.source, guard_jumps);
                 emitter.movRegReg(8, 0);
@@ -5371,13 +5472,77 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     emitter.patchRelative(jump, guard_offset);
                 break;
             }
-            case VMMicroOpcode::Mul:
-            case VMMicroOpcode::Neg:
-            case VMMicroOpcode::Abs:
-                emitter.callHelper(
-                    reinterpret_cast<const void*>(&nativeX64DirectArithmetic),
-                    &instruction);
+            case VMMicroOpcode::Mul: {
+                if (!nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectArithmetic),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
+                emitter.emitLoadT40Integer(
+                    instruction.source, guard_jumps);
+                emitter.movRegReg(8, 0);
+                emitter.emitLoadT40Integer(
+                    instruction.source2, guard_jumps);
+                // The exact integral subset is represented in signed int64.
+                // IMUL's overflow flag is the guard that sends products which
+                // exceed that host range to the portable T40 implementation.
+                emitter.imulRegReg(8, 0);
+                guard_jumps.push_back(emitter.jccRel32(0x80)); // jo
+                emitter.movRegReg(0, 8);
+                emitter.emitEncodeT40Integer(guard_jumps);
+                emitter.emitStoreT40Result(
+                    instruction.destination, instruction.destination_mode);
+                emitter.commitSimple(instruction.next_pc);
+                const std::size_t skip_guard = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                emitter.patchRelative(skip_guard, emitter.code.size());
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
                 break;
+            }
+            case VMMicroOpcode::Neg:
+            case VMMicroOpcode::Abs: {
+                if (!nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectArithmetic),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
+                emitter.emitLoadRawT40Unary(
+                    instruction.source,
+                    instruction.op == VMMicroOpcode::Abs,
+                    guard_jumps);
+                emitter.emitStoreT40Result(
+                    instruction.destination, instruction.destination_mode);
+                emitter.commitSimple(instruction.next_pc);
+                const std::size_t skip_guard = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                emitter.patchRelative(skip_guard, emitter.code.size());
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
+                break;
+            }
             case VMMicroOpcode::Load:
             case VMMicroOpcode::Store: {
                 if (!nativeX64InstructionIsDirect(
