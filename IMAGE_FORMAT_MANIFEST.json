@@ -88,7 +88,9 @@
         "block 7287: redo WAL superblock A",
         "block 7288: redo WAL superblock B",
         "blocks 7289..8017: 729-block redo WAL ring",
-        "blocks 8018 and above: bundled executable text"
+        "blocks 8018..8027: namespace policy home pages",
+        "blocks 8028..8042: compact quota ID/limit/version home pages; usage is volatile",
+        "blocks 8043 and above: bundled executable text"
       ],
       "redo_wal_v2": [
         "record_words:27",

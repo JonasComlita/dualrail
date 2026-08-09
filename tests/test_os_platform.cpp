@@ -547,6 +547,11 @@ void testNativeKernelVfsMountsDiskBackedState() {
             if kernel_syscall_dispatch(1, 47, fd, 0, 0, 0) - 1 != 0 { return -4; }
             if kload(SYS_PAYLOAD_ADDR) - 1 != 0 { return -5; }
             vfs_close(1, fd);
+            if namespace_create(7, 0) - 7 != 0 { return -20; }
+            if quota_set_limit(9, 12345) - 12345 != 0 { return -21; }
+            if quota_charge(9, 27) - 27 != 0 { return -22; }
+            if log_checkpoint() < 0 { return -23; }
+            if wal_used_blocks() != 0 { return -24; }
             return 1;
         }
     )";
@@ -573,6 +578,24 @@ void testNativeKernelVfsMountsDiskBackedState() {
     }
 
     const std::vector<long long> diskImage = writerVm.blockImage();
+    const auto diskWord = [&](int block, int word) {
+        return diskImage[static_cast<std::size_t>(block) *
+                             sandbox::vm::STORAGE_BLOCK_WORDS +
+                         static_cast<std::size_t>(word)];
+    };
+    expect(diskWord(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 1) ==
+               sandbox::os::NATIVE_VFS_VERSION,
+           "native VFS checkpoint writes layout version 2");
+    const int namespaceWord = 7 * sandbox::os::NATIVE_VFS_NAMESPACE_WORDS;
+    expect(diskWord(sandbox::os::NATIVE_VFS_DISK_NAMESPACE_BLOCK +
+                            namespaceWord / sandbox::vm::STORAGE_BLOCK_WORDS,
+                        namespaceWord % sandbox::vm::STORAGE_BLOCK_WORDS) == 7,
+           "namespace policy has an explicit checkpoint home page");
+    const int quotaWord = 9 * sandbox::os::NATIVE_VFS_QUOTA_POLICY_WORDS;
+    expect(diskWord(sandbox::os::NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK +
+                            quotaWord / sandbox::vm::STORAGE_BLOCK_WORDS,
+                        (quotaWord + 1) % sandbox::vm::STORAGE_BLOCK_WORDS) == 12345,
+           "quota limit has an explicit checkpoint home page");
     const std::string reader = R"(
         fn seed_persist_path(addr: t40) -> t40 {
             kstore(addr + 0, 47);
@@ -775,6 +798,16 @@ void testNativeKernelVfsMountsDiskBackedState() {
 
         fn main() -> t40 {
             if kernel_init() - 1 != 0 { return -1; }
+            var namespace_row: t40 = namespace_addr(7);
+            if kload(namespace_row + NS_ID) - 7 != 0 { return -20; }
+            if kload(namespace_row + NS_ROOT_INODE) != 0 { return -21; }
+            if kload(namespace_row + NS_VERSION) - 1 != 0 { return -22; }
+            if kload(namespace_row + NS_ACTIVE) - 1 != 0 { return -23; }
+            var quota_row: t40 = quota_addr(9);
+            if kload(quota_row + QUOTA_ID) - 9 != 0 { return -24; }
+            if kload(quota_row + QUOTA_LIMIT) - 12345 != 0 { return -25; }
+            if kload(quota_row + QUOTA_USED) != 0 { return -26; }
+            if kload(quota_row + QUOTA_VERSION) - 3 != 0 { return -27; }
             var path: t40 = USER_MEM_BASE;
             var append_path: t40 = USER_MEM_BASE + 32;
             var src: t40 = USER_MEM_BASE + 64;
@@ -802,6 +835,9 @@ void testNativeKernelVfsMountsDiskBackedState() {
             log_write(tx, payload, kload(payload), 77);
             if log_commit(tx) <= 0 { return -6; }
             if vfs_write(1, append_fd, src, 4) - 4 != 0 { return -7; }
+            if namespace_create(8, 0) - 8 != 0 { return -14; }
+            if quota_set_limit(10, 54321) - 54321 != 0 { return -15; }
+            if quota_charge(10, 13) - 13 != 0 { return -16; }
             if wal_sync_to_disk() - 1 != 0 { return -8; }
             return 1;
         }
@@ -851,6 +887,14 @@ void testNativeKernelVfsMountsDiskBackedState() {
 
         fn main() -> t40 {
             if kernel_init() - 1 != 0 { return -1; }
+            var namespace_row: t40 = namespace_addr(8);
+            if kload(namespace_row + NS_ID) - 8 != 0 { return -14; }
+            if kload(namespace_row + NS_ACTIVE) - 1 != 0 { return -15; }
+            var quota_row: t40 = quota_addr(10);
+            if kload(quota_row + QUOTA_ID) - 10 != 0 { return -16; }
+            if kload(quota_row + QUOTA_LIMIT) - 54321 != 0 { return -17; }
+            if kload(quota_row + QUOTA_USED) != 0 { return -18; }
+            if kload(quota_row + QUOTA_VERSION) - 2 != 0 { return -19; }
             var path: t40 = USER_MEM_BASE;
             var append_path: t40 = USER_MEM_BASE + 32;
             var dst: t40 = USER_MEM_BASE + 64;
@@ -1201,6 +1245,22 @@ void testNativeVfsImageBuilderBootsKernelRoot() {
     std::vector<long long> image = builder.image();
     expect(!image.empty() && image[0] == NATIVE_VFS_MAGIC,
            "native VFS image uses the kernel mount format");
+    expect(image.size() >= static_cast<std::size_t>(NATIVE_VFS_REQUIRED_BLOCKS) *
+                               sandbox::vm::STORAGE_BLOCK_WORDS,
+           "native VFS image reserves policy homes before executable text");
+    expect(image[1] == NATIVE_VFS_VERSION,
+           "native VFS image builder emits layout version 2");
+    const std::size_t namespaceHome =
+        static_cast<std::size_t>(NATIVE_VFS_DISK_NAMESPACE_BLOCK) *
+        sandbox::vm::STORAGE_BLOCK_WORDS;
+    expect(image[namespaceHome + 2] == 1 && image[namespaceHome + 3] == 1,
+           "native VFS image seeds the root namespace policy");
+    const std::size_t quotaHome =
+        static_cast<std::size_t>(NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK) *
+        sandbox::vm::STORAGE_BLOCK_WORDS;
+    expect(image[quotaHome + 1] == NATIVE_VFS_QUOTA_DEFAULT_LIMIT &&
+               image[quotaHome + 2] == 1,
+           "native VFS image seeds default quota policy without usage");
 
     const std::string kernel = readTextFile("kernel.trit");
     expect(!kernel.empty(), "kernel.trit is available to native image boot test");

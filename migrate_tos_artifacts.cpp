@@ -570,10 +570,12 @@ bool parseNativeSnapshot(
     const auto wordAt = [&](int block, int word) {
         return dense[static_cast<std::size_t>(block * kBlockWords + word)];
     };
+    const long long native_vfs_version =
+        wordAt(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 1);
     if (wordAt(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 0) !=
             sandbox::os::NATIVE_VFS_MAGIC ||
-        wordAt(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 1) !=
-            sandbox::os::NATIVE_VFS_VERSION ||
+        (native_vfs_version != sandbox::os::NATIVE_VFS_LEGACY_VERSION &&
+         native_vfs_version != sandbox::os::NATIVE_VFS_VERSION) ||
         wordAt(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 2) != kBlockWords ||
         wordAt(sandbox::os::NATIVE_VFS_DISK_SUPER_BLOCK, 3) !=
             sandbox::os::NATIVE_VFS_MAX_INODES ||

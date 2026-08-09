@@ -7,11 +7,9 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add a dedicated syscall harness for randomized malformed pointers; the
   structural image validator harness does not exercise guest pointer faults.
-- Give durable namespace/quota policy rows explicit home-page coverage before
-  checkpoints may reclaim their WAL history. Extent reservation, writes,
-  inode-specific `fsync`, torn-record recovery, and the existing crash matrix
-  are covered; allocator reclamation/compaction and rename remain separate
-  VFS feature slices.
+- Add VFS allocator reclamation/compaction and rename. Extent reservation,
+  writes, inode-specific `fsync`, torn-record recovery, namespace/quota policy
+  home pages, and the existing crash matrix are covered.
 - Extend the x86-64 backend's direct lowering beyond the current scalar subset
   and hot internal branch loops. NOP/MOV/COPY, integral T40
   Add/Sub/TCmp/Mul, raw-valid T40 Neg/Abs, guarded dense identity Load/Store,

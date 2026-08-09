@@ -63,14 +63,17 @@ tombstones, extent tombstones, and mtime before committing. `vfs_sync_to_disk`
 also includes the greatest outstanding inode dependency when enforcing the
 no-steal durable-LSN rule. `quota_set_limit` and `namespace_create` log all
 fields in their control-plane rows rather than mutating unlogged companion
-fields after commit.
+fields after commit. Native VFS layout version 2 gives namespace rows ten
+dedicated home-page blocks and quota policy fifteen compact home-page blocks.
+Quota ID, configured limit, and version survive checkpoints; instantaneous
+usage is reset and reconstructed after boot. The image builder seeds namespace
+zero and all default quota policies, and executable payload allocation begins
+after block 8042 so it cannot overlap the control-plane homes.
 
 The following paths remain intentionally outside this completed atomic slice:
 truncate/unlink do not reclaim allocator cursors or compact directory slots;
 there is no rename operation; and quota usage/physical-page allocation are
-volatile reconciliation state. The namespace/quota tables are restored from
-WAL rather than included in the VFS home-page image; a future format revision
-should give them explicit home-page coverage.
+volatile reconciliation state.
 
 Checkpointing first makes committed WAL durable, then writes home pages and
 issues their data barrier, appends and durably flushes a checkpoint record, and

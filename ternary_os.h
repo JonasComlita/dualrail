@@ -89,9 +89,10 @@ static constexpr int DEFAULT_INODE_COUNT = 32;
 static constexpr int DIRECT_BLOCKS = 6;
 
 static constexpr int NATIVE_VFS_MAGIC = 60606;
-static constexpr int NATIVE_VFS_VERSION = 1;
+static constexpr int NATIVE_VFS_VERSION = 2;
+static constexpr int NATIVE_VFS_LEGACY_VERSION = 1;
 static constexpr int NATIVE_KERNEL_MAGIC = 40404;
-static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 8018;
+static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 8043;
 static constexpr int NATIVE_VFS_MAX_INODES = 2048;
 static constexpr int NATIVE_VFS_MAX_DIRENTS = 4096;
 static constexpr int NATIVE_VFS_MAX_EXTENTS = 4096;
@@ -115,6 +116,26 @@ static constexpr int NATIVE_WAL_DISK_META_BLOCK = 7287;
 static constexpr int NATIVE_WAL_DISK_SUPER_B_BLOCK = 7288;
 static constexpr int NATIVE_WAL_DISK_RECORD_BLOCK = 7289;
 static constexpr int NATIVE_WAL_DISK_RECORD_BLOCKS = 729;
+static constexpr int NATIVE_VFS_DISK_NAMESPACE_BLOCK = 8018;
+static constexpr int NATIVE_VFS_DISK_NAMESPACE_BLOCKS = 10;
+static constexpr int NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK = 8028;
+static constexpr int NATIVE_VFS_DISK_QUOTA_POLICY_BLOCKS = 15;
+static constexpr int NATIVE_VFS_NAMESPACE_MAX = 64;
+static constexpr int NATIVE_VFS_NAMESPACE_WORDS = 4;
+static constexpr int NATIVE_VFS_QUOTA_MAX = 128;
+static constexpr int NATIVE_VFS_QUOTA_POLICY_WORDS = 3;
+static constexpr int NATIVE_VFS_QUOTA_DEFAULT_LIMIT = 1000000;
+static_assert(NATIVE_WAL_DISK_RECORD_BLOCK + NATIVE_WAL_DISK_RECORD_BLOCKS ==
+                  NATIVE_VFS_DISK_NAMESPACE_BLOCK,
+              "namespace home pages must begin immediately after the WAL");
+static_assert(NATIVE_VFS_DISK_NAMESPACE_BLOCK +
+                      NATIVE_VFS_DISK_NAMESPACE_BLOCKS ==
+                  NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK,
+              "quota policy homes must not overlap namespace homes");
+static_assert(NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK +
+                      NATIVE_VFS_DISK_QUOTA_POLICY_BLOCKS ==
+                  NATIVE_VFS_REQUIRED_BLOCKS,
+              "executable text must begin after policy home pages");
 static constexpr int NATIVE_VFS_INODE_WORDS = 8;
 static constexpr int NATIVE_VFS_DIRENT_WORDS = 6;
 static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
@@ -1842,8 +1863,27 @@ public:
         if (!wrote.ok()) return wrote;
         wrote = writeZeroBlocks(NATIVE_WAL_DISK_META_BLOCK, 2);
         if (!wrote.ok()) return wrote;
-        return writeZeroBlocks(NATIVE_WAL_DISK_RECORD_BLOCK,
-                               NATIVE_WAL_DISK_RECORD_BLOCKS);
+        wrote = writeZeroBlocks(NATIVE_WAL_DISK_RECORD_BLOCK,
+                                NATIVE_WAL_DISK_RECORD_BLOCKS);
+        if (!wrote.ok()) return wrote;
+        std::vector<long long> namespaces(
+            NATIVE_VFS_NAMESPACE_MAX * NATIVE_VFS_NAMESPACE_WORDS, 0);
+        namespaces[2] = 1;
+        namespaces[3] = 1;
+        wrote = writeRange(NATIVE_VFS_DISK_NAMESPACE_BLOCK,
+                           NATIVE_VFS_DISK_NAMESPACE_BLOCKS, namespaces);
+        if (!wrote.ok()) return wrote;
+        std::vector<long long> quota_policy(
+            NATIVE_VFS_QUOTA_MAX * NATIVE_VFS_QUOTA_POLICY_WORDS, 0);
+        for (int quota = 0; quota < NATIVE_VFS_QUOTA_MAX; ++quota) {
+            const std::size_t base = static_cast<std::size_t>(
+                quota * NATIVE_VFS_QUOTA_POLICY_WORDS);
+            quota_policy[base] = quota;
+            quota_policy[base + 1] = NATIVE_VFS_QUOTA_DEFAULT_LIMIT;
+            quota_policy[base + 2] = 1;
+        }
+        return writeRange(NATIVE_VFS_DISK_QUOTA_POLICY_BLOCK,
+                          NATIVE_VFS_DISK_QUOTA_POLICY_BLOCKS, quota_policy);
     }
 
 private:
@@ -2023,6 +2063,10 @@ private:
         block[9] = next_dirent_;
         block[10] = next_extent_;
         block[11] = NATIVE_VFS_DATA_BASE + next_data_offset_;
+        block[12] = NATIVE_VFS_NAMESPACE_MAX;
+        block[13] = NATIVE_VFS_QUOTA_MAX;
+        block[14] = NATIVE_VFS_QUOTA_POLICY_WORDS;
+        block[15] = NATIVE_VFS_REQUIRED_BLOCKS;
         return device_.writeBlock(NATIVE_VFS_DISK_SUPER_BLOCK, block);
     }
 

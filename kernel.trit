@@ -364,9 +364,9 @@ const FD_VERSION: t40 = 6;
 
 const VFS_DATA_BASE: t40 = 310000;
 const VFS_DISK_MAGIC: t40 = 60606;
-const VFS_DISK_VERSION: t40 = 1;
+const VFS_DISK_VERSION: t40 = 2;
 const VFS_DISK_SCRATCH: t40 = 3100;
-const VFS_DISK_REQUIRED_BLOCKS: t40 = 8018;
+const VFS_DISK_REQUIRED_BLOCKS: t40 = 8043;
 const VFS_DISK_SUPER_BLOCK: t40 = 0;
 const VFS_DISK_STATE_BLOCK: t40 = 1;
 const VFS_DISK_INODE_BLOCK: t40 = 2;
@@ -385,6 +385,11 @@ const WAL_DISK_SUPER_A_BLOCK: t40 = 7287;
 const WAL_DISK_SUPER_B_BLOCK: t40 = 7288;
 const WAL_DISK_RECORD_BLOCK: t40 = 7289;
 const WAL_DISK_RECORD_BLOCKS: t40 = 729;
+const VFS_DISK_NAMESPACE_BLOCK: t40 = 8018;
+const VFS_DISK_NAMESPACE_BLOCKS: t40 = 10;
+const VFS_DISK_QUOTA_POLICY_BLOCK: t40 = 8028;
+const VFS_DISK_QUOTA_POLICY_BLOCKS: t40 = 15;
+const VFS_DISK_QUOTA_POLICY_WORDS: t40 = 3;
 const USER_MEM_BASE: t40 = 10000;
 const USER_MEM_LIMIT: t40 = 16000;
 // 10,000..15,999 spans v2 base-page VPNs 13 through 21.
@@ -5318,6 +5323,14 @@ fn wal_addr_is_persistent(addr: t40) -> t40 {
     if wal_addr_in_range(addr, VFS_DIRENT_NAME_BASE, VFS_MAX_DIRENTS * VFS_MAX_NAME_WORDS) > 0 { return 1; }
     if wal_addr_in_range(addr, VFS_EXTENT_BASE, VFS_MAX_EXTENTS * VFS_EXTENT_WORDS) > 0 { return 1; }
     if wal_addr_in_range(addr, VFS_DATA_BASE, VFS_PAYLOAD_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, NAMESPACE_BASE, NAMESPACE_MAX * NAMESPACE_ROW_WORDS) > 0 { return 1; }
+    if wal_addr_in_range(addr, QUOTA_BASE, QUOTA_MAX * QUOTA_ROW_WORDS) > 0 {
+        var quota_field: t40 = addr - QUOTA_BASE;
+        while quota_field - QUOTA_ROW_WORDS >= 0 {
+            quota_field = quota_field - QUOTA_ROW_WORDS;
+        }
+        if quota_field - QUOTA_USED != 0 { return 1; }
+    }
     return 0;
 }
 
@@ -5405,6 +5418,76 @@ fn vfs_load_used_range_from_disk(dst_addr: t40, word_count: t40, first_block: t4
         return ERR_INVALID;
     }
     return vfs_load_range_from_disk(dst_addr, word_count, first_block, blocks);
+}
+
+fn vfs_sync_quota_policy_to_disk() -> t40 {
+    var quota_slot: t40 = 0;
+    var policy_field: t40 = 0;
+    var block: t40 = 0;
+    while VFS_DISK_QUOTA_POLICY_BLOCKS - block > 0 {
+        kclear(VFS_DISK_SCRATCH, STORAGE_BLOCK_WORDS);
+        var word: t40 = 0;
+        while STORAGE_BLOCK_WORDS - word > 0 {
+            if QUOTA_MAX - quota_slot > 0 {
+                var row: t40 = quota_addr(quota_slot);
+                var value: t40 = kload(row + QUOTA_ID);
+                if policy_field - 1 == 0 {
+                    value = kload(row + QUOTA_LIMIT);
+                } else if policy_field - 2 == 0 {
+                    value = kload(row + QUOTA_VERSION);
+                }
+                kstore(VFS_DISK_SCRATCH + word, value);
+                policy_field = policy_field + 1;
+                if policy_field - VFS_DISK_QUOTA_POLICY_WORDS == 0 {
+                    policy_field = 0;
+                    quota_slot = quota_slot + 1;
+                }
+            }
+            word = word + 1;
+        }
+        if disk_write_block(VFS_DISK_QUOTA_POLICY_BLOCK + block,
+                            VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        block = block + 1;
+    }
+    return quota_slot;
+}
+
+fn vfs_load_quota_policy_from_disk() -> t40 {
+    var quota_slot: t40 = 0;
+    var policy_field: t40 = 0;
+    var block: t40 = 0;
+    while VFS_DISK_QUOTA_POLICY_BLOCKS - block > 0 {
+        if disk_read_block(VFS_DISK_QUOTA_POLICY_BLOCK + block,
+                           VFS_DISK_SCRATCH) - 1 != 0 {
+            return ERR_INVALID;
+        }
+        var word: t40 = 0;
+        while STORAGE_BLOCK_WORDS - word > 0 {
+            if QUOTA_MAX - quota_slot > 0 {
+                var row: t40 = quota_addr(quota_slot);
+                var value: t40 = kload(VFS_DISK_SCRATCH + word);
+                if policy_field == 0 {
+                    if value - quota_slot != 0 { return ERR_INVALID; }
+                    kstore(row + QUOTA_ID, value);
+                    kstore(row + QUOTA_USED, 0);
+                } else if policy_field - 1 == 0 {
+                    kstore(row + QUOTA_LIMIT, value);
+                } else {
+                    kstore(row + QUOTA_VERSION, value);
+                }
+                policy_field = policy_field + 1;
+                if policy_field - VFS_DISK_QUOTA_POLICY_WORDS == 0 {
+                    policy_field = 0;
+                    quota_slot = quota_slot + 1;
+                }
+            }
+            word = word + 1;
+        }
+        block = block + 1;
+    }
+    return quota_slot;
 }
 
 fn wal_sync_to_disk() -> t40 {
@@ -5618,6 +5701,10 @@ fn vfs_sync_state_to_disk() -> t40 {
     kstore(VFS_DISK_SCRATCH + 9, kload(VFS_NEXT_DIRENT_ADDR));
     kstore(VFS_DISK_SCRATCH + 10, kload(VFS_NEXT_EXTENT_ADDR));
     kstore(VFS_DISK_SCRATCH + 11, kload(VFS_NEXT_DATA_ADDR));
+    kstore(VFS_DISK_SCRATCH + 12, NAMESPACE_MAX);
+    kstore(VFS_DISK_SCRATCH + 13, QUOTA_MAX);
+    kstore(VFS_DISK_SCRATCH + 14, VFS_DISK_QUOTA_POLICY_WORDS);
+    kstore(VFS_DISK_SCRATCH + 15, VFS_DISK_REQUIRED_BLOCKS);
     return disk_write_block(VFS_DISK_SUPER_BLOCK, VFS_DISK_SCRATCH);
 }
 
@@ -5644,6 +5731,18 @@ fn vfs_load_state_from_disk() -> t40 {
         return ERR_INVALID;
     }
     if kload(VFS_DISK_SCRATCH + 6) - VFS_PAYLOAD_WORDS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 12) - NAMESPACE_MAX != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 13) - QUOTA_MAX != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 14) - VFS_DISK_QUOTA_POLICY_WORDS != 0 {
+        return ERR_INVALID;
+    }
+    if kload(VFS_DISK_SCRATCH + 15) - VFS_DISK_REQUIRED_BLOCKS != 0 {
         return ERR_INVALID;
     }
     if kload(VFS_DISK_SCRATCH + 7) - KERNEL_MAGIC != 0 {
@@ -5784,6 +5883,12 @@ fn vfs_sync_to_disk() -> t40 {
     if vfs_sync_used_range_to_disk(VFS_DIRENT_NAME_BASE, name_words, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_sync_used_range_to_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_sync_used_range_to_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_sync_range_to_disk(NAMESPACE_BASE,
+            NAMESPACE_MAX * NAMESPACE_ROW_WORDS,
+            VFS_DISK_NAMESPACE_BLOCK, VFS_DISK_NAMESPACE_BLOCKS) < 0 {
+        return ERR_INVALID;
+    }
+    if vfs_sync_quota_policy_to_disk() - QUOTA_MAX != 0 { return ERR_INVALID; }
     if disk_flush() - 1 != 0 { return ERR_INVALID; }
     if buffer_flush_all() < 0 { return ERR_AGAIN; }
     return 1;
@@ -5804,6 +5909,12 @@ fn vfs_load_from_disk() -> t40 {
     if vfs_load_used_range_from_disk(VFS_DIRENT_NAME_BASE, name_words, VFS_DISK_DIRENT_NAME_BLOCK, VFS_DISK_DIRENT_NAME_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_load_used_range_from_disk(VFS_EXTENT_BASE, extent_words, VFS_DISK_EXTENT_BLOCK, VFS_DISK_EXTENT_BLOCKS) < 0 { return ERR_INVALID; }
     if vfs_load_used_range_from_disk(VFS_DATA_BASE, data_words, VFS_DISK_DATA_BLOCK, VFS_DISK_DATA_BLOCKS) < 0 { return ERR_INVALID; }
+    if vfs_load_range_from_disk(NAMESPACE_BASE,
+            NAMESPACE_MAX * NAMESPACE_ROW_WORDS,
+            VFS_DISK_NAMESPACE_BLOCK, VFS_DISK_NAMESPACE_BLOCKS) < 0 {
+        return ERR_INVALID;
+    }
+    if vfs_load_quota_policy_from_disk() - QUOTA_MAX != 0 { return ERR_INVALID; }
     kclear(VFS_FD_BASE, VFS_MAX_FDS * VFS_FD_WORDS);
     return 1;
 }

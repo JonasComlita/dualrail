@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "architecture-v2-candidate-45539f7",
+  "updated_by": "architecture-v2-home-pages",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -31,7 +31,7 @@
     {
       "id": "kernel-vfs-process",
       "status": "in_progress",
-      "summary": "Native kernel, VFS, persistent root image, process lifecycle, waits, and app handoff are implemented with production tests.",
+      "summary": "Native kernel, VFS, persistent root image, checkpoint-durable namespace/quota policy, process lifecycle, waits, and app handoff are implemented with production tests.",
       "evidence": [
         "test_os_platform",
         "test_first_silicon_bringup",
@@ -43,7 +43,6 @@
         "next_scheduler_acceptance"
       ],
       "open_items": [
-        "Add checkpoint-durable namespace/quota home-page coverage",
         "Add VFS allocator reclamation/compaction and rename",
         "Dedicated fuzz harness for syscalls with malformed pointers",
         "First-class guest /bin diagnostic commands"
