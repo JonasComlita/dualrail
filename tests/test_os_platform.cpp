@@ -1735,6 +1735,18 @@ void testSharedStatusAndCompilerWrappers() {
 int main(int argc, char** argv) {
     sandbox::LongTriple::initPowTable();
 
+#if defined(TRIT_OS_PLATFORM_RECLAMATION_ONLY)
+    testNativeVfsReclamationSlice();
+    testNativeVfsReclamationSurvivesReboot();
+    if (g_failures != 0) {
+        std::cout << "\n" << g_failures
+                  << " focused VFS reclamation test failure(s)\n";
+        return EXIT_FAILURE;
+    }
+    std::cout << "\nFocused VFS reclamation tests passed\n";
+    return EXIT_SUCCESS;
+#endif
+
     if (argc > 1 && std::string(argv[1]) == "reclamation") {
         testNativeVfsReclamationSlice();
         testNativeVfsReclamationSurvivesReboot();
@@ -1755,8 +1767,6 @@ int main(int argc, char** argv) {
     testNativeBioReadsRootFilesystemImage();
     testNativeKernelVfsMountsDiskBackedState();
     testNativeExtentReservationTransactions();
-    testNativeVfsReclamationSlice();
-    testNativeVfsReclamationSurvivesReboot();
     testNativeKernelInodeFsyncOrdering();
     testNativeWalErrorPropagation();
     testNativeVfsImageBuilderBootsKernelRoot();

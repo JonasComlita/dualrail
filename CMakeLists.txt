@@ -266,6 +266,12 @@ add_executable(test_os_platform tests/test_os_platform.cpp)
 target_compile_features(test_os_platform PUBLIC cxx_std_17)
 target_compile_definitions(test_os_platform PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_vfs_reclamation tests/test_os_platform.cpp)
+target_compile_features(test_vfs_reclamation PUBLIC cxx_std_17)
+target_compile_definitions(test_vfs_reclamation PRIVATE
+    TERNARY_IGNORE_LONG_DOUBLE_ASSERT
+    TRIT_OS_PLATFORM_RECLAMATION_ONLY)
+
 add_executable(test_scaling_profile_compact tests/test_scaling_profile.cpp)
 target_compile_features(test_scaling_profile_compact PUBLIC cxx_std_17)
 target_compile_definitions(test_scaling_profile_compact PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -332,6 +338,7 @@ add_custom_target(production_profile
         test_production_layers
         test_production_hardening
         test_os_platform
+        test_vfs_reclamation
         test_first_silicon_bringup
         test_migration_v2
         test_redo_wal_v2
@@ -662,6 +669,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_layers>
     COMMAND $<TARGET_FILE:test_production_hardening>
     COMMAND $<TARGET_FILE:test_os_platform>
+    COMMAND $<TARGET_FILE:test_vfs_reclamation>
     COMMAND $<TARGET_FILE:test_first_silicon_bringup>
     COMMAND $<TARGET_FILE:test_architecture_v2>
     COMMAND $<TARGET_FILE:test_migration_v2>
