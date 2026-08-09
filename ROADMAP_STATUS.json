@@ -44,7 +44,7 @@
         "next_scheduler_acceptance"
       ],
       "open_items": [
-        "Add VFS allocator reclamation/compaction and rename",
+        "Complete VFS allocator compaction and atomic rename",
         "Dedicated fuzz harness for syscalls with malformed pointers",
         "First-class guest /bin diagnostic commands"
       ]

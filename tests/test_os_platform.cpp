@@ -1055,6 +1055,312 @@ void testNativeExtentReservationTransactions() {
     }
 }
 
+void testNativeVfsReclamationSlice() {
+    std::cout << "[8] Native VFS reclamation and generation safety\n";
+    using namespace sandbox::compiler;
+
+    const std::string kernel = readTextFile("kernel.trit");
+    const std::string driver = R"(
+        fn seed_path(addr: t40, c0: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, c0);
+            kstore(addr + 2, 0);
+            return addr;
+        }
+
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var path_a: t40 = USER_MEM_BASE;
+            var path_b: t40 = USER_MEM_BASE + 16;
+            var path_c: t40 = USER_MEM_BASE + 32;
+            var path_d: t40 = USER_MEM_BASE + 48;
+            var path_e: t40 = USER_MEM_BASE + 64;
+            var src: t40 = USER_MEM_BASE + 96;
+            var dst: t40 = USER_MEM_BASE + 112;
+            seed_path(path_a, 97);
+            seed_path(path_b, 98);
+            seed_path(path_c, 99);
+            seed_path(path_d, 100);
+            seed_path(path_e, 101);
+            kstore(src + 0, 11);
+            kstore(src + 1, 22);
+            kstore(src + 2, 33);
+            kstore(src + 3, 44);
+
+            // Open-unlink keeps the old inode and data available through both
+            // descriptors, while the path is immediately absent.
+            var fd_a: t40 = vfs_open(1, path_a, 2);
+            if fd_a < 0 { return -2; }
+            if vfs_write(1, fd_a, src, 2) - 2 != 0 { return -3; }
+            var fd_read: t40 = vfs_open(1, path_a, 0);
+            if fd_read < 0 { return -4; }
+            var old_inode: t40 = kload(fd_addr(fd_a) + FD_INODE);
+            var old_generation: t40 = kload(inode_addr(old_inode) + INODE_VERSION);
+            if vfs_unlink(1, path_a) - 1 != 0 { return -5; }
+            if vfs_lookup(0, path_a) >= 0 { return -6; }
+            if vfs_read_kernel(1, fd_read, dst, 2) - 2 != 0 { return -7; }
+            if kload(dst + 0) - 11 != 0 { return -8; }
+            if kload(dst + 1) - 22 != 0 { return -9; }
+
+            // The still-open orphan is not reused; a new file gets a later
+            // inode until both old descriptors close.
+            var fd_b: t40 = vfs_open(1, path_b, 2);
+            if fd_b < 0 { return -10; }
+            var inode_b: t40 = kload(fd_addr(fd_b) + FD_INODE);
+            if inode_b - old_inode == 0 { return -11; }
+            if vfs_close(1, fd_a) - 1 != 0 { return -12; }
+            if vfs_close(1, fd_read) - 1 != 0 { return -13; }
+            if kload(inode_addr(old_inode) + INODE_KIND) - KIND_FREE != 0 {
+                return -14;
+            }
+
+            // A descriptor generation mismatch is rejected even if its row is
+            // otherwise populated, preventing inode ABA through stale state.
+            var stale_fd: t40 = fd_alloc(1);
+            if stale_fd < 0 { return -15; }
+            var stale_row: t40 = fd_addr(stale_fd);
+            kstore(stale_row + FD_PID, 1);
+            kstore(stale_row + FD_INODE, old_inode);
+            kstore(stale_row + FD_NAMESPACE, 0);
+            kstore(stale_row + FD_REFCOUNT, 1);
+            kstore(stale_row + FD_INODE_VERSION, old_generation);
+            if vfs_read_kernel(1, stale_fd, dst, 1) - ERR_BAD_FD != 0 {
+                return -16;
+            }
+            kclear(stale_row, VFS_FD_WORDS);
+
+            // Reusing the inode also reuses its cache key only after the old
+            // frames were invalidated; the new payload must be visible.
+            var fd_c: t40 = vfs_open(1, path_c, 2);
+            if fd_c < 0 { return -17; }
+            var inode_c: t40 = kload(fd_addr(fd_c) + FD_INODE);
+            if inode_c - old_inode != 0 { return -18; }
+            kstore(src + 0, 77);
+            kstore(src + 1, 88);
+            if vfs_write(1, fd_c, src, 2) - 2 != 0 { return -19; }
+            if vfs_close(1, fd_c) - 1 != 0 { return -20; }
+            var fd_c_read: t40 = vfs_open(1, path_c, 0);
+            if fd_c_read < 0 { return -21; }
+            if vfs_read_kernel(1, fd_c_read, dst, 2) - 2 != 0 { return -22; }
+            if kload(dst + 0) - 77 != 0 { return -23; }
+            if kload(dst + 1) - 88 != 0 { return -24; }
+            vfs_close(1, fd_c_read);
+
+            // Truncate tombstones the extent but keeps its DATA_ADDR/LENGTH
+            // span available for a later allocation.
+            var fd_d: t40 = vfs_open(1, path_d, 2);
+            if fd_d < 0 { return -25; }
+            if vfs_write(1, fd_d, src, 2) - 2 != 0 { return -26; }
+            var inode_d: t40 = kload(fd_addr(fd_d) + FD_INODE);
+            var ex_d: t40 = vfs_find_extent(inode_d);
+            if ex_d < 0 { return -27; }
+            var span_addr: t40 = kload(extent_addr(ex_d) + EXTENT_DATA_ADDR);
+            var span_length: t40 = kload(extent_addr(ex_d) + EXTENT_LENGTH);
+            if vfs_close(1, fd_d) - 1 != 0 { return -28; }
+            var trunc_fd: t40 = vfs_open(1, path_d, 3);
+            if trunc_fd < 0 { return -29; }
+            if kload(extent_addr(ex_d) + EXTENT_VERSION) != 0 {
+                return -30;
+            }
+            if kload(extent_addr(ex_d) + EXTENT_DATA_ADDR) - span_addr != 0 {
+                return -31;
+            }
+            if kload(extent_addr(ex_d) + EXTENT_LENGTH) - span_length != 0 {
+                return -32;
+            }
+            vfs_close(1, trunc_fd);
+
+            var fd_e: t40 = vfs_open(1, path_e, 2);
+            if fd_e < 0 { return -33; }
+            if vfs_write(1, fd_e, src, 2) - 2 != 0 { return -34; }
+            var inode_e: t40 = kload(fd_addr(fd_e) + FD_INODE);
+            var ex_e: t40 = vfs_find_extent(inode_e);
+            if ex_e - ex_d != 0 { return -35; }
+            vfs_close(1, fd_e);
+
+            // Force both monotonic cursors to exhaustion; the preserved hole
+            // remains allocatable and does not advance either cursor.
+            kstore(extent_addr(ex_e) + EXTENT_VERSION, 0);
+            var next_ex_before: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+            var next_data_before: t40 = kload(VFS_NEXT_DATA_ADDR);
+            kstore(VFS_NEXT_EXTENT_ADDR, VFS_MAX_EXTENTS);
+            kstore(VFS_NEXT_DATA_ADDR, VFS_DATA_BASE + VFS_PAYLOAD_WORDS);
+            var reused_ex: t40 = vfs_alloc_extent_at(0, 777, 0, 2);
+            if reused_ex - ex_e != 0 { return -36; }
+            if kload(VFS_NEXT_EXTENT_ADDR) - VFS_MAX_EXTENTS != 0 {
+                return -37;
+            }
+            if kload(VFS_NEXT_DATA_ADDR) - VFS_DATA_BASE - VFS_PAYLOAD_WORDS != 0 {
+                return -38;
+            }
+
+            // WAL-full preflight must leave the hole and cursors untouched.
+            kstore(extent_addr(reused_ex) + EXTENT_VERSION, 0);
+            kstore(WAL_TAIL_ADDR, 0);
+            kstore(WAL_HEAD_ADDR, WAL_CAPACITY - 1);
+            var full: t40 = vfs_alloc_extent_at(0, 778, 0, 2);
+            if full - ERR_NO_SPACE != 0 { return -39; }
+            if kload(extent_addr(reused_ex) + EXTENT_VERSION) != 0 {
+                return -40;
+            }
+            if kload(VFS_NEXT_EXTENT_ADDR) - VFS_MAX_EXTENTS != 0 {
+                return -41;
+            }
+            if kload(VFS_NEXT_DATA_ADDR) - VFS_DATA_BASE - VFS_PAYLOAD_WORDS != 0 {
+                return -42;
+            }
+            // Keep the local variables live for the compiler's strict
+            // definite-use checker while documenting the original cursors.
+            if next_ex_before < 0 {
+                return -43;
+            }
+            if next_data_before < 0 {
+                return -44;
+            }
+            return 1;
+        }
+    )";
+
+    CompileResult compiled = compileSource("native_vfs_reclamation_slice.trit",
+                                           kernel + "\n" + driver);
+    if (!compiled.success) {
+        for (const auto& diagnostic : compiled.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(compiled.success, "native VFS reclamation driver compiles");
+    LinkResult linked = linkModules({compiled.object});
+    expect(linked.success, "native VFS reclamation driver links");
+    sandbox::vm::VMState vm(sandbox::vm::ProductionProfile::minimum());
+    if (linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(vm, linked.assembled),
+               "native VFS reclamation driver loads");
+        const auto result = sandbox::vm::run(vm, 50000000);
+        dumpNativeRunIfFailed("vfs-reclamation-slice", result, vm,
+                              linked.assembled.labels);
+        expect(result.halted(), "native VFS reclamation driver halts");
+        expect(sandbox::vm::ops::toLong(vm.regfile.read(13)) == 1,
+               "VFS reclamation preserves open-unlink and allocator safety");
+    }
+}
+
+void testNativeVfsReclamationSurvivesReboot() {
+    std::cout << "[8] Native VFS orphan reclamation after reboot\n";
+    using namespace sandbox::compiler;
+    const std::string kernel = readTextFile("kernel.trit");
+    const std::string writer = R"(
+        fn seed_path(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 111);
+            kstore(addr + 2, 114);
+            kstore(addr + 3, 112);
+            kstore(addr + 4, 104);
+            kstore(addr + 5, 97);
+            kstore(addr + 6, 110);
+            kstore(addr + 7, 0);
+            return addr;
+        }
+
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var path: t40 = USER_MEM_BASE;
+            var src: t40 = USER_MEM_BASE + 32;
+            seed_path(path);
+            kstore(src + 0, 123);
+            kstore(src + 1, 456);
+            var fd: t40 = vfs_open(1, path, 2);
+            if fd < 0 { return -2; }
+            if vfs_write(1, fd, src, 2) - 2 != 0 { return -3; }
+            if vfs_fsync(1, fd) - 1 != 0 { return -4; }
+            if vfs_unlink(1, path) - 1 != 0 { return -5; }
+            // Leave the descriptor open and make the unlink commit durable;
+            // reboot clears the volatile FD row before lazy reclaim.
+            if wal_sync_to_disk() - 1 != 0 { return -6; }
+            return 1;
+        }
+    )";
+    CompileResult writer_compiled = compileSource(
+        "native_vfs_orphan_reboot_writer.trit", kernel + "\n" + writer);
+    if (!writer_compiled.success) {
+        for (const auto& diagnostic : writer_compiled.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(writer_compiled.success, "native orphan reboot writer compiles");
+    LinkResult writer_linked = linkModules({writer_compiled.object});
+    expect(writer_linked.success, "native orphan reboot writer links");
+    sandbox::vm::VMState writer_vm(sandbox::vm::ProductionProfile::minimum());
+    writer_vm.resetBlockDevice(8192);
+    if (writer_linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(writer_vm,
+                                                     writer_linked.assembled),
+               "native orphan reboot writer loads");
+        const auto result = sandbox::vm::run(writer_vm, 50000000);
+        dumpNativeRunIfFailed("vfs-orphan-reboot-writer", result, writer_vm,
+                              writer_linked.assembled.labels);
+        expect(result.halted(), "native orphan reboot writer halts");
+        expect(sandbox::vm::ops::toLong(writer_vm.regfile.read(13)) == 1,
+               "native orphan reboot writer leaves durable unlink WAL");
+    }
+
+    const std::string reader = R"(
+        fn seed_path(addr: t40) -> t40 {
+            kstore(addr + 0, 47);
+            kstore(addr + 1, 111);
+            kstore(addr + 2, 114);
+            kstore(addr + 3, 112);
+            kstore(addr + 4, 104);
+            kstore(addr + 5, 97);
+            kstore(addr + 6, 110);
+            kstore(addr + 7, 0);
+            return addr;
+        }
+
+        fn main() -> t40 {
+            if kernel_init() - 1 != 0 { return -1; }
+            var path: t40 = USER_MEM_BASE;
+            seed_path(path);
+            if vfs_lookup(0, path) - ERR_NOT_FOUND != 0 { return -2; }
+            if kload(inode_addr(1) + INODE_KIND) - KIND_FREE != 0 {
+                return -3;
+            }
+            var fd: t40 = vfs_open(1, path, 2);
+            if fd < 0 { return -4; }
+            var inode: t40 = kload(fd_addr(fd) + FD_INODE);
+            if inode - 1 != 0 { return -5; }
+            if kload(inode_addr(inode) + INODE_KIND) - KIND_FILE != 0 {
+                return -5;
+            }
+            vfs_close(1, fd);
+            return 1;
+        }
+    )";
+    CompileResult reader_compiled = compileSource(
+        "native_vfs_orphan_reboot_reader.trit", kernel + "\n" + reader);
+    if (!reader_compiled.success) {
+        for (const auto& diagnostic : reader_compiled.diagnostics) {
+            std::cout << diagnostic.format() << "\n";
+        }
+    }
+    expect(reader_compiled.success, "native orphan reboot reader compiles");
+    LinkResult reader_linked = linkModules({reader_compiled.object});
+    expect(reader_linked.success, "native orphan reboot reader links");
+    sandbox::vm::VMState reader_vm(sandbox::vm::ProductionProfile::minimum());
+    expect(reader_vm.loadBlockImage(writer_vm.blockImage()),
+           "native orphan reboot image loads");
+    if (reader_linked.success) {
+        expect(sandbox::vm::assembler::loadAndReset(reader_vm,
+                                                     reader_linked.assembled),
+               "native orphan reboot reader loads");
+        const auto result = sandbox::vm::run(reader_vm, 50000000);
+        dumpNativeRunIfFailed("vfs-orphan-reboot-reader", result, reader_vm,
+                              reader_linked.assembled.labels);
+        expect(result.halted(), "native orphan reboot reader halts");
+        expect(sandbox::vm::ops::toLong(reader_vm.regfile.read(13)) == 1,
+               "mount clears and reclaims the durable orphan");
+    }
+}
+
 void testNativeKernelInodeFsyncOrdering() {
     std::cout << "[8] Native kernel inode-scoped fsync ordering\n";
     using namespace sandbox::compiler;
@@ -1426,8 +1732,20 @@ void testSharedStatusAndCompilerWrappers() {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     sandbox::LongTriple::initPowTable();
+
+    if (argc > 1 && std::string(argv[1]) == "reclamation") {
+        testNativeVfsReclamationSlice();
+        testNativeVfsReclamationSurvivesReboot();
+        if (g_failures != 0) {
+            std::cout << "\n" << g_failures
+                      << " focused VFS reclamation test failure(s)\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "\nFocused VFS reclamation tests passed\n";
+        return EXIT_SUCCESS;
+    }
 
     testDeviceTreeAndBlockDevice();
     testTinyFileSystem();
@@ -1437,6 +1755,8 @@ int main() {
     testNativeBioReadsRootFilesystemImage();
     testNativeKernelVfsMountsDiskBackedState();
     testNativeExtentReservationTransactions();
+    testNativeVfsReclamationSlice();
+    testNativeVfsReclamationSurvivesReboot();
     testNativeKernelInodeFsyncOrdering();
     testNativeWalErrorPropagation();
     testNativeVfsImageBuilderBootsKernelRoot();

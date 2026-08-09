@@ -322,7 +322,10 @@ const VFS_INODE_WORDS: t40 = 8;
 const VFS_INODE_BASE: t40 = 150000;
 // Required LSN is volatile dependency metadata.  It is deliberately kept
 // outside the on-disk inode table; recovery reconstructs it from WAL replay.
-const INODE_REQUIRED_LSN_BASE: t40 = 304500;
+// FD rows grow by one volatile word to capture the durable inode allocation
+// generation. Keep the dependency table beyond the enlarged FD arena; neither
+// table is part of the on-disk VFS image.
+const INODE_REQUIRED_LSN_BASE: t40 = 307000;
 const INODE_REQUIRED_LSN_WORDS: t40 = 2048;
 const INODE_KIND: t40 = 0;
 const INODE_MODE: t40 = 1;
@@ -352,7 +355,7 @@ const EXTENT_LENGTH: t40 = 3;
 const EXTENT_DATA_ADDR: t40 = 4;
 const EXTENT_VERSION: t40 = 5;
 
-const VFS_FD_WORDS: t40 = 7;
+const VFS_FD_WORDS: t40 = 8;
 const VFS_FD_BASE: t40 = 290000;
 const FD_PID: t40 = 0;
 const FD_NAMESPACE: t40 = 1;
@@ -361,6 +364,11 @@ const FD_OFFSET: t40 = 3;
 const FD_FLAGS: t40 = 4;
 const FD_REFCOUNT: t40 = 5;
 const FD_VERSION: t40 = 6;
+const FD_INODE_VERSION: t40 = 7;
+
+// Reclamation is deliberately bounded so one orphan cannot consume the whole
+// redo ring. A later pass resumes from the first still-live extent.
+const VFS_RECLAIM_EXTENTS_PER_TX: t40 = 64;
 
 const VFS_DATA_BASE: t40 = 310000;
 const VFS_DISK_MAGIC: t40 = 60606;
@@ -904,19 +912,77 @@ fn buffer_flush_inode(namespace_id: t40, inode: t40) -> t40 {
     while BUFFER_MAX_FRAMES - slot > 0 {
         var row: t40 = buffer_frame_addr(slot);
         if kload(row + BF_VALID) > 0 {
-            if kload(row + BF_NAMESPACE) - namespace_id == 0 {
-                if kload(row + BF_OWNER_INODE) - inode == 0 {
-                    if kload(row + BF_DIRTY) > 0 {
-                        var status: t40 = buffer_flush_frame(slot);
-                        if status <= 0 { return status; }
-                        flushed = flushed + 1;
-                    }
+            if buffer_frame_matches_inode(row, namespace_id, inode) > 0 {
+                if kload(row + BF_DIRTY) > 0 {
+                    var status: t40 = buffer_flush_frame(slot);
+                    if status <= 0 { return status; }
+                    flushed = flushed + 1;
                 }
             }
         }
         slot = slot + 1;
     }
     return flushed;
+}
+
+fn buffer_frame_matches_inode(row: t40, namespace_id: t40, inode: t40) -> t40 {
+    if kload(row + BF_OWNER_INODE) - inode != 0 {
+        return 0;
+    }
+    if namespace_id < 0 {
+        return 1;
+    }
+    if kload(row + BF_NAMESPACE) - namespace_id != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+// Retire every cached page owned by an inode before its inode number or data
+// span can be reused.  Frames are keyed by (namespace, inode, logical page),
+// so merely clearing the extent row would otherwise let a new inode observe
+// the old file's cache.  Validate the whole set before changing any frame so a
+// pinned or non-durable dirty page leaves the cache untouched and the caller
+// can retry after the I/O/WAL boundary.
+fn buffer_invalidate_inode(namespace_id: t40, inode: t40) -> t40 {
+    var slot: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if buffer_frame_matches_inode(row, namespace_id, inode) > 0 {
+                if kload(row + BF_PIN_COUNT) > 0 {
+                    return ERR_AGAIN;
+                }
+                if kload(row + BF_DIRTY) > 0 {
+                    if buffer_frame_writeback_allowed(slot) <= 0 {
+                        return ERR_AGAIN;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+
+    slot = 0;
+    var retired: t40 = 0;
+    while BUFFER_MAX_FRAMES - slot > 0 {
+        var row: t40 = buffer_frame_addr(slot);
+        if kload(row + BF_VALID) > 0 {
+            if buffer_frame_matches_inode(row, namespace_id, inode) > 0 {
+                if kload(row + BF_DIRTY) > 0 {
+                    var flushed: t40 = buffer_flush_frame(slot);
+                    if flushed < 0 {
+                        return flushed;
+                    }
+                }
+                kstore(row + BF_VALID, 0);
+                kstore(row + BF_PIN_COUNT, 0);
+                retired = retired + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return retired;
 }
 
 fn buffer_required_lsn_all() -> t40 {
@@ -3809,6 +3875,10 @@ fn process_release_fds(pid: t40) -> t40 {
         }
         fd = fd + 1;
     }
+    // Closing a process-owned descriptor can make an unlinked inode
+    // reclaimable.  The pass is intentionally best-effort; WAL-full or a
+    // pinned cache frame leaves the orphan for the next lazy/mount pass.
+    vfs_reclaim_pending();
     return released;
 }
 
@@ -5081,6 +5151,146 @@ fn vfs_extent_count(inode: t40) -> t40 {
     return count;
 }
 
+// Allocation rows are reusable tombstones.  The high-water cursors remain
+// monotonic so old v2 images and WAL recovery keep their layout contract.
+fn vfs_find_free_inode_slot() -> t40 {
+    var limit: t40 = kload(VFS_NEXT_INODE_ADDR);
+    if limit - 1 < 0 { limit = 1; }
+    if limit - VFS_MAX_INODES > 0 { limit = VFS_MAX_INODES; }
+    var slot: t40 = 1;
+    while limit - slot > 0 {
+        if kload(inode_addr(slot) + INODE_KIND) - KIND_FREE == 0 {
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    if kload(VFS_NEXT_INODE_ADDR) - VFS_MAX_INODES < 0 {
+        return kload(VFS_NEXT_INODE_ADDR);
+    }
+    return ERR_NO_SPACE;
+}
+
+fn vfs_find_free_dirent_slot() -> t40 {
+    var limit: t40 = vfs_dirent_limit();
+    var slot: t40 = 0;
+    while limit - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        if kload(row + DIRENT_VERSION) <= 0 {
+            return slot;
+        }
+        if kload(row + DIRENT_CHILD) <= 0 {
+            return slot;
+        }
+        slot = slot + 1;
+    }
+    if kload(VFS_NEXT_DIRENT_ADDR) - VFS_MAX_DIRENTS < 0 {
+        return kload(VFS_NEXT_DIRENT_ADDR);
+    }
+    return ERR_NO_SPACE;
+}
+
+fn vfs_find_free_extent_for_length(length_words: t40) -> t40 {
+    if length_words <= 0 { return ERR_INVALID; }
+    var limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if limit - VFS_MAX_EXTENTS > 0 { limit = VFS_MAX_EXTENTS; }
+    var slot: t40 = 0;
+    while limit - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_VERSION) <= 0 {
+            var old_length: t40 = kload(row + EXTENT_LENGTH);
+            var old_data: t40 = kload(row + EXTENT_DATA_ADDR);
+            if old_length - length_words >= 0 {
+                if old_data - VFS_DATA_BASE >= 0 {
+                    if old_data + old_length - VFS_DATA_BASE - VFS_PAYLOAD_WORDS <= 0 {
+                        return slot;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+fn vfs_free_extent_rows() -> t40 {
+    var limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if limit - VFS_MAX_EXTENTS > 0 { limit = VFS_MAX_EXTENTS; }
+    var slot: t40 = 0;
+    var free_rows: t40 = 0;
+    while limit - slot > 0 {
+        if kload(extent_addr(slot) + EXTENT_VERSION) <= 0 {
+            free_rows = free_rows + 1;
+        }
+        slot = slot + 1;
+    }
+    return free_rows;
+}
+
+fn vfs_free_extent_words() -> t40 {
+    var limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if limit - VFS_MAX_EXTENTS > 0 { limit = VFS_MAX_EXTENTS; }
+    var slot: t40 = 0;
+    var words: t40 = 0;
+    while limit - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_VERSION) <= 0 {
+            var length_words: t40 = kload(row + EXTENT_LENGTH);
+            if length_words > 0 {
+                words = words + length_words;
+            }
+        }
+        slot = slot + 1;
+    }
+    return words;
+}
+
+fn vfs_inode_open_refs(namespace_id: t40, inode: t40) -> t40 {
+    if inode < 0 { return 0; }
+    if inode - VFS_MAX_INODES >= 0 { return 0; }
+    var generation: t40 = kload(inode_addr(inode) + INODE_VERSION);
+    var fd: t40 = 0;
+    var refs: t40 = 0;
+    while VFS_MAX_FDS - fd > 0 {
+        var row: t40 = fd_addr(fd);
+        if kload(row + FD_REFCOUNT) > 0 {
+            if namespace_id < 0 {
+                if kload(row + FD_INODE) - inode == 0 {
+                    if kload(row + FD_INODE_VERSION) - generation == 0 {
+                        refs = refs + 1;
+                    }
+                }
+            } else {
+                if kload(row + FD_NAMESPACE) - namespace_id == 0 {
+                    if kload(row + FD_INODE) - inode == 0 {
+                        if kload(row + FD_INODE_VERSION) - generation == 0 {
+                            refs = refs + 1;
+                        }
+                    }
+                }
+            }
+        }
+        fd = fd + 1;
+    }
+    return refs;
+}
+
+fn vfs_inode_active_extent_count(inode: t40) -> t40 {
+    var slot: t40 = 0;
+    var count: t40 = 0;
+    var limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if limit - VFS_MAX_EXTENTS > 0 { limit = VFS_MAX_EXTENTS; }
+    while limit - slot > 0 {
+        var row: t40 = extent_addr(slot);
+        if kload(row + EXTENT_INODE) - inode == 0 {
+            if kload(row + EXTENT_VERSION) > 0 {
+                count = count + 1;
+            }
+        }
+        slot = slot + 1;
+    }
+    return count;
+}
+
 // Record a complete extent reservation in the caller's transaction.  This is
 // the only path that advances the extent/data cursors: log_write records
 // after-images and log_commit publishes them atomically, while log_abort (or a
@@ -5093,14 +5303,32 @@ fn vfs_reserve_extent_tx(txid: t40, namespace_id: t40, inode: t40,
     if inode < 0 { return ERR_INVALID; }
     if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
     var next: t40 = kload(VFS_NEXT_EXTENT_ADDR);
-    if next - VFS_MAX_EXTENTS >= 0 {
-        return ERR_NO_SPACE;
+    var slot: t40 = vfs_find_free_extent_for_length(length_words);
+    var reused: t40 = 0;
+    if slot >= 0 {
+        reused = 1;
+    } else {
+        slot = next;
+        if slot - VFS_MAX_EXTENTS >= 0 {
+            return ERR_NO_SPACE;
+        }
     }
     var data: t40 = kload(VFS_NEXT_DATA_ADDR);
-    if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+    if reused > 0 {
+        data = kload(extent_addr(slot) + EXTENT_DATA_ADDR);
+    } else {
+        if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+            return ERR_NO_SPACE;
+        }
+    }
+    // A direct helper call must fail before the first after-image when the WAL
+    // cannot hold the complete row plus commit record.
+    var required_records: t40 = 7;
+    if reused <= 0 { required_records = 9; }
+    if log_capacity_for(required_records) <= 0 {
         return ERR_NO_SPACE;
     }
-    var row: t40 = extent_addr(next);
+    var row: t40 = extent_addr(slot);
     var logged: t40 = log_write(txid, row + EXTENT_NAMESPACE,
                                  kload(row + EXTENT_NAMESPACE), namespace_id);
     if logged < 0 { return logged; }
@@ -5119,13 +5347,15 @@ fn vfs_reserve_extent_tx(txid: t40, namespace_id: t40, inode: t40,
     logged = log_write(txid, row + EXTENT_VERSION,
                        kload(row + EXTENT_VERSION), 1);
     if logged < 0 { return logged; }
-    logged = log_write(txid, VFS_NEXT_EXTENT_ADDR,
-                       kload(VFS_NEXT_EXTENT_ADDR), next + 1);
-    if logged < 0 { return logged; }
-    logged = log_write(txid, VFS_NEXT_DATA_ADDR,
-                       kload(VFS_NEXT_DATA_ADDR), data + length_words);
-    if logged < 0 { return logged; }
-    return next;
+    if reused <= 0 {
+        logged = log_write(txid, VFS_NEXT_EXTENT_ADDR,
+                           kload(VFS_NEXT_EXTENT_ADDR), next + 1);
+        if logged < 0 { return logged; }
+        logged = log_write(txid, VFS_NEXT_DATA_ADDR,
+                           kload(VFS_NEXT_DATA_ADDR), data + length_words);
+        if logged < 0 { return logged; }
+    }
+    return slot;
 }
 
 // Grow an extent only when it is the most recently allocated extent.  A
@@ -5243,11 +5473,16 @@ fn vfs_can_reserve_extents(inode: t40, offset_words: t40, count_words: t40) -> t
             i = i + chunk;
         }
     }
+    var free_rows: t40 = vfs_free_extent_rows();
     if kload(VFS_NEXT_EXTENT_ADDR) + missing_windows - VFS_MAX_EXTENTS > 0 {
-        return 0;
+        if free_rows - missing_windows < 0 {
+            return 0;
+        }
     }
     if kload(VFS_NEXT_DATA_ADDR) + missing_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
-        return 0;
+        if vfs_free_extent_words() - missing_words < 0 {
+            return 0;
+        }
     }
     return 1;
 }
@@ -5827,6 +6062,23 @@ fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
                     return ERR_INVALID;
                 }
             }
+            // Unlink clears CHILD before the final close.  v2 has no separate
+            // inode owner in a tombstone, so a descriptor fsync conservatively
+            // persists all tombstones in this namespace as well.
+            if kload(dir_row + DIRENT_CHILD) <= 0 {
+                if kload(dir_row + DIRENT_VERSION) <= 0 {
+                    if vfs_sync_partial_range_to_disk(
+                            dir_row, VFS_DIRENT_WORDS, VFS_DIRENT_BASE,
+                            VFS_DISK_DIRENT_BLOCK) < 0 {
+                        return ERR_INVALID;
+                    }
+                    if vfs_sync_partial_range_to_disk(
+                            dirent_name_addr(dir_slot), VFS_MAX_NAME_WORDS,
+                            VFS_DIRENT_NAME_BASE, VFS_DISK_DIRENT_NAME_BLOCK) < 0 {
+                        return ERR_INVALID;
+                    }
+                }
+            }
         }
         dir_slot = dir_slot + 1;
     }
@@ -5838,12 +6090,12 @@ fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
         var extent_row: t40 = extent_addr(extent_slot);
         if kload(extent_row + EXTENT_NAMESPACE) - namespace_id == 0 {
             if kload(extent_row + EXTENT_INODE) - inode == 0 {
+                if vfs_sync_partial_range_to_disk(
+                        extent_row, VFS_EXTENT_WORDS, VFS_EXTENT_BASE,
+                        VFS_DISK_EXTENT_BLOCK) < 0 {
+                    return ERR_INVALID;
+                }
                 if kload(extent_row + EXTENT_VERSION) > 0 {
-                    if vfs_sync_partial_range_to_disk(
-                            extent_row, VFS_EXTENT_WORDS, VFS_EXTENT_BASE,
-                            VFS_DISK_EXTENT_BLOCK) < 0 {
-                        return ERR_INVALID;
-                    }
                     var data_addr: t40 = kload(extent_row + EXTENT_DATA_ADDR);
                     var length_words: t40 = kload(extent_row + EXTENT_LENGTH);
                     if vfs_sync_partial_range_to_disk(
@@ -5857,6 +6109,170 @@ fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
         extent_slot = extent_slot + 1;
     }
     return 1;
+}
+
+fn vfs_prepare_inode_reclaim(namespace_id: t40, inode: t40) -> t40 {
+    var required_lsn: t40 = inode_required_lsn(inode);
+    if vfs_disk_available() > 0 {
+        if required_lsn - kload(WAL_DURABLE_LSN_ADDR) > 0 {
+            var wal_status: t40 = wal_sync_to_disk();
+            if wal_status < 0 { return wal_status; }
+        }
+    }
+    return buffer_invalidate_inode(namespace_id, inode);
+}
+
+fn vfs_reclaim_inode_step(namespace_id: t40, inode: t40) -> t40 {
+    if inode <= 0 { return 0; }
+    if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
+    var row: t40 = inode_addr(inode);
+    if kload(row + INODE_KIND) - KIND_FREE == 0 {
+        return 0;
+    }
+    if kload(row + INODE_LINKS) > 0 {
+        return 0;
+    }
+    if vfs_inode_open_refs(-1, inode) > 0 {
+        return ERR_AGAIN;
+    }
+
+    var active: t40 = vfs_inode_active_extent_count(inode);
+    if active > 0 {
+        var take: t40 = active;
+        if take - VFS_RECLAIM_EXTENTS_PER_TX > 0 {
+            take = VFS_RECLAIM_EXTENTS_PER_TX;
+        }
+        if log_capacity_for(take + 1) <= 0 {
+            return ERR_NO_SPACE;
+        }
+        var prepared: t40 = vfs_prepare_inode_reclaim(namespace_id, inode);
+        if prepared < 0 { return prepared; }
+        var txid: t40 = log_begin();
+        var slot: t40 = 0;
+        var freed: t40 = 0;
+        var limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+        if limit - VFS_MAX_EXTENTS > 0 { limit = VFS_MAX_EXTENTS; }
+        while limit - slot > 0 {
+            var extent_row: t40 = extent_addr(slot);
+            if kload(extent_row + EXTENT_INODE) - inode == 0 {
+                if kload(extent_row + EXTENT_VERSION) > 0 {
+                    var logged: t40 = log_write(
+                        txid, extent_row + EXTENT_VERSION,
+                        kload(extent_row + EXTENT_VERSION), 0);
+                    if logged < 0 {
+                        log_abort(txid);
+                        return logged;
+                    }
+                    freed = freed + 1;
+                    if freed - take >= 0 {
+                        slot = limit;
+                    }
+                }
+            }
+            slot = slot + 1;
+        }
+        var commit_lsn: t40 = log_commit(txid);
+        if commit_lsn < 0 { return commit_lsn; }
+        var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
+        if tracked < 0 { return tracked; }
+        return freed;
+    }
+
+    // Keep INODE_VERSION as a durable allocation generation.  Reclamation
+    // advances it once, so descriptors from the old lifetime fail validation
+    // even though the on-disk row is otherwise a free slot.
+    if log_capacity_for(8) <= 0 {
+        return ERR_NO_SPACE;
+    }
+    var prepared_final: t40 = vfs_prepare_inode_reclaim(namespace_id, inode);
+    if prepared_final < 0 { return prepared_final; }
+    var old_generation: t40 = kload(row + INODE_VERSION);
+    var next_generation: t40 = old_generation + 1;
+    if next_generation <= 0 { next_generation = 1; }
+    var tx_final: t40 = log_begin();
+    var logged_final: t40 = log_write(tx_final, row + INODE_KIND,
+                                      kload(row + INODE_KIND), KIND_FREE);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_MODE,
+                             kload(row + INODE_MODE), 0);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_SIZE,
+                             kload(row + INODE_SIZE), 0);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_LINKS,
+                             kload(row + INODE_LINKS), 0);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_VERSION,
+                             kload(row + INODE_VERSION), next_generation);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_MTIME,
+                             kload(row + INODE_MTIME), kload(KERNEL_TICK_ADDR));
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    logged_final = log_write(tx_final, row + INODE_FLAGS,
+                             kload(row + INODE_FLAGS), 0);
+    if logged_final < 0 { log_abort(tx_final); return logged_final; }
+    var final_lsn: t40 = log_commit(tx_final);
+    if final_lsn < 0 { return final_lsn; }
+    var final_tracked: t40 = inode_track_required_lsn(inode, final_lsn);
+    if final_tracked < 0 { return final_tracked; }
+    return 1;
+}
+
+fn vfs_inode_namespace(inode: t40) -> t40 {
+    var fd: t40 = 0;
+    while VFS_MAX_FDS - fd > 0 {
+        var fdrow: t40 = fd_addr(fd);
+        if kload(fdrow + FD_REFCOUNT) > 0 {
+            if kload(fdrow + FD_INODE) - inode == 0 {
+                return kload(fdrow + FD_NAMESPACE);
+            }
+        }
+        fd = fd + 1;
+    }
+    var extent_limit: t40 = kload(VFS_NEXT_EXTENT_ADDR);
+    if extent_limit - VFS_MAX_EXTENTS > 0 { extent_limit = VFS_MAX_EXTENTS; }
+    var extent_slot: t40 = 0;
+    while extent_limit - extent_slot > 0 {
+        var extent_row: t40 = extent_addr(extent_slot);
+        if kload(extent_row + EXTENT_INODE) - inode == 0 {
+            return kload(extent_row + EXTENT_NAMESPACE);
+        }
+        extent_slot = extent_slot + 1;
+    }
+    return 0;
+}
+
+fn vfs_reclaim_pending() -> t40 {
+    var limit: t40 = kload(VFS_NEXT_INODE_ADDR);
+    if limit - VFS_MAX_INODES > 0 { limit = VFS_MAX_INODES; }
+    var inode: t40 = 1;
+    var reclaimed: t40 = 0;
+    while limit - inode > 0 {
+        var row: t40 = inode_addr(inode);
+        if kload(row + INODE_KIND) - KIND_FREE != 0 {
+            if kload(row + INODE_LINKS) <= 0 {
+                // The inode row does not encode namespace; reclaim uses the
+                // wildcard cache scope and FD generation scan.
+                var rounds: t40 = 0;
+                var max_rounds: t40 = VFS_MAX_EXTENTS /
+                                      VFS_RECLAIM_EXTENTS_PER_TX + 1;
+                while max_rounds - rounds > 0 {
+                    var status: t40 = vfs_reclaim_inode_step(-1, inode);
+                    if status > 0 {
+                        reclaimed = reclaimed + status;
+                        rounds = rounds + 1;
+                        if kload(row + INODE_KIND) - KIND_FREE == 0 {
+                            rounds = max_rounds;
+                        }
+                    } else {
+                        rounds = max_rounds;
+                    }
+                }
+            }
+        }
+        inode = inode + 1;
+    }
+    return reclaimed;
 }
 
 fn vfs_sync_to_disk() -> t40 {
@@ -5944,6 +6360,10 @@ fn vfs_mount(namespace_id: t40, device_id: t40) -> t40 {
         var wal_loaded: t40 = wal_load_from_disk();
         if wal_loaded > 0 {
             log_recover();
+            // Reboot clears volatile descriptors; orphan rows are therefore
+            // eligible for one bounded reclaim pass before the home image is
+            // checkpointed.  WAL-full/pinned-cache cases remain pending.
+            vfs_reclaim_pending();
             var synced: t40 = vfs_sync_to_disk();
             if synced < 0 { return synced; }
             var checkpointed: t40 = log_checkpoint();
@@ -5983,10 +6403,8 @@ fn vfs_add_dirent(txid: t40, namespace_id: t40, parent: t40, child: t40, name_st
     if name_len - VFS_MAX_NAME_WORDS > 0 {
         return ERR_INVALID;
     }
-    var slot: t40 = kload(VFS_NEXT_DIRENT_ADDR);
-    if slot - VFS_MAX_DIRENTS >= 0 {
-        return ERR_NO_SPACE;
-    }
+    var slot: t40 = vfs_find_free_dirent_slot();
+    if slot < 0 { return slot; }
     var h: t40 = vfs_component_hash(name_start, name_len);
     var row: t40 = dirent_addr(slot);
     var logged: t40 = log_write(txid, row + DIRENT_NAMESPACE,
@@ -6015,9 +6433,11 @@ fn vfs_add_dirent(txid: t40, namespace_id: t40, parent: t40, child: t40, name_st
         if logged < 0 { return logged; }
         i = i + 1;
     }
-    logged = log_write(txid, VFS_NEXT_DIRENT_ADDR,
-                       kload(VFS_NEXT_DIRENT_ADDR), slot + 1);
-    if logged < 0 { return logged; }
+    if slot - kload(VFS_NEXT_DIRENT_ADDR) == 0 {
+        logged = log_write(txid, VFS_NEXT_DIRENT_ADDR,
+                           kload(VFS_NEXT_DIRENT_ADDR), slot + 1);
+        if logged < 0 { return logged; }
+    }
     return slot;
 }
 
@@ -6043,10 +6463,29 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
     if existing >= 0 {
         return ERR_EXISTS;
     }
-    var inode: t40 = kload(VFS_NEXT_INODE_ADDR);
-    if inode - VFS_MAX_INODES >= 0 {
+    var inode: t40 = vfs_find_free_inode_slot();
+    if inode < 0 { return inode; }
+    var dir_candidate: t40 = vfs_find_free_dirent_slot();
+    if dir_candidate < 0 { return dir_candidate; }
+    var inode_records: t40 = 8;
+    if inode - kload(VFS_NEXT_INODE_ADDR) == 0 {
+        inode_records = inode_records + 1;
+    }
+    var dir_records: t40 = 6 + len;
+    if dir_candidate - kload(VFS_NEXT_DIRENT_ADDR) == 0 {
+        dir_records = dir_records + 1;
+    }
+    if log_capacity_for(inode_records + dir_records + 1) <= 0 {
         return ERR_NO_SPACE;
     }
+    // A free inode may still have cache frames from a pre-v2 tombstone.  The
+    // volatile cache is never part of the image, so invalidate it before the
+    // new generation becomes visible.
+    var cache_status: t40 = buffer_invalidate_inode(-1, inode);
+    if cache_status < 0 { return cache_status; }
+    var old_generation: t40 = kload(inode_addr(inode) + INODE_VERSION);
+    var generation: t40 = old_generation + 1;
+    if generation <= 0 { generation = 1; }
     var txid: t40 = log_begin();
     var inode_row: t40 = inode_addr(inode);
     var logged: t40 = log_write(txid, inode_row + INODE_KIND, 0, kind);
@@ -6064,7 +6503,7 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
                        kload(inode_row + INODE_LINKS), 1);
     if logged < 0 { log_abort(txid); return logged; }
     logged = log_write(txid, inode_row + INODE_VERSION,
-                       kload(inode_row + INODE_VERSION), 1);
+                       kload(inode_row + INODE_VERSION), generation);
     if logged < 0 { log_abort(txid); return logged; }
     logged = log_write(txid, inode_row + INODE_CTIME,
                        kload(inode_row + INODE_CTIME), kload(KERNEL_TICK_ADDR));
@@ -6075,9 +6514,11 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
     logged = log_write(txid, inode_row + INODE_FLAGS,
                        kload(inode_row + INODE_FLAGS), parent);
     if logged < 0 { log_abort(txid); return logged; }
-    logged = log_write(txid, VFS_NEXT_INODE_ADDR,
-                       kload(VFS_NEXT_INODE_ADDR), inode + 1);
-    if logged < 0 { log_abort(txid); return logged; }
+    if inode - kload(VFS_NEXT_INODE_ADDR) == 0 {
+        logged = log_write(txid, VFS_NEXT_INODE_ADDR,
+                           kload(VFS_NEXT_INODE_ADDR), inode + 1);
+        if logged < 0 { log_abort(txid); return logged; }
+    }
     var dir_slot: t40 = vfs_add_dirent(txid, namespace_id, parent, inode, start, len);
     if dir_slot < 0 {
         log_abort(txid);
@@ -6104,6 +6545,17 @@ fn fd_is_open_for_pid(pid: t40, fd: t40) -> t40 {
     if kload(row + FD_PID) - pid != 0 {
         return 0;
     }
+    var inode: t40 = kload(row + FD_INODE);
+    if inode < 0 {
+        return 0;
+    }
+    if inode - VFS_MAX_INODES >= 0 {
+        return 0;
+    }
+    if kload(row + FD_INODE_VERSION) -
+            kload(inode_addr(inode) + INODE_VERSION) != 0 {
+        return 0;
+    }
     return 1;
 }
 
@@ -6123,6 +6575,11 @@ fn vfs_truncate_inode(inode: t40) -> t40 {
     if inode < 0 { return ERR_INVALID; }
     if inode - VFS_MAX_INODES >= 0 { return ERR_INVALID; }
     var row: t40 = inode_addr(inode);
+    if log_capacity_for(vfs_inode_active_extent_count(inode) + 3) <= 0 {
+        return ERR_NO_SPACE;
+    }
+    var prepared: t40 = vfs_prepare_inode_reclaim(-1, inode);
+    if prepared < 0 { return prepared; }
     var txid: t40 = log_begin();
     var old_size: t40 = kload(row + INODE_SIZE);
     var logged: t40 = log_write(txid, row + INODE_SIZE, old_size, 0);
@@ -6135,12 +6592,6 @@ fn vfs_truncate_inode(inode: t40) -> t40 {
         var ex: t40 = extent_addr(slot);
         if kload(ex + EXTENT_INODE) - inode == 0 {
             if kload(ex + EXTENT_VERSION) > 0 {
-                logged = log_write(txid, ex + EXTENT_LENGTH,
-                                   kload(ex + EXTENT_LENGTH), 0);
-                if logged < 0 {
-                    log_abort(txid);
-                    return logged;
-                }
                 logged = log_write(txid, ex + EXTENT_VERSION,
                                    kload(ex + EXTENT_VERSION), 0);
                 if logged < 0 {
@@ -6201,6 +6652,8 @@ fn vfs_open(pid: t40, path_addr: t40, mode: t40) -> t40 {
     kstore(row + FD_FLAGS, mode);
     kstore(row + FD_REFCOUNT, 1);
     kstore(row + FD_VERSION, 1);
+    kstore(row + FD_INODE_VERSION,
+           kload(inode_addr(inode) + INODE_VERSION));
     return fd;
 }
 
@@ -6208,7 +6661,11 @@ fn vfs_close(pid: t40, fd: t40) -> t40 {
     if fd_is_open_for_pid(pid, fd) <= 0 {
         return ERR_BAD_FD;
     }
-    kstore(fd_addr(fd) + FD_REFCOUNT, 0);
+    var row: t40 = fd_addr(fd);
+    kclear(row, VFS_FD_WORDS);
+    // If this was the final descriptor for an unlinked inode, reclaim now;
+    // failures are deferred to the next close/process/mount pass.
+    vfs_reclaim_pending();
     return 1;
 }
 
@@ -6452,16 +6909,21 @@ fn vfs_write(pid: t40, fd: t40, src_addr: t40, count_words: t40) -> t40 {
         var length_words: t40 = remaining;
         var data: t40 = 0;
         if extent_slot < 0 {
-            extent_slot = kload(VFS_NEXT_EXTENT_ADDR);
-            if extent_slot - VFS_MAX_EXTENTS >= 0 {
-                return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
-            }
             if length_words - STORAGE_BLOCK_WORDS > 0 {
                 length_words = STORAGE_BLOCK_WORDS;
             }
-            data = kload(VFS_NEXT_DATA_ADDR);
-            if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
-                return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
+            extent_slot = vfs_find_free_extent_for_length(length_words);
+            if extent_slot >= 0 {
+                data = kload(extent_addr(extent_slot) + EXTENT_DATA_ADDR);
+            } else {
+                extent_slot = kload(VFS_NEXT_EXTENT_ADDR);
+                if extent_slot - VFS_MAX_EXTENTS >= 0 {
+                    return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
+                }
+                data = kload(VFS_NEXT_DATA_ADDR);
+                if data + length_words - VFS_DATA_BASE - VFS_PAYLOAD_WORDS > 0 {
+                    return vfs_write_partial_result(fdrow, offset, i, ERR_NO_SPACE);
+                }
             }
             new_extent = 1;
         } else {
@@ -8453,47 +8915,27 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
     var row: t40 = inode_addr(inode);
     if kload(row + INODE_KIND) - KIND_DIR == 0 { return ERR_IS_DIR; }
     var links: t40 = kload(row + INODE_LINKS) - 1;
+    var dirent_records: t40 = 0;
+    var count_slot: t40 = 0;
+    var count_limit: t40 = vfs_dirent_limit();
+    while count_limit - count_slot > 0 {
+        var count_row: t40 = dirent_addr(count_slot);
+        if kload(count_row + DIRENT_CHILD) - inode == 0 {
+            if kload(count_row + DIRENT_NAMESPACE) - namespace_id == 0 {
+                dirent_records = dirent_records + 2;
+            }
+        }
+        count_slot = count_slot + 1;
+    }
+    if log_capacity_for(dirent_records + 3) <= 0 {
+        return ERR_NO_SPACE;
+    }
     var txid: t40 = log_begin();
     var logged: t40 = log_write(txid, row + INODE_LINKS,
                                 kload(row + INODE_LINKS), links);
     if logged < 0 {
         log_abort(txid);
         return logged;
-    }
-    if links <= 0 {
-        logged = log_write(txid, row + INODE_SIZE,
-                           kload(row + INODE_SIZE), 0);
-        if logged < 0 {
-            log_abort(txid);
-            return logged;
-        }
-        logged = log_write(txid, row + INODE_VERSION,
-                           kload(row + INODE_VERSION), 0);
-        if logged < 0 {
-            log_abort(txid);
-            return logged;
-        }
-        var extent_slot: t40 = 0;
-        while VFS_MAX_EXTENTS - extent_slot > 0 {
-            var extent_row: t40 = extent_addr(extent_slot);
-            if kload(extent_row + EXTENT_INODE) - inode == 0 {
-                if kload(extent_row + EXTENT_VERSION) > 0 {
-                    logged = log_write(txid, extent_row + EXTENT_LENGTH,
-                                       kload(extent_row + EXTENT_LENGTH), 0);
-                    if logged < 0 {
-                        log_abort(txid);
-                        return logged;
-                    }
-                    logged = log_write(txid, extent_row + EXTENT_VERSION,
-                                       kload(extent_row + EXTENT_VERSION), 0);
-                    if logged < 0 {
-                        log_abort(txid);
-                        return logged;
-                    }
-                }
-            }
-            extent_slot = extent_slot + 1;
-        }
     }
     var slot: t40 = 0;
     var dirent_limit: t40 = vfs_dirent_limit();
@@ -8527,6 +8969,10 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
     if commit_lsn < 0 { return commit_lsn; }
     var tracked: t40 = inode_track_required_lsn(inode, commit_lsn);
     if tracked < 0 { return tracked; }
+    // Open descriptors retain the inode and its extents.  With no matching
+    // descriptor this best-effort pass reclaims immediately; otherwise the
+    // row remains a links=0 orphan for close/process/mount cleanup.
+    vfs_reclaim_pending();
     return 1;
 }
 

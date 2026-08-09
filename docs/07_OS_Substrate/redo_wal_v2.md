@@ -58,8 +58,14 @@ number of committed words and advances the descriptor by exactly that amount.
 
 Create/mkdir now use one WAL transaction for the inode row, inode cursor,
 directory row/name, and directory cursor; create timestamps are part of that
-after-image. Truncate and unlink likewise log inode size/link state, directory
-tombstones, extent tombstones, and mtime before committing. `vfs_sync_to_disk`
+after-image. Tombstoned inode, dirent, and extent rows are first-fit reusable;
+extent tombstones retain their `DATA_ADDR`/`LENGTH` span, while legacy v2
+length-zero tombstones remain valid but provide no reusable data hole.
+Truncate and unlink log inode size/link state, directory tombstones, extent
+version tombstones, and mtime before committing. Unlink leaves a links=0
+orphan readable through matching open descriptors; close, process cleanup, and
+mount perform bounded reclaim passes only after the generation-checked FD set
+is empty. `vfs_sync_to_disk`
 also includes the greatest outstanding inode dependency when enforcing the
 no-steal durable-LSN rule. `quota_set_limit` and `namespace_create` log all
 fields in their control-plane rows rather than mutating unlogged companion
@@ -71,9 +77,9 @@ zero and all default quota policies, and executable payload allocation begins
 after block 8042 so it cannot overlap the control-plane homes.
 
 The following paths remain intentionally outside this completed atomic slice:
-truncate/unlink do not reclaim allocator cursors or compact directory slots;
-there is no rename operation; and quota usage/physical-page allocation are
-volatile reconciliation state.
+high-water allocator cursors are monotonic (there is no global compaction);
+there is no atomic rename operation; and quota usage/physical-page allocation
+are volatile reconciliation state.
 
 Checkpointing first makes committed WAL durable, then writes home pages and
 issues their data barrier, appends and durably flushes a checkpoint record, and
