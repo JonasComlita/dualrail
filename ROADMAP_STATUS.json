@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "knowledge-tooling-pass",
+  "updated_by": "architecture-v2-candidate-45539f7",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -19,9 +19,10 @@
     {
       "id": "compiler-runtime",
       "status": "verified",
-      "summary": "Compiler IR, codegen, runtime wrappers, linking, allocator microcontracts, and TCL assembler have focused coverage.",
+      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
       "evidence": [
         "test_phase7_compiler",
+        "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",
         "test_layer1_hal"
@@ -37,10 +38,13 @@
         "test_phase_d_kernel",
         "test_process_handoff",
         "test_production_layers",
-        "test_production_hardening"
+        "test_production_hardening",
+        "test_redo_wal_v2",
+        "next_scheduler_acceptance"
       ],
       "open_items": [
-        "More crash recovery scenarios",
+        "Add checkpoint-durable namespace/quota home-page coverage",
+        "Add VFS allocator reclamation/compaction and rename",
         "Dedicated fuzz harness for syscalls with malformed pointers",
         "First-class guest /bin diagnostic commands"
       ]
@@ -93,12 +97,13 @@
         "docs/10_Benchmarks/bitnet.md",
         "TEST_MANIFEST.json system_benchmarks",
         "benchmarks/benchmark_doom_os.cpp",
-        "benchmarks/benchmark_bitnet_os.cpp"
+        "benchmarks/benchmark_bitnet_os.cpp",
+        "system_benchmark_gate",
+        "system_release_gate"
       ],
       "open_items": [
         "Import or adapt a minimal Doom renderer and redistributable WAD assets",
         "Scale the BitNet workload from the deterministic 27x27 model to sliced and then full model shards",
-        "Capture seven-iteration archived baselines on controlled hosts before enforcing timing regressions",
         "Archive controlled-host timing baselines before enforcing tighter workload regressions"
       ]
     },

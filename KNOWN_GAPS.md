@@ -7,25 +7,26 @@ These are intentionally visible so agents can pick useful work without asking fo
 - Add guest `/bin/doctor`, `/bin/test`, `/bin/sysinfo`, `/bin/log`, and richer diagnostics for existing `/bin/ps`, `/bin/fsck`, and `/bin/sync`.
 - Add a dedicated syscall harness for randomized malformed pointers; the
   structural image validator harness does not exercise guest pointer faults.
-- Add crash/power-loss scenarios for VFS and WAL recovery.
+- Give durable namespace/quota policy rows explicit home-page coverage before
+  checkpoints may reclaim their WAL history. Extent reservation, writes,
+  inode-specific `fsync`, torn-record recovery, and the existing crash matrix
+  are covered; allocator reclamation/compaction and rename remain separate
+  VFS feature slices.
 - Extend the x86-64 backend's direct lowering beyond the current scalar subset
-  and hot internal branch loops. NOP/MOV/COPY, T40 Add/Sub/TCmp, and internal
-  branch control now execute as emitted x86-64 with guarded portable fallback;
-  multiply/negate/abs, guarded memory, and unsupported operations still use
-  precise helper side exits. Native JIT remains disabled by default until the
-  measured wall-time and stability gate is genuinely satisfied and the
-  remaining helper-backed hot operations are lowered inline.
+  and hot internal branch loops. NOP/MOV/COPY, integral T40
+  Add/Sub/TCmp/Mul, raw-valid T40 Neg/Abs, guarded dense identity Load/Store,
+  and internal branches execute as emitted x86-64. MMU/sparse/tagged memory,
+  non-local control, and unsupported operations use precise helper side exits.
+  Native JIT remains disabled by default because the final candidate produced
+  one CV failure followed by one clean pass; require repeatable controlled-host
+  stability before enabling it globally.
 - Complete the IR-first compiler transition for the remaining unsupported
-  cases: optimized SSA now drives promoted and address-taken local frame
-  memory (including loop-carried accesses), small scalar external-memory
-  regions beside calls, calls with outgoing stack arguments, branch-preserving
-  side-effectful matches, branch-free `TSEL` matches, scalar tuple swaps, and
-  the allocator reserves target scratch registers across spill rewrites.
-  Aggregate/vector values and several complex kernel control/data-flow regions
-  still need memory-SSA aliasing, aggregate lowering, and call-clobber proofs.
-  A fail-closed `--strict-ssa` mode rejects unsupported target lowering; the
-  default transition build still permits only the explicitly reported replay
-  set until those functions are lowered.
+  cases. Optimized SSA is now the sole target-code source and reports zero AST
+  replay functions; graph coloring/coalescing and iterative spill rewriting
+  are active, and the deterministic corpus records a 23.29% median instruction
+  reduction with no workload regression. Aggregate/vector ABI values and some
+  aliased memory/call-clobber cases still need memory-SSA and target lowering;
+  unsupported cases fail closed rather than replaying the AST.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

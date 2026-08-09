@@ -1,52 +1,49 @@
-# Codegen & Lowering Strategies
+# Code generation and lowering
 
-| Status | Last Updated | Related Code |
+| Status | Last verified | Authority |
 | :--- | :--- | :--- |
-| 🛠️ **Draft** | 2026-05-15 | `ternary_ir.h` |
+| Implemented, with fail-closed aggregate/vector gaps | 2026-08-08 | `ternary_compiler_codegen.h` |
 
----
+The compiler does not emit assembly by replaying the AST. The authoritative
+target pipeline is:
 
-## 🏗️ The Lowering Pipeline
-Codegen is the process of recursively visiting [AST Nodes](ast_nodes.md) and emitting [Ternary IR](ternary_ir.md) instructions.
+1. Typed AST to address-based CFG IR.
+2. Predecessor/successor construction, dominators, and dominance frontiers.
+3. `mem2reg` with explicit `(predecessor, value)` phi inputs.
+4. SSA, type, effect, and dominance verification.
+5. Global optimization.
+6. Phi and wide-value lowering.
+7. CFG-wide liveness, graph coloring/coalescing, and iterative spill rewrite.
+8. Target selection and v2 assembly/object emission.
 
-### 1. The Recursive Visitor
-The compiler uses a **Depth-First Search (DFS)** to process the tree.
-*   **Expressions**: Visit children first, then emit the operation using the children's result values.
-*   **Statements**: Process in linear order. Control flow nodes (Loops/Ifs) emit labels and branches to manage the jump logic.
+Target metadata reports `target.ast_replay_functions = 0`. If the target cannot
+prove a lowering correct, compilation rejects that function; there is no
+production AST-assembly fallback.
 
----
+## Global optimization
 
-## ⚡ Optimization Strategies
+The implemented portfolio includes sparse conditional constant propagation,
+global value numbering/common-subexpression elimination, dead-code and copy
+elimination, loop-invariant motion, induction simplification, branch folding,
+and cost-controlled `TSEL` conversion. Promotion is limited to non-escaping
+scalar storage; aliased, atomic, unsafe-pointer, and unsupported aggregate
+storage remains explicit memory.
 
-### 1. Register Pressure & Re-use
-The most critical optimization in the Trit-Stack is the **Immediate Release** of temporary registers.
-*   **Heuristic**: After a `BinaryOpNode` emits its instruction, it must call `program.release()` on both input operands if they were temporary values (not named variables).
-*   **Benefit**: This allows complex expressions to be computed using only 3–4 physical registers.
+The allocator uses separate target constraints, call-clobber interference,
+loop-weighted spill costs, simplify/coalesce/freeze/spill decisions, and
+repeated spill rewriting until colorable or explicitly rejected. Wide T50
+values retain pair constraints through ABI and target lowering.
 
-### 2. Constant Folding
-To minimize instruction count, the codegen visitor must evaluate expressions involving only `LiteralNodes` at compile-time.
-*   **Example**: `x = 1 + 2` is lowered directly as `MOV rX, 3` rather than a `MOV/MOV/ADD` sequence.
+## Quantitative gate
 
-### 3. Strength Reduction & Peephole
-The codegen layer should substitute expensive instructions for cheaper alternatives and perform a final "Peephole" pass:
-*   **`MUL r1, r1, 3`** $\rightarrow$ `TLSHIFT r1, r1, 1` (1-trit left shift).
-*   **Redundancy**: Remove any `COPY rX, rX` or `ADD rX, rX, 0` patterns produced by naive lowering.
+`test_compiler_corpus_gate` compares unoptimized and default SSA pipelines on
+loops/phis, calls, spills, aggregates, ownership, atomics, branches, and alias
+cases. Candidate `45539f7` passed all correctness/determinism checks with a
+23.29% median dynamic-instruction reduction and 0% maximum workload regression,
+exceeding the 15% / 5% acceptance contract.
 
-### 4. Unique Label Generation
-When lowering `IfNodes` or `WhileNodes`, the codegen must generate globally unique labels (e.g., `_L0`, `_L1`) to ensure that multiple control-flow blocks do not collide in the final IR stream.
+## Remaining fail-closed cases
 
-### 3. Fused AI Kernels
-When the codegen detects a pattern of matrix multiplication followed by an activation function, it should collapse the nodes into the **Fused VDOT-VACT Cycle**:
-
-```asm
-; Fused Neural Cycle
-ACLR.t1
-VDOT.t1  v1, v2    ; Matrix multiply
-VACT.t1  r1, rA    ; Fused activation & store
-```
-
----
-
-## 🛡️ Correctness Checks
-1.  **Type Propagation**: The codegen must ensure that the width of the destination register matches the width of the inputs (e.g., adding two `T5` values must produce a `T5` result).
-2.  **Stack Integrity**: For function calls, the codegen must emit the [ABI-compliant prologue and epilogue](../04_Binary_Contract/abi_spec.md) to preserve the `lr` and `sp` registers.
+Aggregate/vector ABI values and some complex aliased-memory/call-clobber cases
+still need memory-SSA and target proofs. These are visible compiler gaps, not a
+second code-generation path. See [Known Gaps](../../KNOWN_GAPS.md).
