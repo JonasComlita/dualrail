@@ -18,13 +18,15 @@ These are intentionally visible so agents can pick useful work without asking fo
   Native JIT remains disabled by default because the final candidate produced
   one CV failure followed by one clean pass; require repeatable controlled-host
   stability before enabling it globally.
-- Complete the IR-first compiler transition for the remaining unsupported
-  cases. Optimized SSA is now the sole target-code source and reports zero AST
-  replay functions; graph coloring/coalescing and iterative spill rewriting
-  are active, and the deterministic corpus records a 23.29% median instruction
-  reduction with no workload regression. Aggregate/vector ABI values and some
-  aliased memory/call-clobber cases still need memory-SSA and target lowering;
-  unsupported cases fail closed rather than replaying the AST.
+- Complete first-class vector and aggregate-return language/ABI design.
+  Optimized SSA is the sole target-code source and reports zero AST replay;
+  graph coloring/coalescing and iterative spill rewriting are active, and the
+  deterministic corpus records a 23.29% median instruction reduction with no
+  workload regression. Aggregate parameters use one-word caller-owned pointers
+  across both argument registers and the outgoing stack, and live external
+  addresses have call-clobber coverage. ABI v2 deliberately rejects aggregate
+  returns and first-class vector boundaries until an authoritative contract is
+  versioned instead of silently miscompiling them.
 - Keep root manifests and the Obsidian vault synchronized as source contracts change.
 
 ## Medium Priority

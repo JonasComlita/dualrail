@@ -19,9 +19,10 @@
     {
       "id": "compiler-runtime",
       "status": "verified",
-      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
+      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, aggregate-pointer ABI and call-clobber contracts, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
       "evidence": [
         "test_phase7_compiler",
+        "test_compiler_abi_contract",
         "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",

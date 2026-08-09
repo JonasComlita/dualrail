@@ -30,6 +30,7 @@
       "description": "Compiler frontend, IR, linking, allocator, and TCL assembler coverage.",
       "targets": [
         "test_phase7_compiler",
+        "test_compiler_abi_contract",
         "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",
@@ -74,6 +75,7 @@
         "next_scheduler_acceptance",
         "test_consumer_shell_productization",
         "test_host_runtime",
+        "test_compiler_abi_contract",
         "test_compiler_corpus_gate"
       ]
     },

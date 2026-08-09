@@ -407,6 +407,28 @@ std::vector<Workload> corpus() {
             "",
         },
         {
+            "aggregate_abi",
+            R"TRIT(
+                struct Pair { a: t40; b: t40; }
+                fn combine(a: Pair, bias: t40, b: Pair, tail: t40,
+                           c: Pair, extra: t40, d: Pair, last: t40) -> t40 {
+                    return a.a + a.b + bias + b.a + b.b + tail +
+                           c.a + c.b + extra + d.a + d.b + last;
+                }
+                fn main() -> t40 {
+                    var left: Pair = Pair { a: 1, b: 2 };
+                    var right: Pair = Pair { a: 3, b: 4 };
+                    var third: Pair = Pair { a: 5, b: 6 };
+                    var fourth: Pair = Pair { a: 7, b: 8 };
+                    return combine(left, 9, right, 10,
+                                   third, 11, fourth, 12);
+                }
+            )TRIT",
+            {"aggregates", "calls", "abi"},
+            78,
+            "",
+        },
+        {
             "ownership",
             R"TRIT(
                 fn alloc(words: t40) -> own<ptr<t40, unknown>> {
@@ -474,6 +496,21 @@ std::vector<Workload> corpus() {
             )TRIT",
             {"memory_alias", "branches"},
             22,
+            "",
+        },
+        {
+            "memory_alias_call",
+            R"TRIT(
+                fn increment(x: t40) -> t40 { return x + 1; }
+                fn main() -> t40 {
+                    var raw: t40 = 120;
+                    unsafe { store(raw, 41); }
+                    let delta = increment(1);
+                    unsafe { return load(raw) + delta; }
+                }
+            )TRIT",
+            {"memory_alias", "calls", "call_clobber"},
+            43,
             "",
         },
     };

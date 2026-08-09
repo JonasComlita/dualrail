@@ -1184,7 +1184,10 @@ public:
             target_spill_stores +=
                 ir_allocation.spill_stores;
             std::string ir_assembly;
-            if (ir_allocation.success &&
+            const std::string declared_lowering_boundary =
+                targetLoweringBoundary(function);
+            if (declared_lowering_boundary.empty() &&
+                ir_allocation.success &&
                 emitScalarSsaFunction(
                     allocation_unit.functions.front(),
                     ir_allocation,
@@ -1207,7 +1210,7 @@ public:
                 ir_emitted_function_names.push_back(
                     function.name);
             } else {
-                std::string rejection_reason = targetLoweringBoundary(function);
+                std::string rejection_reason = declared_lowering_boundary;
                 if (rejection_reason.empty() && !function.cfg_complete) {
                     rejection_reason =
                         "SSA admission/optimization rejected the function";
@@ -1338,6 +1341,11 @@ public:
 private:
     [[nodiscard]] static std::string targetLoweringBoundary(
         const Function& function) {
+        if (isAggregateType(function.return_type)) {
+            return "aggregate-valued function return has no ABI v2 "
+                   "representation; pass a caller-owned aggregate as an "
+                   "output parameter";
+        }
         if (function.return_type.kind == TypeKind::Vector) {
             return "vector-valued function lowering requires an "
                    "authoritative vector call/return ABI and aggregate "
@@ -2875,8 +2883,14 @@ private:
             store.effect = Effect::WriteMem;
             store.span = ctx.ast->span;
             ctx.block->instructions.push_back(std::move(store));
-            argument_word += std::max(
-                1, typeSizeWords(parameter.second, layout_table_));
+            // Structs and arrays cross the v2 function boundary as one-word
+            // addresses. Keep the IR Param ABI index in the same word units
+            // used by the caller and target prologue; advancing by the
+            // pointee's full layout makes every following argument read the
+            // wrong register or outgoing-stack word.
+            argument_word += isAggregateType(parameter.second)
+                ? 1
+                : std::max(1, typeSizeWords(parameter.second, layout_table_));
         }
     }
 

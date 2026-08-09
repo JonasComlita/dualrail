@@ -226,6 +226,10 @@ add_executable(test_phase7_compiler tests/test_phase7_compiler.cpp)
 target_compile_features(test_phase7_compiler PUBLIC cxx_std_17)
 target_compile_definitions(test_phase7_compiler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_compiler_abi_contract tests/test_compiler_abi_contract.cpp)
+target_compile_features(test_compiler_abi_contract PUBLIC cxx_std_17)
+target_compile_definitions(test_compiler_abi_contract PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_phase_c5_pred tests/test_phase_c5_pred.cpp)
 target_compile_features(test_phase_c5_pred PUBLIC cxx_std_17)
 target_compile_definitions(test_phase_c5_pred PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -319,6 +323,9 @@ endif()
 add_test(NAME test_production_hardening
          COMMAND test_production_hardening
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_compiler_abi_contract
+         COMMAND test_compiler_abi_contract
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_custom_target(production_profile
     DEPENDS
@@ -331,6 +338,7 @@ add_custom_target(production_profile
         test_scaling_profile_compact
         test_consumer_shell_productization
         test_host_runtime
+        test_compiler_abi_contract
         trit_checkpoint_replay
 )
 
@@ -662,6 +670,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:next_scheduler_acceptance>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>
     COMMAND $<TARGET_FILE:test_host_runtime>
+    COMMAND $<TARGET_FILE:test_compiler_abi_contract>
     COMMAND $<TARGET_FILE:trit_checkpoint_replay>
             "${CMAKE_CURRENT_BINARY_DIR}/host_runtime_checkpoint_bundle"
             --steps 32 --require-halt

@@ -42,8 +42,19 @@ cases. Candidate `45539f7` passed all correctness/determinism checks with a
 23.29% median dynamic-instruction reduction and 0% maximum workload regression,
 exceeding the 15% / 5% acceptance contract.
 
-## Remaining fail-closed cases
+## ABI and remaining fail-closed cases
 
-Aggregate/vector ABI values and some complex aliased-memory/call-clobber cases
-still need memory-SSA and target proofs. These are visible compiler gaps, not a
-second code-generation path. See [Known Gaps](../../KNOWN_GAPS.md).
+Struct and array parameters cross function ABI v2 as one-word caller-owned
+addresses. Their ABI word indices are shared by frontend IR, caller lowering,
+callee lowering, register arguments, and outgoing-stack arguments; the focused
+ABI contract and deterministic corpus execute an eight-word mixed aggregate
+call in both optimized and unoptimized modes. Live raw addresses across calls
+are also verified to remain in callee-saved storage while memory effects stay
+ordered.
+
+ABI v2 defines only scalar/T50 returns and does not define a vector register
+call convention. Aggregate-valued returns and first-class vector function
+boundaries therefore fail closed with explicit diagnostics. Supporting either
+requires a versioned public ABI decision (such as an sret contract or vector
+argument/return registers), not an emitter-local convention or hidden AST
+replay. See [Known Gaps](../../KNOWN_GAPS.md).
