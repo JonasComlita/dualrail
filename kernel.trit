@@ -207,6 +207,9 @@ const WAIT_DEADLINE_BASE: t40 = 138700;
 const WAIT_ARG0_BASE: t40 = 138800;
 const WAIT_ARG1_BASE: t40 = 138900;
 const WAIT_ARG2_BASE: t40 = 139000;
+// Wait queues keep their FIFO tail in a separate non-overlapping range.  The
+// row remains the three-word channel/head/version ABI used by older images.
+const WAIT_QUEUE_TAIL_BASE: t40 = 678000;
 const WAIT_NO_DEADLINE: t40 = -1;
 const WAIT_KIND_NONE: t40 = 0;
 const WAIT_KIND_LEGACY: t40 = 1;
@@ -3103,6 +3106,7 @@ fn wait_queue_addr(slot: t40) -> t40 {
 
 fn wait_queue_init() -> t40 {
     kclear(WAIT_QUEUE_BASE, WAIT_QUEUE_MAX * WAIT_QUEUE_WORDS);
+    kclear(WAIT_QUEUE_TAIL_BASE, WAIT_QUEUE_MAX);
     kclear(WAIT_KIND_BASE, PROCESS_MAX);
     kclear(WAIT_DEADLINE_BASE, PROCESS_MAX);
     kclear(WAIT_ARG0_BASE, PROCESS_MAX);
@@ -3111,6 +3115,7 @@ fn wait_queue_init() -> t40 {
     var i: t40 = 0;
     while WAIT_QUEUE_MAX - i > 0 {
         kstore(wait_queue_addr(i) + WQ_HEAD, -1);
+        kstore(WAIT_QUEUE_TAIL_BASE + i, -1);
         i = i + 1;
     }
     i = 0;
@@ -3147,6 +3152,7 @@ fn wait_queue_get(channel: t40) -> t40 {
         if kload(row + WQ_VERSION) <= 0 {
             kstore(row + WQ_CHANNEL, channel);
             kstore(row + WQ_HEAD, -1);
+            kstore(WAIT_QUEUE_TAIL_BASE + slot, -1);
             kstore(row + WQ_VERSION, 1);
             return slot;
         }
@@ -3174,6 +3180,9 @@ fn wait_queue_remove_proc(channel: t40, proc_slot: t40) -> t40 {
             } else {
                 kstore(WAIT_PROC_NEXT_BASE + prev, next);
             }
+            if kload(WAIT_QUEUE_TAIL_BASE + queue_slot) - proc_slot == 0 {
+                kstore(WAIT_QUEUE_TAIL_BASE + queue_slot, prev);
+            }
             kstore(WAIT_PROC_NEXT_BASE + proc_slot, -1);
             kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
             return 1;
@@ -3197,8 +3206,14 @@ fn wait_queue_push(channel: t40, proc_slot: t40) -> t40 {
     }
     wait_queue_remove_proc(channel, proc_slot);
     var row: t40 = wait_queue_addr(queue_slot);
-    kstore(WAIT_PROC_NEXT_BASE + proc_slot, kload(row + WQ_HEAD));
-    kstore(row + WQ_HEAD, proc_slot);
+    var tail: t40 = kload(WAIT_QUEUE_TAIL_BASE + queue_slot);
+    kstore(WAIT_PROC_NEXT_BASE + proc_slot, -1);
+    if tail < 0 {
+        kstore(row + WQ_HEAD, proc_slot);
+    } else {
+        kstore(WAIT_PROC_NEXT_BASE + tail, proc_slot);
+    }
+    kstore(WAIT_QUEUE_TAIL_BASE + queue_slot, proc_slot);
     kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
     return 1;
 }
@@ -3215,6 +3230,9 @@ fn wait_queue_pop(channel: t40) -> t40 {
     }
     var next: t40 = kload(WAIT_PROC_NEXT_BASE + head);
     kstore(row + WQ_HEAD, next);
+    if next < 0 {
+        kstore(WAIT_QUEUE_TAIL_BASE + queue_slot, -1);
+    }
     kstore(WAIT_PROC_NEXT_BASE + head, -1);
     kstore(row + WQ_VERSION, kload(row + WQ_VERSION) + 1);
     return head;

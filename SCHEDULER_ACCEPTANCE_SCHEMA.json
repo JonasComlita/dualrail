@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trit.scheduler_acceptance.v1",
+  "title": "Compiled Trit scheduler quantitative acceptance evidence",
+  "type": "object",
+  "required": [
+    "schema",
+    "workload",
+    "protocol",
+    "thresholds",
+    "curve",
+    "evidence"
+  ],
+  "properties": {
+    "schema": { "const": "trit.scheduler_acceptance.v1" },
+    "workload": { "const": "tier1-context-switch" },
+    "protocol": {
+      "type": "object",
+      "required": ["warmups", "iterations", "maximum_accepted_cv", "cost_metric", "normalization"],
+      "properties": {
+        "warmups": { "const": 2 },
+        "iterations": { "const": 7 },
+        "maximum_accepted_cv": { "const": 0.03 },
+        "cost_metric": { "const": "normalized_architectural_cycles" },
+        "normalization": { "const": "one_runnable_median_equals_1" },
+        "wall_time": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "thresholds": {
+      "type": "object",
+      "required": [
+        "median_ratio_min",
+        "median_ratio_max",
+        "max_starvation_rounds",
+        "max_duplicate_enqueues",
+        "ordinary_process_table_scans"
+      ],
+      "properties": {
+        "median_ratio_min": { "const": 0.8 },
+        "median_ratio_max": { "const": 1.2 },
+        "max_starvation_rounds": { "const": 100 },
+        "max_duplicate_enqueues": { "const": 0 },
+        "ordinary_process_table_scans": { "const": 0 }
+      },
+      "additionalProperties": true
+    },
+    "curve": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "required": [
+          "runnable_slots",
+          "median_cost_units",
+          "process_table_scans",
+          "max_wait_rounds"
+        ],
+        "properties": {
+          "runnable_slots": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "median_cost_units": { "const": 1 },
+          "process_table_scans": { "const": 0 },
+          "max_wait_rounds": { "type": "integer", "minimum": 0, "maximum": 100 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["target", "compiled_kernel", "production_gate"],
+      "properties": {
+        "target": { "const": "next_scheduler_acceptance" },
+        "compiled_kernel": { "const": true },
+        "production_gate": { "const": "ci_production" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

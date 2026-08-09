@@ -51,6 +51,7 @@
         "test_redo_wal_v2",
         "test_phase_d_kernel",
         "test_process_handoff",
+        "next_scheduler_acceptance",
         "test_native_apps",
         "test_consumer_shell_productization",
         "test_production_layers",
@@ -70,6 +71,7 @@
         "test_migration_v2",
         "test_redo_wal_v2",
         "test_scaling_profile_compact",
+        "next_scheduler_acceptance",
         "test_consumer_shell_productization",
         "test_host_runtime",
         "test_compiler_corpus_gate"

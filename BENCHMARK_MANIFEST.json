@@ -3,6 +3,12 @@
   "version": 1,
   "schema": "trit.benchmark_manifest.v1",
   "protocol_schema": "BENCHMARK_PROTOCOL_SCHEMA.json",
+  "scheduler_acceptance": {
+    "schema": "SCHEDULER_ACCEPTANCE_SCHEMA.json",
+    "fixture": "benchmarks/reference/scheduler-acceptance.v1.json",
+    "target": "next_scheduler_acceptance",
+    "production_gate": "ci_production"
+  },
   "protocol": {
     "id": "p10.reproducible.v1",
     "correctness_gate": "before_performance",

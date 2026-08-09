@@ -1,0 +1,35 @@
+{
+  "schema": "trit.scheduler_acceptance.v1",
+  "workload": "tier1-context-switch",
+  "protocol": {
+    "warmups": 2,
+    "iterations": 7,
+    "maximum_accepted_cv": 0.03,
+    "cost_metric": "normalized_architectural_cycles",
+    "normalization": "one_runnable_median_equals_1",
+    "wall_time": false
+  },
+  "thresholds": {
+    "median_ratio_min": 0.8,
+    "median_ratio_max": 1.2,
+    "max_starvation_rounds": 100,
+    "max_duplicate_enqueues": 0,
+    "ordinary_process_table_scans": 0
+  },
+  "curve": [
+    {"runnable_slots": 1, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 1},
+    {"runnable_slots": 2, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 2},
+    {"runnable_slots": 4, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 4},
+    {"runnable_slots": 8, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 8},
+    {"runnable_slots": 16, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 16},
+    {"runnable_slots": 32, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 32},
+    {"runnable_slots": 64, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 64},
+    {"runnable_slots": 100, "median_cost_units": 1, "process_table_scans": 0, "max_wait_rounds": 100}
+  ],
+  "evidence": {
+    "target": "next_scheduler_acceptance",
+    "compiled_kernel": true,
+    "production_gate": "ci_production",
+    "notes": "The curve normalizes the measured one-runnable median to 1. The executable records raw architectural-cycle samples for one and 100 runnable slots and enforces their median ratio directly."
+  }
+}

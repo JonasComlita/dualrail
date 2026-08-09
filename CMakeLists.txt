@@ -420,6 +420,10 @@ add_executable(next_process_ipc_scheduler tests_next/09_process_ipc_scheduler/ne
 target_compile_features(next_process_ipc_scheduler PUBLIC cxx_std_17)
 target_compile_definitions(next_process_ipc_scheduler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_scheduler_acceptance tests_next/09_process_ipc_scheduler/next_scheduler_acceptance.cpp)
+target_compile_features(next_scheduler_acceptance PUBLIC cxx_std_17)
+target_compile_definitions(next_scheduler_acceptance PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_drivers_hal tests_next/10_drivers_hal/next_drivers_hal.cpp)
 target_compile_features(next_drivers_hal PUBLIC cxx_std_17)
 target_compile_definitions(next_drivers_hal PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -486,6 +490,7 @@ add_custom_target(tests_next_phase_d
     COMMAND $<TARGET_FILE:next_vfs_persistence>
     COMMAND $<TARGET_FILE:next_vfs_recovery>
     COMMAND $<TARGET_FILE:next_process_ipc_scheduler>
+    COMMAND $<TARGET_FILE:next_scheduler_acceptance>
     COMMAND $<TARGET_FILE:next_drivers_hal>
     COMMAND $<TARGET_FILE:next_graphics_gui>
     COMMAND $<TARGET_FILE:next_apps_consumer_bundle>
@@ -496,6 +501,7 @@ add_custom_target(tests_next_phase_d
         next_vfs_persistence
         next_vfs_recovery
         next_process_ipc_scheduler
+        next_scheduler_acceptance
         next_drivers_hal
         next_graphics_gui
         next_apps_consumer_bundle
@@ -549,6 +555,9 @@ add_test(NAME next_vfs_recovery
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_process_ipc_scheduler
          COMMAND next_process_ipc_scheduler
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_scheduler_acceptance
+         COMMAND next_scheduler_acceptance
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_drivers_hal
          COMMAND next_drivers_hal
@@ -650,12 +659,13 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_migration_v2>
     COMMAND $<TARGET_FILE:test_redo_wal_v2>
     COMMAND $<TARGET_FILE:test_scaling_profile_compact>
+    COMMAND $<TARGET_FILE:next_scheduler_acceptance>
     COMMAND $<TARGET_FILE:test_consumer_shell_productization>
     COMMAND $<TARGET_FILE:test_host_runtime>
     COMMAND $<TARGET_FILE:trit_checkpoint_replay>
             "${CMAKE_CURRENT_BINARY_DIR}/host_runtime_checkpoint_bundle"
             --steps 32 --require-halt
-    DEPENDS production_profile test_architecture_v2
+    DEPENDS production_profile test_architecture_v2 next_scheduler_acceptance
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
 )

@@ -53,6 +53,16 @@ std::string nativePhaseDDriver() {
             return 0;
         }
 
+        fn scheduler_probe_runnable_pid() -> t40 {
+            var slot: t40 = scheduler_pick_next();
+            if slot < 0 {
+                return ERR_NOT_FOUND;
+            }
+            var pid: t40 = kload(process_addr(slot) + PROC_PID);
+            tier1_enqueue(slot);
+            return pid;
+        }
+
         fn expect_pos(actual: t40, ok: t40) -> t40 {
             kstore(35103, kload(35103) + 1);
             if actual > 0 {
@@ -87,14 +97,17 @@ std::string nativePhaseDDriver() {
             process_create(1, 2, 0, 1, 0, 120);
             process_wait(1, 44);
             ok = expect_eq(process_state(1), PROC_BLOCKED, ok);
-            ok = expect_eq(scheduler_find_runnable_pid(), 1, ok);
+            // Publish the kernel process after the explicit drain, then probe
+            // the real queue-backed scheduler path without a table scan.
+            tier1_enqueue(0);
+            ok = expect_eq(scheduler_probe_runnable_pid(), 1, ok);
             process_wait(0, 45);
-            ok = expect_eq(scheduler_find_runnable_pid(), ERR_NOT_FOUND, ok);
+            ok = expect_eq(scheduler_probe_runnable_pid(), ERR_NOT_FOUND, ok);
             ok = expect_eq(process_wake_channel(45), 1, ok);
-            ok = expect_eq(scheduler_find_runnable_pid(), 1, ok);
+            ok = expect_eq(scheduler_probe_runnable_pid(), 1, ok);
             ok = expect_eq(process_wake_channel(44), 1, ok);
             ok = expect_eq(process_state(1), PROC_RUNNABLE, ok);
-            ok = expect_eq(scheduler_find_runnable_pid(), 1, ok);
+            ok = expect_eq(scheduler_probe_runnable_pid(), 1, ok);
             ok = expect_eq(macro_reconcile_processes(), 2, ok);
             ok = expect_eq(macro_publish(), 2, ok);
             var staged_a: t40 = tier1_dequeue();
@@ -462,8 +475,10 @@ void acquireReleaseAndTrapStub(TestContext& ctx) {
     ctx.check(contains(build.boot, "syscall 16"),
               "native boot prelude exercises syscall dispatch");
 
+    const std::string isa_prelude =
+        ".isa 2\n.require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n";
     auto assembled_stub = sandbox::vm::assembler::assemble(
-        build.trap_stub + "\n" + build.compiled.assembly);
+        isa_prelude + build.trap_stub + "\n" + build.compiled.assembly);
     if (!assembled_stub.success) {
         std::ostringstream out;
         for (const auto& error : assembled_stub.errors) {
@@ -479,8 +494,10 @@ void bootTrapDispatchResume(TestContext& ctx) {
     const KernelBuild& build = nativeBuild();
     if (!requireCompiled(ctx, build)) return;
 
+    const std::string isa_prelude =
+        ".isa 2\n.require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50\n";
     auto boot_image = sandbox::vm::assembler::assemble(
-        build.boot + "\n" + build.trap_stub + "\n" + build.compiled.assembly);
+        isa_prelude + build.boot + "\n" + build.trap_stub + "\n" + build.compiled.assembly);
     if (!boot_image.success) {
         std::ostringstream out;
         for (const auto& error : boot_image.errors) {
