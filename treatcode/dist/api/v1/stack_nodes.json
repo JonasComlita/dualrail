@@ -1,10 +1,10 @@
 {
   "schema_version": "treatcode.public.api.v1",
   "snapshot": {
-    "id": "tc:snapshot:b9084c94dbba",
+    "id": "tc:snapshot:371c93041dbe",
     "repository": "https://github.com/JonasComlita/dualrail",
-    "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
-    "generated_at": "2026-08-01T13:23:29-07:00",
+    "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+    "generated_at": "2026-08-12T22:26:36-07:00",
     "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
   },
   "data": [
@@ -74,21 +74,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "AGENTS.md",
           "status": "resolved",
           "role": "agent_workflow"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved",
           "role": "test_authority"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tools/trit_tool.py",
           "status": "resolved",
           "role": "tooling"
@@ -97,7 +97,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -171,21 +171,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_backend.h",
           "status": "resolved",
           "role": "reference_backend"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_lanes.h",
           "status": "resolved",
           "role": "packed_lanes"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/01_Logic_Level/contract_hdl.md",
           "status": "resolved",
           "role": "hardware_contract"
@@ -194,7 +194,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -273,21 +273,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_isa.h",
           "status": "resolved",
           "role": "isa_definition"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ARCHITECTURE_MANIFEST.json",
           "status": "resolved",
           "role": "generated_contract_input"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/02_Hardware_ISA/encoding.md",
           "status": "resolved",
           "role": "isa_explanation"
@@ -296,7 +296,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -375,21 +375,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_scalar.h",
           "status": "resolved",
           "role": "scalar_types"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_native_ops.h",
           "status": "resolved",
           "role": "native_arithmetic"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_simd.h",
           "status": "resolved",
           "role": "host_simd"
@@ -398,7 +398,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -477,21 +477,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_vm_state.h",
           "status": "resolved",
           "role": "architectural_state"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/03_Execution_Engine/vm_state.md",
           "status": "resolved",
           "role": "vm_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/03_Execution_Engine/memory_model.md",
           "status": "resolved",
           "role": "memory_contract"
@@ -500,7 +500,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -579,21 +579,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_vm.h",
           "status": "resolved",
           "role": "interpreter"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/03_Execution_Engine/decoded_trace_and_native_jit.md",
           "status": "resolved",
           "role": "jit_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tests/test_vm_widths.cpp",
           "status": "resolved",
           "role": "execution_regression"
@@ -602,7 +602,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -683,21 +683,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_asm.h",
           "status": "resolved",
           "role": "assembler"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/04_Binary_Contract/asm_syntax.md",
           "status": "resolved",
           "role": "syntax_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tests/test_tcl_asm.cpp",
           "status": "resolved",
           "role": "assembler_tests"
@@ -706,7 +706,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -778,21 +778,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_ir.h",
           "status": "resolved",
           "role": "object_ir"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/05_Compiler_Infra/ternary_ir.md",
           "status": "resolved",
           "role": "ir_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tests/test_ternary_ir.cpp",
           "status": "resolved",
           "role": "ir_tests"
@@ -801,7 +801,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -875,21 +875,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TCL_Spec_1.0.md",
           "status": "resolved",
           "role": "language_specification"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "docs/06_Language/tcl_language.md",
           "status": "resolved",
           "role": "language_documentation"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tcl_parser.trit",
           "status": "resolved",
           "role": "native_parser"
@@ -898,7 +898,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -980,21 +980,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_compiler.h",
           "status": "resolved",
           "role": "compiler_facade"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_compiler_codegen.h",
           "status": "resolved",
           "role": "codegen"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tritc.cpp",
           "status": "resolved",
           "role": "compiler_driver"
@@ -1003,7 +1003,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1078,21 +1078,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tcl_frontend.trit",
           "status": "resolved",
           "role": "native_frontend_facade"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tcl_backend.trit",
           "status": "resolved",
           "role": "native_backend"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "treatcode/compiler_driver.trit",
           "status": "resolved",
           "role": "bootstrap_driver"
@@ -1101,7 +1101,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1180,21 +1180,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ulib.trit",
           "status": "resolved",
           "role": "user_runtime"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "apps/os_sdk.trit",
           "status": "resolved",
           "role": "syscall_sdk"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "apps/libwidget.trit",
           "status": "resolved",
           "role": "widget_sdk"
@@ -1203,7 +1203,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1287,28 +1287,28 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "bootloader.tasm",
           "status": "resolved",
           "role": "reset_program"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "native_kernel_boot.tasm",
           "status": "resolved",
           "role": "native_boot"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "native_kernel_trap_stub.tasm",
           "status": "resolved",
           "role": "trap_entry"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "bbcb3fa14eddae73edd33825e9097b197d4a05e5",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "v2_first_silicon_bringup.tasm",
           "status": "resolved",
           "role": "first_silicon_bringup"
@@ -1317,7 +1317,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1407,21 +1407,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel/hal.trit",
           "status": "resolved",
           "role": "hal_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel/process.trit",
           "status": "resolved",
           "role": "process_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel.trit",
           "status": "resolved",
           "role": "integrated_kernel"
@@ -1430,7 +1430,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1521,21 +1521,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel/bio.trit",
           "status": "resolved",
           "role": "block_io"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel/vfs.trit",
           "status": "resolved",
           "role": "vfs_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_redo_wal.h",
           "status": "resolved",
           "role": "wal_engine"
@@ -1544,7 +1544,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1628,21 +1628,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "kernel/net.trit",
           "status": "resolved",
           "role": "network_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "apps/service_stub.trit",
           "status": "resolved",
           "role": "service_contract"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_os.h",
           "status": "resolved",
           "role": "device_bridge"
@@ -1651,7 +1651,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1737,21 +1737,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_host_runtime.h",
           "status": "resolved",
           "role": "host_runtime"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "run_tos_sdl.cpp",
           "status": "resolved",
           "role": "desktop_runner"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_consumer_shell.h",
           "status": "resolved",
           "role": "consumer_shell_bridge"
@@ -1760,7 +1760,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1847,21 +1847,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "apps/desktop.trit",
           "status": "resolved",
           "role": "desktop"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "apps/shell.trit",
           "status": "resolved",
           "role": "shell"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "APP_MANIFEST.json",
           "status": "resolved",
           "role": "bundle_manifest"
@@ -1870,7 +1870,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -1952,21 +1952,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "IMAGE_FORMAT_MANIFEST.json",
           "status": "resolved",
           "role": "image_authority"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "build_tos_image.cpp",
           "status": "resolved",
           "role": "image_builder"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tools/trit-inspect-image.ps1",
           "status": "resolved",
           "role": "release_validation"
@@ -1975,7 +1975,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -2057,21 +2057,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_montgomery.h",
           "status": "resolved",
           "role": "cryptographic_library"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "ternary_transformer_runtime.h",
           "status": "resolved",
           "role": "transformer_runtime"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "treatcode/src/App.tsx",
           "status": "resolved",
           "role": "developer_product"
@@ -2080,7 +2080,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }
@@ -2171,21 +2171,21 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tests_next/manifests/coverage_matrix.json",
           "status": "resolved",
           "role": "coverage_matrix"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "tests_next/manifests/acceptance_gates.json",
           "status": "resolved",
           "role": "acceptance_gates"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "d168bc8",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "closure_gaps"
@@ -2194,7 +2194,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }

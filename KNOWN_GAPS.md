@@ -43,6 +43,9 @@ These are intentionally visible so agents can pick useful work without asking fo
   the deterministic `benchmark_doom_os` and `benchmark_bitnet_os` synthetic OS
   portfolio workloads establish stable capability and metric baselines.
 - Formalize and implement ternary-native symbolic encodings, including `TASCII-81`, exact trit literals, compact base-27/base-81 dump notation, and explicit ASCII/UTF-8/hex conversion tests.
+- Design and implement encrypted-volume support. Keep host-compatible encrypted
+  volume integration separate from any ternary-native volume format; neither
+  track is currently implemented or selected as the guest storage contract.
 
 ## Lower Priority
 

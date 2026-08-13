@@ -144,10 +144,38 @@ function searchableText(record: PublicRecord): string {
     record.component_kind,
     record.contract_kind,
     ...(Array.isArray(record.tags) ? record.tags : []),
+    ...(Array.isArray(record.search_terms) ? record.search_terms : []),
   ]
     .filter((value): value is string => typeof value === "string")
     .join(" ")
     .toLowerCase();
+}
+
+const SEMANTIC_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does", "for", "from", "how", "i", "in", "is",
+  "it", "of", "on", "or", "our", "the", "their", "this", "to", "was", "what", "when", "where", "which", "who", "why",
+  "with", "would", "you",
+]);
+
+function normalizeSearchText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .normalize("NFKD")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function semanticTerms(value: string): string[] {
+  const normalized = normalizeSearchText(value);
+  const terms = normalized.split(" ").filter((term) => term.length > 1 && !SEMANTIC_STOP_WORDS.has(term));
+  return [...new Set(terms)];
+}
+
+function normalizedField(record: PublicRecord, field: string): string {
+  return normalizeSearchText(record[field]);
 }
 
 function recordName(record: PublicRecord): string {
@@ -180,35 +208,122 @@ function resultFor(
   };
 }
 
-export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMode?: string | null): SearchMatch[] {
-  const query = rawQuery.trim().toLowerCase();
-  if (!query) return [];
-  const mode = normalizeSearchMode(rawMode);
-  const terms = query.split(/\s+/).filter(Boolean);
-  const results: SearchMatch[] = [];
+interface IndexedRecord {
+  resource: PublicResource;
+  record: PublicRecord;
+  literalName: string;
+  literalId: string;
+  literalPath: string;
+  name: string;
+  id: string;
+  path: string;
+  symbol: string;
+  description: string;
+  content: string;
+  nameTerms: Set<string>;
+  idTerms: Set<string>;
+  pathTerms: Set<string>;
+  symbolTerms: Set<string>;
+  tagTerms: Set<string>;
+  sourceTerms: Set<string>;
+  relationshipText: string;
+}
 
+const SNAPSHOT_SEARCH_CACHE = new WeakMap<PublicSnapshot, IndexedRecord[]>();
+
+function termSet(value: string): Set<string> {
+  return new Set(value.split(" ").filter(Boolean));
+}
+
+function indexedRecords(snapshot: PublicSnapshot): IndexedRecord[] {
+  const cached = SNAPSHOT_SEARCH_CACHE.get(snapshot);
+  if (cached) return cached;
+
+  const sourceTermsByPath = new Map<string, Set<string>>();
+  for (const source of snapshot.sources || []) {
+    const sourcePath = typeof source.path === "string" ? source.path.replace(/\\/g, "/") : "";
+    if (!sourcePath) continue;
+    const terms = Array.isArray(source.search_terms) ? source.search_terms.filter((value): value is string => typeof value === "string") : [];
+    sourceTermsByPath.set(sourcePath, new Set(terms));
+  }
+
+  const relatedTextById = new Map<string, string[]>();
+  for (const relation of snapshot.relations || []) {
+    const relationText = normalizeSearchText(`${relation.from} ${relation.type} ${relation.to}`);
+    relatedTextById.set(relation.from, [...(relatedTextById.get(relation.from) || []), relationText]);
+    relatedTextById.set(relation.to, [...(relatedTextById.get(relation.to) || []), relationText]);
+  }
+
+  const documents: IndexedRecord[] = [];
   for (const resource of Object.keys(RESOURCE_KEYS) as PublicResource[]) {
-    const records = collectionFor(snapshot, resource) || [];
-    for (const record of records) {
-      const name = recordName(record).toLowerCase();
-      const id = record.id.toLowerCase();
-      const path = typeof record.path === "string" ? record.path.toLowerCase() : "";
-      const text = searchableText(record);
+    for (const record of collectionFor(snapshot, resource) || []) {
+      const name = normalizeSearchText(recordName(record));
+      const id = normalizeSearchText(record.id);
+      const recordPath = normalizeSearchText(record.path);
+      const symbol = normalizeSearchText(record.symbol);
+      const sourceTerms = new Set<string>();
+      for (const reference of record.source_refs || []) {
+        if (!reference.path) continue;
+        const terms = sourceTermsByPath.get(reference.path.replace(/\\/g, "/"));
+        if (terms) for (const term of terms) sourceTerms.add(term);
+      }
+      documents.push({
+        resource,
+        record,
+        literalName: recordName(record).toLowerCase(),
+        literalId: record.id.toLowerCase(),
+        literalPath: typeof record.path === "string" ? record.path.toLowerCase() : "",
+        name,
+        id,
+        path: recordPath,
+        symbol,
+        description: normalizedField(record, "description"),
+        content: normalizeSearchText(searchableText(record)),
+        nameTerms: termSet(name),
+        idTerms: termSet(id),
+        pathTerms: termSet(recordPath),
+        symbolTerms: termSet(symbol),
+        tagTerms: termSet(normalizeSearchText(Array.isArray(record.tags) ? record.tags.join(" ") : "")),
+        sourceTerms,
+        relationshipText: (relatedTextById.get(record.id) || []).join(" "),
+      });
+    }
+  }
+  SNAPSHOT_SEARCH_CACHE.set(snapshot, documents);
+  return documents;
+}
+
+export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMode?: string | null): SearchMatch[] {
+  const literalQuery = rawQuery.trim().toLowerCase();
+  if (!literalQuery) return [];
+  const query = normalizeSearchText(rawQuery);
+  const mode = normalizeSearchMode(rawMode);
+  const terms = semanticTerms(query);
+  const results: SearchMatch[] = [];
+  for (const document of indexedRecords(snapshot)) {
+      const { resource, record, literalName, literalId, literalPath, name, id, path, symbol, description, content, relationshipText } = document;
       const matchedFields: string[] = [];
 
       if (mode === "exact") {
-        if (id === query) matchedFields.push("id");
-        if (name === query) matchedFields.push("name");
-        if (path === query) matchedFields.push("path");
-        if (matchedFields.length) results.push(resultFor(resource, record, mode, 100, matchedFields));
+        if (literalId === literalQuery || id === query) matchedFields.push("id");
+        if (literalName === literalQuery || name === query) matchedFields.push("name");
+        if (literalPath === literalQuery || path === query) matchedFields.push("path");
+        if (matchedFields.length) {
+          const exactScore = matchedFields.includes("id") ? 120
+            : matchedFields.includes("name") ? 110
+              : resource === "sources" ? 105
+                : resource === "symbols" ? 80
+                  : 100;
+          results.push(resultFor(resource, record, mode, exactScore, matchedFields));
+        }
         continue;
       }
 
       if (mode === "symbol") {
         if (resource !== "symbols" && !record.symbol) continue;
-        if (id === query) matchedFields.push("id");
-        if (name === query || String(record.symbol || "").toLowerCase() === query) matchedFields.push("symbol");
-        if (!matchedFields.length && (name.includes(query) || String(record.symbol || "").toLowerCase().includes(query))) {
+        if (literalId === literalQuery || id === query) matchedFields.push("id");
+        if (literalName === literalQuery || name === query || symbol === query) matchedFields.push("symbol");
+        if (!matchedFields.length && (name.includes(query) || symbol.includes(query))) {
           matchedFields.push("symbol");
         }
         if (matchedFields.length) results.push(resultFor(resource, record, mode, matchedFields.includes("id") ? 100 : 80, matchedFields));
@@ -216,10 +331,7 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
       }
 
       if (mode === "relationship") {
-        const related = snapshot.relations.some((relation) => {
-          const relationText = `${relation.from} ${relation.type} ${relation.to}`.toLowerCase();
-          return (relation.from === record.id || relation.to === record.id) && relationText.includes(query);
-        });
+        const related = relationshipText.includes(query);
         if (related) {
           matchedFields.push("relationship");
           results.push(resultFor(resource, record, mode, 70, matchedFields));
@@ -227,21 +339,82 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
         continue;
       }
 
+      if (terms.length === 0) continue;
       let score = 0;
+      const matchedTerms = new Set<string>();
+      if (id === query) {
+        score += 120;
+        matchedFields.push("id");
+      }
+      if (name === query) {
+        score += 110;
+        matchedFields.push("name");
+      } else if (terms.length > 1 && name.includes(query)) {
+        score += 65;
+        matchedFields.push("name");
+      }
+      if (path === query) {
+        score += 100;
+        matchedFields.push("path");
+      } else if (terms.length > 1 && path.includes(query)) {
+        score += 45;
+        matchedFields.push("path");
+      }
       for (const term of terms) {
-        if (id === term) {
-          score += 10;
+        let termMatched = false;
+        if (document.idTerms.has(term)) {
+          score += 12;
           matchedFields.push("id");
-        } else if (name === term) {
-          score += 8;
+          termMatched = true;
+        }
+        if (document.nameTerms.has(term)) {
+          score += 16;
           matchedFields.push("name");
-        } else if (text.includes(term)) {
+          termMatched = true;
+        }
+        if (symbol && document.symbolTerms.has(term)) {
+          score += 18;
+          matchedFields.push("symbol");
+          termMatched = true;
+        }
+        if (document.pathTerms.has(term)) {
+          score += 9;
+          matchedFields.push("path");
+          termMatched = true;
+        }
+        if (document.tagTerms.has(term)) {
+          score += 10;
+          matchedFields.push("tags");
+          termMatched = true;
+        }
+        if (description.includes(term)) {
+          score += 6;
+          matchedFields.push("description");
+          termMatched = true;
+        } else if (content.includes(term)) {
           score += 3;
           matchedFields.push("content");
+          termMatched = true;
         }
+        if (document.sourceTerms.has(term)) {
+          score += 2;
+          matchedFields.push("source");
+          termMatched = true;
+        }
+        if (relationshipText.includes(term)) {
+          score += 1;
+          matchedFields.push("relationship");
+          termMatched = true;
+        }
+        if (termMatched) matchedTerms.add(term);
       }
+      if (matchedTerms.size === terms.length) score += 30;
+      score += 12 * (matchedTerms.size / terms.length);
+      if (["components", "capabilities", "contracts", "decisions"].includes(resource)) score += 20;
+      else if (resource === "stack_nodes") score += 16;
+      else if (["tests", "benchmarks", "gaps", "releases"].includes(resource)) score += 10;
+      if (resource === "symbols" && !(symbol === query || name === query)) score -= 12;
       if (score > 0) results.push(resultFor(resource, record, mode, score, [...new Set(matchedFields)]));
-    }
   }
 
   return results

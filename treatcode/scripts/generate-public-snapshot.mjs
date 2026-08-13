@@ -79,6 +79,21 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const SEARCH_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does", "for", "from", "how", "i", "in", "is",
+  "it", "of", "on", "or", "our", "the", "their", "this", "to", "was", "what", "when", "where", "which", "who", "why",
+  "with", "would", "you",
+]);
+
+function sourceSearchTerms(relativePath) {
+  const normalized = readText(relativePath)
+    .normalize("NFKD")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+  return [...new Set(normalized.split(/\s+/).filter((term) => term.length > 1 && !SEARCH_STOP_WORDS.has(term)))].slice(0, 1024);
+}
+
 function sourceRef(commit, relativePath, extra = {}) {
   const normalized = normalizePath(relativePath);
   const file = fileHash(normalized);
@@ -190,6 +205,28 @@ function buildSnapshot() {
     "docs/11_TreatCode_Platform/schemas/public_api.v1.openapi.json",
     "treatcode/package.json",
     "treatcode/src/PublicApp.tsx",
+    "ARCHITECTURE_MANIFEST.json",
+    "generated/architecture_contract.h",
+    "generated/architecture_contract.trit",
+    "docs/00_Quick_Ref/register_map.md",
+    "docs/01_Logic_Level/gates.md",
+    "docs/02_Hardware_ISA/immediate_decoding.md",
+    "docs/04_Binary_Contract/architecture_v2.md",
+    "ternary_compiler_ast.h",
+    "ternary_compiler_ir.h",
+    "ternary_compiler_lexer.h",
+    "ternary_compiler_parser.h",
+    "ternary_compiler_types.h",
+    "ternary_gpu_kernels.h",
+    "ternary_gpu_validation.h",
+    "tcl_ast.trit",
+    "tcl_infer.trit",
+    "tcl_ir.trit",
+    "tcl_lexer.trit",
+    "tcl_type.trit",
+    "tests/test_kernel.cpp",
+    "tools/generate_architecture_contract.py",
+    "tools/trit-test.ps1",
   ]);
   const rawRefs = [];
   const collectRefs = (items) => {
@@ -232,6 +269,7 @@ function buildSnapshot() {
       status: file.exists ? "resolved" : "missing",
       bytes: file.bytes,
       sha256: file.hash,
+      search_terms: file.exists ? sourceSearchTerms(normalized) : [],
       source_refs: [sourceRef(commit, normalized, { role: "snapshot_source" })],
       evidence_refs: [sourceRef(commit, "STACK_MANIFEST.json", { role: "snapshot_manifest" })],
     });
@@ -250,7 +288,11 @@ function buildSnapshot() {
           if (value.status) metadata.status = value.status;
           if (value.reason) metadata.reason = value.reason;
         }
-        const referencedCommit = typeof value === "object" && /^[0-9a-f]{7,64}$/i.test(String(value.commit || "")) ? String(value.commit) : commit;
+        const declaredCommit = typeof value === "object" && /^[0-9a-f]{7,64}$/i.test(String(value.commit || "")) ? String(value.commit) : commit;
+        // Resolved paths are hashed from the current worktree snapshot, so their
+        // public provenance must identify the same commit. Preserve an older
+        // declared commit only for missing/historical references.
+        const referencedCommit = fileHash(relativePath).exists ? commit : declaredCommit;
         result.push(sourceRef(referencedCommit, relativePath, metadata));
       }
     }
@@ -477,12 +519,12 @@ function buildSnapshot() {
   const symbolRecords = [];
   const symbolKeySet = new Set();
   const symbolCountBySource = new Map();
-  const MAX_PUBLIC_SYMBOLS = 1600;
+  const MAX_PUBLIC_SYMBOLS = 3000;
   const MAX_SYMBOLS_PER_SOURCE = 64;
   const supportedSource = sourceRecords.filter((record) => ["trit", "tasm", "cpp", "c", "typescript", "typescript-react"].includes(record.language) && record.status === "resolved");
   const addSymbol = (source, name, line, kind) => {
     if (symbolRecords.length >= MAX_PUBLIC_SYMBOLS || (symbolCountBySource.get(source.id) || 0) >= MAX_SYMBOLS_PER_SOURCE) return;
-    if (!name || name.length < 2 || ["if", "for", "while", "switch", "return", "match"].includes(name)) return;
+    if (!name || name.length < 2 || ["if", "is", "and", "or", "for", "while", "switch", "return", "match"].includes(name.toLowerCase())) return;
     const key = `${source.path}:${name}:${line}`;
     if (symbolKeySet.has(key)) return;
     symbolKeySet.add(key);
@@ -513,6 +555,10 @@ function buildSnapshot() {
       if (match) addSymbol(source, match[1], lineNumber, "value");
       match = line.match(/^\s*(?:static\s+|inline\s+|virtual\s+|constexpr\s+)*(?:[A-Za-z_][\w:<>*&\[\], ]+)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:const)?\s*\{/);
       if (match) addSymbol(source, match[1], lineNumber, "function");
+      if (source.language === "tasm") {
+        match = line.match(/^\s*([A-Za-z_][\w.]*)\s*:/);
+        if (match) addSymbol(source, match[1], lineNumber, "label");
+      }
     });
   }
 

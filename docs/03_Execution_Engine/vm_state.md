@@ -85,6 +85,11 @@ In Kernel mode, addresses pass directly without translation.
 
 ## CSR File
 
+> Current Trit v2 note: the legacy/base CSR map occupies indices 0 through 46,
+> and the v2 extension continues through `CSR_ASID` at index 52. The VM sizes
+> the file as `CSR_MAX_ID + 1`; use `ARCHITECTURE_MANIFEST.json` for the current
+> complete map. The 47-slot sentence below describes only the legacy/base map.
+
 47 CSR slots (indices 0–46). Each stores a `TernaryValue`. See [register_map.md](../00_Quick_Ref/register_map.md) for the full table.
 
 Key CSRs the VM reads internally:

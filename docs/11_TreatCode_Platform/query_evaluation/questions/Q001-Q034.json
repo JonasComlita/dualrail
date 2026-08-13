@@ -1,0 +1,594 @@
+[
+  {
+    "id": "Q001",
+    "question": "When a TreatCode page disagrees with implementation behavior, which Trit repository artifacts are authoritative and how should an agent verify the conflict?",
+    "query": "For this Trit/TCL/OS3 repository, identify the authority order between navigation docs, root manifests, source, and tests, and give the repository-native verification command.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-00-authority",
+      "tc:capability:capability-authority-manifested-source-of-truth",
+      "tc:contract:contract-authority-manifests",
+      "tc:component:authority-agents-md",
+      "tc:component:authority-test-manifest-json",
+      "tc:component:authority-tools-trit-tool-py"
+    ],
+    "expected_source_paths": ["AGENTS.md", "TEST_MANIFEST.json", "docs/README.md", "tools/trit_tool.py"],
+    "required_terms": ["root manifests", "source", "tests", "authoritative", "tools/trit_tool.py"],
+    "forbidden_generic_claims": ["the website documentation is always authoritative", "generic ternary specification"],
+    "rationale": "AGENTS.md and docs/README.md make root manifests, implementation source, and tests outrank navigation prose; trit_tool.py exposes the repository-native checks."
+  },
+  {
+    "id": "Q002",
+    "question": "What are Trit's smoke targets, and what target list is the authoritative production gate?",
+    "query": "Read TEST_MANIFEST.json for Trit/TCL/OS3: report the smoke targets, the production suite targets, and the command used to invoke them.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-00-authority",
+      "tc:component:authority-test-manifest-json",
+      "tc:test:test-agent-tooling",
+      "tc:test:test-host-runtime",
+      "tc:test:test-production-hardening",
+      "tc:test:test-production-layers"
+    ],
+    "expected_source_paths": ["TEST_MANIFEST.json", "tools/trit-test.ps1", "tools/trit_tool.py"],
+    "required_terms": ["smoke", "test_host_runtime", "test_production_hardening", "production", "authoritative_gate"],
+    "forbidden_generic_claims": ["run an arbitrary unit-test suite", "all tests are production-gating"],
+    "rationale": "The manifest names smoke as test_host_runtime plus test_production_hardening and declares production as the authoritative gate with a distinct target list."
+  },
+  {
+    "id": "Q003",
+    "question": "Which Trit v2 architecture values and generated files must agree when changing the ISA or ABI contract?",
+    "query": "Use ARCHITECTURE_MANIFEST.json to state the Trit v2/ABI versions and name the generator outputs that must be regenerated.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-02-isa-binary",
+      "tc:component:isa-binary-architecture-manifest-json",
+      "tc:capability:capability-isa-v2-instruction-contract",
+      "tc:contract:contract-abi-v2"
+    ],
+    "expected_source_paths": ["ARCHITECTURE_MANIFEST.json", "tools/generate_architecture_contract.py", "generated/architecture_contract.h", "generated/architecture_contract.trit", "docs/04_Binary_Contract/architecture_v2.md"],
+    "required_terms": ["trit-v2", "isa_version", "function_abi_version", "syscall_abi_version", "generated/architecture_contract.h"],
+    "forbidden_generic_claims": ["the ABI is unspecified", "a binary ISA manifest is sufficient without generated outputs"],
+    "rationale": "The checked-in manifest is v2 for ISA, executable, function, and syscall ABIs and names a deterministic generator plus three generated outputs."
+  },
+  {
+    "id": "Q004",
+    "question": "How does Trit encode -1, 0, +1, and INVALID in a dual-rail trit pair, and where is that encoding implemented?",
+    "query": "Trit dual rail encodeTritPair decodeTritPair -1 0 +1 bit pair",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-01-representation",
+      "tc:capability:capability-logic-dual-rail-trit",
+      "tc:contract:contract-logic-dual-rail",
+      "tc:component:representation-ternary-backend-h",
+      "tc:component:representation-docs-01-logic-level-contract-hdl-md",
+      "tc:symbol:ternary-backend-h-encodetritpair-30",
+      "tc:symbol:ternary-backend-h-decodetritpair-34"
+    ],
+    "expected_source_paths": ["docs/01_Logic_Level/contract_hdl.md", "ternary_backend.h"],
+    "required_terms": ["00", "01", "10", "11", "INVALID", "encodeTritPair", "decodeTritPair"],
+    "forbidden_generic_claims": ["a trit is stored as one binary bit", "balanced ternary has one universal hardware encoding"],
+    "rationale": "The repository's dual-rail contract fixes 00/01/10/11 semantics and exposes matching C++ encode/decode helpers used as the HDL reference."
+  },
+  {
+    "id": "Q005",
+    "question": "What does Trit's sticky-invalid rule require an ALU or VM unit to do with a 0b11 trit?",
+    "query": "Explain detection, propagation, and the VM trap for the INVALID dual-rail sentinel in this stack.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:contract:contract-logic-dual-rail",
+      "tc:component:representation-ternary-backend-h",
+      "tc:symbol:ternary-backend-h-validtritpair-38",
+      "tc:symbol:ternary-backend-h-invalidlane64-91",
+      "tc:layer:phase-02-isa-binary",
+      "tc:capability:capability-isa-v2-instruction-contract"
+    ],
+    "expected_source_paths": ["docs/01_Logic_Level/contract_hdl.md", "ternary_backend.h", "ternary_isa.h"],
+    "required_terms": ["sticky invalid", "detect", "propagation", "TRAP_ILLEGAL_OP", "0b11"],
+    "forbidden_generic_claims": ["invalid values are silently coerced to zero", "hardware may ignore malformed trits"],
+    "rationale": "The logic-level contract requires every functional unit to detect 11, propagate it, and let VM decode/move faults become TRAP_ILLEGAL_OP."
+  },
+  {
+    "id": "Q006",
+    "question": "How are NEG and TSEL realized in Trit's dual-rail hardware contract?",
+    "query": "Give the f(x)=2-x NEG mapping and describe the three-way TSEL multiplexer control used by Trit.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-01-representation",
+      "tc:component:representation-ternary-backend-h",
+      "tc:component:representation-docs-01-logic-level-contract-hdl-md",
+      "tc:symbol:ternary-backend-h-negatetritpair-42",
+      "tc:contract:contract-logic-dual-rail"
+    ],
+    "expected_source_paths": ["docs/01_Logic_Level/contract_hdl.md", "ternary_backend.h", "ternary_isa.h"],
+    "required_terms": ["2 - x", "-1", "+1", "TSEL", "3-to-1 MUX"],
+    "forbidden_generic_claims": ["NEG is a two's-complement bitwise NOT", "TSEL is a binary branch"],
+    "rationale": "The HDL note ties NEG to arithmetic over the pair and TSEL to a 3-to-1 path selected by the dual-rail control trit."
+  },
+  {
+    "id": "Q007",
+    "question": "How many trits fit in Trit's 32-, 64-, and 128-bit transport lanes, and what padding rule does HDL conformance enforce?",
+    "query": "Lane 32 16 trits Lane 64 32 trits Lane 128 64 trits padding zero parity fault",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-01-representation",
+      "tc:component:representation-ternary-lanes-h",
+      "tc:component:representation-docs-01-logic-level-contract-hdl-md",
+      "tc:symbol:ternary-lanes-h-setpair-49",
+      "tc:contract:contract-logic-dual-rail"
+    ],
+    "expected_source_paths": ["docs/01_Logic_Level/contract_hdl.md", "ternary_lanes.h", "ternary_backend.h"],
+    "required_terms": ["Lane 32", "16 trits", "Lane 64", "32 trits", "Lane 128", "64 trits", "padding", "0"],
+    "forbidden_generic_claims": ["lane width is measured in bytes only", "padding bits may contain arbitrary data"],
+    "rationale": "The transport contract explicitly packs two bits per trit and requires unused bits to be tied to zero with a parity-style fault on non-zero padding."
+  },
+  {
+    "id": "Q008",
+    "question": "What is a Trit v2 TritWord27, how is it stored, and which bit pattern is illegal during decode?",
+    "query": "Retrieve the instruction container width, uint64_t payload/padding split, trit ordering, and malformed-word behavior.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-02-isa-binary",
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:component:isa-binary-docs-02-hardware-isa-encoding-md",
+      "tc:symbol:ternary-isa-h-tritword27-111",
+      "tc:contract:contract-isa-v2"
+    ],
+    "expected_source_paths": ["docs/02_Hardware_ISA/encoding.md", "ternary_isa.h", "ARCHITECTURE_MANIFEST.json"],
+    "required_terms": ["27-trit", "uint64_t", "bits [63:54]", "2 bits per trit", "0b11", "TRAP_ILLEGAL_OP"],
+    "forbidden_generic_claims": ["instructions are byte arrays", "all 64 bits are payload"],
+    "rationale": "TritWord27 is a 27-trit Scheme B word in uint64_t: 54 payload bits, ten zero padding bits, and 11 as an invalid decode."
+  },
+  {
+    "id": "Q009",
+    "question": "How does Trit select R-, I-, and B-type instruction layouts, and what are the field widths for opcode, registers, and immediates?",
+    "query": "Explain the trit[26] format discriminant and list the Trit v2 field slices for R, I, and B forms, including the STORE/extended overlays.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:component:isa-binary-docs-02-hardware-isa-encoding-md",
+      "tc:symbol:ternary-isa-h-pack-144",
+      "tc:symbol:ternary-isa-h-setfield-168",
+      "tc:contract:contract-isa-v2"
+    ],
+    "expected_source_paths": ["docs/02_Hardware_ISA/encoding.md", "ternary_isa.h"],
+    "required_terms": ["trit[26]", "R-type", "I-type", "B-type", "opcode", "Rd", "Rs1", "imm16", "offset19", "STORE"],
+    "forbidden_generic_claims": ["all instructions share one fixed binary layout", "B-type uses a byte offset"],
+    "rationale": "The encoding contract uses the MST as a three-valued format discriminant and documents distinct register/immediate layouts plus R4/R5 and STORE overlays."
+  },
+  {
+    "id": "Q010",
+    "question": "How is the Trit v2 opcode field decoded, and what happens at opcode 80 or above?",
+    "query": "Trit v2 opcode unsigned base 3 escape setOpcode",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-02-isa-binary",
+      "tc:component:isa-binary-architecture-manifest-json",
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:symbol:ternary-isa-h-setopcode-1012",
+      "tc:contract:contract-isa-v2"
+    ],
+    "expected_source_paths": ["ARCHITECTURE_MANIFEST.json", "docs/02_Hardware_ISA/encoding.md", "ternary_isa.h"],
+    "required_terms": ["base-3", "rawOp", "0-79", "80", "escape", "TRAP_ILLEGAL_OP", "setOpcode"],
+    "forbidden_generic_claims": ["opcode values are binary hexadecimal", "opcode 80 is an ordinary direct instruction"],
+    "rationale": "ARCHITECTURE_MANIFEST.json reserves 80 as EXT; encoding.md defines rawOp as four unsigned trits and the VM rejects unknown/reserved values."
+  },
+  {
+    "id": "Q011",
+    "question": "How are r0, r13, and r26 represented in a three-trit Trit v2 register field?",
+    "query": "Retrieve the balanced register-index offset and calculate the stored values for r0, r13, and r26.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:component:isa-binary-docs-02-hardware-isa-encoding-md",
+      "tc:symbol:ternary-isa-h-pack-144",
+      "tc:contract:contract-isa-v2"
+    ],
+    "expected_source_paths": ["docs/02_Hardware_ISA/encoding.md", "ternary_isa.h"],
+    "required_terms": ["3-trit", "REG_FIELD_OFFSET", "13", "r0", "r13", "r26", "-13", "+13"],
+    "forbidden_generic_claims": ["registers are encoded as four-bit binary indices", "r0 is an ordinary writable register"],
+    "rationale": "The ISA stores index-13 in a balanced three-trit field: r0=-13, r13=0, r26=+13; separate VM state enforces r0 read-zero/write-ignore."
+  },
+  {
+    "id": "Q012",
+    "question": "What are Trit v2's signed immediate ranges, and how does decodeSigned handle their sign extension?",
+    "query": "Report the imm16 and offset19 balanced-ternary ranges and the rule that all immediate forms are signed.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:isa-binary-docs-02-hardware-isa-encoding-md",
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:symbol:ternary-isa-h-encodesigned-200",
+      "tc:contract:contract-isa-v2"
+    ],
+    "expected_source_paths": ["docs/02_Hardware_ISA/encoding.md", "ternary_isa.h", "docs/02_Hardware_ISA/immediate_decoding.md"],
+    "required_terms": ["imm16", "21,523,360", "offset19", "581,130,733", "signed", "sign-extension", "decodeSigned"],
+    "forbidden_generic_claims": ["there is an unsigned immediate format", "immediates are two's-complement bytes"],
+    "rationale": "Trit v2 decodes all immediates as balanced ternary; the documented 16- and 19-trit ranges and zero sign-padding are not generic base-3 behavior."
+  },
+  {
+    "id": "Q013",
+    "question": "Which memory-order suffixes does Trit's FENCE instruction accept, and how are they encoded?",
+    "query": "FENCE memory order suffix relaxed acquire release sequentially consistent",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-02-isa-binary",
+      "tc:layer:phase-04-vm-state",
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:contract:contract-isa-v2",
+      "tc:contract:contract-vm-state-memory"
+    ],
+    "expected_source_paths": ["docs/02_Hardware_ISA/encoding.md", "docs/03_Execution_Engine/memory_model.md", "ternary_isa.h", "ternary_vm.h"],
+    "required_terms": ["FENCE", ".-1", ".0", ".+1", "relaxed", "acquire-release", "sequentially consistent", "func field"],
+    "forbidden_generic_claims": ["FENCE is a CPU-specific binary opcode with no suffix", "the VM reorders all memory operations"],
+    "rationale": "The ISA and memory model agree on three signed function-field suffixes; the current sequential interpreter validates the marker without speculative reordering."
+  },
+  {
+    "id": "Q014",
+    "question": "What register ranges and return conventions define the Trit v2 function and syscall ABIs?",
+    "query": "Read the architecture manifest and list callee-saved, argument, caller-saved, return, syscall-result, link, and stack-pointer registers.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:isa-binary-architecture-manifest-json",
+      "tc:capability:capability-isa-v2-instruction-contract",
+      "tc:contract:contract-abi-v2",
+      "tc:layer:phase-11-runtime-sdk"
+    ],
+    "expected_source_paths": ["ARCHITECTURE_MANIFEST.json", "docs/04_Binary_Contract/architecture_v2.md", "apps/os_sdk.trit", "SYSCALL_MANIFEST.json"],
+    "required_terms": ["callee_saved", "function_arguments", "caller_saved", "link_register", "stack_pointer", "return_low", "syscall_status"],
+    "forbidden_generic_claims": ["Trit follows the host C ABI unchanged", "syscalls return in an unspecified register"],
+    "rationale": "The v2 manifest fixes register ranges and roles, including r25 link, r26 stack, r13/r14 returns, and r13-r16 syscall argument/result roles."
+  },
+  {
+    "id": "Q015",
+    "question": "Which CSRs exist in the Trit VM, and which ones are read for privilege, trap routing, and syscalls?",
+    "query": "Trit ISA VM CSR STATUS EPC TVEC SYSCALL_ID architecture manifest",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-02-isa-binary",
+      "tc:layer:phase-04-vm-state",
+      "tc:component:isa-binary-ternary-isa-h",
+      "tc:component:vm-state-ternary-vm-state-h",
+      "tc:contract:contract-vm-state-memory"
+    ],
+    "expected_source_paths": ["ternary_isa.h", "docs/03_Execution_Engine/vm_state.md", "docs/00_Quick_Ref/register_map.md", "ARCHITECTURE_MANIFEST.json"],
+    "required_terms": ["CSR", "47 CSR slots", "CSR_STATUS", "CSR_EPC", "CSR_TVEC", "CSR_SYSCALL_ID", "CSR_ISA_VERSION", "CSR_ASID", "CSR_MAX_ID"],
+    "forbidden_generic_claims": ["CSRs are ordinary memory addresses", "the VM has only one status register"],
+    "rationale": "ternary_isa.h defines the 0-47 device/base map plus v2 IDs 48-52; vm_state.md names STATUS/EPC/TVEC/SYSCALL_ID as execution-critical reads."
+  },
+  {
+    "id": "Q016",
+    "question": "What exactly happens to r27, PC, privilege, and CSRs when a Trit VM instruction faults?",
+    "query": "Trit VM unrouted routed fault PC EPC STATUS TVEC trap",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:layer:phase-05-vm-execution",
+      "tc:component:vm-state-docs-03-execution-engine-vm-state-md",
+      "tc:component:vm-execution-ternary-vm-h",
+      "tc:symbol:ternary-vm-h-step-987",
+      "tc:contract:contract-vm-execution"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/vm_state.md", "ternary_vm.h", "ternary_isa.h"],
+    "required_terms": ["r27", "TRAPPED", "PC", "CSR_EPC", "CSR_STATUS", "CSR_TVEC", "Kernel mode", "does not advance"],
+    "forbidden_generic_claims": ["faults always resume at the next instruction", "traps are host exceptions with no VM state change"],
+    "rationale": "The VM writes a fault record to r27, leaves the faulting PC, and only routed traps save EPC/status and jump to TVEC in kernel privilege."
+  },
+  {
+    "id": "Q017",
+    "question": "How does Trit's TernaryScalar represent values and build powers-of-three tables?",
+    "query": "Find the scalar value type and explain how its compile-time pow3 table supports Trit numeric modes.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-03-numeric-operations",
+      "tc:component:numeric-operations-ternary-scalar-h",
+      "tc:symbol:ternary-scalar-h-ternaryscalar-75",
+      "tc:symbol:ternary-scalar-h-pow3table-105",
+      "tc:capability:capability-numeric-native-ops"
+    ],
+    "expected_source_paths": ["ternary_scalar.h", "ternary_native_ops.h"],
+    "required_terms": ["TernaryScalar", "pow3Table", "T1", "T5", "T40", "balanced"],
+    "forbidden_generic_claims": ["TernaryScalar is a floating-point host double", "the table is a binary power-of-two table"],
+    "rationale": "The scalar header defines Trit's mode-parameterized scalar and powers-of-three support; it is distinct from the raw dual-rail transport encoding."
+  },
+  {
+    "id": "Q018",
+    "question": "Which native integer and floating ternary formats are actually declared by Trit, and what normalization helpers implement them?",
+    "query": "Retrieve the TernaryIntFormat/TernaryFloatFormat declarations, named T widths, and encodeExponent/normalizeParts helpers.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-03-numeric-operations",
+      "tc:component:numeric-operations-ternary-native-ops-h",
+      "tc:symbol:ternary-native-ops-h-ternaryintformat-107",
+      "tc:symbol:ternary-native-ops-h-ternaryfloatformat-127",
+      "tc:symbol:ternary-native-ops-h-fmtt1-116",
+      "tc:symbol:ternary-native-ops-h-fmtt40-147",
+      "tc:symbol:ternary-native-ops-h-fmtt50-149",
+      "tc:symbol:ternary-native-ops-h-encodeexponent-268",
+      "tc:symbol:ternary-native-ops-h-normalizeparts-414"
+    ],
+    "expected_source_paths": ["ternary_native_ops.h", "ternary_scalar.h"],
+    "required_terms": ["TernaryIntFormat", "TernaryFloatFormat", "FmtT1", "FmtT40", "FmtT50", "encodeExponent", "normalizeParts"],
+    "forbidden_generic_claims": ["Trit's native formats are IEEE binary float aliases", "only one ternary width is implemented"],
+    "rationale": "The native-ops header exposes discrete T1/T5/T10/T20/T40/T50 format declarations and ternary exponent/mantissa normalization helpers."
+  },
+  {
+    "id": "Q019",
+    "question": "How does Trit's SIMD layer apply a tritwise operation across packed lanes, and which host vector type does it use?",
+    "query": "Locate the batchTritwiseNegScalar path, identify its TritLane20/AVX2 representation, and distinguish it from TernaryScalar.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-03-numeric-operations",
+      "tc:component:numeric-operations-ternary-simd-h",
+      "tc:component:representation-ternary-lanes-h",
+      "tc:symbol:ternary-simd-h-batchtritwisenegscalar-110",
+      "tc:symbol:ternary-simd-h-tritlane20-173",
+      "tc:symbol:ternary-simd-h-m256i-189"
+    ],
+    "expected_source_paths": ["ternary_simd.h", "ternary_lanes.h", "docs/01_Logic_Level/contract_hdl.md"],
+    "required_terms": ["batchTritwiseNegScalar", "TritLane20", "__m256i", "packed", "lane", "2 bits"],
+    "forbidden_generic_claims": ["SIMD lanes are ordinary binary integers", "TernaryScalar and transport lanes share one storage type"],
+    "rationale": "The SIMD header batches packed dual-rail lanes through AVX2 __m256i values; the lane transport contract, not scalar numeric format, defines those bits."
+  },
+  {
+    "id": "Q020",
+    "question": "What GPU backends and conformance corpus does Trit actually provide for raw lane operations?",
+    "query": "Check CUDA/SYCL guards and GPU validation helpers: list the enable macros, operations, lane cases, and CPU-reference comparison behavior.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-03-numeric-operations",
+      "tc:capability:capability-numeric-native-ops",
+      "tc:component:numeric-operations-ternary-native-ops-h",
+      "tc:component:representation-ternary-backend-h"
+    ],
+    "expected_source_paths": ["ternary_gpu_kernels.h", "ternary_gpu_validation.h", "ternary_backend.h", "TEST_MANIFEST.json", "docs/01_Logic_Level/gates.md"],
+    "required_terms": ["TERNARY_ENABLE_CUDA", "TERNARY_ENABLE_SYCL", "cudaTritwiseNegRaw64Kernel", "L1", "L50", "CPU reference", "checksum"],
+    "forbidden_generic_claims": ["GPU support is automatic in every build", "CUDA kernels use a different trit encoding", "GPU correctness is asserted without a reference corpus"],
+    "rationale": "GPU headers are optional and guarded; validation enumerates Neg/Add/Sub/Compare/Min/Max across L1-L50 and records CPU-reference checksums."
+  },
+  {
+    "id": "Q021",
+    "question": "How do ACLR/ALOAD/AADD/ASUB/AMUL, ASTORE, and VDOT use Trit's accumulator widths?",
+    "query": "Explain the VM accumulator's T40 updates and the T1xT1 VDOT result width, naming the corresponding extension operations.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:layer:phase-03-numeric-operations",
+      "tc:component:vm-state-docs-03-execution-engine-vm-state-md",
+      "tc:component:vm-execution-ternary-vm-h",
+      "tc:contract:contract-vm-state-memory"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/vm_state.md", "ternary_vm.h", "ternary_isa.h", "ternary_ir.h"],
+    "required_terms": ["ACLR", "ALOAD", "AADD", "ASUB", "AMUL", "ASTORE", "VDOT", "T40", "T50", "LongTriple"],
+    "forbidden_generic_claims": ["the accumulator is a binary floating-point register", "VDOT returns the same width as each input trit"],
+    "rationale": "vm_state.md specifies a T40 accumulator and conversion on arithmetic, while VDOT produces a T50 LongTriple sum from T1 lanes."
+  },
+  {
+    "id": "Q022",
+    "question": "What fields make up serializable Trit VMState, and what are the exact r0 and r27 register semantics?",
+    "query": "List the architectural state members and explain r0 read-zero/write-ignore versus r27 trap-register behavior.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:component:vm-state-ternary-vm-state-h",
+      "tc:component:vm-state-docs-03-execution-engine-vm-state-md",
+      "tc:symbol:ternary-vm-state-h-ternaryregisterfile-605",
+      "tc:capability:capability-vm-state-and-mmu"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/vm_state.md", "ternary_vm_state.h", "ternary_isa.h"],
+    "required_terms": ["VMState", "pc", "regfile", "trap_reg", "imem", "dmem", "CSRs", "vregfile", "r0", "r27"],
+    "forbidden_generic_claims": ["the VM state is only registers and a program counter", "r0 stores ordinary writes", "r27 is a general-purpose register"],
+    "rationale": "The serializable state includes memories, CSR/privilege/vector/accumulator/fault fields; RegisterFile hard-wires r0 while trap handling uses r27."
+  },
+  {
+    "id": "Q023",
+    "question": "What are Trit VM's separate IMEM/DMEM defaults and word-addressing rules?",
+    "query": "Report the Harvard memory types, default word counts, address calculation for LOAD/STORE and vector memory, and the absence of byte addressing.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:component:vm-state-docs-03-execution-engine-memory-model-md",
+      "tc:component:vm-state-ternary-vm-state-h",
+      "tc:contract:contract-vm-state-memory"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/memory_model.md", "docs/03_Execution_Engine/vm_state.md", "ternary_vm_state.h", "ternary_isa.h"],
+    "required_terms": ["IMEM", "DMEM", "4096", "1,000,000", "word-addressed", "base + imm16", "no byte addressing"],
+    "forbidden_generic_claims": ["guest addresses are byte offsets", "instructions and data share one memory array"],
+    "rationale": "The VM uses a Harvard split with TritWord27 IMEM and tagged TernaryValue DMEM; architectural addresses index words, not bytes."
+  },
+  {
+    "id": "Q024",
+    "question": "How does Trit's user-mode MMU translate instruction and data addresses, and what page-fault evidence is recorded?",
+    "query": "Explain mmu_enable, the separate IMEM/DMEM page-table roots and counts, 27-word pages, PTE permissions, and routed fault causes.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:component:vm-state-docs-03-execution-engine-memory-model-md",
+      "tc:component:vm-state-ternary-vm-state-h",
+      "tc:component:isa-binary-architecture-manifest-json",
+      "tc:capability:capability-vm-state-and-mmu",
+      "tc:contract:contract-vm-state-memory"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/memory_model.md", "ternary_vm_state.h", "ternary_isa.h", "ARCHITECTURE_MANIFEST.json", "tests/test_kernel.cpp"],
+    "required_terms": ["mmu_enable", "user_imem_ptbr", "user_dmem_ptbr", "27-word", "present", "read", "write", "execute", "page_fault_addr", "TRAP_MEM_FAULT"],
+    "forbidden_generic_claims": ["kernel and user addresses always share one page table", "page faults are host segmentation faults", "the MMU uses byte-sized pages"],
+    "rationale": "User IMEM/DMEM use distinct roots and 27-word pages when enabled; translation tracks permissions and page-fault address/access before routed causes."
+  },
+  {
+    "id": "Q025",
+    "question": "How do Trit vector memory faults differ from virtual-memory faults, and when do TLDR/TSTR reservations get invalidated?",
+    "query": "Trit VM VLOAD VSTORE VGATHER VSCATTER writeVectorFaultZero MMU reservation TSTR",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-04-vm-state",
+      "tc:layer:phase-05-vm-execution",
+      "tc:component:vm-execution-ternary-vm-h",
+      "tc:component:vm-state-docs-03-execution-engine-memory-model-md",
+      "tc:contract:contract-vm-state-memory",
+      "tc:symbol:ternary-vm-h-writevectorfaultzero-372"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/memory_model.md", "ternary_vm.h", "tests/test_vm_widths.cpp", "tests/test_kernel.cpp"],
+    "required_terms": ["VLOAD", "VSTORE", "VGATHER", "VSCATTER", "lane-local", "TLDR", "TSTR", "reservation", "page translation"],
+    "forbidden_generic_claims": ["all vector faults halt the whole VM immediately", "atomic reservations survive ordinary stores", "vector addressing bypasses the MMU"],
+    "rationale": "Physical vector range errors are lane-local, while user page failures route architecturally; scalar/vector stores, traps, and TSTR clear matching reservations."
+  },
+  {
+    "id": "Q026",
+    "question": "What does a decoded-trace VMMicroOp carry, and which conditions force a precise side exit back to the Trit interpreter?",
+    "query": "List the trace micro-op accounting/trap/guard fields and the branch, memory, translation, invalid-result, and generation-change exits.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-05-vm-execution",
+      "tc:component:vm-execution-docs-03-execution-engine-decoded-trace-and-native-jit-md",
+      "tc:component:vm-execution-ternary-vm-h",
+      "tc:capability:capability-vm-interpreter-and-jit-fallback",
+      "tc:contract:contract-vm-execution"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "ternary_vm.h", "tests/test_vm_widths.cpp"],
+    "required_terms": ["VMMicroOp", "architectural PC", "trap point", "register and result guards", "side exit", "translation", "memory fault", "generation"],
+    "forbidden_generic_claims": ["the trace executor ignores traps", "trace JIT always emits native code", "a cache hit removes MMU checks"],
+    "rationale": "The portable decoded trace is host-neutral, guard-heavy, and exits at the faulting architectural PC for unsupported or changed state."
+  },
+  {
+    "id": "Q027",
+    "question": "Which operations can Trit's NativeX64Jit emit inline, and which memory/MMU cases deliberately fall back to helpers?",
+    "query": "Report the W^X mapping policy, supported T40 subset, and precise fallback cases for the experimental x86-64 backend.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-05-vm-execution",
+      "tc:component:vm-execution-ternary-vm-h",
+      "tc:component:vm-execution-docs-03-execution-engine-decoded-trace-and-native-jit-md",
+      "tc:capability:capability-vm-interpreter-and-jit-fallback",
+      "tc:contract:contract-vm-execution"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "ternary_vm.h", "tests/test_vm_widths.cpp"],
+    "required_terms": ["NativeX64Jit", "Windows x64", "System V", "RW", "RX", "W^X", "NOP", "T40", "MMU", "sparse", "side exit"],
+    "forbidden_generic_claims": ["the native backend executes every opcode directly", "writable and executable memory are kept simultaneously", "MMU translation is skipped for speed"],
+    "rationale": "The native backend emits only a guarded subset, transitions RW to RX, and delegates translated/sparse/tagged/reservation-sensitive cases to portable helpers."
+  },
+  {
+    "id": "Q028",
+    "question": "What evidence is required before Trit enables NativeX64Jit by default?",
+    "query": "Retrieve the execution-backend benchmark protocol: warmups, seven-run medians, CV ceiling, speed thresholds, and current default status.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-05-vm-execution",
+      "tc:test:test-execution-backends-benchmark",
+      "tc:component:vm-execution-docs-03-execution-engine-decoded-trace-and-native-jit-md",
+      "tc:contract:contract-vm-execution"
+    ],
+    "expected_source_paths": ["docs/03_Execution_Engine/decoded_trace_and_native_jit.md", "TEST_MANIFEST.json", "BENCHMARK_MANIFEST.json"],
+    "required_terms": ["seven-run median", "two warmups", "3%", "1.15x", "3% slower", "default remains disabled"],
+    "forbidden_generic_claims": ["one benchmark run is sufficient", "decode-count reduction alone enables the default", "NativeX64Jit is already the production default"],
+    "rationale": "The benchmark contract requires stable seven-sample wall times, CV below 3%, two-workload 1.15x speed, and no more than 3% regression on the third."
+  },
+  {
+    "id": "Q029",
+    "question": "Which syntax conveniences and two-pass behavior does the Trit assembler guarantee for TCL/OS3 assembly?",
+    "query": "Explain case-insensitive mnemonics/registers, optional commas, semicolon comments, colon labels, and what each assembler pass does.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-06-assembler",
+      "tc:component:assembler-ternary-asm-h",
+      "tc:component:assembler-docs-04-binary-contract-asm-syntax-md",
+      "tc:symbol:ternary-asm-h-assemblyresult-143",
+      "tc:capability:capability-binary-two-pass-assembler",
+      "tc:contract:contract-binary-assembler"
+    ],
+    "expected_source_paths": ["docs/04_Binary_Contract/asm_syntax.md", "ternary_asm.h", "tests/test_tcl_asm.cpp"],
+    "required_terms": ["case-insensitive", "commas are optional", ";", "label", "two-pass", "Pass 1", "Pass 2", "27-trit"],
+    "forbidden_generic_claims": ["the assembler is single-pass", "labels are case-sensitive byte offsets", "commas are mandatory"],
+    "rationale": "The stable syntax guide and assembler API define these TCL conveniences and a pass-1 label collection/pass-2 binary emission workflow."
+  },
+  {
+    "id": "Q030",
+    "question": "How do .text, .data, and .word map to Trit IMEM/DMEM, and what width does .word define?",
+    "query": "Retrieve the assembler section/directive mapping and explain how the emitted sections relate to the Trit VM binary contract.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-06-assembler",
+      "tc:component:assembler-docs-04-binary-contract-asm-syntax-md",
+      "tc:component:assembler-ternary-asm-h",
+      "tc:symbol:ternary-asm-h-architecturedirectives-2039",
+      "tc:contract:contract-binary-assembler"
+    ],
+    "expected_source_paths": ["docs/04_Binary_Contract/asm_syntax.md", "ternary_asm.h", "IMAGE_FORMAT_MANIFEST.json", "ternary_vm_state.h"],
+    "required_terms": [".text", "IMEM", ".data", "DMEM", ".word", "50-trit", "directive"],
+    "forbidden_generic_claims": [".text and .data are interchangeable", ".word is a 32-bit host integer", "the guest writes instructions into IMEM"],
+    "rationale": "The assembler syntax maps executable text to IMEM and data/constants to DMEM; .word declares the documented 50-trit value width."
+  },
+  {
+    "id": "Q031",
+    "question": "How are Trit assembler labels represented and relocated for branches versus loads, and which API structures hold them?",
+    "query": "Distinguish relative branch offsets from absolute load addresses and identify ImmOrLabel, LabelMaps, SourceLine, and AssemblyResult roles.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:assembler-ternary-asm-h",
+      "tc:component:assembler-tests-test-tcl-asm-cpp",
+      "tc:symbol:ternary-asm-h-immorlabel-310",
+      "tc:symbol:ternary-asm-h-labelmaps-747",
+      "tc:symbol:ternary-asm-h-sourceline-591",
+      "tc:symbol:ternary-asm-h-assemblyresult-143",
+      "tc:test:test-tcl-asm"
+    ],
+    "expected_source_paths": ["ternary_asm.h", "docs/04_Binary_Contract/asm_syntax.md", "tests/test_tcl_asm.cpp"],
+    "required_terms": ["ImmOrLabel", "LabelMaps", "SourceLine", "AssemblyResult", "relative offset", "absolute address", "IMEM", "DMEM"],
+    "forbidden_generic_claims": ["all labels relocate as PC-relative bytes", "labels are resolved by the linker only", "the assembler has no relocation distinction"],
+    "rationale": "The syntax contract states branches receive relative offsets while LOAD labels receive absolute addresses; the public assembler types expose this relocation state."
+  },
+  {
+    "id": "Q032",
+    "question": "What is the Trit/TCL compiler's SSA module shape and what does a ValueId of -1 mean?",
+    "query": "Retrieve the Module→Function→BasicBlock→Instr/Terminator hierarchy and the ValueId/Instr fields used by the compiler IR.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-07-low-level-ir",
+      "tc:component:low-level-ir-ternary-ir-h",
+      "tc:component:low-level-ir-docs-05-compiler-infra-ternary-ir-md",
+      "tc:symbol:ternary-ir-h-value-38",
+      "tc:symbol:ternary-ir-h-program-102",
+      "tc:capability:capability-compiler-low-level-ir",
+      "tc:contract:contract-compiler-object-ir"
+    ],
+    "expected_source_paths": ["ternary_compiler_ir.h", "ternary_ir.h", "docs/05_Compiler_Infra/ternary_ir.md"],
+    "required_terms": ["SSA", "Module", "Function", "BasicBlock", "Instr", "Terminator", "ValueId", "-1", "effect"],
+    "forbidden_generic_claims": ["the compiler IR is a generic AST", "SSA values are host pointers", "there is no terminator per block"],
+    "rationale": "The current compiler IR documents an SSA hierarchy and ValueId=-1 for no result; the older minimal ternary_ir.h remains a separate lowering boundary."
+  },
+  {
+    "id": "Q033",
+    "question": "How do Trit IR effects and Branch3 terminators preserve ternary control flow and memory ordering?",
+    "query": "Trit compiler IR Effect Pure ReadMem WriteMem Syscall CSR Atomic Control Branch3",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-07-low-level-ir",
+      "tc:component:low-level-ir-docs-05-compiler-infra-ternary-ir-md",
+      "tc:component:low-level-ir-ternary-ir-h",
+      "tc:symbol:ternary-ir-h-branch-729",
+      "tc:symbol:ternary-ir-h-csrw-400",
+      "tc:symbol:ternary-ir-h-fence-340",
+      "tc:contract:contract-compiler-object-ir"
+    ],
+    "expected_source_paths": ["ternary_compiler_ir.h", "ternary_ir.h", "docs/05_Compiler_Infra/ternary_ir.md"],
+    "required_terms": ["Effect", "Pure", "ReadMem", "WriteMem", "Atomic", "Branch3", "target_neg", "target_zero", "target_pos", "TCMP", "BRN", "BRP"],
+    "forbidden_generic_claims": ["all IR operations are freely reorderable", "Branch3 is a binary if/else", "fences have no IR effect classification"],
+    "rationale": "The IR effect enum prevents unsafe motion and Branch3 preserves all three trit outcomes, lowering to the ISA's TCMP/BRN/BRP pattern."
+  },
+  {
+    "id": "Q034",
+    "question": "What does Trit's register allocator emit for scalar/vector values and why is vector call/return lowering fail-closed?",
+    "query": "Report AllocationResult's scalar/vector/spill maps and explain the compiler's explicit rejection or replay boundary for unspecified vector ABI operations.",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:layer:phase-07-low-level-ir",
+      "tc:layer:phase-09-host-compiler",
+      "tc:component:low-level-ir-ternary-ir-h",
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:capability:capability-compiler-low-level-ir",
+      "tc:contract:contract-compiler-host-pipeline"
+    ],
+    "expected_source_paths": ["ternary_compiler_ir.h", "ternary_compiler_codegen.h", "docs/05_Compiler_Infra/ternary_ir.md", "ternary_asm.h"],
+    "required_terms": ["AllocationResult", "scalar_registers", "vector_registers", "spill_slots", "r0..r26", "v0..v7", "DMEM", "fail-closed", "allow_ast_replay"],
+    "forbidden_generic_claims": ["vector values are silently scalarized", "spills use host heap addresses", "the compiler replays any unsupported operation automatically"],
+    "rationale": "The allocator maps SSA values to Trit scalar/vector registers or DMEM stack slots; vector call/return ABI gaps are intentionally rejected or explicitly replay-backed."
+  }
+]

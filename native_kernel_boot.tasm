@@ -1,6 +1,6 @@
 ; Phase D native-kernel boot prelude.
 ;
-; This file is assembled before OS3/native_kernel_trap_stub.tasm and the
+; This file is assembled before native_kernel_trap_stub.tasm and the
 ; compiler output for kernel.trit. It proves the Phase D kernel can boot,
 ; initialize the native TCL subsystems, enter user mode, take a syscall trap,
 ; run kernel_dispatch, and return to the next user instruction.

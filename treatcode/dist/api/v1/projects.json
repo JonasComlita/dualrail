@@ -1,10 +1,10 @@
 {
   "schema_version": "treatcode.public.api.v1",
   "snapshot": {
-    "id": "tc:snapshot:b9084c94dbba",
+    "id": "tc:snapshot:371c93041dbe",
     "repository": "https://github.com/JonasComlita/dualrail",
-    "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
-    "generated_at": "2026-08-01T13:23:29-07:00",
+    "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+    "generated_at": "2026-08-12T22:26:36-07:00",
     "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
   },
   "data": [
@@ -15,7 +15,7 @@
       "description": "Trit v2 ternary ISA, compiler, VM, kernel, and application stack.",
       "repository": "https://github.com/JonasComlita/dualrail",
       "default_branch": "main",
-      "current_commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+      "current_commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
       "stack_node_ids": [
         "tc:layer:phase-00-authority",
         "tc:layer:phase-01-representation",
@@ -42,13 +42,13 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "README.md",
           "status": "resolved"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "AGENTS.md",
           "status": "resolved"
         }
@@ -56,7 +56,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "645809a4472e042f1389f00c9f936c15977b83cf",
+          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
           "path": "TEST_MANIFEST.json",
           "status": "resolved"
         }

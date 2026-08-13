@@ -1,0 +1,536 @@
+[
+  {
+    "id": "Q035",
+    "question": "How does the implemented TCL frontend lex a 7-bit source file, and where can a caller read each token's kind, start offset, length, and EOF token?",
+    "query": "TCL tcl_frontend_lex token kind start len EOF 7-bit ASCII",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:tcl-language-tcl-spec-1-0-md",
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:component:self-hosted-compiler-tcl-frontend-trit",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-lex-4",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-kind-12",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-start-16",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-len-20"
+    ],
+    "expected_source_paths": [
+      "TCL_Spec_1.0.md",
+      "tcl_parser.trit",
+      "tcl_frontend.trit"
+    ],
+    "required_terms": ["TCL", "7-bit ASCII", "tcl_frontend_lex", "token_kind", "token_start", "token_len", "EOF"],
+    "forbidden_generic_claims": ["an unspecified ternary lexer", "UTF-8 is accepted by the TCL lexer", "tokens have no source offsets"],
+    "rationale": "Anchors lexical retrieval to the shipped TCL specification and native frontend accessors instead of a generic ternary tokenizer description."
+  },
+  {
+    "id": "Q036",
+    "question": "What does the TCL implementation require when matching a T1 or numeric condition, and which three arms must an answer identify?",
+    "query": "TCL T1 match neg zero pos exhaustive arms",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:tcl-language-tcl-spec-1-0-md",
+      "tc:component:tcl-language-docs-06-language-tcl-language-md",
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:symbol:tcl-parser-trit-tcl-err-invalid-match-arm-25",
+      "tc:symbol:tcl-parser-trit-tcl-err-expected-fat-arrow-26"
+    ],
+    "expected_source_paths": ["TCL_Spec_1.0.md", "docs/06_Language/tcl_language.md", "tcl_parser.trit"],
+    "required_terms": ["T1", "match", "neg", "zero", "pos", "all three arms"],
+    "forbidden_generic_claims": ["a boolean has only true and false arms", "the compiler silently accepts a missing match arm", "generic ternary truth-table prose without TCL syntax"],
+    "rationale": "Tests whether retrieval preserves TCL's three-arm control-flow contract and parser diagnostics rather than reverting to binary conditionals."
+  },
+  {
+    "id": "Q037",
+    "question": "How does TCL represent unknown, valid, and null pointers, and what checked operation changes an unknown pointer into a valid binding?",
+    "query": "TCL ptr valid null unknown match pointer state",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:tcl-language-tcl-spec-1-0-md",
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:symbol:tcl-parser-trit-tcl-err-unknown-ptr-state-13",
+      "tc:symbol:tcl-parser-trit-tcl-err-unknown-ptr-region-14"
+    ],
+    "expected_source_paths": ["TCL_Spec_1.0.md", "tcl_parser.trit"],
+    "required_terms": ["ptr<T, unknown>", "ptr<T, valid>", "ptr<T, null>", "match", "TCMP"],
+    "forbidden_generic_claims": ["pointers are untyped integers", "null checks are optional runtime conventions", "a garbage collector supplies pointer validity"],
+    "rationale": "Separates TCL's state-indexed pointer types and checked narrowing from generic ternary memory explanations."
+  },
+  {
+    "id": "Q038",
+    "question": "How are TCL width parameters constrained and monomorphized for the native widths, and what does the parser retain for width parameters?",
+    "query": "TCL TritWidth width parameter W narrow_cast monomorphize width_params",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:tcl-language-tcl-spec-1-0-md",
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:symbol:tcl-parser-trit-tcl-parser-width-params-55",
+      "tc:symbol:tcl-parser-trit-tcl-parser-clear-width-params-158"
+    ],
+    "expected_source_paths": ["TCL_Spec_1.0.md", "tcl_parser.trit"],
+    "required_terms": ["TritWidth", "W", "narrow_cast", "monomorphize", "width_params", "1, 5, 10, 20, 40, 50"],
+    "forbidden_generic_claims": ["width is selected dynamically at runtime", "TCL supports arbitrary unbounded numeric widths", "generic ternary width folklore without parser evidence"],
+    "rationale": "Checks that the answer connects the language-level width contract to the native parser's explicit width-parameter state."
+  },
+  {
+    "id": "Q039",
+    "question": "Where does the native TCL parser keep its current token, error count, diagnostics, and width-parameter vector, and how are malformed declarations reported?",
+    "query": "tcl_parser_diagnostics",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:symbol:tcl-parser-trit-tcl-parser-current-50",
+      "tc:symbol:tcl-parser-trit-tcl-parser-errors-52",
+      "tc:symbol:tcl-parser-trit-tcl-parser-diagnostics-54",
+      "tc:symbol:tcl-parser-trit-tcl-parser-width-params-55",
+      "tc:symbol:tcl-parser-trit-tcl-err-expected-semicolon-6",
+      "tc:symbol:tcl-parser-trit-tcl-err-expected-type-name-16"
+    ],
+    "expected_source_paths": ["tcl_parser.trit"],
+    "required_terms": ["current", "errors", "diagnostics", "width_params", "TCL_ERR_EXPECTED_SEMICOLON", "TCL_ERR_EXPECTED_TYPE_NAME"],
+    "forbidden_generic_claims": ["parser errors are printed only by a host UI", "malformed declarations are accepted", "diagnostics have no token association"],
+    "rationale": "Requires retrieval of concrete parser state accessors and error constants, making stale high-level descriptions detectable."
+  },
+  {
+    "id": "Q040",
+    "question": "What exact host-compiler pipeline does compileSource run for a TCL module before it produces a CompileResult?",
+    "query": "ternary_compiler.h",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:component:host-compiler-tritc-cpp",
+      "tc:source:ternary-compiler-h-fab6853a"
+    ],
+    "expected_source_paths": ["ternary_compiler.h", "tritc.cpp"],
+    "required_terms": ["compileSource", "Lexer", "Parser", "foldModuleConstants", "CompilerImpl", "CompileResult"],
+    "forbidden_generic_claims": ["the host compiler starts from a generic ternary truth table", "there is no parser stage", "compileSource invokes a garbage collector"],
+    "rationale": "Verifies the public host entry point is described as the implemented lexer-parser-folding-compiler pipeline."
+  },
+  {
+    "id": "Q041",
+    "question": "How does the host compiler represent a parsed module and fold constant declarations before type inference?",
+    "query": "ModuleAst",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:symbol:ternary-compiler-codegen-h-moduleast-51",
+      "tc:symbol:ternary-compiler-codegen-h-functionast-439"
+    ],
+    "expected_source_paths": ["ternary_compiler.h", "ternary_compiler_codegen.h"],
+    "required_terms": ["ModuleAst", "FunctionAst", "foldModuleConstants", "constant evaluation", "Parser"],
+    "forbidden_generic_claims": ["the AST is only a flat token list", "constants are always evaluated at runtime", "the compiler uses an unspecified AST schema"],
+    "rationale": "Checks retrieval of concrete AST types and the constant-folding boundary in the current host implementation."
+  },
+  {
+    "id": "Q042",
+    "question": "Which host-compiler component performs TCL type inference for functions, blocks, statements, and expressions, and what object records that work?",
+    "query": "inferFunction",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:symbol:ternary-compiler-codegen-h-typeinferencer-21",
+      "tc:symbol:ternary-compiler-codegen-h-inferfunction-64",
+      "tc:symbol:ternary-compiler-codegen-h-inferblock-79",
+      "tc:symbol:ternary-compiler-codegen-h-inferstmt-90",
+      "tc:symbol:ternary-compiler-codegen-h-inferexpr-255"
+    ],
+    "expected_source_paths": ["ternary_compiler_codegen.h"],
+    "required_terms": ["TypeInferencer", "inferFunction", "inferBlock", "inferStmt", "inferExpr"],
+    "forbidden_generic_claims": ["types are inferred by the VM at runtime", "the host compiler has no type inference", "only hardware gates determine TCL types"],
+    "rationale": "Requires function-to-expression inference symbols from the actual host codegen header."
+  },
+  {
+    "id": "Q043",
+    "question": "How does host TCL type inference instantiate a width-parameterized call with concrete bindings instead of leaving a generic function at code generation time?",
+    "query": "TypeInferencer inferCall width_params concrete_bindings monomorphized mangled_name",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:symbol:ternary-compiler-codegen-h-typeinferencer-21",
+      "tc:symbol:ternary-compiler-codegen-h-infercall-356"
+    ],
+    "expected_source_paths": ["ternary_compiler_codegen.h"],
+    "required_terms": ["inferCall", "width_params", "concrete_bindings", "mangled_name", "monomorphized"],
+    "forbidden_generic_claims": ["generic calls dispatch through runtime type tags", "width selection is deferred to the OS", "monomorphization is absent"],
+    "rationale": "Distinguishes the implemented host compiler's concrete function instantiation from generic ternary-language claims."
+  },
+  {
+    "id": "Q044",
+    "question": "What SSA-facing artifacts does the host compiler retain, and how do they connect to Trit's low-level IR emission boundary?",
+    "query": "ssa_module",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:component:low-level-ir-ternary-ir-h",
+      "tc:symbol:ternary-compiler-codegen-h-module-959"
+    ],
+    "expected_source_paths": ["ternary_compiler.h", "ternary_compiler_codegen.h", "ternary_ir.h"],
+    "required_terms": ["ssa_module", "optimized_module", "structural SSA", "Module", "emit"],
+    "forbidden_generic_claims": ["the compiler emits only raw ternary equations", "SSA is performed by the kernel", "there is no low-level IR boundary"],
+    "rationale": "Tests cross-layer retrieval from host compiler result fields to the repository's IR emitter."
+  },
+  {
+    "id": "Q045",
+    "question": "Which optimization evidence does the host compiler expose for mem2reg, verification, and optimized SSA admission?",
+    "query": "OptimizerStats mem2reg verifyModule optimized SSA compiler",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:symbol:ternary-compiler-codegen-h-optimizerstats-1058"
+    ],
+    "expected_source_paths": ["ternary_compiler_codegen.h", "ternary_compiler.h"],
+    "required_terms": ["OptimizerStats", "mem2reg", "verifyModule", "optimized SSA", "rejection"],
+    "forbidden_generic_claims": ["optimization is an unmeasured black box", "all SSA is accepted without verification", "the ternary VM performs host optimization"],
+    "rationale": "Requires retrieval of the fail-closed optimization and verifier telemetry used by current host compilation."
+  },
+  {
+    "id": "Q046",
+    "question": "How does host code generation allocate registers over live intervals, and what happens when a value must spill?",
+    "query": "AllocationResult colorRegister rewriteAssemblyLine live intervals spill register allocation TCL",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:symbol:ternary-compiler-codegen-h-allocationresult-776",
+      "tc:symbol:ternary-compiler-codegen-h-colorregister-794",
+      "tc:symbol:ternary-compiler-codegen-h-rewriteassemblyline-821"
+    ],
+    "expected_source_paths": ["ternary_compiler_codegen.h"],
+    "required_terms": ["AllocationResult", "colorRegister", "scalar_registers", "spill_slots", "allocateRegisters", "rewriteAssemblyLine"],
+    "forbidden_generic_claims": ["registers are assigned randomly", "spills are handled by a garbage collector", "TCL has unlimited registers"],
+    "rationale": "Checks for the concrete graph-coloring and spill-lowering vocabulary in the host backend."
+  },
+  {
+    "id": "Q047",
+    "question": "How does the host backend lower verified optimized SSA to Trit assembly, including syscall moves and fail-closed target rejection?",
+    "query": "emitScalarSsaFunction verifyModule syscall move target lowering rejection assembly",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-codegen-h",
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:symbol:ternary-compiler-codegen-h-rewriteassemblyline-821"
+    ],
+    "expected_source_paths": ["ternary_compiler_codegen.h", "ternary_compiler.h"],
+    "required_terms": ["emitScalarSsaFunction", "verifyModule", "syscall", "target lowering", "rejection", "assembly"],
+    "forbidden_generic_claims": ["any IR is emitted without verification", "syscalls are ordinary arithmetic", "the backend emits generic pseudo-assembly only"],
+    "rationale": "Targets the actual code-generation admission and syscall-lowering path instead of a generic ternary code emitter."
+  },
+  {
+    "id": "Q048",
+    "question": "What does linkModules do about dead-strip ordering, syscall ABI versioning, stack alignment, and the final executable boundary?",
+    "query": "linkModules",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:symbol:ternary-compiler-h-linkoptions-76"
+    ],
+    "expected_source_paths": ["ternary_compiler.h"],
+    "required_terms": ["linkModules", "dead_strip_functions", "syscall_abi_version", "stack_hint_words", "STACK_ALIGNMENT_WORDS", "executable"],
+    "forbidden_generic_claims": ["linking is performed by a generic ternary runtime", "the linker ignores the syscall ABI", "stack alignment is unspecified"],
+    "rationale": "Verifies that linker answers cite the current Trit executable and ABI controls."
+  },
+  {
+    "id": "Q049",
+    "question": "Which TritC command-line switches expose optimization level, strict-SSA admission, IR dumps, pipeline telemetry, and VM step limits?",
+    "query": "tritc.cpp",
+    "mode": "exact",
+    "expected_entity_ids": [
+      "tc:component:host-compiler-tritc-cpp",
+      "tc:component:host-compiler-ternary-compiler-h",
+      "tc:symbol:tritc-cpp-main-254"
+    ],
+    "expected_source_paths": ["tritc.cpp", "ternary_compiler.h"],
+    "required_terms": ["tritc", "-O0", "-O1", "-O2", "--strict-ssa", "--dump-ir", "--dump-passes", "--dump-pipeline", "--steps"],
+    "forbidden_generic_claims": ["TritC has no strict SSA mode", "optimization switches are invented by the website", "the VM step limit is infinite by contract"],
+    "rationale": "Tests exact CLI retrieval, a high-value inconsistency detector for stale documentation."
+  },
+  {
+    "id": "Q050",
+    "question": "What public functions does the self-hosted TCL frontend expose for lexing and inspecting token count, kind, start, and length?",
+    "query": "tcl_frontend_lex",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:self-hosted-compiler-tcl-frontend-trit",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-lex-4",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-count-8",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-kind-12",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-start-16",
+      "tc:symbol:tcl-frontend-trit-tcl-frontend-token-len-20"
+    ],
+    "expected_source_paths": ["tcl_frontend.trit"],
+    "required_terms": ["tcl_frontend_lex", "tcl_frontend_token_count", "tcl_frontend_token_kind", "tcl_frontend_token_start", "tcl_frontend_token_len", "tcl_frontend_free"],
+    "forbidden_generic_claims": ["the self-hosted compiler delegates lexing to Python", "token offsets are unavailable", "the frontend is only a design document"],
+    "rationale": "Ensures self-hosted retrieval names the native TCL API actually present in the repository."
+  },
+  {
+    "id": "Q051",
+    "question": "How does the self-hosted TCL parser retain diagnostics and width parameters while advancing through tokens?",
+    "query": "tcl_parser_width_params",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:self-hosted-compiler-tcl-frontend-trit",
+      "tc:component:tcl-language-tcl-parser-trit",
+      "tc:symbol:tcl-parser-trit-tcl-parser-current-50",
+      "tc:symbol:tcl-parser-trit-tcl-parser-diagnostics-54",
+      "tc:symbol:tcl-parser-trit-tcl-parser-width-params-55",
+      "tc:symbol:tcl-parser-trit-tcl-parser-clear-width-params-158"
+    ],
+    "expected_source_paths": ["tcl_parser.trit", "tcl_frontend.trit"],
+    "required_terms": ["current", "diagnostics", "errors", "width_params", "clear_width_params"],
+    "forbidden_generic_claims": ["self-hosting discards parser diagnostics", "width parameters are host-only metadata", "the parser has no mutable token cursor"],
+    "rationale": "Checks continuity between the native parser state model and the self-hosted frontend boundary."
+  },
+  {
+    "id": "Q052",
+    "question": "How does the self-hosted TCL backend record and reuse monomorphized functions and CFGs?",
+    "query": "tcl_backend_monomorphize_function",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:self-hosted-compiler-tcl-backend-trit",
+      "tc:symbol:tcl-backend-trit-tcl-backend-mono-records-87",
+      "tc:symbol:tcl-backend-trit-tcl-backend-find-mono-93",
+      "tc:symbol:tcl-backend-trit-tcl-backend-monomorphize-function-118",
+      "tc:symbol:tcl-backend-trit-tcl-backend-monomorphize-cfg-137"
+    ],
+    "expected_source_paths": ["tcl_backend.trit"],
+    "required_terms": ["mono_records", "find_mono", "monomorphize_function", "monomorphize_cfg", "CFG"],
+    "forbidden_generic_claims": ["the self-hosted backend uses dynamic dispatch for generics", "monomorphization occurs only in the host C++ compiler", "CFGs are not retained"],
+    "rationale": "Tests retrieval of the native backend's concrete monomorphization bookkeeping."
+  },
+  {
+    "id": "Q053",
+    "question": "What does the self-hosted backend's mem2reg pass promote at block and CFG scope, and what evidence does it return?",
+    "query": "tcl_backend_mem2reg_block tcl_backend_mem2reg_cfg aliases promoted SSA",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:self-hosted-compiler-tcl-backend-trit",
+      "tc:symbol:tcl-backend-trit-tcl-backend-mem2reg-block-175",
+      "tc:symbol:tcl-backend-trit-tcl-backend-mem2reg-cfg-223",
+      "tc:symbol:tcl-backend-trit-promoted-183"
+    ],
+    "expected_source_paths": ["tcl_backend.trit"],
+    "required_terms": ["mem2reg", "block", "CFG", "aliases", "promoted", "SSA"],
+    "forbidden_generic_claims": ["mem2reg is merely a documentation label", "the self-hosted backend does not construct SSA", "all addresses are promoted regardless of aliasing"],
+    "rationale": "Requires concrete native pass names and alias/promotion vocabulary."
+  },
+  {
+    "id": "Q054",
+    "question": "How does the self-hosted backend allocate intervals and report spills, and where does its C5 native staging hook fit?",
+    "query": "tcl_backend_alloc_new",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:self-hosted-compiler-tcl-backend-trit",
+      "tc:symbol:tcl-backend-trit-tcl-backend-alloc-new-254",
+      "tc:symbol:tcl-backend-trit-intervals-256",
+      "tc:symbol:tcl-backend-trit-tcl-backend-err-spill-5",
+      "tc:symbol:tcl-backend-trit-tcl-native-stage-37",
+      "tc:symbol:tcl-backend-trit-c5-native-stage-fn-addr-17"
+    ],
+    "expected_source_paths": ["tcl_backend.trit"],
+    "required_terms": ["alloc_new", "intervals", "spills", "spill slot", "tcl_native_stage", "C5_NATIVE_STAGE"],
+    "forbidden_generic_claims": ["the self-hosted backend has unlimited registers", "spills are silently ignored", "C5 staging is a generic ternary accelerator claim"],
+    "rationale": "Distinguishes implemented interval allocation and staging symbols from speculative self-hosting narratives."
+  },
+  {
+    "id": "Q055",
+    "question": "Which Trit standard-library wrappers cover process spawning, syscall-backed heap allocation, and freeing, and what ABI prerequisite do they document?",
+    "query": "ulib spawn_static sys_sbrk malloc_raw free_raw Phase 8 OS syscall ABI",
+    "mode": "semantic",
+    "expected_entity_ids": ["tc:component:runtime-sdk-ulib-trit"],
+    "expected_source_paths": ["ulib.trit"],
+    "required_terms": ["spawn_static", "sys_sbrk", "malloc_raw", "free_raw", "Phase 8 OS mode"],
+    "forbidden_generic_claims": ["ulib uses a garbage collector", "malloc is host libc allocation", "process spawning is unspecified"],
+    "rationale": "Checks that runtime answers cite Trit's shipped ulib and its syscall-backed ownership model."
+  },
+  {
+    "id": "Q056",
+    "question": "Which OS SDK wrappers implement console text, keyboard, and GPU drawing operations, and which concrete symbols should a query return?",
+    "query": "os_putc",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:runtime-sdk-apps-os-sdk-trit",
+      "tc:symbol:apps-os-sdk-trit-os-putc-14",
+      "tc:symbol:apps-os-sdk-trit-os-read-key-131",
+      "tc:symbol:apps-os-sdk-trit-os-gpu-rect-92",
+      "tc:symbol:apps-os-sdk-trit-os-gpu-line-104"
+    ],
+    "expected_source_paths": ["apps/os_sdk.trit"],
+    "required_terms": ["os_putc", "os_read_key", "os_gpu_rect", "os_gpu_line", "console", "GPU"],
+    "forbidden_generic_claims": ["the SDK only exposes generic ternary arithmetic", "keyboard and GPU calls are hypothetical", "console output bypasses the OS SDK"],
+    "rationale": "Verifies user-facing runtime retrieval reaches concrete OS SDK wrappers."
+  },
+  {
+    "id": "Q057",
+    "question": "How do TCL applications send and receive IPC words through the OS SDK, and which syscall wrappers are underneath?",
+    "query": "os_ipc_send",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:runtime-sdk-apps-os-sdk-trit",
+      "tc:component:runtime-sdk-ulib-trit",
+      "tc:symbol:apps-os-sdk-trit-os-ipc-send-168",
+      "tc:symbol:apps-os-sdk-trit-os-ipc-recv-172"
+    ],
+    "expected_source_paths": ["apps/os_sdk.trit", "ulib.trit", "SYSCALL_MANIFEST.json"],
+    "required_terms": ["os_ipc_send", "os_ipc_recv", "sys_ipc_send", "sys_ipc_recv", "channel", "word"],
+    "forbidden_generic_claims": ["IPC is only a generic ternary message-passing idea", "the SDK has no IPC wrappers", "IPC uses a hidden network service instead of the OS ABI"],
+    "rationale": "Tests the explicit SDK-to-syscall IPC relationship and gives the evaluator a manifest citation."
+  },
+  {
+    "id": "Q058",
+    "question": "Which OS SDK calls cover VFS file operations and window events, and how can a query distinguish them from generic graphics terminology?",
+    "query": "apps os_sdk os_open os_stat os_window_create os_window_read_event VFS window event",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:runtime-sdk-apps-os-sdk-trit",
+      "tc:symbol:apps-os-sdk-trit-os-open-144",
+      "tc:symbol:apps-os-sdk-trit-os-stat-160",
+      "tc:symbol:apps-os-sdk-trit-os-window-create-184",
+      "tc:symbol:apps-os-sdk-trit-os-window-read-event-208"
+    ],
+    "expected_source_paths": ["apps/os_sdk.trit"],
+    "required_terms": ["os_open", "os_stat", "os_window_create", "os_window_read_event", "VFS", "event"],
+    "forbidden_generic_claims": ["the OS SDK has no file API", "window events are only host-browser events", "generic ternary graphics replace these wrappers"],
+    "rationale": "Ensures retrieval names implemented VFS and window ABI functions rather than generic UI concepts."
+  },
+  {
+    "id": "Q059",
+    "question": "What data layout and event operations does libwidget.trit implement for buttons, text fields, list boxes, and dirty rectangles?",
+    "query": "libwidget widget_store widget_load WIDGET_KIND_BUTTON WIDGET_KIND_TEXTFIELD WIDGET_DIRTY",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:runtime-sdk-apps-libwidget-trit",
+      "tc:symbol:apps-libwidget-trit-widget-store-62",
+      "tc:symbol:apps-libwidget-trit-widget-load-89",
+      "tc:symbol:apps-libwidget-trit-widget-kind-button-8",
+      "tc:symbol:apps-libwidget-trit-widget-kind-textfield-9",
+      "tc:symbol:apps-libwidget-trit-widget-dirty-19"
+    ],
+    "expected_source_paths": ["apps/libwidget.trit"],
+    "required_terms": ["widget_store", "widget_load", "WIDGET_KIND_BUTTON", "WIDGET_KIND_TEXTFIELD", "WIDGET_DIRTY", "WIDGET_DIRTY_X", "WIDGET_DIRTY_W"],
+    "forbidden_generic_claims": ["widgets are browser-only abstractions", "libwidget has no concrete field layout", "button and text-field kinds are generic ternary examples"],
+    "rationale": "Checks UI retrieval against the actual Trit widget constants and storage helpers."
+  },
+  {
+    "id": "Q060",
+    "question": "How does the production bootloader install the native trap vector, configure MMU discovery, and load a v2 image before halting or transferring control?",
+    "query": "bootloader.tasm",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:boot-trap-bootloader-tasm",
+      "tc:component:boot-trap-native-kernel-trap-stub-tasm",
+      "tc:symbol:ternary-asm-h-loadandreset-2170"
+    ],
+    "expected_source_paths": ["bootloader.tasm", "native_kernel_trap_stub.tasm", "ternary_asm.h"],
+    "required_terms": ["native_trap_entry", "tvec", "DTB_MMU_ENABLE", "MMU", "load", "v2"],
+    "forbidden_generic_claims": ["boot is a generic ternary reset algorithm", "the bootloader never installs a trap vector", "the current image contract is OS3 v1 only"],
+    "rationale": "Tests reset/boot retrieval against current v2 bootloader and reset helper evidence."
+  },
+  {
+    "id": "Q061",
+    "question": "What does native_kernel_boot.tasm initialize before entering user mode, and which syscall demonstrates the trap round trip?",
+    "query": "native_kernel_boot.tasm",
+    "mode": "exact",
+    "expected_entity_ids": ["tc:component:boot-trap-native-kernel-boot-tasm", "tc:component:boot-trap-native-kernel-trap-stub-tasm"],
+    "expected_source_paths": ["native_kernel_boot.tasm", "native_kernel_trap_stub.tasm"],
+    "required_terms": ["kernel_init", "native_trap_entry", "ctx_user", "status", "user_stat_root", "syscall 16"],
+    "forbidden_generic_claims": ["native boot enters user mode without a context", "the first syscall is unspecified", "boot code is pseudocode not assembled TASM"],
+    "rationale": "Anchors first-program behavior to the concrete native boot prelude and its sys_stat probe."
+  },
+  {
+    "id": "Q062",
+    "question": "How does native_kernel_trap_stub.tasm save and restore the interrupted task context around kernel_dispatch, including timer and user MMU state?",
+    "query": "native_trap_entry kernel_dispatch save restore epc status user_imem_ptbr user_dmem_ptbr timer",
+    "mode": "semantic",
+    "expected_entity_ids": ["tc:component:boot-trap-native-kernel-trap-stub-tasm", "tc:component:kernel-foundations-kernel-trit"],
+    "expected_source_paths": ["native_kernel_trap_stub.tasm", "kernel.trit"],
+    "required_terms": ["native_trap_entry", "kernel_dispatch", "epc", "status", "user_imem_ptbr", "user_dmem_ptbr", "timer_enable", "eret"],
+    "forbidden_generic_claims": ["trap entry drops registers", "the kernel uses a generic exception stack", "MMU context is not restored"],
+    "rationale": "Tests whether retrieval reflects the raw trap ABI and context frame actually used by OS3/Trit kernel code."
+  },
+  {
+    "id": "Q063",
+    "question": "What v2 first-silicon bring-up checks occur before user entry, and how are write, fsync, WAIT, and timer traps distinguished?",
+    "query": "v2_first_silicon_bringup bringup_entry mmu_base_page_words mmu_superpage_words write_trap fsync_trap timer_trap wait",
+    "mode": "semantic",
+    "expected_entity_ids": ["tc:component:boot-trap-v2-first-silicon-bringup-tasm", "tc:component:boot-trap-native-kernel-trap-stub-tasm"],
+    "expected_source_paths": ["v2_first_silicon_bringup.tasm", "native_kernel_trap_stub.tasm"],
+    "required_terms": ["bringup_entry", "mmu_base_page_words", "mmu_superpage_words", "write_trap", "fsync_trap", "timer_trap", "wait"],
+    "forbidden_generic_claims": ["the bring-up image is the production kernel", "timer and syscall traps share no cause check", "page geometry is unspecified"],
+    "rationale": "Separates the explicitly diagnostic bring-up image from production boot and verifies its v2 trap probes."
+  },
+  {
+    "id": "Q064",
+    "question": "How does kernel/hal.trit validate the device table and provide fallback memory, console, framebuffer, and block-device identifiers?",
+    "query": "hal_verify_dtb",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:kernel-foundations-kernel-hal-trit",
+      "tc:symbol:kernel-hal-trit-hal-verify-dtb-49",
+      "tc:symbol:kernel-hal-trit-hal-dtb-slot-56",
+      "tc:symbol:kernel-hal-trit-hal-get-memory-size-63",
+      "tc:symbol:kernel-hal-trit-hal-get-framebuffer-base-79",
+      "tc:symbol:kernel-hal-trit-hal-get-block-count-115"
+    ],
+    "expected_source_paths": ["kernel/hal.trit"],
+    "required_terms": ["hal_verify_dtb", "hal_dtb_slot", "DTB_MAGIC", "fallback", "memory", "framebuffer", "block"],
+    "forbidden_generic_claims": ["HAL values are hard-coded without validation", "device discovery is a generic ternary operation", "there is no fallback when the DTB is invalid"],
+    "rationale": "Requires exact HAL discovery and fallback behavior from the current kernel source."
+  },
+  {
+    "id": "Q065",
+    "question": "Which HAL functions control timer and MMU state, and which DTB/CSR slots do they use?",
+    "query": "hal_enable_mmu",
+    "mode": "symbol",
+    "expected_entity_ids": [
+      "tc:component:kernel-foundations-kernel-hal-trit",
+      "tc:symbol:kernel-hal-trit-hal-enable-timer-160",
+      "tc:symbol:kernel-hal-trit-hal-disable-timer-168",
+      "tc:symbol:kernel-hal-trit-hal-clear-timer-pending-174",
+      "tc:symbol:kernel-hal-trit-hal-enable-mmu-180",
+      "tc:symbol:kernel-hal-trit-hal-disable-mmu-186",
+      "tc:symbol:kernel-hal-trit-dtb-mmu-enable-13"
+    ],
+    "expected_source_paths": ["kernel/hal.trit"],
+    "required_terms": ["hal_enable_timer", "hal_disable_timer", "hal_clear_timer_pending", "hal_enable_mmu", "hal_disable_mmu", "DTB_MMU_ENABLE"],
+    "forbidden_generic_claims": ["the HAL cannot toggle timer state", "MMU enablement is a generic arithmetic flag", "timer pending is never cleared"],
+    "rationale": "Tests retrieval of concrete kernel control functions and the MMU discovery constant."
+  },
+  {
+    "id": "Q066",
+    "question": "How does the kernel's two-level process MMU encode PTE flags, translate virtual pages, and mark forked leaves copy-on-write?",
+    "query": "kernel process proc2_encode_pte proc2_translate proc2_fork_leaf_as_cow PROC2_FLAG_COW",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:kernel-foundations-kernel-process-trit",
+      "tc:symbol:kernel-process-trit-proc2-encode-pte-52",
+      "tc:symbol:kernel-process-trit-proc2-translate-137",
+      "tc:symbol:kernel-process-trit-proc2-fork-leaf-as-cow-164",
+      "tc:symbol:kernel-process-trit-proc2-flag-cow-13",
+      "tc:symbol:kernel-process-trit-proc2-fault-cow-17"
+    ],
+    "expected_source_paths": ["kernel/process.trit"],
+    "required_terms": ["two-level", "PTE", "proc2_encode_pte", "proc2_translate", "proc2_fork_leaf_as_cow", "PROC2_FLAG_COW", "PROC2_FAULT_COW"],
+    "forbidden_generic_claims": ["the MMU is a single flat table", "fork always copies every page", "PTE flags are not represented in Trit code"],
+    "rationale": "Checks memory/MMU/process answers against the implemented process helper symbols and COW fault code."
+  },
+  {
+    "id": "Q067",
+    "question": "Which kernel state words connect scheduler epochs and current process selection to trap/syscall result reporting?",
+    "query": "SCHED_EPOCH_ADDR",
+    "mode": "semantic",
+    "expected_entity_ids": [
+      "tc:component:kernel-foundations-kernel-trit",
+      "tc:component:boot-trap-native-kernel-trap-stub-tasm",
+      "tc:symbol:kernel-trit-sched-epoch-addr-54",
+      "tc:symbol:kernel-trit-current-context-addr-60",
+      "tc:symbol:kernel-trit-current-pid-addr-61",
+      "tc:symbol:kernel-trit-sys-status-addr-62",
+      "tc:symbol:kernel-trit-sys-payload-addr-63",
+      "tc:symbol:kernel-trit-sys-detail-addr-64"
+    ],
+    "expected_source_paths": ["kernel.trit", "native_kernel_trap_stub.tasm"],
+    "required_terms": ["SCHED_EPOCH_ADDR", "CURRENT_CONTEXT_ADDR", "CURRENT_PID_ADDR", "SYS_STATUS_ADDR", "SYS_PAYLOAD_ADDR", "SYS_DETAIL_ADDR", "KCAUSE_SYSCALL", "kernel_dispatch"],
+    "forbidden_generic_claims": ["scheduler state is not addressable", "syscall results are returned only as host exceptions", "trap dispatch has no persistent current context"],
+    "rationale": "Tests the scheduler/trap/syscall bridge using the kernel's named state slots and raw trap dispatcher."
+  }
+]
