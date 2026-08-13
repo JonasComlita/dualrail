@@ -327,6 +327,12 @@
       "name": "sys_reboot",
       "group": "power",
       "notes": "Requires APP_CAP_SYSTEM; requests a cold guest VM reset while preserving the attached mutable disk."
+    },
+    {
+      "id": 59,
+      "name": "sys_rename",
+      "group": "vfs",
+      "notes": "Atomically renames one regular file within the caller's process namespace; destination replacement and directory sources are rejected."
     }
   ]
 }

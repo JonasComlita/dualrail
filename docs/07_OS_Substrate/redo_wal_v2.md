@@ -76,10 +76,28 @@ usage is reset and reconstructed after boot. The image builder seeds namespace
 zero and all default quota policies, and executable payload allocation begins
 after block 8042 so it cannot overlap the control-plane homes.
 
+`sys_rename(old_path, new_path)` (service 59) is the bounded atomic rename
+slice. It operates in the caller's process namespace and accepts only an
+existing regular file. Both user strings are copied, with independent
+64-word bounds, into non-overlapping kernel scratch before any VFS lookup.
+Source and destination parents must resolve to directories; the root,
+directories, malformed pointers, and an existing destination are rejected
+without a metadata mutation. An identical old/new path is a no-op.
+
+The source directory-entry slot is reused, preserving the dirent and extent
+cursors and the inode generation used by open descriptors. One redo
+transaction carries the parent, hash, name length, complete bounded name
+payload (including zeroed trailing words), and dirent version after-images,
+plus the inode parent flag, ctime, and mtime. The transaction reserves all
+data records and its commit record before starting, aborts unpublished records
+on write failure, and stamps the committed LSN onto the inode dependency
+tracker. Recovery therefore replays a committed rename as a unit and leaves
+the old name visible when a data/commit chain is torn or incomplete.
+
 The following paths remain intentionally outside this completed atomic slice:
 high-water allocator cursors are monotonic (there is no global compaction);
-there is no atomic rename operation; and quota usage/physical-page allocation
-are volatile reconciliation state.
+destination replacement and directory renames are not supported; and quota
+usage/physical-page allocation are volatile reconciliation state.
 
 Checkpointing first makes committed WAL durable, then writes home pages and
 issues their data barrier, appends and durably flushes a checkpoint record, and

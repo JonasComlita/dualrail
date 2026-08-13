@@ -404,6 +404,11 @@ const USER_MEM_LIMIT: t40 = 16000;
 const USER_SCRATCH_VPN_BASE: t40 = 13;
 const USER_SCRATCH_PAGES: t40 = 9;
 const SYSCALL_PATH_COPY_BASE: t40 = 15800;
+// Rename validates both user paths before touching VFS state.  Keep the two
+// kernel scratch strings disjoint and inside the mapped user-memory window so
+// malformed pointers cannot alias a partially copied pathname.
+const SYSCALL_RENAME_OLD_COPY_BASE: t40 = 15800;
+const SYSCALL_RENAME_NEW_COPY_BASE: t40 = 15880;
 
 const IPC_MAX_CHANNELS: t40 = 128;
 const IPC_CHANNEL_WORDS: t40 = 8;
@@ -5080,6 +5085,22 @@ fn vfs_leaf_len(start: t40) -> t40 {
     return len;
 }
 
+fn vfs_paths_equal(a: t40, b: t40) -> t40 {
+    var i: t40 = 0;
+    while VFS_MAX_PATH_WORDS - i > 0 {
+        var left: t40 = kload(a + i);
+        var right: t40 = kload(b + i);
+        if left - right != 0 {
+            return 0;
+        }
+        if left == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 fn vfs_find_extent(inode: t40) -> t40 {
     var slot: t40 = 0;
     while VFS_MAX_EXTENTS - slot > 0 {
@@ -5203,6 +5224,36 @@ fn vfs_find_free_extent_for_length(length_words: t40) -> t40 {
                 if old_data - VFS_DATA_BASE >= 0 {
                     if old_data + old_length - VFS_DATA_BASE - VFS_PAYLOAD_WORDS <= 0 {
                         return slot;
+                    }
+                }
+            }
+        }
+        slot = slot + 1;
+    }
+    return ERR_NOT_FOUND;
+}
+
+// Return the directory-entry slot for an exact child name. Lookup returns
+// only the inode, while rename must reuse the existing source slot so open
+// descriptors and allocator cursors remain untouched.
+fn vfs_find_child_slot(namespace_id: t40, parent_inode: t40,
+                        name_start: t40, name_len: t40, name_hash: t40) -> t40 {
+    var slot: t40 = 0;
+    var dirent_limit: t40 = vfs_dirent_limit();
+    while dirent_limit - slot > 0 {
+        var row: t40 = dirent_addr(slot);
+        var child: t40 = kload(row + DIRENT_CHILD);
+        if child > 0 {
+            if kload(row + DIRENT_NAMESPACE) - namespace_id == 0 {
+                if kload(row + DIRENT_PARENT) - parent_inode == 0 {
+                    if kload(row + DIRENT_HASH) - name_hash == 0 {
+                        if vfs_name_equal(slot, name_start, name_len) > 0 {
+                            return slot;
+                        }
+                    } else {
+                        if vfs_name_equal(slot, name_start, name_len) > 0 {
+                            return slot;
+                        }
                     }
                 }
             }
@@ -8373,6 +8424,27 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         }
         return kernel_set_return(1, unlinked, 0);
     }
+    if service - 59 == 0 {
+        // Copy both user strings before any VFS lookup.  The scratch ranges
+        // are disjoint and each copy validates the complete bounded C string,
+        // so a malformed second pointer cannot partially mutate metadata.
+        var old_path_words: t40 = user_copy_cstring_to_kernel(
+            pid, arg0, SYSCALL_RENAME_OLD_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if old_path_words < 0 {
+            return kernel_set_return(-1, 0, old_path_words);
+        }
+        var new_path_words: t40 = user_copy_cstring_to_kernel(
+            pid, arg1, SYSCALL_RENAME_NEW_COPY_BASE, VFS_MAX_PATH_WORDS);
+        if new_path_words < 0 {
+            return kernel_set_return(-1, 0, new_path_words);
+        }
+        var renamed: t40 = vfs_rename(
+            pid, SYSCALL_RENAME_OLD_COPY_BASE, SYSCALL_RENAME_NEW_COPY_BASE);
+        if renamed < 0 {
+            return kernel_set_return(-1, 0, renamed);
+        }
+        return kernel_set_return(1, renamed, 0);
+    }
     // Process lifecycle: waitpid, exit, sleep
     if service - 43 == 0 {
         var caller_slot: t40 = process_find_pid(pid);
@@ -8973,6 +9045,179 @@ fn vfs_unlink(pid: t40, path_addr: t40) -> t40 {
     // descriptor this best-effort pass reclaims immediately; otherwise the
     // row remains a links=0 orphan for close/process/mount cleanup.
     vfs_reclaim_pending();
+    return 1;
+}
+
+// Rename one regular file without allocating a new inode or dirent. The
+// source dirent slot is rewritten in one redo transaction; an open FD keeps
+// pointing at the unchanged inode generation and extent map.
+fn vfs_rename(pid: t40, old_path_addr: t40, new_path_addr: t40) -> t40 {
+    var namespace_id: t40 = process_namespace_for_pid(pid);
+
+    // Resolve and classify the source before handling the root path. Root and
+    // directories are never valid rename sources.
+    var source_inode: t40 = vfs_lookup(namespace_id, old_path_addr);
+    if source_inode < 0 {
+        return source_inode;
+    }
+    var source_row: t40 = inode_addr(source_inode);
+    var source_kind: t40 = kload(source_row + INODE_KIND);
+    if source_kind - KIND_DIR == 0 {
+        return ERR_IS_DIR;
+    }
+    if source_kind - KIND_FILE != 0 {
+        return ERR_INVALID;
+    }
+
+    var source_parent: t40 = vfs_path_parent(namespace_id, old_path_addr);
+    if source_parent < 0 {
+        return source_parent;
+    }
+    if kload(inode_addr(source_parent) + INODE_KIND) - KIND_DIR != 0 {
+        return ERR_NOT_DIR;
+    }
+    var source_start: t40 = vfs_leaf_start(old_path_addr);
+    if source_start <= 0 {
+        return ERR_INVALID;
+    }
+    var source_len: t40 = vfs_leaf_len(source_start);
+    if source_len <= 0 {
+        return ERR_INVALID;
+    }
+    if source_len - VFS_MAX_NAME_WORDS > 0 {
+        return ERR_INVALID;
+    }
+    var source_hash: t40 = vfs_component_hash(source_start, source_len);
+    var source_slot: t40 = vfs_find_child_slot(
+        namespace_id, source_parent, source_start, source_len, source_hash);
+    if source_slot < 0 {
+        return source_slot;
+    }
+    var source_dirent: t40 = dirent_addr(source_slot);
+    if kload(source_dirent + DIRENT_CHILD) - source_inode != 0 {
+        return ERR_NOT_FOUND;
+    }
+
+    // A byte-for-byte identical pathname is explicitly a no-op, but still
+    // required the source to resolve and pass the regular-file checks above.
+    if vfs_paths_equal(old_path_addr, new_path_addr) > 0 {
+        return 1;
+    }
+
+    var destination_parent: t40 = vfs_path_parent(namespace_id, new_path_addr);
+    if destination_parent < 0 {
+        return destination_parent;
+    }
+    if kload(inode_addr(destination_parent) + INODE_KIND) - KIND_DIR != 0 {
+        return ERR_NOT_DIR;
+    }
+    var destination_start: t40 = vfs_leaf_start(new_path_addr);
+    if destination_start <= 0 {
+        return ERR_INVALID;
+    }
+    var destination_len: t40 = vfs_leaf_len(destination_start);
+    if destination_len <= 0 {
+        return ERR_INVALID;
+    }
+    if destination_len - VFS_MAX_NAME_WORDS > 0 {
+        return ERR_INVALID;
+    }
+    var destination_hash: t40 = vfs_component_hash(destination_start,
+                                                     destination_len);
+    var destination_inode: t40 = vfs_find_child(
+        namespace_id, destination_parent, destination_start, destination_len,
+        destination_hash);
+    if destination_inode >= 0 {
+        return ERR_EXISTS;
+    }
+
+    // Include every name word that may contain old data so shortening a name
+    // cannot leave stale payload visible after recovery. The final WAL commit
+    // record is included in this capacity preflight.
+    var name_words: t40 = source_len;
+    if destination_len - name_words > 0 {
+        name_words = destination_len;
+    }
+    var record_count: t40 = 7 + name_words;
+    if log_capacity_for(record_count + 1) <= 0 {
+        return ERR_NO_SPACE;
+    }
+
+    var txid: t40 = log_begin();
+    var logged: t40 = log_write(txid, source_dirent + DIRENT_PARENT,
+                                kload(source_dirent + DIRENT_PARENT),
+                                destination_parent);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, source_dirent + DIRENT_HASH,
+                       kload(source_dirent + DIRENT_HASH), destination_hash);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, source_dirent + DIRENT_NAME_LEN,
+                       kload(source_dirent + DIRENT_NAME_LEN),
+                       destination_len);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    var old_version: t40 = kload(source_dirent + DIRENT_VERSION);
+    var new_version: t40 = old_version + 1;
+    if new_version <= 0 {
+        new_version = 1;
+    }
+    logged = log_write(txid, source_dirent + DIRENT_VERSION, old_version,
+                       new_version);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    var name_index: t40 = 0;
+    while name_words - name_index > 0 {
+        var desired_name: t40 = 0;
+        if destination_len - name_index > 0 {
+            desired_name = kload(destination_start + name_index);
+        }
+        var name_addr: t40 = dirent_name_addr(source_slot) + name_index;
+        logged = log_write(txid, name_addr, kload(name_addr), desired_name);
+        if logged < 0 {
+            log_abort(txid);
+            return logged;
+        }
+        name_index = name_index + 1;
+    }
+    logged = log_write(txid, source_row + INODE_FLAGS,
+                       kload(source_row + INODE_FLAGS), destination_parent);
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, source_row + INODE_CTIME,
+                       kload(source_row + INODE_CTIME),
+                       kload(KERNEL_TICK_ADDR));
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    logged = log_write(txid, source_row + INODE_MTIME,
+                       kload(source_row + INODE_MTIME),
+                       kload(KERNEL_TICK_ADDR));
+    if logged < 0 {
+        log_abort(txid);
+        return logged;
+    }
+    var commit_lsn: t40 = log_commit(txid);
+    if commit_lsn < 0 {
+        log_abort(txid);
+        return commit_lsn;
+    }
+    var tracked: t40 = inode_track_required_lsn(source_inode, commit_lsn);
+    if tracked < 0 {
+        return tracked;
+    }
     return 1;
 }
 

@@ -1571,6 +1571,7 @@ static constexpr int SYSCALL_WAIT_EVENT       = 55;
 static constexpr int SYSCALL_SLEEP_MS         = 56;
 static constexpr int SYSCALL_APP_SPAWN        = 57;
 static constexpr int SYSCALL_REBOOT           = 58;
+static constexpr int SYSCALL_RENAME           = 59;
 
 static constexpr int EXEC_MAGIC = 40404;
 

@@ -266,6 +266,13 @@ add_executable(test_os_platform tests/test_os_platform.cpp)
 target_compile_features(test_os_platform PUBLIC cxx_std_17)
 target_compile_definitions(test_os_platform PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_vfs_rename tests/test_vfs_rename.cpp)
+target_compile_features(test_vfs_rename PUBLIC cxx_std_17)
+target_compile_definitions(test_vfs_rename PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_vfs_rename
+         COMMAND test_vfs_rename
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_executable(test_vfs_reclamation tests/test_os_platform.cpp)
 target_compile_features(test_vfs_reclamation PUBLIC cxx_std_17)
 target_compile_definitions(test_vfs_reclamation PRIVATE
@@ -339,6 +346,7 @@ add_custom_target(production_profile
         test_production_hardening
         test_os_platform
         test_vfs_reclamation
+        test_vfs_rename
         test_first_silicon_bringup
         test_migration_v2
         test_redo_wal_v2
@@ -670,6 +678,7 @@ add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_hardening>
     COMMAND $<TARGET_FILE:test_os_platform>
     COMMAND $<TARGET_FILE:test_vfs_reclamation>
+    COMMAND $<TARGET_FILE:test_vfs_rename>
     COMMAND $<TARGET_FILE:test_first_silicon_bringup>
     COMMAND $<TARGET_FILE:test_architecture_v2>
     COMMAND $<TARGET_FILE:test_migration_v2>

@@ -422,6 +422,12 @@ fn os_unlink(path_addr: t40) -> t40 {
     return sys_unlink(path_addr);
 }
 
+// --- VFS atomic rename (service 59) ---
+
+fn os_rename(old_path_addr: t40, new_path_addr: t40) -> t40 {
+    return sys_rename(old_path_addr, new_path_addr);
+}
+
 // --- VFS sync (service 47) ---
 
 fn os_fsync(fd: t40) -> t40 {

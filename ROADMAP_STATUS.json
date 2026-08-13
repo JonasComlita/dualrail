@@ -41,10 +41,11 @@
         "test_production_layers",
         "test_production_hardening",
         "test_redo_wal_v2",
+        "test_vfs_rename",
         "next_scheduler_acceptance"
       ],
       "open_items": [
-        "Complete VFS allocator compaction and atomic rename",
+        "Complete VFS allocator compaction and broaden rename semantics (destination replacement and directory renames)",
         "Dedicated fuzz harness for syscalls with malformed pointers",
         "First-class guest /bin diagnostic commands"
       ]

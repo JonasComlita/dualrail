@@ -668,7 +668,7 @@ private:
                name == "sys_futex_wake" || name == "sys_ipc_recv_blocking" ||
                name == "sys_wait_event" || name == "sys_sleep_ms" ||
                name == "sys_app_spawn" ||
-               name == "sys_reboot";
+               name == "sys_reboot" || name == "sys_rename";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -5067,6 +5067,7 @@ private:
         if (name == "sys_sleep_ms") return runtime::sys_sleep_ms;
         if (name == "sys_app_spawn") return runtime::sys_app_spawn;
         if (name == "sys_reboot") return runtime::sys_reboot;
+        if (name == "sys_rename") return runtime::sys_rename;
         return 0;
     }
 
@@ -5112,7 +5113,8 @@ private:
                service == runtime::sys_wait_event ||
                service == runtime::sys_sleep_ms ||
                service == runtime::sys_app_spawn ||
-               service == runtime::sys_reboot;
+               service == runtime::sys_reboot ||
+               service == runtime::sys_rename;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {
