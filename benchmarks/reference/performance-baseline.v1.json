@@ -1,0 +1,239 @@
+{
+  "captured_at_utc": "1970-01-01T00:00:00Z",
+  "external_evidence": [],
+  "host": {
+    "affinity": "reference",
+    "control_profile": "reference",
+    "controlled": true,
+    "cpu_count": 1,
+    "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "implementation": "reference",
+    "machine": "reference",
+    "processor": "reference",
+    "python": "reference",
+    "release": "reference",
+    "system": "reference",
+    "timing_authority": "advisory",
+    "timing_clock": "none"
+  },
+  "metrics": {
+    "app_launch_events": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "events",
+      "value": 5
+    },
+    "app_launch_time_ms": {
+      "authority": "advisory",
+      "deterministic": false,
+      "kind": "timing",
+      "samples": [
+        0.0
+      ],
+      "source": "reference_unmeasured",
+      "summary": {
+        "coefficient_of_variation": 0.0,
+        "count": 1,
+        "maximum": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "minimum": 0.0,
+        "p95": 0.0,
+        "standard_deviation": 0.0
+      },
+      "unit": "milliseconds"
+    },
+    "boot_events": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "events",
+      "value": 6
+    },
+    "boot_time_ms": {
+      "authority": "advisory",
+      "deterministic": false,
+      "kind": "timing",
+      "samples": [
+        0.0
+      ],
+      "source": "reference_unmeasured",
+      "summary": {
+        "coefficient_of_variation": 0.0,
+        "count": 1,
+        "maximum": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "minimum": 0.0,
+        "p95": 0.0,
+        "standard_deviation": 0.0
+      },
+      "unit": "milliseconds"
+    },
+    "context_switches": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "switches",
+      "value": 9
+    },
+    "disk_io_time_ms": {
+      "authority": "advisory",
+      "deterministic": false,
+      "kind": "timing",
+      "samples": [
+        0.0
+      ],
+      "source": "reference_unmeasured",
+      "summary": {
+        "coefficient_of_variation": 0.0,
+        "count": 1,
+        "maximum": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "minimum": 0.0,
+        "p95": 0.0,
+        "standard_deviation": 0.0
+      },
+      "unit": "milliseconds"
+    },
+    "disk_read_bytes": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "bytes",
+      "value": 6480
+    },
+    "disk_read_operations": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "operations",
+      "value": 2
+    },
+    "disk_write_bytes": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "bytes",
+      "value": 5832
+    },
+    "disk_write_operations": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "operations",
+      "value": 2
+    },
+    "frame_time_ms": {
+      "authority": "advisory",
+      "deterministic": false,
+      "kind": "timing",
+      "samples": [
+        0.0
+      ],
+      "source": "reference_unmeasured",
+      "summary": {
+        "coefficient_of_variation": 0.0,
+        "count": 1,
+        "maximum": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "minimum": 0.0,
+        "p95": 0.0,
+        "standard_deviation": 0.0
+      },
+      "unit": "milliseconds"
+    },
+    "frames_presented": {
+      "authority": "functional",
+      "deterministic": true,
+      "kind": "counter",
+      "source": "fixed_trace",
+      "unit": "frames",
+      "value": 7
+    },
+    "host_context_switches": {
+      "authority": "advisory",
+      "available": false,
+      "deterministic": false,
+      "kind": "host_counter",
+      "samples": [],
+      "source": "reference_unmeasured",
+      "summary": {
+        "coefficient_of_variation": null,
+        "count": 0,
+        "maximum": null,
+        "mean": null,
+        "median": null,
+        "minimum": null,
+        "p95": null,
+        "standard_deviation": null
+      },
+      "unit": "switches"
+    }
+  },
+  "policy": {
+    "advisory_metrics": [
+      "boot_time_ms",
+      "app_launch_time_ms",
+      "frame_time_ms",
+      "disk_io_time_ms",
+      "host_context_switches"
+    ],
+    "functional_metrics": [
+      "boot_events",
+      "app_launch_events",
+      "frames_presented",
+      "disk_read_bytes",
+      "disk_write_bytes",
+      "disk_read_operations",
+      "disk_write_operations",
+      "context_switches"
+    ],
+    "no_wall_clock_threshold": true,
+    "reference": "functional_counts_only"
+  },
+  "protocol": {
+    "functional_counts_authoritative": true,
+    "iterations": 1,
+    "timing_threshold_enforced": false,
+    "wall_clock_authority": "advisory",
+    "warmups": 0
+  },
+  "protocol_id": "p10.performance-baseline.v1",
+  "reproducibility": {
+    "expected_hash": "sha256:baefa0b29a4b788e44deead8c32067cd5d1294fd2943adfb65015992fc112e50",
+    "functional_match": true,
+    "input_hash": "sha256:100fbc5cf1a403c504b9f6758aecd5d3d6349aff72d3b1e604ae287e36c1e2fc",
+    "observed_hash": "sha256:baefa0b29a4b788e44deead8c32067cd5d1294fd2943adfb65015992fc112e50",
+    "observed_hashes": [
+      "sha256:baefa0b29a4b788e44deead8c32067cd5d1294fd2943adfb65015992fc112e50"
+    ],
+    "trace_repeatable": true
+  },
+  "schema": "trit.performance_baseline.v1",
+  "source": {
+    "commit": "reference",
+    "dirty": false,
+    "generator": "performance-baseline-reference-v1",
+    "repository": "TernaryStack"
+  },
+  "workload": {
+    "app_path": "/bin/calculator",
+    "app_words": 81,
+    "disk_words": 729,
+    "frames": 7,
+    "name": "synthetic-os-performance-baseline",
+    "seed": 324508639,
+    "version": "v1"
+  }
+}

@@ -121,6 +121,13 @@ void testNativeApps() {
     (void)compileAndRunApp("text_editor", "TEXT\n");
     (void)compileAndRunApp("about", "ABOUT\n");
     (void)compileAndRunApp("help", "HELP\n");
+    (void)compileAndRunApp("doctor", "DOCTOR\n");
+    (void)compileAndRunApp("test", "TEST\n");
+    (void)compileAndRunApp("sysinfo", "SYSINFO\n");
+    (void)compileAndRunApp("log", "LOG\n");
+    (void)compileAndRunApp("ps", "PS\n");
+    (void)compileAndRunApp("fsck", "FSCK\n");
+    (void)compileAndRunApp("sync", "SYNC\n");
 }
 
 void testIpcSdkWrappersCompile() {

@@ -492,6 +492,98 @@ void testTypeDiagnostics() {
     }
 }
 
+void testVersionedAbiBoundaryMetadata() {
+    using namespace sandbox::compiler;
+    const CompileResult scalar = compileSource(
+        "phase7_versioned_abi.trit",
+        "fn main() -> t40 { return 5; }");
+    expect(scalar.success, "versioned ABI scalar source compiles");
+    if (!scalar.success) return;
+    expect(scalar.object.metadata.at("target.function_abi_contract") ==
+               FunctionAbiContract::id(),
+           "versioned ABI metadata records the contract id");
+    expect(scalar.object.metadata.at("target.function_abi_version") ==
+               std::to_string(FunctionAbiContract::version),
+           "versioned ABI metadata records the contract version");
+
+    const CompileResult aggregate = compileSource(
+        "phase7_aggregate_return_boundary.trit", R"TRIT(
+            struct Pair { a: t40; b: t40; }
+            fn make() -> Pair {
+                var pair: Pair = Pair { a: 1, b: 2 };
+                return pair;
+            }
+            fn main() -> t40 { return 0; }
+        )TRIT");
+    expect(!aggregate.success,
+           "aggregate return remains rejected by the v2 boundary contract");
+    expect(hasDiagnostic(aggregate.diagnostics,
+                         FunctionAbiContract::id()),
+           "aggregate return diagnostic names the versioned contract");
+
+    const CompileResult vector = compileSource(
+        "phase7_vector_boundary.trit", R"TRIT(
+            fn identity(v: vec<t20>) -> vec<t20> { return v; }
+            fn main() -> t40 { return 0; }
+        )TRIT");
+    expect(!vector.success,
+           "vector boundary remains rejected by the v2 contract");
+    expect(hasDiagnostic(vector.diagnostics,
+                         FunctionAbiContract::id()),
+           "vector boundary diagnostic names the versioned contract");
+
+    CompilerOptions v3_options;
+    v3_options.target_abi_version = FunctionAbiContract::version_v3;
+    const CompileResult aggregate_v3 = compileSource(
+        "phase7_aggregate_return_v3.trit", R"TRIT(
+            struct Pair { a: t40; b: t40; }
+            fn make(seed: t40) -> Pair {
+                var pair: Pair = Pair { a: seed, b: seed + 1 };
+                return pair;
+            }
+            fn main() -> t40 {
+                var pair: Pair = make(3);
+                return pair.a + pair.b;
+            }
+        )TRIT", v3_options);
+    expect(aggregate_v3.success,
+           "ABI v3 aggregate return lowers through caller-owned sret");
+    if (!aggregate_v3.success) return;
+    expect(aggregate_v3.object.metadata.at("target.function_abi_contract") ==
+               FunctionAbiContract::idForVersion(
+                   FunctionAbiContract::version_v3),
+           "ABI v3 metadata records the compiler function profile");
+    expect(aggregate_v3.object.metadata.at("target.aggregate_return_abi") ==
+               FunctionAbiContract::aggregateReturnForVersion(
+                   FunctionAbiContract::version_v3),
+           "ABI v3 metadata records first-word sret semantics");
+    bool hidden_sret = false;
+    for (const auto& function : aggregate_v3.object.ssa.functions) {
+        for (const auto& block : function.blocks) {
+            for (const auto& instr : block.instructions) {
+                hidden_sret = hidden_sret ||
+                    (instr.opcode == InstrOpcode::Param &&
+                     instr.symbol == "$sret");
+            }
+        }
+    }
+    expect(hidden_sret,
+           "ABI v3 structural IR carries the hidden sret parameter");
+
+    const CompileResult vector_v3 = compileSource(
+        "phase7_vector_boundary_v3.trit", R"TRIT(
+            fn identity(v: vec<t20>) -> vec<t20> { return v; }
+            fn main() -> t40 { return 0; }
+        )TRIT", v3_options);
+    expect(!vector_v3.success,
+           "ABI v3 keeps vector boundaries fail-closed pending VM support");
+    expect(hasDiagnostic(
+               vector_v3.diagnostics,
+               FunctionAbiContract::idForVersion(
+                   FunctionAbiContract::version_v3)),
+           "ABI v3 vector diagnostic names the exact profile dependency");
+}
+
 void testVerifierAllocatorAndDuplicateSymbols() {
     std::cout << "[5] Verifier, allocator, and linker errors\n";
     using namespace sandbox::compiler;
@@ -2410,6 +2502,7 @@ int main() {
     testDirectRawMemoryAddressLowering();
     testIfElseStatements();
     testTypeDiagnostics();
+    testVersionedAbiBoundaryMetadata();
     testVerifierAllocatorAndDuplicateSymbols();
     testHMGeneralizationAndLayouts();
     testAggregatesEndToEnd();

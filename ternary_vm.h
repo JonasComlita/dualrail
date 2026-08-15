@@ -4121,6 +4121,21 @@ inline int nativeX64DirectArithmetic(
     return nativeX64CommitInstruction(context, instruction);
 }
 
+inline int nativeX64CopyHelper(
+    VMNativeRunContext* context,
+    const VMNativeX64Instruction* instruction) {
+    if (!nativeX64CanStartInstruction(context, instruction)) return 0;
+    VMState& vm = *context->vm;
+    // COPY's width is part of the instruction contract. The native inline
+    // path only copies the canonical physical T40 payload; every other
+    // numeric view must use RegFile::readView so conversion and invalid-value
+    // semantics remain identical to the portable interpreter.
+    const TernaryValue value = vm.regfile.readView(
+        instruction->word.rs1, instruction->mode);
+    vm.regfile.write(instruction->word.rd, value);
+    return nativeX64CommitInstruction(context, instruction);
+}
+
 inline int nativeX64DirectMemory(
     VMNativeRunContext* context,
     const VMNativeX64Instruction* instruction) {
@@ -4270,7 +4285,6 @@ inline int nativeX64DirectControl(
             case VMMicroOpcode::CallR:
             case VMMicroOpcode::Jmpr:
                 break;
-            case VMMicroOpcode::Copy:
             case VMMicroOpcode::TCmp:
             case VMMicroOpcode::Add:
             case VMMicroOpcode::Sub:
@@ -4278,6 +4292,10 @@ inline int nativeX64DirectControl(
             case VMMicroOpcode::Neg:
             case VMMicroOpcode::Abs:
                 if (micro_op.mode != TernaryMode::T40) return false;
+                break;
+            case VMMicroOpcode::Copy:
+                // Non-T40 numeric views stay helper-backed so the portable
+                // readView/convertValue path owns width conversion.
                 break;
             case VMMicroOpcode::MovH:
             case VMMicroOpcode::Unsupported:
@@ -4330,7 +4348,8 @@ struct VMNativeX64CodeBlock {
         case VMMicroOpcode::Nop:
         case VMMicroOpcode::Mov:
         case VMMicroOpcode::Copy:
-            return true;
+            return instruction.op != VMMicroOpcode::Copy ||
+                   instruction.mode == TernaryMode::T40;
         case VMMicroOpcode::TCmp:
             return instruction.mode == TernaryMode::T40 &&
                    instruction.source != nullptr &&
@@ -4356,6 +4375,14 @@ struct VMNativeX64CodeBlock {
             return instruction.mode == TernaryMode::T40 &&
                    instruction.source != nullptr;
         case VMMicroOpcode::Call:
+            // CALL has a static target and only writes the canonical T40
+            // return PC to LR before leaving the trace.  The destination
+            // pair guard in the emitter preserves RegFile::writeLR's wide
+            // pair invalidation semantics; live T50/L50 pairs side-exit.
+            return instruction.branch_target != -1 &&
+                   instruction.destination != nullptr &&
+                   instruction.destination_mode != nullptr &&
+                   instruction.destination_previous_mode != nullptr;
         case VMMicroOpcode::Ret:
         case VMMicroOpcode::CallR:
         case VMMicroOpcode::Jmpr:
@@ -5256,6 +5283,17 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     &vm.regfile.view_mode[instruction.word.rd - 1];
             }
         }
+        if (instruction.op == VMMicroOpcode::Call) {
+            // CALL's B-type encoding does not carry an architectural `rd`,
+            // but its link-register write still has ordinary RegFile::write
+            // pair invalidation semantics.  Point the native lowering at LR
+            // explicitly so the same destination-pair guard can protect it.
+            instruction.destination = &vm.regfile.reg[R25_LR];
+            instruction.destination_mode =
+                &vm.regfile.view_mode[R25_LR];
+            instruction.destination_previous_mode =
+                &vm.regfile.view_mode[R25_LR - 1];
+        }
         if (instruction.op == VMMicroOpcode::Copy &&
             instruction.word.rs1 != R0_ZERO &&
             instruction.word.rs1 < REG_COUNT) {
@@ -5321,9 +5359,25 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
         instruction_offsets.push_back(emitter.code.size());
         switch (instruction.op) {
             case VMMicroOpcode::Nop:
-            case VMMicroOpcode::Mov:
-            case VMMicroOpcode::Copy:
                 emitter.budgetGuard();
+                emitter.commitSimple(instruction.next_pc);
+                break;
+            case VMMicroOpcode::Mov:
+            case VMMicroOpcode::Copy: {
+                if (instruction.op == VMMicroOpcode::Copy &&
+                    !nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64CopyHelper),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
                 if (instruction.op == VMMicroOpcode::Mov &&
                     instruction.destination != nullptr) {
                     emitter.movImm64(10, reinterpret_cast<std::uintptr_t>(
@@ -5381,7 +5435,16 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                         10, 0, static_cast<std::uint8_t>(TernaryMode::T40));
                 }
                 emitter.commitSimple(instruction.next_pc);
+                const std::size_t skip_guard = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                emitter.patchRelative(skip_guard, emitter.code.size());
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
                 break;
+            }
             case VMMicroOpcode::TCmp: {
                 if (!nativeX64InstructionIsDirect(
                         instruction, block->lowered.size())) {
@@ -5790,7 +5853,43 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                 }
                 break;
             }
-            case VMMicroOpcode::Call:
+            case VMMicroOpcode::Call: {
+                if (!nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectControl),
+                        &instruction);
+                    break;
+                }
+                // CALL has no dynamic target or MMU interaction.  Emit the
+                // link-register write and branch directly, but side-exit
+                // before mutation if LR participates in a live T50/L50 pair.
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                emitter.emitGuardDestinationPair(
+                    instruction.destination_mode,
+                    instruction.destination_previous_mode,
+                    guard_jumps);
+                const TernaryValue return_pc = ops::fromLong(
+                    static_cast<long long>(instruction.pc) + 1);
+                emitter.movImm64(0, return_pc.bits.lo);
+                emitter.movImm64(2, return_pc.bits.hi);
+                emitter.emitStoreT40Result(
+                    instruction.destination,
+                    instruction.destination_mode);
+                emitter.commitSimple(instruction.branch_target);
+                const std::size_t branch_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(branch_exit);
+                const std::size_t skip_guard = emitter.jmpRel32();
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                emitter.patchRelative(skip_guard, emitter.code.size());
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
+                break;
+            }
             case VMMicroOpcode::Ret:
             case VMMicroOpcode::CallR:
             case VMMicroOpcode::Jmpr:

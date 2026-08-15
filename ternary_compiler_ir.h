@@ -195,10 +195,23 @@ struct LinkOptions {
     bool standalone_halt_on_exit = true;
     bool dead_strip_functions = false;
     std::vector<std::string> dead_strip_roots = {"main"};
+    // Function and syscall ABI versions are kept separate.  The executable
+    // header currently accepts only architecture v2, but carrying the
+    // function version through linking prevents an object compiled for a
+    // future boundary profile from being silently mixed into a v2 image.
+    // Keep this field last so existing aggregate initialization remains
+    // source-compatible.
+    int function_abi_version = FunctionAbiContract::version;
 };
 
 struct LinkResult {
     bool success = false;
+    // Compiler function-boundary profile selected for this link. The v2
+    // executable header remains the image envelope until a v3 header/kernel
+    // contract is available; callers can inspect these fields to distinguish
+    // the nested compiler profile from the image format.
+    int function_abi_version = FunctionAbiContract::version;
+    std::string function_abi_contract = FunctionAbiContract::id();
     std::string assembly;
     std::map<std::string, int> symbol_map;
     vm::ExecutableImageHeaderV2 executable_header_v2;

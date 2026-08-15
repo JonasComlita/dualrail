@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema": "trit.external_benchmark_assets.v1",
+  "version": 1,
+  "provenance_retrieved_on": "2026-08-15",
+  "primary_sources": [
+    "https://github.com/freedoom/freedoom/releases/tag/v0.13.0",
+    "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T",
+    "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf",
+    "https://github.com/microsoft/BitNet",
+    "https://github.com/Farama-Foundation/ViZDoom"
+  ],
+  "policy": {
+    "network_during_validation": false,
+    "full_external_assets_checked_in": false,
+    "status_meaning": {
+      "not_present": "Official provenance is recorded, but no local payload is claimed.",
+      "metadata_only": "Only metadata/configuration is present; no weights are claimed.",
+      "sliced": "A locally validated subset of numbered model shards is present.",
+      "full": "Every declared file is locally present and format-validated."
+    }
+  },
+  "assets": [
+    {
+      "id": "doom-freedoom-0.13.0",
+      "kind": "doom",
+      "stage": "full",
+      "status": "not_present",
+      "source_url": "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip",
+      "source_revision": "v0.13.0",
+      "license": "BSD-3-Clause",
+      "provenance": {
+        "retrieved_on": "2026-08-15",
+        "repository": "https://github.com/freedoom/freedoom",
+        "license_file": "https://raw.githubusercontent.com/freedoom/freedoom/master/COPYING.adoc",
+        "release_checksum_file": "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0-CHECKSUM",
+        "archive_sha256": "3f9b264f3e3ce503b4fb7f6bdcb1f419d93c7b546f4df3e874dd878db9688f59",
+        "archive_size": 24143781
+      },
+      "renderer": {
+        "id": "vizdoom",
+        "source_url": "https://github.com/Farama-Foundation/ViZDoom",
+        "source_revision": "b899d2269a231f9ad1181ce62ada3d70a2ec4bd8",
+        "license": "MIT-origin code with mixed ZDoom dependencies; optional and not vendored",
+        "status": "optional_external"
+      },
+      "files": [
+        {
+          "name": "freedoom-0.13.0/freedoom1.wad",
+          "size": 28795076,
+          "sha256": "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d",
+          "present": false,
+          "format": "IWAD"
+        },
+        {
+          "name": "freedoom-0.13.0/freedoom2.wad",
+          "size": 28787748,
+          "sha256": "a8772e088847032510d97ba2312406a6998f21cbab44d4ff10696faa9c0ecd4b",
+          "present": false,
+          "format": "IWAD"
+        }
+      ],
+      "notes": "Download and extraction are operator actions. Validation never reaches the network; full status is impossible until a local WAD is supplied."
+    },
+    {
+      "id": "bitnet-b1.58-2B-4T-safetensors",
+      "kind": "bitnet",
+      "stage": "full",
+      "status": "not_present",
+      "source_url": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T",
+      "source_revision": "04c3b9ad9361b824064a1f25ea60a8be9599b127",
+      "license": "MIT",
+      "provenance": {
+        "retrieved_on": "2026-08-15",
+        "model_card": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T",
+        "official_inference": "https://github.com/microsoft/BitNet",
+        "file_size": 1178623988,
+        "sha256": "8143ae115ed6babe5e5ada8fb8c5b769d8f417802b2db042ad98b4f7ed73975b"
+      },
+      "files": [
+        {
+          "name": "model.safetensors",
+          "size": 1178623988,
+          "sha256": null,
+          "present": false,
+          "format": "safetensors"
+        }
+      ],
+      "notes": "Official model card identifies this as packed 1.58-bit deployment weights. The 1.18 GB payload is intentionally not checked in."
+    },
+    {
+      "id": "bitnet-b1.58-2B-4T-gguf",
+      "kind": "bitnet",
+      "stage": "full",
+      "status": "not_present",
+      "source_url": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf",
+      "source_revision": "a1f2f1c765812aa8af3f6eda4a313707064bba15",
+      "license": "MIT",
+      "provenance": {
+        "retrieved_on": "2026-08-15",
+        "model_card": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf",
+        "official_inference": "https://github.com/microsoft/BitNet",
+        "file_size": 1187801280,
+        "sha256": "4221b252fdd5fd25e15847adfeb5ee88886506ba50b8a34548374492884c2162"
+      },
+      "files": [
+        {
+          "name": "ggml-model-i2_s.gguf",
+          "size": 1187801280,
+          "sha256": null,
+          "present": false,
+          "format": "gguf"
+        }
+      ],
+      "notes": "Official BitNet repository documents this GGUF variant for bitnet.cpp CPU inference. The 1.19 GB payload is intentionally not checked in."
+    },
+    {
+      "id": "bitnet-metadata-slice-fixture",
+      "kind": "bitnet",
+      "stage": "metadata",
+      "status": "metadata_only",
+      "source_url": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T",
+      "source_revision": "04c3b9ad9361b824064a1f25ea60a8be9599b127",
+      "license": "MIT",
+      "provenance": {
+        "retrieved_on": "2026-08-15",
+        "model_card": "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T",
+        "fixture": "project-authored metadata projection; no weights"
+      },
+      "files": [
+        {
+          "name": "benchmarks/assets/fixtures/bitnet/metadata-slice.v1.json",
+          "size": 677,
+          "sha256": "5ea92e3b959f029f2bb48033884431260cdf6e1f9044583748ebf25471b04713",
+          "present": true,
+          "format": "metadata-json"
+        }
+      ],
+      "notes": "A tiny redistributable metadata slice is included to exercise staged import without shipping model weights."
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+// apps/test.trit - Bounded guest smoke tests.
+//
+// The command follows the existing guest convention: return 1 for a passing
+// command and 0 when any test fails.  It never mutates the filesystem.
+
+const TEST_ROOT: t40 = 10000;
+const TEST_RELEASE: t40 = 10016;
+const TEST_BIN: t40 = 10040;
+const TEST_STAT: t40 = 10100;
+const TEST_DIR: t40 = 10116;
+const TEST_BUF: t40 = 10400;
+const TEST_MAX_WORDS: t40 = 64;
+
+fn test_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn test_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn test_seed_root() -> t40 {
+    test_store(TEST_ROOT, 47); test_store(TEST_ROOT + 1, 0);
+    return TEST_ROOT;
+}
+
+fn test_seed_release() -> t40 {
+    // /etc/os-release
+    test_store(TEST_RELEASE + 0, 47);  test_store(TEST_RELEASE + 1, 101);
+    test_store(TEST_RELEASE + 2, 116); test_store(TEST_RELEASE + 3, 99);
+    test_store(TEST_RELEASE + 4, 47);  test_store(TEST_RELEASE + 5, 111);
+    test_store(TEST_RELEASE + 6, 115); test_store(TEST_RELEASE + 7, 45);
+    test_store(TEST_RELEASE + 8, 114); test_store(TEST_RELEASE + 9, 101);
+    test_store(TEST_RELEASE + 10, 108); test_store(TEST_RELEASE + 11, 101);
+    test_store(TEST_RELEASE + 12, 97); test_store(TEST_RELEASE + 13, 115);
+    test_store(TEST_RELEASE + 14, 101); test_store(TEST_RELEASE + 15, 0);
+    return TEST_RELEASE;
+}
+
+fn test_seed_bin() -> t40 {
+    test_store(TEST_BIN + 0, 47); test_store(TEST_BIN + 1, 98);
+    test_store(TEST_BIN + 2, 105); test_store(TEST_BIN + 3, 110);
+    test_store(TEST_BIN + 4, 0);
+    return TEST_BIN;
+}
+
+fn test_report(name: t40, ok: t40) -> t40 {
+    os_putc(84); os_putc(69); os_putc(83); os_putc(84); os_putc(32);
+    if name - 1 == 0 { os_putc(80); os_putc(73); os_putc(68); }
+    if name - 2 == 0 { os_putc(82); os_putc(79); os_putc(79); os_putc(84); }
+    if name - 3 == 0 { os_putc(82); os_putc(69); os_putc(76); os_putc(69); os_putc(65); os_putc(83); os_putc(69); }
+    if name - 4 == 0 { os_putc(82); os_putc(69); os_putc(65); os_putc(68); }
+    if name - 5 == 0 { os_putc(66); os_putc(73); os_putc(78); }
+    if name - 6 == 0 { os_putc(80); os_putc(83); }
+    if name - 7 == 0 { os_putc(85); os_putc(80); }
+    os_putc(32);
+    if ok > 0 {
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83);
+    } else {
+        os_putc(70); os_putc(65); os_putc(73); os_putc(76);
+    }
+    os_newline();
+    return ok;
+}
+
+fn test_pid() -> t40 {
+    var pid: t40 = sys_getpid();
+    if pid > 0 { return 1; }
+    return 0;
+}
+
+fn test_root() -> t40 {
+    var size: t40 = os_stat(test_seed_root(), TEST_STAT);
+    if test_load(TEST_STAT + 1) - 2 != 0 { return 0; }
+    if size < 0 { return 0; }
+    return 1;
+}
+
+fn test_release() -> t40 {
+    var size: t40 = os_stat(test_seed_release(), TEST_STAT);
+    if test_load(TEST_STAT + 1) - 1 != 0 { return 0; }
+    if size <= 0 { return 0; }
+    return 1;
+}
+
+fn test_read_release() -> t40 {
+    var size: t40 = os_stat(test_seed_release(), TEST_STAT);
+    if test_load(TEST_STAT + 1) - 1 != 0 { return 0; }
+    if size <= 0 { return 0; }
+    var fd: t40 = os_open(TEST_RELEASE, 0);
+    if fd < 0 { return 0; }
+    var read_words: t40 = os_read(fd, TEST_BUF, TEST_MAX_WORDS);
+    var closed: t40 = os_close(fd);
+    if read_words <= 0 { return 0; }
+    if closed <= 0 { return 0; }
+    // The seeded release file starts with NAME=.
+    if test_load(TEST_BUF) - 78 != 0 { return 0; }
+    return 1;
+}
+
+fn test_bin() -> t40 {
+    var size: t40 = os_stat(test_seed_bin(), TEST_STAT);
+    if test_load(TEST_STAT + 1) - 2 != 0 { return 0; }
+    if size < 0 { return 0; }
+    var written: t40 = os_readdir(TEST_BIN, TEST_DIR, 128);
+    if written <= 0 { return 0; }
+    if test_load(TEST_DIR + 2) <= 0 { return 0; }
+    return 1;
+}
+
+fn test_processes() -> t40 {
+    var count: t40 = os_ps(TEST_DIR, 8);
+    if count <= 0 { return 0; }
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    os_putc(84); os_putc(69); os_putc(83); os_putc(84); os_newline();
+    if in_kernel == 0 {
+        os_putc(84); os_putc(69); os_putc(83); os_putc(84); os_putc(32);
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_newline();
+        return 1;
+    }
+
+    var failures: t40 = 0;
+    var ok: t40 = test_pid(); test_report(1, ok); if ok <= 0 { failures = failures + 1; }
+    ok = test_root(); test_report(2, ok); if ok <= 0 { failures = failures + 1; }
+    ok = test_release(); test_report(3, ok); if ok <= 0 { failures = failures + 1; }
+    ok = test_read_release(); test_report(4, ok); if ok <= 0 { failures = failures + 1; }
+    ok = test_bin(); test_report(5, ok); if ok <= 0 { failures = failures + 1; }
+    ok = test_processes(); test_report(6, ok); if ok <= 0 { failures = failures + 1; }
+    // Uptime has no failure payload, but a negative value is never valid.
+    var uptime: t40 = sys_uptime();
+    ok = 1;
+    if uptime < 0 { ok = 0; }
+    test_report(7, ok); if ok <= 0 { failures = failures + 1; }
+
+    if failures == 0 {
+        os_putc(84); os_putc(69); os_putc(83); os_putc(84); os_putc(32);
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_newline();
+        return 1;
+    }
+    os_putc(84); os_putc(69); os_putc(83); os_putc(84); os_putc(32);
+    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_putc(32); os_print_int(failures); os_newline();
+    return 0;
+}

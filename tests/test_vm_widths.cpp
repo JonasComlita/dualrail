@@ -465,6 +465,139 @@ void testVmWidths() {
     }
 
     {
+        // An immediate CALL has a static target and a single architectural
+        // write (LR), so the native emitter can commit it without a helper.
+        // The destination-pair guard must still side-exit when LR is the
+        // lower half of a live T50/L50 pair, matching RegFile::writeLR.
+        const auto call_program = assembleOrThrow(R"(
+            call subroutine
+            halt
+        subroutine:
+            mov r1, 7
+            ret
+        )");
+        VMState interpreter(32, 32);
+        VMState native(32, 32);
+        expect(loadAndReset(interpreter, call_program) &&
+                   loadAndReset(native, call_program),
+               "native immediate CALL programs load");
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 32);
+        const auto native_result = sandbox::vm::run(native, 32);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count,
+               "native immediate CALL preserves status and accounting");
+        expect(native.regfile.read(R1) == interpreter.regfile.read(R1) &&
+                   native.regfile.readLR() == interpreter.regfile.readLR(),
+               "native immediate CALL preserves LR and callee result");
+        if (nativeX64HostAvailable()) {
+            bool saw_direct_call = false;
+            bool saw_call_helper = false;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                    if (instruction.op != VMMicroOpcode::Call) continue;
+                    saw_direct_call = saw_direct_call ||
+                        nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                    saw_call_helper = saw_call_helper ||
+                        !nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                }
+            }
+            expect(saw_direct_call && !saw_call_helper,
+                   "native immediate CALL is emitted directly");
+            expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                   "ordinary immediate CALL stays on native path");
+        }
+
+        VMState wide_interpreter(32, 32);
+        VMState wide_native(32, 32);
+        expect(loadAndReset(wide_interpreter, call_program) &&
+                   loadAndReset(wide_native, call_program),
+               "native wide-LR CALL programs load");
+        const TernaryValue wide_value = TernaryValue::fromLongTriple(
+            native_ops::fromInt(7));
+        wide_interpreter.regfile.write(R25_LR, wide_value);
+        wide_native.regfile.write(R25_LR, wide_value);
+        wide_interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        wide_native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        wide_native.setDecodedTraceHotThreshold(1);
+        const auto wide_interpreter_result =
+            sandbox::vm::run(wide_interpreter, 32);
+        const auto wide_native_result = sandbox::vm::run(wide_native, 32);
+        expect(wide_native_result.status == wide_interpreter_result.status &&
+                   wide_native_result.steps == wide_interpreter_result.steps &&
+                   wide_native.pc == wide_interpreter.pc &&
+                   wide_native.cycle_count == wide_interpreter.cycle_count &&
+                   wide_native.regfile.readLR() ==
+                       wide_interpreter.regfile.readLR(),
+               "native wide-LR CALL side-exit preserves portable semantics");
+        if (nativeX64HostAvailable()) {
+            expect(wide_native.native_x64_jit_stats.portable_side_exits > 0,
+                   "native wide-LR CALL side-exits before mutation");
+        }
+    }
+
+    {
+        // Width-qualified COPY must preserve the requested numeric view.  The
+        // native inline copy is deliberately limited to canonical T40; other
+        // widths use the helper so RegFile::readView performs the conversion.
+        const auto copy_program = assembleOrThrow(R"(
+            copy.t5 r2, r1
+            halt
+        )");
+        VMState interpreter(32, 32);
+        VMState native(32, 32);
+        expect(loadAndReset(interpreter, copy_program) &&
+                   loadAndReset(native, copy_program),
+               "native width-qualified COPY programs load");
+        const TernaryValue source = TernaryValue::fromTriple(
+            native_ops::fromIntT40(17));
+        interpreter.regfile.reg[R1] = source;
+        native.regfile.reg[R1] = source;
+        interpreter.regfile.view_mode[R1] = TernaryMode::T5;
+        native.regfile.view_mode[R1] = TernaryMode::T5;
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 8);
+        const auto native_result = sandbox::vm::run(native, 8);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count,
+               "native width-qualified COPY preserves execution accounting");
+        expect(native.regfile.read(R2) == interpreter.regfile.read(R2) &&
+                   native.regfile.view_mode[R2] == TernaryMode::T5,
+               "native width-qualified COPY preserves converted value/tag");
+        if (nativeX64HostAvailable()) {
+            bool saw_copy_helper = false;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                for (const VMNativeX64Instruction& instruction :
+                     block->lowered) {
+                    saw_copy_helper = saw_copy_helper ||
+                        (instruction.op == VMMicroOpcode::Copy &&
+                         !nativeX64InstructionIsDirect(
+                             instruction, block->lowered.size()));
+                }
+            }
+            expect(saw_copy_helper,
+                   "native width-qualified COPY remains helper-backed");
+        }
+    }
+
+    {
         // The scalar native subset must execute the ordinary normalized T40
         // integer encodings directly.  In particular, fromIntT40(1) has a
         // non-32 exponent after normalization, so parity alone is not enough:

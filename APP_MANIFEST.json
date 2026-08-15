@@ -301,6 +301,38 @@
       "gui_registry": false
     },
     {
+      "source": "apps/doctor.trit",
+      "id": "doctor",
+      "title": "doctor",
+      "guest_path": "/bin/doctor",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/test.trit",
+      "id": "test",
+      "title": "test",
+      "guest_path": "/bin/test",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/sysinfo.trit",
+      "id": "sysinfo",
+      "title": "sysinfo",
+      "guest_path": "/bin/sysinfo",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
+      "source": "apps/log.trit",
+      "id": "log",
+      "title": "log",
+      "guest_path": "/bin/log",
+      "stack_words": 128,
+      "gui_registry": false
+    },
+    {
       "source": "apps/kill.trit",
       "id": "kill",
       "title": "kill",

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "architecture-v2-home-pages",
+  "updated_by": "luna-remaining-gaps-waves",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -19,7 +19,7 @@
     {
       "id": "compiler-runtime",
       "status": "verified",
-      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, aggregate-pointer ABI and call-clobber contracts, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
+      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, ABI v2 compatibility, opt-in ABI v3 aggregate sret, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
       "evidence": [
         "test_phase7_compiler",
         "test_compiler_abi_contract",
@@ -31,7 +31,7 @@
     },
     {
       "id": "kernel-vfs-process",
-      "status": "in_progress",
+      "status": "verified",
       "summary": "Native kernel, VFS, persistent root image, checkpoint-durable namespace/quota policy, process lifecycle, waits, and app handoff are implemented with production tests.",
       "evidence": [
         "test_os_platform",
@@ -40,34 +40,29 @@
         "test_process_handoff",
         "test_production_layers",
         "test_production_hardening",
+        "test_syscall_pointer_fuzz",
         "test_redo_wal_v2",
         "test_vfs_rename",
         "next_scheduler_acceptance"
       ],
-      "open_items": [
-        "Complete VFS allocator compaction and broaden rename semantics (destination replacement and directory renames)",
-        "Dedicated fuzz harness for syscalls with malformed pointers",
-        "First-class guest /bin diagnostic commands"
-      ]
+      "open_items": []
     },
     {
       "id": "desktop-host-runtime",
-      "status": "in_progress",
-      "summary": "Host SDL runner boots release images, routes input, decodes framebuffer snapshots, and exports diagnostics.",
+      "status": "verified",
+      "summary": "Host SDL runner boots release images, routes input, decodes framebuffer snapshots, and exports text and PNG diagnostics.",
       "evidence": [
         "test_host_runtime",
         "stage_tos_release",
-        "smoke_tos_release"
+        "smoke_tos_release",
+        "trit.runtime_checkpoint.v2",
+        "trit.input_journal.v1 provenance"
       ],
-      "open_items": [
-        "Randomized malformed-pointer coverage",
-        "Framebuffer PNG export",
-        "Full guest diagnostics beyond syscall events"
-      ]
+      "open_items": []
     },
     {
       "id": "agent-operable-surface",
-      "status": "in_progress",
+      "status": "verified",
       "summary": "Host tools, manifests, debugging docs, diagnostic bundle contracts, Obsidian vault validation, and Graphify-backed knowledge graph tooling now exist for recursive agent loops.",
       "evidence": [
         "AGENTS.md",
@@ -78,15 +73,19 @@
         "docs/AGENTS.md",
         "tools/trit_tool.py knowledge status",
         "tools/trit_tool.py knowledge graph",
-        "trit_ast_dump"
+        "tools/generate_source_manifests.py --check",
+        "tools/trit-replay.ps1 schema adapters",
+        "tools/trit-*.sh",
+        "tools/trit_tool.py apps validate",
+        "next_apps_golden_snapshots",
+        "trit_ast_dump",
+        "test_syscall_pointer_fuzz",
+        "/bin/doctor",
+        "/bin/test",
+        "/bin/sysinfo",
+        "/bin/log"
       ],
-      "open_items": [
-        "Add randomized syscall coverage for malformed pointers",
-        "Add guest /bin/doctor and /bin/test commands",
-        "Extend diagnostics with guest checkpoints and external input event provenance",
-        "Keep Obsidian vault links and canvas current as docs evolve",
-        "Broaden Graphify/Trit graph augmentation beyond files, functions, constants, structs, imports, syscalls, and direct call edges"
-      ]
+      "open_items": []
     },
     {
       "id": "system-benchmarks",
@@ -99,28 +98,33 @@
         "TEST_MANIFEST.json system_benchmarks",
         "benchmarks/benchmark_doom_os.cpp",
         "benchmarks/benchmark_bitnet_os.cpp",
+        "benchmarks/reference/performance-baseline.v1.json",
+        "benchmarks/assets/external_assets.v1.json",
+        "test_performance_baseline",
+        "test_external_benchmark_assets",
         "system_benchmark_gate",
         "system_release_gate"
       ],
       "open_items": [
-        "Import or adapt a minimal Doom renderer and redistributable WAD assets",
-        "Scale the BitNet workload from the deterministic 27x27 model to sliced and then full model shards",
+        "Materialize the validated Freedoom WAD payloads and connect a reviewed renderer",
+        "Materialize validated BitNet sliced/full model shards when storage policy permits",
         "Archive controlled-host timing baselines before enforcing tighter workload regressions"
       ]
     },
     {
       "id": "ternary-symbolic-encodings",
-      "status": "planned",
-      "summary": "Formalize ASCII, UTF-8, and hexadecimal as compatibility encodings while designing ternary-native text and compact numeric notations.",
+      "status": "in_progress",
+      "summary": "ASCII, UTF-8, and hexadecimal remain compatibility encodings; fixed TASCII-81, exact trits, and compact base-27/base-81 notation are implemented for host tools and both assemblers.",
       "evidence": [
-        "docs/04_Binary_Contract/symbolic_encodings.md"
+        "docs/04_Binary_Contract/symbolic_encodings.md",
+        "ternary_symbolic_encoding.h",
+        "tools/trit_tool.py symbolic",
+        "test_symbolic_encodings",
+        "test_tcl_asm"
       ],
       "open_items": [
-        "Specify a fixed TASCII-81 table for basic guest text",
-        "Specify exact trit literal syntax and compact base-27 or base-81 dump notation",
-        "Add conversion APIs in host tools and the app SDK",
-        "Add assembler and TCL parser tests for decimal, hex, ASCII, UTF-8, and future ternary-native literals",
-        "Teach dump tools to print ternary-native notation alongside host hexadecimal"
+        "Add conversion APIs in the guest app SDK",
+        "Teach image and memory dump tools to print ternary-native notation alongside host hexadecimal"
       ]
     }
   ]

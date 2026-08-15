@@ -221,6 +221,27 @@ fn tcl_asm_is_delim(c: t40) -> t40 {
     return 0;
 }
 
+// A compact ternary dump uses a colon only after its fixed 0z27/0z81
+// introducer. Labels continue to use a standalone colon delimiter.
+fn tcl_asm_is_dump_colon(src: t40, start: t40, pos: t40) -> t40 {
+    match pos - start - 4 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_char_at(src, start) - 48 { zero => {} pos => { return 0; } neg => { return 0; } }
+    match tcl_asm_lower(tcl_asm_char_at(src, start + 1)) - 122 { zero => {} pos => { return 0; } neg => { return 0; } }
+    var head: t40 = tcl_asm_char_at(src, start + 2);
+    var tail: t40 = tcl_asm_char_at(src, start + 3);
+    match head - 50 {
+        zero => { match tail - 55 { zero => { return 1; } pos => {} neg => {} } }
+        pos => {}
+        neg => {}
+    }
+    match head - 56 {
+        zero => { match tail - 49 { zero => { return 1; } pos => {} neg => {} } }
+        pos => {}
+        neg => {}
+    }
+    return 0;
+}
+
 fn tcl_asm_skip_operand_delims(src: t40, len: t40, idx: t40) -> t40 {
     var i: t40 = idx;
     var keep: t40 = 1;
@@ -282,12 +303,45 @@ fn tcl_asm_next_token(src: t40, len: t40, cursor: t40, tok: t40) -> t40 {
         c = tcl_asm_char_at(src, i);
         match tcl_asm_is_delim(c) {
             pos => {
-                unsafe {
-                    store(tok, start);
-                    store(tok + 1, i - start);
-                    store(cursor, i);
+                match c - 58 {
+                    zero => {
+                        match tcl_asm_is_dump_colon(src, start, i) {
+                            pos => { i = i + 1; }
+                            zero => {
+                                unsafe {
+                                    store(tok, start);
+                                    store(tok + 1, i - start);
+                                    store(cursor, i);
+                                }
+                                return 1;
+                            }
+                            neg => {
+                                unsafe {
+                                    store(tok, start);
+                                    store(tok + 1, i - start);
+                                    store(cursor, i);
+                                }
+                                return 1;
+                            }
+                        }
+                    }
+                    pos => {
+                        unsafe {
+                            store(tok, start);
+                            store(tok + 1, i - start);
+                            store(cursor, i);
+                        }
+                        return 1;
+                    }
+                    neg => {
+                        unsafe {
+                            store(tok, start);
+                            store(tok + 1, i - start);
+                            store(cursor, i);
+                        }
+                        return 1;
+                    }
                 }
-                return 1;
             }
             zero => { i = i + 1; }
             neg => { i = i + 1; }
@@ -700,6 +754,117 @@ fn tcl_asm_parse_register(src: t40, tok: t40) -> t40 {
     }
 }
 
+fn tcl_asm_base27_digit(c: t40) -> t40 {
+    match tcl_asm_is_digit(c) {
+        pos => { return c - 48; }
+        zero => {}
+        neg => {}
+    }
+    var lower: t40 = tcl_asm_lower(c);
+    match lower - 97 {
+        neg => { return 0 - 1; }
+        zero => { return 10; }
+        pos => {
+            match 113 - lower {
+                neg => { return 0 - 1; }
+                zero => { return lower - 97 + 10; }
+                pos => { return lower - 97 + 10; }
+            }
+        }
+    }
+}
+
+fn tcl_asm_base81_digit(c: t40) -> t40 {
+    match tcl_asm_is_digit(c) {
+        pos => { return c - 48; }
+        zero => {}
+        neg => {}
+    }
+    match c - 65 {
+        neg => {}
+        zero => { return 36; }
+        pos => {
+            match 90 - c {
+                neg => {}
+                zero => { return c - 65 + 36; }
+                pos => { return c - 65 + 36; }
+            }
+        }
+    }
+    match c - 97 {
+        neg => {}
+        zero => { return 36; }
+        pos => {
+            match 122 - c {
+                neg => {}
+                zero => { return c - 97 + 36; }
+                pos => { return c - 97 + 36; }
+            }
+        }
+    }
+    match c - 33 { zero => { return 62; } pos => {} neg => {} } // !
+    match c - 35 { zero => { return 63; } pos => {} neg => {} } // #
+    match c - 36 { zero => { return 64; } pos => {} neg => {} } // $
+    match c - 37 { zero => { return 65; } pos => {} neg => {} } // %
+    match c - 38 { zero => { return 66; } pos => {} neg => {} } // &
+    match c - 40 { zero => { return 67; } pos => {} neg => {} } // (
+    match c - 41 { zero => { return 68; } pos => {} neg => {} } // )
+    match c - 42 { zero => { return 69; } pos => {} neg => {} } // *
+    match c - 43 { zero => { return 70; } pos => {} neg => {} } // +
+    match c - 44 { zero => { return 71; } pos => {} neg => {} } // ,
+    match c - 45 { zero => { return 72; } pos => {} neg => {} } // -
+    match c - 46 { zero => { return 73; } pos => {} neg => {} } // .
+    match c - 47 { zero => { return 74; } pos => {} neg => {} } // /
+    match c - 58 { zero => { return 75; } pos => {} neg => {} } // :
+    match c - 59 { zero => { return 76; } pos => {} neg => {} } // ;
+    match c - 60 { zero => { return 77; } pos => {} neg => {} } // <
+    match c - 61 { zero => { return 78; } pos => {} neg => {} } // =
+    match c - 62 { zero => { return 79; } pos => {} neg => {} } // >
+    match c - 63 { zero => { return 80; } pos => {} neg => {} } // ?
+    return 0 - 1;
+}
+
+fn tcl_asm_parse_grouped(src: t40, tok: t40, start: t40, width: t40, base81: t40, out: t40) -> t40 {
+    var len: t40 = tcl_asm_tok_len(tok);
+    var i: t40 = start;
+    var n: t40 = 0;
+    var digit: t40 = 0;
+    var c: t40 = 0;
+    var group: t40 = 0;
+    var power: t40 = 0;
+    var q: t40 = 0;
+    var j: t40 = 0;
+    while len - i > 0 {
+        c = tcl_asm_tok_char(src, tok, i);
+        match base81 {
+            pos => { digit = tcl_asm_base81_digit(c); }
+            zero => { digit = tcl_asm_base27_digit(c); }
+            neg => { digit = tcl_asm_base27_digit(c); }
+        }
+        match digit {
+            neg => { return 0; }
+            zero => {}
+            pos => {}
+        }
+        group = digit;
+        power = tcl_asm_pow3(width - 1);
+        j = 0;
+        while width - j > 0 {
+            q = tcl_asm_div(group, power);
+            group = group - q * power;
+            n = n * 3 + q - 1;
+            power = tcl_asm_div(power, 3);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    match len - start {
+        pos => { unsafe { store(out, n); } return 1; }
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+}
+
 fn tcl_asm_parse_int(src: t40, tok: t40, out: t40) -> t40 {
     var len: t40 = tcl_asm_tok_len(tok);
     match len { zero => { return 0; } pos => {} neg => { return 0; } }
@@ -721,17 +886,152 @@ fn tcl_asm_parse_int(src: t40, tok: t40, out: t40) -> t40 {
         zero => { return 0; }
         neg => { return 0; }
     }
-    var n: t40 = 0;
+
+    // Native forms are unsigned at the spelling level: a sign before 0t/0z
+    // is intentionally rejected so exact-trit syntax remains unambiguous.
+    match i {
+        zero => {
+            match len - 2 {
+                pos => {
+                    var c1: t40 = tcl_asm_lower(tcl_asm_tok_char(src, tok, 1));
+                    match c1 - 116 {
+                        zero => {
+                            var n: t40 = 0;
+                            var trit: t40 = 0;
+                            i = 2;
+                            while len - i > 0 {
+                                c = tcl_asm_tok_char(src, tok, i);
+                                trit = 2;
+                                match c - 45 { zero => { trit = 0 - 1; } pos => {} neg => {} }
+                                match c - 43 { zero => { trit = 1; } pos => {} neg => {} }
+                                match c - 48 { zero => { trit = 0; } pos => {} neg => {} }
+                                match trit - 1 { pos => { return 0; } zero => {} neg => {} }
+                                n = n * 3 + trit;
+                                i = i + 1;
+                            }
+                            unsafe { store(out, n); }
+                            return 1;
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                    match c1 - 121 {
+                        zero => {
+                            var n_legacy: t40 = 0;
+                            var legacy: t40 = 2;
+                            while legacy - len < 0 {
+                                c = tcl_asm_tok_char(src, tok, legacy);
+                                match c - 45 { zero => { n_legacy = n_legacy * 3 - 1; } pos => {} neg => {} }
+                                match c - 43 { zero => { n_legacy = n_legacy * 3 + 1; } pos => {} neg => {} }
+                                match c - 48 { zero => { n_legacy = n_legacy * 3; } pos => {} neg => {} }
+                                legacy = legacy + 1;
+                            }
+                            match len - 2 { pos => { unsafe { store(out, n_legacy); } return 1; } zero => { return 0; } neg => { return 0; } }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                    match c1 - 122 {
+                        zero => {
+                            var c2: t40 = tcl_asm_tok_char(src, tok, 2);
+                            var c3: t40 = tcl_asm_tok_char(src, tok, 3);
+                            var colon: t40 = tcl_asm_tok_char(src, tok, 4);
+                            match colon - 58 {
+                                zero => {
+                                    match c2 - 50 {
+                                        zero => { match c3 - 55 { zero => { return tcl_asm_parse_grouped(src, tok, 5, 3, 0, out); } pos => {} neg => {} } }
+                                        pos => {}
+                                        neg => {}
+                                    }
+                                    match c2 - 56 {
+                                        zero => { match c3 - 49 { zero => { return tcl_asm_parse_grouped(src, tok, 5, 4, 1, out); } pos => {} neg => {} } }
+                                        pos => {}
+                                        neg => {}
+                                    }
+                                }
+                                pos => {}
+                                neg => {}
+                            }
+                        }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                zero => {}
+                neg => {}
+            }
+        }
+        pos => {}
+        neg => {}
+    }
+
+    // Hexadecimal remains explicit and decimal parsing is unchanged.
+    var base: t40 = 10;
+    match len - i - 2 {
+        pos => {
+            match tcl_asm_tok_char(src, tok, i) - 48 {
+                zero => {
+                    c = tcl_asm_lower(tcl_asm_tok_char(src, tok, i + 1));
+                    match c - 120 {
+                        zero => { base = 16; i = i + 2; }
+                        pos => {}
+                        neg => {}
+                    }
+                }
+                pos => {}
+                neg => {}
+            }
+        }
+        zero => {}
+        neg => {}
+    }
+    match len - i {
+        pos => {}
+        zero => { return 0; }
+        neg => { return 0; }
+    }
+    var n_decimal: t40 = 0;
     while len - i > 0 {
         c = tcl_asm_tok_char(src, tok, i);
-        match tcl_asm_is_digit(c) {
-            pos => { n = n * 10 + c - 48; }
-            zero => { return 0; }
-            neg => { return 0; }
+        var digit_decimal: t40 = 0 - 1;
+        match base - 16 {
+            zero => {
+                match tcl_asm_is_digit(c) {
+                    pos => { digit_decimal = c - 48; }
+                    zero => {
+                        var lower_hex: t40 = tcl_asm_lower(c);
+                        match lower_hex - 97 {
+                            zero => { digit_decimal = 10; }
+                            pos => {
+                                match 102 - lower_hex {
+                                    neg => {}
+                                    zero => { digit_decimal = lower_hex - 97 + 10; }
+                                    pos => { digit_decimal = lower_hex - 97 + 10; }
+                                }
+                            }
+                            neg => {}
+                        }
+                    }
+                    neg => {}
+                }
+            }
+            pos => { digit_decimal = c - 48; }
+            neg => { digit_decimal = c - 48; }
         }
+        match digit_decimal {
+            neg => { return 0; }
+            zero => {}
+            pos => {}
+        }
+        match digit_decimal - base {
+            pos => { return 0; }
+            zero => { return 0; }
+            neg => {}
+        }
+        n_decimal = n_decimal * base + digit_decimal;
         i = i + 1;
     }
-    unsafe { store(out, n * sign); }
+    unsafe { store(out, n_decimal * sign); }
     return 1;
 }
 

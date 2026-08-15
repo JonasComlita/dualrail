@@ -156,6 +156,11 @@ struct TosInputJournalEvent {
     long long value1 = 0;
     long long value2 = 0;
     std::string text;
+    // Provenance is host-side metadata.  It is intentionally separate from
+    // the guest payload so replay remains deterministic while diagnostics can
+    // identify which external ingress path supplied an event.
+    std::string source = "host.api";
+    std::string channel;
 };
 
 struct TosRuntimeCheckpoint {
@@ -753,6 +758,80 @@ inline bool readCheckpointState(const std::filesystem::path& path,
 
 inline constexpr std::uint64_t kCheckpointJournalMagic =
     0x314c4e52504a5254ULL; // "TRR PNRL1"
+inline constexpr std::uint32_t kCheckpointJournalVersion = 2;
+
+inline const char* inputEventKindName(TosInputEventKind kind) {
+    switch (kind) {
+        case TosInputEventKind::KeyboardWord: return "keyboard";
+        case TosInputEventKind::Text: return "text";
+        case TosInputEventKind::Mouse: return "mouse";
+        default: return "unknown";
+    }
+}
+
+inline bool inputProvenanceFieldSane(const std::string& value) {
+    // Provenance is diagnostic metadata, not guest data.  Keep it bounded and
+    // reject control characters so JSONL and the binary journal have one
+    // canonical representation across host platforms.
+    if (value.empty() || value.size() > 256) return false;
+    for (const unsigned char ch : value) {
+        if (ch < 0x20 || ch == 0x7f) return false;
+    }
+    return true;
+}
+
+inline std::string inputProvenanceOrDefault(const std::string& value) {
+    return inputProvenanceFieldSane(value) ? value : "host.api";
+}
+
+inline std::string inputChannelOrDefault(const TosInputJournalEvent& event) {
+    if (inputProvenanceFieldSane(event.channel)) return event.channel;
+    return inputEventKindName(event.kind);
+}
+
+// Defined below with the other host-runtime JSON helpers; the declaration is
+// kept here so journal writers can live next to the binary format contract.
+inline void writeJsonString(std::ostream& out, const std::string& value);
+
+inline bool writeInputJournalJson(
+    const std::filesystem::path& path,
+    const std::vector<TosInputJournalEvent>& events,
+    std::string* error = nullptr) {
+    std::ofstream out(path, std::ios::trunc);
+    if (!out.good()) {
+        setError(error, "failed to write input journal: " + path.string());
+        return false;
+    }
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const TosInputJournalEvent& event = events[index];
+        if (event.sequence != index ||
+            event.kind < TosInputEventKind::KeyboardWord ||
+            event.kind > TosInputEventKind::Mouse ||
+            !inputProvenanceFieldSane(event.source)) {
+            setError(error, "input journal ordering or provenance is invalid");
+            return false;
+        }
+        out << "{\"schema\":\"trit.input_journal.v1\",";
+        out << "\"sequence\":" << event.sequence << ",";
+        out << "\"cycle\":" << event.cycle << ",";
+        out << "\"kind\":" << static_cast<int>(event.kind) << ",";
+        out << "\"value0\":" << event.value0 << ",";
+        out << "\"value1\":" << event.value1 << ",";
+        out << "\"value2\":" << event.value2 << ",";
+        out << "\"text\":";
+        writeJsonString(out, event.text);
+        out << ",\"provenance\":{\"source\":";
+        writeJsonString(out, event.source);
+        out << ",\"channel\":";
+        writeJsonString(out, inputChannelOrDefault(event));
+        out << ",\"external\":true}}\n";
+    }
+    if (!out.good()) {
+        setError(error, "failed to write input journal: " + path.string());
+        return false;
+    }
+    return true;
+}
 
 inline bool writeCheckpointJournal(
     const std::filesystem::path& path,
@@ -764,9 +843,18 @@ inline bool writeCheckpointJournal(
         return false;
     }
     writer.pod(kCheckpointJournalMagic);
-    writer.pod(kCheckpointStateVersion);
+    writer.pod(kCheckpointJournalVersion);
     writer.pod(static_cast<std::uint64_t>(events.size()));
-    for (const auto& event : events) {
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const auto& event = events[index];
+        if (event.sequence != index ||
+            event.kind < TosInputEventKind::KeyboardWord ||
+            event.kind > TosInputEventKind::Mouse ||
+            !inputProvenanceFieldSane(event.source) ||
+            !inputProvenanceFieldSane(inputChannelOrDefault(event))) {
+            setError(error, "input journal ordering or provenance is invalid");
+            return false;
+        }
         writer.pod(event.sequence);
         writer.pod(event.cycle);
         writer.pod(static_cast<std::uint8_t>(event.kind));
@@ -774,6 +862,8 @@ inline bool writeCheckpointJournal(
         writer.pod(event.value1);
         writer.pod(event.value2);
         writer.string(event.text);
+        writer.string(event.source);
+        writer.string(inputChannelOrDefault(event));
     }
     writer.finish();
     if (!writer.ok) {
@@ -793,7 +883,8 @@ inline bool readCheckpointJournal(
     std::uint64_t count = 0;
     if (!reader.ok || !reader.pod(magic) || !reader.pod(version) ||
         !reader.pod(count) || magic != kCheckpointJournalMagic ||
-        version != kCheckpointStateVersion || count > 100000000ULL) {
+        (version != kCheckpointStateVersion && version != kCheckpointJournalVersion) ||
+        count > 100000000ULL) {
         setError(error, "checkpoint journal header is invalid");
         return false;
     }
@@ -811,6 +902,17 @@ inline bool readCheckpointJournal(
             return false;
         }
         event.kind = static_cast<TosInputEventKind>(kind);
+        if (version == kCheckpointJournalVersion) {
+            if (!reader.string(event.source) || !reader.string(event.channel) ||
+                !inputProvenanceFieldSane(event.source) ||
+                !inputProvenanceFieldSane(event.channel)) {
+                setError(error, "checkpoint journal provenance is invalid");
+                return false;
+            }
+        } else {
+            event.source = "legacy.unknown";
+            event.channel = inputEventKindName(event.kind);
+        }
         if (event.sequence != index) {
             setError(error, "checkpoint journal sequence is not contiguous");
             return false;
@@ -1117,6 +1219,156 @@ inline std::uint32_t paletteColor(int index) {
         case 15: return rgba(215, 230, 255); // Cool white
         default: return rgba(0, 220, 85);
     }
+}
+
+// Diagnostics intentionally use a tiny, dependency-free PNG encoder.  The
+// framebuffer is already materialized as RGBA pixels, so a deterministic PNG
+// with unfiltered scanlines and DEFLATE stored blocks is sufficient here and
+// avoids making zlib/SDL image libraries part of the host-runtime ABI.
+inline void appendPngU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+    out.push_back(static_cast<std::uint8_t>((value >> 24) & 0xff));
+    out.push_back(static_cast<std::uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<std::uint8_t>(value & 0xff));
+}
+
+inline std::uint32_t pngCrc32(const std::uint8_t* bytes, std::size_t size) {
+    std::uint32_t crc = 0xffffffffU;
+    for (std::size_t i = 0; i < size; ++i) {
+        crc ^= bytes[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xedb88320U &
+                                static_cast<std::uint32_t>(-
+                                    static_cast<std::int32_t>(crc & 1U)));
+        }
+    }
+    return ~crc;
+}
+
+inline std::uint32_t pngAdler32(const std::vector<std::uint8_t>& bytes) {
+    constexpr std::uint32_t kModulus = 65521U;
+    std::uint32_t a = 1U;
+    std::uint32_t b = 0U;
+    for (const std::uint8_t byte : bytes) {
+        a += byte;
+        if (a >= kModulus) a -= kModulus;
+        b += a;
+        if (b >= kModulus) b -= kModulus;
+    }
+    return (b << 16) | a;
+}
+
+inline bool appendPngChunk(std::vector<std::uint8_t>& out,
+                           const char type[4],
+                           const std::vector<std::uint8_t>& data) {
+    if (data.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) ||
+        data.size() > std::numeric_limits<std::size_t>::max() - 4) {
+        return false;
+    }
+    appendPngU32(out, static_cast<std::uint32_t>(data.size()));
+    const std::size_t type_offset = out.size();
+    out.insert(out.end(), reinterpret_cast<const std::uint8_t*>(type),
+               reinterpret_cast<const std::uint8_t*>(type) + 4);
+    out.insert(out.end(), data.begin(), data.end());
+    appendPngU32(out, pngCrc32(out.data() + type_offset, 4 + data.size()));
+    return true;
+}
+
+inline bool writeFramebufferPng(const std::filesystem::path& path,
+                                const TosFramebufferSnapshot& framebuffer,
+                                std::string* error = nullptr) {
+    if (framebuffer.width <= 0 || framebuffer.height <= 0) {
+        setError(error, "framebuffer PNG geometry is invalid");
+        return false;
+    }
+
+    const std::size_t width = static_cast<std::size_t>(framebuffer.width);
+    const std::size_t height = static_cast<std::size_t>(framebuffer.height);
+    if (height > std::numeric_limits<std::size_t>::max() / width) {
+        setError(error, "framebuffer PNG geometry overflows host size");
+        return false;
+    }
+    const std::size_t pixel_count = width * height;
+    if (framebuffer.rgba.size() != pixel_count) {
+        setError(error, "framebuffer PNG pixel count does not match geometry");
+        return false;
+    }
+    if (pixel_count >
+        (std::numeric_limits<std::size_t>::max() - height) / 4) {
+        setError(error, "framebuffer PNG scanline size overflows host size");
+        return false;
+    }
+
+    const std::size_t scanline_size = pixel_count * 4 + height;
+    std::vector<std::uint8_t> scanlines;
+    scanlines.reserve(scanline_size);
+    for (std::size_t y = 0; y < height; ++y) {
+        scanlines.push_back(0); // PNG filter type: none.
+        for (std::size_t x = 0; x < width; ++x) {
+            const std::uint32_t pixel = framebuffer.rgba[y * width + x];
+            scanlines.push_back(static_cast<std::uint8_t>((pixel >> 24) & 0xff));
+            scanlines.push_back(static_cast<std::uint8_t>((pixel >> 16) & 0xff));
+            scanlines.push_back(static_cast<std::uint8_t>((pixel >> 8) & 0xff));
+            scanlines.push_back(static_cast<std::uint8_t>(pixel & 0xff));
+        }
+    }
+
+    // Use zlib's no-compression stream and stored DEFLATE blocks.  Splitting
+    // at 65535 bytes keeps the encoder valid for larger diagnostic frames.
+    std::vector<std::uint8_t> compressed;
+    compressed.reserve(scanlines.size() + 16);
+    compressed.push_back(0x78); // CMF: deflate, 32K window.
+    compressed.push_back(0x01); // FLG: no compression, valid FCHECK.
+    std::size_t offset = 0;
+    do {
+        const std::size_t remaining = scanlines.size() - offset;
+        const std::size_t block_size = std::min<std::size_t>(remaining, 65535);
+        const bool final_block = offset + block_size == scanlines.size();
+        compressed.push_back(static_cast<std::uint8_t>(final_block ? 0x01 : 0x00));
+        const auto length = static_cast<std::uint16_t>(block_size);
+        const auto inverse_length = static_cast<std::uint16_t>(0xffffU ^ length);
+        compressed.push_back(static_cast<std::uint8_t>(length & 0xff));
+        compressed.push_back(static_cast<std::uint8_t>((length >> 8) & 0xff));
+        compressed.push_back(static_cast<std::uint8_t>(inverse_length & 0xff));
+        compressed.push_back(static_cast<std::uint8_t>((inverse_length >> 8) & 0xff));
+        compressed.insert(compressed.end(),
+                          scanlines.begin() + static_cast<std::ptrdiff_t>(offset),
+                          scanlines.begin() + static_cast<std::ptrdiff_t>(offset + block_size));
+        offset += block_size;
+    } while (offset < scanlines.size());
+    appendPngU32(compressed, pngAdler32(scanlines));
+
+    std::vector<std::uint8_t> ihdr;
+    appendPngU32(ihdr, static_cast<std::uint32_t>(framebuffer.width));
+    appendPngU32(ihdr, static_cast<std::uint32_t>(framebuffer.height));
+    ihdr.push_back(8); // bit depth
+    ihdr.push_back(6); // color type RGBA
+    ihdr.push_back(0); // compression method
+    ihdr.push_back(0); // filter method
+    ihdr.push_back(0); // no interlace
+
+    std::vector<std::uint8_t> png = {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    };
+    if (!appendPngChunk(png, "IHDR", ihdr) ||
+        !appendPngChunk(png, "IDAT", compressed) ||
+        !appendPngChunk(png, "IEND", {})) {
+        setError(error, "framebuffer PNG chunk is too large");
+        return false;
+    }
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.good()) {
+        setError(error, "failed to write framebuffer_snapshot.png");
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(png.data()),
+              static_cast<std::streamsize>(png.size()));
+    if (!out.good()) {
+        setError(error, "failed to write framebuffer_snapshot.png");
+        return false;
+    }
+    return true;
 }
 
 inline std::string jsonEscape(const std::string& value) {
@@ -1845,7 +2097,7 @@ public:
         return status;
     }
 
-    void pushKeyboardInput(long long word) {
+    void pushKeyboardInput(long long word, const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
         machine_->enqueueConsoleInput(word);
@@ -1857,10 +2109,12 @@ public:
             word,
             0,
             0,
-            {}});
+            {},
+            detail::inputProvenanceOrDefault(source),
+            "keyboard"});
     }
 
-    void pushTextInput(const std::string& text) {
+    void pushTextInput(const std::string& text, const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
         machine_->enqueueConsoleAscii(text);
@@ -1872,10 +2126,15 @@ public:
             0,
             0,
             0,
-            text});
+            text,
+            detail::inputProvenanceOrDefault(source),
+            "text"});
     }
 
-    void updateMouseState(long long x, long long y, long long buttons) {
+    void updateMouseState(long long x,
+                          long long y,
+                          long long buttons,
+                          const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
         machine_->mouse_x = x;
@@ -1889,7 +2148,9 @@ public:
             x,
             y,
             buttons,
-            {}});
+            {},
+            detail::inputProvenanceOrDefault(source),
+            "mouse"});
     }
 
     [[nodiscard]] TosFramebufferSnapshot readFramebuffer() const {
@@ -2074,32 +2335,9 @@ public:
             }
             return false;
         }
-        {
-            std::ofstream journal(base / "input_journal.jsonl", std::ios::trunc);
-            if (!journal.good()) {
-                detail::setError(error, "failed to write checkpoint input journal");
-                return false;
-            }
-            for (const auto& event : input_journal_) {
-                journal << "{\"schema\":\"trit.input_journal.v1\","
-                        << "\"sequence\":" << event.sequence << ","
-                        << "\"cycle\":" << event.cycle << ","
-                        << "\"kind\":" << static_cast<int>(event.kind) << ","
-                        << "\"value0\":" << event.value0 << ","
-                        << "\"value1\":" << event.value1 << ","
-                        << "\"value2\":" << event.value2 << ",\"text\":\"";
-                for (char ch : event.text) {
-                    if (ch == '\\' || ch == '"') journal << '\\';
-                    if (ch == '\n') journal << "\\n";
-                    else if (ch == '\r') journal << "\\r";
-                    else journal << ch;
-                }
-                journal << "\"}\n";
-            }
-            if (!journal.good()) {
-                detail::setError(error, "failed to write checkpoint input journal");
-                return false;
-            }
+        if (!detail::writeInputJournalJson(base / "input_journal.jsonl",
+                                            input_journal_, error)) {
+            return false;
         }
         {
             std::ofstream trace(base / "syscall_trace.jsonl", std::ios::trunc);
@@ -2263,6 +2501,89 @@ public:
         }
 
         const std::filesystem::path base(directory);
+        // Every diagnostic capture gets a self-contained, restorable
+        // instruction-boundary snapshot.  An explicitly captured checkpoint
+        // retains its sequence/input boundary; otherwise capture the live VM
+        // locally without mutating runtime replay state.
+        std::shared_ptr<TosRuntimeCheckpoint> diagnostics_checkpoint = checkpoint_;
+        if (!diagnostics_checkpoint) {
+            diagnostics_checkpoint = std::make_shared<TosRuntimeCheckpoint>();
+            diagnostics_checkpoint->sequence = 0;
+            diagnostics_checkpoint->input_event_count = input_journal_.size();
+            diagnostics_checkpoint->vm = vm::captureCheckpoint(*machine_);
+        }
+        const std::filesystem::path checkpoint_base = base / "checkpoint";
+        std::filesystem::create_directories(checkpoint_base, ec);
+        if (ec) {
+            detail::setError(error,
+                             "failed to create diagnostics checkpoint: " + ec.message());
+            return false;
+        }
+        if (!writeBootImageFile((checkpoint_base / "boot.tboot").string(),
+                                image_, error) ||
+            !detail::writeCheckpointState(checkpoint_base / "vm_state.bin",
+                                           diagnostics_checkpoint->vm.state,
+                                           error) ||
+            !diagnostics_checkpoint->vm.state.block_device.writeSnapshotFile(
+                (checkpoint_base / "disk.tdisk").string()) ||
+            !detail::writeCheckpointJournal(checkpoint_base / "input_journal.bin",
+                                             input_journal_, error) ||
+            !detail::writeInputJournalJson(checkpoint_base / "input_journal.jsonl",
+                                            input_journal_, error) ||
+            !writeSyscallTraceJsonLocked(checkpoint_base / "syscall_trace.jsonl",
+                                         error)) {
+            if (error && error->empty()) {
+                detail::setError(error, "failed to write diagnostics checkpoint payload");
+            }
+            return false;
+        }
+        {
+            detail::CheckpointWriter metadata(checkpoint_base / "checkpoint.bin");
+            if (!metadata.ok) {
+                detail::setError(error, "failed to open diagnostics checkpoint metadata");
+                return false;
+            }
+            metadata.pod(detail::kCheckpointStateMagic);
+            metadata.pod(detail::kCheckpointStateVersion);
+            metadata.pod(diagnostics_checkpoint->sequence);
+            metadata.pod(static_cast<std::uint64_t>(
+                diagnostics_checkpoint->input_event_count));
+            metadata.pod(diagnostics_checkpoint->vm.cycle);
+            metadata.pod(static_cast<std::int32_t>(diagnostics_checkpoint->vm.pc));
+            metadata.pod(boot_generation_);
+            metadata.pod(guest_reboot_count_);
+            metadata.finish();
+            if (!metadata.ok) {
+                detail::setError(error, "failed to write diagnostics checkpoint metadata");
+                return false;
+            }
+        }
+        {
+            std::ofstream metadata(checkpoint_base / "checkpoint.json", std::ios::trunc);
+            if (!metadata.good()) {
+                detail::setError(error, "failed to write diagnostics checkpoint.json");
+                return false;
+            }
+            metadata << "{\n"
+                      << "  \"schema\":\"trit.runtime_checkpoint.v2\",\n"
+                      << "  \"compatibility_schema\":\"trit.runtime_checkpoint.v1\",\n"
+                      << "  \"available\":true,\n"
+                      << "  \"sequence\":" << diagnostics_checkpoint->sequence << ",\n"
+                      << "  \"input_event_count\":"
+                      << diagnostics_checkpoint->input_event_count << ",\n"
+                      << "  \"cycle\":" << diagnostics_checkpoint->vm.cycle << ",\n"
+                      << "  \"pc\":" << diagnostics_checkpoint->vm.pc << ",\n"
+                      << "  \"state_file\":\"vm_state.bin\",\n"
+                      << "  \"disk_file\":\"disk.tdisk\",\n"
+                      << "  \"journal_file\":\"input_journal.bin\",\n"
+                      << "  \"boot_image\":\"boot.tboot\",\n"
+                      << "  \"trace_file\":\"syscall_trace.jsonl\"\n"
+                      << "}\n";
+            if (!metadata.good()) {
+                detail::setError(error, "failed to write diagnostics checkpoint.json");
+                return false;
+            }
+        }
         {
             std::ofstream out(base / "vm_state.txt", std::ios::trunc);
             if (!out.good()) {
@@ -2401,7 +2722,19 @@ public:
                 if (i + 1 < image_.manifest.apps.size()) out << ",";
                 out << "\n";
             }
-            out << "  ]\n";
+            out << "  ],\n";
+            out << "  \"checkpoint\": {\n";
+            out << "    \"schema\": \"trit.runtime_checkpoint.v2\",\n";
+            out << "    \"compatibility_schema\": \"trit.runtime_checkpoint.v1\",\n";
+            out << "    \"available\": true,\n";
+            out << "    \"metadata_file\": \"checkpoint/checkpoint.json\",\n";
+            out << "    \"state_file\": \"checkpoint/vm_state.bin\",\n";
+            out << "    \"disk_file\": \"checkpoint/disk.tdisk\",\n";
+            out << "    \"journal_file\": \"checkpoint/input_journal.bin\",\n";
+            out << "    \"journal_jsonl\": \"checkpoint/input_journal.jsonl\",\n";
+            out << "    \"trace_file\": \"checkpoint/syscall_trace.jsonl\",\n";
+            out << "    \"boot_image\": \"checkpoint/boot.tboot\"\n";
+            out << "  }\n";
             out << "}\n";
         }
         {
@@ -2586,28 +2919,9 @@ public:
                 }
             }
         }
-        {
-            std::ofstream out(base / "input_journal.jsonl", std::ios::trunc);
-            if (!out.good()) {
-                detail::setError(error, "failed to write input_journal.jsonl");
-                return false;
-            }
-            for (const TosInputJournalEvent& event : input_journal_) {
-                out << "{\"schema\":\"trit.input_journal.v1\","
-                    << "\"sequence\":" << event.sequence << ","
-                    << "\"cycle\":" << event.cycle << ","
-                    << "\"kind\":" << static_cast<int>(event.kind) << ","
-                    << "\"value0\":" << event.value0 << ","
-                    << "\"value1\":" << event.value1 << ","
-                    << "\"value2\":" << event.value2 << ",\"text\":\"";
-                for (const char ch : event.text) {
-                    if (ch == '\\' || ch == '\"') out << '\\';
-                    if (ch == '\n') out << "\\n";
-                    else if (ch == '\r') out << "\\r";
-                    else out << ch;
-                }
-                out << "\"}\n";
-            }
+        if (!detail::writeInputJournalJson(base / "input_journal.jsonl",
+                                            input_journal_, error)) {
+            return false;
         }
         {
             std::ofstream out(base / "checkpoint.json", std::ios::trunc);
@@ -2615,17 +2929,21 @@ public:
                 detail::setError(error, "failed to write checkpoint.json");
                 return false;
             }
-            out << "{\n  \"schema\":\""
-                << TosRuntimeCheckpoint::kSchema << "\",\n"
-                << "  \"available\":" << (checkpoint_ ? "true" : "false");
-            if (checkpoint_) {
-                out << ",\n  \"sequence\":" << checkpoint_->sequence
-                    << ",\n  \"input_event_count\":"
-                    << checkpoint_->input_event_count
-                    << ",\n  \"cycle\":" << checkpoint_->vm.cycle
-                    << ",\n  \"pc\":" << checkpoint_->vm.pc;
-            }
-            out << "\n}\n";
+            out << "{\n"
+                << "  \"schema\":\"trit.runtime_checkpoint.v2\",\n"
+                << "  \"compatibility_schema\":\"trit.runtime_checkpoint.v1\",\n"
+                << "  \"available\":true,\n"
+                << "  \"sequence\":" << diagnostics_checkpoint->sequence << ",\n"
+                << "  \"input_event_count\":"
+                << diagnostics_checkpoint->input_event_count << ",\n"
+                << "  \"cycle\":" << diagnostics_checkpoint->vm.cycle << ",\n"
+                << "  \"pc\":" << diagnostics_checkpoint->vm.pc << ",\n"
+                << "  \"state_file\":\"checkpoint/vm_state.bin\",\n"
+                << "  \"disk_file\":\"checkpoint/disk.tdisk\",\n"
+                << "  \"journal_file\":\"checkpoint/input_journal.bin\",\n"
+                << "  \"boot_image\":\"checkpoint/boot.tboot\",\n"
+                << "  \"trace_file\":\"checkpoint/syscall_trace.jsonl\"\n"
+                << "}\n";
         }
         {
             std::ofstream out(base / "crash_report.txt", std::ios::trunc);
@@ -2681,6 +2999,11 @@ public:
             out << "height=" << framebuffer.height << "\n";
             for (std::size_t i = 0; i < framebuffer.rgba.size(); ++i) {
                 out << std::hex << std::setw(8) << std::setfill('0') << framebuffer.rgba[i] << "\n";
+            }
+            if (!detail::writeFramebufferPng(base / "framebuffer_snapshot.png",
+                                             framebuffer,
+                                             error)) {
+                return false;
             }
         }
         return true;
@@ -2742,6 +3065,52 @@ private:
                 machine_->mouse_btn = event.value2;
                 break;
         }
+    }
+
+    bool writeSyscallTraceJsonLocked(const std::filesystem::path& path,
+                                     std::string* error) const {
+        std::ofstream trace(path, std::ios::trunc);
+        if (!trace.good()) {
+            detail::setError(error, "failed to write syscall trace: " + path.string());
+            return false;
+        }
+        if (syscall_trace_.empty()) {
+            trace << "{\"schema\":\"trit.syscall_trace.v1\","
+                  << "\"event\":\"trace_empty\",\"cycles\":"
+                  << machine_->cycle_count << "}\n";
+        } else {
+            for (const auto& event : syscall_trace_) {
+                trace << "{\"schema\":\"trit.syscall_trace.v1\","
+                      << "\"sequence\":" << event.sequence
+                      << ",\"pc\":" << event.record.pc
+                      << ",\"physical_pc\":" << event.record.physical_pc
+                      << ",\"syscall_id\":" << event.record.syscall_id
+                      << ",\"process_id\":" << event.record.process_id
+                      << ",\"before_privilege\":"
+                      << static_cast<int>(event.record.before_privilege)
+                      << ",\"after_privilege\":"
+                      << static_cast<int>(event.record.after_privilege)
+                      << ",\"args\":[" << event.record.syscall_arg0 << ","
+                      << event.record.syscall_arg1 << "," << event.record.syscall_arg2
+                      << "," << event.record.syscall_arg3 << "],\"results\":["
+                      << event.record.syscall_result0 << "," << event.record.syscall_result1
+                      << "," << event.record.syscall_result2 << "],\"before_status\":"
+                      << static_cast<int>(event.record.before_status)
+                      << ",\"after_status\":"
+                      << static_cast<int>(event.record.after_status)
+                      << ",\"trap\":" << (event.record.trap_observed ? 1 : 0)
+                      << ",\"trap_code\":"
+                      << static_cast<int>(event.record.trap_code)
+                      << ",\"trap_cause\":" << event.record.trap_cause
+                      << ",\"cycle_before\":" << event.record.cycle_before
+                      << ",\"cycle_after\":" << event.record.cycle_after << "}\n";
+            }
+        }
+        if (!trace.good()) {
+            detail::setError(error, "failed to write syscall trace: " + path.string());
+            return false;
+        }
+        return true;
     }
 
     bool resetMachineLocked(bool guest_reboot, std::string* error) {

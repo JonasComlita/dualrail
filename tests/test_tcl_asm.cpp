@@ -252,6 +252,17 @@ void runTests() {
         done:
             HALT
     )");
+
+    expectNativeAssemblerMatchesCpp("symbolic numeric literals", R"(
+        .isa 2
+        .text
+        _start:
+            MOV r1, 0x2a
+            MOV r2, 0t-0+
+            MOV r3, 0z27:bp
+            MOV r4, 0z81:d>
+            HALT
+    )");
 }
 
 } // namespace

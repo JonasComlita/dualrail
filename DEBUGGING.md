@@ -32,10 +32,15 @@ The host runtime exports:
 - `process_table.json`: process slots, states, wait metadata, parent/status/signal fields.
 - `syscall_trace.jsonl`: schema-versioned syscall events when capture is
   enabled; disabled/empty captures are explicit markers.
-- `input_journal.jsonl`: cycle-stamped keyboard, text, and mouse events.
-- `checkpoint.json`: metadata for the last in-memory checkpoint; a
-  `TosRuntime::exportCheckpointBundle` directory additionally contains
-  `vm_state.bin`, `disk.tdisk`, `boot.tboot`, and binary/JSONL replay streams.
+- `input_journal.jsonl`: cycle-stamped keyboard, text, and mouse events. Each
+  record retains the v1 schema and adds deterministic external provenance
+  (`source`, `channel`, and `external`) under `provenance`.
+- `checkpoint.json`: v2 metadata retaining the original v1 fields. Every
+  diagnostics export also contains a self-contained `checkpoint/` directory
+  with `boot.tboot`, `vm_state.bin`, `disk.tdisk`, `checkpoint.bin`, and the
+  binary/JSONL replay streams. Paths in the root manifest and metadata are
+  relative to the diagnostics directory; the nested directory can be passed
+  directly to `TosRuntime::restoreCheckpointBundle`.
 - `crash_report.txt`: crash-oriented status summary.
 - `framebuffer_snapshot.txt`: framebuffer mode, dimensions, and color words.
 
@@ -53,7 +58,8 @@ The host runtime exports:
 
 The runtime captures syscall events, VM checkpoints, and cycle-stamped guest
 input. `tools/trit-replay.ps1` validates or compares a complete diagnostics
-bundle, and `TosRuntime::exportCheckpointBundle` plus
+bundle, and each export now carries a file-backed checkpoint under
+`checkpoint/`. `TosRuntime::exportCheckpointBundle` plus
 `restoreCheckpointBundle` provide file-backed restore into a fresh runtime
 before `replayFromCheckpoint` performs rewind and re-execution. The
 `trit_checkpoint_replay` helper (also exposed as
@@ -62,6 +68,16 @@ process. Run `python tools/trit_tool.py fuzz --skip-tests` for deterministic,
 fail-closed malformed `.tboot`/`.tdisk` and checkpoint-restore validation;
 differential replay and randomized bad-pointer coverage remain open in
 `KNOWN_GAPS.md`.
+
+Replay schemas use `trit.<family>.v<major>[.<minor>]` identifiers. The current
+syscall trace and input journal adapters support major v1; checkpoint metadata
+supports the existing v1 and v2 majors. A future minor (for example
+`trit.syscall_trace.v1.1`) is accepted only when all current required fields
+and value shapes still validate. Unknown fields are ignored for deterministic
+comparison and counted in the JSON `schema_capabilities` report. An unknown
+or unsupported major fails closed with an explicit diagnostic; the replay tool
+never guesses the meaning of a changed major. Use `--json` to inspect the
+adapter, observed versions, future-minor status, and ignored fields.
 
 Graphify currently augments `.trit` sources with compiler-AST-derived files,
 functions, constants, structs, imports, syscall nodes, and direct call edges. It

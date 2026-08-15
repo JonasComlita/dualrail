@@ -1,10 +1,12 @@
 #include "ternary_host_runtime.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -48,6 +50,87 @@ std::string readTextFile(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(in),
                        std::istreambuf_iterator<char>());
+}
+
+std::uint32_t readBigEndianU32(const std::string& bytes, std::size_t offset) {
+    return (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset])) << 24) |
+           (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset + 1])) << 16) |
+           (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset + 2])) << 8) |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset + 3]));
+}
+
+bool validateFramebufferPng(const std::string& path,
+                            int expected_width,
+                            int expected_height,
+                            std::uint32_t expected_first_pixel) {
+    const std::string png = readTextFile(path);
+    static constexpr unsigned char kSignature[] =
+        {0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
+    if (png.size() < sizeof(kSignature) ||
+        !std::equal(std::begin(kSignature), std::end(kSignature),
+                    reinterpret_cast<const unsigned char*>(png.data()))) {
+        return false;
+    }
+
+    std::size_t offset = sizeof(kSignature);
+    bool saw_ihdr = false;
+    bool saw_idat = false;
+    bool saw_iend = false;
+    std::string idat;
+    while (offset + 12 <= png.size()) {
+        const std::uint32_t length = readBigEndianU32(png, offset);
+        offset += 4;
+        if (length > png.size() - offset - 8) return false;
+        const std::string type = png.substr(offset, 4);
+        offset += 4;
+        const std::size_t payload_offset = offset;
+        if (type == "IHDR") {
+            if (length != 13 || readBigEndianU32(png, payload_offset) !=
+                                    static_cast<std::uint32_t>(expected_width) ||
+                readBigEndianU32(png, payload_offset + 4) !=
+                    static_cast<std::uint32_t>(expected_height) ||
+                static_cast<unsigned char>(png[payload_offset + 8]) != 8 ||
+                static_cast<unsigned char>(png[payload_offset + 9]) != 6 ||
+                static_cast<unsigned char>(png[payload_offset + 10]) != 0 ||
+                static_cast<unsigned char>(png[payload_offset + 11]) != 0 ||
+                static_cast<unsigned char>(png[payload_offset + 12]) != 0) {
+                return false;
+            }
+            saw_ihdr = true;
+        } else if (type == "IDAT") {
+            idat.append(png, payload_offset, length);
+            saw_idat = true;
+        } else if (type == "IEND") {
+            if (length != 0) return false;
+            saw_iend = true;
+        }
+        offset += length + 4; // payload and CRC
+        if (saw_iend) break;
+    }
+    if (!saw_ihdr || !saw_idat || !saw_iend || idat.size() < 12 ||
+        static_cast<unsigned char>(idat[0]) != 0x78 ||
+        static_cast<unsigned char>(idat[1]) != 0x01 ||
+        static_cast<unsigned char>(idat[2]) != 0x01) {
+        return false;
+    }
+
+    const std::uint16_t block_length =
+        static_cast<std::uint16_t>(static_cast<unsigned char>(idat[3])) |
+        static_cast<std::uint16_t>(static_cast<unsigned char>(idat[4])) << 8;
+    const std::uint16_t inverse_length =
+        static_cast<std::uint16_t>(static_cast<unsigned char>(idat[5])) |
+        static_cast<std::uint16_t>(static_cast<unsigned char>(idat[6])) << 8;
+    if (static_cast<std::uint16_t>(0xffffU ^ block_length) != inverse_length ||
+        block_length < 5 || idat.size() < static_cast<std::size_t>(7 + block_length + 4) ||
+        static_cast<unsigned char>(idat[7]) != 0) {
+        return false;
+    }
+    const std::uint32_t first_pixel =
+        (static_cast<std::uint32_t>(static_cast<unsigned char>(idat[8])) << 24) |
+        (static_cast<std::uint32_t>(static_cast<unsigned char>(idat[9])) << 16) |
+        (static_cast<std::uint32_t>(static_cast<unsigned char>(idat[10])) << 8) |
+        static_cast<std::uint32_t>(static_cast<unsigned char>(idat[11]));
+    return first_pixel == expected_first_pixel;
 }
 
 void testBootImageValidation() {
@@ -223,6 +306,11 @@ void testRuntimeGraphicsResetAndDiagnostics() {
     expect(fileExists(diag_path + "/crash_report.txt"), "diagnostics include crash report");
     expect(fileExists(diag_path + "/framebuffer_snapshot.txt"),
            "diagnostics include framebuffer snapshot");
+    expect(fileExists(diag_path + "/framebuffer_snapshot.png"),
+           "diagnostics include PNG framebuffer snapshot");
+    expect(validateFramebufferPng(diag_path + "/framebuffer_snapshot.png", 80, 60,
+                                  0xffff00ff),
+           "PNG framebuffer snapshot has RGBA8 geometry and first pixel content");
 
     expect(runtime.reset(&error), "runtime resets from loaded boot image");
     raw = runtime.readFramebufferMemory(graphics_revision);
@@ -477,18 +565,53 @@ void testRuntimeCheckpointAndInputReplay() {
     auto restored = runtime.readFramebuffer();
     expect(!restored.glyphs.empty() && restored.glyphs[0] == 'C',
            "restored checkpoint discards post-checkpoint guest state");
+    runtime.updateMouseState(4, 5, 1, "test.harness");
 
     expect(runtime.exportDiagnostics(diag_path, &error),
            "checkpoint runtime exports replay diagnostics");
     expect(fileExists(diag_path + "/checkpoint.json"),
            "diagnostics include checkpoint metadata");
+    expect(fileExists(diag_path + "/checkpoint/checkpoint.json") &&
+               fileExists(diag_path + "/checkpoint/vm_state.bin") &&
+               fileExists(diag_path + "/checkpoint/disk.tdisk") &&
+               fileExists(diag_path + "/checkpoint/boot.tboot") &&
+               fileExists(diag_path + "/checkpoint/input_journal.bin") &&
+               fileExists(diag_path + "/checkpoint/input_journal.jsonl") &&
+               fileExists(diag_path + "/checkpoint/syscall_trace.jsonl"),
+           "diagnostics include a self-contained checkpoint payload");
     expect(fileExists(diag_path + "/input_journal.jsonl"),
            "diagnostics include guest input journal");
     const std::string journal =
         readTextFile(diag_path + "/input_journal.jsonl");
     expect(journal.find("trit.input_journal.v1") != std::string::npos &&
-               journal.find("\"text\":\"A\"") != std::string::npos,
-           "input journal declares schema and records text events");
+               journal.find("\"text\":\"A\"") != std::string::npos &&
+               journal.find("\"provenance\":{\"source\":\"host.api\"") !=
+                   std::string::npos &&
+               journal.find("\"channel\":\"text\"") != std::string::npos &&
+               journal.find("\"source\":\"test.harness\"") != std::string::npos &&
+               journal.find("\"channel\":\"mouse\"") != std::string::npos,
+           "input journal declares schema, provenance, and text events");
+    const std::string manifest = readTextFile(diag_path + "/manifest.json");
+    expect(manifest.find("\"state_file\": \"checkpoint/vm_state.bin\"") !=
+               std::string::npos &&
+               manifest.find("\"journal_jsonl\": \"checkpoint/input_journal.jsonl\"") !=
+                   std::string::npos,
+           "diagnostic manifest records checkpoint paths relative to its root");
+    const std::string checkpoint_metadata =
+        readTextFile(diag_path + "/checkpoint.json");
+    expect(checkpoint_metadata.find("trit.runtime_checkpoint.v2") !=
+               std::string::npos &&
+               checkpoint_metadata.find("trit.runtime_checkpoint.v1") !=
+                   std::string::npos &&
+               checkpoint_metadata.find("checkpoint/vm_state.bin") !=
+                   std::string::npos,
+           "checkpoint metadata preserves v1 fields with v2 relative payload paths");
+    sandbox::host::TosRuntime diagnostic_restore(config);
+    expect(diagnostic_restore.restoreCheckpointBundle(
+               diag_path + "/checkpoint", &error),
+           "nested diagnostics checkpoint restores as a standalone bundle");
+    expect(diagnostic_restore.replayFromCheckpoint(32, &error).halted(),
+           "nested diagnostics checkpoint replays deterministically");
 
     const std::string bundle_path =
         buildPath("host_runtime_checkpoint_bundle");

@@ -34,9 +34,10 @@ UTF-8 should be the external interchange direction for richer text once the OS
 and app SDK need non-ASCII symbols. Until then, non-ASCII should be explicit in
 docs and tests rather than accidental.
 
-Planned native work:
+Implemented native work:
 
-- `TASCII-81`: fixed-width 4-trit basic text encoding with up to 81 symbols.
+- `TASCII-81`: fixed-width 4-trit basic text encoding using the authoritative
+  table in `ternary_symbolic_encoding.h`.
 - `TUTF`: future variable-width ternary Unicode adapter, analogous in purpose to
   UTF-8 but grouped around trit ranges instead of bytes.
 
@@ -59,11 +60,17 @@ Hexadecimal is a host/debug notation. It is appropriate for:
 Hexadecimal is not the natural compact notation for ternary values. It groups
 bits, not trits.
 
-Planned native work:
+Implemented notation:
 
-- exact trit literals, for example `0y+-0++--`
-- compact ternary numeric literals using a base-27 or base-81 alphabet
-- dump tools that can print both host hex and ternary-native notation
+- exact balanced trits: `0t+-0++--` (MSB first; `-`, `0`, `+` only)
+- three-trit groups: `0z27:<digits>`
+- four-trit groups: `0z81:<digits>`
+- `python tools/trit_tool.py symbolic dump <literal>` prints host hex and all
+  three ternary-native forms.
+
+The alphabets and the complete 81-entry text table are defined once in
+`ternary_symbolic_encoding.h` and mirrored by `tools/trit_symbolic.py`.
+Existing decimal and `0x` hexadecimal syntax retains its original meaning.
 
 Useful grouping:
 

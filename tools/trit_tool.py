@@ -96,6 +96,32 @@ SPARSE_DISK_RECORD_SIZE = (
     SPARSE_DISK_RECORD_HEADER.size +
     STORAGE_BLOCK_WORDS * SPARSE_DISK_WORD.size
 )
+APP_MANIFEST_PATH = REPO_ROOT / "APP_MANIFEST.json"
+APP_BUILDER_PATH = REPO_ROOT / "build_tos_image.cpp"
+PACKAGE_MAGIC = 90909
+PACKAGE_FORMAT_VERSION = 1
+NATIVE_VFS_MAGIC = 60606
+NATIVE_VFS_VERSION = 2
+NATIVE_VFS_REQUIRED_BLOCKS = 8043
+NATIVE_VFS_MAX_INODES = 2048
+NATIVE_VFS_MAX_DIRENTS = 4096
+NATIVE_VFS_MAX_EXTENTS = 4096
+NATIVE_VFS_MAX_NAME_WORDS = 16
+NATIVE_VFS_PAYLOAD_WORDS = 65536
+NATIVE_VFS_INODE_WORDS = 8
+NATIVE_VFS_DIRENT_WORDS = 6
+NATIVE_VFS_EXTENT_WORDS = 6
+NATIVE_VFS_DATA_BASE = 310000
+NATIVE_VFS_DISK_INODE_BLOCK = 2
+NATIVE_VFS_DISK_INODE_BLOCKS = 607
+NATIVE_VFS_DISK_DIRENT_BLOCK = 609
+NATIVE_VFS_DISK_DIRENT_BLOCKS = 911
+NATIVE_VFS_DISK_DIRENT_NAME_BLOCK = 1520
+NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS = 2428
+NATIVE_VFS_DISK_EXTENT_BLOCK = 3948
+NATIVE_VFS_DISK_EXTENT_BLOCKS = 911
+NATIVE_VFS_DISK_DATA_BLOCK = 4859
+NATIVE_VFS_DISK_DATA_BLOCKS = 2428
 MANIFEST_FILES = [
     "ARCHITECTURE_MANIFEST.json",
     "COMPILER_CORPUS_SCHEMA.json",
@@ -160,6 +186,45 @@ OBSIDIAN_CORE_PLUGINS = [
     "page-preview",
     "properties",
 ]
+
+# Knowledge reports intentionally fingerprint only source contracts and code
+# inputs.  Build products, Graphify output, and model/cache trees are excluded
+# so a normal build cannot make the vault appear stale.
+KNOWLEDGE_SOURCE_SUFFIXES = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cmake",
+    ".h",
+    ".hh",
+    ".hpp",
+    ".py",
+    ".ps1",
+    ".psm1",
+    ".sv",
+    ".trit",
+}
+KNOWLEDGE_IGNORED_PARTS = {
+    ".git",
+    ".obsidian",
+    ".trash",
+    "build",
+    "build_fresh",
+    "build_cuda",
+    "build_sycl",
+    "graphify-out",
+    "node_modules",
+    "scratch",
+}
+KNOWLEDGE_IGNORED_PREFIXES = (
+    "docs/_graphify/runs/",
+    "bitnet_weights/converted_t40/",
+    "bitnet_weights/model/",
+    "bitnet_weights/raw/",
+    "qwen3.627b_weights/converted_qwen/",
+    "qwen3.627b_weights/raw/",
+)
+KNOWLEDGE_FRESHNESS_SCHEMA = "trit.knowledge_freshness.v1"
 
 
 def rel(path: Path) -> str:
@@ -655,6 +720,720 @@ def inspect_sparse_disk(path: Path) -> dict[str, Any]:
         }
     )
     return result
+
+
+def _app_error(errors: list[str], message: str) -> None:
+    errors.append(message)
+
+
+def _app_path(value: Any, location: str, errors: list[str]) -> Path | None:
+    if not isinstance(value, str) or not value:
+        _app_error(errors, f"{location} must be a non-empty path")
+        return None
+    candidate = (REPO_ROOT / Path(value)).resolve()
+    try:
+        candidate.relative_to(REPO_ROOT)
+    except ValueError:
+        _app_error(errors, f"{location} escapes the repository: {value}")
+        return None
+    return candidate
+
+
+def _app_string(value: Any, location: str, errors: list[str]) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        _app_error(errors, f"{location} must be a non-empty string")
+        return None
+    return value
+
+
+def _app_words_from_file(path: Path) -> tuple[list[int] | None, list[str]]:
+    """Read a package/registry word vector from JSON or whitespace text.
+
+    JSON is preferred because it preserves the signed T40 values used by the
+    host package helpers.  An object may wrap the vector under ``words``,
+    ``manifest``, or ``registry`` so exported diagnostics can be passed back
+    to the validator without reshaping them first.
+    """
+
+    errors: list[str] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, [f"{path}: {exc}"]
+    value: Any
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            value = [int(token, 0) for token in text.split()]
+        except ValueError as exc:
+            return None, [f"{path}: expected JSON or integer words ({exc})"]
+    if isinstance(value, dict):
+        for key in ("words", "manifest", "registry"):
+            if key in value:
+                value = value[key]
+                break
+    if not isinstance(value, list):
+        return None, [f"{path}: word payload must be an array"]
+    words: list[int] = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, int):
+            errors.append(f"{path}: word {index} is not an integer")
+            continue
+        words.append(item)
+    return (words if not errors else None), errors
+
+
+def stable_app_word_hash(words: list[int], seed: int = 1469598103934665603) -> int:
+    """Mirror ternary_os.h stableWordHash for package payload checks."""
+
+    mask = (1 << 64) - 1
+    value = seed & mask
+    for word in words:
+        mixed = (
+            (word & mask)
+            + 0x9E3779B97F4A7C15
+            + ((value << 6) & mask)
+            + (value >> 2)
+        ) & mask
+        value = ((value ^ mixed) * 1099511628211) & mask
+    return value & 0x3FFFFFFFFFFFFFFF
+
+
+def _app_take_string(words: list[int], position: int) -> tuple[str | None, int, str | None]:
+    if position >= len(words):
+        return None, position, "string length is missing"
+    length = words[position]
+    position += 1
+    if length < 0 or length > len(words) - position:
+        return None, position, f"string length {length} exceeds remaining words"
+    chars = words[position : position + length]
+    position += length
+    if any(char < 0 or char > 255 for char in chars):
+        return None, position, "string contains a non-byte word"
+    return "".join(chr(char) for char in chars), position, None
+
+
+def decode_app_registry_words(words: list[int]) -> dict[str, Any]:
+    """Decode the five-field GUI registry written by build_tos_image.cpp."""
+
+    result: dict[str, Any] = {"ok": False, "records": [], "errors": []}
+    errors: list[str] = result["errors"]
+    if not words:
+        errors.append("registry word payload is empty")
+        return result
+    count = words[0]
+    if count < 0 or count > 4096:
+        errors.append(f"registry record count {count} is outside 0..4096")
+        return result
+    position = 1
+    records: list[dict[str, Any]] = result["records"]
+    for index in range(count):
+        location = f"registry.records[{index}]"
+        record: dict[str, Any] = {}
+        for field in ("id", "title", "guest_path"):
+            value, position, error = _app_take_string(words, position)
+            if error:
+                errors.append(f"{location}.{field}: {error}")
+                return result
+            record[field] = value
+        if position + 2 > len(words):
+            errors.append(f"{location}: enabled/windowed fields are truncated")
+            return result
+        record["enabled"] = words[position]
+        record["windowed"] = words[position + 1]
+        position += 2
+        if record["enabled"] not in (0, 1):
+            errors.append(f"{location}.enabled must be 0 or 1")
+        if record["windowed"] not in (0, 1):
+            errors.append(f"{location}.windowed must be 0 or 1")
+        records.append(record)
+    if position != len(words):
+        errors.append(f"registry has {len(words) - position} trailing words")
+    result["record_count"] = count
+    result["word_count"] = len(words)
+    result["ok"] = not errors
+    return result
+
+
+def decode_package_manifest_words(words: list[int]) -> dict[str, Any]:
+    """Decode the package manifest emitted by ``encodePackageManifest``."""
+
+    result: dict[str, Any] = {"ok": False, "entries": [], "errors": []}
+    errors: list[str] = result["errors"]
+    if len(words) < 5:
+        errors.append("package manifest is truncated before its header")
+        return result
+    magic, version, epoch, count = words[:4]
+    result.update({"magic": magic, "version": version, "update_epoch": epoch, "entry_count": count})
+    if magic != PACKAGE_MAGIC:
+        errors.append(f"package magic {magic} does not equal {PACKAGE_MAGIC}")
+    if version != PACKAGE_FORMAT_VERSION:
+        errors.append(f"package format version {version} does not equal {PACKAGE_FORMAT_VERSION}")
+    if epoch < 0:
+        errors.append("package update_epoch must be non-negative")
+    if count < 0 or count > 4096:
+        errors.append(f"package entry count {count} is outside 0..4096")
+        return result
+    position = 4
+    name, position, error = _app_take_string(words, position)
+    if error:
+        errors.append(f"package.name: {error}")
+        return result
+    result["name"] = name
+    if not name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+        errors.append("package.name must be a safe single path component")
+    entries: list[dict[str, Any]] = result["entries"]
+    seen_paths: set[str] = set()
+    for index in range(count):
+        location = f"package.entries[{index}]"
+        if position >= len(words):
+            errors.append(f"{location}: executable flag is missing")
+            return result
+        executable = words[position]
+        position += 1
+        if executable not in (0, 1):
+            errors.append(f"{location}.executable must be 0 or 1")
+        path, position, path_error = _app_take_string(words, position)
+        if path_error:
+            errors.append(f"{location}.path: {path_error}")
+            return result
+        if not path or not path.startswith("/") or ".." in path.split("/"):
+            errors.append(f"{location}.path must be absolute and must not contain '..'")
+        if path in seen_paths:
+            errors.append(f"{location}.path duplicates {path}")
+        seen_paths.add(path or "")
+        if position + 3 > len(words):
+            errors.append(f"{location}: size/hash/signature fields are truncated")
+            return result
+        size, content_hash, signature = words[position : position + 3]
+        position += 3
+        if size < 0:
+            errors.append(f"{location}.word_count must be non-negative")
+        if executable and signature == 0:
+            errors.append(f"{location}.signature must be non-zero for executable entries")
+        if not executable and signature != 0:
+            errors.append(f"{location}.signature must be zero for non-executable entries")
+        entries.append(
+            {
+                "executable": bool(executable),
+                "path": path,
+                "word_count": size,
+                "content_hash": content_hash,
+                "signature": signature,
+            }
+        )
+    if position != len(words):
+        errors.append(f"package manifest has {len(words) - position} trailing words")
+    result["word_count"] = len(words)
+    result["ok"] = not errors
+    return result
+
+
+def _app_builder_entries(builder_text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    marker = "std::vector<BundledApp> apps = {"
+    start = builder_text.find(marker)
+    if start < 0:
+        return [], ["build_tos_image.cpp does not contain the BundledApp vector"]
+    end = builder_text.find("};", start + len(marker))
+    if end < 0:
+        return [], ["BundledApp vector is truncated"]
+    body = builder_text[start + len(marker) : end]
+    stack_values = {
+        "kGuiStackWords": 1024,
+        "kServiceStackWords": 256,
+        "kCliStackWords": 128,
+    }
+    pattern = re.compile(
+        r'\{\s*"([^"\\]*)"\s*,\s*"([^"\\]*)"\s*,\s*"([^"\\]*)"\s*,\s*'
+        r'"([^"\\]*)"\s*,\s*0\s*,\s*([^,}]+?)\s*,\s*(true|false)\s*\}',
+    )
+    entries: list[dict[str, Any]] = []
+    covered_end = 0
+    for match in pattern.finditer(body):
+        covered_end = match.end()
+        stack_expr = match.group(5).strip()
+        stack_words = stack_values.get(stack_expr)
+        if stack_words is None:
+            try:
+                stack_words = int(stack_expr, 0)
+            except ValueError:
+                errors.append(f"builder entry {match.group(2)} has unknown stack expression {stack_expr}")
+                stack_words = 0
+        entries.append(
+            {
+                "source": match.group(1),
+                "id": match.group(2),
+                "title": match.group(3),
+                "guest_path": match.group(4),
+                "stack_words": stack_words,
+                "gui_registry": match.group(6) == "true",
+            }
+        )
+    if not entries:
+        errors.append("BundledApp vector contains no parseable entries")
+    elif not re.search(r"rootfs\.addFile\(\"/apps/registry\",\s*registry\)", builder_text):
+        errors.append("image builder does not install /apps/registry")
+    if covered_end == 0 or body[covered_end:].strip().strip(",").strip():
+        # Keep this a warning-level structural error: a new initializer shape
+        # must not silently make manifest alignment appear complete.
+        errors.append("BundledApp vector contains an initializer the validator cannot parse")
+    return entries, errors
+
+
+def _app_read_region(blocks: dict[int, list[int]], first: int, count: int) -> list[int]:
+    words: list[int] = []
+    zero = [0] * STORAGE_BLOCK_WORDS
+    for block in range(first, first + count):
+        words.extend(blocks.get(block, zero))
+    return words
+
+
+def decode_native_vfs_files(inspected: dict[str, Any]) -> dict[str, Any]:
+    """Decode enough native-VFS metadata to validate installed app artifacts."""
+
+    result: dict[str, Any] = {"ok": False, "files": {}, "errors": []}
+    errors: list[str] = result["errors"]
+    if not inspected.get("ok"):
+        errors.extend(str(item) for item in inspected.get("issues", []))
+        if not errors:
+            errors.append("sparse disk inspection failed")
+        return result
+    blocks = inspected.get("blocks")
+    if not isinstance(blocks, dict):
+        errors.append("sparse disk inspector did not return decoded blocks")
+        return result
+    superblock = list(blocks.get(0, []))
+    if len(superblock) < 16:
+        errors.append("native VFS superblock is missing or truncated")
+        return result
+    result["superblock"] = {
+        "magic": superblock[0],
+        "version": superblock[1],
+        "block_words": superblock[2],
+        "next_inode": superblock[8],
+        "next_dirent": superblock[9],
+        "next_extent": superblock[10],
+    }
+    if superblock[0] != NATIVE_VFS_MAGIC:
+        errors.append(f"native VFS magic {superblock[0]} does not equal {NATIVE_VFS_MAGIC}")
+    if superblock[1] != NATIVE_VFS_VERSION:
+        errors.append(f"native VFS version {superblock[1]} does not equal {NATIVE_VFS_VERSION}")
+    if superblock[2] != STORAGE_BLOCK_WORDS:
+        errors.append(f"native VFS block_words {superblock[2]} does not equal {STORAGE_BLOCK_WORDS}")
+    if errors:
+        return result
+    next_inode = superblock[8]
+    next_dirent = superblock[9]
+    next_extent = superblock[10]
+    if not 1 <= next_inode <= NATIVE_VFS_MAX_INODES:
+        errors.append(f"native VFS next_inode {next_inode} is outside the inode table")
+        next_inode = max(1, min(NATIVE_VFS_MAX_INODES, next_inode))
+    if not 0 <= next_dirent <= NATIVE_VFS_MAX_DIRENTS:
+        errors.append(f"native VFS next_dirent {next_dirent} is outside the dirent table")
+        next_dirent = max(0, min(NATIVE_VFS_MAX_DIRENTS, next_dirent))
+    if not 0 <= next_extent <= NATIVE_VFS_MAX_EXTENTS:
+        errors.append(f"native VFS next_extent {next_extent} is outside the extent table")
+        next_extent = max(0, min(NATIVE_VFS_MAX_EXTENTS, next_extent))
+
+    inodes = _app_read_region(blocks, NATIVE_VFS_DISK_INODE_BLOCK, NATIVE_VFS_DISK_INODE_BLOCKS)
+    dirents = _app_read_region(blocks, NATIVE_VFS_DISK_DIRENT_BLOCK, NATIVE_VFS_DISK_DIRENT_BLOCKS)
+    names = _app_read_region(blocks, NATIVE_VFS_DISK_DIRENT_NAME_BLOCK, NATIVE_VFS_DISK_DIRENT_NAME_BLOCKS)
+    extents = _app_read_region(blocks, NATIVE_VFS_DISK_EXTENT_BLOCK, NATIVE_VFS_DISK_EXTENT_BLOCKS)
+    data = _app_read_region(blocks, NATIVE_VFS_DISK_DATA_BLOCK, NATIVE_VFS_DISK_DATA_BLOCKS)
+    active_inodes: dict[int, dict[str, Any]] = {}
+    for inode in range(next_inode):
+        base = inode * NATIVE_VFS_INODE_WORDS
+        if base + NATIVE_VFS_INODE_WORDS > len(inodes):
+            errors.append(f"inode table truncates at inode {inode}")
+            break
+        kind = inodes[base]
+        if kind in (1, 2, 3):
+            active_inodes[inode] = {
+                "kind": kind,
+                "size": inodes[base + 2],
+                "parent": inodes[base + 7],
+            }
+    active_dirents: list[dict[str, Any]] = []
+    for slot in range(next_dirent):
+        base = slot * NATIVE_VFS_DIRENT_WORDS
+        if base + NATIVE_VFS_DIRENT_WORDS > len(dirents):
+            errors.append(f"dirent table truncates at slot {slot}")
+            break
+        parent, name_length, child, version = dirents[base + 1], dirents[base + 3], dirents[base + 4], dirents[base + 5]
+        if child <= 0 or version <= 0:
+            continue
+        name_base = slot * NATIVE_VFS_MAX_NAME_WORDS
+        name_words = names[name_base : name_base + name_length]
+        if name_length <= 0 or name_length > NATIVE_VFS_MAX_NAME_WORDS or len(name_words) != name_length:
+            errors.append(f"dirent {slot} has an invalid name length {name_length}")
+            continue
+        if any(word < 1 or word > 255 for word in name_words):
+            errors.append(f"dirent {slot} contains a non-byte name word")
+            continue
+        if parent not in active_inodes or child not in active_inodes:
+            errors.append(f"dirent {slot} references an inactive parent or child")
+            continue
+        active_dirents.append({"parent": parent, "child": child, "name": "".join(chr(word) for word in name_words)})
+    parent_edges: dict[int, tuple[int, str]] = {}
+    for entry in active_dirents:
+        if entry["child"] in parent_edges:
+            errors.append(f"inode {entry['child']} has duplicate active directory entries")
+        parent_edges[entry["child"]] = (entry["parent"], entry["name"])
+
+    path_cache: dict[int, str] = {0: "/"}
+
+    def inode_path(inode: int, trail: set[int] | None = None) -> str | None:
+        if inode in path_cache:
+            return path_cache[inode]
+        trail = set() if trail is None else trail
+        if inode in trail or inode not in active_inodes or inode not in parent_edges:
+            return None
+        trail.add(inode)
+        parent, name = parent_edges[inode]
+        parent_path = inode_path(parent, trail)
+        if parent_path is None:
+            return None
+        value = parent_path.rstrip("/") + "/" + name
+        path_cache[inode] = value
+        return value
+
+    files: dict[str, list[int]] = {}
+    for inode, metadata in active_inodes.items():
+        if inode == 0 or metadata["kind"] not in (1, 3):
+            continue
+        path = inode_path(inode)
+        if path is None:
+            errors.append(f"active file inode {inode} has no rooted path")
+            continue
+        pieces: list[tuple[int, list[int]]] = []
+        for extent in range(next_extent):
+            base = extent * NATIVE_VFS_EXTENT_WORDS
+            if base + NATIVE_VFS_EXTENT_WORDS > len(extents):
+                errors.append(f"extent table truncates at extent {extent}")
+                break
+            if extents[base + 1] != inode or extents[base + 5] <= 0:
+                continue
+            length = extents[base + 3]
+            address = extents[base + 4]
+            offset = address - NATIVE_VFS_DATA_BASE
+            if length < 0 or offset < 0 or offset + length > len(data):
+                errors.append(f"file {path} has an extent outside the data arena")
+                continue
+            pieces.append((offset, data[offset : offset + length]))
+        pieces.sort(key=lambda item: item[0])
+        payload: list[int] = []
+        for _, piece in pieces:
+            payload.extend(piece)
+        expected_size = metadata["size"]
+        if expected_size < 0 or len(payload) != expected_size:
+            errors.append(f"file {path} size {expected_size} does not match extent payload {len(payload)}")
+        files[path] = payload[: max(0, expected_size)]
+    result["files"] = files
+    result["file_count"] = len(files)
+    result["ok"] = not errors
+    return result
+
+
+def _app_validate_registry_against_manifest(
+    decoded: dict[str, Any], entries: list[dict[str, Any]], errors: list[str], location: str = "registry"
+) -> dict[str, Any]:
+    if not decoded.get("ok"):
+        errors.extend(f"{location}: {message}" for message in decoded.get("errors", []))
+        return decoded
+    expected = [
+        {
+            "id": entry["id"],
+            "title": entry["title"],
+            "guest_path": entry["guest_path"],
+            "enabled": 1,
+            "windowed": 1,
+        }
+        for entry in entries
+        if entry.get("gui_registry")
+    ]
+    actual = decoded.get("records", [])
+    if actual != expected:
+        errors.append(f"{location} records do not exactly match the GUI APP_MANIFEST entries")
+    return decoded
+
+
+def _app_validate_installed_package(
+    decoded: dict[str, Any], files: dict[str, list[int]] | None, errors: list[str], location: str
+) -> dict[str, Any]:
+    if not decoded.get("ok"):
+        errors.extend(f"{location}: {message}" for message in decoded.get("errors", []))
+        return decoded
+    if files is None:
+        return decoded
+    for entry in decoded.get("entries", []):
+        path = entry["path"]
+        if path not in files:
+            errors.append(f"{location}: installed payload is missing {path}")
+            continue
+        payload = files[path]
+        if len(payload) != entry["word_count"]:
+            errors.append(f"{location}: {path} size does not match package manifest")
+        if stable_app_word_hash(payload) != entry["content_hash"]:
+            errors.append(f"{location}: {path} content hash does not match package manifest")
+        sidecar = files.get(path + ".sig")
+        if entry["executable"]:
+            if sidecar is None:
+                errors.append(f"{location}: executable {path} is missing its .sig sidecar")
+            elif len(sidecar) < 6 or sidecar[0] != 1 or sidecar[1] != 1 or sidecar[2] != entry["content_hash"] or sidecar[4] != entry["signature"]:
+                errors.append(f"{location}: executable {path} signature sidecar does not match")
+    return decoded
+
+
+def validate_app_bundle(
+    manifest_path: Path = APP_MANIFEST_PATH,
+    builder_path: Path = APP_BUILDER_PATH,
+    package_manifest_paths: list[Path] | None = None,
+    registry_path: Path | None = None,
+    disk_image: Path | None = None,
+) -> dict[str, Any]:
+    """Validate source, registry, package, and installed native-VFS contracts."""
+
+    errors: list[str] = []
+    report: dict[str, Any] = {
+        "schema": "trit.app_validation_report.v1",
+        "ok": False,
+        "errors": errors,
+        "warnings": [],
+        "checks": {},
+    }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"APP_MANIFEST.json: {exc}")
+        return report
+    if not isinstance(manifest, dict):
+        errors.append("APP_MANIFEST.json must contain a JSON object")
+        return report
+    manifest_errors: list[str] = []
+    if manifest.get("version") != 1:
+        manifest_errors.append("manifest version must be 1")
+    if manifest.get("schema") != "trit.app_manifest.v1":
+        manifest_errors.append("manifest schema must be trit.app_manifest.v1")
+    if manifest.get("source_of_truth") != "build_tos_image.cpp":
+        manifest_errors.append("manifest source_of_truth must be build_tos_image.cpp")
+    root_layout = manifest.get("root_layout")
+    if not isinstance(root_layout, list) or not root_layout:
+        manifest_errors.append("root_layout must be a non-empty array")
+        root_layout = []
+    else:
+        seen_layout: set[str] = set()
+        for index, path in enumerate(root_layout):
+            if not isinstance(path, str) or not path.startswith("/") or path.endswith("/") and path != "/" or ".." in path.split("/"):
+                manifest_errors.append(f"root_layout[{index}] is not a normalized absolute path")
+            if path in seen_layout:
+                manifest_errors.append(f"root_layout contains duplicate path {path}")
+            seen_layout.add(path)
+    registry_format = manifest.get("registry_format")
+    if not isinstance(registry_format, dict):
+        manifest_errors.append("registry_format must be an object")
+        registry_format = {}
+    if registry_format.get("path") != "/apps/registry":
+        manifest_errors.append("registry_format.path must be /apps/registry")
+    if registry_format.get("records") != "GUI apps only":
+        manifest_errors.append("registry_format.records must be 'GUI apps only'")
+    if registry_format.get("fields") != ["id", "title", "guest_path", "enabled", "windowed"]:
+        manifest_errors.append("registry_format.fields must describe the five-field GUI registry contract")
+    default_user = manifest.get("default_user")
+    if not isinstance(default_user, dict):
+        manifest_errors.append("default_user must be an object")
+        default_user = {}
+    for key in ("name", "home", "shell"):
+        if not isinstance(default_user.get(key), str) or not default_user[key]:
+            manifest_errors.append(f"default_user.{key} must be a non-empty string")
+    raw_entries = manifest.get("bundled_apps")
+    if not isinstance(raw_entries, list) or not raw_entries:
+        manifest_errors.append("bundled_apps must be a non-empty array")
+        raw_entries = []
+    entries: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    paths: set[str] = set()
+    for index, raw in enumerate(raw_entries):
+        location = f"bundled_apps[{index}]"
+        if not isinstance(raw, dict):
+            manifest_errors.append(f"{location} must be an object")
+            continue
+        entry = dict(raw)
+        entries.append(entry)
+        for key in ("source", "id", "title", "guest_path"):
+            if _app_string(entry.get(key), f"{location}.{key}", manifest_errors) is None:
+                continue
+        app_id = entry.get("id")
+        guest_path = entry.get("guest_path")
+        if isinstance(app_id, str):
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", app_id):
+                manifest_errors.append(f"{location}.id is not a safe app identifier")
+            if app_id in ids:
+                manifest_errors.append(f"duplicate app id {app_id}")
+            ids.add(app_id)
+        if isinstance(guest_path, str):
+            if not guest_path.startswith("/bin/") or guest_path.endswith("/") or ".." in guest_path.split("/"):
+                manifest_errors.append(f"{location}.guest_path must be a normalized /bin path")
+            if guest_path in paths:
+                manifest_errors.append(f"duplicate guest path {guest_path}")
+            paths.add(guest_path)
+        stack_words = entry.get("stack_words")
+        if isinstance(stack_words, bool) or not isinstance(stack_words, int) or stack_words <= 0:
+            manifest_errors.append(f"{location}.stack_words must be a positive integer")
+        if not isinstance(entry.get("gui_registry"), bool):
+            manifest_errors.append(f"{location}.gui_registry must be boolean")
+        source_path = _app_path(entry.get("source"), f"{location}.source", manifest_errors)
+        if source_path is not None and not source_path.is_file():
+            manifest_errors.append(f"{location}.source does not exist: {entry.get('source')}")
+    if isinstance(default_user, dict) and isinstance(default_user.get("shell"), str):
+        if default_user["shell"] not in paths:
+            manifest_errors.append("default_user.shell does not name a bundled app guest_path")
+    report["checks"]["manifest"] = {
+        "ok": not manifest_errors,
+        "path": rel(manifest_path),
+        "entry_count": len(entries),
+        "gui_entry_count": sum(1 for entry in entries if entry.get("gui_registry")),
+        "errors": manifest_errors,
+    }
+    errors.extend(f"manifest: {message}" for message in manifest_errors)
+
+    builder_errors: list[str] = []
+    try:
+        builder_text = builder_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        builder_text = ""
+        builder_errors.append(f"{builder_path}: {exc}")
+    builder_entries, parser_errors = _app_builder_entries(builder_text)
+    builder_errors.extend(parser_errors)
+    expected_builder = []
+    for entry in entries:
+        source = str(entry.get("source", ""))
+        expected_builder.append(
+            {
+                "source": Path(source).stem,
+                "id": entry.get("id"),
+                "title": entry.get("title"),
+                "guest_path": entry.get("guest_path"),
+                "stack_words": entry.get("stack_words"),
+                "gui_registry": entry.get("gui_registry"),
+            }
+        )
+    if builder_entries != expected_builder:
+        builder_errors.append("BundledApp vector entries do not exactly match APP_MANIFEST.json")
+    report["checks"]["builder_alignment"] = {
+        "ok": not builder_errors,
+        "path": rel(builder_path),
+        "builder_entry_count": len(builder_entries),
+        "errors": builder_errors,
+    }
+    errors.extend(f"builder_alignment: {message}" for message in builder_errors)
+
+    gui_entries = [entry for entry in entries if entry.get("gui_registry")]
+    registry_checks: list[dict[str, Any]] = []
+    registry_sources: list[tuple[str, list[int]]] = []
+    if registry_path is not None:
+        words, word_errors = _app_words_from_file(registry_path)
+        if words is None:
+            errors.extend(f"registry: {message}" for message in word_errors)
+            registry_checks.append({"path": rel(registry_path), "ok": False, "errors": word_errors})
+        else:
+            registry_sources.append((rel(registry_path), words))
+    registry_checks.extend(
+        {"path": path, "ok": True, "source": "input"}
+        for path, _ in registry_sources
+    )
+    if registry_sources:
+        for path, words in registry_sources:
+            decoded = decode_app_registry_words(words)
+            local_errors: list[str] = []
+            _app_validate_registry_against_manifest(decoded, gui_entries, local_errors, f"registry {path}")
+            errors.extend(local_errors)
+            registry_checks = [item for item in registry_checks if item.get("path") != path]
+            registry_checks.append({"path": path, "ok": not local_errors and decoded.get("ok", False), "decoded": decoded})
+    report["checks"]["registry"] = {
+        "ok": not any(not item.get("ok") for item in registry_checks),
+        "expected_gui_entry_count": len(gui_entries),
+        "sources": registry_checks,
+    }
+
+    package_paths = list(package_manifest_paths or [])
+    disk_files: dict[str, list[int]] | None = None
+    if disk_image is not None:
+        inspected = inspect_sparse_disk(disk_image)
+        decoded_disk = decode_native_vfs_files(inspected)
+        disk_files = decoded_disk.get("files", {}) if decoded_disk.get("ok") else None
+        disk_errors: list[str] = []
+        if not decoded_disk.get("ok"):
+            disk_errors.extend(str(item) for item in decoded_disk.get("errors", []))
+        disk_registry = decoded_disk.get("files", {}).get("/apps/registry") if decoded_disk.get("ok") else None
+        if disk_registry is None:
+            disk_errors.append("installed native VFS does not contain /apps/registry")
+        else:
+            decoded = decode_app_registry_words(disk_registry)
+            report["checks"]["registry"]["installed"] = decoded
+            _app_validate_registry_against_manifest(decoded, gui_entries, disk_errors, "installed /apps/registry")
+        installed_apps: list[dict[str, Any]] = []
+        if decoded_disk.get("ok"):
+            installed_files = decoded_disk.get("files", {})
+            for entry in entries:
+                path = entry.get("guest_path")
+                present = isinstance(path, str) and path in installed_files
+                installed_apps.append({"id": entry.get("id"), "path": path, "present": present})
+                if not present:
+                    disk_errors.append(f"installed native VFS is missing bundled executable {path}")
+        report["checks"]["installed_apps"] = {
+            "ok": not any(not item["present"] for item in installed_apps) and bool(decoded_disk.get("ok")),
+            "count": len(installed_apps),
+            "items": installed_apps,
+        }
+        if decoded_disk.get("ok"):
+            discovered = sorted(path for path in decoded_disk.get("files", {}) if path.startswith("/var/packages/") and path.endswith(".manifest"))
+            report["checks"]["disk"] = {
+                "path": rel(disk_image),
+                "ok": not disk_errors,
+                "file_count": decoded_disk.get("file_count", 0),
+                "package_manifest_paths": discovered,
+                "errors": disk_errors,
+            }
+            for package_path in discovered:
+                package_words = decoded_disk["files"].get(package_path)
+                if package_words is not None:
+                    package_result = decode_package_manifest_words(package_words)
+                    local_errors: list[str] = []
+                    _app_validate_installed_package(package_result, decoded_disk["files"], local_errors, f"installed package {package_path}")
+                    if local_errors:
+                        disk_errors.extend(local_errors)
+                    report.setdefault("checks", {}).setdefault("packages", []).append(
+                        {"path": package_path, "ok": not local_errors and package_result.get("ok", False), "decoded": package_result}
+                    )
+            report["checks"]["disk"]["ok"] = not disk_errors
+            errors.extend(f"disk: {message}" for message in disk_errors)
+        else:
+            report["checks"]["disk"] = {"path": rel(disk_image), "ok": False, "errors": disk_errors}
+            errors.extend(f"disk: {message}" for message in disk_errors)
+
+    package_checks: list[dict[str, Any]] = report["checks"].setdefault("packages", [])
+    for package_path in package_paths:
+        if not isinstance(package_path, Path):
+            package_path = Path(package_path)
+        words, word_errors = _app_words_from_file(package_path)
+        if words is None:
+            errors.extend(f"package {package_path}: {message}" for message in word_errors)
+            package_checks.append({"path": rel(package_path), "ok": False, "errors": word_errors})
+            continue
+        decoded = decode_package_manifest_words(words)
+        local_errors: list[str] = []
+        _app_validate_installed_package(decoded, disk_files, local_errors, f"package {package_path}")
+        errors.extend(local_errors)
+        package_checks.append({"path": rel(package_path), "ok": not local_errors and decoded.get("ok", False), "decoded": decoded})
+    report["checks"]["packages"] = {
+        "ok": not any(not item.get("ok") for item in package_checks),
+        "count": len(package_checks),
+        "items": package_checks,
+    }
+    report["ok"] = not errors
+    return report
 
 
 def write_sparse_disk(path: Path, blocks: dict[int, list[int]],
@@ -1438,7 +2217,10 @@ Open `docs/` as the Obsidian vault for Trit.
 3. Use `python ../tools/trit_tool.py knowledge canvas` after changing the docs map.
 4. Use `python ../tools/trit_tool.py knowledge graph` only when Graphify is installed
    and a structural code report would help.
-5. Keep manually written docs concise and source-linked; put generated Graphify
+5. Treat freshness warnings as advisory contract checks. Regenerate the canvas
+   after source-contract edits, and rerun Graphify when its archived summary is
+   stale or legacy/unverified.
+6. Keep manually written docs concise and source-linked; put generated Graphify
    runs under `_graphify/runs/`.
 
 ## Obsidian Conventions
@@ -1473,9 +2255,15 @@ docs/wiki layer; Graphify is the code graph layer.
 Graphify does not natively parse `.trit` sources yet. Trit's `knowledge graph`
 command therefore runs Graphify first, then augments `graphify-out/graph.json`
 with a deterministic Trit adapter that extracts `.trit` file, function,
-constant, syscall, and call edges. When the CMake `trit_ast_dump` target is
-available, the adapter uses the compiler parser's `ModuleAst`; otherwise it
-falls back to a lightweight text scan.
+constant, syscall, and call edges. It also links the authoritative syscall IDs,
+the app manifest to source ownership and image sections, image-section
+producers in `build_tos_image.cpp`, and test-manifest targets to their explicit
+CMake/test-source evidence. Every adapter node and edge has a source location,
+an extraction confidence, and a `trit_*` context; IDs and edge keys are
+deduplicated before writing the graph. Unsupported links are reported in the
+`cross_links.unsupported_links` summary instead of being guessed. When the
+CMake `trit_ast_dump` target is available, the adapter uses the compiler
+parser's `ModuleAst`; otherwise it falls back to a lightweight text scan.
 """
 
 
@@ -1530,7 +2318,128 @@ def obsidian_file_specs() -> dict[Path, str]:
     }
 
 
+def knowledge_source_path_ignored(path: Path) -> bool:
+    """Return whether *path* is an output/cache rather than a source input.
+
+    The Graphify ignore file intentionally excludes a few large/generated
+    trees.  Keeping the same exclusions here means a build or a Graphify run
+    cannot create a spurious freshness warning.
+    """
+
+    try:
+        relative = path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return True
+    if relative.startswith("docs/"):
+        return True
+    if any(relative.startswith(prefix) for prefix in KNOWLEDGE_IGNORED_PREFIXES):
+        return True
+    parts = set(Path(relative).parts)
+    return bool(parts.intersection(KNOWLEDGE_IGNORED_PARTS))
+
+
+def knowledge_source_files() -> list[Path]:
+    """Enumerate deterministic source-contract inputs for freshness checks."""
+
+    paths: set[Path] = set()
+    # Root manifests are authoritative even though they use a generic .json
+    # extension and therefore are not picked up by the source suffix filter.
+    for name in MANIFEST_FILES:
+        path = REPO_ROOT / name
+        if path.is_file() and not knowledge_source_path_ignored(path):
+            paths.add(path.resolve())
+    for path in REPO_ROOT.rglob("*"):
+        if not path.is_file() or knowledge_source_path_ignored(path):
+            continue
+        if path.suffix.lower() in KNOWLEDGE_SOURCE_SUFFIXES:
+            paths.add(path.resolve())
+    return sorted(paths, key=lambda item: rel(item))
+
+
+def knowledge_source_snapshot(paths: list[Path] | None = None) -> dict[str, Any]:
+    """Build a content-based source snapshot.
+
+    mtime is deliberately not part of the fingerprint: touching a source file
+    without changing its content should not make a generated report stale.
+    The size and SHA-256 are retained per file to make a mismatch actionable.
+    """
+
+    entries: list[dict[str, Any]] = []
+    read_errors: list[dict[str, str]] = []
+    for path in paths or knowledge_source_files():
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
+            read_errors.append({"path": rel(path), "error": str(exc)})
+            continue
+        entries.append(
+            {
+                "path": rel(path),
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    entries.sort(key=lambda item: item["path"])
+    digest_input = [{"path": item["path"], "sha256": item["sha256"]} for item in entries]
+    fingerprint = hashlib.sha256(canonical_json(digest_input).encode("utf-8")).hexdigest()
+    return {
+        "schema": KNOWLEDGE_FRESHNESS_SCHEMA,
+        "algorithm": "sha256",
+        "file_count": len(entries),
+        "fingerprint": fingerprint,
+        "files": entries,
+        "read_errors": read_errors,
+    }
+
+
+def compare_knowledge_snapshots(
+    recorded: dict[str, Any] | None,
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare two source snapshots and return changed/added/removed paths."""
+
+    if not isinstance(recorded, dict):
+        return {
+            "ok": False,
+            "state": "metadata_missing",
+            "message": "generated artifact has no source fingerprint",
+            "changed": [],
+            "added": [],
+            "removed": [],
+        }
+    recorded_files = {
+        str(item.get("path")): str(item.get("sha256"))
+        for item in recorded.get("files", [])
+        if isinstance(item, dict) and item.get("path")
+    }
+    current_files = {
+        str(item.get("path")): str(item.get("sha256"))
+        for item in current.get("files", [])
+        if isinstance(item, dict) and item.get("path")
+    }
+    changed = sorted(
+        path
+        for path in recorded_files.keys() & current_files.keys()
+        if recorded_files[path] != current_files[path]
+    )
+    added = sorted(current_files.keys() - recorded_files.keys())
+    removed = sorted(recorded_files.keys() - current_files.keys())
+    ok = not changed and not added and not removed
+    return {
+        "ok": ok,
+        "state": "current" if ok else "stale",
+        "recorded_fingerprint": recorded.get("fingerprint"),
+        "current_fingerprint": current.get("fingerprint"),
+        "recorded_file_count": len(recorded_files),
+        "current_file_count": len(current_files),
+        "changed": changed,
+        "added": added,
+        "removed": removed,
+    }
+
+
 def build_obsidian_canvas() -> dict[str, Any]:
+    source_snapshot = knowledge_source_snapshot()
     node_specs = [
         ("home", "README.md", 0, 0, 360, 240, "1"),
         ("index", "INDEX.md", 440, 0, 360, 240, "2"),
@@ -1570,6 +2479,13 @@ def build_obsidian_canvas() -> dict[str, Any]:
         ("benchmarks", "status", "gates"),
     ]
     return {
+        "metadata": {
+            "trit": {
+                "schema": KNOWLEDGE_FRESHNESS_SCHEMA,
+                "source_fingerprint": source_snapshot["fingerprint"],
+                "source_file_count": source_snapshot["file_count"],
+            }
+        },
         "nodes": [
             {
                 "id": node_id,
@@ -1693,12 +2609,59 @@ def canvas_status() -> dict[str, Any]:
             continue
         if edge.get("fromNode") not in node_ids or edge.get("toNode") not in node_ids:
             broken_edges.append(str(edge.get("id", "<unnamed edge>")))
+    source_snapshot = knowledge_source_snapshot()
+    metadata = data.get("metadata") if isinstance(data, dict) else None
+    trit_metadata = metadata.get("trit") if isinstance(metadata, dict) else None
+    recorded_fingerprint = (
+        trit_metadata.get("source_fingerprint")
+        if isinstance(trit_metadata, dict)
+        else None
+    )
+    recorded_count = (
+        trit_metadata.get("source_file_count")
+        if isinstance(trit_metadata, dict)
+        else None
+    )
+    if not recorded_fingerprint:
+        freshness = {
+            "ok": False,
+            "state": "metadata_missing",
+            "message": (
+                "canvas has no source fingerprint; regenerate it with "
+                "`python tools/trit_tool.py knowledge canvas`"
+            ),
+            "current_fingerprint": source_snapshot["fingerprint"],
+            "current_file_count": source_snapshot["file_count"],
+        }
+    elif recorded_fingerprint != source_snapshot["fingerprint"]:
+        freshness = {
+            "ok": False,
+            "state": "stale",
+            "message": (
+                "canvas source fingerprint differs from current source inputs; "
+                "regenerate it with `python tools/trit_tool.py knowledge canvas`"
+            ),
+            "recorded_fingerprint": recorded_fingerprint,
+            "current_fingerprint": source_snapshot["fingerprint"],
+            "recorded_file_count": recorded_count,
+            "current_file_count": source_snapshot["file_count"],
+        }
+    else:
+        freshness = {
+            "ok": True,
+            "state": "current",
+            "recorded_fingerprint": recorded_fingerprint,
+            "current_fingerprint": source_snapshot["fingerprint"],
+            "recorded_file_count": recorded_count,
+            "current_file_count": source_snapshot["file_count"],
+        }
     return {
         "ok": not missing_files and not broken_edges,
         "nodes": len(nodes),
         "edges": len(edges),
         "missing_files": missing_files,
         "broken_edges": broken_edges,
+        "freshness": freshness,
     }
 
 
@@ -2326,9 +3289,687 @@ def extract_trit_graph(prefer_ast: bool = True) -> dict[str, Any]:
             graph = extract_trit_graph_from_ast(ast_data, files)
             graph["ast_dump"] = ast_status
             if graph["functions"] > 0:
-                return graph
+                return augment_trit_graph_crosslinks(graph)
     graph = extract_trit_graph_regex()
     graph["ast_dump"] = ast_status
+    return augment_trit_graph_crosslinks(graph)
+
+
+GRAPH_ADAPTER_SCHEMA = "trit.graph_adapter.v2"
+
+
+def _graph_source_line(path: Path, *tokens: str) -> str:
+    """Return a deterministic source location for a set of literal tokens.
+
+    The manifests are JSON, but retaining a full JSON path for every relation
+    would make the adapter dependent on a third-party parser.  Literal token
+    matching gives us stable, human-readable evidence while still failing
+    closed (L1) when a generated or malformed source has no matching line.
+    """
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return "L1"
+    wanted = tuple(token for token in tokens if token)
+    if not wanted:
+        return "L1"
+    for index, line in enumerate(lines, start=1):
+        if all(token in line for token in wanted):
+            return f"L{index}"
+    return "L1"
+
+
+def _graph_source_line_occurrence(path: Path, token: str, occurrence: int = 1) -> str:
+    """Return the line for the Nth literal occurrence of ``token``."""
+
+    if occurrence < 1:
+        return "L1"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return "L1"
+    seen = 0
+    for index, line in enumerate(lines, start=1):
+        if token in line:
+            seen += 1
+            if seen == occurrence:
+                return f"L{index}"
+    return "L1"
+
+
+def _graph_load_json(path: Path) -> tuple[Any, str | None]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle), None
+    except FileNotFoundError:
+        return None, "source file is missing"
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+
+
+def _graph_cmake_source_map() -> tuple[dict[str, list[Path]], dict[str, list[Path]]]:
+    """Extract explicit CMake target and CTest source ownership.
+
+    This intentionally only records paths written in ``add_executable`` and
+    ``add_test`` calls.  It does not infer semantic coverage from target names,
+    keeping test-to-source links conservative and reviewable.
+    """
+
+    target_sources: dict[str, list[Path]] = {}
+    ctest_sources: dict[str, list[Path]] = {}
+    cmake = REPO_ROOT / "CMakeLists.txt"
+    try:
+        text = cmake.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return target_sources, ctest_sources
+
+    source_pattern = re.compile(
+        r"(?<![A-Za-z0-9_-])([A-Za-z0-9_./-]+\.(?:c|cc|cpp|cxx|cu|py|trit))(?![A-Za-z0-9_./-])"
+    )
+    executable_pattern = re.compile(
+        r"add_executable\s*\(\s*([^\s\)]+)(.*?)\)", re.IGNORECASE | re.DOTALL
+    )
+    for match in executable_pattern.finditer(text):
+        target = match.group(1).strip()
+        paths: list[Path] = []
+        for source in source_pattern.findall(match.group(2)):
+            normalized_source = source.replace("\\", "/").lstrip("/")
+            candidate = (REPO_ROOT / normalized_source).resolve()
+            try:
+                candidate.relative_to(REPO_ROOT)
+            except ValueError:
+                continue
+            if candidate.is_file() and candidate not in paths:
+                paths.append(candidate)
+        if paths:
+            target_sources[target] = paths
+
+    test_pattern = re.compile(
+        r"add_test\s*\(\s*NAME\s+([^\s\)]+)(.*?)\)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in test_pattern.finditer(text):
+        name = match.group(1).strip()
+        paths: list[Path] = []
+        for source in source_pattern.findall(match.group(2)):
+            normalized_source = source.replace("\\", "/").lstrip("/")
+            candidate = (REPO_ROOT / normalized_source).resolve()
+            try:
+                candidate.relative_to(REPO_ROOT)
+            except ValueError:
+                continue
+            if candidate.is_file() and candidate not in paths:
+                paths.append(candidate)
+        if paths:
+            ctest_sources[name] = paths
+    return target_sources, ctest_sources
+
+
+def _graph_include_sources(path: Path) -> list[Path]:
+    """Return repository files explicitly included by a C/C++ test source."""
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    found: list[Path] = []
+    include_pattern = re.compile(r"^\s*#\s*include\s*[\"<]([^\">]+)[\">]")
+    for line in lines:
+        match = include_pattern.match(line)
+        if not match:
+            continue
+        include = match.group(1).replace("\\", "/")
+        candidates = [
+            (path.parent / include).resolve(),
+            (REPO_ROOT / include).resolve(),
+        ]
+        for candidate in candidates:
+            try:
+                candidate.relative_to(REPO_ROOT)
+            except ValueError:
+                continue
+            if candidate.is_file() and candidate not in found:
+                found.append(candidate)
+                break
+    return found
+
+
+def _graph_explicit_path_mentions(path: Path, candidates: list[Path]) -> list[Path]:
+    """Find source paths explicitly named in a test (no basename guessing)."""
+
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[Path] = []
+    for candidate in candidates:
+        rel_path = rel(candidate)
+        if rel_path in text or candidate.name in text:
+            out.append(candidate)
+    return out
+
+
+def augment_trit_graph_crosslinks(graph: dict[str, Any]) -> dict[str, Any]:
+    """Augment a Trit graph with manifest and test provenance relations.
+
+    The adapter is deliberately source-only and deterministic.  Every relation
+    carries a source file/location, confidence, and a ``trit_*`` context so a
+    subsequent run can replace exactly the adapter-owned records without
+    disturbing Graphify's advisory edges.
+    """
+
+    nodes = graph.setdefault("nodes", [])
+    edges = graph.setdefault("edges", [])
+    if not isinstance(nodes, list):
+        nodes = graph["nodes"] = []
+    if not isinstance(edges, list):
+        edges = graph["edges"] = []
+
+    nodes_by_id: dict[str, dict[str, Any]] = {
+        str(node.get("id")): node
+        for node in nodes
+        if isinstance(node, dict) and node.get("id")
+    }
+    existing_edge_keys = {
+        (
+            edge.get("source"),
+            edge.get("target"),
+            edge.get("relation"),
+            edge.get("source_file"),
+            edge.get("source_location"),
+            edge.get("context"),
+        )
+        for edge in edges
+        if isinstance(edge, dict)
+    }
+    relation_counts: dict[str, int] = {}
+    unsupported_items: list[dict[str, Any]] = []
+    added_nodes = 0
+    added_edges = 0
+
+    def add_node(node: dict[str, Any]) -> str:
+        nonlocal added_nodes
+        node_id = str(node.get("id", ""))
+        if not node_id:
+            return ""
+        node.setdefault("_origin", "trit-adapter")
+        node.setdefault("extractor", graph.get("extractor", "unknown"))
+        if node_id not in nodes_by_id:
+            nodes_by_id[node_id] = node
+            nodes.append(node)
+            added_nodes += 1
+        return node_id
+
+    def source_node(path: Path, kind: str = "trit_file") -> str:
+        node_id = trit_file_node_id(path)
+        add_node(
+            {
+                "id": node_id,
+                "label": path.name,
+                "file_type": "code" if path.suffix.lower() not in {".json", ".md"} else "data",
+                "source_file": rel(path),
+                "source_location": "L1",
+                "kind": kind,
+            }
+        )
+        return node_id
+
+    def add_edge(
+        source: str,
+        target: str,
+        relation: str,
+        source_file: Path | str,
+        source_location: str,
+        *,
+        confidence: str = "EXTRACTED",
+        context: str = "trit_crosslink",
+        **extra: Any,
+    ) -> bool:
+        nonlocal added_edges
+        if not source or not target:
+            return False
+        source_path = rel(source_file) if isinstance(source_file, Path) else str(source_file)
+        key = (source, target, relation, source_path, source_location, context)
+        if key in existing_edge_keys:
+            return False
+        existing_edge_keys.add(key)
+        edge: dict[str, Any] = {
+            "source": source,
+            "target": target,
+            "relation": relation,
+            "confidence": confidence,
+            "source_file": source_path,
+            "source_location": source_location,
+            "weight": 1.0,
+            "context": context,
+        }
+        edge.update(extra)
+        edges.append(edge)
+        relation_counts[relation] = relation_counts.get(relation, 0) + 1
+        added_edges += 1
+        return True
+
+    def record_unsupported(kind: str, message: str, **details: Any) -> None:
+        item: dict[str, Any] = {"kind": kind, "message": message}
+        item.update(details)
+        unsupported_items.append(item)
+
+    # Build a lookup for the existing AST/regex function nodes.  Names are
+    # retained separately from labels so wrappers and aliases can be matched.
+    function_nodes: dict[str, list[str]] = {}
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("kind") != "trit_function":
+            continue
+        label = str(node.get("label", ""))
+        name = label[:-2] if label.endswith("()") else label
+        if name:
+            function_nodes.setdefault(name, []).append(str(node.get("id")))
+
+    # --- Syscall ID cross-links -----------------------------------------
+    syscall_manifest = REPO_ROOT / "SYSCALL_MANIFEST.json"
+    syscall_manifest_node = source_node(syscall_manifest, "trit_manifest")
+    syscall_data, syscall_error = _graph_load_json(syscall_manifest)
+    service_nodes: dict[str, str] = {}
+    service_ids: dict[int, str] = {}
+    syscall_edges_before = added_edges
+    if syscall_error or not isinstance(syscall_data, dict):
+        record_unsupported("syscall_manifest", "unable to parse SYSCALL_MANIFEST.json", error=syscall_error)
+    else:
+        services = syscall_data.get("services", [])
+        if not isinstance(services, list):
+            record_unsupported("syscall_manifest", "services is not an array")
+            services = []
+        for index, service in enumerate(services):
+            if not isinstance(service, dict):
+                record_unsupported("syscall_service", "service entry is not an object", index=index)
+                continue
+            name = str(service.get("name", "")).strip()
+            try:
+                service_id = int(service.get("id"))
+            except (TypeError, ValueError):
+                record_unsupported("syscall_service", "service id is not an integer", index=index, name=name)
+                continue
+            if not name:
+                record_unsupported("syscall_service", "service name is empty", index=index, syscall_id=service_id)
+                continue
+            service_node_id = f"trit_syscall_{service_id}_{graph_slug(name)}"
+            service_location = _graph_source_line(syscall_manifest, f'"name": "{name}"')
+            add_node(
+                {
+                    "id": service_node_id,
+                    "label": f"{name} [{service_id}]",
+                    "file_type": "data",
+                    "source_file": rel(syscall_manifest),
+                    "source_location": service_location,
+                    "kind": "trit_syscall",
+                    "syscall_id": service_id,
+                    "name": name,
+                    "group": service.get("group", ""),
+                    "status": service.get("status", "active"),
+                }
+            )
+            service_nodes[name] = service_node_id
+            service_ids.setdefault(service_id, service_node_id)
+            add_edge(
+                syscall_manifest_node,
+                service_node_id,
+                "defines",
+                syscall_manifest,
+                service_location,
+                context="trit_syscall_manifest",
+                syscall_id=service_id,
+            )
+
+        aliases = syscall_data.get("compiler_aliases", {})
+        if isinstance(aliases, dict):
+            for alias, target in sorted(aliases.items(), key=lambda item: str(item[0])):
+                alias_name = str(alias)
+                target_name = str(target)
+                target_node = service_nodes.get(target_name)
+                if target_node:
+                    service_nodes[alias_name] = target_node
+                    add_edge(
+                        syscall_manifest_node,
+                        target_node,
+                        "aliases",
+                        syscall_manifest,
+                        _graph_source_line(syscall_manifest, f'"{alias_name}": "{target_name}"'),
+                        context="trit_syscall_alias",
+                        alias=alias_name,
+                        syscall_name=target_name,
+                    )
+
+        # Wrapper functions and their aliases provide source-level references
+        # to the manifest's numeric service IDs.
+        for name, service_node_id in sorted(service_nodes.items()):
+            for function_id in function_nodes.get(name, []):
+                function_node = nodes_by_id.get(function_id, {})
+                add_edge(
+                    function_id,
+                    service_node_id,
+                    "syscall_id",
+                    str(function_node.get("source_file", "")),
+                    str(function_node.get("source_location", "L1")),
+                    context="trit_syscall_id",
+                    syscall_name=name,
+                )
+
+        # The runtime header is an explicit numeric cross-check for every
+        # compiler wrapper. Alias constants are retained as syscall_id edges.
+        runtime_header = REPO_ROOT / "ternary_compiler_ir.h"
+        runtime_node = source_node(runtime_header, "trit_header")
+        try:
+            runtime_lines = runtime_header.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            runtime_lines = []
+        runtime_constants: dict[str, int] = {}
+        for line_no, line in enumerate(runtime_lines, start=1):
+            match = re.search(
+                r"static constexpr int\s+(sys_[A-Za-z0-9_]+)\s*=\s*([^;]+)",
+                line,
+            )
+            if not match:
+                continue
+            name = match.group(1)
+            expression = match.group(2).strip()
+            if expression in runtime_constants:
+                value = runtime_constants[expression]
+            else:
+                try:
+                    value = int(expression, 0)
+                except ValueError:
+                    continue
+            runtime_constants[name] = value
+            service_node_id = service_ids.get(value)
+            if not service_node_id:
+                record_unsupported("syscall_constant", "runtime constant has no manifest service", name=name, syscall_id=value)
+                continue
+            constant_node_id = f"trit_syscall_constant_{graph_slug(name)}"
+            add_node(
+                {
+                    "id": constant_node_id,
+                    "label": f"{name} = {value}",
+                    "file_type": "code",
+                    "source_file": rel(runtime_header),
+                    "source_location": f"L{line_no}",
+                    "kind": "trit_syscall_constant",
+                    "syscall_id": value,
+                    "name": name,
+                }
+            )
+            add_edge(runtime_node, constant_node_id, "contains", runtime_header, f"L{line_no}", context="trit_syscall_constant")
+            add_edge(
+                constant_node_id,
+                service_node_id,
+                "syscall_id",
+                runtime_header,
+                f"L{line_no}",
+                context="trit_syscall_id",
+                syscall_id=value,
+                syscall_name=name,
+            )
+
+        # Kernel dispatch uses explicit ``service - <id>`` guards.  Recording
+        # those guards links the authoritative ID to its implementation without
+        # pretending that every helper called by the branch is the service.
+        kernel_path = REPO_ROOT / "kernel.trit"
+        kernel_node = source_node(kernel_path)
+        dispatch_function_ids = function_nodes.get("kernel_syscall_dispatch", [])
+        dispatch_pattern = re.compile(r"\bservice\s*-\s*(-?\d+)\s*==\s*0")
+        try:
+            kernel_lines = kernel_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            kernel_lines = []
+        for line_no, line in enumerate(kernel_lines, start=1):
+            match = dispatch_pattern.search(line)
+            if not match:
+                continue
+            service_id = int(match.group(1))
+            target = service_ids.get(service_id)
+            if not target:
+                record_unsupported("syscall_dispatch", "kernel dispatch guard has no manifest service", syscall_id=service_id, line=line_no)
+                continue
+            source_ids = dispatch_function_ids or [kernel_node]
+            for source_id in source_ids:
+                add_edge(
+                    source_id,
+                    target,
+                    "dispatches",
+                    kernel_path,
+                    f"L{line_no}",
+                    context="trit_syscall_dispatch",
+                    syscall_id=service_id,
+                )
+
+    syscall_edge_count = added_edges - syscall_edges_before
+
+    # --- App bundle ownership -------------------------------------------
+    app_manifest = APP_MANIFEST_PATH
+    app_manifest_node = source_node(app_manifest, "trit_manifest")
+    app_data, app_error = _graph_load_json(app_manifest)
+    app_nodes: dict[str, str] = {}
+    app_entries = app_data.get("bundled_apps", []) if isinstance(app_data, dict) else []
+    if app_error or not isinstance(app_data, dict):
+        record_unsupported("app_manifest", "unable to parse APP_MANIFEST.json", error=app_error)
+        app_entries = []
+    if not isinstance(app_entries, list):
+        record_unsupported("app_manifest", "bundled_apps is not an array")
+        app_entries = []
+    for index, app in enumerate(app_entries):
+        if not isinstance(app, dict):
+            record_unsupported("app_bundle", "bundled app entry is not an object", index=index)
+            continue
+        app_id = str(app.get("id", "")).strip()
+        source_name = str(app.get("source", "")).strip()
+        guest_path = str(app.get("guest_path", "")).strip()
+        if not app_id or not source_name or not guest_path:
+            record_unsupported("app_bundle", "bundle entry lacks id/source/guest_path", index=index, id=app_id)
+            continue
+        app_node_id = f"trit_app_bundle_{graph_slug(app_id)}"
+        app_location = _graph_source_line(app_manifest, f'"id": "{app_id}"')
+        add_node(
+            {
+                "id": app_node_id,
+                "label": f"{app_id} -> {guest_path}",
+                "file_type": "data",
+                "source_file": rel(app_manifest),
+                "source_location": app_location,
+                "kind": "trit_app_bundle",
+                "app_id": app_id,
+                "title": app.get("title", ""),
+                "guest_path": guest_path,
+                "source": source_name,
+                "gui_registry": bool(app.get("gui_registry", False)),
+                "launch_role": app.get("launch_role", ""),
+            }
+        )
+        app_nodes[app_id] = app_node_id
+        add_edge(app_manifest_node, app_node_id, "contains", app_manifest, app_location, context="trit_app_manifest")
+        source_path = (REPO_ROOT / source_name).resolve()
+        if not source_path.is_file():
+            record_unsupported("app_bundle", "bundle source is missing", app_id=app_id, source=source_name)
+            continue
+        app_source_node = source_node(source_path)
+        add_edge(app_source_node, app_node_id, "bundles", source_path, app_location, context="trit_app_bundle", guest_path=guest_path)
+        add_edge(app_node_id, app_source_node, "owns", app_manifest, app_location, context="trit_app_bundle", guest_path=guest_path)
+
+    builder_path = APP_BUILDER_PATH
+    builder_node = source_node(builder_path, "trit_builder")
+    builder_entries, builder_errors = _app_builder_entries(
+        builder_path.read_text(encoding="utf-8", errors="replace")
+    ) if builder_path.is_file() else ([], ["build_tos_image.cpp is missing"])
+    if builder_errors:
+        for error in builder_errors:
+            record_unsupported("app_builder", error)
+    builder_by_id = {str(item.get("id")): item for item in builder_entries if isinstance(item, dict)}
+    for app_id, app_node_id in sorted(app_nodes.items()):
+        builder_entry = builder_by_id.get(app_id)
+        if builder_entry is None:
+            record_unsupported("app_builder", "manifest app has no matching builder entry", app_id=app_id)
+            continue
+        builder_location = _graph_source_line(builder_path, f'"{app_id}"')
+        add_edge(builder_node, app_node_id, "declares", builder_path, builder_location, context="trit_app_builder")
+        builder_source = str(builder_entry.get("source", "")).strip()
+        manifest_source = str(nodes_by_id[app_node_id].get("source", "")).replace("\\", "/")
+        expected_source = f"apps/{builder_source}.trit" if builder_source else ""
+        if expected_source != manifest_source:
+            record_unsupported("app_builder", "builder source differs from manifest source", app_id=app_id)
+
+    # --- Image section producers ---------------------------------------
+    image_manifest = REPO_ROOT / "IMAGE_FORMAT_MANIFEST.json"
+    image_manifest_node = source_node(image_manifest, "trit_manifest")
+    image_kernel_line = _graph_source_line_occurrence(builder_path, "manifest.sections.push_back", 1)
+    image_app_line = _graph_source_line_occurrence(builder_path, "manifest.sections.push_back", 2)
+    section_count_before = relation_counts.get("produces", 0)
+    kernel_section_id = "trit_image_section_kernel"
+    add_node(
+        {
+            "id": kernel_section_id,
+            "label": "kernel section",
+            "file_type": "data",
+            "source_file": rel(builder_path),
+            "source_location": image_kernel_line,
+            "kind": "trit_image_section",
+            "section_name": "kernel",
+            "path": "/kernel",
+            "section_kind": "kernel",
+            "producer": rel(builder_path),
+        }
+    )
+    add_edge(builder_node, kernel_section_id, "produces", builder_path, image_kernel_line, context="trit_image_section", section_name="kernel")
+    add_edge(image_manifest_node, kernel_section_id, "describes", image_manifest, _graph_source_line(image_manifest, '"section_fields"'), context="trit_image_section")
+    kernel_source_node = source_node(REPO_ROOT / "kernel.trit")
+    add_edge(kernel_source_node, kernel_section_id, "emits", kernel_path, image_kernel_line, context="trit_image_section", section_name="kernel")
+
+    for app_id, app_node_id in sorted(app_nodes.items()):
+        section_id = f"trit_image_section_{graph_slug(app_id)}"
+        app_entry = nodes_by_id.get(app_node_id, {})
+        guest_path = str(app_entry.get("guest_path", ""))
+        add_node(
+            {
+                "id": section_id,
+                "label": f"{app_id} image section",
+                "file_type": "data",
+                "source_file": rel(builder_path),
+                "source_location": image_app_line,
+                "kind": "trit_image_section",
+                "section_name": app_id,
+                "path": guest_path,
+                "section_kind": "app",
+                "producer": rel(builder_path),
+                "app_id": app_id,
+            }
+        )
+        add_edge(builder_node, section_id, "produces", builder_path, image_app_line, context="trit_image_section", section_name=app_id)
+        add_edge(image_manifest_node, section_id, "describes", image_manifest, _graph_source_line(image_manifest, '"section_fields"'), context="trit_image_section")
+        add_edge(app_node_id, section_id, "packages", app_manifest, str(app_entry.get("source_location", "L1")), context="trit_image_section", guest_path=guest_path)
+        source_name = str(app_entry.get("source", ""))
+        source_path = (REPO_ROOT / source_name).resolve()
+        if source_path.is_file():
+            add_edge(source_node(source_path), section_id, "emits", source_path, image_app_line, context="trit_image_section", section_name=app_id)
+    image_section_edges = relation_counts.get("produces", 0) - section_count_before
+
+    # --- Test-to-source coverage ---------------------------------------
+    test_manifest = REPO_ROOT / "TEST_MANIFEST.json"
+    test_manifest_node = source_node(test_manifest, "trit_manifest")
+    test_data, test_error = _graph_load_json(test_manifest)
+    target_sources, ctest_sources = _graph_cmake_source_map()
+    test_targets = 0
+    test_coverage_edges_before = added_edges
+    if test_error or not isinstance(test_data, dict):
+        record_unsupported("test_manifest", "unable to parse TEST_MANIFEST.json", error=test_error)
+        suites = []
+    else:
+        suites = test_data.get("suites", [])
+    if not isinstance(suites, list):
+        record_unsupported("test_manifest", "suites is not an array")
+        suites = []
+    all_test_sources: list[Path] = []
+    known_project_sources = trit_source_files() + [
+        path for path in REPO_ROOT.rglob("*.h") if not knowledge_source_path_ignored(path)
+    ]
+    for suite in suites:
+        if not isinstance(suite, dict):
+            continue
+        suite_name = str(suite.get("name", "")).strip()
+        if not suite_name:
+            continue
+        suite_id = f"trit_test_suite_{graph_slug(suite_name)}"
+        suite_location = _graph_source_line(test_manifest, f'"name": "{suite_name}"')
+        add_node(
+            {
+                "id": suite_id,
+                "label": f"{suite_name} tests",
+                "file_type": "data",
+                "source_file": rel(test_manifest),
+                "source_location": suite_location,
+                "kind": "trit_test_suite",
+                "suite": suite_name,
+                "status": suite.get("status", "active"),
+            }
+        )
+        add_edge(test_manifest_node, suite_id, "contains", test_manifest, suite_location, context="trit_test_manifest")
+        names: list[tuple[str, str]] = []
+        for target in suite.get("targets", []) if isinstance(suite.get("targets", []), list) else []:
+            names.append((str(target), "target"))
+        for target in suite.get("ctest_tests", []) if isinstance(suite.get("ctest_tests", []), list) else []:
+            names.append((str(target), "ctest"))
+        for target_name, target_kind in names:
+            if not target_name:
+                continue
+            target_id = f"trit_test_target_{graph_slug(target_name)}"
+            target_location = _graph_source_line(test_manifest, f'"{target_name}"')
+            add_node(
+                {
+                    "id": target_id,
+                    "label": target_name,
+                    "file_type": "data",
+                    "source_file": rel(test_manifest),
+                    "source_location": target_location,
+                    "kind": "trit_test_target",
+                    "target": target_name,
+                    "target_kind": target_kind,
+                }
+            )
+            add_edge(suite_id, target_id, "runs", test_manifest, target_location, context="trit_test_coverage", target_kind=target_kind)
+            test_targets += 1
+            source_paths = (target_sources if target_kind == "target" else ctest_sources).get(target_name, [])
+            if not source_paths:
+                record_unsupported("test_target", "manifest target has no explicit CMake source mapping", target=target_name, suite=suite_name)
+            for test_path in source_paths:
+                if test_path not in all_test_sources:
+                    all_test_sources.append(test_path)
+                source_id = source_node(test_path, "trit_test_source")
+                add_edge(target_id, source_id, "covers", test_manifest, target_location, context="trit_test_source", evidence="cmake")
+                # Explicit includes and path mentions are evidence-backed links
+                # from a test source to implementation contracts.
+                for included in _graph_include_sources(test_path):
+                    add_edge(source_id, source_node(included), "covers", test_path, _graph_source_line(test_path, f'"{rel(included)}"', "include"), context="trit_test_include", evidence="include")
+                for mentioned in _graph_explicit_path_mentions(test_path, known_project_sources):
+                    add_edge(source_id, source_node(mentioned), "covers", test_path, _graph_source_line(test_path, rel(mentioned)), context="trit_test_reference", evidence="path_mention")
+
+        for planned in suite.get("planned_targets", []) if isinstance(suite.get("planned_targets", []), list) else []:
+            record_unsupported("planned_test_target", "planned target has no executable coverage edge", target=str(planned), suite=suite_name)
+
+    test_coverage_edges = added_edges - test_coverage_edges_before
+    graph["cross_links"] = {
+        "schema": GRAPH_ADAPTER_SCHEMA,
+        "relation_counts": dict(sorted(relation_counts.items())),
+        "nodes_added": added_nodes,
+        "edges_added": added_edges,
+        "syscall_id_edges": syscall_edge_count,
+        "syscall_services": len(service_ids),
+        "app_bundle_edges": relation_counts.get("owns", 0) + relation_counts.get("bundles", 0),
+        "app_bundles": len(app_nodes),
+        "image_section_edges": image_section_edges,
+        "image_sections": 1 + len(app_nodes),
+        "test_targets": test_targets,
+        "test_source_files": len(all_test_sources),
+        "test_coverage_edges": test_coverage_edges,
+        "unsupported_links": unsupported_items,
+        "unsupported_link_count": len(unsupported_items),
+    }
     return graph
 
 
@@ -2421,6 +4062,8 @@ def augment_graph_with_trit(graph_path: Path) -> dict[str, Any]:
         "parse_diagnostics": trit_graph.get("parse_diagnostics", 0),
         "parse_errors": trit_graph.get("parse_errors", 0),
         "ast_dump": trit_graph.get("ast_dump", {}),
+        "cross_links": trit_graph.get("cross_links", {}),
+        "relation_counts": trit_graph.get("cross_links", {}).get("relation_counts", {}),
     }
     (graph_path.parent / "trit-symbols.json").write_text(canonical_json(summary), encoding="utf-8")
     return summary
@@ -2454,9 +4097,39 @@ def knowledge_status_report() -> dict[str, Any]:
     if not canvas.get("ok", False):
         issues.append({"severity": "error", "message": f"canvas invalid: {canvas.get('error', canvas)}"})
 
+    source_snapshot = knowledge_source_snapshot()
+    canvas_freshness = canvas.get("freshness", {})
+    if not canvas_freshness.get("ok", False):
+        warnings.append(
+            {
+                "severity": "warning",
+                "code": "canvas_stale",
+                "message": str(
+                    canvas_freshness.get(
+                        "message",
+                        "canvas source fingerprint is not current",
+                    )
+                ),
+            }
+        )
+
     graphify_path = find_tool_executable("graphify")
     if not graphify_path:
         warnings.append({"severity": "warning", "message": "graphify CLI is not installed; knowledge graph runs are optional"})
+    graphify_freshness = graphify_freshness_status(source_snapshot)
+    if not graphify_freshness.get("ok", False):
+        warnings.append(
+            {
+                "severity": "warning",
+                "code": "graphify_stale",
+                "message": str(
+                    graphify_freshness.get(
+                        "message",
+                        "latest Graphify summary cannot be proven current",
+                    )
+                ),
+            }
+        )
 
     report = {
         "ok": not issues,
@@ -2472,6 +4145,13 @@ def knowledge_status_report() -> dict[str, Any]:
             "ignore": str(graphify_ignore),
             "output_dir": str(GRAPHIFY_OUT_DIR),
             "archive_dir": str(GRAPHIFY_ARCHIVE_DIR / "runs"),
+            "freshness": graphify_freshness,
+        },
+        "freshness": {
+            "schema": KNOWLEDGE_FRESHNESS_SCHEMA,
+            "source": source_snapshot,
+            "canvas": canvas_freshness,
+            "graphify": graphify_freshness,
         },
         "markdown": {
             "files": len(docs_markdown_files()),
@@ -2541,9 +4221,21 @@ def cmd_knowledge_status(args: argparse.Namespace) -> int:
         text_status("docs vault", DOCS_DIR.exists(), str(DOCS_DIR))
         text_status("Obsidian config", OBSIDIAN_DIR.exists(), str(OBSIDIAN_DIR))
         text_status("canvas", bool(report["obsidian"]["canvas"].get("ok")), str(OBSIDIAN_CANVAS))
+        canvas_freshness = report["freshness"]["canvas"]
+        text_status(
+            "canvas freshness",
+            bool(canvas_freshness.get("ok")),
+            str(canvas_freshness.get("state", "unknown")),
+        )
         text_status("Markdown links", not report["markdown"]["broken_links"], f"{report['markdown']['files']} files")
         graphify_cli = report["graphify"]["cli"]
         text_status("Graphify CLI", bool(graphify_cli), graphify_cli or "optional")
+        graphify_freshness = report["freshness"]["graphify"]
+        text_status(
+            "Graphify freshness",
+            bool(graphify_freshness.get("ok")),
+            str(graphify_freshness.get("state", "unknown")),
+        )
         if report["issues"]:
             print("\nIssues:")
             for issue in report["issues"]:
@@ -2584,6 +4276,7 @@ def archive_graphify_artifacts(command_result: dict[str, Any]) -> dict[str, Any]
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = GRAPHIFY_ARCHIVE_DIR / "runs" / f"{stamp}-{current_git_short_sha()}"
     run_dir.mkdir(parents=True, exist_ok=True)
+    source_snapshot = knowledge_source_snapshot()
     copied = []
     if GRAPHIFY_OUT_DIR.exists():
         candidates = [
@@ -2604,6 +4297,7 @@ def archive_graphify_artifacts(command_result: dict[str, Any]) -> dict[str, Any]
         "returncode": command_result.get("returncode"),
         "graphify_out": str(GRAPHIFY_OUT_DIR),
         "copied": copied,
+        "source_snapshot": source_snapshot,
     }
     (run_dir / "run.json").write_text(canonical_json(summary), encoding="utf-8")
     return {"run_dir": str(run_dir), "copied": copied}
@@ -2648,6 +4342,122 @@ def cmd_knowledge_graph(args: argparse.Namespace) -> int:
     if args.json:
         print_json({"ok": result["returncode"] == 0, "run": result, "trit": trit, "archive": archive})
     return int(result["returncode"])
+
+
+def latest_graphify_run() -> Path | None:
+    """Return the newest archived run using its deterministic directory name."""
+
+    nested_runs = GRAPHIFY_ARCHIVE_DIR / "runs"
+    runs_dir = nested_runs if nested_runs.exists() else GRAPHIFY_ARCHIVE_DIR
+    if not runs_dir.exists():
+        return None
+    runs = [
+        path
+        for path in runs_dir.iterdir()
+        if path.is_dir() and (path / "run.json").is_file()
+    ]
+    return max(runs, key=lambda path: path.name) if runs else None
+
+
+def graphify_freshness_status(current: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Check the newest Graphify summary against source inputs.
+
+    New archives carry a SHA-256 source snapshot.  Older archives only carry
+    Graphify's mtime/AST manifest; those are reported as unverified rather than
+    falsely claiming that they are current.
+    """
+
+    run_dir = latest_graphify_run()
+    if run_dir is None:
+        return {
+            "ok": False,
+            "state": "missing",
+            "message": (
+                "no archived Graphify summary found; run `python tools/trit_tool.py "
+                "knowledge graph` when Graphify is available"
+            ),
+        }
+    run_data, run_error = read_json_file_any(run_dir / "run.json")
+    if run_error or not isinstance(run_data, dict):
+        return {
+            "ok": False,
+            "state": "metadata_invalid",
+            "run": rel(run_dir),
+            "message": f"{rel(run_dir / 'run.json')}: {run_error or 'object expected'}",
+        }
+    current = current or knowledge_source_snapshot()
+    recorded = run_data.get("source_snapshot")
+    if isinstance(recorded, dict) and recorded.get("fingerprint"):
+        comparison = compare_knowledge_snapshots(recorded, current)
+        comparison.update({"run": rel(run_dir), "metadata": "sha256"})
+        if comparison["ok"]:
+            comparison["message"] = "latest Graphify summary matches current source inputs"
+        else:
+            changed = comparison["changed"] + comparison["added"] + comparison["removed"]
+            preview = ", ".join(changed[:5])
+            suffix = "" if len(changed) <= 5 else f" (+{len(changed) - 5} more)"
+            comparison["message"] = (
+                "latest Graphify summary is stale; rerun `python tools/trit_tool.py "
+                f"knowledge graph` (changed: {preview}{suffix})"
+            )
+        return comparison
+
+    # Legacy Graphify archives expose only a manifest with mtimes and opaque
+    # AST hashes.  We can identify edits made after the archive, but cannot
+    # prove that equal mtimes imply equal content.
+    manifest, manifest_error = read_json_file_any(run_dir / "manifest.json")
+    changed: list[str] = []
+    missing: list[str] = []
+    checked = 0
+    if isinstance(manifest, dict):
+        for raw_path, details in manifest.items():
+            if not isinstance(raw_path, str) or not isinstance(details, dict):
+                continue
+            source_path = (REPO_ROOT / raw_path).resolve()
+            if knowledge_source_path_ignored(source_path):
+                continue
+            checked += 1
+            if not source_path.exists():
+                missing.append(raw_path)
+                continue
+            recorded_mtime = details.get("mtime")
+            if isinstance(recorded_mtime, (int, float)):
+                try:
+                    if source_path.stat().st_mtime > float(recorded_mtime) + 1e-6:
+                        changed.append(raw_path)
+                except OSError:
+                    missing.append(raw_path)
+    if manifest_error or not isinstance(manifest, dict):
+        detail = manifest_error or "manifest must be an object"
+        message = (
+            f"{rel(run_dir)} has no usable source snapshot ({detail}); rerun `python "
+            "tools/trit_tool.py knowledge graph`"
+        )
+        state = "metadata_invalid"
+    elif changed or missing:
+        preview = ", ".join((changed + missing)[:5])
+        suffix = "" if len(changed) + len(missing) <= 5 else f" (+{len(changed) + len(missing) - 5} more)"
+        message = (
+            "legacy Graphify summary is stale; rerun `python tools/trit_tool.py "
+            f"knowledge graph` (changed: {preview}{suffix})"
+        )
+        state = "stale"
+    else:
+        message = (
+            "legacy Graphify summary has no content fingerprint and cannot be "
+            "proven current; rerun `python tools/trit_tool.py knowledge graph`"
+        )
+        state = "legacy_unverified"
+    return {
+        "ok": False,
+        "state": state,
+        "run": rel(run_dir),
+        "metadata": "legacy_mtime" if isinstance(manifest, dict) else "missing",
+        "checked_files": checked,
+        "changed": sorted(changed),
+        "missing": sorted(missing),
+        "message": message,
+    }
 
 
 def _plan_error(code: str, message: str, **details: Any) -> dict[str, Any]:
@@ -3784,6 +5594,54 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_apps_validate(args: argparse.Namespace) -> int:
+    report = validate_app_bundle(
+        manifest_path=Path(args.manifest).resolve() if args.manifest else APP_MANIFEST_PATH,
+        builder_path=Path(args.builder).resolve() if args.builder else APP_BUILDER_PATH,
+        package_manifest_paths=[Path(path).resolve() for path in (args.package_manifest or [])],
+        registry_path=Path(args.registry).resolve() if args.registry else None,
+        disk_image=Path(args.disk_image).resolve() if args.disk_image else None,
+    )
+    if args.json:
+        print_json(report)
+    else:
+        checks = report.get("checks", {})
+        print("Trit app/package validation")
+        text_status("APP_MANIFEST", bool(checks.get("manifest", {}).get("ok")))
+        text_status("build_tos_image alignment", bool(checks.get("builder_alignment", {}).get("ok")))
+        text_status("/apps/registry", bool(checks.get("registry", {}).get("ok")))
+        text_status("installed package manifests", bool(checks.get("packages", {}).get("ok")),
+                    f"{checks.get('packages', {}).get('count', 0)} checked")
+        if "disk" in checks:
+            text_status("native VFS disk", bool(checks["disk"].get("ok")),
+                        str(checks["disk"].get("path", "")))
+        for error in report.get("errors", []):
+            print(f"- {error}", file=sys.stderr)
+    return 0 if report.get("ok") else 1
+
+
+def cmd_symbolic(args: argparse.Namespace) -> int:
+    from trit_symbolic import (
+        ascii_to_tascii81,
+        format_integer_dump,
+        parse_numeric_literal,
+        tascii81_to_ascii,
+    )
+
+    if args.action == "dump":
+        value = parse_numeric_literal(args.value)
+        if value is None:
+            raise RuntimeError(f"invalid numeric literal: {args.value}")
+        print(format_integer_dump(value))
+        return 0
+    if args.action == "encode-text":
+        print(" ".join(str(value) for value in ascii_to_tascii81(args.value)))
+        return 0
+    values = [int(part, 10) for part in args.value.replace(",", " ").split()]
+    print(tascii81_to_ascii(values))
+    return 0
+
+
 def cmd_test(args: argparse.Namespace) -> int:
     suites = suites_by_name()
     if args.list:
@@ -4273,7 +6131,122 @@ def cmd_bench(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+_REPLAY_SCHEMA_CATALOG: dict[str, dict[str, Any]] = {
+    # JSONL producers currently emit v1.  A minor version is compatible when
+    # it retains these required fields and event semantics; the adapter drops
+    # unknown fields before comparison.  Major versions are never guessed.
+    "trit.syscall_trace": {
+        "label": "syscall_trace",
+        "supported_majors": (1,),
+        "current_minor": {1: 0},
+    },
+    "trit.input_journal": {
+        "label": "input_journal",
+        "supported_majors": (1,),
+        "current_minor": {1: 0},
+    },
+    "trit.runtime_checkpoint": {
+        "label": "checkpoint",
+        "supported_majors": (1, 2),
+        "current_minor": {1: 0, 2: 0},
+    },
+}
+_REPLAY_SCHEMA_RE = re.compile(
+    r"^(?P<family>trit\.[a-z0-9_]+)\.v(?P<major>[0-9]+)"
+    r"(?:\.(?P<minor>[0-9]+))?$"
+)
+
+
+def _new_replay_schema_capability(family: str) -> dict[str, Any]:
+    catalog = _REPLAY_SCHEMA_CATALOG[family]
+    return {
+        "family": family,
+        "supported": True,
+        "status": "not_observed",
+        "supported_majors": list(catalog["supported_majors"]),
+        "current_minor_by_major": {
+            str(key): value for key, value in catalog["current_minor"].items()
+        },
+        "observed": [],
+        "future_minor": False,
+        "adapter": None,
+        "unknown_fields_ignored": 0,
+        "ignored_fields": [],
+        "unsupported_majors": [],
+        "malformed": 0,
+    }
+
+
+def _record_replay_unknown_fields(
+    capability: dict[str, Any], event: dict[str, Any], known: set[str]
+) -> None:
+    unknown = sorted(set(event) - known)
+    capability["unknown_fields_ignored"] += len(unknown)
+    fields = capability["ignored_fields"]
+    for field in unknown:
+        if field not in fields and len(fields) < 64:
+            fields.append(field)
+
+
+def _dispatch_replay_schema(
+    value: Any,
+    expected_family: str,
+    capability: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse and dispatch one versioned replay schema identifier.
+
+    Future minors route to the current major adapter.  There is deliberately
+    no fallback for an unknown major because changed field meaning would make
+    deterministic replay evidence unsafe to compare.
+    """
+    if not isinstance(value, str):
+        capability["supported"] = False
+        capability["status"] = "malformed"
+        capability["malformed"] += 1
+        return None, f"schema must be {expected_family}.v<major>[.<minor>]"
+    match = _REPLAY_SCHEMA_RE.fullmatch(value)
+    if not match or match.group("family") != expected_family:
+        capability["supported"] = False
+        capability["status"] = "malformed"
+        capability["malformed"] += 1
+        return None, (
+            f"unsupported or malformed schema {value!r}; expected "
+            f"{expected_family}.v<major>[.<minor>]"
+        )
+    major = int(match.group("major"))
+    minor = int(match.group("minor") or 0)
+    catalog = _REPLAY_SCHEMA_CATALOG[expected_family]
+    if major not in catalog["supported_majors"]:
+        capability["supported"] = False
+        capability["status"] = "unsupported_major"
+        if major not in capability["unsupported_majors"]:
+            capability["unsupported_majors"].append(major)
+        supported = ", ".join(f"v{item}" for item in catalog["supported_majors"])
+        return None, (
+            f"unsupported {expected_family} schema major v{major}; "
+            f"supported major version(s): {supported}"
+        )
+    current_minor = int(catalog["current_minor"][major])
+    if value not in capability["observed"]:
+        capability["observed"].append(value)
+    capability["status"] = "future_minor" if minor > current_minor else "supported"
+    capability["future_minor"] = capability["future_minor"] or minor > current_minor
+    # Named adapter dispatch is reported so callers can audit compatibility.
+    capability["adapter"] = f"{expected_family}.v{major}"
+    return {
+        "raw": value,
+        "family": expected_family,
+        "major": major,
+        "minor": minor,
+        "canonical": f"{expected_family}.v{major}",
+        "future_minor": minor > current_minor,
+        "adapter": f"{expected_family}.v{major}",
+    }, None
+
+
+def _load_syscall_trace(
+    path: Path, capability: dict[str, Any] | None = None
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Load and validate the host runtime's deterministic syscall trace.
 
     Malformed or disabled traces cannot be mistaken for replay evidence, and
@@ -4282,6 +6255,8 @@ def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     VM checkpoint and guest-input journal are validated as well.
     """
     issues: list[str] = []
+    if capability is None:
+        capability = _new_replay_schema_capability("trit.syscall_trace")
     events: list[dict[str, Any]] = []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -4299,9 +6274,20 @@ def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
         if not isinstance(event, dict):
             issues.append(f"{path}:{line_number}: event must be a JSON object")
             continue
-        if event.get("schema") != "trit.syscall_trace.v1":
-            issues.append(f"{path}:{line_number}: unsupported or missing schema")
+        descriptor, schema_issue = _dispatch_replay_schema(
+            event.get("schema"), "trit.syscall_trace", capability
+        )
+        if schema_issue:
+            issues.append(f"{path}:{line_number}: {schema_issue}")
             continue
+        assert descriptor is not None
+        known_fields = {
+            "schema", "event", "cycles", "sequence", "pc", "physical_pc",
+            "syscall_id", "process_id", "before_privilege", "after_privilege",
+            "args", "results", "before_status", "after_status", "trap",
+            "trap_code", "trap_cause", "cycle_before", "cycle_after",
+        }
+        _record_replay_unknown_fields(capability, event, known_fields)
         marker = event.get("event")
         if marker == "trace_disabled":
             issues.append(f"{path}:{line_number}: trace was disabled during capture")
@@ -4310,7 +6296,22 @@ def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
             # An enabled VM may legitimately execute no syscalls.  Keep the
             # marker in the event stream so comparison distinguishes it from
             # an accidentally disabled capture.
-            events.append(event)
+            cycles = event.get("cycles")
+            if (isinstance(cycles, bool) or not isinstance(cycles, int) or
+                    cycles < 0):
+                issues.append(
+                    f"{path}:{line_number}: trace_empty cycles must be a "
+                    "non-negative integer"
+                )
+                continue
+            events.append({
+                "schema": descriptor["canonical"],
+                "event": "trace_empty",
+                "cycles": cycles,
+            })
+            continue
+        if marker is not None and not isinstance(marker, str):
+            issues.append(f"{path}:{line_number}: event must be a string")
             continue
         required = {
             "sequence", "pc", "physical_pc", "syscall_id", "process_id",
@@ -4361,14 +6362,23 @@ def _load_syscall_trace(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
                     cycle_before < previous_cycle_after):
                 issues.append(f"{path}:{line_number}: cycles move backwards")
             previous_cycle_after = cycle_after
-        events.append(event)
+        canonical_event = {"schema": descriptor["canonical"]}
+        for field in required:
+            canonical_event[field] = event[field]
+        if marker is not None:
+            canonical_event["event"] = marker
+        events.append(canonical_event)
     if not lines:
         issues.append(f"{path}: trace is empty; expected a JSONL marker or event")
     return events, issues
 
 
-def _load_input_journal(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+def _load_input_journal(
+    path: Path, capability: dict[str, Any] | None = None
+) -> tuple[list[dict[str, Any]], list[str]]:
     issues: list[str] = []
+    if capability is None:
+        capability = _new_replay_schema_capability("trit.input_journal")
     events: list[dict[str, Any]] = []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -4382,9 +6392,21 @@ def _load_input_journal(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
         except json.JSONDecodeError as exc:
             issues.append(f"{path}:{line_number}: invalid JSON: {exc.msg}")
             continue
-        if not isinstance(event, dict) or event.get("schema") != "trit.input_journal.v1":
-            issues.append(f"{path}:{line_number}: unsupported or missing schema")
+        if not isinstance(event, dict):
+            issues.append(f"{path}:{line_number}: event must be a JSON object")
             continue
+        descriptor, schema_issue = _dispatch_replay_schema(
+            event.get("schema"), "trit.input_journal", capability
+        )
+        if schema_issue:
+            issues.append(f"{path}:{line_number}: {schema_issue}")
+            continue
+        assert descriptor is not None
+        known_fields = {
+            "schema", "sequence", "cycle", "kind", "value0", "value1",
+            "value2", "text", "provenance",
+        }
+        _record_replay_unknown_fields(capability, event, known_fields)
         sequence = event.get("sequence")
         cycle = event.get("cycle")
         kind = event.get("kind")
@@ -4397,7 +6419,7 @@ def _load_input_journal(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
         if (isinstance(cycle, bool) or not isinstance(cycle, int) or
                 cycle < 0):
             issues.append(f"{path}:{line_number}: cycle must be a non-negative integer")
-        if kind not in (1, 2, 3):
+        if isinstance(kind, bool) or kind not in (1, 2, 3):
             issues.append(f"{path}:{line_number}: kind must be keyboard, text, or mouse")
         for name in ("value0", "value1", "value2"):
             value = event.get(name)
@@ -4405,18 +6427,63 @@ def _load_input_journal(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 issues.append(f"{path}:{line_number}: {name} must be an integer")
         if not isinstance(event.get("text", ""), str):
             issues.append(f"{path}:{line_number}: text must be a string")
-        events.append(event)
+        provenance = event.get("provenance")
+        if provenance is not None:
+            if not isinstance(provenance, dict):
+                issues.append(f"{path}:{line_number}: provenance must be an object")
+            else:
+                for name in ("source", "channel"):
+                    if name in provenance and not isinstance(provenance[name], str):
+                        issues.append(
+                            f"{path}:{line_number}: provenance.{name} must be a string"
+                        )
+                if ("external" in provenance and
+                        not isinstance(provenance["external"], bool)):
+                    issues.append(
+                        f"{path}:{line_number}: provenance.external must be boolean"
+                    )
+        canonical_event = {
+            "schema": descriptor["canonical"],
+            "sequence": sequence,
+            "cycle": cycle,
+            "kind": kind,
+            "value0": event.get("value0"),
+            "value1": event.get("value1"),
+            "value2": event.get("value2"),
+            "text": event.get("text", ""),
+        }
+        if isinstance(provenance, dict):
+            canonical_event["provenance"] = provenance
+        events.append(canonical_event)
     return events, issues
 
 
-def _load_checkpoint_metadata(path: Path) -> list[str]:
+def _load_checkpoint_metadata(
+    path: Path, capability: dict[str, Any] | None = None
+) -> list[str]:
+    if capability is None:
+        capability = _new_replay_schema_capability("trit.runtime_checkpoint")
     try:
         metadata = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return [f"{path}: invalid checkpoint metadata: {exc}"]
-    if not isinstance(metadata, dict) or metadata.get("schema") not in (
-            "trit.runtime_checkpoint.v1", "trit.runtime_checkpoint.v2"):
-        return [f"{path}: unsupported or missing checkpoint schema"]
+    if not isinstance(metadata, dict):
+        capability["supported"] = False
+        capability["status"] = "malformed"
+        capability["malformed"] += 1
+        return [f"{path}: checkpoint metadata must be a JSON object"]
+    descriptor, schema_issue = _dispatch_replay_schema(
+        metadata.get("schema"), "trit.runtime_checkpoint", capability
+    )
+    if schema_issue:
+        return [f"{path}: {schema_issue}"]
+    assert descriptor is not None
+    known_fields = {
+        "schema", "compatibility_schema", "available", "sequence",
+        "input_event_count", "cycle", "pc", "state_file", "disk_file",
+        "journal_file", "boot_image", "trace_file",
+    }
+    _record_replay_unknown_fields(capability, metadata, known_fields)
     if not isinstance(metadata.get("available"), bool):
         return [f"{path}: available must be boolean"]
     if not metadata["available"]:
@@ -4426,7 +6493,7 @@ def _load_checkpoint_metadata(path: Path) -> list[str]:
         value = metadata.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             issues.append(f"{path}: {name} must be a non-negative integer")
-    if metadata.get("schema") == "trit.runtime_checkpoint.v2":
+    if descriptor["major"] == 2:
         for field in ("state_file", "disk_file", "journal_file", "boot_image"):
             value = metadata.get(field)
             if not isinstance(value, str) or not value:
@@ -4518,7 +6585,14 @@ def _run_checkpoint_replay(
 def cmd_replay(args: argparse.Namespace) -> int:
     requested = Path(args.trace)
     trace = requested / "syscall_trace.jsonl" if requested.is_dir() else requested
-    events, issues = _load_syscall_trace(trace)
+    schema_capabilities = {
+        "syscall_trace": _new_replay_schema_capability("trit.syscall_trace"),
+        "input_journal": _new_replay_schema_capability("trit.input_journal"),
+        "checkpoint": _new_replay_schema_capability("trit.runtime_checkpoint"),
+    }
+    events, issues = _load_syscall_trace(
+        trace, schema_capabilities["syscall_trace"]
+    )
     artifact_summary: dict[str, Any] = {}
     if requested.is_dir():
         journal = requested / "input_journal.jsonl"
@@ -4526,13 +6600,17 @@ def cmd_replay(args: argparse.Namespace) -> int:
         if not journal.is_file():
             issues.append(f"{journal}: missing input journal")
         else:
-            input_events, input_issues = _load_input_journal(journal)
+            input_events, input_issues = _load_input_journal(
+                journal, schema_capabilities["input_journal"]
+            )
             issues.extend(input_issues)
             artifact_summary["input_event_count"] = len(input_events)
         if not checkpoint.is_file():
             issues.append(f"{checkpoint}: missing checkpoint metadata")
         else:
-            checkpoint_issues = _load_checkpoint_metadata(checkpoint)
+            checkpoint_issues = _load_checkpoint_metadata(
+                checkpoint, schema_capabilities["checkpoint"]
+            )
             issues.extend(checkpoint_issues)
             artifact_summary["checkpoint_metadata"] = str(checkpoint)
     comparison: dict[str, Any] | None = None
@@ -4540,7 +6618,14 @@ def cmd_replay(args: argparse.Namespace) -> int:
         requested_other = Path(args.against)
         other = (requested_other / "syscall_trace.jsonl"
                  if requested_other.is_dir() else requested_other)
-        other_events, other_issues = _load_syscall_trace(other)
+        other_capabilities = {
+            "syscall_trace": _new_replay_schema_capability("trit.syscall_trace"),
+            "input_journal": _new_replay_schema_capability("trit.input_journal"),
+            "checkpoint": _new_replay_schema_capability("trit.runtime_checkpoint"),
+        }
+        other_events, other_issues = _load_syscall_trace(
+            other, other_capabilities["syscall_trace"]
+        )
         issues.extend(other_issues)
         left = [json.dumps(item, sort_keys=True, separators=(",", ":"))
                 for item in events]
@@ -4568,7 +6653,10 @@ def cmd_replay(args: argparse.Namespace) -> int:
         "valid": not issues,
         "event_count": len(events),
         "issues": issues,
+        "schema_capabilities": schema_capabilities,
     }
+    if args.against:
+        summary["schema_capabilities"]["against"] = other_capabilities
     if artifact_summary:
         summary["artifacts"] = artifact_summary
     if comparison is not None:
@@ -4963,6 +7051,34 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--strict", action="store_true", help="return nonzero when warnings are present")
     doctor.add_argument("--no-commands", action="store_true", help="skip git/cmake PATH probes")
     doctor.set_defaults(func=cmd_doctor)
+
+    apps = sub.add_parser("apps", help="validate bundled apps, installed packages, and /apps/registry")
+    apps_sub = apps.add_subparsers(dest="apps_command", required=True)
+    apps_validate = apps_sub.add_parser(
+        "validate",
+        help="validate APP_MANIFEST/build alignment and optional package or native-VFS artifacts",
+    )
+    apps_validate.add_argument("--manifest", default=None, help="APP_MANIFEST.json path")
+    apps_validate.add_argument("--builder", default=None, help="build_tos_image.cpp path")
+    apps_validate.add_argument(
+        "--package-manifest", action="append", default=None,
+        help="standalone package manifest word file (JSON array/object or integer text); repeatable",
+    )
+    apps_validate.add_argument(
+        "--registry", default=None,
+        help="standalone /apps/registry word file (JSON array/object or integer text)",
+    )
+    apps_validate.add_argument(
+        "--disk-image", default=None,
+        help="native sparse .tdisk; decode installed /apps/registry and /var/packages/*.manifest",
+    )
+    apps_validate.add_argument("--json", action="store_true", help="emit JSON report")
+    apps_validate.set_defaults(func=cmd_apps_validate)
+
+    symbolic = sub.add_parser("symbolic", help="convert TASCII-81 and ternary-native numeric notation")
+    symbolic.add_argument("action", choices=("dump", "encode-text", "decode-text"))
+    symbolic.add_argument("value")
+    symbolic.set_defaults(func=cmd_symbolic)
 
     test = sub.add_parser("test", help="build and run suites from TEST_MANIFEST.json")
     add_test_options(test)

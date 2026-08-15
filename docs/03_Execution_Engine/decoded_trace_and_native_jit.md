@@ -25,12 +25,16 @@ faulting PC when a guard fails.
 `VMExecutionBackend::NativeX64Jit` is dependency-free and supports Windows x64
 and System V x86-64 calling conventions. It emits ABI-correct code into RW
 memory, changes the mapping to RX, flushes the instruction cache, and never
-keeps a mapping writable and executable at the same time. NOP/MOV/COPY, the
-integral T40 Add/Sub/TCmp/Mul subset, raw-valid T40 Neg/Abs, guarded dense
-identity-physical T40 Load/Store, and hot internal branch control are emitted
-inline. MMU-translated or sparse memory, tagged/fractional address views,
-active reservations, non-local control, and unsupported operations retain
-precise helper side exits.
+keeps a mapping writable and executable at the same time. NOP/MOV and
+canonical T40 COPY, the integral T40 Add/Sub/TCmp/Mul subset, raw-valid T40
+Neg/Abs, guarded dense identity-physical T40 Load/Store, and hot internal
+branch control, and immediate `CALL` link/branch commits are emitted inline.
+The `CALL` lowering guards the link-register destination pair and side-exits
+before mutation if a live T50/L50 pair would be invalidated. Width-qualified COPY uses the portable
+`readView` conversion helper (and commits through the same native block), while
+MMU-translated or sparse memory, tagged/fractional address views, active
+reservations, dynamic/non-local control (`RET`, `CALLR`, `JMPR`), and unsupported
+operations retain precise helper side exits.
 
 The code-block inventory distinguishes these paths explicitly:
 `VMNativeX64CodeBlock::direct_instruction_count` counts only micro-ops whose
@@ -58,17 +62,23 @@ and instruction count for invalid arithmetic and out-of-range memory.
 
 `test_execution_backends_benchmark` reports seven-run median wall time after two warmups
 for arithmetic, guarded-memory, and branch workloads; the acceptance gate also
-requires each seven-sample coefficient of variation to stay below 3%. Native execution may
+requires each seven-sample coefficient of variation to stay below 3%. Every
+repeat contributes a deterministic FNV fingerprint of status, PC, steps,
+cycles, backend counters, and the final register payload; the gate requires
+all seven fingerprints to match on the controlled host. Native execution may
 become a default only after it reaches at least 1.15x on two workloads and is
-no more than 3% slower on the third. Decode-count reduction is diagnostic only,
-not a performance acceptance gate. On x86-64, a failed wall-time gate returns
-nonzero so a benchmark result cannot be mistaken for acceptance. The native
-backend remains opt-in until the measured wall-time and stability contract is
-repeatably satisfied on a controlled host. Candidate `45539f7` produced one
-run that missed the CV ceiling only for arithmetic (3.294%) and an immediate
-quiet-host confirmation that passed all three workloads (6.31x, 5.41x, and
-1.44x, with native CVs of 1.25-1.45%). This proves the speed path but not yet
-repeatable default-on stability, so the production default remains disabled.
+no more than 3% slower on the third, with repeatability and CV gates passing.
+Decode-count reduction is diagnostic only, not a performance acceptance gate.
+On x86-64, a failed wall-time, repeatability, or stability gate returns nonzero
+so a benchmark result cannot be mistaken for acceptance. The native backend
+remains opt-in until the measured wall-time and repeatability contract is
+repeatably satisfied on a controlled host; the benchmark emits a
+`native_x64_repeatability_record` key/value line for evidence collectors.
+Candidate `45539f7` produced one run that missed the CV ceiling only for
+arithmetic (3.294%) and an immediate quiet-host confirmation that passed all
+three workloads (6.31x, 5.41x, and 1.44x, with native CVs of 1.25-1.45%).
+This proves the speed path but not yet repeatable default-on stability, so the
+production default remains disabled.
 
 Focused parity and safety coverage lives in `tests/test_vm_widths.cpp`,
 including deterministic randomized differential execution, user-mode memory,

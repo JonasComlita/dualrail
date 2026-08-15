@@ -1,14 +1,75 @@
 // apps/fsck.trit - User-space filesystem check probe.
 
 const FSCK_PATH: t40 = 10000;
+const FSCK_RELEASE: t40 = 10016;
+const FSCK_BIN: t40 = 10040;
+const FSCK_LOG: t40 = 10056;
 const FSCK_STAT: t40 = 10100;
+const FSCK_DIR: t40 = 10116;
+
+fn fsck_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn fsck_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
 
 fn fsck_seed_root() -> t40 {
-    unsafe {
-        store(FSCK_PATH, 47);
-        store(FSCK_PATH + 1, 0);
-    }
+    fsck_store(FSCK_PATH, 47); fsck_store(FSCK_PATH + 1, 0);
     return FSCK_PATH;
+}
+
+fn fsck_seed_release() -> t40 {
+    // /etc/os-release
+    fsck_store(FSCK_RELEASE + 0, 47); fsck_store(FSCK_RELEASE + 1, 101);
+    fsck_store(FSCK_RELEASE + 2, 116); fsck_store(FSCK_RELEASE + 3, 99);
+    fsck_store(FSCK_RELEASE + 4, 47); fsck_store(FSCK_RELEASE + 5, 111);
+    fsck_store(FSCK_RELEASE + 6, 115); fsck_store(FSCK_RELEASE + 7, 45);
+    fsck_store(FSCK_RELEASE + 8, 114); fsck_store(FSCK_RELEASE + 9, 101);
+    fsck_store(FSCK_RELEASE + 10, 108); fsck_store(FSCK_RELEASE + 11, 101);
+    fsck_store(FSCK_RELEASE + 12, 97); fsck_store(FSCK_RELEASE + 13, 115);
+    fsck_store(FSCK_RELEASE + 14, 101); fsck_store(FSCK_RELEASE + 15, 0);
+    return FSCK_RELEASE;
+}
+
+fn fsck_seed_bin() -> t40 {
+    fsck_store(FSCK_BIN + 0, 47); fsck_store(FSCK_BIN + 1, 98);
+    fsck_store(FSCK_BIN + 2, 105); fsck_store(FSCK_BIN + 3, 110);
+    fsck_store(FSCK_BIN + 4, 0);
+    return FSCK_BIN;
+}
+
+fn fsck_seed_log() -> t40 {
+    // /var/log/system.log
+    fsck_store(FSCK_LOG + 0, 47); fsck_store(FSCK_LOG + 1, 118);
+    fsck_store(FSCK_LOG + 2, 97); fsck_store(FSCK_LOG + 3, 114);
+    fsck_store(FSCK_LOG + 4, 47); fsck_store(FSCK_LOG + 5, 108);
+    fsck_store(FSCK_LOG + 6, 111); fsck_store(FSCK_LOG + 7, 103);
+    fsck_store(FSCK_LOG + 8, 47); fsck_store(FSCK_LOG + 9, 115);
+    fsck_store(FSCK_LOG + 10, 121); fsck_store(FSCK_LOG + 11, 115);
+    fsck_store(FSCK_LOG + 12, 116); fsck_store(FSCK_LOG + 13, 101);
+    fsck_store(FSCK_LOG + 14, 109); fsck_store(FSCK_LOG + 15, 46);
+    fsck_store(FSCK_LOG + 16, 108); fsck_store(FSCK_LOG + 17, 111);
+    fsck_store(FSCK_LOG + 18, 103); fsck_store(FSCK_LOG + 19, 0);
+    return FSCK_LOG;
+}
+
+fn fsck_line(label: t40, ok: t40) -> t40 {
+    os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
+    if label - 1 == 0 { os_putc(82); os_putc(79); os_putc(79); os_putc(84); }
+    if label - 2 == 0 { os_putc(82); os_putc(69); os_putc(76); os_putc(69); os_putc(65); os_putc(83); os_putc(69); }
+    if label - 3 == 0 { os_putc(66); os_putc(73); os_putc(78); }
+    if label - 4 == 0 { os_putc(68); os_putc(73); os_putc(82); }
+    if label - 5 == 0 { os_putc(76); os_putc(79); os_putc(71); }
+    os_putc(32);
+    if ok > 0 { os_putc(79); os_putc(75); }
+    else { os_putc(70); os_putc(65); os_putc(73); os_putc(76); }
+    os_newline();
+    return ok;
 }
 
 fn main() -> t40 {
@@ -18,13 +79,47 @@ fn main() -> t40 {
         os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_newline();
         return 1;
     }
+    var failures: t40 = 0;
     var ok: t40 = os_stat(fsck_seed_root(), FSCK_STAT);
-    if ok >= 0 {
+    var root_ok: t40 = 0;
+    if ok >= 0 { if fsck_load(FSCK_STAT + 1) - 2 == 0 { root_ok = 1; } }
+    fsck_line(1, root_ok);
+    if root_ok <= 0 { failures = failures + 1; }
+
+    ok = os_stat(fsck_seed_release(), FSCK_STAT);
+    var release_ok: t40 = 0;
+    if ok > 0 { if fsck_load(FSCK_STAT + 1) - 1 == 0 { release_ok = 1; } }
+    fsck_line(2, release_ok);
+    if release_ok <= 0 { failures = failures + 1; }
+
+    ok = os_stat(fsck_seed_bin(), FSCK_STAT);
+    var bin_ok: t40 = 0;
+    if ok >= 0 { if fsck_load(FSCK_STAT + 1) - 2 == 0 { bin_ok = 1; } }
+    fsck_line(3, bin_ok);
+    if bin_ok <= 0 { failures = failures + 1; }
+
+    var entries: t40 = os_readdir(fsck_seed_bin(), FSCK_DIR, 128);
+    var dir_ok: t40 = 0;
+    if entries > 0 { dir_ok = 1; }
+    fsck_line(4, dir_ok);
+    if dir_ok <= 0 { failures = failures + 1; }
+
+    ok = os_stat(fsck_seed_log(), FSCK_STAT);
+    var log_ok: t40 = 0;
+    if ok > 0 { if fsck_load(FSCK_STAT + 1) - 1 == 0 { log_ok = 1; } }
+    if log_ok > 0 {
+        fsck_line(5, 1);
+    } else {
+        os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
+        os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+        os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_newline();
+    }
+    if failures == 0 {
         os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
         os_putc(79); os_putc(75); os_newline();
         return 1;
     }
     os_putc(70); os_putc(83); os_putc(67); os_putc(75); os_putc(32);
-    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_newline();
+    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_putc(32); os_print_int(failures); os_newline();
     return 0;
 }

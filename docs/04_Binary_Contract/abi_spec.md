@@ -23,14 +23,37 @@ Source of truth: `ternary_isa.h` (register constants), `SYSCALL_MANIFEST.json` (
 
 ### Argument Passing
 
-- Up to 4 arguments pass in **r13–r16**.
-- Additional arguments are passed on the stack (pushed before the call, popped by the caller after).
-- Arguments larger than one word (e.g., structs) are split across consecutive registers or passed by pointer.
+- Up to 4 scalar ABI words pass in **r13–r16**.
+- Additional words are passed in the caller-owned outgoing stack area (pushed
+  before the call, reclaimed by the caller after the call).
+- The compiler-facing function contract is explicitly versioned as
+  `trit.compiler.function-abi.v2` (version 2). Struct and array parameters do
+  **not** split their payload across registers: each crosses the boundary as
+  one caller-owned pointer word. The register/stack cursor advances by one
+  word for that pointer, and the callee treats it as the aggregate base
+  address for word-wise loads and stores.
+- Compiler function ABI v3 is an opt-in profile,
+  `trit.compiler.function-abi.v3`. It keeps the v2 scalar and aggregate
+  parameter rules and reserves the first ABI word for a hidden caller-owned
+  structure-return (`sret`) pointer whenever the function's result is a
+  struct or array. User arguments begin at the next register/stack word.
 
 ### Return Values
 
-- Single-word return: **r13**.
-- The callee writes the return value to r13 before executing `RET`.
+- Scalar returns use **r13**. A wide T50 value occupies the ABI pair
+  **r13–r14**.
+- The callee writes the return value to the ABI return register(s) before
+  executing `RET`.
+- Aggregate-valued returns have no representation in function ABI v2 and are
+  rejected by the compiler. Source code must pass a caller-owned aggregate
+  output pointer explicitly until a future ABI version defines an `sret`
+  contract.
+- Under function ABI v3, an aggregate-returning callee receives the hidden
+  `sret` pointer in the first ABI word (`r13`, or the corresponding outgoing
+  stack word after register words are exhausted). It copies the result into
+  that caller-owned storage and returns with no scalar payload in `r13`.
+  The caller owns the storage lifetime through the call and may pass its
+  address to subsequent aggregate loads/copies.
 
 ### Stack Frame Layout
 
@@ -94,10 +117,15 @@ Kernel-side return (via ERET):
 
 ## Vector ABI
 
-Vector operations use a separate vector register file (v0–v7). Calling convention for functions that use vectors:
-- Vectors are NOT saved by the standard callee-saved convention.
-- Functions that modify vector registers must document this explicitly.
-- `VLEN Rd` writes the current vector length (number of lanes) into `Rd`.
+Vector operations use a separate vector register file (v0–v7). The hardware
+register roles are described in [vector_abi.md](vector_abi.md), but they are
+not a compiler function boundary contract. Function ABI v2 intentionally
+defines no vector argument, return, or spill representation. A source
+function with a first-class `vec<T>` parameter/return/value is therefore
+rejected with a diagnostic naming the selected compiler profile; it is never
+scalarized or emitted through an AST fallback. A future version must define
+lane width, register assignment, VLEN preservation, fault state, and stack
+spill layout together before these boundaries can be enabled.
 
 ---
 
@@ -120,7 +148,12 @@ Compiled TCL programs produce an `ObjectModule` containing:
 | `function_refs` | Cross-function reference graph (for dead-stripping) |
 
 The linker (`LinkResult`) assembles all modules into a single
-`ExecutableImageHeaderV2` plus `AssemblyResult` ready for the v2 VM.
+`ExecutableImageHeaderV2` plus `AssemblyResult` ready for the v2 VM. Selecting
+compiler function ABI v3 changes the object/link profile and sret lowering,
+but does not silently rewrite the executable header: the image envelope and
+kernel loader remain v2 until a corresponding header version is implemented.
+Linkers must therefore match object profile metadata exactly and expose the
+selected profile separately from the image envelope.
 
 ---
 

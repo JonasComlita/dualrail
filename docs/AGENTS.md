@@ -16,7 +16,10 @@ Open `docs/` as the Obsidian vault for Trit.
 3. Use `python ../tools/trit_tool.py knowledge canvas` after changing the docs map.
 4. Use `python ../tools/trit_tool.py knowledge graph` only when Graphify is installed
    and a structural code report would help.
-5. Keep manually written docs concise and source-linked; put generated Graphify
+5. Treat freshness warnings as advisory contract checks. Regenerate the canvas
+   after source-contract edits, and rerun Graphify when its archived summary is
+   stale or legacy/unverified.
+6. Keep manually written docs concise and source-linked; put generated Graphify
    runs under `_graphify/runs/`.
 
 ## Obsidian Conventions

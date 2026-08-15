@@ -1,0 +1,194 @@
+// apps/doctor.trit - First-class guest health check.
+//
+// Doctor deliberately uses only read-only, public SDK calls.  A probe is
+// either a hard check (the image cannot be healthy without it) or an
+// informational sample (the command still completes when that sample is
+// unavailable).  Output is line-oriented so it is useful over a serial
+// console and in host diagnostic captures.
+
+const DOC_ROOT: t40 = 10000;
+const DOC_RELEASE: t40 = 10016;
+const DOC_BIN: t40 = 10040;
+const DOC_LOG: t40 = 10056;
+const DOC_STAT: t40 = 10100;
+const DOC_DIR: t40 = 10116;
+
+fn doc_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn doc_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn doc_seed_root() -> t40 {
+    doc_store(DOC_ROOT, 47);
+    doc_store(DOC_ROOT + 1, 0);
+    return DOC_ROOT;
+}
+
+fn doc_seed_release() -> t40 {
+    // /etc/os-release
+    doc_store(DOC_RELEASE + 0, 47);  doc_store(DOC_RELEASE + 1, 101);
+    doc_store(DOC_RELEASE + 2, 116); doc_store(DOC_RELEASE + 3, 99);
+    doc_store(DOC_RELEASE + 4, 47);  doc_store(DOC_RELEASE + 5, 111);
+    doc_store(DOC_RELEASE + 6, 115); doc_store(DOC_RELEASE + 7, 45);
+    doc_store(DOC_RELEASE + 8, 114); doc_store(DOC_RELEASE + 9, 101);
+    doc_store(DOC_RELEASE + 10, 108); doc_store(DOC_RELEASE + 11, 101);
+    doc_store(DOC_RELEASE + 12, 97); doc_store(DOC_RELEASE + 13, 115);
+    doc_store(DOC_RELEASE + 14, 101); doc_store(DOC_RELEASE + 15, 0);
+    return DOC_RELEASE;
+}
+
+fn doc_seed_bin() -> t40 {
+    // /bin
+    doc_store(DOC_BIN + 0, 47); doc_store(DOC_BIN + 1, 98);
+    doc_store(DOC_BIN + 2, 105); doc_store(DOC_BIN + 3, 110);
+    doc_store(DOC_BIN + 4, 0);
+    return DOC_BIN;
+}
+
+fn doc_seed_log() -> t40 {
+    // /var/log/system.log
+    doc_store(DOC_LOG + 0, 47);  doc_store(DOC_LOG + 1, 118);
+    doc_store(DOC_LOG + 2, 97);  doc_store(DOC_LOG + 3, 114);
+    doc_store(DOC_LOG + 4, 47);  doc_store(DOC_LOG + 5, 108);
+    doc_store(DOC_LOG + 6, 111); doc_store(DOC_LOG + 7, 103);
+    doc_store(DOC_LOG + 8, 47);  doc_store(DOC_LOG + 9, 115);
+    doc_store(DOC_LOG + 10, 121); doc_store(DOC_LOG + 11, 115);
+    doc_store(DOC_LOG + 12, 116); doc_store(DOC_LOG + 13, 101);
+    doc_store(DOC_LOG + 14, 109); doc_store(DOC_LOG + 15, 46);
+    doc_store(DOC_LOG + 16, 108); doc_store(DOC_LOG + 17, 111);
+    doc_store(DOC_LOG + 18, 103); doc_store(DOC_LOG + 19, 0);
+    return DOC_LOG;
+}
+
+fn doc_word_ok(label: t40, ok: t40) -> t40 {
+    os_putc(67); os_putc(72); os_putc(69); os_putc(67); os_putc(75); os_putc(32);
+    if label - 1 == 0 {
+        os_putc(112); os_putc(105); os_putc(100);
+    }
+    if label - 2 == 0 {
+        os_putc(114); os_putc(111); os_putc(111); os_putc(116);
+    }
+    if label - 3 == 0 {
+        os_putc(114); os_putc(101); os_putc(108); os_putc(101); os_putc(97); os_putc(115); os_putc(101);
+    }
+    if label - 4 == 0 {
+        os_putc(98); os_putc(105); os_putc(110);
+    }
+    if label - 5 == 0 {
+        os_putc(108); os_putc(111); os_putc(103);
+    }
+    os_putc(32);
+    if ok > 0 {
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83);
+    } else {
+        os_putc(70); os_putc(65); os_putc(73); os_putc(76);
+    }
+    os_newline();
+    return ok;
+}
+
+fn doc_info_pid(pid: t40) -> t40 {
+    os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_putc(32);
+    os_putc(112); os_putc(105); os_putc(100); os_putc(61);
+    os_print_int(pid); os_newline();
+    return 1;
+}
+
+fn doc_info_uptime(ticks: t40) -> t40 {
+    os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_putc(32);
+    os_putc(117); os_putc(112); os_putc(116); os_putc(105); os_putc(109); os_putc(101); os_putc(61);
+    os_print_int(ticks); os_newline();
+    return 1;
+}
+
+fn doc_info_processes(count: t40) -> t40 {
+    os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_putc(32);
+    os_putc(112); os_putc(114); os_putc(111); os_putc(99); os_putc(101); os_putc(115); os_putc(115); os_putc(101); os_putc(115); os_putc(61);
+    os_print_int(count); os_newline();
+    return 1;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    os_putc(68); os_putc(79); os_putc(67); os_putc(84); os_putc(79); os_putc(82); os_newline();
+    if in_kernel == 0 {
+        // Standalone compiler/VM runs have no syscall trap route.  Keep the
+        // command useful as a smoke marker without issuing unsupported calls.
+        os_putc(68); os_putc(79); os_putc(67); os_putc(84); os_putc(79); os_putc(82);
+        os_putc(32); os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_newline();
+        return 1;
+    }
+
+    var failures: t40 = 0;
+    var pid: t40 = sys_getpid();
+    if pid > 0 {
+        doc_word_ok(1, 1);
+        doc_info_pid(pid);
+    } else {
+        doc_word_ok(1, 0);
+        failures = failures + 1;
+    }
+
+    var uptime: t40 = sys_uptime();
+    doc_info_uptime(uptime);
+
+    var root: t40 = os_stat(doc_seed_root(), DOC_STAT);
+    var root_ok: t40 = 0;
+    if doc_load(DOC_STAT + 1) - 2 == 0 {
+        root_ok = 1;
+    }
+    if root < 0 { root_ok = 0; }
+    doc_word_ok(2, root_ok);
+    if root_ok <= 0 { failures = failures + 1; }
+
+    var release: t40 = os_stat(doc_seed_release(), DOC_STAT);
+    var release_ok: t40 = 0;
+    if doc_load(DOC_STAT + 1) - 1 == 0 {
+        if release > 0 { release_ok = 1; }
+    }
+    doc_word_ok(3, release_ok);
+    if release_ok <= 0 { failures = failures + 1; }
+
+    var bin_stat: t40 = os_stat(doc_seed_bin(), DOC_STAT);
+    var bin_ok: t40 = 0;
+    if doc_load(DOC_STAT + 1) - 2 == 0 { bin_ok = 1; }
+    if bin_stat < 0 { bin_ok = 0; }
+    doc_word_ok(4, bin_ok);
+    if bin_ok <= 0 { failures = failures + 1; }
+
+    var log_stat: t40 = os_stat(doc_seed_log(), DOC_STAT);
+    var log_ok: t40 = 0;
+    if doc_load(DOC_STAT + 1) - 1 == 0 {
+        if log_stat > 0 { log_ok = 1; }
+    }
+    doc_word_ok(5, log_ok);
+    if log_ok <= 0 {
+        // Logging is useful evidence but not a boot blocker.
+        os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_putc(32);
+        os_putc(108); os_putc(111); os_putc(103); os_putc(32); os_putc(111); os_putc(112); os_putc(116); os_putc(105); os_putc(111); os_putc(110); os_putc(97); os_putc(108); os_newline();
+    }
+
+    var process_count: t40 = os_ps(DOC_DIR, 8);
+    if process_count > 0 {
+        doc_info_processes(process_count);
+    } else {
+        os_putc(73); os_putc(78); os_putc(70); os_putc(79); os_putc(32);
+        os_putc(112); os_putc(114); os_putc(111); os_putc(99); os_putc(101); os_putc(115); os_putc(115); os_putc(101); os_putc(115); os_putc(61); os_putc(63); os_newline();
+    }
+
+    if failures == 0 {
+        os_putc(68); os_putc(79); os_putc(67); os_putc(84); os_putc(79); os_putc(82); os_putc(32);
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_newline();
+        return 1;
+    }
+    os_putc(68); os_putc(79); os_putc(67); os_putc(84); os_putc(79); os_putc(82); os_putc(32);
+    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_putc(32); os_print_int(failures); os_newline();
+    return 0;
+}

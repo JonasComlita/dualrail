@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(TernaryGPUBackendValidation LANGUAGES CXX)
 
+option(TRIT_ENCRYPTED_VOLUME_OPENSSL
+       "Enable host-compatible AES-256-GCM encrypted volumes through OpenSSL"
+       OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 enable_testing()
@@ -250,6 +254,10 @@ add_executable(test_production_hardening tests/test_production_hardening.cpp)
 target_compile_features(test_production_hardening PUBLIC cxx_std_17)
 target_compile_definitions(test_production_hardening PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_syscall_pointer_fuzz tests/test_syscall_pointer_fuzz.cpp)
+target_compile_features(test_syscall_pointer_fuzz PUBLIC cxx_std_17)
+target_compile_definitions(test_syscall_pointer_fuzz PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_native_apps tests/test_native_apps.cpp)
 target_compile_features(test_native_apps PUBLIC cxx_std_17)
 target_compile_definitions(test_native_apps PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -287,6 +295,19 @@ add_executable(test_host_runtime tests/test_host_runtime.cpp)
 target_compile_features(test_host_runtime PUBLIC cxx_std_17)
 target_compile_definitions(test_host_runtime PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_encrypted_volume
+    tests/test_encrypted_volume.cpp
+    encrypted_volume_openssl.cpp)
+target_compile_features(test_encrypted_volume PUBLIC cxx_std_17)
+target_compile_definitions(test_encrypted_volume PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+if(TRIT_ENCRYPTED_VOLUME_OPENSSL)
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+    target_compile_definitions(test_encrypted_volume
+        PRIVATE TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
+    target_link_libraries(test_encrypted_volume PRIVATE OpenSSL::Crypto)
+endif()
+add_test(NAME test_encrypted_volume COMMAND test_encrypted_volume)
+
 add_executable(trit_checkpoint_replay tools/trit_checkpoint_replay.cpp)
 target_compile_features(trit_checkpoint_replay PUBLIC cxx_std_17)
 target_compile_definitions(trit_checkpoint_replay PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -321,6 +342,22 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_system_benchmark_contract.py
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_performance_baseline
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_performance_baseline.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_external_benchmark_assets
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_external_benchmark_assets.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_posix_wrappers
+             COMMAND ${Python3_EXECUTABLE} -m unittest
+                     tools.tests.test_posix_wrappers
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_source_manifest_generation
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_source_manifest_generation.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME test_compiler_corpus_gate
              COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/tools/compiler_corpus_gate.py
@@ -336,6 +373,9 @@ endif()
 add_test(NAME test_production_hardening
          COMMAND test_production_hardening
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_syscall_pointer_fuzz
+         COMMAND test_syscall_pointer_fuzz
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME test_compiler_abi_contract
          COMMAND test_compiler_abi_contract
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -344,6 +384,7 @@ add_custom_target(production_profile
     DEPENDS
         test_production_layers
         test_production_hardening
+        test_syscall_pointer_fuzz
         test_os_platform
         test_vfs_reclamation
         test_vfs_rename
@@ -390,6 +431,11 @@ target_compile_definitions(test_malloc_micro PRIVATE TERNARY_IGNORE_LONG_DOUBLE_
 add_executable(test_tcl_asm tests/test_tcl_asm.cpp)
 target_compile_features(test_tcl_asm PUBLIC cxx_std_17)
 target_compile_definitions(test_tcl_asm PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
+add_executable(test_symbolic_encodings tests/test_symbolic_encodings.cpp)
+target_compile_features(test_symbolic_encodings PUBLIC cxx_std_17)
+target_compile_definitions(test_symbolic_encodings PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_symbolic_encodings COMMAND test_symbolic_encodings)
 
 add_executable(next_isa_encoding tests_next/01_isa/next_isa_encoding.cpp)
 target_compile_features(next_isa_encoding PUBLIC cxx_std_17)
@@ -463,6 +509,10 @@ add_executable(next_apps_desktop_shell tests_next/12_apps/next_apps_desktop_shel
 target_compile_features(next_apps_desktop_shell PUBLIC cxx_std_17)
 target_compile_definitions(next_apps_desktop_shell PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(next_apps_golden_snapshots tests_next/12_apps/next_apps_golden_snapshots.cpp)
+target_compile_features(next_apps_golden_snapshots PUBLIC cxx_std_17)
+target_compile_definitions(next_apps_golden_snapshots PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(next_full_system_release tests_next/17_full_system/next_full_system_release.cpp)
 target_compile_features(next_full_system_release PUBLIC cxx_std_17)
 target_compile_definitions(next_full_system_release
@@ -518,6 +568,7 @@ add_custom_target(tests_next_phase_d
     COMMAND $<TARGET_FILE:next_graphics_gui>
     COMMAND $<TARGET_FILE:next_apps_consumer_bundle>
     COMMAND $<TARGET_FILE:next_apps_desktop_shell>
+    COMMAND $<TARGET_FILE:next_apps_golden_snapshots>
     DEPENDS
         next_kernel_native_os
         next_kernel_native_phase_d
@@ -529,6 +580,7 @@ add_custom_target(tests_next_phase_d
         next_graphics_gui
         next_apps_consumer_bundle
         next_apps_desktop_shell
+        next_apps_golden_snapshots
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
 )
@@ -593,6 +645,9 @@ add_test(NAME next_apps_consumer_bundle
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_apps_desktop_shell
          COMMAND next_apps_desktop_shell
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME next_apps_golden_snapshots
+         COMMAND next_apps_golden_snapshots
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME next_full_system_release
          COMMAND next_full_system_release
@@ -676,6 +731,7 @@ endif()
 add_custom_target(ci_production
     COMMAND $<TARGET_FILE:test_production_layers>
     COMMAND $<TARGET_FILE:test_production_hardening>
+    COMMAND $<TARGET_FILE:test_syscall_pointer_fuzz>
     COMMAND $<TARGET_FILE:test_os_platform>
     COMMAND $<TARGET_FILE:test_vfs_reclamation>
     COMMAND $<TARGET_FILE:test_vfs_rename>

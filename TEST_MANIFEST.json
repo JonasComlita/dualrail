@@ -22,7 +22,8 @@
         "test_ternary_ir",
         "test_ternary_lanes",
         "test_native_ops",
-        "test_numeric_workloads"
+        "test_numeric_workloads",
+        "test_encrypted_volume"
       ]
     },
     {
@@ -59,6 +60,7 @@
         "test_consumer_shell_productization",
         "test_production_layers",
         "test_production_hardening",
+        "test_syscall_pointer_fuzz",
         "test_host_runtime"
       ]
     },
@@ -68,6 +70,7 @@
       "targets": [
         "test_production_layers",
         "test_production_hardening",
+        "test_syscall_pointer_fuzz",
         "test_os_platform",
         "test_vfs_reclamation",
         "test_vfs_rename",
@@ -89,7 +92,8 @@
       "targets": [
         "test_native_apps",
         "test_all_apps",
-        "test_consumer_shell_productization"
+        "test_consumer_shell_productization",
+        "next_apps_golden_snapshots"
       ]
     },
     {
@@ -97,13 +101,16 @@
       "description": "Python/CTest checks for repo automation, manifests, Obsidian vault validation, and Graphify/Trit graph augmentation helpers.",
       "targets": [],
       "ctest_tests": [
-        "test_agent_tooling"
+        "test_agent_tooling",
+        "test_posix_wrappers",
+        "test_source_manifest_generation"
       ],
       "runner": "ctest",
       "commands": [
         "ctest --test-dir build -R test_agent_tooling --output-on-failure",
         "python tools/trit_tool.py knowledge status --json",
-        "python tools/trit_tool.py knowledge setup --check --json"
+        "python tools/trit_tool.py knowledge setup --check --json",
+        "python tools/generate_source_manifests.py --check"
       ]
     },
     {
@@ -128,27 +135,31 @@
         "benchmark_bitnet_os"
       ],
       "ctest_tests": [
-        "test_system_benchmark_contract"
+        "test_system_benchmark_contract",
+        "test_performance_baseline",
+        "test_external_benchmark_assets"
       ],
       "manual": true,
       "status": "active",
       "docs": [
         "docs/10_Benchmarks/system_benchmark_plan.md",
         "docs/10_Benchmarks/doom.md",
-        "docs/10_Benchmarks/bitnet.md"
+        "docs/10_Benchmarks/bitnet.md",
+        "docs/10_Benchmarks/performance_baselines.md",
+        "benchmarks/performance_baseline_schema.json",
+        "benchmarks/reference/performance-baseline.v1.json",
+        "benchmarks/assets/external_assets.v1.json",
+        "docs/10_Benchmarks/external_assets.md"
       ]
     },
     {
       "name": "symbolic_encodings",
-      "description": "Planned tests for ASCII/UTF-8 compatibility, hexadecimal boundaries, and ternary-native symbolic encodings.",
-      "targets": [],
-      "planned_targets": [
+      "description": "ASCII/UTF-8 compatibility, fixed TASCII-81, exact trits, and compact base-27/base-81 notation.",
+      "targets": [
         "test_symbolic_encodings",
-        "test_tascii81",
-        "test_ternary_dump_notation"
+        "test_tcl_asm"
       ],
-      "manual": true,
-      "status": "planned",
+      "status": "active",
       "docs": [
         "docs/04_Binary_Contract/symbolic_encodings.md"
       ]

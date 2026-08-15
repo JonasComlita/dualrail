@@ -1,0 +1,1406 @@
+{
+  "version": 1,
+  "schema": "trit.source_contract_manifest.v1",
+  "generated_by": "tools/generate_source_manifests.py",
+  "generator_version": 1,
+  "authoritative_manifests": [
+    "SYSCALL_MANIFEST.json",
+    "APP_MANIFEST.json",
+    "IMAGE_FORMAT_MANIFEST.json"
+  ],
+  "sources": [
+    {
+      "path": "ternary_compiler_ir.h",
+      "sha256": "1523f93729c705a92c797518e44f6780d7cd9d79eb035eb4a22b8e03d01295e3"
+    },
+    {
+      "path": "ternary_compiler_codegen.h",
+      "sha256": "b5e3863402683a7b622d1505624a43a3437a4471f85b394009edade7a2fbd817"
+    },
+    {
+      "path": "ternary_vm_state.h",
+      "sha256": "d9f24dc74a3033eac03d06b84d3a9f73e0c62248d385e2d12e8a0196057f6287"
+    },
+    {
+      "path": "build_tos_image.cpp",
+      "sha256": "e78a66e3f1087a27172436b4d0cf856e42d8b4b4ff56c82113621c015d1f0222"
+    },
+    {
+      "path": "ternary_host_runtime.h",
+      "sha256": "da78af2087211053c30421f2a20468dfd964de2c3a66c312cd30865d8f04ab7e"
+    },
+    {
+      "path": "ARCHITECTURE_MANIFEST.json",
+      "sha256": "1e472a37cc717259a2b662dc68bdb150d38095e403b2c59ffb1eca45e711f436"
+    }
+  ],
+  "syscalls": {
+    "runtime_constants": [
+      {
+        "name": "reserved_4",
+        "id": 4,
+        "expression": "4"
+      },
+      {
+        "name": "reserved_5",
+        "id": 5,
+        "expression": "5"
+      },
+      {
+        "name": "reserved_6",
+        "id": 6,
+        "expression": "6"
+      },
+      {
+        "name": "sys_app_spawn",
+        "id": 57,
+        "expression": "57"
+      },
+      {
+        "name": "sys_bind",
+        "id": 37,
+        "expression": "37"
+      },
+      {
+        "name": "sys_brk",
+        "id": 18,
+        "expression": "18"
+      },
+      {
+        "name": "sys_clear",
+        "id": 3,
+        "expression": "3"
+      },
+      {
+        "name": "sys_close",
+        "id": 13,
+        "expression": "13"
+      },
+      {
+        "name": "sys_connect",
+        "id": 38,
+        "expression": "38"
+      },
+      {
+        "name": "sys_exec",
+        "id": 21,
+        "expression": "21"
+      },
+      {
+        "name": "sys_exit",
+        "id": 44,
+        "expression": "44"
+      },
+      {
+        "name": "sys_fb_flip",
+        "id": 26,
+        "expression": "26"
+      },
+      {
+        "name": "sys_fb_init",
+        "id": 25,
+        "expression": "25"
+      },
+      {
+        "name": "sys_fork",
+        "id": 20,
+        "expression": "20"
+      },
+      {
+        "name": "sys_fsync",
+        "id": 47,
+        "expression": "47"
+      },
+      {
+        "name": "sys_futex_wait",
+        "id": 52,
+        "expression": "52"
+      },
+      {
+        "name": "sys_futex_wake",
+        "id": 53,
+        "expression": "53"
+      },
+      {
+        "name": "sys_getpid",
+        "id": 7,
+        "expression": "7"
+      },
+      {
+        "name": "sys_getproc",
+        "id": 51,
+        "expression": "51"
+      },
+      {
+        "name": "sys_ipc_recv",
+        "id": 24,
+        "expression": "24"
+      },
+      {
+        "name": "sys_ipc_recv_blocking",
+        "id": 54,
+        "expression": "54"
+      },
+      {
+        "name": "sys_ipc_send",
+        "id": 23,
+        "expression": "23"
+      },
+      {
+        "name": "sys_kill",
+        "id": 48,
+        "expression": "48"
+      },
+      {
+        "name": "sys_mkdir",
+        "id": 41,
+        "expression": "41"
+      },
+      {
+        "name": "sys_newline",
+        "id": 2,
+        "expression": "2"
+      },
+      {
+        "name": "sys_open",
+        "id": 12,
+        "expression": "12"
+      },
+      {
+        "name": "sys_ps",
+        "id": 46,
+        "expression": "46"
+      },
+      {
+        "name": "sys_read",
+        "id": 14,
+        "expression": "14"
+      },
+      {
+        "name": "sys_read_console_word",
+        "id": 9,
+        "expression": "9"
+      },
+      {
+        "name": "sys_readdir",
+        "id": 17,
+        "expression": "17"
+      },
+      {
+        "name": "sys_reboot",
+        "id": 58,
+        "expression": "58"
+      },
+      {
+        "name": "sys_recv",
+        "id": 40,
+        "expression": "40"
+      },
+      {
+        "name": "sys_rename",
+        "id": 59,
+        "expression": "59"
+      },
+      {
+        "name": "sys_resume",
+        "id": 50,
+        "expression": "50"
+      },
+      {
+        "name": "sys_sbrk",
+        "id": 19,
+        "expression": "19"
+      },
+      {
+        "name": "sys_send",
+        "id": 39,
+        "expression": "39"
+      },
+      {
+        "name": "sys_sleep",
+        "id": 45,
+        "expression": "45"
+      },
+      {
+        "name": "sys_sleep_ms",
+        "id": 56,
+        "expression": "56"
+      },
+      {
+        "name": "sys_sleep_until_tick",
+        "id": 45,
+        "expression": "sys_sleep",
+        "alias_of": "sys_sleep"
+      },
+      {
+        "name": "sys_socket",
+        "id": 36,
+        "expression": "36"
+      },
+      {
+        "name": "sys_spawn_static",
+        "id": 10,
+        "expression": "10"
+      },
+      {
+        "name": "sys_stat",
+        "id": 16,
+        "expression": "16"
+      },
+      {
+        "name": "sys_suspend",
+        "id": 49,
+        "expression": "49"
+      },
+      {
+        "name": "sys_unlink",
+        "id": 42,
+        "expression": "42"
+      },
+      {
+        "name": "sys_uptime",
+        "id": 8,
+        "expression": "8"
+      },
+      {
+        "name": "sys_wait_event",
+        "id": 55,
+        "expression": "55"
+      },
+      {
+        "name": "sys_waitpid",
+        "id": 43,
+        "expression": "43"
+      },
+      {
+        "name": "sys_window_create",
+        "id": 27,
+        "expression": "27"
+      },
+      {
+        "name": "sys_window_destroy",
+        "id": 32,
+        "expression": "32"
+      },
+      {
+        "name": "sys_window_get_buffer",
+        "id": 28,
+        "expression": "28"
+      },
+      {
+        "name": "sys_window_move",
+        "id": 30,
+        "expression": "30"
+      },
+      {
+        "name": "sys_window_present",
+        "id": 29,
+        "expression": "29"
+      },
+      {
+        "name": "sys_window_read_event",
+        "id": 33,
+        "expression": "33"
+      },
+      {
+        "name": "sys_window_request_close",
+        "id": 35,
+        "expression": "35"
+      },
+      {
+        "name": "sys_window_resize",
+        "id": 34,
+        "expression": "34"
+      },
+      {
+        "name": "sys_window_set_z",
+        "id": 31,
+        "expression": "31"
+      },
+      {
+        "name": "sys_write",
+        "id": 15,
+        "expression": "15"
+      },
+      {
+        "name": "sys_write_char",
+        "id": 22,
+        "expression": "22"
+      },
+      {
+        "name": "sys_write_int",
+        "id": 1,
+        "expression": "1"
+      },
+      {
+        "name": "sys_yield",
+        "id": 45,
+        "expression": "sys_sleep",
+        "alias_of": "sys_sleep"
+      }
+    ],
+    "compiler_wrappers": [
+      {
+        "name": "sys_app_spawn",
+        "target": "sys_app_spawn",
+        "id": 57
+      },
+      {
+        "name": "sys_bind",
+        "target": "sys_bind",
+        "id": 37
+      },
+      {
+        "name": "sys_brk",
+        "target": "sys_brk",
+        "id": 18
+      },
+      {
+        "name": "sys_clear",
+        "target": "sys_clear",
+        "id": 3
+      },
+      {
+        "name": "sys_close",
+        "target": "sys_close",
+        "id": 13
+      },
+      {
+        "name": "sys_connect",
+        "target": "sys_connect",
+        "id": 38
+      },
+      {
+        "name": "sys_exec",
+        "target": "sys_exec",
+        "id": 21
+      },
+      {
+        "name": "sys_exit",
+        "target": "sys_exit",
+        "id": 44
+      },
+      {
+        "name": "sys_fb_flip",
+        "target": "sys_fb_flip",
+        "id": 26
+      },
+      {
+        "name": "sys_fb_init",
+        "target": "sys_fb_init",
+        "id": 25
+      },
+      {
+        "name": "sys_fork",
+        "target": "sys_fork",
+        "id": 20
+      },
+      {
+        "name": "sys_fsync",
+        "target": "sys_fsync",
+        "id": 47
+      },
+      {
+        "name": "sys_futex_wait",
+        "target": "sys_futex_wait",
+        "id": 52
+      },
+      {
+        "name": "sys_futex_wake",
+        "target": "sys_futex_wake",
+        "id": 53
+      },
+      {
+        "name": "sys_getpid",
+        "target": "sys_getpid",
+        "id": 7
+      },
+      {
+        "name": "sys_getproc",
+        "target": "sys_getproc",
+        "id": 51
+      },
+      {
+        "name": "sys_ipc_recv",
+        "target": "sys_ipc_recv",
+        "id": 24
+      },
+      {
+        "name": "sys_ipc_recv_blocking",
+        "target": "sys_ipc_recv_blocking",
+        "id": 54
+      },
+      {
+        "name": "sys_ipc_send",
+        "target": "sys_ipc_send",
+        "id": 23
+      },
+      {
+        "name": "sys_kill",
+        "target": "sys_kill",
+        "id": 48
+      },
+      {
+        "name": "sys_mkdir",
+        "target": "sys_mkdir",
+        "id": 41
+      },
+      {
+        "name": "sys_newline",
+        "target": "sys_newline",
+        "id": 2
+      },
+      {
+        "name": "sys_open",
+        "target": "sys_open",
+        "id": 12
+      },
+      {
+        "name": "sys_ps",
+        "target": "sys_ps",
+        "id": 46
+      },
+      {
+        "name": "sys_read",
+        "target": "sys_read",
+        "id": 14
+      },
+      {
+        "name": "sys_read_console_word",
+        "target": "sys_read_console_word",
+        "id": 9
+      },
+      {
+        "name": "sys_readdir",
+        "target": "sys_readdir",
+        "id": 17
+      },
+      {
+        "name": "sys_reboot",
+        "target": "sys_reboot",
+        "id": 58
+      },
+      {
+        "name": "sys_recv",
+        "target": "sys_recv",
+        "id": 40
+      },
+      {
+        "name": "sys_rename",
+        "target": "sys_rename",
+        "id": 59
+      },
+      {
+        "name": "sys_resume",
+        "target": "sys_resume",
+        "id": 50
+      },
+      {
+        "name": "sys_sbrk",
+        "target": "sys_sbrk",
+        "id": 19
+      },
+      {
+        "name": "sys_send",
+        "target": "sys_send",
+        "id": 39
+      },
+      {
+        "name": "sys_sleep",
+        "target": "sys_sleep",
+        "id": 45
+      },
+      {
+        "name": "sys_sleep_ms",
+        "target": "sys_sleep_ms",
+        "id": 56
+      },
+      {
+        "name": "sys_sleep_until_tick",
+        "target": "sys_sleep_until_tick",
+        "id": 45
+      },
+      {
+        "name": "sys_socket",
+        "target": "sys_socket",
+        "id": 36
+      },
+      {
+        "name": "sys_spawn_static",
+        "target": "sys_spawn_static",
+        "id": 10
+      },
+      {
+        "name": "sys_stat",
+        "target": "sys_stat",
+        "id": 16
+      },
+      {
+        "name": "sys_suspend",
+        "target": "sys_suspend",
+        "id": 49
+      },
+      {
+        "name": "sys_unlink",
+        "target": "sys_unlink",
+        "id": 42
+      },
+      {
+        "name": "sys_uptime",
+        "target": "sys_uptime",
+        "id": 8
+      },
+      {
+        "name": "sys_wait_event",
+        "target": "sys_wait_event",
+        "id": 55
+      },
+      {
+        "name": "sys_waitpid",
+        "target": "sys_waitpid",
+        "id": 43
+      },
+      {
+        "name": "sys_window_create",
+        "target": "sys_window_create",
+        "id": 27
+      },
+      {
+        "name": "sys_window_destroy",
+        "target": "sys_window_destroy",
+        "id": 32
+      },
+      {
+        "name": "sys_window_get_buffer",
+        "target": "sys_window_get_buffer",
+        "id": 28
+      },
+      {
+        "name": "sys_window_move",
+        "target": "sys_window_move",
+        "id": 30
+      },
+      {
+        "name": "sys_window_present",
+        "target": "sys_window_present",
+        "id": 29
+      },
+      {
+        "name": "sys_window_read_event",
+        "target": "sys_window_read_event",
+        "id": 33
+      },
+      {
+        "name": "sys_window_request_close",
+        "target": "sys_window_request_close",
+        "id": 35
+      },
+      {
+        "name": "sys_window_resize",
+        "target": "sys_window_resize",
+        "id": 34
+      },
+      {
+        "name": "sys_window_set_z",
+        "target": "sys_window_set_z",
+        "id": 31
+      },
+      {
+        "name": "sys_write",
+        "target": "sys_write",
+        "id": 15
+      },
+      {
+        "name": "sys_write_char",
+        "target": "sys_write_char",
+        "id": 22
+      },
+      {
+        "name": "sys_write_int",
+        "target": "sys_write_int",
+        "id": 1
+      },
+      {
+        "name": "sys_yield",
+        "target": "sys_yield",
+        "id": 45
+      }
+    ],
+    "compiler_aliases": [
+      "sys_sleep_until_tick",
+      "sys_yield"
+    ],
+    "legacy_vm_constants": [
+      {
+        "name": "SYSCALL_APP_SPAWN",
+        "id": 57,
+        "expression": "57"
+      },
+      {
+        "name": "SYSCALL_BRK",
+        "id": 18,
+        "expression": "18"
+      },
+      {
+        "name": "SYSCALL_CLEAR_CONSOLE",
+        "id": 3,
+        "expression": "3"
+      },
+      {
+        "name": "SYSCALL_CLOSE",
+        "id": 13,
+        "expression": "13"
+      },
+      {
+        "name": "SYSCALL_EXEC",
+        "id": 21,
+        "expression": "21"
+      },
+      {
+        "name": "SYSCALL_EXIT",
+        "id": 6,
+        "expression": "6"
+      },
+      {
+        "name": "SYSCALL_FORK",
+        "id": 20,
+        "expression": "20"
+      },
+      {
+        "name": "SYSCALL_FSYNC",
+        "id": 47,
+        "expression": "47"
+      },
+      {
+        "name": "SYSCALL_FUTEX_WAIT",
+        "id": 52,
+        "expression": "52"
+      },
+      {
+        "name": "SYSCALL_FUTEX_WAKE",
+        "id": 53,
+        "expression": "53"
+      },
+      {
+        "name": "SYSCALL_GETPID",
+        "id": 7,
+        "expression": "7"
+      },
+      {
+        "name": "SYSCALL_GETPROC",
+        "id": 51,
+        "expression": "51"
+      },
+      {
+        "name": "SYSCALL_IPC_RECV_BLOCKING",
+        "id": 54,
+        "expression": "54"
+      },
+      {
+        "name": "SYSCALL_KILL",
+        "id": 48,
+        "expression": "48"
+      },
+      {
+        "name": "SYSCALL_NEWLINE",
+        "id": 2,
+        "expression": "2"
+      },
+      {
+        "name": "SYSCALL_OPEN",
+        "id": 12,
+        "expression": "12"
+      },
+      {
+        "name": "SYSCALL_READ",
+        "id": 14,
+        "expression": "14"
+      },
+      {
+        "name": "SYSCALL_READDIR",
+        "id": 17,
+        "expression": "17"
+      },
+      {
+        "name": "SYSCALL_READ_INPUT",
+        "id": 9,
+        "expression": "9"
+      },
+      {
+        "name": "SYSCALL_REBOOT",
+        "id": 58,
+        "expression": "58"
+      },
+      {
+        "name": "SYSCALL_RENAME",
+        "id": 59,
+        "expression": "59"
+      },
+      {
+        "name": "SYSCALL_RESUME",
+        "id": 50,
+        "expression": "50"
+      },
+      {
+        "name": "SYSCALL_SBRK",
+        "id": 19,
+        "expression": "19"
+      },
+      {
+        "name": "SYSCALL_SLEEP_MS",
+        "id": 56,
+        "expression": "56"
+      },
+      {
+        "name": "SYSCALL_SLEEP_UNTIL_TICK",
+        "id": 5,
+        "expression": "5"
+      },
+      {
+        "name": "SYSCALL_SPAWN",
+        "id": 10,
+        "expression": "10"
+      },
+      {
+        "name": "SYSCALL_STAT",
+        "id": 16,
+        "expression": "16"
+      },
+      {
+        "name": "SYSCALL_SUSPEND",
+        "id": 49,
+        "expression": "49"
+      },
+      {
+        "name": "SYSCALL_UPTIME",
+        "id": 8,
+        "expression": "8"
+      },
+      {
+        "name": "SYSCALL_WAITPID",
+        "id": 11,
+        "expression": "11"
+      },
+      {
+        "name": "SYSCALL_WAIT_EVENT",
+        "id": 55,
+        "expression": "55"
+      },
+      {
+        "name": "SYSCALL_WRITE",
+        "id": 15,
+        "expression": "15"
+      },
+      {
+        "name": "SYSCALL_WRITE_CHAR",
+        "id": 22,
+        "expression": "22"
+      },
+      {
+        "name": "SYSCALL_WRITE_INT",
+        "id": 1,
+        "expression": "1"
+      },
+      {
+        "name": "SYSCALL_YIELD",
+        "id": 4,
+        "expression": "4"
+      }
+    ],
+    "legacy_conflicts": [
+      {
+        "constant": "SYSCALL_EXIT",
+        "id": 6,
+        "v2_name": "sys_exit",
+        "v2_id": 44
+      },
+      {
+        "constant": "SYSCALL_SLEEP_UNTIL_TICK",
+        "id": 5,
+        "v2_name": "sys_sleep_until_tick",
+        "v2_id": 45
+      },
+      {
+        "constant": "SYSCALL_WAITPID",
+        "id": 11,
+        "v2_name": "sys_waitpid",
+        "v2_id": 43
+      },
+      {
+        "constant": "SYSCALL_YIELD",
+        "id": 4,
+        "v2_name": "sys_yield",
+        "v2_id": 45
+      }
+    ]
+  },
+  "apps": {
+    "bundled_apps": [
+      {
+        "source": "apps/init.trit",
+        "id": "init",
+        "title": "Init",
+        "guest_path": "/bin/init",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/desktop.trit",
+        "id": "desktop",
+        "title": "Desktop",
+        "guest_path": "/bin/desktop",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/shell.trit",
+        "id": "shell",
+        "title": "Shell",
+        "guest_path": "/bin/shell",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/shell.trit",
+        "id": "sh",
+        "title": "sh",
+        "guest_path": "/bin/sh",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/terminal.trit",
+        "id": "terminal",
+        "title": "Terminal",
+        "guest_path": "/bin/terminal",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/file_manager.trit",
+        "id": "files",
+        "title": "Files",
+        "guest_path": "/bin/file_manager",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/settings.trit",
+        "id": "settings",
+        "title": "Settings",
+        "guest_path": "/bin/settings",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/task_manager.trit",
+        "id": "tasks",
+        "title": "Tasks",
+        "guest_path": "/bin/task_manager",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/task_manager.trit",
+        "id": "top",
+        "title": "top",
+        "guest_path": "/bin/top",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/task_manager.trit",
+        "id": "tasks_cmd",
+        "title": "tasks",
+        "guest_path": "/bin/tasks",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/calculator.trit",
+        "id": "calculator",
+        "title": "Calculator",
+        "guest_path": "/bin/calculator",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/paint.trit",
+        "id": "paint",
+        "title": "Paint",
+        "guest_path": "/bin/paint",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/text_editor.trit",
+        "id": "text_editor",
+        "title": "Text Editor",
+        "guest_path": "/bin/text_editor",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/text_editor.trit",
+        "id": "edit",
+        "title": "edit",
+        "guest_path": "/bin/edit",
+        "text_ppn": 0,
+        "stack_words": 256,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/about.trit",
+        "id": "about",
+        "title": "About",
+        "guest_path": "/bin/about",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/help.trit",
+        "id": "help",
+        "title": "Help",
+        "guest_path": "/bin/help",
+        "text_ppn": 0,
+        "stack_words": 1024,
+        "gui_registry": true
+      },
+      {
+        "source": "apps/ls.trit",
+        "id": "ls",
+        "title": "ls",
+        "guest_path": "/bin/ls",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "cat",
+        "title": "cat",
+        "guest_path": "/bin/cat",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "echo",
+        "title": "echo",
+        "guest_path": "/bin/echo",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "pwd",
+        "title": "pwd",
+        "guest_path": "/bin/pwd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "cp",
+        "title": "cp",
+        "guest_path": "/bin/cp",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "mv",
+        "title": "mv",
+        "guest_path": "/bin/mv",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "rm",
+        "title": "rm",
+        "guest_path": "/bin/rm",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "mkdir",
+        "title": "mkdir",
+        "guest_path": "/bin/mkdir",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "rmdir",
+        "title": "rmdir",
+        "guest_path": "/bin/rmdir",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "touch",
+        "title": "touch",
+        "guest_path": "/bin/touch",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "stat",
+        "title": "stat",
+        "guest_path": "/bin/stat",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "find",
+        "title": "find",
+        "guest_path": "/bin/find",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/bin_core.trit",
+        "id": "grep",
+        "title": "grep",
+        "guest_path": "/bin/grep",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/clear.trit",
+        "id": "clear",
+        "title": "clear",
+        "guest_path": "/bin/clear",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/date.trit",
+        "id": "date",
+        "title": "date",
+        "guest_path": "/bin/date",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/sleep.trit",
+        "id": "sleep",
+        "title": "sleep",
+        "guest_path": "/bin/sleep",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/ps.trit",
+        "id": "ps",
+        "title": "ps",
+        "guest_path": "/bin/ps",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/doctor.trit",
+        "id": "doctor",
+        "title": "doctor",
+        "guest_path": "/bin/doctor",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/test.trit",
+        "id": "test",
+        "title": "test",
+        "guest_path": "/bin/test",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/sysinfo.trit",
+        "id": "sysinfo",
+        "title": "sysinfo",
+        "guest_path": "/bin/sysinfo",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/log.trit",
+        "id": "log",
+        "title": "log",
+        "guest_path": "/bin/log",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/kill.trit",
+        "id": "kill",
+        "title": "kill",
+        "guest_path": "/bin/kill",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/mount.trit",
+        "id": "mount",
+        "title": "mount",
+        "guest_path": "/bin/mount",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/fsck.trit",
+        "id": "fsck",
+        "title": "fsck",
+        "guest_path": "/bin/fsck",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/sync.trit",
+        "id": "sync",
+        "title": "sync",
+        "guest_path": "/bin/sync",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/reboot.trit",
+        "id": "reboot",
+        "title": "reboot",
+        "guest_path": "/bin/reboot",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/shutdown.trit",
+        "id": "shutdown",
+        "title": "shutdown",
+        "guest_path": "/bin/shutdown",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/crash.trit",
+        "id": "crash",
+        "title": "crash",
+        "guest_path": "/bin/crash",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/login.trit",
+        "id": "login",
+        "title": "login",
+        "guest_path": "/bin/login",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/passwd.trit",
+        "id": "passwd",
+        "title": "passwd",
+        "guest_path": "/bin/passwd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "sessiond",
+        "title": "sessiond",
+        "guest_path": "/bin/sessiond",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "window_server",
+        "title": "window_server",
+        "guest_path": "/bin/window_server",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "compositor",
+        "title": "compositor",
+        "guest_path": "/bin/compositor",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "inputd",
+        "title": "inputd",
+        "guest_path": "/bin/inputd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "mountd",
+        "title": "mountd",
+        "guest_path": "/bin/mountd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "logd",
+        "title": "logd",
+        "guest_path": "/bin/logd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "crashd",
+        "title": "crashd",
+        "guest_path": "/bin/crashd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "updated",
+        "title": "updated",
+        "guest_path": "/bin/updated",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "packaged",
+        "title": "packaged",
+        "guest_path": "/bin/packaged",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "devd",
+        "title": "devd",
+        "guest_path": "/bin/devd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "timed",
+        "title": "timed",
+        "guest_path": "/bin/timed",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "authd",
+        "title": "authd",
+        "guest_path": "/bin/authd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      },
+      {
+        "source": "apps/service_stub.trit",
+        "id": "powerd",
+        "title": "powerd",
+        "guest_path": "/bin/powerd",
+        "text_ppn": 0,
+        "stack_words": 128,
+        "gui_registry": false
+      }
+    ],
+    "count": 59,
+    "gui_count": 10
+  },
+  "image_formats": {
+    "tboot": {
+      "magic_hex": "0x31544f4f424f5354",
+      "write_version": 3
+    },
+    "tdisk": {
+      "magic_hex": "0x54524954535032",
+      "write_version": 2,
+      "legacy_magic_hex": "0x54524954535031",
+      "block_words": 27
+    },
+    "section_flags": {
+      "executable": 1,
+      "kernel": 2,
+      "app": 4
+    },
+    "vm_duplicates": {
+      "sparse_disk_magic": "0x54524954535032",
+      "sparse_disk_version": 2,
+      "page_words": 729,
+      "superpage_words": 19683
+    }
+  },
+  "notes": {
+    "authority": "Root manifests, source files, and tests remain authoritative.",
+    "hand_authored": [
+      "SYSCALL_MANIFEST service groups, statuses, notes, and calling-convention prose",
+      "APP_MANIFEST root layout, default user, registry format, supporting sources, and validation commands",
+      "IMAGE_FORMAT_MANIFEST payload fields, runtime policy, migration policy, and tool descriptions",
+      "ternary_vm_state.h legacy SYSCALL_* names (reported as conflicts, not rewritten)"
+    ]
+  }
+}

@@ -111,6 +111,9 @@
 #include <stdexcept>
 #include <optional>
 #include <iomanip>
+#include <limits>
+
+#include "ternary_symbolic_encoding.h"
 
 namespace sandbox {
 namespace vm {
@@ -199,6 +202,44 @@ struct AssemblyResult {
     }
     if (!cur.empty()) tokens.push_back(cur);
     return tokens;
+}
+
+// Find a source-label colon without mistaking the colon in a compact
+// `0z27:`/`0z81:` operand for a label separator.
+[[nodiscard]] inline size_t findLabelColon(const std::string& s) {
+    char quote = '\0';
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (quote != '\0') {
+            if (s[i] == '\\' && i + 1 < s.size()) {
+                ++i;
+            } else if (s[i] == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (s[i] == '"' || s[i] == '\'') {
+            quote = s[i];
+            continue;
+        }
+        if (s[i] != ':') continue;
+        size_t start = i;
+        while (start > 0 && s[start - 1] != ' ' && s[start - 1] != '\t' &&
+               s[start - 1] != ',') {
+            --start;
+        }
+        if (i - start == 4 && start + 4 <= s.size() && s[start] == '0' &&
+            (s[start + 1] == 'z' || s[start + 1] == 'Z') &&
+            s[start + 2] == '2' && s[start + 3] == '7') {
+            continue;
+        }
+        if (i - start == 4 && start + 4 <= s.size() && s[start] == '0' &&
+            (s[start + 1] == 'z' || s[start + 1] == 'Z') &&
+            s[start + 2] == '8' && s[start + 3] == '1') {
+            continue;
+        }
+        return i;
+    }
+    return std::string::npos;
 }
 
 // =============================================================================
@@ -319,14 +360,19 @@ struct ImmOrLabel {
 [[nodiscard]] inline ImmOrLabel parseImmOrLabel(const std::string& tok) {
     if (tok.empty()) return {false, 0, ""};
 
-    // Try integer parse.
-    size_t start = (tok[0] == '-' || tok[0] == '+') ? 1 : 0;
-    bool isNum = !tok.empty() && (start < tok.size());
-    for (size_t i = start; i < tok.size(); ++i) {
-        if (!std::isdigit(tok[i])) { isNum = false; break; }
+    // Keep decimal and hexadecimal syntax explicit, and add the canonical
+    // balanced-trit/compact-dump forms from ternary_symbolic_encoding.h.
+    // A malformed token which starts like a number remains an invalid
+    // immediate instead of silently becoming a label.
+    if (const auto value = symbolic::parseNumericLiteral(tok)) {
+        if (*value >= std::numeric_limits<int>::min() &&
+            *value <= std::numeric_limits<int>::max()) {
+            return {false, static_cast<int>(*value), ""};
+        }
+        return {false, 0, ""};
     }
-    if (isNum && tok.size() > start) {
-        return {false, std::stoi(tok), ""};
+    if (symbolic::looksLikeNumericLiteral(tok)) {
+        return {false, 0, ""};
     }
 
     // Otherwise treat as label name.
@@ -624,7 +670,7 @@ struct SourceLine {
 
         // Extract label if present (token ending with ':').
         // Label may be followed by an instruction on the same line.
-        size_t colon = s.find(':');
+        size_t colon = findLabelColon(s);
         if (colon != std::string::npos) {
             std::string label_part = trim(s.substr(0, colon));
             bool valid = !label_part.empty() &&

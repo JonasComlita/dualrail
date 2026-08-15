@@ -779,6 +779,18 @@ struct FunctionContext {
     std::set<std::string> moved_vars;
     std::vector<int> callee_saved_regs;
     int return_slot_offset = -1;
+    // ABI v3 aggregate returns use a hidden first-word sret parameter. The
+    // value is kept as an SSA pointer so optimizer/allocation passes can
+    // prove it remains live across calls and stores.
+    bool aggregate_return_sret = false;
+    ValueId sret_param_value = -1;
+    int sret_param_reg = -1;
+    // Caller-side aggregate call results use one frame-owned scratch slot per
+    // call nesting depth. Slots are fixed-size (the largest aggregate return
+    // in the module) so nested calls cannot overwrite an in-flight result.
+    int aggregate_return_scratch_base = -1;
+    int aggregate_return_scratch_words = 0;
+    std::vector<LocalInfo> aggregate_return_scratch_slots;
     int call_arg_slot_base = -1;
     int call_arg_depth = 0;
     int max_call_arg_depth = 0;
@@ -973,6 +985,19 @@ public:
     CompilerImpl(ModuleAst ast, CompilerOptions options)
         : ast_(std::move(ast)), options_(options) {
         layout_table_ = buildLayoutTable(ast_, diagnostics_);
+
+        if (!FunctionAbiContract::supportsVersion(
+                options_.target_abi_version)) {
+            diagnostics_.push_back({
+                DiagnosticSeverity::Error,
+                "unsupported function ABI version " +
+                    std::to_string(options_.target_abi_version) +
+                    "; compiler supports " +
+                    std::string(FunctionAbiContract::id()) + " and " +
+                    FunctionAbiContract::idForVersion(
+                        FunctionAbiContract::version_v3),
+                SourceSpan{ast_.name, 1, 1, 1}});
+        }
         
         // Build module-level constants
         for (const auto& const_decl : ast_.consts) {
@@ -1185,7 +1210,7 @@ public:
                 ir_allocation.spill_stores;
             std::string ir_assembly;
             const std::string declared_lowering_boundary =
-                targetLoweringBoundary(function);
+                targetLoweringBoundary(function, options_.target_abi_version);
             if (declared_lowering_boundary.empty() &&
                 ir_allocation.success &&
                 emitScalarSsaFunction(
@@ -1286,6 +1311,22 @@ public:
             "ordered-effects-with-call-carrier-proof";
         result.object.metadata["target.vector_lowering"] =
             "fail-closed-no-authoritative-call-abi";
+        result.object.metadata["target.compiler_image_envelope"] =
+            "trit.executable.image.v2";
+        result.object.metadata["target.function_abi_contract"] =
+            FunctionAbiContract::idForVersion(options_.target_abi_version);
+        result.object.metadata["target.function_abi_version"] =
+            std::to_string(options_.target_abi_version);
+        result.object.metadata["target.scalar_return_abi"] =
+            FunctionAbiContract::scalarReturn();
+        result.object.metadata["target.aggregate_parameter_abi"] =
+            FunctionAbiContract::aggregateParameter();
+        result.object.metadata["target.aggregate_return_abi"] =
+            FunctionAbiContract::aggregateReturnForVersion(
+                options_.target_abi_version);
+        result.object.metadata["target.vector_boundary_abi"] =
+            FunctionAbiContract::vectorBoundaryForVersion(
+                options_.target_abi_version);
         result.object.metadata["target.scalar_wrapper_lowering"] =
             "owned-borrow-shared-scalar-word";
         result.object.metadata["target.interference_edges"] =
@@ -1340,22 +1381,31 @@ public:
 
 private:
     [[nodiscard]] static std::string targetLoweringBoundary(
-        const Function& function) {
-        if (isAggregateType(function.return_type)) {
+        const Function& function,
+        int function_abi_version) {
+        if (isAggregateType(function.return_type) &&
+            !FunctionAbiContract::aggregateReturnsSupported(
+                function_abi_version)) {
             return "aggregate-valued function return has no ABI v2 "
-                   "representation; pass a caller-owned aggregate as an "
-                   "output parameter";
+                   "representation in " +
+                   std::string(FunctionAbiContract::idForVersion(
+                       function_abi_version)) +
+                   "; pass a caller-owned aggregate as an output parameter";
         }
         if (function.return_type.kind == TypeKind::Vector) {
             return "vector-valued function lowering requires an "
-                   "authoritative vector call/return ABI and aggregate "
-                   "spill layout";
+                   "authoritative vector call/return ABI under " +
+                   std::string(FunctionAbiContract::idForVersion(
+                       function_abi_version)) +
+                   " and an aggregate spill layout";
         }
         for (const auto& parameter : function.params) {
             if (parameter.second.kind == TypeKind::Vector) {
                 return "vector-valued function lowering requires an "
-                       "authoritative vector call/return ABI and aggregate "
-                       "spill layout";
+                       "authoritative vector call/return ABI under " +
+                       std::string(FunctionAbiContract::idForVersion(
+                           function_abi_version)) +
+                       " and an aggregate spill layout";
             }
             if (isTargetAbiBoundaryType(parameter.second)) {
                 return "type '" + parameter.second.str() +
@@ -1366,8 +1416,10 @@ private:
             for (const Instr& instr : block.instructions) {
                 if (instr.type.kind == TypeKind::Vector) {
                     return "vector-valued function lowering requires an "
-                           "authoritative vector call/return ABI and "
-                           "aggregate spill layout";
+                           "authoritative vector call/return ABI under " +
+                           std::string(FunctionAbiContract::idForVersion(
+                               function_abi_version)) +
+                           " and an aggregate spill layout";
                 }
                 if (isTargetAbiBoundaryType(instr.type)) {
                     return "type '" + instr.type.str() +
@@ -1835,7 +1887,8 @@ private:
             for (const Instr& instr : block.instructions) {
                 if (instr.opcode != InstrOpcode::Call)
                     continue;
-                if (instr.symbol.empty() || instr.def < 0)
+                if (instr.symbol.empty() ||
+                    (instr.def < 0 && !isAggregateType(instr.type)))
                     return false;
                 int argument_word = 0;
                 for (ValueId argument : instr.args) {
@@ -2235,7 +2288,7 @@ private:
                                "load", instr.type)
                         << " " << regName(destination)
                         << ", " << regName(address)
-                        << ", 0\n";
+                        << ", " << instr.aux << "\n";
                     break;
                 }
                 case InstrOpcode::Store: {
@@ -2546,6 +2599,12 @@ private:
                         out << "    mov.t40 r24, " << stack_word_count << "\n";
                         out << "    add.t40 sp, sp, r24\n";
                     }
+                    if (isAggregateType(instr.type)) {
+                        // ABI v3 aggregate calls return through the hidden
+                        // first-word sret pointer. The callee writes the
+                        // caller-owned area and leaves no scalar in r13.
+                        break;
+                    }
                     if (destination != 13) {
                         out << "    copy"
                             << (usesWideT50Pair(instr.type)
@@ -2732,6 +2791,14 @@ private:
         dry_ctx.ir.cfg_complete = true;
         dry_ctx.ir.params = fn.params;
         dry_ctx.ir.return_type = fn.return_type;
+        dry_ctx.aggregate_return_sret =
+            FunctionAbiContract::aggregateReturnsSupported(
+                options_.target_abi_version) && isAggregateType(fn.return_type);
+        if (dry_ctx.aggregate_return_sret) {
+            dry_ctx.ir.params.insert(
+                dry_ctx.ir.params.begin(),
+                {"$sret", TypeRef::pointer(fn.return_type)});
+        }
         dry_ctx.ir.blocks.push_back(BasicBlock{fn.name + "_entry", {}, {}});
         dry_ctx.block = &dry_ctx.ir.blocks.back();
         dry_ctx.function_returns = function_returns_;
@@ -2745,6 +2812,48 @@ private:
 
         collectLocals(fn, dry_ctx);
         materializeLocalAllocas(dry_ctx);
+        // Reserve one caller-owned result area per nested call depth. The
+        // compiler profile is module-local, so choose the largest aggregate
+        // return layout once and reuse it for every call site.
+        if (FunctionAbiContract::aggregateReturnsSupported(
+                options_.target_abi_version)) {
+            for (const auto& entry : function_returns_) {
+                if (!isAggregateType(entry.second)) continue;
+                dry_ctx.aggregate_return_scratch_words = std::max(
+                    dry_ctx.aggregate_return_scratch_words,
+                    std::max(1, typeSizeWords(entry.second, layout_table_)));
+            }
+            if (dry_ctx.aggregate_return_scratch_words > 0) {
+                dry_ctx.aggregate_return_scratch_base =
+                    dry_ctx.next_local_offset;
+                for (int depth = 0; depth < kCallArgScratchAreas; ++depth) {
+                    LocalInfo slot;
+                    slot.type = TypeRef::numeric(ir::Type::T40);
+                    slot.offset = dry_ctx.aggregate_return_scratch_base +
+                        depth * dry_ctx.aggregate_return_scratch_words;
+                    slot.size_words = dry_ctx.aggregate_return_scratch_words;
+                    slot.mutable_binding = true;
+                    slot.address_taken = true;
+                    slot.by_pointer = false;
+                    Instr alloca;
+                    alloca.def = dry_ctx.next_value++;
+                    alloca.opcode = InstrOpcode::Alloca;
+                    alloca.type = slot.type;
+                    alloca.imm = slot.offset;
+                    alloca.aux = slot.size_words;
+                    alloca.symbol = "$aggregate_return_scratch_" +
+                        std::to_string(depth);
+                    alloca.effect = Effect::Pure;
+                    alloca.span = fn.span;
+                    slot.ir_address = alloca.def;
+                    dry_ctx.aggregate_return_scratch_slots.push_back(slot);
+                    dry_ctx.block->instructions.push_back(std::move(alloca));
+                }
+                dry_ctx.next_local_offset +=
+                    dry_ctx.aggregate_return_scratch_words *
+                    kCallArgScratchAreas;
+            }
+        }
         dry_ctx.return_slot_offset = dry_ctx.next_local_offset;
         dry_ctx.call_arg_slot_base =
             dry_ctx.return_slot_offset +
@@ -2862,6 +2971,25 @@ private:
         }
         if (!ctx.ast || !ctx.block) return;
         int argument_word = 0;
+        if (ctx.aggregate_return_sret) {
+            Instr param;
+            param.def = ctx.next_value++;
+            param.opcode = InstrOpcode::Param;
+            param.type = TypeRef::pointer(ctx.ast->return_type);
+            param.aux = 0;
+            param.symbol = "$sret";
+            param.effect = Effect::Pure;
+            param.span = ctx.ast->span;
+            ctx.sret_param_value = param.def;
+            // Keep a dry-run register associated with the hidden parameter so
+            // frontend address emission can use the same SSA carrier. The
+            // target emitter remaps it through the allocator like any other
+            // Param value.
+            ctx.sret_param_reg = ctx.acquire();
+            ctx.reg_to_value[ctx.sret_param_reg] = param.def;
+            ctx.block->instructions.push_back(std::move(param));
+            argument_word = 1;
+        }
         for (const auto& parameter : ctx.ast->params) {
             const auto local = ctx.locals.find(parameter.first);
             if (local == ctx.locals.end()) continue;
@@ -2928,7 +3056,7 @@ private:
             ctx.raw("    store r" + std::to_string(ctx.callee_saved_regs[i]) + ", sp, " +
                     std::to_string(ctx.next_local_offset + static_cast<int>(i)));
         }
-        int argument_register_word = 0;
+        int argument_register_word = ctx.aggregate_return_sret ? 1 : 0;
         int stack_argument_word = 0;
         for (const auto& parameter : fn.params) {
             const auto it = ctx.locals.find(parameter.first);
@@ -2977,6 +3105,22 @@ private:
             ctx.block->terminator.kind == TerminatorKind::Return;
         if (!has_ret) {
             emitDropsForReturn(ctx);
+            if (isAggregateType(ctx.ast->return_type) &&
+                ctx.aggregate_return_sret) {
+                emitAggregateZeroToAddress(
+                    ctx.ast->return_type, ctx.sret_param_reg, ctx);
+                ctx.raw("    jmp " + ctx.ast->name + "_return");
+                Instr ret;
+                ret.def = -1;
+                ret.opcode = InstrOpcode::Ret;
+                ret.type = ctx.ast->return_type;
+                ret.effect = Effect::Control;
+                ret.span = ctx.ast->span;
+                ctx.block->instructions.push_back(std::move(ret));
+                ctx.block->terminator.kind = TerminatorKind::Return;
+                emitEpilogue(ctx);
+                return;
+            }
             ctx.raw("    mov." + std::string(ir::suffix(ctx.ast->return_type.scalar)) + " r13, 0");
             ctx.raw("    jmp " + ctx.ast->name + "_return");
             Instr zero;
@@ -3224,6 +3368,48 @@ private:
     }
 
     void emitReturn(const Stmt& stmt, FunctionContext& ctx) {
+        if (isAggregateType(ctx.ast->return_type) &&
+            ctx.aggregate_return_sret) {
+            if (ctx.sret_param_reg < 0 || ctx.sret_param_value < 0) {
+                diag("ABI v3 aggregate return is missing its hidden sret "
+                     "parameter", stmt.span);
+                return;
+            }
+            if (stmt.expr && stmt.expr->kind == ExprKind::StructLiteral) {
+                emitAggregateInitToAddress(
+                    stmt.expr, ctx.ast->return_type, ctx.sret_param_reg, ctx);
+            } else if (stmt.expr && stmt.expr->kind == ExprKind::ArrayLiteral) {
+                emitAggregateInitToAddress(
+                    stmt.expr, ctx.ast->return_type, ctx.sret_param_reg, ctx);
+            } else if (stmt.expr) {
+                ExprCode source = emitExpr(
+                    stmt.expr, ctx.ast->return_type, ctx);
+                if (!source.address || !isAggregateType(source.type)) {
+                    diag("ABI v3 aggregate return requires an aggregate "
+                         "addressable value", stmt.span);
+                    ctx.release(source.reg);
+                } else {
+                    emitAggregateCopy(
+                        source.reg, ctx.sret_param_reg,
+                        ctx.ast->return_type, ctx);
+                    ctx.release(source.reg);
+                }
+            } else {
+                emitAggregateZeroToAddress(
+                    ctx.ast->return_type, ctx.sret_param_reg, ctx);
+            }
+            emitDropsForReturn(ctx);
+            ctx.line("jmp " + ctx.ast->name + "_return");
+            Instr ret;
+            ret.def = -1;
+            ret.opcode = InstrOpcode::Ret;
+            ret.type = ctx.ast->return_type;
+            ret.effect = Effect::Control;
+            ret.span = stmt.span;
+            if (ctx.block) ctx.block->instructions.push_back(std::move(ret));
+            if (ctx.block) ctx.block->terminator.kind = TerminatorKind::Return;
+            return;
+        }
         ValueId return_value = -1;
         if (stmt.expr) {
             ExprCode code = emitExpr(stmt.expr, ctx.ast->return_type, ctx);
@@ -3974,7 +4160,8 @@ private:
                     : off_id};
         }
         if (ctx.dry_run &&
-            !isAggregateType(local.type)) {
+            !isAggregateType(local.type) &&
+            !local.address_taken) {
             // Scalar local loads/stores use the virtual frame index directly
             // so mem2reg can reason about the allocation. The target-only
             // address calculation above remains for value-ID parity with
@@ -3985,6 +4172,33 @@ private:
         }
         ctx.release(off);
         return reg;
+    }
+
+    [[nodiscard]] ExprCode emitAggregateReturnScratchAddress(
+        const TypeRef& type,
+        int depth,
+        FunctionContext& ctx) {
+        if (ctx.aggregate_return_scratch_slots.empty()) {
+            diag("ABI v3 aggregate return has no caller-owned scratch area",
+                 ctx.ast ? ctx.ast->span : SourceSpan{});
+            return emitImmediate(0, TypeRef::numeric(ir::Type::T40),
+                                 ctx.ast ? ctx.ast->span : SourceSpan{}, ctx);
+        }
+        if (depth < 0 || depth >=
+                static_cast<int>(ctx.aggregate_return_scratch_slots.size())) {
+            diag("nested ABI v3 aggregate returns exceed the caller-owned "
+                 "scratch depth", ctx.ast ? ctx.ast->span : SourceSpan{});
+            depth = std::min(
+                std::max(depth, 0),
+                static_cast<int>(ctx.aggregate_return_scratch_slots.size()) - 1);
+        }
+        const LocalInfo& slot = ctx.aggregate_return_scratch_slots[
+            static_cast<std::size_t>(depth)];
+        const int reg = emitLocalBase(slot, ctx);
+        ValueId address = -1;
+        const auto found = ctx.reg_to_value.find(reg);
+        if (found != ctx.reg_to_value.end()) address = found->second;
+        return ExprCode{reg, type, true, address};
     }
 
     void addImmediateToReg(int reg, int offset, FunctionContext& ctx) {
@@ -4194,6 +4408,7 @@ private:
                      ", " + std::to_string(i));
             ValueId load_id = ctx.value(InstrOpcode::Load, TypeRef::numeric(ir::Type::T40), SourceSpan{}, tmp);
             if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().aux = i;
                 ctx.block->instructions.back().args = {src_val};
             }
             ctx.line("store r" + std::to_string(tmp) + ", r" + std::to_string(dstReg) +
@@ -4205,6 +4420,34 @@ private:
             }
         }
         ctx.release(tmp);
+    }
+
+    void emitAggregateZeroToAddress(
+        const TypeRef& type,
+        int baseReg,
+        FunctionContext& ctx) {
+        const int words = std::max(1, typeSizeWords(type, layout_table_));
+        int zero = ctx.acquire();
+        ctx.line("mov.t40 r" + std::to_string(zero) + ", 0");
+        ValueId zero_value = ctx.value(
+            InstrOpcode::Const, TypeRef::numeric(ir::Type::T40),
+            ctx.ast ? ctx.ast->span : SourceSpan{}, zero);
+        if (ctx.block && !ctx.block->instructions.empty())
+            ctx.block->instructions.back().imm = 0;
+        ValueId base_value = -1;
+        const auto found = ctx.reg_to_value.find(baseReg);
+        if (found != ctx.reg_to_value.end()) base_value = found->second;
+        for (int index = 0; index < words; ++index) {
+            ctx.line("store r" + std::to_string(zero) + ", r" +
+                     std::to_string(baseReg) + ", " + std::to_string(index));
+            ctx.value(InstrOpcode::Store, TypeRef::numeric(ir::Type::T40),
+                      ctx.ast ? ctx.ast->span : SourceSpan{});
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().aux = index;
+                ctx.block->instructions.back().args = {base_value, zero_value};
+            }
+        }
+        ctx.release(zero);
     }
 
     const ExprPtr* findStructLiteralField(const Expr& expr, const std::string& field) const {
@@ -4393,6 +4636,19 @@ private:
             diag("unknown function '" + expr.text + "'", expr.span);
             return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
         }
+        const TypeRef ret = retIt->second;
+        const bool aggregate_return = isAggregateType(ret);
+        if (aggregate_return &&
+            !FunctionAbiContract::aggregateReturnsSupported(
+                ctx.options ? ctx.options->target_abi_version
+                            : FunctionAbiContract::version)) {
+            diag("aggregate-valued call requires " +
+                 std::string(FunctionAbiContract::idForVersion(
+                     FunctionAbiContract::version_v3)) +
+                 " caller-owned sret lowering", expr.span);
+            return emitImmediate(0, TypeRef::numeric(ir::Type::T40),
+                                 expr.span, ctx);
+        }
         const auto paramIt = ctx.function_params.find(expr.text);
         std::vector<ValueId> arg_values;
         const std::size_t argc = expr.args.size();
@@ -4419,15 +4675,9 @@ private:
         int scratch_word_count = 0;
         int register_word_count = 0;
         int stack_word_count = 0;
-        for (std::size_t i = 0; i < argc; ++i) {
-            TypeRef argument_type = TypeRef::numeric(ir::Type::T40);
-            if (paramIt != ctx.function_params.end() && i < paramIt->second.size()) {
-                argument_type = paramIt->second[i];
-            }
-            ExprCode arg = emitExpr(expr.args[i], argument_type, ctx);
-            if (isAggregateType(argument_type) && !arg.address) {
-                diag("aggregate arguments are passed by pointer in the v2 ABI", expr.args[i]->span);
-            }
+        auto appendArgument = [&](const ExprCode& arg,
+                                   const TypeRef& argument_type,
+                                   bool release_after_store) {
             const int width = isAggregateType(argument_type)
                 ? 1
                 : std::max(1, typeSizeWords(argument_type, layout_table_));
@@ -4448,7 +4698,28 @@ private:
             scratch_word_count += width;
             argument_slots.push_back(slot);
             arg_values.push_back(arg.value);
-            ctx.release(arg.reg);
+            if (release_after_store) ctx.release(arg.reg);
+        };
+        ExprCode sret_result;
+        if (aggregate_return) {
+            sret_result = emitAggregateReturnScratchAddress(
+                ret, saved_call_arg_depth, ctx);
+            appendArgument(
+                sret_result,
+                TypeRef::pointer(ret),
+                /*release_after_store=*/false);
+        }
+        for (std::size_t i = 0; i < argc; ++i) {
+            TypeRef argument_type = TypeRef::numeric(ir::Type::T40);
+            if (paramIt != ctx.function_params.end() && i < paramIt->second.size()) {
+                argument_type = paramIt->second[i];
+            }
+            ExprCode arg = emitExpr(expr.args[i], argument_type, ctx);
+            if (isAggregateType(argument_type) && !arg.address) {
+                diag("aggregate arguments are passed by pointer in the "
+                     "caller-owned aggregate ABI", expr.args[i]->span);
+            }
+            appendArgument(arg, argument_type, /*release_after_store=*/true);
         }
         if (scratch_word_count > kCallArgScratchWords) {
             diag("function-call arguments require " +
@@ -4484,15 +4755,24 @@ private:
             ctx.line("mov.t40 r24, " + std::to_string(stack_word_count));
             ctx.line("add.t40 sp, sp, r24");
         }
-        TypeRef ret = retIt->second;
-        int out = ctx.acquire();
-        ctx.line(std::string("copy") + (usesWideT50Pair(ret) ? ".t50" : "") +
-                 " r" + std::to_string(out) + ", r13");
+        int out = aggregate_return ? -1 : ctx.acquire();
+        if (!aggregate_return) {
+            ctx.line(std::string("copy") +
+                     (usesWideT50Pair(ret) ? ".t50" : "") +
+                     " r" + std::to_string(out) + ", r13");
+        }
         ValueId id = ctx.value(InstrOpcode::Call, ret, expr.span, out);
         if (ctx.block && !ctx.block->instructions.empty()) {
+            if (aggregate_return) ctx.block->instructions.back().def = -1;
             ctx.block->instructions.back().symbol = expr.text;
             ctx.block->instructions.back().args = arg_values;
             ctx.block->instructions.back().effect = Effect::Control;
+        }
+        if (aggregate_return) {
+            // The call's observable result is the caller-owned storage. Keep
+            // its address as the expression value; the Call instruction is a
+            // side-effecting node with no scalar SSA definition.
+            return sret_result;
         }
         return ExprCode{out, ret, false, id};
     }

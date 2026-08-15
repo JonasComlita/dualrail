@@ -1,0 +1,89 @@
+// apps/log.trit - Bounded guest log viewer.
+//
+// Reads the durable system log through the normal VFS path.  It intentionally
+// caps output at LOG_MAX_WORDS so a corrupt or unexpectedly large log cannot
+// monopolize the console or guest memory.
+
+const LOG_PATH: t40 = 10000;
+const LOG_BUF: t40 = 10100;
+const LOG_MAX_WORDS: t40 = 96;
+const LOG_READ_WORDS: t40 = 97;
+
+fn log_store(addr: t40, value: t40) -> t40 {
+    unsafe { store(addr, value); }
+    return value;
+}
+
+fn log_load(addr: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr); }
+    return value;
+}
+
+fn log_seed_path() -> t40 {
+    // /var/log/system.log
+    log_store(LOG_PATH + 0, 47);  log_store(LOG_PATH + 1, 118);
+    log_store(LOG_PATH + 2, 97);  log_store(LOG_PATH + 3, 114);
+    log_store(LOG_PATH + 4, 47);  log_store(LOG_PATH + 5, 108);
+    log_store(LOG_PATH + 6, 111); log_store(LOG_PATH + 7, 103);
+    log_store(LOG_PATH + 8, 47);  log_store(LOG_PATH + 9, 115);
+    log_store(LOG_PATH + 10, 121); log_store(LOG_PATH + 11, 115);
+    log_store(LOG_PATH + 12, 116); log_store(LOG_PATH + 13, 101);
+    log_store(LOG_PATH + 14, 109); log_store(LOG_PATH + 15, 46);
+    log_store(LOG_PATH + 16, 108); log_store(LOG_PATH + 17, 111);
+    log_store(LOG_PATH + 18, 103); log_store(LOG_PATH + 19, 0);
+    return LOG_PATH;
+}
+
+fn log_emit_bounded(addr: t40, count: t40) -> t40 {
+    var i: t40 = 0;
+    var limit: t40 = count;
+    if limit - LOG_MAX_WORDS > 0 { limit = LOG_MAX_WORDS; }
+    while limit - i > 0 {
+        os_putc(log_load(addr + i));
+        i = i + 1;
+    }
+    if count - LOG_MAX_WORDS > 0 {
+        os_putc(10);
+        os_putc(46); os_putc(46); os_putc(46);
+    }
+    os_newline();
+    return limit;
+}
+
+fn main() -> t40 {
+    var in_kernel: t40 = 0;
+    unsafe { in_kernel = csr_read(scratch); }
+    os_putc(76); os_putc(79); os_putc(71); os_newline();
+    if in_kernel == 0 {
+        os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+        os_putc(80); os_putc(65); os_putc(83); os_putc(83); os_newline();
+        return 1;
+    }
+
+    var fd: t40 = os_open(log_seed_path(), 0);
+    if fd < 0 {
+        os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+        os_putc(85); os_putc(78); os_putc(65); os_putc(86); os_putc(65); os_putc(73); os_putc(76); os_putc(65); os_putc(66); os_putc(76); os_putc(69); os_newline();
+        return 0;
+    }
+    var count: t40 = os_read(fd, LOG_BUF, LOG_READ_WORDS);
+    var closed: t40 = os_close(fd);
+    if count < 0 {
+        count = 0;
+    }
+    os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+    if count > 0 {
+        log_emit_bounded(LOG_BUF, count);
+        if closed > 0 {
+            os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+            os_putc(79); os_putc(75); os_newline();
+            return 1;
+        }
+    } else {
+        os_putc(69); os_putc(77); os_putc(80); os_putc(84); os_newline();
+    }
+    os_putc(76); os_putc(79); os_putc(71); os_putc(32);
+    os_putc(70); os_putc(65); os_putc(73); os_putc(76); os_newline();
+    return 0;
+}

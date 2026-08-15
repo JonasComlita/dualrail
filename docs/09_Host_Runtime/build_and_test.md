@@ -48,6 +48,34 @@ Test suites are defined in `TEST_MANIFEST.json`.
 
 ---
 
+### Linux and macOS shell wrappers
+
+Each PowerShell host-tool entry point also has a Bash wrapper for Linux,
+macOS, and Git Bash. The wrappers resolve the repository from their own path,
+select `python3` (falling back to `python`), and forward arguments unchanged
+to `tools/trit_tool.py`. Set `TRIT_PYTHON` when Python is not on `PATH`:
+
+```bash
+TRIT_PYTHON=/opt/python/bin/python3 tools/trit-doctor.sh
+```
+
+The wrappers preserve `TRIT_BUILD_DIR`; commands that accept `--build-dir`
+use that environment variable whenever the option is omitted. For example:
+
+```bash
+export TRIT_BUILD_DIR="$PWD/build-linux"
+tools/trit-doctor.sh
+tools/trit-test.sh smoke
+tools/trit-run.sh --smoke-test --frames 10 --export-diagnostics build/diag
+```
+
+The available wrappers are `trit-bench.sh`, `trit-build-image.sh`,
+`trit-compact-disk.sh`, `trit-doctor.sh`, `trit-export-diagnostics.sh`,
+`trit-fuzz.sh`, `trit-inspect-image.sh`, `trit-knowledge.sh`,
+`trit-replay.sh`, `trit-run.sh`, and `trit-test.sh`. They accept the same
+arguments as their `.ps1` counterparts; use `bash tools/<name>.sh --help` when
+the filesystem does not preserve executable bits.
+
 ## Agent Workflow
 
 ```powershell
@@ -174,6 +202,22 @@ Exports (from `DEBUGGING.md`):
 - `diagnostics.json` — summary
 
 ---
+
+The input journal keeps its v1 event schema for existing readers and adds a
+deterministic `provenance` object (`source`, `channel`, and `external`) for
+each host event. Every diagnostics export also writes a self-contained
+`checkpoint/` directory containing `boot.tboot`, `vm_state.bin`, `disk.tdisk`,
+`checkpoint.bin`, binary/JSONL journals, and the syscall trace. Root manifest
+and checkpoint metadata use paths relative to the diagnostics directory, and
+the nested directory can be restored into a fresh runtime before replay.
+
+Replay accepts versioned schema identifiers in the form
+`trit.<family>.v<major>[.<minor>]`. Current v1 syscall traces and input
+journals (and checkpoint metadata v1/v2) are dispatched to their named
+adapters. Compatible future minors are accepted after the existing required
+fields and value shapes validate; unknown fields are ignored for comparison
+and reported by `replay --json` under `schema_capabilities`. Unsupported
+majors fail closed with an explicit error instead of being interpreted as v1.
 
 ## Benchmarks
 

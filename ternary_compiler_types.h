@@ -85,6 +85,65 @@ struct CompilerOptions {
     bool dump_pass_pipeline = false;
 };
 
+// The compiler-facing function ABI is deliberately narrower than the full
+// ISA. Keep this contract in the type layer so parser, IR, and target
+// lowering diagnostics all name the same versioned boundary rather than
+// growing emitter-local conventions. ABI v2 supports scalar/T50 values and
+// one-word caller-owned pointers for aggregate parameters. ABI v3 is an
+// opt-in compiler function profile: aggregate returns use a hidden
+// caller-owned sret pointer in the first ABI word. The executable envelope
+// remains the v2 image format until its header/kernel contract grows a
+// corresponding version.
+struct FunctionAbiContract {
+    static constexpr int version_v2 = architecture::v2::FUNCTION_ABI_VERSION;
+    static constexpr int version_v3 = version_v2 + 1;
+    // Keep the default at v2 for source and binary compatibility. Callers
+    // explicitly select v3 through CompilerOptions/LinkOptions.
+    static constexpr int version = version_v2;
+
+    [[nodiscard]] static constexpr const char* id() {
+        return "trit.compiler.function-abi.v2";
+    }
+    [[nodiscard]] static constexpr const char* idForVersion(int candidate) {
+        return candidate == version_v3
+            ? "trit.compiler.function-abi.v3"
+            : "trit.compiler.function-abi.v2";
+    }
+    [[nodiscard]] static constexpr const char* scalarReturn() {
+        return "r13.scalar-or-t50-pair";
+    }
+    [[nodiscard]] static constexpr const char* aggregateParameter() {
+        return "caller-owned-pointer.word";
+    }
+    [[nodiscard]] static constexpr const char* aggregateReturn() {
+        return "unsupported";
+    }
+    [[nodiscard]] static constexpr const char* aggregateReturnForVersion(
+        int candidate) {
+        return candidate == version_v3
+            ? "caller-owned-sret-pointer.first-word"
+            : "unsupported";
+    }
+    [[nodiscard]] static constexpr const char* vectorBoundary() {
+        return "unsupported";
+    }
+    [[nodiscard]] static constexpr const char* vectorBoundaryForVersion(
+        int candidate) {
+        // v3 reserves a named boundary profile, but vector execution is still
+        // fail-closed until VM/vector-state ownership and spill encoding are
+        // implemented outside this compiler layer.
+        return candidate == version_v3
+            ? "unsupported-vm-vector-register-boundary"
+            : "unsupported";
+    }
+    [[nodiscard]] static constexpr bool aggregateReturnsSupported(int candidate) {
+        return candidate == version_v3;
+    }
+    [[nodiscard]] static constexpr bool supportsVersion(int candidate) {
+        return candidate == version_v2 || candidate == version_v3;
+    }
+};
+
 // =============================================================================
 // Type model
 // =============================================================================

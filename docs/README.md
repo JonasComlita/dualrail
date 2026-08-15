@@ -88,6 +88,7 @@ completion gates, use
 
 ### System Benchmarks
 - **[10_Benchmarks/system_benchmark_plan.md](10_Benchmarks/system_benchmark_plan.md)** - Doom-class and BitNet-class benchmark plan
+- **[10_Benchmarks/performance_baselines.md](10_Benchmarks/performance_baselines.md)** - controlled-host boot, app, frame, disk, and scheduler baselines
 - **[10_Benchmarks/doom.md](10_Benchmarks/doom.md)** - Interactive OS benchmark target
 - **[10_Benchmarks/bitnet.md](10_Benchmarks/bitnet.md)** - Inference and data-movement benchmark target
 
@@ -144,3 +145,13 @@ completion gates, use
 | System benchmarks | Planned |
 
 See `ROADMAP_STATUS.json` for evidence and open items. See `KNOWN_GAPS.md` for actionable work.
+
+## Knowledge freshness
+
+`python ../tools/trit_tool.py knowledge status` checks the vault and reports
+advisory freshness warnings for the generated canvas and the newest archived
+Graphify summary. Source fingerprints include root contract manifests and
+tracked code inputs while excluding build products, Graphify output, and model
+caches. Regenerate a stale canvas with `knowledge canvas`; regenerate a stale
+or legacy/unverified Graphify snapshot with `knowledge graph` when Graphify is
+available. These warnings do not override source files, manifests, or tests.

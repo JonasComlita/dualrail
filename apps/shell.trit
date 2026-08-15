@@ -291,7 +291,7 @@ fn sh_builtin_ps() -> t40 {
 // ── built-in: help ─────────────────────────────────────────────────
 
 fn sh_builtin_help() -> t40 {
-    // "calc paint tasks files settings ls ps exit help"
+    // "calc paint tasks files settings doctor test sysinfo log ls ps exit help"
     sh_putc(99);  sh_putc(97);  sh_putc(108); sh_putc(99);  sh_newline(); // calc
     sh_putc(112); sh_putc(97);  sh_putc(105); sh_putc(110); sh_putc(116); sh_newline(); // paint
     sh_putc(116); sh_putc(97);  sh_putc(115); sh_putc(107); sh_putc(115); sh_newline(); // tasks
@@ -302,6 +302,10 @@ fn sh_builtin_help() -> t40 {
     sh_putc(99);  sh_putc(108); sh_putc(101); sh_putc(97);  sh_putc(114); sh_newline(); // clear
     sh_putc(102); sh_putc(115); sh_putc(99);  sh_putc(107); sh_newline(); // fsck
     sh_putc(115); sh_putc(121); sh_putc(110); sh_putc(99);  sh_newline(); // sync
+    sh_putc(100); sh_putc(111); sh_putc(99); sh_putc(116); sh_putc(111); sh_putc(114); sh_newline(); // doctor
+    sh_putc(116); sh_putc(101); sh_putc(115); sh_putc(116); sh_newline(); // test
+    sh_putc(115); sh_putc(121); sh_putc(115); sh_putc(105); sh_putc(110); sh_putc(102); sh_putc(111); sh_newline(); // sysinfo
+    sh_putc(108); sh_putc(111); sh_putc(103); sh_newline(); // log
     sh_putc(108); sh_putc(115); sh_newline(); // ls
     sh_putc(112); sh_putc(115); sh_newline(); // ps
     sh_putc(101); sh_putc(120); sh_putc(105); sh_putc(116); sh_newline(); // exit

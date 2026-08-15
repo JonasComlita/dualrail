@@ -76,6 +76,9 @@ namespace compiler {
     const LinkOptions& options = LinkOptions{}) {
 
     LinkResult result;
+    result.function_abi_version = options.function_abi_version;
+    result.function_abi_contract =
+        FunctionAbiContract::idForVersion(options.function_abi_version);
     std::set<std::string> symbols;
     const int architectural_stack_words =
         ((std::max(
@@ -136,7 +139,45 @@ namespace compiler {
 
     auto functionOrder = selectedFunctionOrder();
     std::uint64_t required_features = options.required_features;
+    if (!FunctionAbiContract::supportsVersion(options.function_abi_version)) {
+        result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "unsupported function ABI version " +
+                std::to_string(options.function_abi_version) +
+                "; linker supports " +
+                std::string(FunctionAbiContract::id()) + " and " +
+                FunctionAbiContract::idForVersion(
+                    FunctionAbiContract::version_v3),
+            SourceSpan{"linker", 1, 1, 1}});
+    }
+    const std::string expected_abi_contract =
+        FunctionAbiContract::idForVersion(options.function_abi_version);
     for (const auto& module : modules) {
+        const auto abi_version =
+            module.metadata.find("target.function_abi_version");
+        if (abi_version != module.metadata.end() &&
+            abi_version->second !=
+                std::to_string(options.function_abi_version)) {
+            result.diagnostics.push_back({
+                DiagnosticSeverity::Error,
+                "object '" + module.name +
+                    "' declares function ABI version " +
+                    abi_version->second + "; linker requires version " +
+                    std::to_string(options.function_abi_version),
+                SourceSpan{module.name, 1, 1, 1}});
+        }
+        const auto abi_contract =
+            module.metadata.find("target.function_abi_contract");
+        if (abi_contract != module.metadata.end() &&
+            abi_contract->second != expected_abi_contract) {
+            result.diagnostics.push_back({
+                DiagnosticSeverity::Error,
+                "object '" + module.name +
+                    "' declares function ABI contract '" +
+                    abi_contract->second + "'; linker requires '" +
+                    expected_abi_contract + "'",
+                SourceSpan{module.name, 1, 1, 1}});
+        }
         std::vector<vm::assembler::AssemblyError> parse_errors;
         const auto source_lines =
             vm::assembler::parseSources(module.assembly, parse_errors);

@@ -1,0 +1,1 @@
+{"schema":"trit.syscall_trace.v1.1","sequence":0,"pc":7,"physical_pc":7,"syscall_id":19,"process_id":0,"before_privilege":0,"after_privilege":0,"args":[3,0,0,0],"results":[4096,0,0],"before_status":0,"after_status":0,"trap":0,"trap_code":0,"trap_cause":0,"cycle_before":7,"cycle_after":8,"future_annotation":{"producer":"fixture","optional":true}}

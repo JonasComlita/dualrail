@@ -175,6 +175,50 @@ def test_replay_validates_and_compares_syscall_traces():
         assert report["artifacts"]["input_event_count"] == 1
 
 
+def test_replay_versioned_adapters_and_capabilities():
+    fixture_root = REPO / "tests" / "fixtures" / "replay"
+    current = fixture_root / "current_trace.jsonl"
+    future_minor = fixture_root / "future_minor_trace.jsonl"
+    unsupported_major = fixture_root / "unsupported_major_trace.jsonl"
+
+    current_report = json.loads(run_tool("replay", str(current), "--json").stdout)
+    assert current_report["valid"], current_report
+    current_capability = current_report["schema_capabilities"]["syscall_trace"]
+    assert current_capability["status"] == "supported", current_capability
+    assert current_capability["future_minor"] is False, current_capability
+
+    future_report = json.loads(run_tool("replay", str(future_minor), "--json").stdout)
+    assert future_report["valid"], future_report
+    future_capability = future_report["schema_capabilities"]["syscall_trace"]
+    assert future_capability["status"] == "future_minor", future_capability
+    assert future_capability["future_minor"] is True, future_capability
+    assert future_capability["unknown_fields_ignored"] == 1, future_capability
+
+    equivalent = run_tool(
+        "replay", str(current), "--against", str(future_minor), "--json"
+    )
+    equivalent_report = json.loads(equivalent.stdout)
+    assert equivalent_report["valid"], equivalent_report
+    assert equivalent_report["comparison"]["match"], equivalent_report
+    assert equivalent_report["schema_capabilities"]["against"]["syscall_trace"]["future_minor"]
+
+    rejected = subprocess.run(
+        [sys.executable, str(TOOL), "replay", str(unsupported_major), "--json"],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode != 0
+    rejected_report = json.loads(rejected.stdout)
+    assert not rejected_report["valid"], rejected_report
+    assert any("unsupported trit.syscall_trace schema major v2" in issue
+               for issue in rejected_report["issues"]), rejected_report
+    rejected_capability = rejected_report["schema_capabilities"]["syscall_trace"]
+    assert rejected_capability["status"] == "unsupported_major", rejected_capability
+    assert rejected_capability["unsupported_majors"] == [2], rejected_capability
+
+
 def test_replay_compares_separate_process_results():
     event = {
         "schema": "trit.syscall_trace.v1",
@@ -365,6 +409,57 @@ def test_knowledge_obsidian_and_graphify_integration():
     assert any(node.get("file") == "_graphify/README.md" for node in canvas["nodes"])
 
 
+def test_knowledge_source_fingerprints_are_content_based_and_filter_outputs():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source = Path(temp_dir) / "source.trit"
+        source.write_text("fn stable() {}\n", encoding="utf-8")
+        first = trit_tool.knowledge_source_snapshot([source])
+        source.write_text("fn changed() {}\n", encoding="utf-8")
+        second = trit_tool.knowledge_source_snapshot([source])
+        comparison = trit_tool.compare_knowledge_snapshots(first, second)
+        assert not comparison["ok"], comparison
+        assert comparison["changed"] == [str(source)], comparison
+
+    assert trit_tool.knowledge_source_path_ignored(REPO / "build" / "generated.cpp")
+    assert trit_tool.knowledge_source_path_ignored(REPO / "graphify-out" / "graph.json")
+    assert not trit_tool.knowledge_source_path_ignored(REPO / "tools" / "trit_tool.py")
+
+
+def test_knowledge_graphify_legacy_and_stale_runs_warn_actionably():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        archive = Path(temp_dir) / "runs"
+        run = archive / "20990101T000000Z-test"
+        run.mkdir(parents=True)
+        (run / "run.json").write_text(json.dumps({"created_at": "20990101T000000Z"}), encoding="utf-8")
+        (run / "manifest.json").write_text("{}", encoding="utf-8")
+        with patch.object(trit_tool, "GRAPHIFY_ARCHIVE_DIR", archive):
+            legacy = trit_tool.graphify_freshness_status(
+                {"schema": trit_tool.KNOWLEDGE_FRESHNESS_SCHEMA, "files": [], "fingerprint": "empty"}
+            )
+        assert legacy["state"] == "legacy_unverified", legacy
+        assert "cannot be proven current" in legacy["message"]
+
+        run2 = archive / "20990102T000000Z-test"
+        run2.mkdir(parents=True)
+        (run2 / "run.json").write_text(
+            json.dumps(
+                {
+                    "created_at": "20990102T000000Z",
+                    "source_snapshot": {
+                        "schema": trit_tool.KNOWLEDGE_FRESHNESS_SCHEMA,
+                        "fingerprint": "stale",
+                        "files": [{"path": "tools/trit_tool.py", "sha256": "stale"}],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch.object(trit_tool, "GRAPHIFY_ARCHIVE_DIR", archive):
+            stale = trit_tool.graphify_freshness_status()
+        assert stale["state"] == "stale", stale
+        assert "rerun `python tools/trit_tool.py knowledge graph`" in stale["message"]
+
+
 def test_treatcode_registry_and_coverage():
     registry = json.loads(run_tool("website", "registry", "validate", "--json").stdout)
     assert registry["ok"], registry
@@ -391,6 +486,87 @@ def test_treatcode_registry_and_coverage():
     ]
     assert {item["encoding_family"] for item in encrypted} == {"compatibility", "ternary_native"}
     assert len(stack["layers"]) == 21
+
+
+def _string_words(value):
+    return [len(value), *map(ord, value)]
+
+
+def _manifest_registry_words(manifest):
+    gui = [entry for entry in manifest["bundled_apps"] if entry.get("gui_registry")]
+    words = [len(gui)]
+    for entry in gui:
+        words.extend(_string_words(entry["id"]))
+        words.extend(_string_words(entry["title"]))
+        words.extend(_string_words(entry["guest_path"]))
+        words.extend([1, 1])
+    return words
+
+
+def test_app_package_and_registry_validation():
+    report = json.loads(run_tool("apps", "validate", "--json").stdout)
+    assert report["ok"], report
+    assert report["schema"] == "trit.app_validation_report.v1"
+    assert report["checks"]["manifest"]["entry_count"] >= 50
+    assert report["checks"]["builder_alignment"]["ok"]
+    assert report["checks"]["registry"]["expected_gui_entry_count"] == 10
+
+    manifest = json.loads((REPO / "APP_MANIFEST.json").read_text(encoding="utf-8"))
+    payload = [84, 82, 73, 84]
+    package_words = [90909, 1, 42, 1]
+    package_words.extend(_string_words("base"))
+    package_words.extend([0])
+    package_words.extend(_string_words("/etc/motd"))
+    package_words.extend(
+        [len(payload), trit_tool.stable_app_word_hash(payload), 0]
+    )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp = Path(temp_dir)
+        registry_path = temp / "registry.json"
+        registry_path.write_text(json.dumps(_manifest_registry_words(manifest)), encoding="utf-8")
+        registry = json.loads(run_tool("apps", "validate", "--registry", str(registry_path), "--json").stdout)
+        assert registry["ok"], registry
+        assert registry["checks"]["registry"]["sources"][0]["decoded"]["record_count"] == 10
+
+        malformed_registry = _manifest_registry_words(manifest)[:-1]
+        malformed_path = temp / "registry-truncated.json"
+        malformed_path.write_text(json.dumps(malformed_registry), encoding="utf-8")
+        rejected = subprocess.run(
+            [sys.executable, str(TOOL), "apps", "validate", "--registry", str(malformed_path), "--json"],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert rejected.returncode != 0
+        assert not json.loads(rejected.stdout)["ok"]
+
+        package_path = temp / "base.manifest.json"
+        package_path.write_text(json.dumps(package_words), encoding="utf-8")
+        package = json.loads(run_tool("apps", "validate", "--package-manifest", str(package_path), "--json").stdout)
+        assert package["ok"], package
+        assert package["checks"]["packages"]["items"][0]["decoded"]["name"] == "base"
+
+        duplicate = list(package_words)
+        duplicate[4] = 5
+        duplicate_path = temp / "bad.manifest.json"
+        duplicate_path.write_text(json.dumps(duplicate), encoding="utf-8")
+        bad_package = subprocess.run(
+            [sys.executable, str(TOOL), "apps", "validate", "--package-manifest", str(duplicate_path), "--json"],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert bad_package.returncode != 0
+        assert not json.loads(bad_package.stdout)["ok"]
+
+    disk = REPO / "build" / "release" / "TernaryOS" / "ternary-os.tdisk"
+    if disk.exists():
+        installed = json.loads(run_tool("apps", "validate", "--disk-image", str(disk), "--json").stdout)
+        assert installed["ok"], installed
+        assert installed["checks"]["disk"]["file_count"] > 0
 
 
 def test_trit_adapter_augments_graphify_graph():
@@ -424,6 +600,49 @@ def test_trit_adapter_augments_graphify_graph():
         assert any(edge.get("context") == "trit_call" for edge in graph["edges"])
 
 
+def test_trit_adapter_crosslinks_manifests_image_sections_and_test_sources():
+    graph = trit_tool.extract_trit_graph(prefer_ast=False)
+    cross_links = graph["cross_links"]
+    assert cross_links["schema"] == "trit.graph_adapter.v2"
+    assert cross_links["syscall_services"] == len(
+        json.loads((REPO / "SYSCALL_MANIFEST.json").read_text(encoding="utf-8"))["services"]
+    )
+    assert cross_links["app_bundles"] == len(
+        json.loads((REPO / "APP_MANIFEST.json").read_text(encoding="utf-8"))["bundled_apps"]
+    )
+    assert cross_links["image_sections"] == cross_links["app_bundles"] + 1
+    assert cross_links["test_coverage_edges"] > 0
+    for relation in ("syscall_id", "owns", "produces", "covers"):
+        edges = [edge for edge in graph["edges"] if edge.get("relation") == relation]
+        assert edges, relation
+        assert all(edge.get("source_file") and edge.get("source_location") for edge in edges)
+        assert all(edge.get("confidence") in {"EXTRACTED", "INFERRED"} for edge in edges)
+
+    node_ids = [node["id"] for node in graph["nodes"]]
+    assert len(node_ids) == len(set(node_ids))
+    edge_keys = [
+        (
+            edge.get("source"),
+            edge.get("target"),
+            edge.get("relation"),
+            edge.get("source_file"),
+            edge.get("source_location"),
+            edge.get("context"),
+        )
+        for edge in graph["edges"]
+    ]
+    assert len(edge_keys) == len(set(edge_keys))
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        graph_path = Path(temp_dir) / "graph.json"
+        first = trit_tool.augment_graph_with_trit(graph_path)
+        second = trit_tool.augment_graph_with_trit(graph_path)
+        assert first["cross_links"]["relation_counts"] == second["cross_links"]["relation_counts"]
+        persisted = json.loads(graph_path.read_text(encoding="utf-8"))
+        persisted_ids = [node["id"] for node in persisted["nodes"]]
+        assert len(persisted_ids) == len(set(persisted_ids))
+
+
 if __name__ == "__main__":
     test_doctor_json_and_manifests()
     test_boot_image_inspector_when_release_image_exists()
@@ -433,5 +652,8 @@ if __name__ == "__main__":
     test_structural_fuzz_is_deterministic_and_fail_closed()
     test_v1_fixture_provenance_and_checksums()
     test_knowledge_obsidian_and_graphify_integration()
+    test_knowledge_source_fingerprints_are_content_based_and_filter_outputs()
+    test_knowledge_graphify_legacy_and_stale_runs_warn_actionably()
     test_treatcode_registry_and_coverage()
+    test_app_package_and_registry_validation()
     test_trit_adapter_augments_graphify_graph()
