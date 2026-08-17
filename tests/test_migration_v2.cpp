@@ -53,10 +53,13 @@ void testTemplateMigration() {
     const fs::path legacy_disk =
         source / "tests" / "fixtures" / "v1" / "v1-release.tdisk";
 
+    // The release builder defaults to ABI v3.  A migration template is an
+    // explicit v2 compatibility artifact, so request that contract directly
+    // instead of depending on the repository default.
     const std::string build =
         std::string(TRIT_BUILD_TOS_IMAGE_PATH) + " " +
         quote(template_boot) + " " + quote(template_disk) +
-        " migration-test";
+        " migration-test --function-abi 2";
     if (!runCommand(build, "v2 migration template builds")) return;
 
     const std::string migrate =

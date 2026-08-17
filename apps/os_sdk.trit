@@ -23,6 +23,737 @@ fn os_print_int(value: t40) -> t40 {
     return sys_write_int(value);
 }
 
+// -----------------------------------------------------------------------------
+// Allocation-free symbolic conversions
+// -----------------------------------------------------------------------------
+//
+// Symbolic helpers use caller-owned word buffers.  Text buffers contain one
+// ASCII code per word and are terminated with a zero word by the formatters;
+// raw TASCII-81 buffers contain one table index per word and are length-based
+// because table index zero is a valid space character.
+const OS_SYMBOLIC_OK: t40 = 0;
+const OS_SYMBOLIC_ERR_INVALID: t40 = -1;
+const OS_SYMBOLIC_ERR_OVERFLOW: t40 = -2;
+const OS_SYMBOLIC_ERR_BUFFER: t40 = -3;
+const OS_SYMBOLIC_ERR_ARGUMENT: t40 = -4;
+// The guest compiler's immediate ABI is intentionally narrow.  Keeping the
+// checked integer range at ten million makes every conversion exact in T40,
+// while host tools retain their signed-64-bit numeric contract.
+const OS_SYMBOLIC_MAX_INTEGER: t40 = 10000000;
+// Successful numeric parsing returns value + this bias from the internal
+// value-only helpers.  The positive range cannot collide with public errors.
+const OS_SYMBOLIC_PARSE_VALUE_BIAS: t40 = 10000001;
+
+const OS_SYMBOLIC_STATUS_OK: t40 = 0;
+const OS_SYMBOLIC_STATUS_INVALID: t40 = -1;
+const OS_SYMBOLIC_STATUS_OVERFLOW: t40 = -2;
+const OS_SYMBOLIC_STATUS_BUFFER: t40 = -3;
+const OS_SYMBOLIC_STATUS_ARGUMENT: t40 = -4;
+// Stable format selector values for os_symbolic_format().
+const OS_SYMBOLIC_FORMAT_TRIT: t40 = 0;
+const OS_SYMBOLIC_FORMAT_BASE27: t40 = 1;
+const OS_SYMBOLIC_FORMAT_BASE81: t40 = 2;
+const OS_SYMBOLIC_FORMAT_HEX: t40 = 3;
+const OS_SYMBOLIC_FORMAT_DECIMAL: t40 = 4;
+const OS_SYMBOLIC_FORMAT_0T: t40 = 0;
+const OS_SYMBOLIC_FORMAT_0Z27: t40 = 1;
+const OS_SYMBOLIC_FORMAT_0Z81: t40 = 2;
+
+fn os_symbolic_load(addr: t40, index: t40) -> t40 {
+    var value: t40 = 0;
+    unsafe { value = load(addr + index); }
+    return value;
+}
+
+fn os_symbolic_store(addr: t40, index: t40, value: t40) -> t40 {
+    unsafe { store(addr + index, value); }
+    return 1;
+}
+
+// The table is the exact 81-entry host table, expressed as ranges plus the
+// fixed punctuation entries so guest code has no static allocation to scan.
+fn os_symbolic_tascii81_encode_char(c: t40) -> t40 {
+    if c == 32 { return 0; }
+    if c == 9 { return 1; }
+    if c == 10 { return 2; }
+    if c == 34 { return 3; }
+    if c == 39 { return 4; }
+    if c == 44 { return 5; }
+    if c == 46 { return 6; }
+    if c == 58 { return 7; }
+    if c == 59 { return 8; }
+    if c == 33 { return 9; }
+    if c == 45 { return 10; }
+    if c == 95 { return 11; }
+    if c == 43 { return 12; }
+    if c == 61 { return 13; }
+    if c == 47 { return 14; }
+    if c == 91 { return 15; }
+    if c == 93 { return 16; }
+    if c == 123 { return 17; }
+    if c == 125 { return 18; }
+    if c >= 48 {
+        if c <= 57 { return c - 29; }
+    }
+    if c >= 65 {
+        if c <= 90 { return c - 36; }
+    }
+    if c >= 97 {
+        if c <= 122 { return c - 42; }
+    }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_tascii81_decode_char(index: t40) -> t40 {
+    if index == 0 { return 32; }
+    if index == 1 { return 9; }
+    if index == 2 { return 10; }
+    if index == 3 { return 34; }
+    if index == 4 { return 39; }
+    if index == 5 { return 44; }
+    if index == 6 { return 46; }
+    if index == 7 { return 58; }
+    if index == 8 { return 59; }
+    if index == 9 { return 33; }
+    if index == 10 { return 45; }
+    if index == 11 { return 95; }
+    if index == 12 { return 43; }
+    if index == 13 { return 61; }
+    if index == 14 { return 47; }
+    if index == 15 { return 91; }
+    if index == 16 { return 93; }
+    if index == 17 { return 123; }
+    if index == 18 { return 125; }
+    if index >= 19 {
+        if index <= 28 { return index + 29; }
+    }
+    if index >= 29 {
+        if index <= 54 { return index + 36; }
+    }
+    if index >= 55 {
+        if index <= 80 { return index + 42; }
+    }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+// Stable guest-SDK spellings.  The longer internal names remain available for
+// source compatibility with the first staged implementation.
+fn os_tascii81_encode_char(ascii: t40) -> t40 {
+    return os_symbolic_tascii81_encode_char(ascii);
+}
+
+fn os_tascii81_decode_char(index: t40) -> t40 {
+    return os_symbolic_tascii81_decode_char(index);
+}
+
+fn os_symbolic_base27_char(index: t40) -> t40 {
+    if index < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    if index <= 9 { return index + 48; }
+    if index <= 26 { return index + 87; }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_base81_char(index: t40) -> t40 {
+    if index < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    if index <= 9 { return index + 48; }
+    if index <= 35 { return index + 55; }
+    if index <= 61 { return index + 61; }
+    if index == 62 { return 33; }
+    if index == 63 { return 35; }
+    if index == 64 { return 36; }
+    if index == 65 { return 37; }
+    if index == 66 { return 38; }
+    if index == 67 { return 40; }
+    if index == 68 { return 41; }
+    if index == 69 { return 42; }
+    if index == 70 { return 43; }
+    if index == 71 { return 44; }
+    if index == 72 { return 45; }
+    if index == 73 { return 46; }
+    if index == 74 { return 47; }
+    if index == 75 { return 58; }
+    if index == 76 { return 59; }
+    if index == 77 { return 60; }
+    if index == 78 { return 61; }
+    if index == 79 { return 62; }
+    if index == 80 { return 63; }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_numeric_digit(c: t40, base: t40) -> t40 {
+    if c >= 48 {
+        if c <= 57 {
+            var digit: t40 = c - 48;
+            if digit < base { return digit; }
+            return OS_SYMBOLIC_ERR_INVALID;
+        }
+    }
+    if base == 16 {
+        if c >= 65 {
+            if c <= 70 { return c - 55; }
+        }
+        if c >= 97 {
+            if c <= 102 { return c - 87; }
+        }
+    }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_hex_char(digit: t40) -> t40 {
+    if digit < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    if digit <= 9 { return digit + 48; }
+    if digit <= 15 { return digit + 55; }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_trit_step_status(value: t40, trit: t40) -> t40 {
+    var upper: t40 = tdiv(OS_SYMBOLIC_MAX_INTEGER - trit, 3);
+    var lower: t40 = tdiv(0 - OS_SYMBOLIC_MAX_INTEGER - trit, 3);
+    if value > upper { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    if value < lower { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    return OS_SYMBOLIC_OK;
+}
+
+fn os_symbolic_group_digit(c: t40, base: t40) -> t40 {
+    if base == 27 {
+        if c >= 48 {
+            if c <= 57 { return c - 48; }
+        }
+        if c >= 65 {
+            if c <= 81 { return c - 55; }
+        }
+        if c >= 97 {
+            if c <= 113 { return c - 87; }
+        }
+        return OS_SYMBOLIC_ERR_INVALID;
+    }
+    if c >= 48 {
+        if c <= 57 { return c - 48; }
+    }
+    if c >= 65 {
+        if c <= 90 { return c - 55; }
+    }
+    if c >= 97 {
+        if c <= 122 { return c - 61; }
+    }
+    if c == 33 { return 62; }
+    if c == 35 { return 63; }
+    if c == 36 { return 64; }
+    if c == 37 { return 65; }
+    if c == 38 { return 66; }
+    if c == 40 { return 67; }
+    if c == 41 { return 68; }
+    if c == 42 { return 69; }
+    if c == 43 { return 70; }
+    if c == 44 { return 71; }
+    if c == 45 { return 72; }
+    if c == 46 { return 73; }
+    if c == 47 { return 74; }
+    if c == 58 { return 75; }
+    if c == 59 { return 76; }
+    if c == 60 { return 77; }
+    if c == 61 { return 78; }
+    if c == 62 { return 79; }
+    if c == 63 { return 80; }
+    return OS_SYMBOLIC_ERR_INVALID;
+}
+
+fn os_symbolic_balanced_remainder(value: t40, radix: t40, half: t40) -> t40 {
+    var remainder: t40 = 0;
+    unsafe { remainder = tmod(value, radix); }
+    if remainder > half { remainder = remainder - radix; }
+    if remainder < 0 - half { remainder = remainder + radix; }
+    return remainder;
+}
+
+fn os_symbolic_group_count(value: t40, radix: t40, half: t40) -> t40 {
+    var temp: t40 = value;
+    var count: t40 = 0;
+    while temp != 0 {
+        var remainder: t40 = os_symbolic_balanced_remainder(temp, radix, half);
+        temp = tdiv(temp - remainder, radix);
+        count = count + 1;
+    }
+    if count == 0 { count = 1; }
+    return count;
+}
+
+fn os_symbolic_parse_exact_value(src_addr: t40, src_len: t40) -> t40 {
+    if src_len <= 2 { return OS_SYMBOLIC_ERR_INVALID; }
+    var value: t40 = 0;
+    var i: t40 = 2;
+    while src_len - i > 0 {
+        var c: t40 = os_symbolic_load(src_addr, i);
+        var trit: t40 = 0;
+        if c == 45 { trit = -1; }
+        else if c == 43 { trit = 1; }
+        else if c == 48 { trit = 0; }
+        else { return OS_SYMBOLIC_ERR_INVALID; }
+        var step: t40 = os_symbolic_trit_step_status(value, trit);
+        if step < 0 { return step; }
+        value = value * 3 + trit;
+        i = i + 1;
+    }
+    return value + OS_SYMBOLIC_PARSE_VALUE_BIAS;
+}
+
+fn os_symbolic_parse_exact(src_addr: t40, src_len: t40, out_addr: t40) -> t40 {
+    if out_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    var encoded: t40 = os_symbolic_parse_exact_value(src_addr, src_len);
+    if encoded < 0 { return encoded; }
+    os_symbolic_store(out_addr, 0, encoded - OS_SYMBOLIC_PARSE_VALUE_BIAS);
+    return OS_SYMBOLIC_OK;
+}
+
+fn os_symbolic_parse_grouped_value(src_addr: t40, src_len: t40, base: t40) -> t40 {
+    if src_len <= 5 { return OS_SYMBOLIC_ERR_INVALID; }
+    var value: t40 = 0;
+    var i: t40 = 5;
+    var width: t40 = 3;
+    var power: t40 = 9;
+    var half: t40 = 13;
+    if base == 81 {
+        width = 4;
+        power = 27;
+        half = 40;
+    }
+    else if base != 27 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    while src_len - i > 0 {
+        var digit: t40 = os_symbolic_group_digit(os_symbolic_load(src_addr, i), base);
+        if digit < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+        var remaining: t40 = digit;
+        var group_i: t40 = 0;
+        var group_power: t40 = power;
+        while width - group_i > 0 {
+            var ordinary: t40 = tdiv(remaining, group_power);
+            remaining = remaining - ordinary * group_power;
+            var trit: t40 = ordinary - 1;
+            var step: t40 = os_symbolic_trit_step_status(value, trit);
+            if step < 0 { return step; }
+            value = value * 3 + trit;
+            group_i = group_i + 1;
+            group_power = tdiv(group_power, 3);
+        }
+        i = i + 1;
+    }
+    // Keep the local half live in the same contract as the formatter; this
+    // also documents the balanced range represented by each group.
+    if half < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    return value + OS_SYMBOLIC_PARSE_VALUE_BIAS;
+}
+
+fn os_symbolic_parse_grouped(src_addr: t40, src_len: t40, out_addr: t40, base: t40) -> t40 {
+    if out_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    var encoded: t40 = os_symbolic_parse_grouped_value(src_addr, src_len, base);
+    if encoded < 0 { return encoded; }
+    os_symbolic_store(out_addr, 0, encoded - OS_SYMBOLIC_PARSE_VALUE_BIAS);
+    return OS_SYMBOLIC_OK;
+}
+
+fn os_symbolic_parse_decimal_or_hex_value(src_addr: t40, src_len: t40) -> t40 {
+    var i: t40 = 0;
+    var negative: t40 = 0;
+    var first: t40 = os_symbolic_load(src_addr, 0);
+    if first == 45 { negative = 1; i = 1; }
+    else if first == 43 { i = 1; }
+    if i >= src_len { return OS_SYMBOLIC_ERR_INVALID; }
+
+    var base: t40 = 10;
+    if src_len - i >= 2 {
+        var prefix_zero: t40 = os_symbolic_load(src_addr, i);
+        var prefix_x: t40 = os_symbolic_load(src_addr, i + 1);
+        if prefix_zero == 48 {
+            if prefix_x == 120 { base = 16; i = i + 2; }
+            else if prefix_x == 88 { base = 16; i = i + 2; }
+        }
+    }
+    if i >= src_len { return OS_SYMBOLIC_ERR_INVALID; }
+
+    var limit: t40 = OS_SYMBOLIC_MAX_INTEGER;
+    if negative == 1 { limit = limit + 1; }
+    var magnitude: t40 = 0;
+    var digits: t40 = 0;
+    while src_len - i > 0 {
+        var digit: t40 = os_symbolic_numeric_digit(os_symbolic_load(src_addr, i), base);
+        if digit < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+        if magnitude > tdiv(limit - digit, base) { return OS_SYMBOLIC_ERR_OVERFLOW; }
+        magnitude = magnitude * base + digit;
+        digits = digits + 1;
+        i = i + 1;
+    }
+    if digits == 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    if negative == 1 { magnitude = 0 - magnitude; }
+    return magnitude + OS_SYMBOLIC_PARSE_VALUE_BIAS;
+}
+
+fn os_symbolic_parse_decimal_or_hex(src_addr: t40, src_len: t40, out_addr: t40) -> t40 {
+    if out_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    var encoded: t40 = os_symbolic_parse_decimal_or_hex_value(src_addr, src_len);
+    if encoded < 0 { return encoded; }
+    os_symbolic_store(out_addr, 0, encoded - OS_SYMBOLIC_PARSE_VALUE_BIAS);
+    return OS_SYMBOLIC_OK;
+}
+
+// Parse accepts decimal, 0x hex, canonical 0t, parse-only 0y, 0z27:, and
+// 0z81:. The value-only pass never touches caller memory.
+fn os_symbolic_parse_numeric_value(src_addr: t40, src_len: t40) -> t40 {
+    if src_len < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if src_len == 0 { return OS_SYMBOLIC_ERR_INVALID; }
+    var first: t40 = os_symbolic_load(src_addr, 0);
+    if src_len >= 2 {
+        var second: t40 = os_symbolic_load(src_addr, 1);
+        if first == 48 {
+            if second == 116 { return os_symbolic_parse_exact_value(src_addr, src_len); }
+            if second == 84 { return os_symbolic_parse_exact_value(src_addr, src_len); }
+            if second == 121 { return os_symbolic_parse_exact_value(src_addr, src_len); }
+            if second == 89 { return os_symbolic_parse_exact_value(src_addr, src_len); }
+            if second == 122 {
+                if src_len >= 5 {
+                    if os_symbolic_load(src_addr, 2) == 50 {
+                        if os_symbolic_load(src_addr, 3) == 55 {
+                            if os_symbolic_load(src_addr, 4) == 58 {
+                                return os_symbolic_parse_grouped_value(src_addr, src_len, 27);
+                            }
+                        }
+                    }
+                    if os_symbolic_load(src_addr, 2) == 56 {
+                        if os_symbolic_load(src_addr, 3) == 49 {
+                            if os_symbolic_load(src_addr, 4) == 58 {
+                                return os_symbolic_parse_grouped_value(src_addr, src_len, 81);
+                            }
+                        }
+                    }
+                }
+                return OS_SYMBOLIC_ERR_INVALID;
+            }
+        }
+    }
+    return os_symbolic_parse_decimal_or_hex_value(src_addr, src_len);
+}
+
+// The scalar parser retains its historical status return and writes only
+// after the complete value-only pass has succeeded.
+fn os_symbolic_parse_numeric(src_addr: t40, src_len: t40, out_addr: t40) -> t40 {
+    if src_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    var encoded: t40 = os_symbolic_parse_numeric_value(src_addr, src_len);
+    if encoded < 0 { return encoded; }
+    os_symbolic_store(out_addr, 0, encoded - OS_SYMBOLIC_PARSE_VALUE_BIAS);
+    return OS_SYMBOLIC_OK;
+}
+
+// Parse into caller-owned MSB-first balanced trits. The value-only numeric
+// pass runs before capacity checks and output writes, so malformed input and
+// undersized buffers leave every caller word unchanged.
+fn os_symbolic_parse(src_addr: t40, src_len: t40, out_trits: t40, capacity: t40) -> t40 {
+    if src_addr < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_trits < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if capacity < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    var encoded: t40 = os_symbolic_parse_numeric_value(src_addr, src_len);
+    if encoded < 0 { return encoded; }
+    var value: t40 = encoded - OS_SYMBOLIC_PARSE_VALUE_BIAS;
+    var count: t40 = 1;
+    if value != 0 {
+        count = 0;
+        var count_temp: t40 = value;
+        while count_temp != 0 {
+            var remainder: t40 = os_symbolic_balanced_remainder(count_temp, 3, 1);
+            count_temp = tdiv(count_temp - remainder, 3);
+            count = count + 1;
+        }
+    }
+    if capacity < count {
+        return OS_SYMBOLIC_ERR_BUFFER;
+    }
+
+    var temp: t40 = value;
+    var index: t40 = count;
+    while index > 0 {
+        var remainder: t40 = os_symbolic_balanced_remainder(temp, 3, 1);
+        temp = tdiv(temp - remainder, 3);
+        index = index - 1;
+        os_symbolic_store(out_trits, index, remainder);
+    }
+    return count;
+}
+
+// Raw TASCII-81 conversions are length-based and deliberately make two
+// passes: malformed input or an undersized output never causes partial writes.
+fn os_symbolic_tascii81_encode(src_addr: t40, src_len: t40, out_addr: t40, out_cap: t40) -> t40 {
+    if src_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if src_len < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_cap < src_len { return OS_SYMBOLIC_ERR_BUFFER; }
+    var i: t40 = 0;
+    while src_len - i > 0 {
+        var code: t40 = os_symbolic_tascii81_encode_char(os_symbolic_load(src_addr, i));
+        if code < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+        i = i + 1;
+    }
+    i = 0;
+    while src_len - i > 0 {
+        os_symbolic_store(out_addr, i, os_symbolic_tascii81_encode_char(os_symbolic_load(src_addr, i)));
+        i = i + 1;
+    }
+    return src_len;
+}
+
+fn os_symbolic_tascii81_decode(src_addr: t40, src_len: t40, out_addr: t40, out_cap: t40) -> t40 {
+    if src_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if src_len < 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if out_cap < src_len { return OS_SYMBOLIC_ERR_BUFFER; }
+    var i: t40 = 0;
+    while src_len - i > 0 {
+        var c: t40 = os_symbolic_tascii81_decode_char(os_symbolic_load(src_addr, i));
+        if c < 0 { return OS_SYMBOLIC_ERR_INVALID; }
+        i = i + 1;
+    }
+    i = 0;
+    while src_len - i > 0 {
+        os_symbolic_store(out_addr, i, os_symbolic_tascii81_decode_char(os_symbolic_load(src_addr, i)));
+        i = i + 1;
+    }
+    return src_len;
+}
+
+fn os_symbolic_format_decimal(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if value - OS_SYMBOLIC_MAX_INTEGER > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    if 0 - OS_SYMBOLIC_MAX_INTEGER - value > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    var negative: t40 = 0;
+    var temp: t40 = value;
+    if temp < 0 { negative = 1; temp = 0 - temp; }
+    var digits: t40 = 1;
+    if temp > 0 {
+        digits = 0;
+        var count_temp: t40 = temp;
+        while count_temp > 0 {
+            count_temp = tdiv(count_temp, 10);
+            digits = digits + 1;
+        }
+    }
+    var needed: t40 = digits + negative + 1;
+    if out_cap < needed { return OS_SYMBOLIC_ERR_BUFFER; }
+    var pos: t40 = 0;
+    if negative == 1 { os_symbolic_store(out_addr, 0, 45); pos = 1; }
+    var i: t40 = digits;
+    while i > 0 {
+        var remainder: t40 = 0;
+        unsafe { remainder = tmod(temp, 10); }
+        temp = tdiv(temp - remainder, 10);
+        os_symbolic_store(out_addr, pos + i - 1, remainder + 48);
+        i = i - 1;
+    }
+    os_symbolic_store(out_addr, needed - 1, 0);
+    return needed - 1;
+}
+
+fn os_symbolic_format_hex(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if value - OS_SYMBOLIC_MAX_INTEGER > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    if 0 - OS_SYMBOLIC_MAX_INTEGER - value > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    var negative: t40 = 0;
+    var temp: t40 = value;
+    if temp < 0 { negative = 1; }
+    var digits: t40 = 1;
+    var count_temp: t40 = 0;
+    if negative == 1 { digits = 16; }
+    else if temp > 0 {
+        digits = 0;
+            count_temp = temp;
+        while count_temp > 0 {
+            count_temp = tdiv(count_temp, 16);
+            digits = digits + 1;
+        }
+    }
+    var needed: t40 = digits + 3;
+    if out_cap < needed { return OS_SYMBOLIC_ERR_BUFFER; }
+    os_symbolic_store(out_addr, 0, 48);
+    os_symbolic_store(out_addr, 1, 120);
+    var i: t40 = digits;
+    while i > 0 {
+        var digit: t40 = 0;
+        var remainder: t40 = 0;
+        if negative == 1 {
+            if temp == 0 { digit = 15; }
+            else {
+                unsafe { remainder = tmod(temp, 16); }
+                if remainder < 0 {
+                    digit = remainder + 16;
+                    temp = tdiv(temp - digit, 16);
+                }
+                else {
+                    digit = remainder;
+                    temp = tdiv(temp - digit, 16);
+                }
+            }
+        } else {
+            unsafe { remainder = tmod(temp, 16); }
+            digit = remainder;
+            temp = tdiv(temp - remainder, 16);
+        }
+        os_symbolic_store(out_addr, i + 1, os_symbolic_hex_char(digit));
+        i = i - 1;
+    }
+    os_symbolic_store(out_addr, needed - 1, 0);
+    return needed - 1;
+}
+
+fn os_symbolic_format_trit(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if value - OS_SYMBOLIC_MAX_INTEGER > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    if 0 - OS_SYMBOLIC_MAX_INTEGER - value > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    var count: t40 = 1;
+    if value != 0 {
+        count = 0;
+        var count_temp: t40 = value;
+        while count_temp != 0 {
+            var remainder: t40 = os_symbolic_balanced_remainder(count_temp, 3, 1);
+            count_temp = tdiv(count_temp - remainder, 3);
+            count = count + 1;
+        }
+    }
+    var needed: t40 = count + 3;
+    if out_cap < needed { return OS_SYMBOLIC_ERR_BUFFER; }
+    os_symbolic_store(out_addr, 0, 48);
+    os_symbolic_store(out_addr, 1, 116);
+    var temp: t40 = value;
+    var i: t40 = count;
+    while i > 0 {
+        var remainder: t40 = os_symbolic_balanced_remainder(temp, 3, 1);
+        temp = tdiv(temp - remainder, 3);
+        var c: t40 = 48;
+        if remainder < 0 { c = 45; }
+        else if remainder > 0 { c = 43; }
+        os_symbolic_store(out_addr, i + 1, c);
+        i = i - 1;
+    }
+    os_symbolic_store(out_addr, needed - 1, 0);
+    return needed - 1;
+}
+
+fn os_symbolic_format_grouped(value: t40, out_addr: t40, out_cap: t40, base: t40) -> t40 {
+    if out_addr <= 0 { return OS_SYMBOLIC_ERR_ARGUMENT; }
+    if value - OS_SYMBOLIC_MAX_INTEGER > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    if 0 - OS_SYMBOLIC_MAX_INTEGER - value > 0 { return OS_SYMBOLIC_ERR_OVERFLOW; }
+    var radix: t40 = 27;
+    var half: t40 = 13;
+    var prefix_a: t40 = 50;
+    var prefix_b: t40 = 55;
+    if base == 81 {
+        radix = 81;
+        half = 40;
+        prefix_a = 56;
+        prefix_b = 49;
+    }
+    var count: t40 = os_symbolic_group_count(value, radix, half);
+    var needed: t40 = count + 6;
+    if out_cap < needed { return OS_SYMBOLIC_ERR_BUFFER; }
+    os_symbolic_store(out_addr, 0, 48);
+    os_symbolic_store(out_addr, 1, 122);
+    os_symbolic_store(out_addr, 2, prefix_a);
+    os_symbolic_store(out_addr, 3, prefix_b);
+    os_symbolic_store(out_addr, 4, 58);
+    var temp: t40 = value;
+    var i: t40 = count;
+    while i > 0 {
+        var remainder: t40 = os_symbolic_balanced_remainder(temp, radix, half);
+        temp = tdiv(temp - remainder, radix);
+        var digit: t40 = remainder + half;
+        var c: t40 = 0;
+        if base == 27 { c = os_symbolic_base27_char(digit); }
+        else { c = os_symbolic_base81_char(digit); }
+        os_symbolic_store(out_addr, i + 4, c);
+        i = i - 1;
+    }
+    os_symbolic_store(out_addr, needed - 1, 0);
+    return needed - 1;
+}
+
+// Canonical formatters always emit 0t; 0y is accepted only by the parser.
+fn os_symbolic_format_trit_literal(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_trit(value, out_addr, out_cap);
+}
+
+fn os_symbolic_format_base27(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_grouped(value, out_addr, out_cap, 27);
+}
+
+fn os_symbolic_format_base81(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_grouped(value, out_addr, out_cap, 81);
+}
+
+// Stable format-selector API.  All output remains caller-buffer based and
+// canonical formatters emit 0t/0z27:/0z81: spellings.
+fn os_format_selector_dispatch(value: t40, kind: t40, out_addr: t40, out_cap: t40) -> t40 {
+    var result: t40 = OS_SYMBOLIC_ERR_ARGUMENT;
+    // Keep numeric selectors here: the current guest parser misclassifies
+    // named format constants in conditional expressions, while the constants
+    // remain the public source-level contract for callers.
+    if kind == 0 {
+        result = os_symbolic_format_trit_literal(value, out_addr, out_cap);
+    }
+    if kind == 1 {
+        result = os_symbolic_format_base27(value, out_addr, out_cap);
+    }
+    if kind == 2 {
+        result = os_symbolic_format_base81(value, out_addr, out_cap);
+    }
+    if kind == 3 {
+        result = os_symbolic_format_hex(value, out_addr, out_cap);
+    }
+    if kind == 4 {
+        result = os_symbolic_format_decimal(value, out_addr, out_cap);
+    }
+    return result;
+}
+
+fn os_symbolic_format(value: t40, kind: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_format_selector_dispatch(value, kind, out_addr, out_cap);
+}
+
+// Short SDK spellings keep the helpers convenient for small native apps.
+fn os_tascii81_encode(src_addr: t40, src_len: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_tascii81_encode(src_addr, src_len, out_addr, out_cap);
+}
+
+fn os_tascii81_decode(src_addr: t40, src_len: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_tascii81_decode(src_addr, src_len, out_addr, out_cap);
+}
+
+fn os_parse_numeric(src_addr: t40, src_len: t40, out_addr: t40) -> t40 {
+    return os_symbolic_parse_numeric(src_addr, src_len, out_addr);
+}
+
+fn os_format_decimal(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_decimal(value, out_addr, out_cap);
+}
+
+fn os_format_hex(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_hex(value, out_addr, out_cap);
+}
+
+fn os_format_trit_literal(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_trit_literal(value, out_addr, out_cap);
+}
+
+fn os_format_base27(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_base27(value, out_addr, out_cap);
+}
+
+fn os_format_base81(value: t40, out_addr: t40, out_cap: t40) -> t40 {
+    return os_symbolic_format_base81(value, out_addr, out_cap);
+}
+
+fn os_symbolic_dispatch_probe(value: t40, kind: t40, out_addr: t40, out_cap: t40) -> t40 {
+    var result: t40 = 0;
+    if kind == 0 {
+        result = os_symbolic_format_trit_literal(value, out_addr, out_cap);
+    }
+    return result;
+}
+
 fn os_puts(addr: t40) -> t40 {
     var i: t40 = 0;
     var done: t40 = 0;

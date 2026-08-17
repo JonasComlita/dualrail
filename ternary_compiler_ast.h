@@ -149,6 +149,12 @@ struct ModuleAst {
         case TypeKind::Array:
             return std::max(0, type.array_len) *
                    (type.element ? typeSizeWords(*type.element, layouts) : 1);
+        case TypeKind::Vector:
+            // A vector value is a full fixed-VLEN payload whenever it crosses
+            // memory, a spill slot, or the outgoing stack.  Its register ABI
+            // remains one architectural vector register, but its stack
+            // representation is exactly 27 words.
+            return architecture::v3::VECTOR_LANE_COUNT;
         default:
             return 1;
     }

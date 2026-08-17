@@ -143,6 +143,11 @@ struct AllocationResult {
     std::map<ValueId, int> scalar_registers;
     std::map<ValueId, int> vector_registers;
     std::map<ValueId, int> spill_slots;
+    // Values whose defining instruction was rewritten into a spill-backed
+    // producer may still be named by a call's stack-passed argument.  Keep
+    // their exact type available to the target emitter even though the
+    // original SSA definition no longer owns a register.
+    std::map<ValueId, TypeRef> spill_value_types;
     int spills = 0;
     std::set<int> callee_saved_used;
     std::set<int> caller_saved_live_across_calls;
@@ -154,6 +159,7 @@ struct AllocationResult {
     int spill_rewrite_rounds = 0;
     int spill_loads = 0;
     int spill_stores = 0;
+    int vector_spill_words = 0;
     std::vector<Diagnostic> diagnostics;
 };
 
@@ -202,24 +208,36 @@ struct LinkOptions {
     // Keep this field last so existing aggregate initialization remains
     // source-compatible.
     int function_abi_version = FunctionAbiContract::version;
+    // The executable envelope is independently selected from the function
+    // ABI. These fields are carried through the owned compiler/link contract;
+    // the concrete image builder still has to consume them before a v3 image
+    // can be emitted.
+    bool enable_vector_abi = false;
+    bool enable_vector_spilling = false;
+    int vector_length = architecture::v3::VECTOR_LANE_COUNT;
+    int executable_version = architecture::v2::EXECUTABLE_VERSION;
+    int vector_abi_version = 0;
 };
 
 struct LinkResult {
     bool success = false;
-    // Compiler function-boundary profile selected for this link. The v2
-    // executable header remains the image envelope until a v3 header/kernel
-    // contract is available; callers can inspect these fields to distinguish
-    // the nested compiler profile from the image format.
+    // Compiler function-boundary and image profiles selected for this link.
+    // The image builder owns the final envelope bytes, so these fields also
+    // make an unconsumed v3 request observable instead of silently downgrading
+    // it to v2.
     int function_abi_version = FunctionAbiContract::version;
     std::string function_abi_contract = FunctionAbiContract::id();
     std::string assembly;
     std::map<std::string, int> symbol_map;
     vm::ExecutableImageHeaderV2 executable_header_v2;
+    vm::ExecutableImageHeaderV3 executable_header_v3;
     vm::assembler::AssemblyResult assembled;
     std::vector<Diagnostic> diagnostics;
     int instruction_count = 0;
     int text_words = 0;
     int data_words = 0;
+    int executable_version = architecture::v2::EXECUTABLE_VERSION;
+    int vector_abi_version = 0;
 };
 
 namespace runtime {

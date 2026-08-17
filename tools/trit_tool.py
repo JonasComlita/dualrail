@@ -5620,6 +5620,229 @@ def cmd_apps_validate(args: argparse.Namespace) -> int:
     return 0 if report.get("ok") else 1
 
 
+_SYMBOLIC_FORMATS = ("decimal", "hex", "trit", "base27", "base81", "all")
+_SYMBOLIC_VIEWS = ("scalar", "t40", "t50", "l50", "wide")
+
+
+def _symbolic_payload(
+    value: int,
+    format_name: str,
+    declared_width: int | None = None,
+    view: str = "scalar",
+) -> dict[str, Any]:
+    """Return lossless symbolic views without changing the numeric authority.
+
+    The native formats are generated from a padded trit sequence when a width
+    is declared.  That preserves leading trits for register views while the
+    original integer remains available as the authoritative ``value`` field.
+    """
+    from trit_symbolic import (
+        balanced_trits,
+        format_base27,
+        format_base81,
+        format_trit_literal,
+    )
+
+    if format_name not in _SYMBOLIC_FORMATS:
+        raise ValueError(f"unsupported symbolic format: {format_name}")
+    if declared_width is not None and declared_width < 1:
+        raise ValueError("symbolic width must be positive")
+
+    trits = balanced_trits(value, declared_width or 1)
+    formats: dict[str, str] = {
+        "decimal": str(value),
+        "hex": f"0x{value & ((1 << 64) - 1):X}",
+        "trit": format_trit_literal(trits),
+        "base27": format_base27(trits),
+        "base81": format_base81(trits),
+    }
+    selected = formats if format_name == "all" else {format_name: formats[format_name]}
+    return {
+        "value": value,
+        "declared_width": declared_width,
+        "view": view,
+        "trit_width": len(trits),
+        "formats": selected,
+    }
+
+
+def _symbolic_text(payload: dict[str, Any], format_name: str) -> str:
+    formats = payload["formats"]
+    if format_name == "all" and payload.get("declared_width") is None:
+        # Keep the established default human output byte-for-byte compatible.
+        return (
+            f"hex={formats['hex']} trits={formats['trit']} "
+            f"base27={formats['base27']} base81={formats['base81']}"
+        )
+    return " ".join(f"{name}={value}" for name, value in formats.items())
+
+
+def _add_symbolic_fields(
+    report: dict[str, Any],
+    fields: dict[str, int],
+    format_name: str,
+    view: str,
+    declared_width: int | None = None,
+) -> None:
+    """Add an opt-in symbolic sibling object to a numeric report."""
+    width = declared_width if declared_width is not None else _diagnostic_symbolic_width(view)
+    report["symbolic"] = {
+        "format": format_name,
+        "declared_width": width,
+        "view": view,
+        "fields": {
+            name: _symbolic_payload(value, format_name, width, view=view)
+            for name, value in fields.items()
+        },
+    }
+
+
+def _diagnostic_symbolic_width(view: str) -> int:
+    return {
+        "scalar": 40,
+        "t40": 40,
+        "t50": 50,
+        "l50": 50,
+        "wide": 50,
+    }.get(view, 40)
+
+
+def _numeric_json_fields(value: Any, path: str = "") -> dict[str, int]:
+    """Flatten numeric diagnostic fields without changing their authority."""
+    fields: dict[str, int] = {}
+    if isinstance(value, bool):
+        return fields
+    if isinstance(value, int):
+        if path:
+            fields[path] = value
+        return fields
+    if isinstance(value, dict):
+        for name, child in value.items():
+            if name == "symbolic":
+                continue
+            child_path = f"{path}.{name}" if path else str(name)
+            fields.update(_numeric_json_fields(child, child_path))
+        return fields
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            fields.update(_numeric_json_fields(child, f"{path}[{index}]"))
+    return fields
+
+
+def _diagnostic_symbolic_object(
+    fields: dict[str, int], format_name: str, view: str
+) -> dict[str, Any]:
+    width = _diagnostic_symbolic_width(view)
+    return {
+        "format": format_name,
+        "declared_width": width,
+        "view": view,
+        "fields": {
+            name: _symbolic_payload(value, format_name, width, view=view)
+            for name, value in fields.items()
+        },
+    }
+
+
+def _augment_diagnostic_json(
+    document: Any, format_name: str, view: str
+) -> Any:
+    if not isinstance(document, dict):
+        return document
+    result = dict(document)
+    result["symbolic"] = _diagnostic_symbolic_object(
+        _numeric_json_fields(document), format_name, view
+    )
+    return result
+
+
+def _augment_diagnostic_text(
+    source: Path, format_name: str, view: str
+) -> Path | None:
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+    fields: dict[str, int] = {}
+    for line in lines:
+        match = re.match(r"^([A-Za-z0-9_.-]+)=(-?[0-9]+)$", line.strip())
+        if match:
+            fields[match.group(1)] = int(match.group(2))
+    if not fields:
+        return None
+    output = source.with_name(source.stem + ".symbolic" + source.suffix)
+    symbolic = _diagnostic_symbolic_object(fields, format_name, view)
+    output.write_text(
+        "# symbolic diagnostic projection\n"
+        + f"format={format_name}\n"
+        + f"view={view}\n"
+        + f"declared_width={symbolic['declared_width']}\n"
+        + "\n"
+        + "\n".join(
+            f"{name}={_symbolic_text(payload, format_name)}"
+            for name, payload in symbolic["fields"].items()
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return output
+
+
+def _apply_symbolic_diagnostics(
+    directory: Path, format_name: str, view: str
+) -> dict[str, Any]:
+    """Add opt-in symbolic siblings to all structured diagnostic surfaces."""
+    if format_name not in _SYMBOLIC_FORMATS:
+        raise ValueError(f"unsupported symbolic format: {format_name}")
+    if view not in _SYMBOLIC_VIEWS:
+        raise ValueError(f"unsupported symbolic view: {view}")
+    if not directory.is_dir():
+        raise ValueError(f"diagnostic directory does not exist: {directory}")
+
+    json_files: list[str] = []
+    jsonl_files: list[str] = []
+    text_files: list[str] = []
+    for path in sorted(directory.rglob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        enriched = _augment_diagnostic_json(document, format_name, view)
+        path.write_text(json.dumps(enriched, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        json_files.append(str(path))
+
+    for path in sorted(directory.rglob("*.jsonl")):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        enriched_lines: list[str] = []
+        changed = False
+        for line in lines:
+            try:
+                document = json.loads(line)
+            except json.JSONDecodeError:
+                enriched_lines.append(line)
+                continue
+            enriched = _augment_diagnostic_json(document, format_name, view)
+            enriched_lines.append(json.dumps(enriched, sort_keys=True))
+            changed = True
+        if changed:
+            path.write_text("\n".join(enriched_lines) + "\n", encoding="utf-8")
+            jsonl_files.append(str(path))
+
+    for name in ("vm_state.txt", "manifest.txt"):
+        path = directory / name
+        if path.is_file() and _augment_diagnostic_text(path, format_name, view):
+            text_files.append(str(path.with_name(path.stem + ".symbolic" + path.suffix)))
+
+    return {
+        "format": format_name,
+        "view": view,
+        "declared_width": _diagnostic_symbolic_width(view),
+        "json_files": json_files,
+        "jsonl_files": jsonl_files,
+        "text_files": text_files,
+    }
+
+
 def cmd_symbolic(args: argparse.Namespace) -> int:
     from trit_symbolic import (
         ascii_to_tascii81,
@@ -5632,7 +5855,16 @@ def cmd_symbolic(args: argparse.Namespace) -> int:
         value = parse_numeric_literal(args.value)
         if value is None:
             raise RuntimeError(f"invalid numeric literal: {args.value}")
-        print(format_integer_dump(value))
+        format_name = getattr(args, "format", "all")
+        view = getattr(args, "view", "scalar")
+        declared_width = getattr(args, "width", None)
+        payload = _symbolic_payload(value, format_name, declared_width, view)
+        if getattr(args, "json", False):
+            print_json(payload)
+        elif format_name == "all" and declared_width is None and view == "scalar":
+            print(format_integer_dump(value))
+        else:
+            print(_symbolic_text(payload, format_name))
         return 0
     if args.action == "encode-text":
         print(" ".join(str(value) for value in ascii_to_tascii81(args.value)))
@@ -5724,6 +5956,37 @@ def cmd_test(args: argparse.Namespace) -> int:
 
 def cmd_inspect_image(args: argparse.Namespace) -> int:
     inspected = inspect_boot_image(Path(args.image).resolve())
+    if getattr(args, "format", None):
+        image = inspected.get("image", {})
+        segments = inspected.get("segments", {})
+        fields: dict[str, int] = {}
+        for name, value in {
+            "image.version": image.get("version"),
+            "image.boot_entry": image.get("boot_entry"),
+            "segments.program_words": segments.get("program_words"),
+            "segments.data_words": segments.get("data_words"),
+            "segments.rootfs_blocks": segments.get("rootfs_blocks"),
+            "segments.rootfs_nonzero_blocks": segments.get("rootfs_nonzero_blocks"),
+        }.items():
+            if isinstance(value, int):
+                fields[name] = value
+        for index, section in enumerate(inspected.get("sections", [])):
+            for field in ("entry_pc", "word_count"):
+                value = section.get(field)
+                if isinstance(value, int):
+                    fields[f"sections[{index}].{field}"] = value
+        for index, app in enumerate(inspected.get("apps", [])):
+            for field in ("entry_pc", "text_pages"):
+                value = app.get(field)
+                if isinstance(value, int):
+                    fields[f"apps[{index}].{field}"] = value
+        inspected = dict(inspected)
+        _add_symbolic_fields(
+            inspected,
+            fields,
+            args.format,
+            getattr(args, "view", "scalar"),
+        )
     if args.json:
         print_json(inspected)
     else:
@@ -5757,6 +6020,10 @@ def cmd_inspect_image(args: argparse.Namespace) -> int:
         print("apps:")
         for app in inspected["apps"]:
             print(f"- {app['path']} entry={app['entry_pc']} text_pages={app['text_pages']}")
+        if getattr(args, "format", None) and inspected.get("symbolic", {}).get("fields"):
+            print(f"symbolic ({args.format}):")
+            for name, payload in inspected["symbolic"]["fields"].items():
+                print(f"- {name}: {_symbolic_text(payload, args.format)}")
     return 0 if inspected["ok"] else 1
 
 
@@ -5835,6 +6102,28 @@ def cmd_export_diagnostics(args: argparse.Namespace) -> int:
         disk_image = fallback_disk
     if boot_image and boot_image.exists():
         inspected = inspect_boot_image(boot_image)
+        if getattr(args, "format", None):
+            image = inspected.get("image", {})
+            segments = inspected.get("segments", {})
+            fields = {
+                name: value
+                for name, value in {
+                    "image.version": image.get("version"),
+                    "image.boot_entry": image.get("boot_entry"),
+                    "segments.program_words": segments.get("program_words"),
+                    "segments.data_words": segments.get("data_words"),
+                    "segments.rootfs_blocks": segments.get("rootfs_blocks"),
+                    "segments.rootfs_nonzero_blocks": segments.get("rootfs_nonzero_blocks"),
+                }.items()
+                if isinstance(value, int)
+            }
+            inspected = dict(inspected)
+            _add_symbolic_fields(
+                inspected,
+                fields,
+                args.format,
+                getattr(args, "view", "scalar"),
+            )
         (out_dir / "image_manifest.json").write_text(
             json.dumps(inspected, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -5873,10 +6162,25 @@ def cmd_export_diagnostics(args: argparse.Namespace) -> int:
             (out_dir / "smoke_stdout.txt").write_text(smoke["stdout"], encoding="utf-8")
             (out_dir / "smoke_stderr.txt").write_text(smoke["stderr"], encoding="utf-8")
 
+    if getattr(args, "format", None):
+        try:
+            report["symbolic_diagnostics"] = _apply_symbolic_diagnostics(
+                out_dir, args.format, getattr(args, "view", "scalar")
+            )
+            runtime_dir = out_dir / "runtime"
+            if runtime_dir.is_dir():
+                report["symbolic_diagnostics"]["runtime"] = _apply_symbolic_diagnostics(
+                    runtime_dir, args.format, getattr(args, "view", "scalar")
+                )
+        except (OSError, ValueError) as exc:
+            report["symbolic_diagnostics"] = {"ok": False, "error": str(exc)}
+
     report_path = out_dir / "agent_diagnostics.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     print(f"wrote {report_path}")
     if report.get("smoke_run", {}).get("ok") is False:
+        return 1
+    if report.get("symbolic_diagnostics", {}).get("ok") is False:
         return 1
     return 0
 
@@ -5904,6 +6208,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         cmd.extend(["--export-diagnostics", args.export_diagnostics])
     cmd.extend([str(boot_image), str(disk_image)])
     result = run_command(cmd, cwd=REPO_ROOT, capture=False)
+    if (
+        result["returncode"] == 0
+        and args.export_diagnostics
+        and getattr(args, "format", None)
+    ):
+        try:
+            _apply_symbolic_diagnostics(
+                Path(args.export_diagnostics).resolve(),
+                args.format,
+                getattr(args, "view", "scalar"),
+            )
+        except (OSError, ValueError) as exc:
+            print(f"symbolic diagnostics failed: {exc}", file=sys.stderr)
+            return 1
     return int(result["returncode"])
 
 
@@ -6025,6 +6343,49 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
+    if getattr(args, "mode", None) == "native-jit":
+        collector = TOOLS_DIR / "collect_native_x64_jit_acceptance.py"
+        command = [
+            sys.executable,
+            str(collector),
+            "--repo-root",
+            str(REPO_ROOT),
+            "--build-dir",
+            str(default_build_dir(args.build_dir)),
+        ]
+        if args.no_build:
+            command.append("--skip-build")
+        if args.output:
+            command.extend(["--output", str(Path(args.output).resolve())])
+        if getattr(args, "cpu", None) is not None:
+            command.extend(["--cpu", str(args.cpu)])
+        result = run_command(command, cwd=REPO_ROOT, capture=True, timeout=3600)
+        if result["stdout"]:
+            print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+        if result["stderr"]:
+            print(result["stderr"], file=sys.stderr, end="" if result["stderr"].endswith("\n") else "\n")
+        if result["returncode"] != 0:
+            return int(result["returncode"])
+        if args.archive_if_passed:
+            accepted = Path(args.output).resolve() if args.output else (
+                default_build_dir(args.build_dir) /
+                "native-x64-jit-acceptance" /
+                "native_x64_jit_acceptance.v1.json")
+            try:
+                report = json.loads(accepted.read_text(encoding="utf-8"))
+                if report.get("accepted") is not True:
+                    print("native JIT evidence was not accepted; refusing archive", file=sys.stderr)
+                    return 1
+                archive = accepted.parent / "accepted" / accepted.name
+                archive.parent.mkdir(parents=True, exist_ok=True)
+                temporary = archive.with_suffix(archive.suffix + ".tmp")
+                shutil.copy2(accepted, temporary)
+                os.replace(temporary, archive)
+                print(f"archived {archive}")
+            except (OSError, json.JSONDecodeError) as error:
+                print(f"could not archive accepted native JIT evidence: {error}", file=sys.stderr)
+                return 1
+        return 0
     args.suites = ["benchmark"]
     args.all = False
     args.list = False
@@ -6129,6 +6490,68 @@ def cmd_bench(args: argparse.Namespace) -> int:
             file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_volume(args: argparse.Namespace) -> int:
+    """Run the explicitly opt-in host TRITENC1 volume consumer."""
+
+    build_dir = default_build_dir(args.build_dir)
+    if not args.no_build:
+        build = run_command(
+            ["cmake", "--build", str(build_dir), "--target", "trit_volume"],
+            cwd=REPO_ROOT, capture=True, timeout=args.timeout)
+        if build["stdout"]:
+            print(build["stdout"], end="" if build["stdout"].endswith("\n") else "\n")
+        if build["stderr"]:
+            print(build["stderr"], file=sys.stderr,
+                  end="" if build["stderr"].endswith("\n") else "\n")
+        if build["returncode"] != 0:
+            return int(build["returncode"])
+
+    binary = find_executable(build_dir, "trit_volume")
+    if binary is None:
+        print(
+            "could not find trit_volume; configure/build the CMake target first",
+            file=sys.stderr)
+        return 127
+
+    action = args.volume_action
+    command = [str(binary), action]
+    if action == "inspect":
+        if args.json:
+            command.append("--json")
+        command.append(str(Path(args.envelope).resolve()))
+    elif action == "encrypt":
+        command.extend(["--key-file", str(Path(args.key_file).resolve())])
+        if args.chunk_bytes is not None:
+            command.extend(["--chunk-bytes", str(args.chunk_bytes)])
+        if args.overwrite:
+            command.append("--overwrite")
+        command.extend([
+            str(Path(args.input).resolve()),
+            str(Path(args.output).resolve()),
+        ])
+    elif action == "decrypt":
+        command.extend(["--key-file", str(Path(args.key_file).resolve())])
+        if args.overwrite:
+            command.append("--overwrite")
+        command.extend([
+            str(Path(args.input).resolve()),
+            str(Path(args.output).resolve()),
+        ])
+    else:
+        command.extend(["--key-file", str(Path(args.key_file).resolve()),
+                        str(Path(args.envelope).resolve()), "--"])
+        command.extend(args.command)
+
+    result = run_command(command, cwd=REPO_ROOT, capture=True,
+                         timeout=args.timeout)
+    if result["stdout"]:
+        print(result["stdout"], end="" if result["stdout"].endswith("\n") else "\n")
+    if result["stderr"]:
+        print(result["stderr"], file=sys.stderr,
+              end="" if result["stderr"].endswith("\n") else "\n")
+    return int(result["returncode"])
 
 
 _REPLAY_SCHEMA_CATALOG: dict[str, dict[str, Any]] = {
@@ -7078,7 +7501,73 @@ def build_parser() -> argparse.ArgumentParser:
     symbolic = sub.add_parser("symbolic", help="convert TASCII-81 and ternary-native numeric notation")
     symbolic.add_argument("action", choices=("dump", "encode-text", "decode-text"))
     symbolic.add_argument("value")
+    symbolic.add_argument(
+        "--format", choices=_SYMBOLIC_FORMATS, default="all",
+        help="numeric dump format (default: all; legacy output is preserved)",
+    )
+    symbolic.add_argument(
+        "--width", type=int, default=None,
+        help="declared trit width for preserving leading trits",
+    )
+    symbolic.add_argument(
+        "--view", choices=_SYMBOLIC_VIEWS, default="scalar",
+        help="declared register/value view for symbolic output",
+    )
+    symbolic.add_argument("--json", action="store_true", help="emit a structured symbolic object")
     symbolic.set_defaults(func=cmd_symbolic)
+
+    volume = sub.add_parser(
+        "volume",
+        help="explicitly enabled host TRITENC1 encrypted-volume operations",
+    )
+    volume_sub = volume.add_subparsers(dest="volume_action", required=True)
+
+    volume_inspect = volume_sub.add_parser(
+        "inspect", help="inspect envelope version and geometry without a key",
+    )
+    add_build_dir(volume_inspect)
+    volume_inspect.add_argument("envelope")
+    volume_inspect.add_argument("--json", action="store_true")
+    volume_inspect.add_argument("--no-build", action="store_true")
+    volume_inspect.add_argument("--timeout", type=int, default=300)
+    volume_inspect.set_defaults(func=cmd_volume)
+
+    volume_encrypt = volume_sub.add_parser(
+        "encrypt", help="encrypt a canonical tDisk v2 file with AES-256-GCM",
+    )
+    add_build_dir(volume_encrypt)
+    volume_encrypt.add_argument("input")
+    volume_encrypt.add_argument("output")
+    volume_encrypt.add_argument("--key-file", required=True)
+    volume_encrypt.add_argument("--chunk-bytes", type=int, default=None)
+    volume_encrypt.add_argument("--overwrite", action="store_true")
+    volume_encrypt.add_argument("--no-build", action="store_true")
+    volume_encrypt.add_argument("--timeout", type=int, default=300)
+    volume_encrypt.set_defaults(func=cmd_volume)
+
+    volume_decrypt = volume_sub.add_parser(
+        "decrypt", help="decrypt and validate a TRITENC1 file into canonical tDisk",
+    )
+    add_build_dir(volume_decrypt)
+    volume_decrypt.add_argument("input")
+    volume_decrypt.add_argument("output")
+    volume_decrypt.add_argument("--key-file", required=True)
+    volume_decrypt.add_argument("--overwrite", action="store_true")
+    volume_decrypt.add_argument("--no-build", action="store_true")
+    volume_decrypt.add_argument("--timeout", type=int, default=300)
+    volume_decrypt.set_defaults(func=cmd_volume)
+
+    volume_attach = volume_sub.add_parser(
+        "attach/run", aliases=("attach", "run"),
+        help="decrypt, expose TRIT_VOLUME_PLAINTEXT to a command, and re-encrypt",
+    )
+    add_build_dir(volume_attach)
+    volume_attach.add_argument("envelope")
+    volume_attach.add_argument("--key-file", required=True)
+    volume_attach.add_argument("--no-build", action="store_true")
+    volume_attach.add_argument("--timeout", type=int, default=3600)
+    volume_attach.add_argument("command", nargs=argparse.REMAINDER)
+    volume_attach.set_defaults(func=cmd_volume)
 
     test = sub.add_parser("test", help="build and run suites from TEST_MANIFEST.json")
     add_test_options(test)
@@ -7086,6 +7575,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     bench = sub.add_parser("bench", help="run benchmark suite")
     add_test_options(bench)
+    bench.add_argument(
+        "mode", nargs="?", choices=("native-jit",), default=None,
+        help="run a controlled NativeX64Jit acceptance collection",
+    )
     bench.add_argument(
         "--warmups", type=int, default=2,
         help="unmeasured warmup iterations (default: 2)")
@@ -7098,11 +7591,31 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--output", default=None,
         help="benchmark JSON destination")
+    bench.add_argument(
+        "--archive-if-passed", action="store_true",
+        help="archive controlled NativeX64Jit evidence only after acceptance",
+    )
+    bench.add_argument(
+        "--controlled", action="store_true",
+        help="require the controlled-host NativeX64Jit acceptance collector",
+    )
+    bench.add_argument(
+        "--cpu", type=int, default=None,
+        help="verified logical CPU for controlled NativeX64Jit collection",
+    )
     bench.set_defaults(func=cmd_bench)
 
     inspect = sub.add_parser("inspect-image", help="validate and summarize a .tboot image")
     inspect.add_argument("image")
     inspect.add_argument("--json", action="store_true")
+    inspect.add_argument(
+        "--format", choices=_SYMBOLIC_FORMATS, default=None,
+        help="add symbolic fields without replacing numeric image fields",
+    )
+    inspect.add_argument(
+        "--view", choices=_SYMBOLIC_VIEWS, default="scalar",
+        help="declared register/value view for symbolic fields",
+    )
     inspect.set_defaults(func=cmd_inspect_image)
 
     compact_disk = sub.add_parser("compact-disk", help="compact a sparse .tdisk append-record image")
@@ -7126,6 +7639,14 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output", default=str(REPO_ROOT / "build" / "diagnostics" / "latest"))
     export.add_argument("--frames", type=int, default=10)
     export.add_argument("--timeout", type=int, default=120)
+    export.add_argument(
+        "--format", choices=_SYMBOLIC_FORMATS, default=None,
+        help="add symbolic fields to image, register, memory, checkpoint, and trace diagnostics",
+    )
+    export.add_argument(
+        "--view", choices=_SYMBOLIC_VIEWS, default="scalar",
+        help="declared register/value view for symbolic fields",
+    )
     export.add_argument("--no-smoke-run", dest="smoke_run", action="store_false")
     export.add_argument("--no-commands", action="store_true")
     export.set_defaults(func=cmd_export_diagnostics, smoke_run=True)
@@ -7137,6 +7658,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--smoke-test", action="store_true")
     run.add_argument("--frames", type=int, default=120)
     run.add_argument("--export-diagnostics", default=None)
+    run.add_argument(
+        "--format", choices=_SYMBOLIC_FORMATS, default=None,
+        help="add symbolic fields to exported diagnostics without changing numeric fields",
+    )
+    run.add_argument(
+        "--view", choices=_SYMBOLIC_VIEWS, default="scalar",
+        help="declared register/value view for exported symbolic diagnostics",
+    )
     run.set_defaults(func=cmd_run)
 
     profile = sub.add_parser("profile", help="boot a Ternary OS image and emit a deterministic VM profile")

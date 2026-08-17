@@ -72,6 +72,33 @@ The alphabets and the complete 81-entry text table are defined once in
 `ternary_symbolic_encoding.h` and mirrored by `tools/trit_symbolic.py`.
 Existing decimal and `0x` hexadecimal syntax retains its original meaning.
 
+## Guest SDK and dump selectors
+
+The allocation-free guest surface is executable in `apps/os_sdk.trit`:
+
+- `os_tascii81_encode_char(ascii)` and `os_tascii81_decode_char(index)` return
+  the table index or `-1`.
+- `os_symbolic_parse(addr, length, out_trits, capacity)` writes MSB-first
+  balanced trits and returns the trit count or a negative error. `0y` remains
+  parse-only; formatters emit `0t`.
+- `os_symbolic_format(value, format, out_addr, capacity)` selects decimal,
+  hexadecimal, `0t`, `0z27:`, or `0z81:` output and never writes partial output
+  on a buffer error.
+
+`tests/test_symbolic_guest.py` is the executable VM acceptance test. It covers
+the complete TASCII-81 table, parser/formatter round trips, malformed and
+overflow inputs, capacity errors, and sentinel preservation. Integer guest
+algorithms use the compiler's general `tdiv()` quotient intrinsic; ordinary
+T40 `/` retains numeric division semantics.
+
+`tools/trit_tool.py symbolic dump` keeps its legacy human output by default.
+`--format`, `--width`, and `--view` opt into structured symbolic output. The
+same selectors can be passed to `inspect-image` and `export-diagnostics`; JSON
+keeps the authoritative numeric fields and adds a sibling `symbolic` object.
+Memory/register/checkpoint/debugger selector propagation remains a separate
+integration gate until those runtime and diagnostic surfaces emit the same
+metadata contract.
+
 Useful grouping:
 
 | Group | States | Role |

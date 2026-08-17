@@ -2,7 +2,7 @@
 
 | Status | Last Updated | Related Code |
 | :--- | :--- | :--- |
-| Hardware register contract stable; compiler function boundary reserved | 2026-08-13 | `ternary_vm_state.h`, `ternary_compiler_types.h`, `ternary_compiler_codegen.h` |
+| Hardware register contract and ABI v3 boundary integrated; v2 compatibility retained | 2026-08-17 | `executable_header_v3.h`, `ternary_vm_state.h`, `ternary_compiler_types.h`, `ternary_compiler_codegen.h`, `kernel.trit` |
 
 ---
 
@@ -10,11 +10,34 @@
 
 The architectural vector register file is available to VM/ISA operations,
 but its existence does not by itself define a source-language function ABI.
-The compiler's default function contract is
-`trit.compiler.function-abi.v2` (version 2). An opt-in
-`trit.compiler.function-abi.v3` profile now defines caller-owned aggregate
-returns, but both profiles keep first-class vector function boundaries
-fail-closed until the VM/vector-state contract is complete.
+The release compiler and image builder use
+`trit.compiler.function-abi.v3` (version 3) by default. An explicit
+`trit.compiler.function-abi.v2` compatibility path remains available for
+legacy applications and migration fixtures.
+
+## Executable and function ABI v3
+
+The v3 executable identity is separate from the existing `.tboot` container
+version. It uses function ABI 3, vector ABI 1, fixed `VLEN = 27`, eight vector
+registers, and a 279-word process vector-context contract. Required feature
+bits identify the v3 executable profile, vector geometry, vector context, and
+vector spill support. `executable_header_v3.h` provides versioned validation
+and round-trip helpers while the v2 decoder remains unchanged.
+
+The vector function rules are:
+
+- `v0`–`v3` carry vector arguments and `v0` carries a vector return;
+- `v4`–`v7`, the accumulator, and lane-fault state are caller-saved;
+- `VLEN` is callee-preserved and must be 27 at entry and exit;
+- vector arguments beyond the first four use 27-word, 9-aligned outgoing
+  stack slots sharing the scalar/T50/aggregate stack cursor;
+- vector spills use 27 words with 9-word alignment.
+
+Vector syscalls, atomics, and foreign interfaces remain fail-closed. The
+versioned loader, image propagation, trap/scheduler integration, and exact
+tagged context ownership are integrated. The release gate keeps v2 readable
+and rejects unknown versions, mixed object ABIs, malformed vector geometry,
+and v3 images without VECTOR_CONTEXT support.
 
 ### 1. Vector Register Roles
 The 8 vector registers are assigned specific architectural roles:
@@ -25,11 +48,11 @@ The 8 vector registers are assigned specific architectural roles:
 | **v1 - v3** | `va1 - va3` | Arguments 1 - 3 | Caller-Saved |
 | **v4 - v7** | `vt0 - vt3` | Temporary Vectors | Caller-Saved |
 
-These roles are an architectural design target, not an enabled compiler
-boundary. In ABI v2 and v3, a function with a `vec<T>` parameter or return
-value is rejected before target emission. The compiler must not scalarize the
-value, silently pass a scalar register, or replay the AST with a private
-convention.
+ABI v2 rejects first-class vector function parameters and returns before target
+emission. ABI v3 admits only the explicitly supported vector signatures and
+SSA operations; unsupported element types and interfaces still fail closed.
+The compiler must not scalarize the value, silently pass a scalar register, or
+replay the AST with a private convention.
 
 ### 2. The Accumulator Protocol (`rA`)
 The high-precision 50-trit accumulator is a global shared resource.
@@ -46,9 +69,9 @@ The hardware `vector_length` setting affects all subsequent vector operations.
 *   **Preservation**: `VLEN` is **Callee-Saved**.
 *   **Contract**: If a function modifies the vector length to optimize a local loop, it must save the original length and restore it before the `RET` instruction.
 
-The VLEN rule is a requirement for a future enabled vector function profile;
-it does not make VLEN preservation available at either compiler function
-boundary profile.
+The VLEN rule is enforced by the v3 contract. The kernel saves and restores
+the separately allocated vector context across entry, preemption, timer and
+syscall switches, fork, exec, exit, and task-slot reuse.
 
 ### Lane Faults
 The `VectorFaultState` is **Volatile**. 
@@ -64,13 +87,9 @@ The `VectorFaultState` is **Volatile**.
 > [!WARNING]
 > **Register Spilling**: Spilling a single vector register to the stack requires 27 (or `VLEN`) `STORE` instructions. High-performance code should be structured to avoid vector spills entirely through register-pressure analysis at the compiler level.
 
-## Compiler boundary checklist for a future ABI version
+## Compatibility and release checklist
 
-Before first-class vectors can be enabled, a versioned contract must specify
-all of the following as one change: fixed lane width (or a dynamic-length
-descriptor), argument and return registers, caller/callee preservation of
-vector registers and VLEN, lane-fault and accumulator state, word-aligned
-stack spill encoding, and cross-version link rejection. ABI v3 publishes the
-reserved boundary name `unsupported-vm-vector-register-boundary` so tools and
-linkers can distinguish this dependency from a generic type error; it still
-fails closed until VM/vector-state ownership and spill lowering are added.
+The focused codec/compiler test is `test_executable_abi_v3`; the OS and
+production suites additionally cover loader, image, scheduler, and process
+handoff behavior. ABI v2 applications must continue to boot unchanged, while
+new release images use v3 unless `TRIT_BUNDLED_APP_FUNCTION_ABI=2` is set.

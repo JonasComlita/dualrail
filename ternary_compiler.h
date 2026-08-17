@@ -79,6 +79,24 @@ namespace compiler {
     result.function_abi_version = options.function_abi_version;
     result.function_abi_contract =
         FunctionAbiContract::idForVersion(options.function_abi_version);
+    const bool emit_v3_executable =
+        options.executable_version == architecture::v3::EXECUTABLE_VERSION;
+    if (emit_v3_executable &&
+        options.function_abi_version != architecture::v3::FUNCTION_ABI_VERSION) {
+        result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "executable ABI v3 requires function ABI v3; refusing a mixed link",
+            SourceSpan{"linker", 1, 1, 1}});
+    }
+    if (options.enable_vector_abi &&
+        (!emit_v3_executable ||
+         options.function_abi_version != architecture::v3::FUNCTION_ABI_VERSION ||
+         options.vector_length != architecture::v3::VECTOR_LANE_COUNT)) {
+        result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "vector ABI requires function ABI v3, executable ABI v3, and VLEN 27",
+            SourceSpan{"linker", 1, 1, 1}});
+    }
     std::set<std::string> symbols;
     const int architectural_stack_words =
         ((std::max(
@@ -139,6 +157,15 @@ namespace compiler {
 
     auto functionOrder = selectedFunctionOrder();
     std::uint64_t required_features = options.required_features;
+    if (emit_v3_executable) {
+        required_features |= architecture::v3::REQUIRED_FEATURES |
+            isa::featureBit(architecture::v3::FEATURE_VECTOR_ABI_V3) |
+            isa::featureBit(architecture::v3::FEATURE_VECTOR_GEOMETRY);
+        if (options.enable_vector_spilling) {
+            required_features |=
+                isa::featureBit(architecture::v3::FEATURE_VECTOR_SPILL);
+        }
+    }
     if (!FunctionAbiContract::supportsVersion(options.function_abi_version)) {
         result.diagnostics.push_back({
             DiagnosticSeverity::Error,
@@ -211,6 +238,21 @@ namespace compiler {
         requireFeature(architecture::v2::FEATURE_MMU, "mmu");
         requireFeature(architecture::v2::FEATURE_WAIT, "wait");
         requireFeature(architecture::v2::FEATURE_WIDE_T50, "wide_t50");
+        if (emit_v3_executable) {
+            const auto requireV3Feature = [&](int trit, const char* name) {
+                if ((required_features & isa::featureBit(trit)) != 0) {
+                    asmOut << ".require " << name << "\n";
+                }
+            };
+            requireV3Feature(
+                architecture::v3::FEATURE_VECTOR_ABI_V3, "vector_abi_v3");
+            requireV3Feature(
+                architecture::v3::FEATURE_VECTOR_GEOMETRY, "vector_geometry");
+            requireV3Feature(
+                architecture::v3::FEATURE_VECTOR_CONTEXT, "vector_context");
+            requireV3Feature(
+                architecture::v3::FEATURE_VECTOR_SPILL, "vector_spill");
+        }
         asmOut << ".text\n";
         asmOut << "_start:\n";
         asmOut << "    call main\n";
@@ -236,9 +278,15 @@ namespace compiler {
             for (const auto& module : modules) asmOut << module.assembly;
         }
         asmOut << ".data\n";
-        asmOut << "phase7_exec: .execheader2 0, " << text_measure << ", "
+        const long long feature_word = emit_v3_executable
+            ? vm::executableFeatureWordNumeric(
+                  required_features, architecture::v3::FEATURE_V3_LAST)
+            : isa::featureWordNumeric(required_features);
+        asmOut << "phase7_exec: "
+               << (emit_v3_executable ? ".execheader3 " : ".execheader2 ")
+               << "0, " << text_measure << ", "
                << data_words << ", " << architectural_stack_words << ", "
-               << isa::featureWordNumeric(required_features) << ", "
+               << feature_word << ", "
                << options.syscall_abi_version << ", " << options.flags << "\n";
         return asmOut.str();
     };
@@ -253,7 +301,7 @@ namespace compiler {
     }
 
     const vm::assembler::AssemblyOptions assembly_options{
-        isa::IsaEncodingVersion::V2, true};
+        isa::IsaEncodingVersion::V2, true, options.executable_version};
     result.assembly = buildAssembly(1, 0);
     result.assembled =
         vm::assembler::assemble(result.assembly, assembly_options);
@@ -261,9 +309,12 @@ namespace compiler {
         int text_measure = 1;
         int data_words = 0;
         text_measure = static_cast<int>(result.assembled.program.size());
+        const int executable_header_words = emit_v3_executable
+            ? vm::EXEC_V3_HEADER_WORDS
+            : vm::EXEC_V2_HEADER_WORDS;
         data_words = std::max(
             0, static_cast<int>(result.assembled.data.size()) -
-                   vm::EXEC_V2_HEADER_WORDS);
+                   executable_header_words);
         if (text_measure != 1 || data_words != 0) {
             result.assembly = buildAssembly(text_measure, data_words);
             result.assembled =
@@ -283,6 +334,14 @@ namespace compiler {
         result.executable_header_v2 =
             result.assembled.executable_headers_v2.at("phase7_exec");
     }
+    if (result.assembled.executable_headers_v3.count("phase7_exec")) {
+        result.executable_header_v3 =
+            result.assembled.executable_headers_v3.at("phase7_exec");
+    }
+    result.executable_version = options.executable_version;
+    result.vector_abi_version = emit_v3_executable
+        ? architecture::v3::VECTOR_ABI_VERSION
+        : 0;
     for (const auto& module : modules) {
         for (const auto& symbol : module.symbols) result.symbol_map[symbol.first] = symbol.second;
     }

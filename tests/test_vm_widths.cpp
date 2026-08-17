@@ -547,6 +547,513 @@ void testVmWidths() {
     }
 
     {
+        // Dynamic control lowers only the strict canonical T40/integral
+        // subset.  Valid RET/CALLR/JMPR targets must commit directly and
+        // preserve CALLR's link write, while all three leave the trace after
+        // the target is validated.
+        const auto dynamic_program = assembleOrThrow(R"(
+            mov r1, 5
+            callr r1
+            mov r3, 7
+            jmpr r3
+            nop
+            mov r2, 7
+            ret
+            halt
+        )");
+        VMState interpreter(32, 64);
+        VMState native(32, 64);
+        expect(loadAndReset(interpreter, dynamic_program) &&
+                   loadAndReset(native, dynamic_program),
+               "native dynamic control programs load");
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 32);
+        const auto native_result = sandbox::vm::run(native, 32);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count,
+               "native dynamic control preserves status and accounting");
+        expect(native.branch_instructions_count ==
+                   interpreter.branch_instructions_count &&
+                   native.trap_reg == interpreter.trap_reg &&
+                   native.regfile.reg == interpreter.regfile.reg &&
+                   native.regfile.view_mode == interpreter.regfile.view_mode,
+               "native dynamic control preserves complete architectural state");
+        expect(native.regfile.read(R2) == interpreter.regfile.read(R2) &&
+                   native.regfile.read(R3) == interpreter.regfile.read(R3) &&
+                   native.regfile.readLR() == interpreter.regfile.readLR(),
+               "native dynamic control preserves target and LR values");
+        if (nativeX64HostAvailable()) {
+            bool saw_callr = false;
+            bool saw_ret = false;
+            bool saw_jmpr = false;
+            bool all_dynamic_direct = true;
+            bool all_lowerings_accounted = true;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                all_lowerings_accounted = all_lowerings_accounted &&
+                    block->direct_instruction_count +
+                            block->helper_instruction_count ==
+                        block->lowered.size();
+                for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                    if (instruction.op == VMMicroOpcode::CallR) {
+                        saw_callr = true;
+                        all_dynamic_direct = all_dynamic_direct &&
+                            nativeX64InstructionIsDirect(
+                                instruction, block->lowered.size());
+                    } else if (instruction.op == VMMicroOpcode::Ret) {
+                        saw_ret = true;
+                        all_dynamic_direct = all_dynamic_direct &&
+                            nativeX64InstructionIsDirect(
+                                instruction, block->lowered.size());
+                    } else if (instruction.op == VMMicroOpcode::Jmpr) {
+                        saw_jmpr = true;
+                        all_dynamic_direct = all_dynamic_direct &&
+                            nativeX64InstructionIsDirect(
+                                instruction, block->lowered.size());
+                    }
+                }
+            }
+            expect(saw_callr && saw_ret && saw_jmpr && all_dynamic_direct,
+                   "native dynamic RET/CALLR/JMPR lower directly");
+            expect(all_lowerings_accounted,
+                   "native dynamic code cache accounts every lowering");
+            expect(native.native_x64_jit_stats.blocks_built > 0 &&
+                       native.native_x64_jit_stats.direct_instructions > 0,
+                   "native dynamic control builds and executes code");
+            expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                   "valid native dynamic control has no portable side exit");
+            expect(native.native_x64_jit_stats.direct_instructions ==
+                       native.native_x64_jit_stats.instructions_executed,
+                   "valid native dynamic control counts direct commits");
+            bool all_dynamic_wx = !native.native_x64_code_cache.empty();
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                all_dynamic_wx = all_dynamic_wx && block->isWriteXorExecute();
+            }
+            expect(all_dynamic_wx,
+                   "native dynamic control code remains W^X");
+        } else {
+            expect(native.native_x64_jit_stats.blocks_built == 0,
+                   "non-x86 dynamic control stays portable");
+        }
+    }
+
+    {
+        // Exercise a nested immediate CALL -> CALLR -> RET sequence.  The
+        // outer link is explicitly saved and restored around the inner call,
+        // so native and portable execution must agree on both LR transitions.
+        const auto nested_program = assembleOrThrow(R"(
+            call outer
+            halt
+            nop
+            nop
+        outer:
+            copy r6, r25
+            mov r1, 11
+            callr r1
+            copy r25, r6
+            jmp done
+            nop
+            nop
+        inner:
+            mov r2, 7
+            ret
+        done:
+            ret
+        )");
+        VMState interpreter(32, 32);
+        VMState native(32, 32);
+        expect(loadAndReset(interpreter, nested_program) &&
+                   loadAndReset(native, nested_program),
+               "native nested dynamic-control programs load");
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 64);
+        const auto native_result = sandbox::vm::run(native, 64);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native_result.trap_code == interpreter_result.trap_code &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count &&
+                   native.branch_instructions_count ==
+                       interpreter.branch_instructions_count &&
+                   native.trap_reg == interpreter.trap_reg &&
+                   native.regfile.reg == interpreter.regfile.reg &&
+                   native.regfile.view_mode == interpreter.regfile.view_mode,
+               "native nested CALL/CALLR/RET preserves full state");
+        expect(sandbox::vm::ops::toLong(native.regfile.read(R2)) == 7,
+               "native nested dynamic-control reaches inner callee");
+        if (nativeX64HostAvailable()) {
+            expect(native.native_x64_jit_stats.direct_instructions > 0 &&
+                       native.native_x64_jit_stats.portable_side_exits == 0,
+                   "native nested dynamic control stays direct");
+        } else {
+            expect(native.native_x64_jit_stats.blocks_built == 0,
+                   "non-x86 nested dynamic control stays portable");
+        }
+    }
+
+    {
+        // CALLR may read its target from LR while also overwriting LR.  The
+        // generated path must load the target first and only then commit the
+        // validated return PC.
+        const auto alias_program = assembleOrThrow(R"(
+            callr r25
+            halt
+            nop
+            mov r2, 7
+            ret
+        )");
+        VMState interpreter(32, 32);
+        VMState native(32, 32);
+        expect(loadAndReset(interpreter, alias_program) &&
+                   loadAndReset(native, alias_program),
+               "native CALLR/LR alias programs load");
+        interpreter.regfile.writeLR(sandbox::vm::ops::fromLong(3));
+        native.regfile.writeLR(sandbox::vm::ops::fromLong(3));
+        interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto interpreter_result = sandbox::vm::run(interpreter, 32);
+        const auto native_result = sandbox::vm::run(native, 32);
+        expect(native_result.status == interpreter_result.status &&
+                   native_result.steps == interpreter_result.steps &&
+                   native.pc == interpreter.pc &&
+                   native.cycle_count == interpreter.cycle_count &&
+                   native.regfile.read(R2) == interpreter.regfile.read(R2) &&
+                   native.regfile.readLR() == interpreter.regfile.readLR(),
+               "native CALLR/LR alias preserves portable semantics");
+        if (nativeX64HostAvailable()) {
+            bool saw_alias_callr = false;
+            bool alias_was_direct = false;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                    if (instruction.op != VMMicroOpcode::CallR ||
+                        instruction.word.rs1 != R25_LR) {
+                        continue;
+                    }
+                    saw_alias_callr = true;
+                    alias_was_direct = nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size());
+                }
+            }
+            expect(saw_alias_callr && alias_was_direct,
+                   "native CALLR/LR alias remains directly lowerable");
+            expect(native.native_x64_jit_stats.portable_side_exits == 0,
+                   "valid CALLR/LR alias stays on native path");
+        }
+    }
+
+    {
+        // Guard failures must leave the faulting dynamic instruction wholly
+        // untouched so the portable interpreter observes the same trap or
+        // non-local control behavior.  This covers target range validation,
+        // fractional T40, non-T40 view aliasing, and wide LR state.
+        auto compareDynamicGuard = [&](const std::string& label,
+                                       const std::vector<TritWord27>& program,
+                                       const std::function<void(VMState&)>& setup,
+                                       int max_steps) {
+            VMState interpreter(32, 64);
+            VMState native(32, 64);
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   label + " programs load");
+            setup(interpreter);
+            setup(native);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result =
+                sandbox::vm::run(interpreter, max_steps);
+            const auto native_result = sandbox::vm::run(native, max_steps);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps &&
+                       native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count &&
+                       native.branch_instructions_count ==
+                           interpreter.branch_instructions_count &&
+                       native.trap_reg == interpreter.trap_reg &&
+                       native.regfile.reg == interpreter.regfile.reg &&
+                       native.regfile.view_mode ==
+                           interpreter.regfile.view_mode,
+                   label + " preserves precise portable state");
+            expect(native.regfile.readLR() == interpreter.regfile.readLR(),
+                   label + " preserves LR across a guard exit");
+            if (!nativeX64HostAvailable()) {
+                expect(native.native_x64_jit_stats.blocks_built == 0,
+                       label + " skips native code on non-x86 host");
+                return;
+            }
+            expect(native.native_x64_jit_stats.portable_side_exits > 0,
+                   label + " records a precise native guard exit");
+            bool saw_dynamic = false;
+            bool dynamic_was_direct = false;
+            for (const auto& cached : native.native_x64_code_cache) {
+                const auto block =
+                    std::static_pointer_cast<VMNativeX64CodeBlock>(
+                        cached.second);
+                for (const VMNativeX64Instruction& instruction :
+                         block->lowered) {
+                    if (instruction.op != VMMicroOpcode::Ret &&
+                        instruction.op != VMMicroOpcode::CallR &&
+                        instruction.op != VMMicroOpcode::Jmpr) {
+                        continue;
+                    }
+                    saw_dynamic = true;
+                    dynamic_was_direct = dynamic_was_direct ||
+                        nativeX64InstructionIsDirect(
+                            instruction, block->lowered.size());
+                }
+            }
+            expect(saw_dynamic && dynamic_was_direct,
+                   label + " keeps the dynamic op in the direct cache class");
+        };
+
+        auto compareDynamicValid = [&](const std::string& label,
+                                       const std::vector<TritWord27>& program,
+                                       const std::function<void(VMState&)>& setup,
+                                       int max_steps) {
+            VMState interpreter(32, 64);
+            VMState native(32, 64);
+            expect(loadAndReset(interpreter, program) &&
+                       loadAndReset(native, program),
+                   label + " programs load");
+            setup(interpreter);
+            setup(native);
+            interpreter.setExecutionBackend(VMExecutionBackend::Interpreter);
+            native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+            native.setDecodedTraceHotThreshold(1);
+            const auto interpreter_result =
+                sandbox::vm::run(interpreter, max_steps);
+            const auto native_result = sandbox::vm::run(native, max_steps);
+            expect(native_result.status == interpreter_result.status &&
+                       native_result.trap_code == interpreter_result.trap_code &&
+                       native_result.steps == interpreter_result.steps &&
+                       native.pc == interpreter.pc &&
+                       native.cycle_count == interpreter.cycle_count &&
+                       native.branch_instructions_count ==
+                           interpreter.branch_instructions_count &&
+                       native.regfile.reg == interpreter.regfile.reg &&
+                       native.regfile.view_mode ==
+                           interpreter.regfile.view_mode,
+                   label + " preserves dynamic architectural state");
+            if (nativeX64HostAvailable()) {
+                expect(native.native_x64_jit_stats.direct_instructions > 0 &&
+                           native.native_x64_jit_stats.portable_side_exits == 0,
+                       label + " commits on the direct native path");
+                bool all_wx = !native.native_x64_code_cache.empty();
+                for (const auto& cached : native.native_x64_code_cache) {
+                    const auto block =
+                        std::static_pointer_cast<VMNativeX64CodeBlock>(
+                            cached.second);
+                    all_wx = all_wx && block->isWriteXorExecute();
+                }
+                expect(all_wx, label + " keeps generated code W^X");
+            } else {
+                expect(native.native_x64_jit_stats.blocks_built == 0,
+                       label + " remains portable on non-x86 hosts");
+            }
+        };
+
+        compareDynamicValid(
+            "native dynamic zero target",
+            assembleOrThrow(R"(
+                jmpr r1
+                halt
+            )"),
+            [](VMState&) {},
+            8);
+
+        std::string highest_target_source = "mov r1, 31\njmpr r1\n";
+        for (int pc = 2; pc < 31; ++pc) highest_target_source += "nop\n";
+        highest_target_source += "halt\n";
+        compareDynamicValid(
+            "native dynamic highest valid target",
+            assembleOrThrow(highest_target_source),
+            [](VMState&) {},
+            16);
+
+        compareDynamicValid(
+            "native user dynamic target",
+            assembleOrThrow(R"(
+                mov r1, 4
+                jmpr r1
+                halt
+                nop
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.privilege = PrivilegeMode::User;
+                vm.mmu_enable = false;
+                vm.user_imem_base = 0;
+                vm.user_imem_limit = 5;
+            },
+            8);
+
+        compareDynamicValid(
+            "native MMU user dynamic fetch boundary",
+            assembleOrThrow(R"(
+                mov r1, 1000
+                jmpr r1
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.privilege = PrivilegeMode::User;
+                vm.mmu_enable = true;
+                vm.user_imem_ptbr = 32;
+                vm.user_imem_pages = 1;
+                PageTableEntry code_page;
+                code_page.ppn = 0;
+                code_page.present = true;
+                code_page.user = true;
+                code_page.read = true;
+                code_page.execute = true;
+                expect(vm.dmem.store(
+                           vm.user_imem_ptbr,
+                           encodePageTableEntry(code_page)) ==
+                           MemFaultCode::OK,
+                       "native MMU user code page table entry stores");
+            },
+            8);
+
+        compareDynamicGuard(
+            "native dynamic target range",
+            assembleOrThrow(R"(
+                mov r1, 1000
+                callr r1
+                halt
+            )"),
+            [](VMState&) {},
+            16);
+        compareDynamicGuard(
+            "native negative dynamic target",
+            assembleOrThrow(R"(
+                mov r1, -1
+                jmpr r1
+                halt
+            )"),
+            [](VMState&) {},
+            8);
+        compareDynamicGuard(
+            "native invalid dynamic target",
+            assembleOrThrow(R"(
+                jmpr r1
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.reg[R1] = TernaryValue::invalid(TernaryMode::T40);
+                vm.regfile.view_mode[R1] = TernaryMode::T40;
+            },
+            8);
+        compareDynamicGuard(
+            "native user dynamic target range",
+            assembleOrThrow(R"(
+                mov r1, 1000
+                jmpr r1
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.privilege = PrivilegeMode::User;
+                vm.mmu_enable = false;
+                vm.user_imem_base = 0;
+                vm.user_imem_limit = 3;
+            },
+            8);
+        compareDynamicGuard(
+            "native fractional dynamic target",
+            assembleOrThrow(R"(
+                jmpr r1
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.reg[R1] = TernaryValue::fromTriple(
+                    sandbox::ops::fromDouble(0.5));
+            },
+            8);
+        compareDynamicGuard(
+            "native non-T40 dynamic view",
+            assembleOrThrow(R"(
+                jmpr r1
+                halt
+                nop
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.write(
+                    R1,
+                    TernaryValue::fromT20(native_ops::fromIntT20(3)));
+            },
+            8);
+        compareDynamicGuard(
+            "native wide LR RET",
+            assembleOrThrow(R"(
+                ret
+                nop
+                halt
+            )"),
+            [](VMState& vm) {
+                vm.regfile.writeLR(TernaryValue::fromLongTriple(
+                    native_ops::fromInt(2)));
+            },
+            8);
+    }
+
+    {
+        // The dynamic target is part of the trace cache key's start PC, but
+        // the generated block itself must be reused across repeated entries.
+        VMState native(16, 16);
+        const auto loop = assembleOrThrow(R"(
+            mov r1, 1
+            jmpr r1
+        )");
+        expect(loadAndReset(native, loop),
+               "native dynamic cache-reuse program loads");
+        native.setExecutionBackend(VMExecutionBackend::NativeX64Jit);
+        native.setDecodedTraceHotThreshold(1);
+        const auto first = sandbox::vm::run(native, 24);
+        expect(first.timeout(), "native dynamic cache-reuse first run times out");
+        const auto first_attempts =
+            native.native_x64_jit_stats.compilation_attempts;
+        const auto first_blocks = native.native_x64_jit_stats.blocks_built;
+        const auto first_cache_size = native.native_x64_code_cache.size();
+        // Change the runtime target without changing the decoded trace key;
+        // the same generated block must decode the new T40 value.
+        native.regfile.write(
+            R1,
+            TernaryValue::fromTriple(native_ops::fromIntT40(0)));
+        const auto second = sandbox::vm::run(native, 24);
+        expect(second.timeout(), "native dynamic cache-reuse second run times out");
+        if (nativeX64HostAvailable()) {
+            expect(first_attempts > 0 && first_blocks > 0 &&
+                       first_cache_size > 0,
+                   "native dynamic cache-reuse builds a code block");
+            expect(native.native_x64_jit_stats.compilation_attempts ==
+                       first_attempts &&
+                       native.native_x64_jit_stats.blocks_built == first_blocks &&
+                       native.native_x64_code_cache.size() == first_cache_size,
+                   "native dynamic cache-reuse avoids recompilation");
+            expect(native.native_x64_jit_stats.portable_side_exits == 0 &&
+                       native.native_x64_jit_stats.direct_instructions > 0,
+                   "native dynamic cache-reuse commits changed targets directly");
+        }
+    }
+
+    {
         // Width-qualified COPY must preserve the requested numeric view.  The
         // native inline copy is deliberately limited to canonical T40; other
         // widths use the helper so RegFile::readView performs the conversion.

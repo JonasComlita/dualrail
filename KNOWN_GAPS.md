@@ -4,31 +4,27 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- Complete the remaining x86-64 dynamic/non-local control lowering (`RET`,
-  `CALLR`, and `JMPR`) and archive controlled-host timing evidence before
-  enabling the native JIT by default. Immediate `CALL` is now directly lowered
-  with wide-register guards, and deterministic seven-repeat fingerprints pass;
-  wall-clock CV still exceeds the global gate on this host.
-- Complete the VM/image side of first-class vector and function ABI v3.
-  Compiler ABI v3 now supports nested caller-owned `sret` aggregate returns
-  across register and stack arguments, while executable headers/loaders remain
-  ABI v2 and vector boundaries fail closed pending VLEN, fault, accumulator,
-  and spill-state ownership.
+No highest-priority implementation gaps are currently recorded. The dynamic
+control JIT, executable/vector ABI v3 rollout, symbolic guest/dump integration,
+and real external benchmark acceptance have passed their focused or manual
+gates. NativeX64Jit is now the host-runtime default on accepted x86-64 hosts;
+portable hosts retain CachedBlockInterpreter.
 
 ## Medium Priority
 
-- Materialize the provenance-locked external benchmark payloads when repository
-  storage policy permits: two Freedoom 0.13.0 WADs and the official ~1.18 GB
-  BitNet safetensors/GGUF artifacts. Offline staged import, hashes, licenses,
-  WAD/model validation, and metadata-only fixtures are implemented; no full
-  payload is currently committed or claimed.
-- Add guest app-SDK conversions and broader image/memory dump integration for
-  the implemented TASCII-81, `0t`, `0z27:`, and `0z81:` host/assembler/TCL
-  contract.
-- Complete production integration and cryptographic review for encrypted
-  volumes. The versioned host `TRITENC1` AES-256-GCM envelope and optional
-  OpenSSL provider are implemented and tested; default remains fail-closed,
-  and the separately documented ternary-native format remains non-selected.
+- External payload acceptance is complete in the ignored, provenance-locked
+  local cache: Freedoom slice/full frame hashes and official BitNet slice/full
+  token/reference hashes pass. Payloads, converted tensors, and inventories
+  remain intentionally untracked; a fresh machine must acquire the cache, and
+  the normal offline benchmark profile remains synthetic.
+- Complete the independent cryptographic review for the production host-only
+  `TRITENC1` lifecycle. The strict key provider, OpenSSL 3 AES-256-GCM path,
+  parser, CLI, managed plaintext lifecycle, atomic replacement, and focused
+  tamper/cleanup tests are implemented. The review gate still has unresolved
+  high-severity nonce-uniqueness, replay/rollback, crash-cleanup, key-file
+  race, provider-policy, and fuzz-bound findings. Any format-affecting
+  remediation requires a new envelope version; the ternary-native proposal
+  remains explicitly non-selected.
 
 ## Lower Priority
 

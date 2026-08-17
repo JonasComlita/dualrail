@@ -83,6 +83,44 @@
 #include <stdexcept>
 #include "generated/architecture_contract.h"
 
+// The v3 executable/function profile keeps the v2 instruction encoding.  These
+// constants describe the opt-in vector/context envelope.  VCTX operations use
+// a private escape selector in the v2 wire space and are deliberately exposed
+// through the owned semantic codec below; the generated v2 dispatcher must
+// still opt in before executing them.
+namespace sandbox::architecture::v3 {
+inline constexpr int ISA_VERSION = architecture::v2::ISA_VERSION;
+inline constexpr int EXECUTABLE_VERSION = 3;
+inline constexpr int FUNCTION_ABI_VERSION = 3;
+inline constexpr int VECTOR_ABI_VERSION = 1;
+inline constexpr int SYSCALL_ABI_VERSION = architecture::v2::SYSCALL_ABI_VERSION;
+inline constexpr int VECTOR_REGISTER_COUNT = 8;
+inline constexpr int VECTOR_LANE_COUNT = 27;
+inline constexpr int VECTOR_LANE_WORD_TRITS = architecture::v2::SCALAR_WORD_TRITS;
+inline constexpr int VECTOR_CONTEXT_WORDS = 279;
+inline constexpr int VECTOR_SPILL_WORDS = VECTOR_LANE_COUNT;
+
+// Feature trits 0..8 are the v2 feature set.  The v3 envelope requires an
+// explicit profile bit plus independent geometry/context/spill declarations.
+inline constexpr int FEATURE_EXECUTABLE_ABI_V3 = 9;
+inline constexpr int FEATURE_VECTOR_ABI_V3 = FEATURE_EXECUTABLE_ABI_V3;
+inline constexpr int FEATURE_VECTOR_GEOMETRY = 10;
+inline constexpr int FEATURE_VECTOR_CONTEXT = 11;
+inline constexpr int FEATURE_VECTOR_SPILL = 12;
+inline constexpr int FEATURE_V3_LAST = FEATURE_VECTOR_SPILL;
+
+inline constexpr std::uint64_t featureBit(int trit) {
+    return std::uint64_t{1} << static_cast<unsigned>(trit);
+}
+
+inline constexpr std::uint64_t SUPPORTED_FEATURES =
+    (std::uint64_t{1} << static_cast<unsigned>(FEATURE_V3_LAST + 1)) - 1;
+inline constexpr std::uint64_t REQUIRED_FEATURES =
+    featureBit(architecture::v2::FEATURE_BASE_V2) |
+    featureBit(architecture::v2::FEATURE_VECTOR) |
+    featureBit(FEATURE_VECTOR_CONTEXT);
+} // namespace sandbox::architecture::v3
+
 namespace sandbox {
 namespace isa {
 
@@ -427,6 +465,12 @@ enum class Opcode : uint8_t {
     WAIT     = 80,
     TLBINV   = 81,
 
+    // v3 privileged vector-context operations. These are semantic opcodes;
+    // their escape selectors are outside the v2 generated selector table and
+    // are handled by encodeVectorContext/decodeVectorContext below.
+    VCTXSTORE = 82,
+    VCTXLOAD  = 83,
+
     // --- Reserved ---
     // Value 80 is reserved for future extension.
     // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
@@ -439,6 +483,9 @@ enum class IsaEncodingVersion : uint8_t {
 
 static constexpr uint8_t OPCODE_MAX_ASSIGNED = 79;  // TSTR
 static constexpr uint8_t OPCODE_RESERVED_START = 80;
+
+static constexpr int VCTXSTORE_ESCAPE_SELECTOR = 81;
+static constexpr int VCTXLOAD_ESCAPE_SELECTOR  = 82;
 
 static constexpr uint8_t FUNC_T1  =  8;
 static constexpr uint8_t FUNC_T5  =  9;
@@ -557,6 +604,7 @@ static constexpr uint8_t FUNC_ORDER_SEQ_CST = static_cast<uint8_t>(FUNC_DEFAULT 
 }
 
 static constexpr int VECTOR_REGISTER_COUNT = 8;
+static constexpr int VECTOR_LANE_COUNT = architecture::v3::VECTOR_LANE_COUNT;
 
 // =============================================================================
 // SECTION 6 — Register Conventions
@@ -1022,6 +1070,96 @@ private:
 #include "generated/architecture_instruction_codec.h"
 
 #include "architecture_v2_support.h"
+
+// =============================================================================
+// SECTION 8a — v3 privileged vector-context escape operations
+// =============================================================================
+//
+// The generated v2 selector table is intentionally immutable for v2
+// compatibility.  VCTXSTORE/VCTXLOAD therefore use an owned, unambiguous
+// escape form: I-format, raw opcode ESCAPE_OPCODE, a 12-trit signed offset at
+// bits [0,11], and a 10-trit selector at [12,21].  The context address is the
+// scalar rs1 register plus the signed offset.  rd is encoded as r0 and must be
+// ignored by an execution backend.  v2 decoders continue to see the escape as
+// reserved; v3-capable loaders dispatch through these helpers only after the
+// VECTOR_CONTEXT feature and kernel privilege checks succeed.
+
+struct VectorContextInstruction {
+    bool valid = false;
+    Opcode opcode = Opcode::RESERVED;
+    uint8_t context_register = R0_ZERO;
+    int offset = 0;
+};
+
+[[nodiscard]] inline bool isVectorContextOpcode(Opcode opcode) {
+    return opcode == Opcode::VCTXSTORE || opcode == Opcode::VCTXLOAD;
+}
+
+[[nodiscard]] inline std::uint64_t requiredVectorContextFeatures(
+    const VectorContextInstruction& instruction) {
+    return instruction.valid && isVectorContextOpcode(instruction.opcode)
+        ? featureBit(architecture::v3::FEATURE_VECTOR_CONTEXT)
+        : 0;
+}
+
+[[nodiscard]] inline TritWord27 encodeVectorContext(
+    Opcode opcode,
+    uint8_t context_register,
+    int offset = 0) {
+    if (!isVectorContextOpcode(opcode) || context_register >= REG_COUNT) {
+        throw std::invalid_argument("invalid vector-context opcode/register");
+    }
+    TritWord27 word;
+    word.setTrit(FIELD_FMT_LSB, T_ZER);
+    encodeUnsignedField(
+        word, FIELD_OP_LSB, FIELD_OP_W, architecture::v2::ESCAPE_OPCODE);
+    word.setField(
+        FIELD_RD_LSB, FIELD_RD_W,
+        static_cast<int>(R0_ZERO) - REG_FIELD_OFFSET);
+    word.setField(
+        FIELD_RS1_LSB, FIELD_RS1_W,
+        static_cast<int>(context_register) - REG_FIELD_OFFSET);
+    encodeSigned(word, 0, 12, offset);
+    encodeUnsignedField(
+        word, 12, 10,
+        opcode == Opcode::VCTXSTORE
+            ? VCTXSTORE_ESCAPE_SELECTOR
+            : VCTXLOAD_ESCAPE_SELECTOR);
+    return word;
+}
+
+[[nodiscard]] inline VectorContextInstruction decodeVectorContext(
+    const TritWord27& word) {
+    VectorContextInstruction decoded;
+    if (word.isMalformed(FIELD_FMT_LSB) ||
+        decodeUnsignedField(word, FIELD_OP_LSB, FIELD_OP_W) !=
+            architecture::v2::ESCAPE_OPCODE ||
+        word.getTrit(FIELD_FMT_LSB) != T_ZER) {
+        return decoded;
+    }
+    const int selector = decodeUnsignedField(word, 12, 10);
+    if (selector == VCTXSTORE_ESCAPE_SELECTOR) {
+        decoded.opcode = Opcode::VCTXSTORE;
+    } else if (selector == VCTXLOAD_ESCAPE_SELECTOR) {
+        decoded.opcode = Opcode::VCTXLOAD;
+    } else {
+        return decoded;
+    }
+    const int context_register =
+        word.getField(FIELD_RS1_LSB, FIELD_RS1_W) +
+        REG_FIELD_OFFSET;
+    if (context_register < 0 || context_register >= REG_COUNT) return {};
+    decoded.valid = true;
+    decoded.context_register = static_cast<uint8_t>(context_register);
+    decoded.offset = decodeSigned(word, 0, 12);
+    return decoded;
+}
+
+[[nodiscard]] inline bool isPrivilegedVectorContextOpcode(
+    const VectorContextInstruction& instruction) {
+    return instruction.valid && isVectorContextOpcode(instruction.opcode);
+}
+
 // =============================================================================
 // SECTION 9 — Round-Trip Verification
 // =============================================================================

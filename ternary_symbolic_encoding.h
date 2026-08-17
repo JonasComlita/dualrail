@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -365,6 +366,10 @@ inline Trits decodeGroupedDigits(std::string_view digits,
                                  std::string_view alphabet,
                                  std::size_t trits_per_digit) {
     if (digits.empty()) throw std::invalid_argument("compact ternary dump is empty");
+    if (trits_per_digit == 0 ||
+        digits.size() > std::numeric_limits<std::size_t>::max() / trits_per_digit) {
+        throw std::invalid_argument("compact ternary dump is too large");
+    }
     Trits out;
     out.reserve(digits.size() * trits_per_digit);
     for (const char c : digits) {
@@ -459,6 +464,9 @@ inline std::optional<long long> parseNumericLiteral(std::string_view token) {
         if (offset == token.size()) return std::nullopt;
     }
     __int128 value = 0;
+    const __int128 max_magnitude =
+        static_cast<__int128>(std::numeric_limits<long long>::max()) +
+        (negative ? 1 : 0);
     for (std::size_t i = offset; i < token.size(); ++i) {
         const unsigned char c = static_cast<unsigned char>(token[i]);
         int digit = -1;
@@ -466,11 +474,8 @@ inline std::optional<long long> parseNumericLiteral(std::string_view token) {
         else if (base == 16 && c >= 'a' && c <= 'f') digit = c - 'a' + 10;
         else if (base == 16 && c >= 'A' && c <= 'F') digit = c - 'A' + 10;
         if (digit < 0 || digit >= base) return std::nullopt;
+        if (value > (max_magnitude - digit) / base) return std::nullopt;
         value = value * base + digit;
-        if (value > static_cast<__int128>(std::numeric_limits<long long>::max()) +
-                        (negative ? 1 : 0)) {
-            return std::nullopt;
-        }
     }
     if (negative) value = -value;
     if (value < std::numeric_limits<long long>::min() ||

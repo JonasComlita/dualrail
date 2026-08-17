@@ -11,27 +11,27 @@
   "sources": [
     {
       "path": "ternary_compiler_ir.h",
-      "sha256": "1523f93729c705a92c797518e44f6780d7cd9d79eb035eb4a22b8e03d01295e3"
+      "sha256": "2baced0af019a25f3a013c5a446a732e7cf9aa4424fd5f8e55f12f3667dc36a6"
     },
     {
       "path": "ternary_compiler_codegen.h",
-      "sha256": "b5e3863402683a7b622d1505624a43a3437a4471f85b394009edade7a2fbd817"
+      "sha256": "9dd02db44d9c96d6dae0186741b2e63c3a17ccf10bf600128590cd929de971db"
     },
     {
       "path": "ternary_vm_state.h",
-      "sha256": "d9f24dc74a3033eac03d06b84d3a9f73e0c62248d385e2d12e8a0196057f6287"
+      "sha256": "d8304f9636595393962d087b99a075eb45b53e5acdca65c40eb5bfa4030e192b"
     },
     {
       "path": "build_tos_image.cpp",
-      "sha256": "e78a66e3f1087a27172436b4d0cf856e42d8b4b4ff56c82113621c015d1f0222"
+      "sha256": "d51ccd72071a41cd95fe0e09340ac8f34184a5ccdd9c6e234427faf222e14d8f"
     },
     {
       "path": "ternary_host_runtime.h",
-      "sha256": "da78af2087211053c30421f2a20468dfd964de2c3a66c312cd30865d8f04ab7e"
+      "sha256": "f0d32fdcf654f20f164e164cbc053525621e64681ada337040db9031d18248e6"
     },
     {
       "path": "ARCHITECTURE_MANIFEST.json",
-      "sha256": "1e472a37cc717259a2b662dc68bdb150d38095e403b2c59ffb1eca45e711f436"
+      "sha256": "0def8429e71ae47813704fea047a1c868a3b89a81587ea1d1ef366920905bced"
     }
   ],
   "syscalls": {

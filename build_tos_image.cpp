@@ -20,6 +20,7 @@ struct BundledApp {
     int text_ppn = 0;
     int stack_words = 256;
     bool gui_registry = false;
+    int function_abi_version = sandbox::architecture::v2::FUNCTION_ABI_VERSION;
 };
 
 std::string readTextFile(const std::string& path) {
@@ -144,21 +145,31 @@ std::string buildBootExecAssembly(const std::string& path) {
 sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     using namespace sandbox::compiler;
 
-    const std::string architecture =
+    const std::string architecture_source =
         readTextFile("generated/architecture_contract.trit");
     const std::string sdk = readTextFile("apps/os_sdk.trit");
     const std::string widget = readTextFile("apps/libwidget.trit");
     const std::string source = readTextFile("apps/" + app.source_name + ".trit");
-    if (architecture.empty() || sdk.empty() || widget.empty() ||
+    if (architecture_source.empty() || sdk.empty() || widget.empty() ||
         source.empty()) {
         std::cerr << "missing source for app " << app.id << "\n";
         ok = false;
         return {};
     }
 
+    CompilerOptions compiler_options;
+    compiler_options.target_abi_version = app.function_abi_version;
+    compiler_options.target_executable_version =
+        app.function_abi_version == sandbox::architecture::v3::FUNCTION_ABI_VERSION
+            ? sandbox::architecture::v3::EXECUTABLE_VERSION
+            : sandbox::architecture::v2::EXECUTABLE_VERSION;
+    compiler_options.enable_vector_abi =
+        app.function_abi_version == sandbox::architecture::v3::FUNCTION_ABI_VERSION;
+    compiler_options.enable_vector_spilling = compiler_options.enable_vector_abi;
     CompileResult compiled = compileSource(
         app.source_name + ".trit",
-        architecture + "\n" + sdk + "\n" + widget + "\n" + source);
+        architecture_source + "\n" + sdk + "\n" + widget + "\n" + source,
+        compiler_options);
     if (!compiled.success) {
         std::cerr << "compile failed for " << app.id << ":\n";
         dumpDiagnostics(compiled);
@@ -170,6 +181,13 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     options.stack_hint_words = alignUp(app.stack_words, 9);
     options.standalone_halt_on_exit = false;
     options.dead_strip_functions = true;
+    options.function_abi_version = app.function_abi_version;
+    options.executable_version = compiler_options.target_executable_version;
+    options.enable_vector_abi = compiler_options.enable_vector_abi;
+    options.enable_vector_spilling = compiler_options.enable_vector_spilling;
+    options.vector_abi_version = options.enable_vector_abi
+        ? sandbox::architecture::v3::VECTOR_ABI_VERSION
+        : 0;
     LinkResult linked = linkModules({compiled.object}, options);
     if (!linked.success) {
         std::cerr << "link failed for " << app.id << "\n";
@@ -313,7 +331,8 @@ bool installEssentialRootFiles(sandbox::os::NativeVfsImageBuilder& rootfs,
 
 int usage(const char* exe) {
     std::cerr << "usage: " << exe
-              << " [output.tboot] [output.tdisk] [image-version]\n";
+              << " [output.tboot] [output.tdisk] [image-version]"
+              << " [--function-abi 2|3]\n";
     return EXIT_FAILURE;
 }
 
@@ -322,10 +341,59 @@ int usage(const char* exe) {
 int main(int argc, char** argv) {
     sandbox::LongTriple::initPowTable();
 
-    if (argc > 4) return usage(argv[0]);
-    const std::string boot_path = argc >= 2 ? argv[1] : "build/ternary-os.tboot";
-    const std::string disk_path = argc >= 3 ? argv[2] : defaultDiskPathForBoot(boot_path);
-    const std::string image_version = argc >= 4 ? argv[3] : "dev";
+    std::vector<std::string> positional;
+    int explicit_function_abi = 0;
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (argument == "--function-abi") {
+            if (index + 1 >= argc) return usage(argv[0]);
+            const std::string value = argv[++index];
+            if (value != "2" && value != "3") {
+                std::cerr << "--function-abi must be 2 or 3\n";
+                return EXIT_FAILURE;
+            }
+            explicit_function_abi = std::stoi(value);
+            continue;
+        }
+        constexpr const char* kFunctionAbiPrefix = "--function-abi=";
+        if (argument.rfind(kFunctionAbiPrefix, 0) == 0) {
+            const std::string value =
+                argument.substr(std::char_traits<char>::length(kFunctionAbiPrefix));
+            if (value != "2" && value != "3") {
+                std::cerr << "--function-abi must be 2 or 3\n";
+                return EXIT_FAILURE;
+            }
+            explicit_function_abi = std::stoi(value);
+            continue;
+        }
+        positional.push_back(argument);
+    }
+    if (positional.size() > 3) return usage(argv[0]);
+    const std::string boot_path = positional.empty()
+        ? "build/ternary-os.tboot" : positional[0];
+    const std::string disk_path = positional.size() < 2
+        ? defaultDiskPathForBoot(boot_path) : positional[1];
+    const std::string image_version = positional.size() < 3
+        ? "dev" : positional[2];
+
+    // ABI v3 is the release default after the focused, smoke, and production
+    // gates.  The environment override keeps an explicit v2 migration path
+    // for legacy bundles and compatibility fixtures.
+    int bundled_app_abi = explicit_function_abi != 0
+        ? explicit_function_abi
+        : sandbox::architecture::v3::FUNCTION_ABI_VERSION;
+    if (explicit_function_abi == 0) {
+        if (const char* requested = std::getenv("TRIT_BUNDLED_APP_FUNCTION_ABI")) {
+            if (std::string(requested) == "3") {
+                bundled_app_abi = sandbox::architecture::v3::FUNCTION_ABI_VERSION;
+            } else if (std::string(requested) == "2") {
+                bundled_app_abi = sandbox::architecture::v2::FUNCTION_ABI_VERSION;
+            } else {
+                std::cerr << "TRIT_BUNDLED_APP_FUNCTION_ABI must be 2 or 3\n";
+                return EXIT_FAILURE;
+            }
+        }
+    }
 
     constexpr int kGuiStackWords = 1024;
     constexpr int kServiceStackWords = 256;
@@ -416,7 +484,8 @@ int main(int argc, char** argv) {
     bool ok = true;
     std::vector<LinkResult> linked_apps;
     linked_apps.reserve(apps.size());
-    for (const BundledApp& app : apps) {
+    for (BundledApp& app : apps) {
+        app.function_abi_version = bundled_app_abi;
         linked_apps.push_back(compileApp(app, ok));
     }
     if (!ok) return EXIT_FAILURE;
@@ -430,8 +499,12 @@ int main(int argc, char** argv) {
         next_text_ppn = alignUp(next_text_ppn, kAppTextPpnAlignment);
         apps[i].text_ppn = next_text_ppn;
         next_text_ppn +=
-            sandbox::vm::executableTextPages(
-                linked_apps[i].executable_header_v2) +
+            (linked_apps[i].executable_version ==
+                     sandbox::architecture::v3::EXECUTABLE_VERSION
+                 ? sandbox::vm::executableTextPages(
+                       linked_apps[i].executable_header_v3)
+                 : sandbox::vm::executableTextPages(
+                       linked_apps[i].executable_header_v2)) +
             kAppTextPpnGuardPages;
     }
 
@@ -444,10 +517,18 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < apps.size(); ++i) {
         const BundledApp& app = apps[i];
         const LinkResult& linked = linked_apps[i];
-        if (!rootfs.addExecutableImage(app.guest_path,
-                                       linked.assembled.program,
-                                       linked.executable_header_v2,
-                                       app.text_ppn).ok()) {
+        const sandbox::os::StatusResult installed =
+            linked.executable_version ==
+                    sandbox::architecture::v3::EXECUTABLE_VERSION
+                ? rootfs.addExecutableImage(app.guest_path,
+                                            linked.assembled.program,
+                                            linked.executable_header_v3,
+                                            app.text_ppn)
+                : rootfs.addExecutableImage(app.guest_path,
+                                            linked.assembled.program,
+                                            linked.executable_header_v2,
+                                            app.text_ppn);
+        if (!installed.ok()) {
             std::cerr << "failed to install " << app.id << " into root image\n";
             return EXIT_FAILURE;
         }
@@ -493,15 +574,41 @@ int main(int argc, char** argv) {
     });
     for (std::size_t i = 0; i < apps.size(); ++i) {
         const BundledApp& app = apps[i];
-        const auto& header = linked_apps[i].executable_header_v2;
+        const bool is_v3 = linked_apps[i].executable_version ==
+            sandbox::architecture::v3::EXECUTABLE_VERSION;
+        const int entry_pc = is_v3
+            ? linked_apps[i].executable_header_v3.entry_pc
+            : linked_apps[i].executable_header_v2.entry_pc;
+        const int text_pages = is_v3
+            ? sandbox::vm::executableTextPages(
+                  linked_apps[i].executable_header_v3)
+            : sandbox::vm::executableTextPages(
+                  linked_apps[i].executable_header_v2);
+        const int data_pages = is_v3
+            ? sandbox::vm::executableDataPages(
+                  linked_apps[i].executable_header_v3)
+            : sandbox::vm::executableDataPages(
+                  linked_apps[i].executable_header_v2);
+        const int stack_words = is_v3
+            ? linked_apps[i].executable_header_v3.stack_words
+            : linked_apps[i].executable_header_v2.stack_words;
+        const int isa_version = is_v3
+            ? linked_apps[i].executable_header_v3.isa_version
+            : linked_apps[i].executable_header_v2.isa_version;
+        const std::uint64_t required_features = is_v3
+            ? linked_apps[i].executable_header_v3.required_features
+            : linked_apps[i].executable_header_v2.required_features;
+        const int syscall_abi_version = is_v3
+            ? linked_apps[i].executable_header_v3.syscall_abi_version
+            : linked_apps[i].executable_header_v2.syscall_abi_version;
         manifest.sections.push_back({
             app.id,
             app.guest_path,
             "app",
             app.text_ppn * sandbox::vm::MMU_PAGE_WORDS,
-            header.entry_pc,
+            entry_pc,
             static_cast<int>(linked_apps[i].assembled.program.size()),
-            sandbox::vm::executableTextPages(header),
+            text_pages,
             sandbox::host::TOS_IMAGE_SECTION_EXECUTABLE |
                 sandbox::host::TOS_IMAGE_SECTION_APP,
         });
@@ -509,14 +616,14 @@ int main(int argc, char** argv) {
             app.id,
             app.guest_path,
             app.text_ppn,
-            header.entry_pc,
-            sandbox::vm::executableTextPages(header),
-            sandbox::vm::executableDataPages(header),
-            header.stack_words,
-            sandbox::architecture::v2::ISA_VERSION,
-            linked_apps[i].executable_header_v2.required_features,
-            sandbox::architecture::v2::FUNCTION_ABI_VERSION,
-            sandbox::architecture::v2::SYSCALL_ABI_VERSION,
+            entry_pc,
+            text_pages,
+            data_pages,
+            stack_words,
+            isa_version,
+            required_features,
+            linked_apps[i].function_abi_version,
+            syscall_abi_version,
         });
     }
 

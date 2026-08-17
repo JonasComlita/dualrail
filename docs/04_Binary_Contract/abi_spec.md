@@ -32,7 +32,7 @@ Source of truth: `ternary_isa.h` (register constants), `SYSCALL_MANIFEST.json` (
   one caller-owned pointer word. The register/stack cursor advances by one
   word for that pointer, and the callee treats it as the aggregate base
   address for word-wise loads and stores.
-- Compiler function ABI v3 is an opt-in profile,
+- Compiler function ABI v3 is the release profile,
   `trit.compiler.function-abi.v3`. It keeps the v2 scalar and aggregate
   parameter rules and reserves the first ABI word for a hidden caller-owned
   structure-return (`sret`) pointer whenever the function's result is a
@@ -147,13 +147,13 @@ Compiled TCL programs produce an `ObjectModule` containing:
 | `function_order` | Ordered function list for linking |
 | `function_refs` | Cross-function reference graph (for dead-stripping) |
 
-The linker (`LinkResult`) assembles all modules into a single
-`ExecutableImageHeaderV2` plus `AssemblyResult` ready for the v2 VM. Selecting
-compiler function ABI v3 changes the object/link profile and sret lowering,
-but does not silently rewrite the executable header: the image envelope and
-kernel loader remain v2 until a corresponding header version is implemented.
-Linkers must therefore match object profile metadata exactly and expose the
-selected profile separately from the image envelope.
+The linker (`LinkResult`) assembles all modules into a version-dispatched
+executable header plus `AssemblyResult`. ABI v2 objects produce the 15-word
+`ExecutableImageHeaderV2`; ABI v3 link requests produce the 20-word
+`ExecutableImageHeaderV3` with fixed vector geometry. Linkers match object
+profile metadata exactly and reject mixed ABI links. The loader, image builder,
+kernel, process information, and diagnostics preserve the selected version;
+they never rewrite a v2 payload into a v3 executable.
 
 ---
 
@@ -162,7 +162,7 @@ selected profile separately from the image envelope.
 After linking, the final image contains:
 
 ```
-ExecutableImageHeaderV2:
+ExecutableImageHeaderV2 or ExecutableImageHeaderV3:
   executable_version, function_abi_version, syscall_abi_version
   isa_version, required_features
   boot_entry    — PC value at start (default: address of "main")
@@ -171,7 +171,9 @@ ExecutableImageHeaderV2:
 ```
 
 The header also records exact text/data words, stack words, scalar width,
-base-page size, flags, and a checksum. The production linker, assembler,
-loader, VM, kernel, and image builders accept only v2. v1 executable and
-live-storage compatibility is intentionally absent; the standalone offline
-migrator converts preserved inputs from `trit-v1-final`.
+base-page size, flags, and a checksum. Header v3 appends vector register,
+VLEN, lane-width, 279-word context, and 27-word spill geometry. Production
+linker, assembler, loader, VM, kernel, and image builders accept v2 and v3;
+v2 remains the explicit compatibility profile. v1 executable and live-storage
+compatibility is intentionally absent; the standalone offline migrator
+converts preserved inputs from `trit-v1-final`.

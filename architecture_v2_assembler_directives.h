@@ -23,6 +23,15 @@
         return architecture::v2::FEATURE_WAIT;
     if (name == "wide" || name == "wide_t50" || name == "t50")
         return architecture::v2::FEATURE_WIDE_T50;
+    if (name == "executable_v3" || name == "abi_v3" ||
+        name == "vector_abi_v3")
+        return architecture::v3::FEATURE_VECTOR_ABI_V3;
+    if (name == "vector_geometry" || name == "vlen27")
+        return architecture::v3::FEATURE_VECTOR_GEOMETRY;
+    if (name == "vector_context" || name == "vctx")
+        return architecture::v3::FEATURE_VECTOR_CONTEXT;
+    if (name == "vector_spill")
+        return architecture::v3::FEATURE_VECTOR_SPILL;
     return std::nullopt;
 }
 

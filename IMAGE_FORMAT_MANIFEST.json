@@ -55,7 +55,23 @@
         "function_abi_version:int32",
         "syscall_abi_version:int32"
       ],
-      "runtime_policy": "Production loaders accept only tboot v3; v1 and v2 inputs are rejected with offline migration guidance.",
+      "executable_header_versions": {
+        "v2": {
+          "words": 15,
+          "function_abi_version": 2,
+          "vector_abi_version": 0
+        },
+        "v3": {
+          "words": 20,
+          "function_abi_version": 3,
+          "vector_abi_version": 1,
+          "vector_length": 27,
+          "vector_register_count": 8,
+          "vector_context_words": 279,
+          "vector_spill_words": 27
+        }
+      },
+      "runtime_policy": "Production loaders accept tboot v3 with executable ABI v2 or v3 descriptors; v1 and v2 tboot payloads are rejected with offline migration guidance.",
       "offline_migration": {
         "accepted_versions": [1, 2],
         "tool": "migrate_tos_artifacts.cpp",
@@ -81,7 +97,12 @@
       ],
       "block_record_v2": [
         "block_index:int32",
-        "words:raw_t40_uint64[27]"
+        "words:uint64[27] (canonical raw T40 for ordinary blocks; direct TritWord27.bits for executable-text blocks)"
+      ],
+      "block_encoding_notes": [
+        "blocks 0..8042 encode ordinary VFS and metadata values as canonical raw T40 uint64 words",
+        "blocks 8043 and above encode bundled executable text as direct nonnegative TritWord27.bits values in the low 54 bits",
+        "executable-text words outside the 54-bit TritWord27 range are rejected; no numeric T40 conversion is applied to them"
       ],
       "native_vfs_layout_v2": [
         "blocks 0..7286: VFS superblock, metadata, extents, and data",

@@ -443,7 +443,7 @@ const NET_STATE_BOUND: t40 = 2;
 const NET_STATE_CONNECTED: t40 = 3;
 
 const PROCESS_MAX: t40 = 100;
-const PROCESS_ROW_WORDS: t40 = 8;
+const PROCESS_ROW_WORDS: t40 = 9;
 const PROCESS_BASE: t40 = 390000;
 const PROC_PID: t40 = 0;
 const PROC_NAMESPACE: t40 = 1;
@@ -453,6 +453,7 @@ const PROC_QUOTA: t40 = 4;
 const PROC_CONTEXT: t40 = 5;
 const PROC_WAIT_CHANNEL: t40 = 6;
 const PROC_VERSION: t40 = 7;
+const PROC_VECTOR_CONTEXT: t40 = 8;
 
 const PROC_FREE: t40 = 0;
 const PROC_RUNNABLE: t40 = 1;
@@ -564,6 +565,27 @@ const EXEC_V2_SCALAR_WIDTH_INDEX: t40 = 11;
 const EXEC_V2_BASE_PAGE_INDEX: t40 = 12;
 const EXEC_V2_FLAGS_INDEX: t40 = 13;
 const EXEC_V2_CHECKSUM_INDEX: t40 = 14;
+// v3 is an executable/context profile over the v2 instruction codec. The
+// scalar trap record remains v2; the vector context is a separate 279-word
+// process-owned allocation referenced by PROC_VECTOR_CONTEXT.
+const EXEC_V3_HEADER_WORDS: t40 = 20;
+const EXEC_V3_VERSION: t40 = 3;
+const EXEC_V3_FUNCTION_ABI: t40 = 3;
+const EXEC_V3_ISA: t40 = 2;
+const EXEC_V3_SYSCALL_ABI: t40 = 2;
+const EXEC_V3_VECTOR_REGISTER_COUNT: t40 = 8;
+const EXEC_V3_VECTOR_LANE_COUNT: t40 = 27;
+const EXEC_V3_VECTOR_LANE_WORD_TRITS: t40 = 40;
+const EXEC_V3_VECTOR_CONTEXT_WORDS: t40 = 279;
+const EXEC_V3_VECTOR_SPILL_WORDS: t40 = 27;
+const EXEC_V3_VECTOR_REGISTER_COUNT_INDEX: t40 = 15;
+const EXEC_V3_VECTOR_LANE_COUNT_INDEX: t40 = 16;
+const EXEC_V3_VECTOR_LANE_WORD_TRITS_INDEX: t40 = 17;
+const EXEC_V3_VECTOR_CONTEXT_WORDS_INDEX: t40 = 18;
+const EXEC_V3_VECTOR_SPILL_WORDS_INDEX: t40 = 19;
+const EXEC_V3_REQUIRED_FEATURES_WORD: t40 = 177175;
+const EXEC_V3_CONTEXT_VERSION: t40 = 1;
+const EXEC_V3_FEATURE_CONTEXT_TRIT: t40 = 11;
 const PROCESS_ARCH_WORDS: t40 = 6;
 const PROCESS_ARCH_BASE: t40 = 674000;
 const PROC_ARCH_EXEC_VERSION: t40 = 0;
@@ -581,6 +603,21 @@ const TASK_CONTEXT_DMEM_PTBR: t40 = 4;
 const TASK_CONTEXT_DMEM_PAGES: t40 = 5;
 const TASK_CONTEXT_REG_BASE: t40 = 6;
 const TASK_CONTEXT_SP: t40 = 31;
+const TASK_CONTEXT_V3_WORDS: t40 = 279;
+const TASK_CONTEXT_V3_HEADER_VERSION: t40 = 0;
+const TASK_CONTEXT_V3_HEADER_LENGTH: t40 = 1;
+const TASK_CONTEXT_V3_HEADER_VECTOR_ABI: t40 = 2;
+const TASK_CONTEXT_V3_HEADER_REGISTER_COUNT: t40 = 3;
+const TASK_CONTEXT_V3_VLEN: t40 = 4;
+const TASK_CONTEXT_V3_ACCUMULATOR: t40 = 5;
+const TASK_CONTEXT_V3_FIRST_FAILING_LANE: t40 = 6;
+const TASK_CONTEXT_V3_FAULT_BASE: t40 = 7;
+const TASK_CONTEXT_V3_VECTOR_BASE: t40 = 34;
+const TASK_CONTEXT_V3_VECTOR_WORDS: t40 = 216;
+const TASK_CONTEXT_V3_RESERVED_BASE: t40 = 250;
+const TASK_CONTEXT_V3_RESERVED_WORDS: t40 = 29;
+const TASK_CONTEXT_V3_VECTOR_LENGTH: t40 = TASK_CONTEXT_V3_VLEN;
+const TASK_CONTEXT_V3_FAULT_WORDS: t40 = 27;
 const TASK_STATUS_USER_RESUME: t40 = 35;
 const HW_PT_MAX_PAGES: t40 = 512;
 const HW_PT_WORDS: t40 = 1024;
@@ -596,6 +633,9 @@ const PROCESS_SCRATCH_PPN_OFFSET: t40 = 74;
 const PROCESS_DATA_PAGES_MAX: t40 = 74;
 const PROCESS_DMEM_PPN_BASE: t40 = 1000;
 const PROCESS_CONTEXT_BASE: t40 = 669000;
+// Separate arena: PROCESS_CONTEXT_BASE is intentionally left at 32 words per
+// task for the v2 trap ABI.  100 * 279 words fit below the WAL area.
+const PROCESS_CONTEXT_V3_BASE: t40 = 700002;
 
 const APP_MAX: t40 = 256;
 const APP_ROW_WORDS: t40 = 10;
@@ -2916,10 +2956,99 @@ fn process_default_context_addr(slot: t40) -> t40 {
     return PROCESS_CONTEXT_BASE + slot * TASK_CONTEXT_WORDS;
 }
 
+fn process_default_context_v3_addr(slot: t40) -> t40 {
+    return PROCESS_CONTEXT_V3_BASE + slot * TASK_CONTEXT_V3_WORDS;
+}
+
+fn process_v3_context_addr_valid(context_addr: t40) -> t40 {
+    if context_addr - PROCESS_CONTEXT_V3_BASE < 0 {
+        return 0;
+    }
+    if context_addr - (PROCESS_CONTEXT_V3_BASE +
+                       PROCESS_MAX * TASK_CONTEXT_V3_WORDS -
+                       TASK_CONTEXT_V3_WORDS) > 0 {
+        return 0;
+    }
+    return 1;
+}
+
+// Prepare only the process-owned v3 storage. Scalar state remains in the v2
+// task record. The native VCTX entry points save/restore this allocation at
+// the kernel boundary; this routine is also used for fork/exec/reuse reset.
+fn process_prepare_v3_context(slot: t40) -> t40 {
+    if slot < 0 { return ERR_INVALID; }
+    if slot - PROCESS_MAX >= 0 { return ERR_INVALID; }
+    var context_addr: t40 = process_default_context_v3_addr(slot);
+    if process_v3_context_addr_valid(context_addr) <= 0 {
+        return ERR_INVALID;
+    }
+    kclear(context_addr, TASK_CONTEXT_V3_WORDS);
+    kstore(context_addr + TASK_CONTEXT_V3_HEADER_VERSION,
+           EXEC_V3_CONTEXT_VERSION);
+    kstore(context_addr + TASK_CONTEXT_V3_HEADER_LENGTH,
+           TASK_CONTEXT_V3_WORDS);
+    kstore(context_addr + TASK_CONTEXT_V3_HEADER_VECTOR_ABI, 1);
+    kstore(context_addr + TASK_CONTEXT_V3_HEADER_REGISTER_COUNT, 8);
+    kstore(context_addr + TASK_CONTEXT_V3_VLEN, EXEC_V3_VECTOR_LANE_COUNT);
+    kstore(context_addr + TASK_CONTEXT_V3_ACCUMULATOR, 0);
+    kstore(context_addr + TASK_CONTEXT_V3_FIRST_FAILING_LANE, -1);
+    var lane: t40 = 0;
+    while EXEC_V3_VECTOR_LANE_COUNT - lane > 0 {
+        // The host VM stores one exact tagged fault record per lane. Kernel
+        // initialization clears those records; the common layout reserves
+        // 27 words beginning at the same offset.
+        kstore(context_addr + TASK_CONTEXT_V3_FAULT_BASE + lane, 0);
+        lane = lane + 1;
+    }
+    return context_addr;
+}
+
+fn process_vector_context_addr(slot: t40) -> t40 {
+    if slot < 0 { return ERR_INVALID; }
+    if slot - PROCESS_MAX >= 0 { return ERR_INVALID; }
+    var addr: t40 = kload(process_addr(slot) + PROC_VECTOR_CONTEXT);
+    if process_v3_context_addr_valid(addr) <= 0 { return ERR_INVALID; }
+    return addr;
+}
+
+fn process_vector_context_reset(slot: t40) -> t40 {
+    var addr: t40 = process_prepare_v3_context(slot);
+    if addr < 0 { return addr; }
+    kstore(process_addr(slot) + PROC_VECTOR_CONTEXT, addr);
+    return addr;
+}
+
+fn process_vector_context_copy(dst_slot: t40, src_slot: t40) -> t40 {
+    var dst: t40 = process_vector_context_addr(dst_slot);
+    var src: t40 = process_vector_context_addr(src_slot);
+    if dst < 0 { return dst; }
+    if src < 0 { return src; }
+    var word: t40 = 0;
+    while TASK_CONTEXT_V3_WORDS - word > 0 {
+        kstore(dst + word, kload(src + word));
+        word = word + 1;
+    }
+    return dst;
+}
+
+// These two hooks are the kernel-side lifecycle boundary for the privileged
+// VCTXSTORE/VCTXLOAD instructions. The native dispatcher supplies the current
+// vector file; the process table owns only the validated destination pointer.
+fn process_vector_context_save(slot: t40) -> t40 {
+    return process_vector_context_addr(slot);
+}
+
+fn process_vector_context_restore(slot: t40) -> t40 {
+    return process_vector_context_addr(slot);
+}
+
 fn process_table_init() -> t40 {
     kclear(PROCESS_BASE, PROCESS_MAX * PROCESS_ROW_WORDS);
     kclear(QUOTA_BASE, QUOTA_MAX * QUOTA_ROW_WORDS);
     kclear(PROCESS_CONTEXT_BASE, PROCESS_MAX * TASK_CONTEXT_WORDS);
+    // V3 vector contexts are initialized lazily by process_create and reset
+    // on task-slot reuse.  Avoid clearing the full 100 x 279-word arena on
+    // every scheduler/process-table reset; no unowned slot is observable.
     kclear(PROCESS_HEAP_BASE, PROCESS_MAX * PROCESS_HEAP_WORDS);
     kclear(PROCESS_ARCH_BASE, PROCESS_MAX * PROCESS_ARCH_WORDS);
     kclear(DESIRED_PROCESS_BASE, PROCESS_MAX);
@@ -2960,6 +3089,9 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     kstore(row + PROC_PRIORITY, priority);
     kstore(row + PROC_QUOTA, quota_id);
     kstore(row + PROC_CONTEXT, ctx);
+    var vector_ctx: t40 = process_prepare_v3_context(slot);
+    if vector_ctx < 0 { return vector_ctx; }
+    kstore(row + PROC_VECTOR_CONTEXT, vector_ctx);
     kstore(row + PROC_WAIT_CHANNEL, 0);
     kstore(PROC_PARENT_PID_BASE + slot, -1);
     kstore(PROC_EXIT_STATUS_BASE + slot, 0);
@@ -3717,9 +3849,14 @@ fn scheduler_switch_to_slot(process_slot: t40) -> t40 {
     var row: t40 = process_addr(process_slot);
     var state: t40 = kload(row + PROC_STATE);
     if state - PROC_RUNNABLE != 0 {
-        if state - PROC_RUNNING != 0 {
+    if state - PROC_RUNNING != 0 {
             return ERR_INVALID;
         }
+    }
+    var current_pid: t40 = kload(CURRENT_PID_ADDR);
+    var current_slot: t40 = process_find_pid(current_pid);
+    if current_slot >= 0 {
+        process_vector_context_save(current_slot);
     }
     var ctx: t40 = kload(row + PROC_CONTEXT);
     if ctx <= 0 {
@@ -3728,6 +3865,7 @@ fn scheduler_switch_to_slot(process_slot: t40) -> t40 {
     kstore(CURRENT_CONTEXT_ADDR, ctx);
     var pid: t40 = kload(row + PROC_PID);
     kstore(CURRENT_PID_ADDR, pid);
+    process_vector_context_restore(process_slot);
     tier1_enqueue(process_slot);
     return pid;
 }
@@ -3937,6 +4075,7 @@ fn process_release_memory(process_slot: t40) -> t40 {
     kclear(exec_process_dmem_ppn(process_slot) * MMU_PAGE_WORDS, mapped_pages * MMU_PAGE_WORDS);
     kclear(exec_image_addr(process_slot), EXEC_IMAGE_WORDS);
     kclear(process_arch_addr(process_slot), PROCESS_ARCH_WORDS);
+    process_vector_context_reset(process_slot);
     kclear(heap, PROCESS_HEAP_WORDS);
     process_cache_invalidate(process_slot);
     translation_cache_invalidate(process_slot);
@@ -4330,6 +4469,7 @@ fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
     }
     process_create(child_slot, child_pid, ns, kload(parent_row + PROC_PRIORITY), quota_id, 0);
     process_arch_copy(child_slot, parent_slot);
+    process_vector_context_copy(child_slot, parent_slot);
     process_set_parent(child_slot, kload(parent_row + PROC_PID));
     process_set_caps(child_slot, kload(PROC_CAPS_BASE + parent_slot));
     vpn = 0;
@@ -7523,6 +7663,69 @@ fn exec_pages_for_words(words: t40) -> t40 {
     return pages;
 }
 
+fn exec_is_v3(image_addr: t40) -> t40 {
+    if kload(image_addr + EXEC_V2_VERSION_INDEX) - EXEC_V3_VERSION == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn exec_descriptor_base(image_addr: t40) -> t40 {
+    if exec_is_v3(image_addr) > 0 {
+        return image_addr + EXEC_V3_HEADER_WORDS;
+    }
+    return image_addr + EXEC_V2_HEADER_WORDS;
+}
+
+fn exec_descriptor_words(image_addr: t40) -> t40 {
+    if exec_is_v3(image_addr) > 0 {
+        return EXEC_V3_HEADER_WORDS + 3;
+    }
+    return EXEC_V2_HEADER_WORDS + 3;
+}
+
+fn exec_descriptor_text_ppn(image_addr: t40) -> t40 {
+    return kload(exec_descriptor_base(image_addr) + 0);
+}
+
+fn exec_descriptor_text_disk_block(image_addr: t40) -> t40 {
+    return kload(exec_descriptor_base(image_addr) + 1);
+}
+
+fn exec_descriptor_text_words(image_addr: t40) -> t40 {
+    return kload(exec_descriptor_base(image_addr) + 2);
+}
+
+// Executable feature words are canonical positional base-3 masks, not binary
+// integers.  v3 applications may request additional supported ISA features,
+// so validation must require the v3 baseline bits without demanding an exact
+// feature word.
+fn exec_v3_feature_word_valid(word: t40) -> t40 {
+    if word < 0 { return 0; }
+    var remaining: t40 = word;
+    var place: t40 = 1;
+    var trit: t40 = 0;
+    while 13 - trit > 0 {
+        var digit: t40 = 0;
+        unsafe { digit = tmod(tdiv(remaining, place), 3); }
+        if digit < 0 { return 0; }
+        if digit > 1 { return 0; }
+        if trit == 0 {
+            if digit <= 0 { return 0; }
+        }
+        if trit == 3 {
+            if digit <= 0 { return 0; }
+        }
+        if trit == 11 {
+            if digit <= 0 { return 0; }
+        }
+        place = place * 3;
+        trit = trit + 1;
+    }
+    if tdiv(remaining, place) > 0 { return 0; }
+    return 1;
+}
+
 fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
     if size_words - EXEC_DESC_WORDS < 0 {
         return 0;
@@ -7553,7 +7756,7 @@ fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
         return 0;
     }
     if kload(header + EXEC_V2_TEXT_WORDS_INDEX) -
-           kload(image_addr + EXEC_DESC_TEXT_WORDS) != 0 {
+           exec_descriptor_text_words(image_addr) != 0 {
         return 0;
     }
     if kload(header + EXEC_V2_DATA_WORDS_INDEX) < 0 {
@@ -7583,8 +7786,49 @@ fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
     return 1;
 }
 
+fn exec_v3_header_valid(image_addr: t40, size_words: t40) -> t40 {
+    if size_words - (EXEC_V3_HEADER_WORDS + 3) < 0 { return 0; }
+    var header: t40 = image_addr;
+    if kload(header + EXEC_V2_MAGIC_INDEX) - EXEC_MAGIC != 0 { return 0; }
+    if kload(header + EXEC_V2_VERSION_INDEX) - EXEC_V3_VERSION != 0 { return 0; }
+    if kload(header + EXEC_V2_FUNCTION_ABI_INDEX) - EXEC_V3_FUNCTION_ABI != 0 { return 0; }
+    if kload(header + EXEC_V2_HEADER_SIZE_INDEX) - EXEC_V3_HEADER_WORDS != 0 { return 0; }
+    if kload(header + EXEC_V2_ISA_INDEX) - EXEC_V3_ISA != 0 { return 0; }
+    if exec_v3_feature_word_valid(
+            kload(header + EXEC_V2_FEATURES_INDEX)) <= 0 { return 0; }
+    if kload(header + EXEC_V2_ENTRY_PC_INDEX) < 0 { return 0; }
+    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) <= 0 { return 0; }
+    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) -
+           exec_descriptor_text_words(image_addr) != 0 { return 0; }
+    if kload(header + EXEC_V2_DATA_WORDS_INDEX) < 0 { return 0; }
+    if kload(header + EXEC_V2_STACK_WORDS_INDEX) <= 0 { return 0; }
+    if kload(header + EXEC_V2_SYSCALL_ABI_INDEX) - EXEC_V3_SYSCALL_ABI != 0 { return 0; }
+    if kload(header + EXEC_V2_SCALAR_WIDTH_INDEX) - EXEC_V2_SCALAR_TRITS != 0 { return 0; }
+    if kload(header + EXEC_V2_BASE_PAGE_INDEX) - EXEC_V2_BASE_PAGE_WORDS != 0 { return 0; }
+    if kload(header + EXEC_V3_VECTOR_REGISTER_COUNT_INDEX) - EXEC_V3_VECTOR_REGISTER_COUNT != 0 { return 0; }
+    if kload(header + EXEC_V3_VECTOR_LANE_COUNT_INDEX) - EXEC_V3_VECTOR_LANE_COUNT != 0 { return 0; }
+    if kload(header + EXEC_V3_VECTOR_LANE_WORD_TRITS_INDEX) - EXEC_V3_VECTOR_LANE_WORD_TRITS != 0 { return 0; }
+    if kload(header + EXEC_V3_VECTOR_CONTEXT_WORDS_INDEX) - EXEC_V3_VECTOR_CONTEXT_WORDS != 0 { return 0; }
+    if kload(header + EXEC_V3_VECTOR_SPILL_WORDS_INDEX) - EXEC_V3_VECTOR_SPILL_WORDS != 0 { return 0; }
+    var checksum: t40 = 0;
+    var word: t40 = 0;
+    while EXEC_V3_HEADER_WORDS - word > 0 {
+        checksum = checksum + kload(header + word);
+        word = word + 1;
+    }
+    if checksum != 0 { return 0; }
+    return 1;
+}
+
+fn exec_header_valid(image_addr: t40, size_words: t40) -> t40 {
+    if exec_is_v3(image_addr) > 0 {
+        return exec_v3_header_valid(image_addr, size_words);
+    }
+    return exec_v2_header_valid(image_addr, size_words);
+}
+
 fn exec_install_architecture(process_slot: t40, image_addr: t40, size_words: t40) -> t40 {
-    if exec_v2_header_valid(image_addr, size_words) <= 0 {
+    if exec_header_valid(image_addr, size_words) <= 0 {
         return ERR_INVALID;
     }
     var header: t40 = image_addr;
@@ -7605,10 +7849,10 @@ fn exec_install_architecture(process_slot: t40, image_addr: t40, size_words: t40
 }
 
 fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
-    if size_words - EXEC_DESC_WORDS < 0 {
+    if size_words - exec_descriptor_words(image_addr) < 0 {
         return 0;
     }
-    if exec_v2_header_valid(image_addr, size_words) <= 0 {
+    if exec_header_valid(image_addr, size_words) <= 0 {
         return 0;
     }
     var text_words: t40 = kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX);
@@ -7633,25 +7877,25 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if data_pages - PROCESS_DATA_PAGES_MAX > 0 {
         return 0;
     }
-    if kload(image_addr + EXEC_DESC_TEXT_PPN) <= 0 {
+    if exec_descriptor_text_ppn(image_addr) <= 0 {
         return 0;
     }
-    var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
+    var disk_block: t40 = exec_descriptor_text_disk_block(image_addr);
     if disk_block <= 0 {
         return 0;
     }
-    if kload(image_addr + EXEC_DESC_TEXT_WORDS) - text_words != 0 {
+    if exec_descriptor_text_words(image_addr) - text_words != 0 {
         return 0;
     }
     return 1;
 }
 
 fn exec_load_text_image(image_addr: t40, size_words: t40) -> t40 {
-    if size_words - EXEC_DESC_WORDS < 0 {
+    if size_words - exec_descriptor_words(image_addr) < 0 {
         return ERR_INVALID;
     }
-    var disk_block: t40 = kload(image_addr + EXEC_DESC_TEXT_DISK_BLOCK);
-    var text_words: t40 = kload(image_addr + EXEC_DESC_TEXT_WORDS);
+    var disk_block: t40 = exec_descriptor_text_disk_block(image_addr);
+    var text_words: t40 = exec_descriptor_text_words(image_addr);
     if disk_block <= 0 {
         return ERR_INVALID;
     }
@@ -7662,7 +7906,7 @@ fn exec_load_text_image(image_addr: t40, size_words: t40) -> t40 {
     if text_words - (text_pages * MMU_PAGE_WORDS) > 0 {
         return ERR_INVALID;
     }
-    var text_ppn: t40 = kload(image_addr + EXEC_DESC_TEXT_PPN);
+    var text_ppn: t40 = exec_descriptor_text_ppn(image_addr);
     var dst_pc: t40 = text_ppn * MMU_PAGE_WORDS;
     var remaining: t40 = text_words;
     var block: t40 = 0;
@@ -7762,7 +8006,7 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
     }
     var data_pages: t40 = exec_pages_for_words(writable_words);
     if data_pages <= 0 { data_pages = 1; }
-    var text_ppn: t40 = kload(image_addr + EXEC_DESC_TEXT_PPN);
+    var text_ppn: t40 = exec_descriptor_text_ppn(image_addr);
     var data_ppn: t40 = exec_process_dmem_ppn(process_slot);
     exec_clear_hw_page_tables(process_slot);
     kclear(data_ppn * MMU_PAGE_WORDS, data_pages * MMU_PAGE_WORDS);
@@ -7802,6 +8046,14 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
 }
 
 fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
+    if exec_header_valid(image_addr, EXEC_IMAGE_WORDS) <= 0 {
+        return ERR_INVALID;
+    }
+    if exec_is_v3(image_addr) > 0 {
+        if process_vector_context_reset(process_slot) < 0 {
+            return ERR_INVALID;
+        }
+    }
     var row: t40 = process_addr(process_slot);
     var ctx: t40 = kload(row + PROC_CONTEXT);
     var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
@@ -7946,14 +8198,20 @@ fn exec_process_inode(process_slot: t40, namespace_id: t40, inode: t40, path_add
     if exec_descriptor_valid(dst, read_count) <= 0 {
         return ERR_INVALID;
     }
-    exec_install_architecture(process_slot, dst, read_count);
+    if exec_install_architecture(process_slot, dst, read_count) < 0 {
+        return ERR_INVALID;
+    }
     var text_loaded: t40 = exec_load_text_image(dst, read_count);
     if text_loaded < 0 {
         return text_loaded;
     }
     var is_gui: t40 = is_gui_app(path_addr);
-    exec_map_descriptor(process_slot, dst, is_gui);
-    exec_install_context(process_slot, dst, is_gui);
+    if exec_map_descriptor(process_slot, dst, is_gui) < 0 {
+        return ERR_INVALID;
+    }
+    if exec_install_context(process_slot, dst, is_gui) < 0 {
+        return ERR_INVALID;
+    }
     unsafe { csr_write(mmu_enable, 1); }
     process_cache_invalidate(process_slot);
     process_set_state(process_slot, PROC_RUNNABLE);

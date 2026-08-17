@@ -25,17 +25,38 @@ The checked-in BitNet fixture is metadata-only and explicitly sets
 `weights_included: false`.  It must not be used as evidence that a full model
 has been imported.
 
-## Offline workflow
+## Validation and explicit acquisition
 
-The importer never downloads files:
+`validate`, `cache`, and `import` are offline. They never follow a URL or
+replace a missing payload with synthetic data. Network access is available only
+through the explicit, provenance-locked `acquire` command:
 
 ```text
 python tools/import_external_benchmark_assets.py validate
-python tools/import_external_benchmark_assets.py validate --require-present
+python tools/import_external_benchmark_assets.py cache \
+  --asset-id doom-freedoom-0.13.0
+python tools/import_external_benchmark_assets.py cache \
+  --asset-id bitnet-b1.58-2B-4T-safetensors
+python tools/import_external_benchmark_assets.py cache \
+  --asset-id bitnet-b1.58-2B-4T-gguf
+python tools/import_external_benchmark_assets.py cache \
+  --asset-id doom-freedoom-0.13.0
+python tools/import_external_benchmark_assets.py acquire \
+  --id doom-freedoom-0.13.0 --kind doom
+python tools/import_external_benchmark_assets.py acquire \
+  --id bitnet-b1.58-2B-4T-safetensors --kind bitnet
+python tools/import_external_benchmark_assets.py acquire \
+  --id bitnet-b1.58-2B-4T-gguf --kind bitnet
 python tools/import_external_benchmark_assets.py import --kind bitnet --stage sliced \
   --source C:/models/bitnet-slices --id bitnet-local-slices \
   --output-manifest build/bitnet-slices.inventory.json
 ```
+
+`acquire` derives the revision-pinned URL from the checked-in lock, leaves a
+`.part` file for resumable retries, verifies the locked archive/file size and
+SHA-256, and atomically promotes only validated payloads under the ignored
+`build/external-assets/<asset-id>/` directory. `--force` is required to replace
+an existing mismatched file. The checked-in provenance manifest is not edited.
 
 `metadata` accepts JSON/YAML configuration slices, `sliced` accepts numbered
 model shards (for example `model-00001-of-00003.safetensors`), and `full`
@@ -44,6 +65,11 @@ offsets and GGUF fixed headers are checked without loading tensor payloads.
 WAD validation checks the IWAD/PWAD header, lump directory bounds, lump names,
 and lump data bounds.  Hashes are streamed with SHA-256.
 
-Tests and release jobs should invoke `validate` against local files only.  A
-missing external file is a deliberate, visible `not_present` state; it is not
-silently replaced by a synthetic benchmark or reported as imported.
+Tests and release jobs should invoke `validate` against local files only. A
+The checked-in lock remains `not_present` until a payload is intentionally
+acquired; it is never rewritten to describe local cache state. Once an
+operator has acquired a payload, the `cache --asset-id` command validates its
+ignored `inventory.v1.json` and returns `skip` when that inventory is absent.
+A missing external file is therefore a deliberate, visible `not_present` or
+`skip` state; it is not silently replaced by a synthetic benchmark or
+reported as imported.

@@ -124,6 +124,11 @@ static constexpr int DEFAULT_DMEM_SIZE = 1000000;
 
 static constexpr int STORAGE_BLOCK_WORDS =
     architecture::v2::STORAGE_BLOCK_WORDS;
+// tDisk v2 reserves this block range for bundled executable text.  Those
+// words are TritWord27 bit patterns, not numeric T40 values, so the compact
+// reader/writer preserves them directly while ordinary VFS blocks continue
+// to use canonical numeric T40 encoding.
+static constexpr int TDISK_EXECUTABLE_TEXT_FIRST_BLOCK = 8043;
 static constexpr int MMU_PAGE_WORDS =
     architecture::v2::BASE_PAGE_WORDS;
 static constexpr int MMU_SUPERPAGE_WORDS =
@@ -1507,6 +1512,10 @@ static constexpr int PTE_FLAG_READ = 2;
 static constexpr int PTE_FLAG_WRITE = 3;
 static constexpr int PTE_FLAG_EXECUTE = 4;
 static constexpr int PTE_PPN_SHIFT = 5;
+// Keep the historical v2 trap-stub context width and offsets intact.  The
+// v3 process context is a separate, exact-width arena described below.
+static constexpr int TASK_CONTEXT_V2_WORDS = 32;
+static constexpr int TASK_CONTEXT_V3_WORDS = architecture::v3::VECTOR_CONTEXT_WORDS;
 static constexpr int TASK_CONTEXT_WORDS = 32;
 static constexpr int TASK_CONTEXT_EPC = 0;
 static constexpr int TASK_CONTEXT_STATUS = 1;
@@ -1515,6 +1524,41 @@ static constexpr int TASK_CONTEXT_IMEM_PAGES = 3;
 static constexpr int TASK_CONTEXT_DMEM_PTBR = 4;
 static constexpr int TASK_CONTEXT_DMEM_PAGES = 5;
 static constexpr int TASK_CONTEXT_REG_BASE = 6;
+// v3 is a separately allocated vector context.  It never aliases the v2
+// scalar task record.  The exact 279-word layout is:
+//   0 version, 1 length, 2 vector ABI, 3 register count, 4 VLEN,
+//   5 tagged accumulator, 6 first-failing-lane,
+//   7..33 tagged lane fault records, 34..249 tagged vector lanes,
+//   250..278 reserved zero words.
+static constexpr int TASK_CONTEXT_V3_HEADER_VERSION = 0;
+static constexpr int TASK_CONTEXT_V3_HEADER_LENGTH = 1;
+static constexpr int TASK_CONTEXT_V3_HEADER_VECTOR_ABI = 2;
+static constexpr int TASK_CONTEXT_V3_HEADER_REGISTER_COUNT = 3;
+static constexpr int TASK_CONTEXT_V3_VLEN = 4;
+static constexpr int TASK_CONTEXT_V3_ACCUMULATOR = 5;
+static constexpr int TASK_CONTEXT_V3_FIRST_FAILING_LANE = 6;
+static constexpr int TASK_CONTEXT_V3_FAULT_BASE = 7;
+static constexpr int TASK_CONTEXT_V3_FAULT_WORDS =
+    architecture::v3::VECTOR_LANE_COUNT;
+static constexpr int TASK_CONTEXT_V3_VECTOR_BASE =
+    TASK_CONTEXT_V3_FAULT_BASE + TASK_CONTEXT_V3_FAULT_WORDS;
+static constexpr int TASK_CONTEXT_V3_VECTOR_WORDS =
+    architecture::v3::VECTOR_REGISTER_COUNT *
+    architecture::v3::VECTOR_LANE_COUNT;
+static constexpr int TASK_CONTEXT_V3_RESERVED_BASE =
+    TASK_CONTEXT_V3_VECTOR_BASE + TASK_CONTEXT_V3_VECTOR_WORDS;
+static constexpr int TASK_CONTEXT_V3_RESERVED_WORDS =
+    TASK_CONTEXT_V3_WORDS - TASK_CONTEXT_V3_RESERVED_BASE;
+// Source-compatible name for callers that only need the fixed VLEN field.
+static constexpr int TASK_CONTEXT_V3_VECTOR_LENGTH = TASK_CONTEXT_V3_VLEN;
+static_assert(
+    TASK_CONTEXT_V3_RESERVED_BASE + TASK_CONTEXT_V3_RESERVED_WORDS ==
+        TASK_CONTEXT_V3_WORDS &&
+    TASK_CONTEXT_V3_VECTOR_BASE + TASK_CONTEXT_V3_VECTOR_WORDS ==
+        TASK_CONTEXT_V3_RESERVED_BASE,
+    "v3 task context geometry must remain exactly 279 words");
+
+static constexpr int TASK_CONTEXT_V3_FORMAT_VERSION = 1;
 
 static constexpr int PROC_STATE_FREE     = 0;
 static constexpr int PROC_STATE_RUNNABLE = 1;
@@ -1576,6 +1620,24 @@ static constexpr int SYSCALL_RENAME           = 59;
 static constexpr int EXEC_MAGIC = 40404;
 
 #include "executable_header_v2.h"
+#include "executable_header_v3.h"
+
+[[nodiscard]] inline bool taskContextSpanValid(
+    const TernaryMemory& dmem,
+    int context_addr,
+    int word_count) {
+    return context_addr >= 0 && word_count >= 0 &&
+           context_addr <= dmem.size() &&
+           word_count <= dmem.size() - context_addr;
+}
+
+[[nodiscard]] inline bool taskVectorContextSpanValid(
+    const TernaryMemory& dmem,
+    int context_addr) {
+    return context_addr >= 0 &&
+           context_addr % architecture::v2::STACK_ALIGNMENT_WORDS == 0 &&
+           taskContextSpanValid(dmem, context_addr, TASK_CONTEXT_V3_WORDS);
+}
 
 inline bool initializeTaskContext(
     TernaryMemory& dmem,
@@ -1585,25 +1647,86 @@ inline bool initializeTaskContext(
     int dmem_ptbr) {
 
     if (!validateExecutableHeaderV2(header)) return false;
-    if (context_addr < 0 || context_addr + TASK_CONTEXT_WORDS > dmem.size()) return false;
-    const int sp = header.stack_words;
-    if (dmem.store(context_addr + TASK_CONTEXT_EPC,
-                   ops::fromLong(header.entry_pc)) != MemFaultCode::OK) return false;
-    if (dmem.store(context_addr + TASK_CONTEXT_STATUS,
-                   ops::fromLong(35)) != MemFaultCode::OK) return false;
-    if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PTBR,
-                   ops::fromLong(imem_ptbr)) != MemFaultCode::OK) return false;
-    if (dmem.store(context_addr + TASK_CONTEXT_IMEM_PAGES,
-                   ops::fromLong(executableTextPages(header))) != MemFaultCode::OK) return false;
-    if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PTBR,
-                   ops::fromLong(dmem_ptbr)) != MemFaultCode::OK) return false;
-    if (dmem.store(context_addr + TASK_CONTEXT_DMEM_PAGES,
-                   ops::fromLong(executableDataPages(header))) != MemFaultCode::OK) return false;
-    for (int i = TASK_CONTEXT_REG_BASE; i < TASK_CONTEXT_WORDS; ++i) {
-        if (dmem.store(context_addr + i, TernaryValue::zero()) != MemFaultCode::OK) return false;
+    if (!taskContextSpanValid(dmem, context_addr, TASK_CONTEXT_V2_WORDS)) {
+        return false;
     }
-    return dmem.store(context_addr + TASK_CONTEXT_REG_BASE + R26_SP - 1,
-                      ops::fromLong(sp)) == MemFaultCode::OK;
+    std::array<TernaryValue, TASK_CONTEXT_V2_WORDS> staged{};
+    staged.fill(TernaryValue::zero());
+    staged[TASK_CONTEXT_EPC] = ops::fromLong(header.entry_pc);
+    staged[TASK_CONTEXT_STATUS] = ops::fromLong(35);
+    staged[TASK_CONTEXT_IMEM_PTBR] = ops::fromLong(imem_ptbr);
+    staged[TASK_CONTEXT_IMEM_PAGES] =
+        ops::fromLong(executableTextPages(header));
+    staged[TASK_CONTEXT_DMEM_PTBR] = ops::fromLong(dmem_ptbr);
+    staged[TASK_CONTEXT_DMEM_PAGES] =
+        ops::fromLong(executableDataPages(header));
+    staged[TASK_CONTEXT_REG_BASE + R26_SP - 1] =
+        ops::fromLong(header.stack_words);
+    for (int index = 0; index < TASK_CONTEXT_V2_WORDS; ++index) {
+        if (dmem.store(context_addr + index,
+                       staged[static_cast<std::size_t>(index)]) !=
+            MemFaultCode::OK) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool initializeTaskContextV3(
+    TernaryMemory& dmem,
+    int context_addr,
+    const ExecutableImageHeaderV3& header,
+    int imem_ptbr,
+    int dmem_ptbr) {
+    (void)imem_ptbr;
+    (void)dmem_ptbr;
+    if (!validateExecutableHeaderV3(header) ||
+        !taskVectorContextSpanValid(dmem, context_addr)) {
+        return false;
+    }
+
+    std::array<TernaryValue, TASK_CONTEXT_V3_WORDS> staged{};
+    staged.fill(TernaryValue::zero());
+    staged[TASK_CONTEXT_V3_HEADER_VERSION] =
+        ops::fromLong(TASK_CONTEXT_V3_FORMAT_VERSION);
+    staged[TASK_CONTEXT_V3_HEADER_LENGTH] =
+        ops::fromLong(TASK_CONTEXT_V3_WORDS);
+    staged[TASK_CONTEXT_V3_HEADER_VECTOR_ABI] =
+        ops::fromLong(architecture::v3::VECTOR_ABI_VERSION);
+    staged[TASK_CONTEXT_V3_HEADER_REGISTER_COUNT] =
+        ops::fromLong(architecture::v3::VECTOR_REGISTER_COUNT);
+    staged[TASK_CONTEXT_V3_VLEN] =
+        ops::fromLong(header.vector_lane_count);
+    staged[TASK_CONTEXT_V3_ACCUMULATOR] = TernaryValue::zero();
+    staged[TASK_CONTEXT_V3_FIRST_FAILING_LANE] = ops::fromLong(-1);
+    for (int lane = 0;
+         lane < architecture::v3::VECTOR_LANE_COUNT;
+         ++lane) {
+        staged[TASK_CONTEXT_V3_FAULT_BASE + lane] =
+            makeFaultRecord(FAULT_VALID_NONE,
+                            static_cast<int8_t>(TrapCode::TRAP_MEM_FAULT));
+    }
+
+    // The complete span was prevalidated before any write.  A valid memory
+    // range cannot fault during this staged initialization.
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        if (dmem.store(context_addr + index,
+                       staged[static_cast<std::size_t>(index)]) !=
+            MemFaultCode::OK) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Name the owned allocation explicitly for new callers while retaining
+// initializeTaskContextV3 for source compatibility with the original v3
+// scaffold.
+inline bool initializeTaskVectorContextV3(
+    TernaryMemory& dmem,
+    int context_addr,
+    const ExecutableImageHeaderV3& header) {
+    return initializeTaskContextV3(dmem, context_addr, header, 0, 0);
 }
 
 struct PageTableEntry {
@@ -1893,6 +2016,11 @@ public:
     [[nodiscard]] bool writeBlock(int index, const std::vector<long long>& data) {
         if (index < 0 || index >= block_count_) return false;
         if (static_cast<int>(data.size()) != STORAGE_BLOCK_WORDS) return false;
+        if (isExecutableTextBlock(index)) {
+            for (long long value : data) {
+                if (!validInstructionBits(value)) return false;
+            }
+        }
 
         ++stats_.writes;
         applyBlock(index, data);
@@ -1928,6 +2056,11 @@ public:
                 payload[static_cast<std::size_t>(word)] =
                     image[static_cast<std::size_t>(
                         block * STORAGE_BLOCK_WORDS + word)];
+            }
+            if (isExecutableTextBlock(block)) {
+                for (long long value : payload) {
+                    if (!validInstructionBits(value)) return false;
+                }
             }
             if (!isZeroBlock(payload)) blocks_[block] = std::move(payload);
         }
@@ -2032,7 +2165,22 @@ private:
         }
     }
 
-    [[nodiscard]] static std::uint64_t canonicalRawWord(long long value) {
+    [[nodiscard]] static bool isExecutableTextBlock(int index) {
+        return index >= TDISK_EXECUTABLE_TEXT_FIRST_BLOCK;
+    }
+
+    [[nodiscard]] static bool validInstructionBits(long long value) {
+        constexpr std::uint64_t kTritWord27Mask = (std::uint64_t{1} << 54) - 1;
+        return value >= 0 && static_cast<std::uint64_t>(value) <= kTritWord27Mask;
+    }
+
+    [[nodiscard]] static std::uint64_t canonicalRawWord(
+        int block_index, long long value) {
+        if (isExecutableTextBlock(block_index)) {
+            return validInstructionBits(value)
+                       ? static_cast<std::uint64_t>(value)
+                       : 0;
+        }
         return convertValue(ops::fromLong(value), TernaryMode::T40)
             .asTriple().data;
     }
@@ -2061,7 +2209,7 @@ private:
                 if (found == blocks_.end()) continue;
                 hashBytes(checksum, &index, sizeof(index));
                 for (long long word : found->second) {
-                    const std::uint64_t raw = canonicalRawWord(word);
+                    const std::uint64_t raw = canonicalRawWord(index, word);
                     hashBytes(checksum, &raw, sizeof(raw));
                 }
             }
@@ -2079,7 +2227,7 @@ private:
                 if (found == blocks_.end()) continue;
                 file.write(reinterpret_cast<const char*>(&index), sizeof(index));
                 for (long long word : found->second) {
-                    const std::uint64_t raw = canonicalRawWord(word);
+                    const std::uint64_t raw = canonicalRawWord(index, word);
                     file.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
                 }
             }
@@ -2183,9 +2331,15 @@ private:
             for (int word = 0; word < STORAGE_BLOCK_WORDS; ++word) {
                 std::uint64_t raw = 0;
                 file.read(reinterpret_cast<char*>(&raw), sizeof(raw));
-                if (!numericWordFromRaw(
-                        raw, payload[static_cast<std::size_t>(word)])) {
-                    return false;
+                if (isExecutableTextBlock(index)) {
+                    if (raw > ((std::uint64_t{1} << 54) - 1)) return false;
+                    payload[static_cast<std::size_t>(word)] =
+                        static_cast<long long>(raw);
+                } else {
+                    if (!numericWordFromRaw(
+                            raw, payload[static_cast<std::size_t>(word)])) {
+                        return false;
+                    }
                 }
                 hashBytes(actual_checksum, &raw, sizeof(raw));
             }
@@ -2617,6 +2771,11 @@ struct VMState {
     int                      pc = 0;   // Program counter (word-addressed into imem)
     VMStatus                 status = VMStatus::RUNNING;
     TernaryValue             trap_reg;  // r27: written on fault, read-only from ISA
+    int                      executable_version =
+        architecture::v2::EXECUTABLE_VERSION;
+    int                      function_abi_version =
+        architecture::v2::FUNCTION_ABI_VERSION;
+    int                      vector_abi_version = 0;
     std::uint64_t            required_features = 0;
     std::uint64_t            supported_features =
         (std::uint64_t{1} <<
@@ -3127,7 +3286,42 @@ struct VMState {
             (required & ~supported_features) != 0) {
             return false;
         }
+        executable_version = architecture::v2::EXECUTABLE_VERSION;
+        function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+        vector_abi_version = 0;
         required_features = required;
+        invalidateBlockCache();
+        invalidateTraceJit();
+        return true;
+    }
+
+    [[nodiscard]] bool configureArchitecture(
+        const ExecutableImageHeaderV2& header) {
+        if (!validateExecutableHeaderV2(header) ||
+            !configureArchitecture(IsaEncodingVersion::V2,
+                                    header.required_features)) {
+            return false;
+        }
+        executable_version = header.executable_version;
+        function_abi_version = header.function_abi_version;
+        return true;
+    }
+
+    [[nodiscard]] bool configureArchitecture(
+        const ExecutableImageHeaderV3& header) {
+        if (!validateExecutableHeaderV3(header) ||
+            (header.required_features &
+             ~architecture::v3::SUPPORTED_FEATURES) != 0) {
+            return false;
+        }
+        supported_features = architecture::v3::SUPPORTED_FEATURES;
+        required_features = header.required_features;
+        executable_version = header.executable_version;
+        function_abi_version = header.function_abi_version;
+        vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
+        vector_length = architecture::v3::VECTOR_LANE_COUNT;
+        vregfile.reset(vector_length);
+        vector_faults.reset(vector_length);
         invalidateBlockCache();
         invalidateTraceJit();
         return true;
@@ -4282,6 +4476,372 @@ struct VMState {
         return oss.str();
     }
 };
+
+[[nodiscard]] inline bool taskContextWordToLong(
+    const TernaryValue& value,
+    long long& out) {
+    if (!isNumericMode(value.mode) || value.isInvalid()) return false;
+    out = ops::toLong(value);
+    return true;
+}
+
+[[nodiscard]] inline bool decodeTaskContextFault(
+    const TernaryValue& value,
+    bool& valid,
+    TrapCode& code) {
+    if (value.mode != TernaryMode::T5 || value.isInvalid()) return false;
+    const int8_t valid_trit = readStoredTrit(value, 0);
+    const int8_t class_trit = readStoredTrit(value, 1);
+    if (valid_trit != FAULT_VALID_NONE &&
+        valid_trit != FAULT_VALID_SET) {
+        return false;
+    }
+    if (class_trit < T_NEG || class_trit > T_POS) return false;
+    valid = valid_trit == FAULT_VALID_SET;
+    code = static_cast<TrapCode>(class_trit);
+    return true;
+}
+
+[[nodiscard]] inline bool vectorContextFeatureEnabled(const VMState& vm) {
+    const std::uint64_t feature =
+        featureBit(architecture::v3::FEATURE_VECTOR_CONTEXT);
+    return vm.privilege == PrivilegeMode::Kernel &&
+           (vm.required_features & feature) != 0 &&
+           (vm.supported_features & feature) != 0;
+}
+
+[[nodiscard]] inline bool decodeVectorContextLane(
+    const TernaryValue& fault_word,
+    uint8_t& valid,
+    TrapCode& code) {
+    if (fault_word.mode != TernaryMode::T5 || fault_word.isInvalid()) {
+        return false;
+    }
+    const LongTriple raw = fault_word.asLongTripleRaw();
+    const long long valid_value = readStoredTrit(raw, 0);
+    const long long class_value = readStoredTrit(raw, 1);
+    if ((valid_value != 0 && valid_value != 1) ||
+        class_value < T_NEG || class_value > T_POS) {
+        return false;
+    }
+    valid = static_cast<uint8_t>(valid_value);
+    code = static_cast<TrapCode>(class_value);
+    return true;
+}
+
+// Serialize only vector-owned state. Scalar registers, EPC, status, address
+// spaces, and the scalar trap register live in the v2 task record and are not
+// duplicated here. Every check happens before the first store.
+[[nodiscard]] inline bool saveVectorContextV3(
+    const VMState& vm,
+    TernaryMemory& dmem,
+    int context_addr) {
+    if (!vectorContextFeatureEnabled(vm) ||
+        !taskVectorContextSpanValid(dmem, context_addr) ||
+        vm.vector_length != architecture::v3::VECTOR_LANE_COUNT ||
+        static_cast<int>(vm.vector_faults.fault_valid.size()) !=
+            architecture::v3::VECTOR_LANE_COUNT ||
+        static_cast<int>(vm.vector_faults.fault_class.size()) !=
+            architecture::v3::VECTOR_LANE_COUNT ||
+        vm.vector_faults.first_failing_lane < -1 ||
+        vm.vector_faults.first_failing_lane >=
+            architecture::v3::VECTOR_LANE_COUNT ||
+        vm.accumulator.isInvalid()) {
+        return false;
+    }
+    std::array<TernaryValue, TASK_CONTEXT_V3_WORDS> staged{};
+    staged.fill(TernaryValue::zero());
+    staged[TASK_CONTEXT_V3_HEADER_VERSION] =
+        ops::fromLong(TASK_CONTEXT_V3_FORMAT_VERSION);
+    staged[TASK_CONTEXT_V3_HEADER_LENGTH] =
+        ops::fromLong(TASK_CONTEXT_V3_WORDS);
+    staged[TASK_CONTEXT_V3_HEADER_VECTOR_ABI] =
+        ops::fromLong(architecture::v3::VECTOR_ABI_VERSION);
+    staged[TASK_CONTEXT_V3_HEADER_REGISTER_COUNT] =
+        ops::fromLong(architecture::v3::VECTOR_REGISTER_COUNT);
+    staged[TASK_CONTEXT_V3_VLEN] = ops::fromLong(vm.vector_length);
+    staged[TASK_CONTEXT_V3_ACCUMULATOR] = vm.accumulator;
+    staged[TASK_CONTEXT_V3_FIRST_FAILING_LANE] =
+        ops::fromLong(vm.vector_faults.first_failing_lane);
+    for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+        const std::size_t index = static_cast<std::size_t>(lane);
+        if (vm.vector_faults.fault_valid[index] > 1) return false;
+        const int class_value = static_cast<int>(vm.vector_faults.fault_class[index]);
+        if (class_value < T_NEG || class_value > T_POS) return false;
+        staged[TASK_CONTEXT_V3_FAULT_BASE + lane] =
+            makeFaultRecord(vm.vector_faults.fault_valid[index],
+                            static_cast<int8_t>(class_value));
+    }
+    for (int reg = 0; reg < architecture::v3::VECTOR_REGISTER_COUNT; ++reg) {
+        const auto& vector = vm.vregfile.reg[static_cast<std::size_t>(reg)];
+        if (static_cast<int>(vector.lane.size()) !=
+            architecture::v3::VECTOR_LANE_COUNT) return false;
+        for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+            const TernaryValue& value =
+                vector.lane[static_cast<std::size_t>(lane)];
+            if (value.isInvalid()) return false;
+            staged[TASK_CONTEXT_V3_VECTOR_BASE +
+                   reg * architecture::v3::VECTOR_LANE_COUNT + lane] = value;
+        }
+    }
+    for (int index = 0; index < TASK_CONTEXT_V3_RESERVED_WORDS; ++index) {
+        staged[TASK_CONTEXT_V3_RESERVED_BASE + index] =
+            TernaryValue::zero();
+    }
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        if (dmem.store(context_addr + index,
+                       staged[static_cast<std::size_t>(index)]) !=
+            MemFaultCode::OK) return false;
+    }
+    return true;
+}
+
+// Restore is a complete read/validate phase followed by one mutation phase.
+// It restores vector state exactly, including tagged lanes, and leaves every
+// scalar field untouched.
+[[nodiscard]] inline bool restoreVectorContextV3(
+    VMState& vm,
+    const TernaryMemory& dmem,
+    int context_addr) {
+    if (!vectorContextFeatureEnabled(vm) ||
+        !taskVectorContextSpanValid(dmem, context_addr)) return false;
+    std::array<TernaryValue, TASK_CONTEXT_V3_WORDS> staged{};
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        const auto loaded = dmem.load(context_addr + index);
+        if (loaded.second != MemFaultCode::OK || loaded.first.isInvalid()) {
+            return false;
+        }
+        staged[static_cast<std::size_t>(index)] = loaded.first;
+    }
+    long long version = 0;
+    long long context_length = 0;
+    long long vector_abi = 0;
+    long long register_count = 0;
+    long long vector_length = 0;
+    long long first_failing_lane = 0;
+    if (!taskContextWordToLong(staged[TASK_CONTEXT_V3_HEADER_VERSION], version) ||
+        !taskContextWordToLong(staged[TASK_CONTEXT_V3_HEADER_LENGTH], context_length) ||
+        !taskContextWordToLong(staged[TASK_CONTEXT_V3_HEADER_VECTOR_ABI], vector_abi) ||
+        !taskContextWordToLong(staged[TASK_CONTEXT_V3_HEADER_REGISTER_COUNT], register_count) ||
+        !taskContextWordToLong(staged[TASK_CONTEXT_V3_VLEN], vector_length) ||
+        !taskContextWordToLong(
+            staged[TASK_CONTEXT_V3_FIRST_FAILING_LANE], first_failing_lane) ||
+        version != TASK_CONTEXT_V3_FORMAT_VERSION ||
+        context_length != TASK_CONTEXT_V3_WORDS ||
+        vector_abi != architecture::v3::VECTOR_ABI_VERSION ||
+        register_count != architecture::v3::VECTOR_REGISTER_COUNT ||
+        vector_length != architecture::v3::VECTOR_LANE_COUNT ||
+        first_failing_lane < -1 ||
+        first_failing_lane >= architecture::v3::VECTOR_LANE_COUNT) {
+        return false;
+    }
+    if (staged[TASK_CONTEXT_V3_ACCUMULATOR].isInvalid()) return false;
+    for (int index = 0; index < TASK_CONTEXT_V3_RESERVED_WORDS; ++index) {
+        const TernaryValue& reserved =
+            staged[TASK_CONTEXT_V3_RESERVED_BASE + index];
+        if (reserved.mode != TernaryMode::T40 || !reserved.isZero()) {
+            return false;
+        }
+    }
+    std::array<uint8_t, architecture::v3::VECTOR_LANE_COUNT> valid{};
+    std::array<TrapCode, architecture::v3::VECTOR_LANE_COUNT> classes{};
+    for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+        if (!decodeVectorContextLane(
+                staged[TASK_CONTEXT_V3_FAULT_BASE + lane],
+                valid[static_cast<std::size_t>(lane)],
+                classes[static_cast<std::size_t>(lane)])) return false;
+    }
+    for (int reg = 0; reg < architecture::v3::VECTOR_REGISTER_COUNT; ++reg) {
+        for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+            if (staged[TASK_CONTEXT_V3_VECTOR_BASE +
+                       reg * architecture::v3::VECTOR_LANE_COUNT + lane]
+                    .isInvalid()) return false;
+        }
+    }
+
+    vm.vector_length = static_cast<int>(vector_length);
+    vm.vregfile.reset(vm.vector_length);
+    vm.vector_faults.reset(vm.vector_length);
+    for (int reg = 0; reg < architecture::v3::VECTOR_REGISTER_COUNT; ++reg) {
+        for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+            vm.vregfile.reg[static_cast<std::size_t>(reg)].write(
+                lane,
+                staged[TASK_CONTEXT_V3_VECTOR_BASE +
+                       reg * architecture::v3::VECTOR_LANE_COUNT + lane]);
+        }
+    }
+    for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+        const std::size_t index = static_cast<std::size_t>(lane);
+        vm.vector_faults.fault_valid[index] = valid[index];
+        vm.vector_faults.fault_class[index] = classes[index];
+    }
+    vm.vector_faults.first_failing_lane =
+        static_cast<int>(first_failing_lane);
+    vm.accumulator = staged[TASK_CONTEXT_V3_ACCUMULATOR];
+    return true;
+}
+
+// Legacy names remain source-compatible, but now have the privileged vector
+// context semantics rather than the old combined scalar scaffold.
+[[nodiscard]] inline bool saveTaskContextV3(
+    const VMState& vm, TernaryMemory& dmem, int context_addr) {
+    return saveVectorContextV3(vm, dmem, context_addr);
+}
+
+[[nodiscard]] inline bool restoreTaskContextV3(
+    VMState& vm, const TernaryMemory& dmem, int context_addr) {
+    return restoreVectorContextV3(vm, dmem, context_addr);
+}
+
+struct NativeVectorContextOwnerV3 {
+    int context_addr = -1;
+    // Native task records own a separately allocated copy of the exact
+    // tagged context.  The address is retained for VM-backed task records;
+    // host scheduler records use the words directly and never narrow them
+    // through scalar conversions.
+    std::array<TernaryValue, TASK_CONTEXT_V3_WORDS> words{};
+};
+
+[[nodiscard]] inline bool initializeNativeVectorContextOwnerV3(
+    NativeVectorContextOwnerV3& owner,
+    const ExecutableImageHeaderV3& header) {
+    if (!validateExecutableHeaderV3(header)) return false;
+    owner.words.fill(TernaryValue::zero());
+    owner.words[TASK_CONTEXT_V3_HEADER_VERSION] =
+        ops::fromLong(TASK_CONTEXT_V3_FORMAT_VERSION);
+    owner.words[TASK_CONTEXT_V3_HEADER_LENGTH] =
+        ops::fromLong(TASK_CONTEXT_V3_WORDS);
+    owner.words[TASK_CONTEXT_V3_HEADER_VECTOR_ABI] =
+        ops::fromLong(architecture::v3::VECTOR_ABI_VERSION);
+    owner.words[TASK_CONTEXT_V3_HEADER_REGISTER_COUNT] =
+        ops::fromLong(architecture::v3::VECTOR_REGISTER_COUNT);
+    owner.words[TASK_CONTEXT_V3_VLEN] = ops::fromLong(header.vector_lane_count);
+    owner.words[TASK_CONTEXT_V3_ACCUMULATOR] = TernaryValue::zero();
+    owner.words[TASK_CONTEXT_V3_FIRST_FAILING_LANE] = ops::fromLong(-1);
+    for (int lane = 0; lane < architecture::v3::VECTOR_LANE_COUNT; ++lane) {
+        owner.words[TASK_CONTEXT_V3_FAULT_BASE + lane] =
+            makeFaultRecord(FAULT_VALID_NONE,
+                            static_cast<int8_t>(TrapCode::TRAP_MEM_FAULT));
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool saveNativeVectorContextV3(
+    const VMState& vm,
+    NativeVectorContextOwnerV3& owner) {
+    TernaryMemory staging(TASK_CONTEXT_V3_WORDS);
+    if (!saveVectorContextV3(vm, staging, 0)) return false;
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        const auto loaded = staging.load(index);
+        if (loaded.second != MemFaultCode::OK || loaded.first.isInvalid()) {
+            return false;
+        }
+        owner.words[static_cast<std::size_t>(index)] = loaded.first;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool restoreNativeVectorContextV3(
+    VMState& vm,
+    const NativeVectorContextOwnerV3& owner) {
+    TernaryMemory staging(TASK_CONTEXT_V3_WORDS);
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        if (staging.store(index,
+                         owner.words[static_cast<std::size_t>(index)]) !=
+            MemFaultCode::OK) {
+            return false;
+        }
+    }
+    return restoreVectorContextV3(vm, staging, 0);
+}
+
+struct NativeTaskRecordV3 {
+    int slot = -1;
+    int scalar_context_addr = -1;
+    std::shared_ptr<NativeVectorContextOwnerV3> vector_context;
+};
+
+[[nodiscard]] inline bool initializeNativeTaskRecordV3(
+    NativeTaskRecordV3& task,
+    TernaryMemory& dmem,
+    int slot,
+    int scalar_context_addr,
+    int vector_context_addr,
+    const ExecutableImageHeaderV3& header) {
+    if (!initializeTaskContextV3(
+            dmem, vector_context_addr, header, 0, 0)) return false;
+    task.slot = slot;
+    task.scalar_context_addr = scalar_context_addr;
+    task.vector_context = std::make_shared<NativeVectorContextOwnerV3>();
+    task.vector_context->context_addr = vector_context_addr;
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        const auto loaded = dmem.load(vector_context_addr + index);
+        if (loaded.second != MemFaultCode::OK || loaded.first.isInvalid()) {
+            return false;
+        }
+        task.vector_context->words[static_cast<std::size_t>(index)] = loaded.first;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool resetNativeTaskRecordV3(
+    NativeTaskRecordV3& task,
+    TernaryMemory& dmem,
+    const ExecutableImageHeaderV3& header) {
+    if (!task.vector_context) return false;
+    if (!initializeTaskContextV3(
+            dmem, task.vector_context->context_addr, header, 0, 0)) {
+        return false;
+    }
+    if (!initializeNativeVectorContextOwnerV3(*task.vector_context, header)) {
+        return false;
+    }
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        const auto loaded = dmem.load(task.vector_context->context_addr + index);
+        if (loaded.second != MemFaultCode::OK || loaded.first.isInvalid()) {
+            return false;
+        }
+        task.vector_context->words[static_cast<std::size_t>(index)] = loaded.first;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool copyNativeTaskVectorContextV3(
+    NativeTaskRecordV3& destination,
+    const NativeTaskRecordV3& source,
+    TernaryMemory& dmem) {
+    if (!destination.vector_context || !source.vector_context ||
+        !taskVectorContextSpanValid(dmem, destination.vector_context->context_addr) ||
+        !taskVectorContextSpanValid(dmem, source.vector_context->context_addr)) {
+        return false;
+    }
+    std::array<TernaryValue, TASK_CONTEXT_V3_WORDS> staged{};
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        const auto loaded = dmem.load(source.vector_context->context_addr + index);
+        if (loaded.second != MemFaultCode::OK || loaded.first.isInvalid()) {
+            return false;
+        }
+        staged[static_cast<std::size_t>(index)] = loaded.first;
+    }
+    for (int index = 0; index < TASK_CONTEXT_V3_WORDS; ++index) {
+        if (dmem.store(destination.vector_context->context_addr + index,
+                       staged[static_cast<std::size_t>(index)]) !=
+            MemFaultCode::OK) return false;
+        destination.vector_context->words[static_cast<std::size_t>(index)] =
+            staged[static_cast<std::size_t>(index)];
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool vctxstore(
+    const VMState& vm, TernaryMemory& dmem, int context_addr) {
+    return saveVectorContextV3(vm, dmem, context_addr);
+}
+
+[[nodiscard]] inline bool vctxload(
+    VMState& vm, const TernaryMemory& dmem, int context_addr) {
+    return restoreVectorContextV3(vm, dmem, context_addr);
+}
 
 // A deterministic, in-memory VM checkpoint.  The checkpoint owns a complete
 // architectural state copy (registers, memories, MMU/TLB state, queues, and

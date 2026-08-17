@@ -4,6 +4,7 @@
 
 #if defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
 #include <openssl/crypto.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #endif
@@ -15,7 +16,32 @@ void setError(std::string* error, const char* text) {
     if (error) *error = text;
 }
 
+void cleanse(ByteVector& value) {
 #if defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
+    if (!value.empty()) OPENSSL_cleanse(value.data(), value.size());
+#else
+    std::fill(value.begin(), value.end(), 0);
+#endif
+    value.clear();
+    value.shrink_to_fit();
+}
+
+#if defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
+struct OpenSslErrorQueueGuard final {
+    OpenSslErrorQueueGuard() { ERR_clear_error(); }
+    ~OpenSslErrorQueueGuard() { ERR_clear_error(); }
+};
+
+EVP_CIPHER* fetchAes256Gcm(std::string* error) {
+    // EVP_CIPHER_fetch is the OpenSSL 3 provider boundary.  The caller never
+    // falls back to a legacy or home-grown cipher if the provider is absent.
+    EVP_CIPHER* cipher = EVP_CIPHER_fetch(nullptr, "AES-256-GCM", nullptr);
+    if (!cipher) {
+        setError(error, "OpenSSL AES-256-GCM provider is unavailable");
+    }
+    return cipher;
+}
+
 bool validAesGcmSizes(const ByteVector& key,
                      const ByteVector& nonce,
                      const ByteVector& aad,
@@ -68,8 +94,9 @@ bool OpenSslAes256GcmProvider::encrypt(const ByteVector& key,
                                        ByteVector& ciphertext,
                                        ByteVector& tag,
                                        std::string* error) const {
-    ciphertext.clear();
-    tag.clear();
+    cleanse(ciphertext);
+    cleanse(tag);
+    if (error) error->clear();
 #if !defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
     (void)key;
     (void)nonce;
@@ -78,15 +105,19 @@ bool OpenSslAes256GcmProvider::encrypt(const ByteVector& key,
     setError(error, "OpenSSL AES-256-GCM provider is not linked");
     return false;
 #else
+    OpenSslErrorQueueGuard error_queue;
     if (!validAesGcmSizes(key, nonce, aad, plaintext, nullptr, error)) return false;
+    EVP_CIPHER* cipher = fetchAes256Gcm(error);
+    if (!cipher) return false;
     EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
     if (!context) {
+        EVP_CIPHER_free(cipher);
         setError(error, "OpenSSL AES-256-GCM context allocation failed");
         return false;
     }
     bool ok = false;
     do {
-        if (EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) <= 0 ||
+        if (EVP_EncryptInit_ex(context, cipher, nullptr, nullptr, nullptr) <= 0 ||
             EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN,
                                 static_cast<int>(nonce.size()), nullptr) <= 0 ||
             EVP_EncryptInit_ex(context, nullptr, nullptr, key.data(), nonce.data()) <= 0) {
@@ -122,9 +153,10 @@ bool OpenSslAes256GcmProvider::encrypt(const ByteVector& key,
         ok = true;
     } while (false);
     EVP_CIPHER_CTX_free(context);
+    EVP_CIPHER_free(cipher);
     if (!ok) {
-        ciphertext.clear();
-        tag.clear();
+        cleanse(ciphertext);
+        cleanse(tag);
         if (error && error->empty()) *error = "OpenSSL AES-256-GCM encryption failed";
     }
     return ok;
@@ -138,7 +170,8 @@ bool OpenSslAes256GcmProvider::decrypt(const ByteVector& key,
                                        const ByteVector& tag,
                                        ByteVector& plaintext,
                                        std::string* error) const {
-    plaintext.clear();
+    cleanse(plaintext);
+    if (error) error->clear();
 #if !defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
     (void)key;
     (void)nonce;
@@ -148,15 +181,19 @@ bool OpenSslAes256GcmProvider::decrypt(const ByteVector& key,
     setError(error, "OpenSSL AES-256-GCM provider is not linked");
     return false;
 #else
+    OpenSslErrorQueueGuard error_queue;
     if (!validAesGcmSizes(key, nonce, aad, ciphertext, &tag, error)) return false;
+    EVP_CIPHER* cipher = fetchAes256Gcm(error);
+    if (!cipher) return false;
     EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
     if (!context) {
+        EVP_CIPHER_free(cipher);
         setError(error, "OpenSSL AES-256-GCM context allocation failed");
         return false;
     }
     bool ok = false;
     do {
-        if (EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) <= 0 ||
+        if (EVP_DecryptInit_ex(context, cipher, nullptr, nullptr, nullptr) <= 0 ||
             EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN,
                                 static_cast<int>(nonce.size()), nullptr) <= 0 ||
             EVP_DecryptInit_ex(context, nullptr, nullptr, key.data(), nonce.data()) <= 0) {
@@ -192,11 +229,9 @@ bool OpenSslAes256GcmProvider::decrypt(const ByteVector& key,
         ok = true;
     } while (false);
     EVP_CIPHER_CTX_free(context);
+    EVP_CIPHER_free(cipher);
     if (!ok) {
-        if (!plaintext.empty()) {
-            OPENSSL_cleanse(plaintext.data(), plaintext.size());
-        }
-        plaintext.clear();
+        cleanse(plaintext);
         if (error && error->empty()) *error = "encrypted-volume authentication failed";
     }
     return ok;
@@ -206,18 +241,22 @@ bool OpenSslAes256GcmProvider::decrypt(const ByteVector& key,
 bool OpenSslAes256GcmProvider::randomBytes(std::uint8_t* destination,
                                            std::size_t size,
                                            std::string* error) const {
+    if (error) error->clear();
 #if !defined(TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
     (void)destination;
     (void)size;
+    if (destination && size != 0) std::fill(destination, destination + size, 0);
     setError(error, "OpenSSL AES-256-GCM provider is not linked");
     return false;
 #else
+    OpenSslErrorQueueGuard error_queue;
     if (size > static_cast<std::size_t>(INT_MAX) || (size != 0 && !destination)) {
         setError(error, "OpenSSL secure-random request is invalid");
         return false;
     }
     if (size == 0) return true;
     if (RAND_bytes(destination, static_cast<int>(size)) != 1) {
+        OPENSSL_cleanse(destination, size);
         setError(error, "OpenSSL secure-random request failed");
         return false;
     }

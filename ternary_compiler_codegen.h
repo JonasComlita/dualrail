@@ -15,8 +15,34 @@ namespace sandbox {
 namespace compiler {
 
 constexpr int kRegisterArgCount = 6;
+// The frontend dry-run call area grows per function to cover the largest call
+// argument bundle in that function. This is the scalar-only baseline; vector
+// arguments raise it to their exact 27-word memory representation.
 constexpr int kCallArgScratchWords = 16;
 constexpr int kCallArgScratchAreas = 8;
+
+[[nodiscard]] inline bool compilerVectorAbiEnabled(
+    const CompilerOptions& options) {
+    return FunctionAbiContract::vectorBoundarySupported(
+        options.target_abi_version,
+        options.enable_vector_abi,
+        options.vector_length) &&
+        options.target_executable_version ==
+            architecture::v3::EXECUTABLE_VERSION;
+}
+
+[[nodiscard]] inline int compilerSpillSlotWidth(
+    const TypeRef& type,
+    const CompilerOptions& options) {
+    if (type.kind == TypeKind::Vector) {
+        return compilerVectorAbiEnabled(options) &&
+                       options.enable_vector_spilling
+            ? options.vector_length
+            : 0;
+    }
+    // Scalar spill slots retain the established nine-word stack spacing.
+    return 9;
+}
 
 class TypeInferencer {
 public:
@@ -295,6 +321,14 @@ private:
     InferResult inferUnary(const Expr& expr) {
         InferResult inner = inferExpr(expr.left);
         if (expr.text == "-") {
+            if (inner.type.kind == TypeKind::Vector) {
+                if (!isVectorLike(inner.type)) {
+                    diagnostics_.push_back({DiagnosticSeverity::Error,
+                        "unary minus requires a supported numeric vector",
+                        expr.span});
+                }
+                return inner;
+            }
             unify(inner.type, TypeRef::numeric(ir::Type::T40), subst_, diagnostics_,
                   expr.span, "unary minus requires a numeric operand");
             inner.type = commonNumericType(subst_.apply(inner.type), TypeRef::numeric(ir::Type::T40));
@@ -348,7 +382,11 @@ private:
         }
         unify(lhs.type, common, subst_, diagnostics_, expr.span, "left operand type mismatch");
         unify(rhs.type, common, subst_, diagnostics_, expr.span, "right operand type mismatch");
-        TypeRef resultType = isComparison(expr.text) ? TypeRef::trit() : common;
+        TypeRef resultType = isComparison(expr.text)
+            ? (common.kind == TypeKind::Vector
+                   ? TypeRef::vector(TypeRef::trit())
+                   : TypeRef::trit())
+            : common;
         return InferResult{resultType, combineEffects(lhs.effect, rhs.effect), false,
                            lhs.value_restricted || rhs.value_restricted};
     }
@@ -422,8 +460,34 @@ private:
         }
         if (isRuntimeName(expr->text)) {
             Effect effect = Effect::Syscall;
-            for (const auto& arg : expr->args) effect = combineEffects(effect, inferExpr(arg).effect);
+            for (const auto& arg : expr->args) {
+                InferResult argument = inferExpr(arg);
+                if (argument.type.kind == TypeKind::Vector) {
+                    diagnostics_.push_back({DiagnosticSeverity::Error,
+                        "vector syscall arguments are unsupported by the scalar syscall ABI",
+                        arg ? arg->span : expr->span});
+                }
+                effect = combineEffects(effect, argument.effect);
+            }
             return InferResult{TypeRef::numeric(ir::Type::T40), effect, false, true};
+        }
+        if (expr->text == "tdiv") {
+            if (expr->args.size() != 2) {
+                diagnostics_.push_back({DiagnosticSeverity::Error,
+                    "tdiv requires dividend and divisor", expr->span});
+                return InferResult{TypeRef::numeric(ir::Type::T40), Effect::Control, false, true};
+            }
+            InferResult dividend = inferExpr(expr->args[0]);
+            InferResult divisor = inferExpr(expr->args[1]);
+            unify(dividend.type, TypeRef::numeric(ir::Type::T40), subst_,
+                  diagnostics_, expr->args[0]->span,
+                  "tdiv dividend must be numeric T40");
+            unify(divisor.type, TypeRef::numeric(ir::Type::T40), subst_,
+                  diagnostics_, expr->args[1]->span,
+                  "tdiv divisor must be numeric T40");
+            return InferResult{
+                TypeRef::numeric(ir::Type::T40),
+                combineEffects(dividend.effect, divisor.effect), false, true};
         }
         if (isUnsafeIntrinsicName(expr->text)) {
             if (!unsafe_allowed_) {
@@ -753,6 +817,23 @@ struct LocalInfo {
     return std::string(operation) + (usesWideT50Pair(type) ? ".t50" : "");
 }
 
+[[nodiscard]] inline bool isCompilerVectorType(const TypeRef& type) {
+    return type.kind == TypeKind::Vector && type.element &&
+           (type.element->kind == TypeKind::Numeric ||
+            type.element->kind == TypeKind::Lane ||
+            type.element->kind == TypeKind::Trit);
+}
+
+[[nodiscard]] inline std::string vectorMemoryMnemonic(
+    const char* operation,
+    const TypeRef& type) {
+    if (!isCompilerVectorType(type)) return {};
+    const std::string suffix = type.element->kind == TypeKind::Trit
+        ? "t1"
+        : std::string(ir::suffix(type.element->scalar));
+    return std::string(operation) + "." + suffix;
+}
+
 struct FunctionContext {
     const FunctionAst* ast = nullptr;
     Function ir;
@@ -792,6 +873,7 @@ struct FunctionContext {
     int aggregate_return_scratch_words = 0;
     std::vector<LocalInfo> aggregate_return_scratch_slots;
     int call_arg_slot_base = -1;
+    int call_arg_scratch_words = kCallArgScratchWords;
     int call_arg_depth = 0;
     int max_call_arg_depth = 0;
     int next_virtual_reg = 100;
@@ -969,7 +1051,8 @@ struct LValueCode {
 
 [[nodiscard]] AllocationResult allocateRegisters(
     const Module& module,
-    const CompilerOptions& options = CompilerOptions{});
+    const CompilerOptions& options = CompilerOptions{},
+    const std::set<ValueId>& forced_spills = {});
 [[nodiscard]] AllocationResult allocateRegistersWithSpillRewrite(
     Module& module,
     const CompilerOptions& options = CompilerOptions{},
@@ -996,6 +1079,21 @@ public:
                     std::string(FunctionAbiContract::id()) + " and " +
                     FunctionAbiContract::idForVersion(
                         FunctionAbiContract::version_v3),
+                    SourceSpan{ast_.name, 1, 1, 1}});
+        }
+        if (options_.enable_vector_abi &&
+            !compilerVectorAbiEnabled(options_)) {
+            diagnostics_.push_back({
+                DiagnosticSeverity::Error,
+                "vector ABI opt-in requires function ABI v3 and fixed VLEN " +
+                    std::to_string(architecture::v3::VECTOR_LANE_COUNT),
+                SourceSpan{ast_.name, 1, 1, 1}});
+        }
+        if (options_.enable_vector_spilling &&
+            !compilerVectorAbiEnabled(options_)) {
+            diagnostics_.push_back({
+                DiagnosticSeverity::Error,
+                "vector spilling requires the explicit v3 vector ABI opt-in",
                 SourceSpan{ast_.name, 1, 1, 1}});
         }
         
@@ -1156,6 +1254,9 @@ public:
             destination.spill_slots.insert(
                 source.spill_slots.begin(),
                 source.spill_slots.end());
+            destination.spill_value_types.insert(
+                source.spill_value_types.begin(),
+                source.spill_value_types.end());
             destination.spills += source.spills;
             destination.callee_saved_used.insert(
                 source.callee_saved_used.begin(),
@@ -1172,6 +1273,9 @@ public:
                 source.spill_rewrite_rounds;
             destination.spill_loads += source.spill_loads;
             destination.spill_stores += source.spill_stores;
+            destination.vector_spill_words = std::max(
+                destination.vector_spill_words,
+                source.vector_spill_words);
             destination.diagnostics.insert(
                 destination.diagnostics.end(),
                 source.diagnostics.begin(),
@@ -1210,7 +1314,7 @@ public:
                 ir_allocation.spill_stores;
             std::string ir_assembly;
             const std::string declared_lowering_boundary =
-                targetLoweringBoundary(function, options_.target_abi_version);
+                targetLoweringBoundary(function, options_);
             if (declared_lowering_boundary.empty() &&
                 ir_allocation.success &&
                 emitScalarSsaFunction(
@@ -1310,9 +1414,13 @@ public:
         result.object.metadata["target.memory_alias_model"] =
             "ordered-effects-with-call-carrier-proof";
         result.object.metadata["target.vector_lowering"] =
-            "fail-closed-no-authoritative-call-abi";
+            compilerVectorAbiEnabled(options_)
+                ? "v3-fixed-vlen27-register-stack-typed-boundary"
+                : "fail-closed-no-authoritative-call-abi";
         result.object.metadata["target.compiler_image_envelope"] =
-            "trit.executable.image.v2";
+            compilerVectorAbiEnabled(options_)
+                ? "trit.executable.image.v3"
+                : "trit.executable.image.v2";
         result.object.metadata["target.function_abi_contract"] =
             FunctionAbiContract::idForVersion(options_.target_abi_version);
         result.object.metadata["target.function_abi_version"] =
@@ -1326,7 +1434,19 @@ public:
                 options_.target_abi_version);
         result.object.metadata["target.vector_boundary_abi"] =
             FunctionAbiContract::vectorBoundaryForVersion(
-                options_.target_abi_version);
+                options_.target_abi_version,
+                compilerVectorAbiEnabled(options_));
+        result.object.metadata["target.vector_spill_abi"] =
+            compilerVectorAbiEnabled(options_) &&
+                    options_.enable_vector_spilling
+                ? FunctionAbiContract::vectorSpillOptIn()
+                : "unsupported";
+        result.object.metadata["target.vector_length"] =
+            std::to_string(options_.vector_length);
+        result.object.metadata["target.vector_register_count"] =
+            std::to_string(architecture::v3::VECTOR_REGISTER_COUNT);
+        result.object.metadata["target.vector_spill_words"] =
+            std::to_string(target_allocation.vector_spill_words);
         result.object.metadata["target.scalar_wrapper_lowering"] =
             "owned-borrow-shared-scalar-word";
         result.object.metadata["target.interference_edges"] =
@@ -1382,7 +1502,8 @@ public:
 private:
     [[nodiscard]] static std::string targetLoweringBoundary(
         const Function& function,
-        int function_abi_version) {
+        const CompilerOptions& options) {
+        const int function_abi_version = options.target_abi_version;
         if (isAggregateType(function.return_type) &&
             !FunctionAbiContract::aggregateReturnsSupported(
                 function_abi_version)) {
@@ -1393,21 +1514,26 @@ private:
                    "; pass a caller-owned aggregate as an output parameter";
         }
         if (function.return_type.kind == TypeKind::Vector) {
-            return "vector-valued function lowering requires an "
-                   "authoritative vector call/return ABI under " +
-                   std::string(FunctionAbiContract::idForVersion(
-                       function_abi_version)) +
-                   " and an aggregate spill layout";
-        }
-        for (const auto& parameter : function.params) {
-            if (parameter.second.kind == TypeKind::Vector) {
+            if (!compilerVectorAbiEnabled(options)) {
                 return "vector-valued function lowering requires an "
                        "authoritative vector call/return ABI under " +
                        std::string(FunctionAbiContract::idForVersion(
                            function_abi_version)) +
                        " and an aggregate spill layout";
             }
-            if (isTargetAbiBoundaryType(parameter.second)) {
+        }
+        for (const auto& parameter : function.params) {
+            if (parameter.second.kind == TypeKind::Vector) {
+                if (!compilerVectorAbiEnabled(options)) {
+                    return "vector-valued function lowering requires an "
+                           "authoritative vector call/return ABI under " +
+                           std::string(FunctionAbiContract::idForVersion(
+                               function_abi_version)) +
+                           " and an aggregate spill layout";
+                }
+            }
+            if (isTargetAbiBoundaryType(parameter.second) &&
+                parameter.second.kind != TypeKind::Vector) {
                 return "type '" + parameter.second.str() +
                        "' has no authoritative scalar target representation";
             }
@@ -1415,13 +1541,16 @@ private:
         for (const BasicBlock& block : function.blocks) {
             for (const Instr& instr : block.instructions) {
                 if (instr.type.kind == TypeKind::Vector) {
-                    return "vector-valued function lowering requires an "
-                           "authoritative vector call/return ABI under " +
-                           std::string(FunctionAbiContract::idForVersion(
-                               function_abi_version)) +
-                           " and an aggregate spill layout";
+                    if (!compilerVectorAbiEnabled(options)) {
+                        return "vector-valued function lowering requires an "
+                               "authoritative vector call/return ABI under " +
+                               std::string(FunctionAbiContract::idForVersion(
+                                   function_abi_version)) +
+                               " and an aggregate spill layout";
+                    }
                 }
-                if (isTargetAbiBoundaryType(instr.type)) {
+                if (isTargetAbiBoundaryType(instr.type) &&
+                    instr.type.kind != TypeKind::Vector) {
                     return "type '" + instr.type.str() +
                            "' has no authoritative scalar target "
                            "representation";
@@ -1625,10 +1754,15 @@ private:
                      instr.type.kind == TypeKind::Borrow ||
                      instr.type.kind == TypeKind::BorrowMut ||
                      instr.type.kind == TypeKind::Shared)) {
-                    return false;
+                    if (instr.type.kind != TypeKind::Vector ||
+                        !compilerVectorAbiEnabled(options_)) {
+                        return false;
+                    }
                 }
             }
         }
+        for (const auto& spilled : allocation.spill_value_types)
+            value_types[spilled.first] = spilled.second;
         auto registerFor = [&](ValueId value,
                                int& reg) {
             if (value < 0) {
@@ -1642,11 +1776,24 @@ private:
             reg = found->second;
             return true;
         };
+        auto vectorRegisterFor = [&](ValueId value, int& reg) {
+            if (value < 0) {
+                reg = 0;
+                return true;
+            }
+            const auto found = allocation.vector_registers.find(value);
+            if (found == allocation.vector_registers.end()) return false;
+            reg = found->second;
+            return true;
+        };
         auto valueType = [&](ValueId value) {
             const auto found = value_types.find(value);
             return found == value_types.end()
                 ? TypeRef::numeric(ir::Type::T40)
                 : found->second;
+        };
+        auto isVectorValue = [&](ValueId value) {
+            return valueType(value).kind == TypeKind::Vector;
         };
         auto regName = [](int reg) {
             return "r" + std::to_string(reg);
@@ -1793,7 +1940,8 @@ private:
                         instr.opcode == InstrOpcode::CallR ||
                         instr.opcode == InstrOpcode::Syscall) {
                         for (ValueId value : live) {
-                            if (external_address_values.count(value) != 0 &&
+                            if (value != instr.def &&
+                                external_address_values.count(value) != 0 &&
                                 !calleeSavedScalar(value)) {
                                 // Spill rewriting should have materialized a
                                 // fresh load around the call. A remaining
@@ -1813,6 +1961,7 @@ private:
             int source = -1;
             TypeRef type = TypeRef::unknown();
             bool source_is_scratch = false;
+            bool vector = false;
         };
         std::map<
             std::pair<std::string, std::string>,
@@ -1826,12 +1975,17 @@ private:
                 }
                 if (past_phis || instr.def < 0) return false;
                 int destination = -1;
-                if (!registerFor(instr.def, destination))
+                const bool vector_phi = instr.type.kind == TypeKind::Vector;
+                if (!(vector_phi
+                          ? vectorRegisterFor(instr.def, destination)
+                          : registerFor(instr.def, destination)))
                     return false;
                 for (const auto& incoming :
                      instr.phi_incoming) {
                     int source = -1;
-                    if (!registerFor(incoming.second, source) ||
+                    if (!((vector_phi
+                               ? vectorRegisterFor(incoming.second, source)
+                               : registerFor(incoming.second, source))) ||
                         !cfg.predecessors.at(block.name).count(
                             incoming.first)) {
                         return false;
@@ -1844,7 +1998,8 @@ private:
                                     destination,
                                     source,
                                     instr.type,
-                                    false});
+                                    false,
+                                    vector_phi});
                     }
                 }
             }
@@ -1854,8 +2009,22 @@ private:
             if (instr.opcode != InstrOpcode::Param)
                 continue;
             int destination = -1;
-            if (!registerFor(instr.def, destination))
+            const bool vector_param = instr.type.kind == TypeKind::Vector;
+            if (!(vector_param
+                      ? vectorRegisterFor(instr.def, destination)
+                      : registerFor(instr.def, destination)))
                 return false;
+            if (vector_param) {
+                if (instr.aux < 0) return false;
+                if (instr.aux >= 4) continue;
+                if (destination != instr.aux) {
+                    edge_moves[
+                        {"$params", function.blocks.front().name}]
+                        .push_back(EdgeMove{
+                            destination, instr.aux, instr.type, false, true});
+                }
+                continue;
+            }
             const int width =
                 usesWideT50Pair(instr.type) ? 2 : 1;
             if (instr.aux < 0) {
@@ -1872,6 +2041,7 @@ private:
                             destination,
                             source,
                             instr.type,
+                            false,
                             false});
             }
         }
@@ -1891,17 +2061,36 @@ private:
                     (instr.def < 0 && !isAggregateType(instr.type)))
                     return false;
                 int argument_word = 0;
+                int vector_argument = 0;
                 for (ValueId argument : instr.args) {
                     const auto type = value_types.find(argument);
                     int source = -1;
                     if (type == value_types.end() ||
-                        !registerFor(argument, source) ||
-                        type->second.kind == TypeKind::Vector ||
                         type->second.kind == TypeKind::Struct ||
                         type->second.kind == TypeKind::Array ||
-                        !isTargetScalarWordType(type->second)) {
+                        (!isCompilerVectorType(type->second) &&
+                         !isTargetScalarWordType(type->second))) {
                         return false;
                     }
+                    if (type->second.kind == TypeKind::Vector) {
+                        const bool has_register =
+                            vectorRegisterFor(argument, source);
+                        if (vector_argument < 4) {
+                            if (!has_register &&
+                                !allocation.spill_slots.count(argument)) {
+                                return false;
+                            }
+                            if (has_register && vector_argument != source) {
+                                edge_moves[callMoveKey(block, instr)]
+                                    .push_back(EdgeMove{
+                                        vector_argument, source,
+                                        type->second, false, true});
+                            }
+                        }
+                        ++vector_argument;
+                        continue;
+                    }
+                    if (!registerFor(argument, source)) return false;
                     const int width =
                         usesWideT50Pair(type->second) ? 2 : 1;
                     if (argument_word + width <= kRegisterArgCount) {
@@ -1913,6 +2102,7 @@ private:
                                         destination,
                                         source,
                                         type->second,
+                                        false,
                                         false});
                         }
                     }
@@ -1969,40 +2159,49 @@ private:
             getCalleeSavedUsed(allocation, function);
         const int parallel_copy_scratch =
             1 + static_cast<int>(callee_saved.size());
+        const int parallel_copy_vector_scratch =
+            align9(parallel_copy_scratch + 1);
+        int active_parallel_copy_scratch = parallel_copy_scratch;
+        int active_parallel_copy_vector_scratch =
+            parallel_copy_vector_scratch;
         std::map<ValueId, int> frame_offsets;
-        int frame_cursor = parallel_copy_scratch + 2;
+        int frame_cursor = parallel_copy_vector_scratch +
+            architecture::v3::VECTOR_SPILL_WORDS;
         for (const BasicBlock& block : function.blocks) {
             for (const Instr& instr : block.instructions) {
                 if (instr.opcode != InstrOpcode::Alloca ||
                     instr.def < 0) {
                     continue;
                 }
+                if (instr.type.kind == TypeKind::Vector) {
+                    frame_cursor = align9(frame_cursor);
+                }
                 frame_offsets[instr.def] = frame_cursor;
                 frame_cursor += std::max(1, instr.aux);
             }
         }
-        const int spill_base = frame_cursor;
+        const int spill_base = align9(frame_cursor);
         int spill_extent = 0;
+        auto memoryWidthOf = [](const TypeRef& type) {
+            if (type.kind == TypeKind::Vector) {
+                return architecture::v3::VECTOR_SPILL_WORDS;
+            }
+            return usesWideT50Pair(type) ? 2 : 1;
+        };
         for (const BasicBlock& block : function.blocks) {
             for (const Instr& instr : block.instructions) {
                 if (instr.opcode == InstrOpcode::SpillLoad) {
                     spill_extent = std::max(
                         spill_extent,
-                        instr.aux +
-                            (usesWideT50Pair(instr.type)
-                                 ? 2
-                                 : 1));
+                        instr.aux + memoryWidthOf(instr.type));
                 } else if (
                     instr.opcode ==
                         InstrOpcode::SpillStore &&
                     !instr.args.empty()) {
                     spill_extent = std::max(
                         spill_extent,
-                        instr.aux +
-                            (usesWideT50Pair(
-                                 valueType(instr.args[0]))
-                                 ? 2
-                                 : 1));
+                        instr.aux + memoryWidthOf(
+                            valueType(instr.args[0])));
                 }
             }
         }
@@ -2019,7 +2218,15 @@ private:
                 << ", sp, " << (index + 1) << "\n";
         }
         auto widthOf = [](const TypeRef& type) {
+            if (type.kind == TypeKind::Vector) {
+                return architecture::v3::VECTOR_SPILL_WORDS;
+            }
             return usesWideT50Pair(type) ? 2 : 1;
+        };
+        auto registerWidthOf = [](const TypeRef& type) {
+            return type.kind == TypeKind::Vector
+                ? 1
+                : (usesWideT50Pair(type) ? 2 : 1);
         };
         // Parameters beyond r13-r18 are loaded from the caller's temporary
         // outgoing area. The caller subtracts that area immediately before
@@ -2027,8 +2234,29 @@ private:
         // incoming words are at [sp + frame_words + stack_word].
         int parameter_register_word = 0;
         int parameter_stack_word = 0;
+        int vector_parameter_index = 0;
+        std::map<ValueId, int> vector_stack_parameter_offsets;
         for (const Instr& parameter : function.blocks.front().instructions) {
             if (parameter.opcode != InstrOpcode::Param) continue;
+            if (parameter.type.kind == TypeKind::Vector) {
+                int destination = -1;
+                if (!vectorRegisterFor(parameter.def, destination)) return false;
+                if (vector_parameter_index < 4) {
+                    ++vector_parameter_index;
+                    continue;
+                }
+                parameter_stack_word = align9(parameter_stack_word);
+                // Stack vector parameters are loaded at their corresponding
+                // local Store instruction, after the v0-v3 ABI parallel move.
+                // This permits more than eight vector parameters without
+                // requiring every incoming stack value to occupy a live
+                // vector register simultaneously.
+                vector_stack_parameter_offsets[parameter.def] =
+                    frame_words + parameter_stack_word;
+                parameter_stack_word += widthOf(parameter.type);
+                ++vector_parameter_index;
+                continue;
+            }
             const int width = widthOf(parameter.type);
             if (parameter_register_word + width <= kRegisterArgCount) {
                 parameter_register_word += width;
@@ -2057,12 +2285,18 @@ private:
             [&](std::vector<EdgeMove> pending) {
             bool scratch_in_use = false;
             int scratch_users = 0;
+            auto scratchAddress = [&](const EdgeMove& move) {
+                return move.vector
+                    ? active_parallel_copy_vector_scratch
+                    : active_parallel_copy_scratch;
+            };
             while (!pending.empty()) {
                 pending.erase(
                     std::remove_if(
                         pending.begin(), pending.end(),
                         [&](const EdgeMove& move) {
                             return !move.source_is_scratch &&
+                                   !move.vector &&
                                    move.destination ==
                                        move.source;
                         }),
@@ -2082,11 +2316,14 @@ private:
                                 .source_is_scratch) {
                             continue;
                         }
+                        if (candidate.vector != pending[other].vector) {
+                            continue;
+                        }
                         if (rangesOverlap(
                                 candidate.destination,
-                                widthOf(candidate.type),
+                                registerWidthOf(candidate.type),
                                 pending[other].source,
-                                widthOf(pending[other].type))) {
+                                registerWidthOf(pending[other].type))) {
                             destination_is_source = true;
                             break;
                         }
@@ -2098,28 +2335,38 @@ private:
                 }
 
                 if (selected == pending.size()) {
-                    if (scratch_in_use) return false;
+                    if (scratch_in_use &&
+                        std::none_of(pending.begin(), pending.end(),
+                                     [](const EdgeMove& move) {
+                                         return move.source_is_scratch;
+                                     })) {
+                        return false;
+                    }
                     const EdgeMove& cycle = pending.front();
-                    out << "    "
-                        << scalarMemoryMnemonic(
-                               "store", cycle.type)
-                        << " " << regName(cycle.destination)
-                        << ", sp, "
-                        << parallel_copy_scratch << "\n";
+                    if (cycle.vector) {
+                        out << "    " << vectorMemoryMnemonic("vstore", cycle.type)
+                            << " v" << cycle.destination << ", sp, "
+                            << scratchAddress(cycle) << "\n";
+                    } else {
+                        out << "    " << scalarMemoryMnemonic("store", cycle.type)
+                            << " " << regName(cycle.destination)
+                            << ", sp, " << scratchAddress(cycle) << "\n";
+                    }
                     const int saved_width =
-                        widthOf(cycle.type);
+                        registerWidthOf(cycle.type);
                     for (EdgeMove& move : pending) {
                         if (move.source_is_scratch)
                             continue;
                         if (move.source ==
                                 cycle.destination &&
-                            widthOf(move.type) ==
+                            move.vector == cycle.vector &&
+                            registerWidthOf(move.type) ==
                                 saved_width) {
                             move.source_is_scratch = true;
                             ++scratch_users;
                         } else if (rangesOverlap(
                                        move.source,
-                                       widthOf(move.type),
+                                       registerWidthOf(move.type),
                                        cycle.destination,
                                        saved_width)) {
                             return false;
@@ -2136,23 +2383,32 @@ private:
                     static_cast<std::ptrdiff_t>(
                         selected));
                 if (move.source_is_scratch) {
-                    out << "    "
-                        << scalarMemoryMnemonic(
-                               "load", move.type)
-                        << " " << regName(move.destination)
-                        << ", sp, "
-                        << parallel_copy_scratch << "\n";
+                    if (move.vector) {
+                        out << "    " << vectorMemoryMnemonic("vload", move.type)
+                            << " v" << move.destination << ", sp, "
+                            << scratchAddress(move) << "\n";
+                    } else {
+                        out << "    " << scalarMemoryMnemonic("load", move.type)
+                            << " " << regName(move.destination)
+                            << ", sp, " << scratchAddress(move) << "\n";
+                    }
                     --scratch_users;
                     if (scratch_users == 0)
                         scratch_in_use = false;
                 } else {
-                    out << "    copy"
-                        << (widthOf(move.type) == 2
-                                ? ".t50"
-                                : "")
-                        << " " << regName(move.destination)
-                        << ", " << regName(move.source)
-                        << "\n";
+                    if (move.vector) {
+                        out << "    " << vectorMemoryMnemonic("vstore", move.type)
+                            << " v" << move.source << ", sp, "
+                            << scratchAddress(move) << "\n";
+                        out << "    " << vectorMemoryMnemonic("vload", move.type)
+                            << " v" << move.destination << ", sp, "
+                            << scratchAddress(move) << "\n";
+                    } else {
+                        out << "    copy"
+                            << (usesWideT50Pair(move.type) ? ".t50" : "")
+                            << " " << regName(move.destination)
+                            << ", " << regName(move.source) << "\n";
+                    }
                 }
             }
             return !scratch_in_use;
@@ -2181,9 +2437,17 @@ private:
             out << block.name << ":\n";
             for (const Instr& instr : block.instructions) {
             int destination = -1;
+            const bool vector_instruction = instr.type.kind == TypeKind::Vector;
+            const bool deferred_stack_vector_param =
+                instr.opcode == InstrOpcode::Param && vector_instruction &&
+                instr.aux >= 4 &&
+                !allocation.vector_registers.count(instr.def);
             if (instr.def >= 0 &&
                 instr.opcode != InstrOpcode::Alloca &&
-                !registerFor(instr.def, destination)) {
+                !deferred_stack_vector_param &&
+                !(vector_instruction
+                      ? vectorRegisterFor(instr.def, destination)
+                      : registerFor(instr.def, destination))) {
                 return false;
             }
             auto argumentRegister = [&](std::size_t index,
@@ -2202,8 +2466,20 @@ private:
                 }
                 return registerFor(value, reg);
             };
+            auto vectorArgumentRegister = [&](std::size_t index, int& reg) {
+                if (index >= instr.args.size()) return false;
+                return vectorRegisterFor(instr.args[index], reg);
+            };
             const std::string suffix =
-                instr.type.kind == TypeKind::Trit
+                instr.type.kind == TypeKind::Vector
+                    ? (instr.type.element &&
+                       instr.type.element->kind == TypeKind::Trit
+                           ? "t1"
+                           : std::string(ir::suffix(
+                                 instr.type.element
+                                     ? instr.type.element->scalar
+                                     : ir::Type::T40)))
+                : instr.type.kind == TypeKind::Trit
                     ? "t1"
                     : std::string(ir::suffix(instr.type.scalar));
             switch (instr.opcode) {
@@ -2217,6 +2493,18 @@ private:
                     break;
                 }
                 case InstrOpcode::Const:
+                    if (vector_instruction) {
+                        out << "    mov." << suffix << " r24, "
+                            << (instr.imm < 0 ? -instr.imm : instr.imm)
+                            << "\n";
+                        if (instr.imm < 0) {
+                            out << "    neg." << suffix
+                                << " r24, r24\n";
+                        }
+                        out << "    vbcast." << suffix << " v"
+                            << destination << ", r24\n";
+                        break;
+                    }
                     if (instr.imm < 0) {
                         out << "    mov." << suffix << " "
                             << regName(destination) << ", "
@@ -2231,6 +2519,19 @@ private:
                     }
                     break;
                 case InstrOpcode::Copy: {
+                    if (vector_instruction) {
+                        int source = -1;
+                        if (!vectorArgumentRegister(0, source)) return false;
+                        if (destination != source) {
+                            out << "    " << vectorMemoryMnemonic("vstore", instr.type)
+                                << " v" << source << ", sp, "
+                                << parallel_copy_vector_scratch << "\n";
+                            out << "    " << vectorMemoryMnemonic("vload", instr.type)
+                                << " v" << destination << ", sp, "
+                                << parallel_copy_vector_scratch << "\n";
+                        }
+                        break;
+                    }
                     int source = -1;
                     if (!argumentRegister(0, source)) return false;
                     if (destination != source) {
@@ -2283,6 +2584,12 @@ private:
                         !argumentRegister(0, address)) {
                         return false;
                     }
+                    if (vector_instruction) {
+                        out << "    " << vectorMemoryMnemonic("vload", instr.type)
+                            << " v" << destination << ", "
+                            << regName(address) << ", " << instr.aux << "\n";
+                        break;
+                    }
                     out << "    "
                         << scalarMemoryMnemonic(
                                "load", instr.type)
@@ -2295,9 +2602,42 @@ private:
                     int address = -1;
                     int source = -1;
                     if (instr.args.size() != 2 ||
-                        !argumentRegister(0, address) ||
-                        !argumentRegister(1, source)) {
+                        !argumentRegister(0, address)) {
                         return false;
+                    }
+                    const bool vector_source =
+                        valueType(instr.args[1]).kind == TypeKind::Vector;
+                    const bool deferred_vector_parameter =
+                        vector_source &&
+                        vector_stack_parameter_offsets.count(instr.args[1]);
+                    if ((!vector_source &&
+                         !registerFor(instr.args[1], source)) ||
+                        (vector_source && !deferred_vector_parameter &&
+                         !vectorRegisterFor(instr.args[1], source))) {
+                        return false;
+                    }
+                    if (valueType(instr.args[1]).kind == TypeKind::Vector) {
+                        const TypeRef source_type = valueType(instr.args[1]);
+                        const auto stack_parameter =
+                            vector_stack_parameter_offsets.find(instr.args[1]);
+                        if (stack_parameter !=
+                            vector_stack_parameter_offsets.end()) {
+                            out << "    " << vectorMemoryMnemonic(
+                                       "vload", source_type)
+                                << " v7, sp, " << stack_parameter->second
+                                << "\n";
+                            out << "    " << vectorMemoryMnemonic(
+                                       "vstore", source_type)
+                                << " v7, " << regName(address)
+                                << ", " << instr.aux << "\n";
+                        } else {
+                            if (source < 0) return false;
+                            out << "    " << vectorMemoryMnemonic(
+                                       "vstore", source_type)
+                                << " v" << source << ", " << regName(address)
+                                << ", " << instr.aux << "\n";
+                        }
+                        break;
                     }
                     out << "    "
                         << scalarMemoryMnemonic(
@@ -2361,6 +2701,12 @@ private:
                 }
                 case InstrOpcode::SpillLoad:
                     if (instr.aux < 0) return false;
+                    if (vector_instruction) {
+                        out << "    " << vectorMemoryMnemonic("vload", instr.type)
+                            << " v" << destination << ", sp, "
+                            << (spill_base + instr.aux) << "\n";
+                        break;
+                    }
                     out << "    "
                         << scalarMemoryMnemonic(
                                "load", instr.type)
@@ -2373,8 +2719,17 @@ private:
                     int source = -1;
                     if (instr.aux < 0 ||
                         instr.args.size() != 1 ||
-                        !argumentRegister(0, source)) {
+                        !(valueType(instr.args[0]).kind == TypeKind::Vector
+                              ? vectorRegisterFor(instr.args[0], source)
+                              : registerFor(instr.args[0], source))) {
                         return false;
+                    }
+                    if (valueType(instr.args[0]).kind == TypeKind::Vector) {
+                        out << "    " << vectorMemoryMnemonic(
+                                   "vstore", valueType(instr.args[0]))
+                            << " v" << source << ", sp, "
+                            << (spill_base + instr.aux) << "\n";
+                        break;
                     }
                     out << "    "
                         << scalarMemoryMnemonic(
@@ -2391,6 +2746,23 @@ private:
                 case InstrOpcode::Mul:
                 case InstrOpcode::Div:
                 case InstrOpcode::Tmod: {
+                    if (vector_instruction) {
+                        int lhs = -1;
+                        int rhs = -1;
+                        if (!vectorArgumentRegister(0, lhs) ||
+                            !vectorArgumentRegister(1, rhs)) return false;
+                        const char* mnemonic =
+                            instr.opcode == InstrOpcode::Add ? "vadd" :
+                            instr.opcode == InstrOpcode::Sub ? "vsub" :
+                            instr.opcode == InstrOpcode::Mul ? "vmul" :
+                            instr.opcode == InstrOpcode::Div ? "vdiv" :
+                                                               nullptr;
+                        if (mnemonic == nullptr) return false;
+                        out << "    " << mnemonic << "." << suffix
+                            << " v" << destination << ", v" << lhs
+                            << ", v" << rhs << "\n";
+                        break;
+                    }
                     int lhs = -1;
                     int rhs = -1;
                     if (!argumentRegister(0, lhs) ||
@@ -2423,6 +2795,25 @@ private:
                     break;
                 }
                 case InstrOpcode::Cmp: {
+                    if (vector_instruction) {
+                        int lhs = -1;
+                        int rhs = -1;
+                        if (!vectorArgumentRegister(0, lhs) ||
+                            !vectorArgumentRegister(1, rhs)) return false;
+                        const TypeRef operand_type =
+                            valueType(instr.args[0]);
+                        const std::string operand_suffix =
+                            operand_type.kind == TypeKind::Vector &&
+                                    operand_type.element
+                                ? (operand_type.element->kind == TypeKind::Trit
+                                       ? "t1"
+                                       : std::string(ir::suffix(
+                                             operand_type.element->scalar)))
+                                : suffix;
+                        out << "    vcmp." << operand_suffix << " v" << destination
+                            << ", v" << lhs << ", v" << rhs << "\n";
+                        break;
+                    }
                     int lhs = -1;
                     int rhs = -1;
                     if (!argumentRegister(0, lhs) ||
@@ -2444,6 +2835,22 @@ private:
                 }
                 case InstrOpcode::Tsel: {
                     if (instr.args.size() != 4) return false;
+                    if (vector_instruction) {
+                        int condition = -1;
+                        int negative = -1;
+                        int zero = -1;
+                        int positive = -1;
+                        if (!vectorArgumentRegister(0, condition) ||
+                            !vectorArgumentRegister(1, negative) ||
+                            !vectorArgumentRegister(2, zero) ||
+                            !vectorArgumentRegister(3, positive)) {
+                            return false;
+                        }
+                        out << "    vsel." << suffix << " v" << destination
+                            << ", v" << condition << ", v" << negative
+                            << ", v" << zero << ", v" << positive << "\n";
+                        break;
+                    }
                     int condition = -1;
                     int negative = -1;
                     int zero = -1;
@@ -2562,21 +2969,106 @@ private:
                 }
                 case InstrOpcode::Call: {
                     int argument_word = 0;
-                    int stack_word_count = 0;
+                    int vector_argument = 0;
+                    int outgoing_stack_cursor = 0;
                     for (ValueId argument : instr.args) {
                         const TypeRef type = valueType(argument);
+                        if (type.kind == TypeKind::Vector) {
+                            ++vector_argument;
+                            if (vector_argument > 4) {
+                                outgoing_stack_cursor =
+                                    align9(outgoing_stack_cursor);
+                                outgoing_stack_cursor += widthOf(type);
+                            }
+                            continue;
+                        }
                         const int width = widthOf(type);
-                        if (argument_word + width > kRegisterArgCount)
-                            stack_word_count += width;
-                        argument_word += width;
+                        if (argument_word + width > kRegisterArgCount) {
+                            outgoing_stack_cursor += width;
+                        } else {
+                            argument_word += width;
+                        }
+                    }
+                    const int stack_word_count =
+                        align9(outgoing_stack_cursor);
+                    const int saved_parallel_copy_scratch =
+                        active_parallel_copy_scratch;
+                    const int saved_parallel_copy_vector_scratch =
+                        active_parallel_copy_vector_scratch;
+                    int call_stack_words = stack_word_count;
+                    struct SpilledVectorCallArg {
+                        int destination = 0;
+                        int slot = 0;
+                        TypeRef type = TypeRef::unknown();
+                    };
+                    std::vector<SpilledVectorCallArg>
+                        spilled_vector_register_args;
+                    int spilled_vector_argument_index = 0;
+                    for (ValueId argument : instr.args) {
+                        const TypeRef type = valueType(argument);
+                        if (type.kind != TypeKind::Vector) continue;
+                        int probe_source = -1;
+                        if (spilled_vector_argument_index < 4 &&
+                            !vectorRegisterFor(argument, probe_source)) {
+                            const auto spill = allocation.spill_slots.find(argument);
+                            if (spill == allocation.spill_slots.end()) return false;
+                            spilled_vector_register_args.push_back({
+                                spilled_vector_argument_index,
+                                spill->second,
+                                type});
+                        }
+                        ++spilled_vector_argument_index;
                     }
                     if (stack_word_count > 0) {
-                        out << "    mov.t40 r24, " << stack_word_count << "\n";
+                        // The outgoing argument area is caller-owned and
+                        // starts at the post-subtraction SP.  Parallel
+                        // argument moves still need a full-width scratch
+                        // vector, so place both scratch classes after the
+                        // outgoing slots instead of overlapping the caller
+                        // frame or a stack-passed vector.
+                        active_parallel_copy_scratch =
+                            stack_word_count;
+                        active_parallel_copy_vector_scratch =
+                            align9(stack_word_count);
+                        call_stack_words = align9(
+                            active_parallel_copy_vector_scratch +
+                            architecture::v3::VECTOR_SPILL_WORDS);
+                    }
+                    if (call_stack_words > 0) {
+                        out << "    mov.t40 r24, " << call_stack_words << "\n";
                         out << "    sub.t40 sp, sp, r24\n";
                         argument_word = 0;
+                        vector_argument = 0;
                         int stack_word = 0;
                         for (ValueId argument : instr.args) {
                             const TypeRef type = valueType(argument);
+                            if (type.kind == TypeKind::Vector) {
+                                ++vector_argument;
+                                int source = -1;
+                                const bool has_register =
+                                    vectorRegisterFor(argument, source);
+                                if (vector_argument <= 4) {
+                                    continue;
+                                }
+                                stack_word = align9(stack_word);
+                                if (has_register) {
+                                    out << "    " << vectorMemoryMnemonic("vstore", type)
+                                        << " v" << source << ", sp, " << stack_word
+                                        << "\n";
+                                } else {
+                                    const auto spill = allocation.spill_slots.find(argument);
+                                    if (spill == allocation.spill_slots.end())
+                                        return false;
+                                    out << "    " << vectorMemoryMnemonic("vload", type)
+                                        << " v7, sp, "
+                                        << (spill_base + call_stack_words + spill->second)
+                                        << "\n";
+                                    out << "    " << vectorMemoryMnemonic("vstore", type)
+                                        << " v7, sp, " << stack_word << "\n";
+                                }
+                                stack_word += widthOf(type);
+                                continue;
+                            }
                             const int width = widthOf(type);
                             int source = -1;
                             if (!registerFor(argument, source)) return false;
@@ -2585,8 +3077,9 @@ private:
                                     << " r" << source << ", sp, " << stack_word
                                     << "\n";
                                 stack_word += width;
+                            } else {
+                                argument_word += width;
                             }
-                            argument_word += width;
                         }
                     }
                     if (!emitParallelMoveSet(
@@ -2594,10 +3087,36 @@ private:
                                 callMoveKey(block, instr)])) {
                         return false;
                     }
+                    // Spilled vector arguments in v0-v3 are loaded only
+                    // after register-to-register moves have completed, so
+                    // their destination cannot clobber another argument
+                    // source participating in the parallel copy.
+                    for (const SpilledVectorCallArg& spilled :
+                         spilled_vector_register_args) {
+                        out << "    " << vectorMemoryMnemonic("vload", spilled.type)
+                            << " v" << spilled.destination << ", sp, "
+                            << (spill_base + call_stack_words + spilled.slot)
+                            << "\n";
+                    }
                     out << "    call " << instr.symbol << "\n";
                     if (stack_word_count > 0) {
-                        out << "    mov.t40 r24, " << stack_word_count << "\n";
+                        out << "    mov.t40 r24, " << call_stack_words << "\n";
                         out << "    add.t40 sp, sp, r24\n";
+                    }
+                    active_parallel_copy_scratch =
+                        saved_parallel_copy_scratch;
+                    active_parallel_copy_vector_scratch =
+                        saved_parallel_copy_vector_scratch;
+                    if (instr.type.kind == TypeKind::Vector) {
+                        if (destination != 0) {
+                            out << "    " << vectorMemoryMnemonic("vstore", instr.type)
+                                << " v0, sp, " << parallel_copy_vector_scratch
+                                << "\n";
+                            out << "    " << vectorMemoryMnemonic("vload", instr.type)
+                                << " v" << destination << ", sp, "
+                                << parallel_copy_vector_scratch << "\n";
+                        }
+                        break;
                     }
                     if (isAggregateType(instr.type)) {
                         // ABI v3 aggregate calls return through the hidden
@@ -2662,15 +3181,26 @@ private:
                     if (instr.args.size() > 1) return false;
                     if (!instr.args.empty()) {
                         int source = -1;
-                        if (!argumentRegister(0, source))
-                            return false;
-                        if (source != 13) {
-                            out << "    copy"
-                                << (usesWideT50Pair(instr.type)
-                                        ? ".t50"
-                                        : "")
-                                << " r13, " << regName(source)
-                                << "\n";
+                        if (instr.type.kind == TypeKind::Vector) {
+                            if (!vectorArgumentRegister(0, source)) return false;
+                            if (source != 0) {
+                                out << "    " << vectorMemoryMnemonic("vstore", instr.type)
+                                    << " v" << source << ", sp, "
+                                    << parallel_copy_vector_scratch << "\n";
+                                out << "    " << vectorMemoryMnemonic("vload", instr.type)
+                                    << " v0, sp, "
+                                    << parallel_copy_vector_scratch << "\n";
+                            }
+                        } else {
+                            if (!argumentRegister(0, source)) return false;
+                            if (source != 13) {
+                                out << "    copy"
+                                    << (usesWideT50Pair(instr.type)
+                                            ? ".t50"
+                                            : "")
+                                    << " r13, " << regName(source)
+                                    << "\n";
+                            }
                         }
                     }
                     out << "    jmp " << function.name
@@ -2855,12 +3385,14 @@ private:
             }
         }
         dry_ctx.return_slot_offset = dry_ctx.next_local_offset;
-        dry_ctx.call_arg_slot_base =
+        dry_ctx.call_arg_scratch_words = callScratchWordsForFunction(fn);
+        dry_ctx.call_arg_slot_base = align9(
             dry_ctx.return_slot_offset +
-            std::max(1, typeSizeWords(fn.return_type, layout_table_));
+            std::max(1, typeSizeWords(fn.return_type, layout_table_)));
         dry_ctx.frame_words = align9(std::max(
             1,
-            dry_ctx.call_arg_slot_base + kCallArgScratchWords * kCallArgScratchAreas));
+            dry_ctx.call_arg_slot_base +
+                dry_ctx.call_arg_scratch_words * kCallArgScratchAreas));
         emitFunctionPrologue(fn, dry_ctx);
         dry_ctx.scope_vars.push_back({});
         emitStatements(fn.body, dry_ctx);
@@ -2903,6 +3435,9 @@ private:
 
     void collectLocals(const FunctionAst& fn, FunctionContext& ctx) {
         for (std::size_t i = 0; i < fn.params.size(); ++i) {
+            if (fn.params[i].second.kind == TypeKind::Vector) {
+                ctx.next_local_offset = align9(ctx.next_local_offset);
+            }
             const bool aggregate = isAggregateType(fn.params[i].second);
             const int size = aggregate ? 1 : std::max(1, typeSizeWords(fn.params[i].second, layout_table_));
             ctx.locals[fn.params[i].first] = LocalInfo{fn.params[i].second,
@@ -2922,6 +3457,9 @@ private:
                 TypeRef type = stmt.annotation;
                 if (type.kind == TypeKind::Unknown && stmt.expr) {
                     type = inferLiteralAggregateType(stmt.expr, ctx);
+                }
+                if (type.kind == TypeKind::Vector) {
+                    ctx.next_local_offset = align9(ctx.next_local_offset);
                 }
                 const int size = std::max(1, typeSizeWords(type, layout_table_));
                 ctx.locals[stmt.name] = LocalInfo{stmt.annotation,
@@ -2971,6 +3509,7 @@ private:
         }
         if (!ctx.ast || !ctx.block) return;
         int argument_word = 0;
+        int vector_argument = 0;
         if (ctx.aggregate_return_sret) {
             Instr param;
             param.def = ctx.next_value++;
@@ -2997,7 +3536,14 @@ private:
             param.def = ctx.next_value++;
             param.opcode = InstrOpcode::Param;
             param.type = parameter.second;
-            param.aux = argument_word;
+            if (parameter.second.kind == TypeKind::Vector) {
+                // Vector arguments use the independent v0-v3 register class;
+                // their 27-word stack representation is accounted for only
+                // after the fourth vector argument by the target ABI cursor.
+                param.aux = vector_argument++;
+            } else {
+                param.aux = argument_word;
+            }
             param.symbol = parameter.first;
             param.effect = Effect::Pure;
             param.span = ctx.ast->span;
@@ -3016,9 +3562,11 @@ private:
             // used by the caller and target prologue; advancing by the
             // pointee's full layout makes every following argument read the
             // wrong register or outgoing-stack word.
-            argument_word += isAggregateType(parameter.second)
-                ? 1
-                : std::max(1, typeSizeWords(parameter.second, layout_table_));
+            if (parameter.second.kind != TypeKind::Vector) {
+                argument_word += isAggregateType(parameter.second)
+                    ? 1
+                    : std::max(1, typeSizeWords(parameter.second, layout_table_));
+            }
         }
     }
 
@@ -3121,6 +3669,25 @@ private:
                 emitEpilogue(ctx);
                 return;
             }
+            if (ctx.ast->return_type.kind == TypeKind::Vector) {
+                ExprCode zero = emitImmediate(
+                    0, ctx.ast->return_type,
+                    ctx.ast ? ctx.ast->span : SourceSpan{}, ctx);
+                const ValueId zero_value = zero.value;
+                ctx.release(zero.reg);
+                ctx.line("jmp " + ctx.ast->name + "_return");
+                Instr ret;
+                ret.def = -1;
+                ret.opcode = InstrOpcode::Ret;
+                ret.type = ctx.ast->return_type;
+                ret.args = {zero_value};
+                ret.effect = Effect::Control;
+                ret.span = ctx.ast->span;
+                ctx.block->instructions.push_back(std::move(ret));
+                ctx.block->terminator.kind = TerminatorKind::Return;
+                emitEpilogue(ctx);
+                return;
+            }
             ctx.raw("    mov." + std::string(ir::suffix(ctx.ast->return_type.scalar)) + " r13, 0");
             ctx.raw("    jmp " + ctx.ast->name + "_return");
             Instr zero;
@@ -3144,6 +3711,91 @@ private:
             ctx.block->terminator.kind = TerminatorKind::Return;
         }
         emitEpilogue(ctx);
+    }
+
+    [[nodiscard]] int callArgumentWidth(const TypeRef& type) const {
+        return isAggregateType(type)
+            ? 1
+            : std::max(1, typeSizeWords(type, layout_table_));
+    }
+
+    [[nodiscard]] int callScratchWordsInExpr(const ExprPtr& expr) const {
+        if (!expr) return 0;
+        int maximum = 0;
+        auto visit = [&](const ExprPtr& child) {
+            maximum = std::max(maximum, callScratchWordsInExpr(child));
+        };
+        switch (expr->kind) {
+            case ExprKind::Unary:
+                visit(expr->left);
+                break;
+            case ExprKind::Binary:
+            case ExprKind::Field:
+            case ExprKind::Index:
+                visit(expr->left);
+                visit(expr->right);
+                break;
+            case ExprKind::Call: {
+                int width = 0;
+                const auto parameter_it = function_params_.find(expr->text);
+                for (std::size_t index = 0; index < expr->args.size(); ++index) {
+                    TypeRef argument_type = TypeRef::numeric(ir::Type::T40);
+                    if (parameter_it != function_params_.end() &&
+                        index < parameter_it->second.size()) {
+                        argument_type = parameter_it->second[index];
+                    }
+                    if (argument_type.kind == TypeKind::Vector) {
+                        width = align9(width);
+                    }
+                    width += callArgumentWidth(argument_type);
+                    visit(expr->args[index]);
+                }
+                const auto return_it = function_returns_.find(expr->text);
+                if (return_it != function_returns_.end() &&
+                    isAggregateType(return_it->second)) {
+                    ++width; // hidden caller-owned sret pointer
+                }
+                if (parameter_it == function_params_.end() &&
+                    runtimeService(expr->text) != 0) {
+                    width = std::min<std::size_t>(expr->args.size(), 4);
+                }
+                maximum = std::max(maximum, width);
+                break;
+            }
+            case ExprKind::StructLiteral:
+            case ExprKind::ArrayLiteral:
+                for (const auto& argument : expr->args) visit(argument);
+                for (const auto& field : expr->fields) visit(field.second);
+                break;
+            case ExprKind::Number:
+            case ExprKind::Name:
+                break;
+        }
+        return maximum;
+    }
+
+    [[nodiscard]] int callScratchWordsInBody(
+        const std::vector<Stmt>& body) const {
+        int maximum = 0;
+        auto visit_expr = [&](const ExprPtr& expr) {
+            maximum = std::max(maximum, callScratchWordsInExpr(expr));
+        };
+        for (const Stmt& stmt : body) {
+            visit_expr(stmt.expr);
+            visit_expr(stmt.rhs);
+            visit_expr(stmt.target);
+            maximum = std::max(maximum, callScratchWordsInBody(stmt.body));
+            maximum = std::max(maximum, callScratchWordsInBody(stmt.else_body));
+            for (const MatchArm& arm : stmt.arms) {
+                maximum = std::max(maximum, callScratchWordsInBody(arm.body));
+            }
+        }
+        return maximum;
+    }
+
+    [[nodiscard]] int callScratchWordsForFunction(
+        const FunctionAst& fn) const {
+        return std::max(kCallArgScratchWords, callScratchWordsInBody(fn.body));
     }
 
     void emitDrops(const std::vector<std::string>& vars, FunctionContext& ctx) {
@@ -3267,6 +3919,15 @@ private:
                  " to " + it->second.type.str(), stmt.span);
         }
         emitCvtIfNeeded(code, it->second.type, ctx);
+        if (it->second.type.kind == TypeKind::Vector) {
+            ctx.value(InstrOpcode::Store, it->second.type, stmt.span);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    it->second.ir_address, code.value};
+            }
+            ctx.release(code.reg);
+            return;
+        }
         ctx.line(scalarMemoryMnemonic("store", it->second.type) +
                  " r" + std::to_string(code.reg) + ", sp, " +
                  std::to_string(it->second.offset));
@@ -3321,6 +3982,24 @@ private:
                  " to " + place.type.str(), stmt.span);
         }
         emitCvtIfNeeded(code, place.type, ctx);
+        if (place.type.kind == TypeKind::Vector) {
+            ctx.value(InstrOpcode::Store, place.type, stmt.span);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ValueId addr_val = -1;
+                if (target && target->kind == ExprKind::Name) {
+                    const auto local = ctx.locals.find(target->text);
+                    if (local != ctx.locals.end()) addr_val = local->second.ir_address;
+                }
+                if (addr_val < 0) {
+                    auto it_addr = ctx.reg_to_value.find(place.reg);
+                    if (it_addr != ctx.reg_to_value.end()) addr_val = it_addr->second;
+                }
+                ctx.block->instructions.back().args = {addr_val, code.value};
+            }
+            ctx.release(code.reg);
+            ctx.release(place.reg);
+            return;
+        }
         ctx.line(scalarMemoryMnemonic("store", place.type) +
                  " r" + std::to_string(code.reg) + ", r" +
                  std::to_string(place.reg) + ", 0");
@@ -3404,6 +4083,38 @@ private:
             ret.def = -1;
             ret.opcode = InstrOpcode::Ret;
             ret.type = ctx.ast->return_type;
+            ret.effect = Effect::Control;
+            ret.span = stmt.span;
+            if (ctx.block) ctx.block->instructions.push_back(std::move(ret));
+            if (ctx.block) ctx.block->terminator.kind = TerminatorKind::Return;
+            return;
+        }
+        if (ctx.ast->return_type.kind == TypeKind::Vector) {
+            ValueId return_value = -1;
+            if (stmt.expr) {
+                ExprCode code = emitExpr(
+                    stmt.expr, ctx.ast->return_type, ctx);
+                if (!canWiden(code.type, ctx.ast->return_type)) {
+                    diag("implicit narrowing is not allowed from " +
+                         code.type.str() + " to " +
+                         ctx.ast->return_type.str(), stmt.span);
+                }
+                emitCvtIfNeeded(code, ctx.ast->return_type, ctx);
+                return_value = code.value;
+                ctx.release(code.reg);
+            } else {
+                ExprCode zero = emitImmediate(
+                    0, ctx.ast->return_type, stmt.span, ctx);
+                return_value = zero.value;
+                ctx.release(zero.reg);
+            }
+            emitDropsForReturn(ctx);
+            ctx.line("jmp " + ctx.ast->name + "_return");
+            Instr ret;
+            ret.def = -1;
+            ret.opcode = InstrOpcode::Ret;
+            ret.type = ctx.ast->return_type;
+            ret.args = {return_value};
             ret.effect = Effect::Control;
             ret.span = stmt.span;
             if (ctx.block) ctx.block->instructions.push_back(std::move(ret));
@@ -3990,6 +4701,11 @@ private:
         if (!expr) return emitImmediate(0, expected, SourceSpan{}, ctx);
         switch (expr->kind) {
             case ExprKind::Number:
+                if (expected.kind == TypeKind::Vector) {
+                    diag("vector literals are not part of the v3 source boundary; use a vector parameter or supported vector SSA operation",
+                         expr->span);
+                    return emitImmediate(0, expected, expr->span, ctx);
+                }
                 return emitImmediate(expr->number,
                                      expected.kind == TypeKind::Numeric ? expected
                                                                         : TypeRef::numeric(ir::Type::T40),
@@ -4020,6 +4736,17 @@ private:
         const SourceSpan& span,
         FunctionContext& ctx) {
         if (type.kind == TypeKind::Unknown) type = TypeRef::numeric(ir::Type::T40);
+        if (type.kind == TypeKind::Vector) {
+            if (!isCompilerVectorType(type)) {
+                diag("unsupported vector element type " + type.str(), span);
+            }
+            const int reg = ctx.acquire();
+            const ValueId id = ctx.value(InstrOpcode::Const, type, span, reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().imm = value;
+            }
+            return ExprCode{reg, type, false, id};
+        }
         int reg = ctx.acquire();
         if (value < 0) {
             ctx.line("mov." + std::string(ir::suffix(type.scalar)) + " r" +
@@ -4059,6 +4786,16 @@ private:
             if (it_reg != ctx.reg_to_value.end()) id = it_reg->second;
             return ExprCode{addr, it->second.type, true, id};
         }
+        if (it->second.type.kind == TypeKind::Vector) {
+            const int reg = ctx.acquire();
+            const ValueId id = ctx.value(
+                InstrOpcode::Load, it->second.type, expr.span, reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    it->second.ir_address};
+            }
+            return ExprCode{reg, it->second.type, false, id};
+        }
         int reg = ctx.acquire();
         ctx.line(scalarMemoryMnemonic("load", it->second.type) +
                  " r" + std::to_string(reg) + ", sp, " +
@@ -4074,6 +4811,17 @@ private:
     [[nodiscard]] ExprCode emitUnary(const Expr& expr, TypeRef expected, FunctionContext& ctx) {
         if (expr.text == "-") {
             ExprCode inner = emitExpr(expr.left, expected, ctx);
+            if (inner.type.kind == TypeKind::Vector) {
+                ExprCode zero = emitImmediate(0, inner.type, expr.span, ctx);
+                const ValueId id = ctx.value(
+                    InstrOpcode::Sub, inner.type, expr.span, zero.reg);
+                if (ctx.block && !ctx.block->instructions.empty()) {
+                    ctx.block->instructions.back().args = {
+                        zero.value, inner.value};
+                }
+                ctx.release(inner.reg);
+                return ExprCode{zero.reg, inner.type, false, id};
+            }
             ctx.line("neg." + std::string(ir::suffix(inner.type.scalar)) + " r" +
                      std::to_string(inner.reg) + ", r" + std::to_string(inner.reg));
             return inner;
@@ -4346,6 +5094,19 @@ private:
             }
             return ExprCode{place.reg, place.type, true, place_val};
         }
+        if (place.type.kind == TypeKind::Vector) {
+            const int out = ctx.acquire();
+            const ValueId id = ctx.value(
+                InstrOpcode::Load, place.type, span, out);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ValueId place_val = -1;
+                auto it = ctx.reg_to_value.find(place.reg);
+                if (it != ctx.reg_to_value.end()) place_val = it->second;
+                ctx.block->instructions.back().args = {place_val};
+            }
+            ctx.release(place.reg);
+            return ExprCode{out, place.type, false, id};
+        }
         int out = ctx.acquire();
         ctx.line(scalarMemoryMnemonic("load", place.type) +
                  " r" + std::to_string(out) + ", r" +
@@ -4376,6 +5137,19 @@ private:
                  " to " + expected.str(), expr ? expr->span : SourceSpan{});
         }
         emitCvtIfNeeded(code, expected, ctx);
+        if (expected.kind == TypeKind::Vector) {
+            ctx.value(InstrOpcode::Store, expected,
+                      expr ? expr->span : SourceSpan{});
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().aux = offset;
+                ValueId base_val = -1;
+                auto it = ctx.reg_to_value.find(baseReg);
+                if (it != ctx.reg_to_value.end()) base_val = it->second;
+                ctx.block->instructions.back().args = {base_val, code.value};
+            }
+            ctx.release(code.reg);
+            return;
+        }
         ctx.line(scalarMemoryMnemonic("store", expected) +
                  " r" + std::to_string(code.reg) + ", r" +
                  std::to_string(baseReg) + ", " + std::to_string(offset));
@@ -4531,12 +5305,55 @@ private:
     }
 
     [[nodiscard]] ExprCode emitBinary(const Expr& expr, TypeRef expected, FunctionContext& ctx) {
-        TypeRef target = expected.kind == TypeKind::Numeric ? expected : TypeRef::unknown();
+        TypeRef target = (expected.kind == TypeKind::Numeric ||
+                          expected.kind == TypeKind::Vector)
+            ? expected
+            : TypeRef::unknown();
         ExprCode lhs = emitExpr(expr.left, target, ctx);
         ExprCode rhs = emitExpr(expr.right, lhs.type, ctx);
         TypeRef common = commonNumericType(lhs.type, rhs.type);
         emitCvtIfNeeded(lhs, common, ctx);
         emitCvtIfNeeded(rhs, common, ctx);
+
+        if (lhs.type.kind == TypeKind::Vector ||
+            rhs.type.kind == TypeKind::Vector) {
+            if (!isCompilerVectorType(common)) {
+                diag("vector operands must have the same supported element type",
+                     expr.span);
+                ctx.release(lhs.reg);
+                ctx.release(rhs.reg);
+                return emitImmediate(0, common.kind == TypeKind::Vector
+                                         ? common
+                                         : TypeRef::vector(TypeRef::trit()),
+                                     expr.span, ctx);
+            }
+            const bool comparison = isComparison(expr.text);
+            const bool arithmetic = expr.text == "+" || expr.text == "-" ||
+                                    expr.text == "*" || expr.text == "/";
+            if (!comparison && !arithmetic) {
+                diag("unsupported vector binary operator '" + expr.text + "'",
+                     expr.span);
+                ctx.release(lhs.reg);
+                ctx.release(rhs.reg);
+                return emitImmediate(0, common, expr.span, ctx);
+            }
+            const TypeRef result_type = comparison
+                ? TypeRef::vector(TypeRef::trit())
+                : common;
+            const ValueId id = ctx.value(
+                comparison ? InstrOpcode::Cmp
+                            : expr.text == "+" ? InstrOpcode::Add
+                            : expr.text == "-" ? InstrOpcode::Sub
+                            : expr.text == "*" ? InstrOpcode::Mul
+                                                : InstrOpcode::Div,
+                result_type, expr.span, lhs.reg);
+            if (ctx.block && !ctx.block->instructions.empty()) {
+                ctx.block->instructions.back().args = {
+                    lhs.value, rhs.value};
+            }
+            ctx.release(rhs.reg);
+            return ExprCode{lhs.reg, result_type, false, id};
+        }
 
         if (isComparison(expr.text)) {
             int rCmp = ctx.acquire();
@@ -4623,6 +5440,7 @@ private:
         if (expr.text == "shared_alloc" || expr.text == "atomic_load" || expr.text == "atomic_store") {
             return emitAtomicOp(expr, expected, ctx);
         }
+        if (expr.text == "tdiv") return emitIntegerDivision(expr, expected, ctx);
         if (isRuntimeWrapper(expr.text)) return emitRuntimeCall(expr, expected, ctx);
         if (isUnsafeIntrinsic(expr.text)) {
             if (!ctx.unsafe_allowed) {
@@ -4661,7 +5479,8 @@ private:
                      std::min(saved_call_arg_depth + 1, kCallArgScratchAreas));
         const int scratch_base =
             ctx.call_arg_slot_base +
-            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
+            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) *
+                ctx.call_arg_scratch_words;
         ctx.call_arg_depth =
             std::min(saved_call_arg_depth + 1, kCallArgScratchAreas);
         struct CallArgumentSlot {
@@ -4669,11 +5488,13 @@ private:
             int scratch_word = 0;
             int width = 1;
             int register_word = -1;
+            int register_vector = -1;
             int stack_word = -1;
         };
         std::vector<CallArgumentSlot> argument_slots;
         int scratch_word_count = 0;
         int register_word_count = 0;
+        int vector_register_count = 0;
         int stack_word_count = 0;
         auto appendArgument = [&](const ExprCode& arg,
                                    const TypeRef& argument_type,
@@ -4683,18 +5504,32 @@ private:
                 : std::max(1, typeSizeWords(argument_type, layout_table_));
             CallArgumentSlot slot;
             slot.type = argument_type;
+            if (argument_type.kind == TypeKind::Vector) {
+                scratch_word_count = align9(scratch_word_count);
+            }
             slot.scratch_word = scratch_word_count;
             slot.width = width;
-            if (register_word_count + width <= kRegisterArgCount) {
+            if (argument_type.kind == TypeKind::Vector) {
+                if (vector_register_count < 4) {
+                    slot.register_vector = vector_register_count;
+                } else {
+                    stack_word_count = align9(stack_word_count);
+                    slot.stack_word = stack_word_count;
+                    stack_word_count += width;
+                }
+                ++vector_register_count;
+            } else if (register_word_count + width <= kRegisterArgCount) {
                 slot.register_word = register_word_count;
                 register_word_count += width;
             } else {
                 slot.stack_word = stack_word_count;
                 stack_word_count += width;
             }
-            ctx.line(scalarMemoryMnemonic("store", argument_type) +
-                     " r" + std::to_string(arg.reg) + ", sp, " +
-                     std::to_string(scratch_base + scratch_word_count));
+            if (argument_type.kind != TypeKind::Vector) {
+                ctx.line(scalarMemoryMnemonic("store", argument_type) +
+                         " r" + std::to_string(arg.reg) + ", sp, " +
+                         std::to_string(scratch_base + scratch_word_count));
+            }
             scratch_word_count += width;
             argument_slots.push_back(slot);
             arg_values.push_back(arg.value);
@@ -4721,11 +5556,11 @@ private:
             }
             appendArgument(arg, argument_type, /*release_after_store=*/true);
         }
-        if (scratch_word_count > kCallArgScratchWords) {
+        if (scratch_word_count > ctx.call_arg_scratch_words) {
             diag("function-call arguments require " +
                      std::to_string(scratch_word_count) +
                      " scratch words, exceeding the bootstrap limit of " +
-                     std::to_string(kCallArgScratchWords),
+                     std::to_string(ctx.call_arg_scratch_words),
                  expr.span);
         }
         ctx.call_arg_depth = saved_call_arg_depth;
@@ -4736,18 +5571,32 @@ private:
         for (const auto& slot : argument_slots) {
             const int shifted_scratch =
                 scratch_base + stack_word_count + slot.scratch_word;
-            if (slot.register_word >= 0) {
+            if (slot.register_vector >= 0) {
+                // The target emitter repeats this staging from the SSA call
+                // arguments.  Keep the frontend scratch calculation aligned
+                // with the ABI for the legacy textual path as well.
+                ctx.line(vectorMemoryMnemonic("vload", slot.type) +
+                         " v" + std::to_string(slot.register_vector) +
+                         ", sp, " + std::to_string(shifted_scratch));
+            } else if (slot.register_word >= 0) {
                 ctx.line(scalarMemoryMnemonic("load", slot.type) +
                          " r" + std::to_string(13 + slot.register_word) +
                          ", sp, " + std::to_string(shifted_scratch));
             } else {
-                const int scratch = slot.width == 2 ? 23 : 24;
-                ctx.line(scalarMemoryMnemonic("load", slot.type) +
-                         " r" + std::to_string(scratch) + ", sp, " +
-                         std::to_string(shifted_scratch));
-                ctx.line(scalarMemoryMnemonic("store", slot.type) +
-                         " r" + std::to_string(scratch) + ", sp, " +
-                         std::to_string(slot.stack_word));
+                if (slot.type.kind == TypeKind::Vector) {
+                    ctx.line(vectorMemoryMnemonic("vload", slot.type) +
+                             " v7, sp, " + std::to_string(shifted_scratch));
+                    ctx.line(vectorMemoryMnemonic("vstore", slot.type) +
+                             " v7, sp, " + std::to_string(slot.stack_word));
+                } else {
+                    const int scratch = slot.width == 2 ? 23 : 24;
+                    ctx.line(scalarMemoryMnemonic("load", slot.type) +
+                             " r" + std::to_string(scratch) + ", sp, " +
+                             std::to_string(shifted_scratch));
+                    ctx.line(scalarMemoryMnemonic("store", slot.type) +
+                             " r" + std::to_string(scratch) + ", sp, " +
+                             std::to_string(slot.stack_word));
+                }
             }
         }
         ctx.line("call " + expr.text);
@@ -4756,7 +5605,7 @@ private:
             ctx.line("add.t40 sp, sp, r24");
         }
         int out = aggregate_return ? -1 : ctx.acquire();
-        if (!aggregate_return) {
+        if (!aggregate_return && ret.kind != TypeKind::Vector) {
             ctx.line(std::string("copy") +
                      (usesWideT50Pair(ret) ? ".t50" : "") +
                      " r" + std::to_string(out) + ", r13");
@@ -4794,11 +5643,18 @@ private:
                      std::min(saved_call_arg_depth + 1, kCallArgScratchAreas));
         const int scratch_base =
             ctx.call_arg_slot_base +
-            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) * kCallArgScratchWords;
+            std::min(saved_call_arg_depth, kCallArgScratchAreas - 1) *
+                ctx.call_arg_scratch_words;
         ctx.call_arg_depth =
             std::min(saved_call_arg_depth + 1, kCallArgScratchAreas);
         for (std::size_t i = 0; i < argc; ++i) {
             ExprCode arg = emitExpr(expr.args[i], TypeRef::numeric(ir::Type::T40), ctx);
+            if (arg.type.kind == TypeKind::Vector) {
+                diag("vector syscall arguments are unsupported by the scalar syscall ABI",
+                     expr.args[i] ? expr.args[i]->span : expr.span);
+                ctx.release(arg.reg);
+                continue;
+            }
             ctx.line("store r" + std::to_string(arg.reg) + ", sp, " +
                      std::to_string(scratch_base + static_cast<int>(i)));
             arg_values.push_back(arg.value);
@@ -5025,6 +5881,75 @@ private:
         }
         (void)expected;
         return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+    }
+
+    // T40 division is numeric division.  Integer algorithms must not use it
+    // as a quotient operation: a loop such as x = x / 10 can retain a
+    // positive fractional value forever.  Lower the explicit integer
+    // quotient intrinsic through the architectural TMOD operation, then
+    // divide an exactly divisible numerator.  This keeps ordinary `/`
+    // semantics unchanged while giving all guest programs one general,
+    // deterministic integer-division primitive.
+    [[nodiscard]] ExprCode emitIntegerDivision(
+        const Expr& expr,
+        TypeRef expected,
+        FunctionContext& ctx) {
+        if (expr.args.size() != 2) {
+            diag("tdiv requires dividend and divisor", expr.span);
+            return emitImmediate(0, TypeRef::numeric(ir::Type::T40),
+                                 expr.span, ctx);
+        }
+        ExprCode dividend = emitExpr(
+            expr.args[0], TypeRef::numeric(ir::Type::T40), ctx);
+        ExprCode divisor = emitExpr(
+            expr.args[1], TypeRef::numeric(ir::Type::T40), ctx);
+        const TypeRef t40 = TypeRef::numeric(ir::Type::T40);
+
+        const int original_reg = ctx.acquire();
+        ctx.line("copy r" + std::to_string(original_reg) + ", r" +
+                 std::to_string(dividend.reg));
+        const ValueId original_value = ctx.value(
+            InstrOpcode::Copy, t40, expr.span, original_reg);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {dividend.value};
+        }
+
+        const int remainder_reg = ctx.acquire();
+        ctx.line("tmod.t40 r" + std::to_string(remainder_reg) + ", r" +
+                 std::to_string(dividend.reg) + ", r" +
+                 std::to_string(divisor.reg));
+        const ValueId remainder_value = ctx.value(
+            InstrOpcode::Tmod, t40, expr.span, remainder_reg);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                dividend.value, divisor.value};
+        }
+
+        ctx.line("sub.t40 r" + std::to_string(original_reg) + ", r" +
+                 std::to_string(original_reg) + ", r" +
+                 std::to_string(remainder_reg));
+        const ValueId numerator_value = ctx.value(
+            InstrOpcode::Sub, t40, expr.span, original_reg);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                original_value, remainder_value};
+        }
+
+        ctx.line("div.t40 r" + std::to_string(original_reg) + ", r" +
+                 std::to_string(original_reg) + ", r" +
+                 std::to_string(divisor.reg));
+        const ValueId quotient_value = ctx.value(
+            InstrOpcode::Div, t40, expr.span, original_reg);
+        if (ctx.block && !ctx.block->instructions.empty()) {
+            ctx.block->instructions.back().args = {
+                numerator_value, divisor.value};
+        }
+
+        ctx.release(dividend.reg);
+        ctx.release(divisor.reg);
+        ctx.release(remainder_reg);
+        (void)expected;
+        return ExprCode{original_reg, t40, false, quotient_value};
     }
 
     [[nodiscard]] ExprCode emitUnsafeIntrinsic(
@@ -5703,7 +6628,8 @@ inline void addInterferenceEdge(
 
 [[nodiscard]] inline AllocationResult allocateRegisters(
     const Module& module,
-    const CompilerOptions& options) {
+    const CompilerOptions& options,
+    const std::set<ValueId>& forced_spills) {
 
     AllocationResult result;
     const std::vector<int> scalarColors = {
@@ -5732,6 +6658,38 @@ inline void addInterferenceEdge(
     const std::vector<int> callTemporaryColors = {
         13, 15, 16, 17, 18, 19, 20, 21, 22, 23,
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
+    const bool vector_abi_enabled = compilerVectorAbiEnabled(options);
+    const bool vector_spilling_enabled =
+        vector_abi_enabled && options.enable_vector_spilling;
+    bool module_has_vector_values = false;
+    for (const Function& fn : module.functions) {
+        if (fn.return_type.kind == TypeKind::Vector) {
+            module_has_vector_values = true;
+        }
+        for (const auto& parameter : fn.params) {
+            if (parameter.second.kind == TypeKind::Vector) {
+                module_has_vector_values = true;
+            }
+        }
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
+                if (instr.type.kind == TypeKind::Vector) {
+                    module_has_vector_values = true;
+                }
+            }
+        }
+    }
+    if (module_has_vector_values && !vector_abi_enabled) {
+        result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "vector register allocation requires explicit function ABI v3 "
+            "vector opt-in",
+            SourceSpan{module.name, 1, 1, 1}});
+    }
+    if (vector_spilling_enabled) {
+        result.vector_spill_words = options.vector_length;
+    }
 
     std::map<ValueId, TypeRef> valueTypes;
     std::map<ValueId, std::set<ValueId>> graph;
@@ -5772,7 +6730,12 @@ inline void addInterferenceEdge(
                 if (instr.opcode == InstrOpcode::Call || instr.opcode == InstrOpcode::CallR ||
                     instr.opcode == InstrOpcode::Syscall) {
                     for (ValueId value : live) {
-                        if (!frameValues.count(value))
+                        // The result defined by this call is live after the
+                        // call, but it is not live *across* the call.  Treating
+                        // it as caller-saved input would force every vector
+                        // return through a spill and, for vector values, make
+                        // the spill rewrite oscillate forever.
+                        if (value != instr.def && !frameValues.count(value))
                             liveAcrossCalls.insert(value);
                     }
                 }
@@ -5826,11 +6789,16 @@ inline void addInterferenceEdge(
     // destination register and silently overwrite an earlier argument.
     for (const auto& fn : module.functions) {
         std::vector<ValueId> parameters;
+        std::map<ValueId, int> vector_parameter_indices;
+        int vector_parameter_index = 0;
         for (const BasicBlock& block : fn.blocks) {
             for (const Instr& instr : block.instructions) {
                 if (instr.opcode == InstrOpcode::Param &&
                     instr.def >= 0 && !frameValues.count(instr.def)) {
                     parameters.push_back(instr.def);
+                    if (instr.type.kind == TypeKind::Vector)
+                        vector_parameter_indices[instr.def] =
+                            vector_parameter_index++;
                 }
             }
         }
@@ -5847,6 +6815,15 @@ inline void addInterferenceEdge(
                 if ((lhs_type->second.kind == TypeKind::Vector) !=
                     (rhs_type->second.kind == TypeKind::Vector)) {
                     continue;
+                }
+                if (lhs_type->second.kind == TypeKind::Vector) {
+                    const int lhs_index = vector_parameter_indices[lhs];
+                    const int rhs_index = vector_parameter_indices[rhs];
+                    // Only v0-v3 are simultaneously live ABI sources. Stack
+                    // vector parameters are loaded directly at their Store
+                    // instruction, so they do not need artificial pairwise
+                    // interference with one another or with register args.
+                    if (lhs_index >= 4 || rhs_index >= 4) continue;
                 }
                 addInterferenceEdge(graph, lhs, rhs);
             }
@@ -5937,7 +6914,9 @@ inline void addInterferenceEdge(
         move_related.insert(move.second);
     }
     std::set<ValueId> remaining;
-    for (const auto& entry : valueTypes) remaining.insert(entry.first);
+    for (const auto& entry : valueTypes) {
+        if (!forced_spills.count(entry.first)) remaining.insert(entry.first);
+    }
     std::vector<ValueId> simplify_stack;
     simplify_stack.reserve(remaining.size());
     auto remainingDegree = [&](ValueId value) {
@@ -6013,6 +6992,24 @@ inline void addInterferenceEdge(
     };
 
     int nextSpillSlot = 0;
+    for (ValueId value : forced_spills) {
+        const auto type = valueTypes.find(value);
+        if (type == valueTypes.end()) continue;
+        if (type->second.kind == TypeKind::Vector)
+            nextSpillSlot = ((nextSpillSlot + 8) / 9) * 9;
+        result.spill_slots[value] = nextSpillSlot;
+        const int spill_words = compilerSpillSlotWidth(type->second, options);
+        if (spill_words <= 0) {
+            result.diagnostics.push_back({
+                DiagnosticSeverity::Error,
+                "forced spill has no valid storage geometry for " +
+                    type->second.str(),
+                SourceSpan{module.name, 1, 1, 1}});
+            continue;
+        }
+        nextSpillSlot += spill_words;
+        ++result.spills;
+    }
     for (ValueId value : values) {
         const TypeRef type = valueTypes[value];
         const bool vector = type.kind == TypeKind::Vector;
@@ -6040,8 +7037,14 @@ inline void addInterferenceEdge(
         }
         const std::vector<int>& palette = *palette_ptr;
 
+        // Every vector register is caller-saved in ABI v3. A vector value
+        // live across a call must therefore take the typed spill path; there
+        // is no fabricated callee-saved vector register class.
+        const bool force_vector_spill =
+            vector && liveAcrossCalls.count(value) != 0;
         bool assigned = false;
         for (const auto& move : moveEdges) {
+            if (force_vector_spill) break;
             ValueId peer = move.first == value ? move.second :
                            move.second == value ? move.first : -1;
             if (peer < 0 || graph[value].count(peer)) continue;
@@ -6058,6 +7061,7 @@ inline void addInterferenceEdge(
         if (assigned) continue;
 
         for (int color : palette) {
+            if (force_vector_spill) break;
             if (colorAvailable(value, color, colors)) {
                 colors[value] = color;
                 assigned = true;
@@ -6065,9 +7069,25 @@ inline void addInterferenceEdge(
             }
         }
         if (!assigned) {
-            if (options.enable_spilling) {
+            if (vector && !vector_spilling_enabled) {
+                result.diagnostics.push_back({
+                    DiagnosticSeverity::Error,
+                    "vector register allocation exhausted; enable explicit "
+                    "v3 vector spilling for 27-word slots",
+                    SourceSpan{module.name, 1, 1, 1}});
+            } else if (options.enable_spilling) {
+                if (vector) nextSpillSlot = ((nextSpillSlot + 8) / 9) * 9;
                 result.spill_slots[value] = nextSpillSlot;
-                nextSpillSlot += 9;
+                const int spill_words = compilerSpillSlotWidth(type, options);
+                if (spill_words <= 0) {
+                    result.diagnostics.push_back({
+                        DiagnosticSeverity::Error,
+                        "vector spill geometry is unavailable without the "
+                        "explicit v3 vector ABI",
+                        SourceSpan{module.name, 1, 1, 1}});
+                    continue;
+                }
+                nextSpillSlot += spill_words;
                 ++result.spills;
                 continue;
             }
@@ -6108,15 +7128,45 @@ inline void addInterferenceEdge(
     int total_stores = 0;
     int next_slot = 0;
     int next_value = 1;
+    std::set<ValueId> forced_spill_values;
+    std::map<ValueId, TypeRef> all_spill_value_types;
+    std::map<ValueId, TypeRef> value_types;
     for (const Function& fn : module.functions) {
         next_value = std::max(next_value, fn.ir_value_ceiling);
         for (const BasicBlock& block : fn.blocks) {
             for (const Instr& instr : block.instructions) {
                 next_value = std::max(next_value, instr.def + 1);
+                if (instr.def >= 0) value_types[instr.def] = instr.type;
+            }
+        }
+    }
+    auto spillType = [&](ValueId value) {
+        const auto spilled = all_spill_value_types.find(value);
+        if (spilled != all_spill_value_types.end()) return spilled->second;
+        const auto found = value_types.find(value);
+        return found == value_types.end()
+            ? TypeRef::numeric(ir::Type::T40)
+            : found->second;
+    };
+    auto spillWidthForValue = [&](ValueId value) {
+        const int width = compilerSpillSlotWidth(spillType(value), options);
+        return width > 0 ? width : 9;
+    };
+    for (const Function& fn : module.functions) {
+        for (const BasicBlock& block : fn.blocks) {
+            for (const Instr& instr : block.instructions) {
                 if ((instr.opcode == InstrOpcode::SpillLoad ||
                      instr.opcode == InstrOpcode::SpillStore) &&
                     instr.aux >= 0) {
-                    next_slot = std::max(next_slot, instr.aux + 9);
+                    const TypeRef type = instr.opcode == InstrOpcode::SpillLoad
+                        ? instr.type
+                        : (instr.args.empty()
+                               ? TypeRef::numeric(ir::Type::T40)
+                               : spillType(instr.args.front()));
+                    const int width = compilerSpillSlotWidth(type, options);
+                    next_slot = std::max(
+                        next_slot,
+                        instr.aux + (width > 0 ? width : 9));
                 }
             }
         }
@@ -6124,16 +7174,30 @@ inline void addInterferenceEdge(
 
     for (int round = 0; round < max_rounds; ++round) {
         AllocationResult allocation =
-            allocateRegisters(module, options);
+            allocateRegisters(module, options, forced_spill_values);
+        std::set<ValueId> new_spill_values;
+        for (const auto& spill : allocation.spill_slots) {
+            if (!all_spill_slots.count(spill.first))
+                new_spill_values.insert(spill.first);
+        }
+        for (const auto& spill : allocation.spill_slots) {
+            forced_spill_values.insert(spill.first);
+            const auto type = value_types.find(spill.first);
+            if (type != value_types.end())
+                all_spill_value_types[spill.first] = type->second;
+        }
         if (!allocation.diagnostics.empty()) {
             allocation.spill_slots.insert(
                 all_spill_slots.begin(), all_spill_slots.end());
+            allocation.spill_value_types = all_spill_value_types;
             allocation.spills = total_spills + allocation.spills;
             allocation.spill_rewrite_rounds = round;
             return allocation;
         }
-        if (allocation.spill_slots.empty()) {
+        const bool has_new_spill = !new_spill_values.empty();
+        if (!has_new_spill) {
             allocation.spill_slots = all_spill_slots;
+            allocation.spill_value_types = all_spill_value_types;
             allocation.spills = total_spills;
             allocation.spill_rewrite_rounds = round;
             allocation.spill_loads = total_loads;
@@ -6144,13 +7208,17 @@ inline void addInterferenceEdge(
 
         std::map<ValueId, int> current_slots;
         for (const auto& spill : allocation.spill_slots) {
+            if (all_spill_slots.count(spill.first)) {
+                current_slots[spill.first] = all_spill_slots.at(spill.first);
+                continue;
+            }
             current_slots[spill.first] = next_slot;
             all_spill_slots[spill.first] = next_slot;
-            next_slot += 9;
+            all_spill_value_types[spill.first] = spillType(spill.first);
+            next_slot += spillWidthForValue(spill.first);
         }
-        total_spills += static_cast<int>(current_slots.size());
+        total_spills += static_cast<int>(new_spill_values.size());
 
-        std::map<ValueId, TypeRef> value_types;
         for (const Function& fn : module.functions) {
             for (const BasicBlock& block : fn.blocks) {
                 for (const Instr& instr : block.instructions) {
@@ -6158,12 +7226,6 @@ inline void addInterferenceEdge(
                 }
             }
         }
-        auto spillType = [&](ValueId value) {
-            const auto found = value_types.find(value);
-            return found == value_types.end()
-                ? TypeRef::numeric(ir::Type::T40)
-                : found->second;
-        };
         auto makeLoad = [&](ValueId original,
                             const SourceSpan& span) {
             Instr load;
@@ -6251,6 +7313,16 @@ inline void addInterferenceEdge(
                     std::map<ValueId, ValueId> loaded_for_instruction;
                     for (ValueId& argument : instr.args) {
                         if (!current_slots.count(argument)) continue;
+                        // A vector passed in the outgoing stack portion of a
+                        // call can be copied directly from its spill slot by
+                        // the target emitter.  Do not reload all such values
+                        // into v0-v7 at the same call site: nine live vector
+                        // arguments are intentionally representable with
+                        // eight architectural registers plus stack slots.
+                        if (instr.opcode == InstrOpcode::Call &&
+                            spillType(argument).kind == TypeKind::Vector) {
+                            continue;
+                        }
                         auto loaded =
                             loaded_for_instruction.find(argument);
                         if (loaded == loaded_for_instruction.end()) {
@@ -6288,9 +7360,10 @@ inline void addInterferenceEdge(
         }
     }
 
-    final_result = allocateRegisters(module, options);
+    final_result = allocateRegisters(module, options, forced_spill_values);
     const int unresolved_spills = final_result.spills;
     final_result.spill_slots = all_spill_slots;
+    final_result.spill_value_types = all_spill_value_types;
     final_result.spills = total_spills + unresolved_spills;
     final_result.spill_rewrite_rounds = max_rounds;
     final_result.spill_loads = total_loads;

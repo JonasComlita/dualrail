@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import struct
 import tempfile
@@ -99,6 +100,43 @@ def test_full_slice_set_rejects_missing_shard() -> None:
     ]
     issues = MODULE.validate_shard_set(files, "full")
     assert any("missing" in issue for issue in issues)
+
+
+def test_acquire_is_explicit_and_derives_revision_locked_urls() -> None:
+    manifest = json.loads(
+        (ROOT / "benchmarks" / "assets" / "external_assets.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    asset = MODULE._asset_by_id(manifest, "bitnet-b1.58-2B-4T-safetensors")
+    url = MODULE._download_url(asset, "model.safetensors")
+    assert "/resolve/04c3b9ad9361b824064a1f25ea60a8be9599b127/model.safetensors" in url
+    args = MODULE.build_parser().parse_args(
+        ["acquire", "--id", "doom-freedoom-0.13.0", "--kind", "doom"]
+    )
+    assert args.func is MODULE._command_acquire
+
+
+def test_locked_download_promotes_only_matching_local_bytes() -> None:
+    payload = b"bounded resumable payload\x00\x01"
+    digest = hashlib.sha256(payload).hexdigest()
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "source.bin"
+        target = root / "cache" / "payload.bin"
+        source.write_bytes(payload)
+        result = MODULE._download_locked(
+            source.as_uri(),
+            target,
+            expected_size=len(payload),
+            expected_sha256=digest,
+            timeout=10,
+            resume=True,
+            force=False,
+        )
+        assert result["sha256"] == digest
+        assert target.read_bytes() == payload
+        assert not target.with_name(target.name + ".part").exists()
 
 
 if __name__ == "__main__":

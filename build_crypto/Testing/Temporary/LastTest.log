@@ -1,0 +1,51 @@
+Start testing: Aug 17 10:13 Pacific Daylight Time
+----------------------------------------------------------
+6/46 Testing: test_encrypted_volume
+6/46 Test: test_encrypted_volume
+Command: "C:/Users/jonas/Documents/trit/build_crypto/test_encrypted_volume.exe"
+Directory: C:/Users/jonas/Documents/trit/build_crypto
+"test_encrypted_volume" start time: Aug 17 10:13 Pacific Daylight Time
+Output:
+----------------------------------------------------------
+encrypted-volume checks passed
+<end of output>
+Test time =   7.31 sec
+----------------------------------------------------------
+Test Passed.
+"test_encrypted_volume" end time: Aug 17 10:14 Pacific Daylight Time
+"test_encrypted_volume" time elapsed: 00:00:07
+----------------------------------------------------------
+
+7/46 Testing: test_encrypted_volume_parser
+7/46 Test: test_encrypted_volume_parser
+Command: "C:/Users/jonas/Documents/trit/build_crypto/test_encrypted_volume_parser.exe"
+Directory: C:/Users/jonas/Documents/trit/build_crypto
+"test_encrypted_volume_parser" start time: Aug 17 10:14 Pacific Daylight Time
+Output:
+----------------------------------------------------------
+encrypted-volume parser checks passed
+<end of output>
+Test time =   0.07 sec
+----------------------------------------------------------
+Test Passed.
+"test_encrypted_volume_parser" end time: Aug 17 10:14 Pacific Daylight Time
+"test_encrypted_volume_parser" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/46 Testing: test_encrypted_volume_cli
+18/46 Test: test_encrypted_volume_cli
+Command: "C:/Users/jonas/AppData/Local/Programs/Python/Python312/python.exe" "C:/Users/jonas/Documents/trit/tests/test_encrypted_volume_cli.py"
+Directory: C:/Users/jonas/Documents/trit
+"test_encrypted_volume_cli" start time: Aug 17 10:14 Pacific Daylight Time
+Output:
+----------------------------------------------------------
+encrypted volume CLI: PASS
+<end of output>
+Test time =   0.31 sec
+----------------------------------------------------------
+Test Passed.
+"test_encrypted_volume_cli" end time: Aug 17 10:14 Pacific Daylight Time
+"test_encrypted_volume_cli" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Aug 17 10:14 Pacific Daylight Time

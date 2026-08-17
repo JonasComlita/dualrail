@@ -136,6 +136,19 @@ bool validateFramebufferPng(const std::string& path,
 void testBootImageValidation() {
     std::cout << "[1] Host boot image round-trip and validation\n";
 
+    sandbox::host::TosRuntimeConfig default_config;
+#if defined(_M_X64) || defined(__x86_64__)
+    expect(
+        default_config.execution_backend ==
+            sandbox::vm::VMExecutionBackend::NativeX64Jit,
+        "x86-64 host runtime defaults to the accepted NativeX64Jit backend");
+#else
+    expect(
+        default_config.execution_backend ==
+            sandbox::vm::VMExecutionBackend::CachedBlockInterpreter,
+        "portable host runtime defaults to CachedBlockInterpreter");
+#endif
+
     const std::string path = buildPath("host_runtime_roundtrip.tboot");
     const sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -229,8 +242,48 @@ void testRuntimeTextFramebufferAndInput() {
            "runtime raw framebuffer read skips unchanged revisions");
 }
 
+void testRuntimeInputWakesWaitingMachine() {
+    std::cout << "[3] Host input wakes an architectural WAIT\n";
+
+    const auto assembled = sandbox::vm::assembler::assembleV2(R"(
+        .isa 2
+        .require wait
+        .text
+        boot:
+            wait
+            mov r1, 65
+            mov r2, 60000
+            store r1, r2, 0
+            halt
+    )");
+    expect(assembled.success, "test WAIT/input wake assembly assembles");
+    sandbox::host::TosImageManifest manifest;
+    manifest.image_version = "test";
+    manifest.profile_name = "compact";
+    const auto boot = assembled.labels.find("boot");
+    if (boot != assembled.labels.end()) manifest.boot_entry = boot->second;
+    const sandbox::host::TosBootImage image =
+        sandbox::host::bootImageFromAssembly(assembled, std::move(manifest));
+
+    sandbox::host::TosRuntime runtime;
+    std::string error;
+    expect(runtime.loadImage(image, &error),
+           "runtime loads the WAIT/input wake fixture");
+    const auto waiting = runtime.runForSteps(8);
+    expect(waiting.status == sandbox::vm::VMStatus::WAITING &&
+               runtime.snapshot().status == sandbox::vm::VMStatus::WAITING,
+           "WAIT instruction leaves the host runtime in architectural WAIT");
+    runtime.pushKeyboardInput('K');
+    const auto resumed = runtime.runForSteps(16);
+    expect(resumed.halted(),
+           "host keyboard input resumes an architectural WAIT");
+    const auto framebuffer = runtime.readFramebuffer();
+    expect(!framebuffer.glyphs.empty() && framebuffer.glyphs[0] == 'A',
+           "execution continues after host input wakes a waiting machine");
+}
+
 void testRuntimeGraphicsResetAndDiagnostics() {
-    std::cout << "[3] Runtime graphics decode, reset, disk seed, and diagnostics\n";
+    std::cout << "[4] Runtime graphics decode, reset, disk seed, and diagnostics\n";
 
     sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -322,7 +375,7 @@ void testRuntimeGraphicsResetAndDiagnostics() {
 }
 
 void testRuntimeGuestFaultDiagnostics() {
-    std::cout << "[4] Guest page-fault diagnostics and stable trap metadata\n";
+    std::cout << "[5] Guest page-fault diagnostics and stable trap metadata\n";
 
     const sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -373,7 +426,7 @@ void testRuntimeGuestFaultDiagnostics() {
 }
 
 void testRuntimeSeparateDiskRequiredAndPreserved() {
-    std::cout << "[5] Runtime boots from separate mutable sparse disk\n";
+    std::cout << "[6] Runtime boots from separate mutable sparse disk\n";
 
     sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -436,7 +489,7 @@ void testRuntimeSeparateDiskRequiredAndPreserved() {
 }
 
 void testGuestRequestedColdRebootPreservesDisk() {
-    std::cout << "[6] Guest-requested cold reboot boundary and disk preservation\n";
+    std::cout << "[7] Guest-requested cold reboot boundary and disk preservation\n";
 
     sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -513,11 +566,57 @@ void testGuestRequestedColdRebootPreservesDisk() {
                                   std::istreambuf_iterator<char>());
     expect(diagnostics.find("boot_generation=2") != std::string::npos &&
                diagnostics.find("guest_reboot_count=1") != std::string::npos,
-               "diagnostics record the completed guest reboot boundary");
+           "diagnostics record the completed guest reboot boundary");
+}
+
+void testExecutableTextSparseDiskPreservesInstructionBits() {
+    std::cout << "[8] Sparse tDisk preserves raw executable TritWord27 bits\n";
+
+    const std::string disk_path =
+        buildPath("host_runtime_executable_text_bits.tdisk");
+    std::filesystem::remove(disk_path);
+
+    constexpr int kTextBlock =
+        sandbox::vm::TDISK_EXECUTABLE_TEXT_FIRST_BLOCK;
+    constexpr std::uint64_t kHighInstructionBits =
+        (std::uint64_t{1} << 53) | 0x12345U;
+    sandbox::vm::SparseBlockStorage writer(kTextBlock + 1);
+    std::string error;
+    expect(writer.attachBackingFile(disk_path),
+           "executable-text tDisk writer initializes a v2 backing file");
+
+    std::vector<long long> text_block(sandbox::vm::STORAGE_BLOCK_WORDS, 0);
+    text_block[0] = static_cast<long long>(kHighInstructionBits);
+    text_block[1] = static_cast<long long>((std::uint64_t{1} << 54) - 1);
+    expect(writer.writeBlock(kTextBlock, text_block),
+           "executable-text tDisk accepts valid raw instruction bits");
+
+    std::vector<long long> ordinary_block(sandbox::vm::STORAGE_BLOCK_WORDS, 0);
+    ordinary_block[0] = 42;
+    expect(writer.writeBlock(0, ordinary_block),
+           "ordinary tDisk blocks retain numeric writes");
+    expect(writer.flushBackingFile(),
+           "executable-text tDisk flushes its compact generation");
+    writer.detachBackingFile();
+
+    sandbox::vm::SparseBlockStorage reader(kTextBlock + 1);
+    expect(reader.attachBackingFile(disk_path),
+           "executable-text tDisk reader validates the compact generation");
+    std::vector<long long> readback;
+    expect(reader.readBlock(kTextBlock, readback) &&
+               readback.size() == sandbox::vm::STORAGE_BLOCK_WORDS &&
+               readback[0] == static_cast<long long>(kHighInstructionBits) &&
+               readback[1] == static_cast<long long>((std::uint64_t{1} << 54) - 1),
+           "tDisk round-trip preserves high TritWord27 instruction bits exactly");
+    expect(reader.readBlock(0, readback) && !readback.empty() &&
+               readback[0] == 42,
+           "tDisk round-trip preserves canonical numeric VFS words");
+    reader.detachBackingFile();
+    std::filesystem::remove(disk_path);
 }
 
 void testRuntimeCheckpointAndInputReplay() {
-    std::cout << "[7] Runtime checkpoints and guest-input replay\n";
+    std::cout << "[9] Runtime checkpoints and guest-input replay\n";
 
     const sandbox::host::TosBootImage image = assembleImage(R"(
         .text
@@ -669,10 +768,12 @@ int main() {
 
     testBootImageValidation();
     testRuntimeTextFramebufferAndInput();
+    testRuntimeInputWakesWaitingMachine();
     testRuntimeGraphicsResetAndDiagnostics();
     testRuntimeGuestFaultDiagnostics();
     testRuntimeSeparateDiskRequiredAndPreserved();
     testGuestRequestedColdRebootPreservesDisk();
+    testExecutableTextSparseDiskPreservesInstructionBits();
     testRuntimeCheckpointAndInputReplay();
 
     if (g_failures != 0) {

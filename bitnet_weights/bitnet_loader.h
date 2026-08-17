@@ -19,6 +19,9 @@
 #define BITNET_LOADER_H
 
 #include "ternary_transformer_runtime.h"
+#include "bitnet_guest_vfs.h"
+#include <algorithm>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <filesystem>
@@ -31,6 +34,7 @@
 #include <queue>
 #include <sstream>
 #include <string>
+#include <limits>
 #include <vector>
 
 namespace sandbox {
@@ -42,19 +46,30 @@ struct WeightLayer {
     std::string name;
     std::string filename;
     double scale = 1.0;
-    std::string mode = "T40";  // "L1", "T40", "L50", or "T50"
+    std::string mode = "T40";  // "L1", "T40", "L50", "T50", or source "BF16"
     int count = 0;
 };
 
 class BitNetLoader {
 public:
     std::string baseDir;
+    // Non-null only for the opt-in external benchmark.  The pointer is
+    // borrowed; the caller owns the immutable package for the loader's life.
+    const ReadOnlyGuestVfs* guestVfs_ = nullptr;
     std::map<std::string, WeightLayer>                   layers;
     std::map<std::string, std::vector<int8_t>>           weightCacheL1;
     std::map<std::string, std::vector<uint64_t>>         weightCacheT40;
     std::map<std::string, std::vector<UInt128>>          weightCacheL50;
     std::map<std::string, std::vector<vm::TernaryValue>> weightCacheT50;
     std::map<std::string, std::vector<int8_t>>           weightCacheUnpacked;
+
+    // A conversion metadata sidecar is optional for legacy local exports, but
+    // when present it must describe a completed streaming conversion.  The
+    // native benchmark can use this bit to distinguish a resumable/incomplete
+    // cache from a usable converted directory.
+    bool manifestValid = false;
+    bool conversionMetadataPresent = false;
+    std::string conversionMetadataError;
 
     // All cache accesses must hold loaderMutex.
     std::mutex loaderMutex;
@@ -70,12 +85,28 @@ public:
         init(baseDir);
     }
 
+    explicit BitNetLoader(const ReadOnlyGuestVfs& guest_vfs)
+        : baseDir(guest_vfs.rootPath().string()), guestVfs_(&guest_vfs) {
+        init(baseDir);
+    }
+
     bool init(const std::string& baseDir_) {
         baseDir = baseDir_;
         normaliseDir(baseDir);
 
-        std::ifstream file(baseDir + "manifest.csv");
-        if (!file.is_open()) return false;
+        std::ifstream file;
+        if (guestVfs_) {
+            if (!guestVfs_->open("manifest.csv", file)) {
+                manifestValid = false;
+                return false;
+            }
+        } else {
+            file.open(baseDir + "manifest.csv");
+        }
+        if (!file.is_open()) {
+            manifestValid = false;
+            return false;
+        }
 
         auto trim = [](std::string& s) {
             const auto first = s.find_first_not_of(" \t\r\n");
@@ -84,6 +115,7 @@ public:
         };
 
         layers.clear();
+        manifestValid = true;
         std::string line;
         bool firstLine = true;
         while (std::getline(file, line)) {
@@ -97,12 +129,28 @@ public:
             std::stringstream ss(line);
             std::string part;
             while (std::getline(ss, part, ',')) { trim(part); parts.push_back(part); }
-            if (parts.size() < 3) continue;
+            if (parts.size() < 3) {
+                manifestValid = false;
+                continue;
+            }
 
             WeightLayer layer;
             layer.name     = parts[0];
             layer.filename = parts[1];
-            try { layer.scale = std::stod(parts[2]); } catch (...) { layer.scale = 1.0; }
+            if (layer.name.empty()) {
+                manifestValid = false;
+                continue;
+            }
+            try {
+                layer.scale = std::stod(parts[2]);
+                if (!std::isfinite(layer.scale) || layer.scale <= 0.0) {
+                    manifestValid = false;
+                    continue;
+                }
+            } catch (...) {
+                manifestValid = false;
+                continue;
+            }
 
             if (parts.size() >= 4) {
                 layer.mode = parts[3];
@@ -113,20 +161,68 @@ public:
                 else                                                         layer.mode = "L1";
             }
 
+            if (layer.mode != "L1" && layer.mode != "T40" &&
+                layer.mode != "L50" && layer.mode != "T50" &&
+                layer.mode != "BF16") {
+                manifestValid = false;
+                continue;
+            }
+            if (layer.filename != "SKIP" && !safeRelative(layer.filename)) {
+                manifestValid = false;
+                continue;
+            }
+
             try {
-                const std::string fullPath = baseDir + layer.filename;
-                if (fs::exists(fullPath)) {
-                    const uintmax_t size = fs::file_size(fullPath);
+                uintmax_t size = 0;
+                bool present = false;
+                if (layer.filename != "SKIP") {
+                    if (guestVfs_) {
+                        present = guestVfs_->fileSize(layer.filename, size);
+                    } else {
+                        const fs::path fullPath = fs::path(baseDir) / layer.filename;
+                        present = fs::exists(fullPath) && fs::is_regular_file(fullPath);
+                        if (present) size = fs::file_size(fullPath);
+                    }
+                }
+                if (layer.filename != "SKIP" && present) {
                     if      (layer.mode == "T40") layer.count = static_cast<int>(size / 8) * 40;
                     else if (layer.mode == "T50") layer.count = static_cast<int>(size / 16);
                     else if (layer.mode == "L50") layer.count = static_cast<int>(size / 16) * 50;
+                    else if (layer.mode == "BF16") layer.count = static_cast<int>(size / 2);
                     else                           layer.count = static_cast<int>(size);
+                    const uintmax_t unit = layer.mode == "T40" ? 8 :
+                        (layer.mode == "T50" || layer.mode == "L50" ? 16 :
+                            (layer.mode == "BF16" ? 2 : 1));
+                    if (size % unit != 0) manifestValid = false;
+                } else if (layer.filename != "SKIP") {
+                    manifestValid = false;
                 }
-            } catch (...) { layer.count = 0; }
+            } catch (...) {
+                layer.count = 0;
+                manifestValid = false;
+            }
 
+            if (layers.find(layer.name) != layers.end()) {
+                manifestValid = false;
+                continue;
+            }
             layers[layer.name] = layer;
         }
-        return !layers.empty();
+        conversionMetadataPresent = false;
+        conversionMetadataError.clear();
+        const fs::path metadataPath = fs::path(baseDir) / "conversion_metadata.v1.json";
+        if (fs::exists(metadataPath)) {
+            conversionMetadataPresent = true;
+            validateConversionMetadata(metadataPath.string(), conversionMetadataError);
+            if (!conversionMetadataError.empty()) manifestValid = false;
+        }
+        return manifestValid && !layers.empty();
+    }
+
+    bool hasValidManifest() const { return manifestValid; }
+
+    bool hasValidConversionMetadata() const {
+        return !conversionMetadataPresent || conversionMetadataError.empty();
     }
 
     WeightLayer getLayer(const std::string& name) const {
@@ -163,8 +259,8 @@ public:
         const int laneCount = (layer.count + TritLane50::trits - 1) / TritLane50::trits;
         std::vector<UInt128> lanes(static_cast<std::size_t>(laneCount));
         {
-            std::ifstream f(baseDir + layer.filename, std::ios::binary);
-            if (!f.is_open()) return nullptr;
+            std::ifstream f;
+            if (!openLayer(layer, f)) return nullptr;
             f.read(reinterpret_cast<char*>(lanes.data()),
                    static_cast<std::streamsize>(static_cast<std::size_t>(laneCount) * 16));
             if (!f) return nullptr;
@@ -194,8 +290,8 @@ public:
         const int wordCount = layer.count / 40;
         std::vector<uint64_t> words(static_cast<std::size_t>(wordCount));
         {
-            std::ifstream f(baseDir + layer.filename, std::ios::binary);
-            if (!f.is_open()) return nullptr;
+            std::ifstream f;
+            if (!openLayer(layer, f)) return nullptr;
             f.read(reinterpret_cast<char*>(words.data()),
                    static_cast<std::streamsize>(static_cast<std::size_t>(wordCount) * 8));
             if (!f) return nullptr;
@@ -288,13 +384,17 @@ public:
             this->unpackedAny(layerName); // internally lock-safe
         });
 
+        std::future<void> losingFuture;
         {
             std::lock_guard<std::mutex> lk(loaderMutex);
             // Another thread may have raced and launched first
             if (!prefetchFutures.count(layerName))
                 prefetchFutures.emplace(layerName, std::move(fut));
-            // Otherwise fut destructor will join immediately — harmless
+            else
+                losingFuture = std::move(fut);
         }
+        // Destroy a losing async future outside loaderMutex.  Its destructor
+        // may wait for a task that is trying to acquire the same mutex.
     }
 
     // -------------------------------------------------------------------------
@@ -331,8 +431,8 @@ public:
 
         std::vector<int8_t> decoded(static_cast<std::size_t>(layer.count));
         if (layer.mode == "L1") {
-            std::ifstream f(baseDir + layer.filename, std::ios::binary);
-            if (!f.is_open()) return nullptr;
+            std::ifstream f;
+            if (!openLayer(layer, f)) return nullptr;
             f.read(reinterpret_cast<char*>(decoded.data()),
                    static_cast<std::streamsize>(decoded.size()));
             if (!f) return nullptr;
@@ -393,8 +493,8 @@ public:
             }
         }
 
-        std::ifstream f(baseDir + layer.filename, std::ios::binary);
-        if (!f.is_open()) return 0;
+        std::ifstream f;
+        if (!openLayer(layer, f)) return 0;
         if (offsetInWeights > 0)
             f.seekg(static_cast<std::streamoff>(offsetInWeights) * 16, std::ios::beg);
 
@@ -441,6 +541,38 @@ public:
     }
 
 private:
+    bool openLayer(const WeightLayer& layer, std::ifstream& stream) const {
+        if (guestVfs_) return guestVfs_->open(layer.filename, stream);
+        stream.open(baseDir + layer.filename, std::ios::binary);
+        return stream.is_open();
+    }
+
+    static bool safeRelative(const std::string& filename) {
+        const fs::path path(filename);
+        return !path.empty() && !path.is_absolute() &&
+               std::find(path.begin(), path.end(), fs::path("..")) == path.end();
+    }
+
+    static void validateConversionMetadata(const std::string& path,
+                                           std::string& error) {
+        std::ifstream input(path, std::ios::binary);
+        if (!input.is_open()) {
+            error = "cannot open conversion metadata";
+            return;
+        }
+        std::ostringstream text;
+        text << input.rdbuf();
+        const std::string value = text.str();
+        if (value.find("trit.bitnet_conversion.v1") == std::string::npos) {
+            error = "conversion metadata schema is not trit.bitnet_conversion.v1";
+            return;
+        }
+        if (value.find("\"status\": \"complete\"") == std::string::npos &&
+            value.find("\"status\":\"complete\"") == std::string::npos) {
+            error = "conversion metadata is not complete";
+        }
+    }
+
     static void normaliseDir(std::string& dir) {
         if (!dir.empty() && dir.back() != '/' && dir.back() != '\\')
             dir += '/';

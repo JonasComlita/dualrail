@@ -534,6 +534,10 @@ void testVersionedAbiBoundaryMetadata() {
 
     CompilerOptions v3_options;
     v3_options.target_abi_version = FunctionAbiContract::version_v3;
+    v3_options.target_executable_version =
+        sandbox::architecture::v3::EXECUTABLE_VERSION;
+    v3_options.enable_vector_abi = true;
+    v3_options.enable_vector_spilling = true;
     const CompileResult aggregate_v3 = compileSource(
         "phase7_aggregate_return_v3.trit", R"TRIT(
             struct Pair { a: t40; b: t40; }
@@ -575,13 +579,16 @@ void testVersionedAbiBoundaryMetadata() {
             fn identity(v: vec<t20>) -> vec<t20> { return v; }
             fn main() -> t40 { return 0; }
         )TRIT", v3_options);
-    expect(!vector_v3.success,
-           "ABI v3 keeps vector boundaries fail-closed pending VM support");
-    expect(hasDiagnostic(
-               vector_v3.diagnostics,
-               FunctionAbiContract::idForVersion(
-                   FunctionAbiContract::version_v3)),
-           "ABI v3 vector diagnostic names the exact profile dependency");
+    expect(vector_v3.success,
+           "ABI v3 vector boundaries lower through the fixed v3 profile");
+    if (vector_v3.success) {
+        expect(vector_v3.object.metadata.at("target.vector_boundary_abi") ==
+                   FunctionAbiContract::vectorBoundaryOptIn(),
+               "ABI v3 vector metadata records the fixed register boundary");
+        expect(vector_v3.object.metadata.at("target.vector_spill_abi") ==
+                   FunctionAbiContract::vectorSpillOptIn(),
+               "ABI v3 vector metadata records the 27-word spill class");
+    }
 }
 
 void testVerifierAllocatorAndDuplicateSymbols() {

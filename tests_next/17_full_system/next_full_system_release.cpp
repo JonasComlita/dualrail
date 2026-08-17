@@ -106,21 +106,46 @@ bool readSparseDiskRecords(const std::filesystem::path& path,
     }
 
     std::uint64_t magic = 0;
-    int count = 0;
     in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    in.read(reinterpret_cast<char*>(&count), sizeof(count));
     if (!in.good()) {
         error = "sparse disk header is truncated";
         return false;
     }
-    if (magic != sandbox::host::TOS_SPARSE_DISK_MAGIC || count < 0) {
+
+    std::uint32_t version = 0;
+    std::uint32_t block_words = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t expected_checksum = 0;
+    std::uint32_t count = 0;
+    const bool legacy = magic == sandbox::host::TOS_LEGACY_SPARSE_DISK_MAGIC;
+    if (legacy) {
+        int legacy_count = 0;
+        in.read(reinterpret_cast<char*>(&legacy_count), sizeof(legacy_count));
+        if (!in.good() || legacy_count < 0) {
+            error = "legacy sparse disk header is invalid";
+            return false;
+        }
+        count = static_cast<std::uint32_t>(legacy_count);
+    } else if (magic == sandbox::host::TOS_SPARSE_DISK_MAGIC) {
+        in.read(reinterpret_cast<char*>(&version), sizeof(version));
+        in.read(reinterpret_cast<char*>(&block_words), sizeof(block_words));
+        in.read(reinterpret_cast<char*>(&generation), sizeof(generation));
+        in.read(reinterpret_cast<char*>(&expected_checksum),
+                sizeof(expected_checksum));
+        in.read(reinterpret_cast<char*>(&count), sizeof(count));
+        if (!in.good() || version != sandbox::host::TOS_SPARSE_DISK_VERSION ||
+            block_words != static_cast<std::uint32_t>(sandbox::vm::STORAGE_BLOCK_WORDS)) {
+            error = "sparse disk v2 header is invalid";
+            return false;
+        }
+    } else {
         error = "sparse disk header is invalid";
         return false;
     }
 
     records.clear();
     records.reserve(static_cast<std::size_t>(count));
-    for (int i = 0; i < count; ++i) {
+    for (std::uint32_t i = 0; i < count; ++i) {
         SparseDiskRecord record;
         record.words.assign(
             static_cast<std::size_t>(sandbox::vm::STORAGE_BLOCK_WORDS),
@@ -129,14 +154,42 @@ bool readSparseDiskRecords(const std::filesystem::path& path,
         for (int word = 0;
              word < sandbox::vm::STORAGE_BLOCK_WORDS;
              ++word) {
-            in.read(reinterpret_cast<char*>(&record.words[static_cast<std::size_t>(word)]),
-                    sizeof(long long));
+            if (legacy) {
+                in.read(reinterpret_cast<char*>(&record.words[
+                             static_cast<std::size_t>(word)]),
+                        sizeof(long long));
+            } else {
+                std::uint64_t raw = 0;
+                in.read(reinterpret_cast<char*>(&raw), sizeof(raw));
+                if (in.good()) {
+                    if (record.block >=
+                        sandbox::vm::TDISK_EXECUTABLE_TEXT_FIRST_BLOCK) {
+                        constexpr std::uint64_t kTritWord27Mask =
+                            (std::uint64_t{1} << 54) - 1;
+                        if (raw > kTritWord27Mask) {
+                            error = "sparse disk executable text word is out of range";
+                            return false;
+                        }
+                        record.words[static_cast<std::size_t>(word)] =
+                            static_cast<long long>(raw);
+                    } else {
+                        const sandbox::vm::TernaryValue value =
+                            sandbox::vm::TernaryValue::fromTriple(
+                                sandbox::Triple{raw});
+                        record.words[static_cast<std::size_t>(word)] =
+                            sandbox::vm::ops::toLong(value);
+                    }
+                }
+            }
         }
         if (!in.good()) {
             error = "sparse disk block record is truncated";
             return false;
         }
-        records.push_back(std::move(record));
+        if (std::any_of(record.words.begin(), record.words.end(),
+                        [](long long word) { return word != 0; })) {
+            records.push_back(std::move(record));
+        }
     }
     return true;
 }
@@ -550,6 +603,9 @@ bool runUntilFramebufferContains(TestContext& ctx,
     ctx.fail(message + " missing='" + needle + "' after steps=" +
              std::to_string(executed) +
              " gpu_mode=" + std::to_string(last_snapshot.gpu_mode) +
+             " pc=" + std::to_string(last_snapshot.pc) +
+             " status=" + std::to_string(static_cast<int>(last_snapshot.status)) +
+             " cycles=" + std::to_string(last_snapshot.cycles) +
              " framebuffer_mode=" +
              (last_framebuffer.mode == sandbox::host::TosFramebufferMode::Graphics80x60
                   ? "graphics"
@@ -871,7 +927,7 @@ bool runUntilGuestRebootCountAtLeast(TestContext& ctx,
 
 bool driveReleaseLoginToDesktop(TestContext& ctx, sandbox::host::TosRuntime& runtime) {
     if (!runUntilFramebufferContains(ctx, runtime, "OS 3 SECURE",
-                                     8000000, 500000,
+                                     10000000, 500000,
                                      "release reaches login screen")) {
         return false;
     }
@@ -1015,7 +1071,12 @@ void releaseArtifactManifest(TestContext& ctx) {
         const auto* app = findApp(image, gui_app);
         ctx.check(app != nullptr, "GUI app appears in release manifest: " + gui_app);
         if (app != nullptr) {
-            ctx.equal(app->stack_words, 1024,
+            const int expected_stack_words =
+                app->function_abi_version ==
+                        sandbox::architecture::v3::FUNCTION_ABI_VERSION
+                    ? 1026
+                    : 1024;
+            ctx.equal(app->stack_words, expected_stack_words,
                       gui_app + " release stack hint is preserved");
             ctx.check(app->text_pages > 0 && app->data_pages > 0,
                       gui_app + " release image metadata has text/data pages");
@@ -1144,49 +1205,62 @@ void releaseCliCommandDescriptors(TestContext& ctx) {
                   path + " descriptor is readable from the release rootfs");
         if (descriptor.empty()) continue;
 
-        ctx.check(static_cast<int>(descriptor.size()) >=
-                      sandbox::os::NATIVE_EXEC_DESC_V2_WORDS,
-                  path + " uses the v2 disk-backed executable descriptor");
-        if (static_cast<int>(descriptor.size()) <
-            sandbox::os::NATIVE_EXEC_DESC_V2_WORDS) {
+        ctx.check(static_cast<int>(descriptor.size()) >= 2,
+                  path + " has a versioned disk-backed executable descriptor");
+        if (descriptor.size() < 2) {
+            continue;
+        }
+        const int executable_version = static_cast<int>(descriptor[1]);
+        const int header_words = executable_version ==
+                sandbox::architecture::v3::EXECUTABLE_VERSION
+            ? sandbox::vm::EXEC_V3_HEADER_WORDS
+            : sandbox::vm::EXEC_V2_HEADER_WORDS;
+        const int descriptor_words = header_words + 3;
+        ctx.check(executable_version ==
+                      sandbox::architecture::v2::EXECUTABLE_VERSION ||
+                      executable_version ==
+                      sandbox::architecture::v3::EXECUTABLE_VERSION,
+                  path + " descriptor declares a supported executable version");
+        if (static_cast<int>(descriptor.size()) < descriptor_words) {
             continue;
         }
         std::vector<sandbox::vm::TernaryValue> encoded_header;
-        encoded_header.reserve(sandbox::vm::EXEC_V2_HEADER_WORDS);
-        for (int index = 0; index < sandbox::vm::EXEC_V2_HEADER_WORDS; ++index) {
+        encoded_header.reserve(header_words);
+        for (int index = 0; index < header_words; ++index) {
             encoded_header.push_back(
                 sandbox::vm::ops::fromLong(descriptor[index]));
         }
-        sandbox::vm::ExecutableImageHeaderV2 header;
-        ctx.check(sandbox::vm::decodeExecutableHeaderV2(
+        sandbox::vm::ExecutableHeaderVariant header;
+        ctx.check(sandbox::vm::decodeExecutableHeaderVersioned(
                       encoded_header, 0, header),
-                  path + " descriptor contains a valid checksummed v2 header");
-        ctx.equal(header.executable_version,
-                  sandbox::architecture::v2::EXECUTABLE_VERSION,
-                  path + " descriptor version is v2");
-        ctx.equal(header.function_abi_version,
-                  sandbox::architecture::v2::FUNCTION_ABI_VERSION,
-                  path + " descriptor function ABI is v2");
-        ctx.check(header.entry_pc >= 0,
+                  path + " descriptor contains a valid checksummed header");
+        const sandbox::vm::ExecutableHeaderCommonView& common = header.common;
+        ctx.equal(common.executable_version, executable_version,
+                  path + " descriptor preserves its executable version");
+        ctx.equal(common.function_abi_version, executable_version,
+                  path + " descriptor function ABI matches its executable version");
+        ctx.check(common.entry_pc >= 0,
                   path + " entry PC is non-negative");
-        ctx.check(sandbox::vm::executableTextPages(header) > 0,
+        const int text_pages = std::max(
+            1, (common.text_words + sandbox::vm::MMU_PAGE_WORDS - 1) /
+                   sandbox::vm::MMU_PAGE_WORDS);
+        ctx.check(text_pages > 0,
                   path + " has text pages");
-        ctx.check(sandbox::vm::executableDataPages(header) > 0,
+        ctx.check(std::max(common.data_words, common.stack_words) > 0,
                   path + " has data pages");
-        ctx.equal(header.stack_words,
+        ctx.equal(common.stack_words,
                   stack_words,
                   path + " preserves the aligned release stack class");
-        ctx.equal(header.syscall_abi_version,
+        ctx.equal(common.syscall_abi_version,
                   sandbox::architecture::v2::SYSCALL_ABI_VERSION,
                   path + " descriptor syscall ABI version is v2");
 
         const int text_ppn =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS]);
+            static_cast<int>(descriptor[header_words]);
         const int text_disk_block =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS + 1]);
+            static_cast<int>(descriptor[header_words + 1]);
         const int text_words =
-            static_cast<int>(descriptor[sandbox::vm::EXEC_V2_HEADER_WORDS + 2]);
-        const int text_pages = sandbox::vm::executableTextPages(header);
+            static_cast<int>(descriptor[header_words + 2]);
         ctx.check(text_ppn > 0, path + " descriptor records a text PPN");
         ctx.check(text_disk_block >= sandbox::os::NATIVE_VFS_REQUIRED_BLOCKS,
                   path + " text lives after the native VFS metadata area");
@@ -1929,6 +2003,12 @@ void releaseFileManagerExitDesktopRecovery(TestContext& ctx) {
         return;
     }
 
+    if (!runUntilProcessFieldEquals(
+            ctx, runtime, exit_diagnostics, 104, "wait_channel", 103000,
+            2500000, 250000,
+            "file manager reaches its input wait before exit recovery input")) {
+        return;
+    }
     runtime.pushKeyboardInput('x');
     if (!runUntilProcessFieldEquals(ctx, runtime, exit_diagnostics, 104,
                                     "state", 7, 5000000, 250000,

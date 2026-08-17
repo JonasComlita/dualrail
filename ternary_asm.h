@@ -151,6 +151,7 @@ struct AssemblyResult {
     std::map<std::string, int>    labels;       // text label name -> IMEM word address
     std::map<std::string, int>    data_labels;  // data label name -> DMEM word address
     std::map<std::string, ExecutableImageHeaderV2> executable_headers_v2;
+    std::map<std::string, ExecutableImageHeaderV3> executable_headers_v3;
     IsaEncodingVersion            isa_version = IsaEncodingVersion::V2;
     std::uint64_t                 required_features = 0;
 
@@ -743,9 +744,10 @@ struct SourceLine {
         sl.section = current_section;
         if (current_section == AssemblySection::Data) {
             if (sl.mnemonic != ".word" && sl.mnemonic != ".pte" &&
-                sl.mnemonic != ".execheader2") {
+                sl.mnemonic != ".execheader2" &&
+                sl.mnemonic != ".execheader3") {
                 errors.push_back({line_num,
-                    "Only .word, .pte, and .execheader2 directives are "
+                    "Only .word, .pte, .execheader2, and .execheader3 directives are "
                     "valid in .data"});
                 lines.push_back(sl);
                 continue;
@@ -767,14 +769,21 @@ struct SourceLine {
                 lines.push_back(sl);
                 continue;
             }
+            if (sl.mnemonic == ".execheader3" && sl.operands.size() != 7) {
+                errors.push_back({line_num, ".execheader3 requires entry_pc, text_words, data_words, stack_words, required_feature_word, syscall_abi, flags"});
+                lines.push_back(sl);
+                continue;
+            }
             sl.address = data_addr;
             sl.word_count = sl.mnemonic == ".pte" ? 1 :
                             sl.mnemonic == ".execheader2" ? EXEC_V2_HEADER_WORDS :
+                            sl.mnemonic == ".execheader3" ? EXEC_V3_HEADER_WORDS :
                             static_cast<int>(sl.operands.size());
             data_addr += sl.word_count;
         } else {
             if (sl.mnemonic == ".word" || sl.mnemonic == ".pte" ||
-                sl.mnemonic == ".execheader2") {
+                sl.mnemonic == ".execheader2" ||
+                sl.mnemonic == ".execheader3") {
                 errors.push_back({line_num, sl.mnemonic + " is only valid in .data"});
                 lines.push_back(sl);
                 continue;
@@ -2008,6 +2017,44 @@ struct LabelMaps {
             }
             for (int index = 0; index < EXEC_V2_HEADER_WORDS; ++index)
                 data.push_back(TernaryValue::zero());
+        } else if (sl.mnemonic == ".execheader3") {
+            std::array<int, 7> fields{};
+            bool ok = true;
+            for (int index = 0; index < 7; ++index) {
+                auto value = resolveAbsolute(
+                    sl.operands[static_cast<std::size_t>(index)],
+                    sl.line_num);
+                if (!value) {
+                    ok = false;
+                } else {
+                    fields[static_cast<std::size_t>(index)] = value.value();
+                }
+            }
+            ExecutableImageHeaderV3 header;
+            if (ok && !executableFeatureMaskFromNumeric(
+                          fields[4], architecture::v3::FEATURE_V3_LAST,
+                          header.required_features)) {
+                errors.push_back({sl.line_num,
+                    ".execheader3 feature word contains an invalid feature mask"});
+                ok = false;
+            }
+            if (ok) {
+                header.entry_pc = fields[0];
+                header.text_words = fields[1];
+                header.data_words = fields[2];
+                header.stack_words = fields[3];
+                header.syscall_abi_version = fields[5];
+                header.flags = fields[6];
+                try {
+                    auto encoded = encodeExecutableHeaderV3(header);
+                    data.insert(data.end(), encoded.begin(), encoded.end());
+                    continue;
+                } catch (const std::exception& error) {
+                    errors.push_back({sl.line_num, error.what()});
+                }
+            }
+            for (int index = 0; index < EXEC_V3_HEADER_WORDS; ++index)
+                data.push_back(TernaryValue::zero());
         } else if (sl.mnemonic == ".pte") {
             auto ppn = resolveAbsolute(sl.operands[0], sl.line_num);
             auto user = requireFlag(sl.operands[1], sl.line_num, "user");
@@ -2066,6 +2113,32 @@ collectExecutableHeadersV2(
                 {line.line_num, "Invalid executable header v2"});
             continue;
         }
+        headers[line.label] = header;
+    }
+    return headers;
+}
+
+[[nodiscard]] inline std::map<std::string, ExecutableImageHeaderV3>
+collectExecutableHeadersV3(
+        const std::vector<SourceLine>& lines,
+        const std::vector<TernaryValue>& data,
+        std::vector<AssemblyError>& errors) {
+    std::map<std::string, ExecutableImageHeaderV3> headers;
+    for (const SourceLine& line : lines) {
+        if (line.section != AssemblySection::Data ||
+            line.mnemonic != ".execheader3" || line.address < 0) {
+            continue;
+        }
+        if (line.label.empty()) {
+            errors.push_back({line.line_num, ".execheader3 requires a label"});
+            continue;
+        }
+        ExecutableImageHeaderV3 header;
+        if (!decodeExecutableHeaderV3(data, line.address, header)) {
+            errors.push_back({line.line_num, "Invalid executable header v3"});
+            continue;
+        }
+        header.header_addr = line.address;
         headers[line.label] = header;
     }
     return headers;
@@ -2184,6 +2257,8 @@ collectExecutableHeadersV2(
     result.data = encodeData(lines, result.labels, result.data_labels, result.errors);
     result.executable_headers_v2 =
         collectExecutableHeadersV2(lines, result.data, result.errors);
+    result.executable_headers_v3 =
+        collectExecutableHeadersV3(lines, result.data, result.errors);
     for (const auto& [label, header] : result.executable_headers_v2) {
         if (header.required_features != result.required_features) {
             result.errors.push_back({
@@ -2192,6 +2267,30 @@ collectExecutableHeadersV2(
                     "' feature word must exactly match the unit's .require "
                     "feature set"});
         }
+    }
+    for (const auto& [label, header] : result.executable_headers_v3) {
+        if (header.required_features != result.required_features) {
+            result.errors.push_back({
+                header.header_addr,
+                ".execheader3 '" + label +
+                    "' feature word must exactly match the unit's .require "
+                    "feature set"});
+        }
+    }
+    if (!result.executable_headers_v2.empty() &&
+        !result.executable_headers_v3.empty()) {
+        result.errors.push_back({0,
+            "a translation unit cannot mix executable header v2 and v3"});
+    }
+    if (options.executable_version == architecture::v3::EXECUTABLE_VERSION &&
+        result.executable_headers_v3.empty()) {
+        result.errors.push_back({0,
+            "v3 assembly selection requires one validated .execheader3"});
+    }
+    if (options.executable_version == architecture::v2::EXECUTABLE_VERSION &&
+        !result.executable_headers_v3.empty()) {
+        result.errors.push_back({0,
+            "v3 executable header requires explicit v3 assembly selection"});
     }
     result.success = result.errors.empty();
     return result;
@@ -2203,6 +2302,11 @@ collectExecutableHeadersV2(
 
 [[nodiscard]] inline AssemblyResult assembleV2(const std::string& source) {
     return assemble(source, AssemblyOptions{IsaEncodingVersion::V2, true});
+}
+
+[[nodiscard]] inline AssemblyResult assembleV3(const std::string& source) {
+    return assemble(source, AssemblyOptions{
+        IsaEncodingVersion::V2, true, architecture::v3::EXECUTABLE_VERSION});
 }
 
 // Convenience: assemble and throw on any error.
@@ -2219,9 +2323,13 @@ inline bool loadAndReset(VMState& vm, const AssemblyResult& assembled) {
     if (static_cast<int>(assembled.data.size()) > vm.dmem.size()) return false;
 
     vm.coldReset();
-    if (!vm.configureArchitecture(
-            assembled.isa_version, assembled.required_features))
+    if (assembled.executable_headers_v3.size() == 1) {
+        if (!vm.configureArchitecture(
+                assembled.executable_headers_v3.begin()->second)) return false;
+    } else if (!vm.configureArchitecture(
+                   assembled.isa_version, assembled.required_features)) {
         return false;
+    }
     if (!vm.imem.loadProgram(assembled.program, 0)) return false;
     for (int i = 0; i < static_cast<int>(assembled.data.size()); ++i) {
         if (vm.dmem.store(i, assembled.data[static_cast<std::size_t>(i)]) != MemFaultCode::OK) {

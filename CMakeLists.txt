@@ -96,6 +96,7 @@ target_compile_definitions(test_tiny_transformer_runtime PRIVATE TERNARY_IGNORE_
 
 add_executable(test_bitnet_loading tests/test_bitnet_loading.cpp)
 add_executable(run_bitnet bitnet_weights/run_bitnet.cpp)
+add_executable(bitnet_guest_executor bitnet_weights/bitnet_guest_executor.cpp)
 add_executable(benchmark_doom_os benchmarks/benchmark_doom_os.cpp)
 add_executable(benchmark_bitnet_os benchmarks/benchmark_bitnet_os.cpp)
 add_executable(build_tos_image build_tos_image.cpp)
@@ -121,6 +122,8 @@ target_compile_definitions(test_bitnet_loading PRIVATE TERNARY_IGNORE_LONG_DOUBL
 
 target_compile_features(run_bitnet PUBLIC cxx_std_17)
 target_compile_definitions(run_bitnet PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+target_compile_features(bitnet_guest_executor PUBLIC cxx_std_17)
+target_compile_definitions(bitnet_guest_executor PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 target_compile_features(benchmark_doom_os PUBLIC cxx_std_17)
 target_compile_definitions(benchmark_doom_os PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 target_compile_features(benchmark_bitnet_os PUBLIC cxx_std_17)
@@ -234,6 +237,10 @@ add_executable(test_compiler_abi_contract tests/test_compiler_abi_contract.cpp)
 target_compile_features(test_compiler_abi_contract PUBLIC cxx_std_17)
 target_compile_definitions(test_compiler_abi_contract PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_executable_abi_v3 tests/test_executable_abi_v3.cpp)
+target_compile_features(test_executable_abi_v3 PUBLIC cxx_std_17)
+target_compile_definitions(test_executable_abi_v3 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+
 add_executable(test_phase_c5_pred tests/test_phase_c5_pred.cpp)
 target_compile_features(test_phase_c5_pred PUBLIC cxx_std_17)
 target_compile_definitions(test_phase_c5_pred PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -308,6 +315,19 @@ if(TRIT_ENCRYPTED_VOLUME_OPENSSL)
 endif()
 add_test(NAME test_encrypted_volume COMMAND test_encrypted_volume)
 
+add_executable(test_encrypted_volume_parser tests/test_encrypted_volume_parser.cpp)
+target_compile_features(test_encrypted_volume_parser PUBLIC cxx_std_17)
+target_compile_definitions(test_encrypted_volume_parser PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+add_test(NAME test_encrypted_volume_parser COMMAND test_encrypted_volume_parser)
+
+add_executable(trit_volume tools/trit_volume.cpp encrypted_volume_openssl.cpp)
+target_compile_features(trit_volume PUBLIC cxx_std_17)
+target_compile_definitions(trit_volume PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+if(TRIT_ENCRYPTED_VOLUME_OPENSSL)
+    target_compile_definitions(trit_volume PRIVATE TRIT_ENCRYPTED_VOLUME_ENABLE_OPENSSL)
+    target_link_libraries(trit_volume PRIVATE OpenSSL::Crypto)
+endif()
+
 add_executable(trit_checkpoint_replay tools/trit_checkpoint_replay.cpp)
 target_compile_features(trit_checkpoint_replay PUBLIC cxx_std_17)
 target_compile_definitions(trit_checkpoint_replay PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
@@ -350,6 +370,24 @@ if(Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE}
                      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_external_benchmark_assets.py
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_bitnet_external_execution
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bitnet_external_execution.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_symbolic_guest
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_symbolic_guest.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_symbolic_diagnostics
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_symbolic_diagnostics.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME test_encrypted_volume_cli
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_encrypted_volume_cli.py
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(test_encrypted_volume_cli PROPERTIES
+        ENVIRONMENT "TRIT_VOLUME_BINARY=$<TARGET_FILE:trit_volume>")
     add_test(NAME test_posix_wrappers
              COMMAND ${Python3_EXECUTABLE} -m unittest
                      tools.tests.test_posix_wrappers
@@ -378,6 +416,9 @@ add_test(NAME test_syscall_pointer_fuzz
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 add_test(NAME test_compiler_abi_contract
          COMMAND test_compiler_abi_contract
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME test_executable_abi_v3
+         COMMAND test_executable_abi_v3
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_custom_target(production_profile

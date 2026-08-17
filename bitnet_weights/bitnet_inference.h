@@ -13,7 +13,8 @@
 //   num_layers:        24    (override → 30)
 //   vocab_size:        32000 (override → 128256)
 //   norm:              RMSNorm
-//   activation:        relu²  (gate² × up) with sub-norms per BitNet b1.58-2B-4T spec
+//   activation:        SiLU(gate) × up with sub-norms per the pinned BitNet
+//                       llama.cpp graph
 //   attn weights:      L50 (ternary {-1,0,+1}, packed 50-trit lanes)
 //   mlp weights:       L50 (ternary {-1,0,+1}, packed 50-trit lanes)
 //   embed/norm:        BF16 read directly from safetensors
@@ -30,10 +31,9 @@
 //   4. Fused gate+up projection — same input quantized once for both MLP
 //      projections in one pool.execute() call.
 //      Saves 1 A8 quantization + 1 pool barrier per layer.
-//   5. int8 KV cache — keys and values quantized to int8 per head with
-//      per-head scale factors. Halves KV cache memory and improves
-//      cache locality during attention score computation.
-//   6. AVX2 attention scores — dot products between float Q and int8 K/V.
+//   5. FP16 KV cache — keys and values are stored at the same FP16 boundary
+//      as the pinned llama.cpp reference.
+//   6. AVX2 attention scores — dot products between float Q and FP16 K/V.
 //   7. Greedy-only argmax — when temperature=0 in run_bitnet.cpp, set
 //      computeAllLogits=false to skip the full logit vector (saves ~13ms
 //      on vocab=128256; the bandwidth cost is unavoidable when sampling).
@@ -78,6 +78,7 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -437,6 +438,71 @@ static inline float bf16ToFloat(uint16_t raw) {
     return c.f;
 }
 
+static inline uint16_t floatToF16Bits(float value) {
+    union { uint32_t u; float f; } c{0};
+    c.f = value;
+    const uint32_t sign = (c.u >> 16) & 0x8000U;
+    const uint32_t exponent = (c.u >> 23) & 0xffU;
+    uint32_t mantissa = c.u & 0x7fffffU;
+    if (exponent == 0xffU) {
+        return static_cast<uint16_t>(sign | 0x7c00U |
+            (mantissa == 0 ? 0U : 0x0200U));
+    }
+
+    int halfExponent = static_cast<int>(exponent) - 127 + 15;
+    if (halfExponent <= 0) {
+        if (halfExponent < -10) return static_cast<uint16_t>(sign);
+        mantissa |= 0x800000U;
+        const int shift = 14 - halfExponent;
+        uint32_t rounded = mantissa >> shift;
+        const uint32_t remainder = mantissa & ((1U << shift) - 1U);
+        const uint32_t halfway = 1U << (shift - 1);
+        if (remainder > halfway ||
+            (remainder == halfway && (rounded & 1U) != 0)) {
+            ++rounded;
+        }
+        return static_cast<uint16_t>(sign | rounded);
+    }
+    if (halfExponent >= 31) return static_cast<uint16_t>(sign | 0x7c00U);
+
+    uint32_t rounded = mantissa >> 13;
+    const uint32_t remainder = mantissa & 0x1fffU;
+    if (remainder > 0x1000U ||
+        (remainder == 0x1000U && (rounded & 1U) != 0)) {
+        ++rounded;
+        if (rounded == 0x400U) {
+            rounded = 0;
+            ++halfExponent;
+            if (halfExponent >= 31) return static_cast<uint16_t>(sign | 0x7c00U);
+        }
+    }
+    return static_cast<uint16_t>(sign |
+        (static_cast<uint32_t>(halfExponent) << 10) | rounded);
+}
+
+static inline float f16BitsToFloat(uint16_t raw) {
+    const uint32_t sign = (static_cast<uint32_t>(raw & 0x8000U)) << 16;
+    uint32_t exponent = (raw >> 10) & 0x1fU;
+    uint32_t mantissa = raw & 0x03ffU;
+    uint32_t bits = sign;
+    if (exponent == 0) {
+        if (mantissa != 0) {
+            int highest = 0;
+            for (uint32_t probe = mantissa; probe > 1; probe >>= 1) ++highest;
+            exponent = static_cast<uint32_t>(highest + 103);
+            bits |= exponent << 23;
+            bits |= (mantissa << (23 - highest)) & 0x7fffffU;
+        }
+    } else if (exponent == 0x1fU) {
+        bits |= 0x7f800000U | (mantissa << 13);
+    } else {
+        bits |= (exponent - 15U + 127U) << 23;
+        bits |= mantissa << 13;
+    }
+    union { uint32_t u; float f; } c{bits};
+    return c.f;
+}
+
 class SafeTensorReader {
 public:
     ~SafeTensorReader() { close(); }
@@ -498,6 +564,31 @@ public:
         out.resize(static_cast<std::size_t>(info->count()));
         std::memcpy(out.data(), dataPtr_ + dataBase_ + info->begin,
                     static_cast<std::size_t>(info->end - info->begin));
+        return true;
+    }
+
+    bool readBf16Row(const std::string& name, long long row,
+                    std::vector<uint16_t>& out, std::string& error) const {
+        const auto* info = tensor(name);
+        if (!info) { error = "Not found: " + name; return false; }
+        if (info->dtype != "BF16" || info->shape.size() != 2) {
+            error = "Not a rank-2 BF16 tensor: " + name;
+            return false;
+        }
+        if (row < 0 || row >= info->shape[0]) {
+            error = "BF16 row is out of range: " + name;
+            return false;
+        }
+        const std::size_t columns = static_cast<std::size_t>(info->shape[1]);
+        const std::uint64_t byte_offset = info->begin +
+            static_cast<std::uint64_t>(row) * columns * sizeof(std::uint16_t);
+        const std::size_t byte_count = columns * sizeof(std::uint16_t);
+        if (byte_offset + byte_count > info->end + 0ULL) {
+            error = "BF16 row exceeds tensor bounds: " + name;
+            return false;
+        }
+        out.resize(columns);
+        std::memcpy(out.data(), dataPtr_ + dataBase_ + byte_offset, byte_count);
         return true;
     }
 
@@ -626,6 +717,17 @@ public:
     int cachedTokens() const { return kv_len_; }
     void reset() { kv_len_ = 0; }
 
+    bool setDebugTracePath(const std::string& path, std::string& error) {
+        debugTrace_.close();
+        debugTrace_.clear();
+        debugTrace_.open(path, std::ios::binary | std::ios::trunc);
+        if (!debugTrace_) {
+            error = "unable to open BitNet debug trace";
+            return false;
+        }
+        return true;
+    }
+
     bool init(const std::string& safetensorsPath, std::string& error) {
         if (!safe_.open(safetensorsPath, error)) return false;
 
@@ -649,14 +751,21 @@ public:
                   << ", " << threads_ << " workers)...\n";
         if (!safe_.readBf16Raw("model.embed_tokens.weight", embeddings_, error))
             return false;
+        // The pinned GGUF reference stores token embeddings as IEEE FP16.
+        // Round the source BF16 values at the same representation boundary so
+        // later logits are compared against the same model, not a wider
+        // source-only approximation.
+        for (uint16_t& value : embeddings_)
+            value = floatToF16Bits(bf16ToFloat(value));
 
         kv_dim_ = cfg.num_kv_heads * cfg.head_dim;
         kv_.resize(static_cast<std::size_t>(cfg.num_layers));
         for (auto& lyr : kv_) {
-            lyr.keys.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * kv_dim_, 0);
-            lyr.values.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * kv_dim_, 0);
-            lyr.k_scales.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * cfg.num_kv_heads, 0.0f);
-            lyr.v_scales.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * cfg.num_kv_heads, 0.0f);
+            // The pinned GGUF runner keeps the attention cache in IEEE FP16.
+            // An int8 cache is useful for a throughput experiment but changes
+            // the logits enough to invalidate exact token acceptance.
+            lyr.keys.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * kv_dim_, 0.0f);
+            lyr.values.assign(static_cast<std::size_t>(cfg.max_position_embeddings) * kv_dim_, 0.0f);
         }
 
         // Precompute RoPE inverse frequencies
@@ -704,6 +813,7 @@ public:
             auto nt0 = nowMs();
             if (!rmsNorm(x, tensorFloat(pfx + "input_layernorm.weight", error), norm_, error))
                 { result.error = error; return result; }
+            traceVector("attn_norm-" + std::to_string(layer), norm_);
             result.norm_ms += nowMs() - nt0;
 
             // Attention (fused Q/K/V projection + scores + O projection)
@@ -717,6 +827,7 @@ public:
             nt0 = nowMs();
             if (!rmsNorm(x, tensorFloat(pfx + "post_attention_layernorm.weight", error), norm_, error))
                 { result.error = error; return result; }
+            traceVector("ffn_norm-" + std::to_string(layer), norm_);
             result.norm_ms += nowMs() - nt0;
 
             // MLP (fused gate+up projection + down)
@@ -724,12 +835,14 @@ public:
                 { result.error = error; return result; }
             addInto(residual_, mlp_out_, x);
 
-            // Safety clamp (prevents NaN/Inf propagation)
+            // Keep finite model values unchanged.  The pinned runner permits
+            // valid residuals above 2^14; clamping them changes later RMSNorm
+            // inputs and breaks autoregressive parity.  Only contain an
+            // unexpected non-finite value at this portability boundary.
             for (float& v : x) {
-                if      (!std::isfinite(v))  v =  0.0f;
-                else if (v >  16384.0f)      v =  16384.0f;
-                else if (v < -16384.0f)      v = -16384.0f;
+                if (!std::isfinite(v)) v = 0.0f;
             }
+            traceVector("l_out-" + std::to_string(layer), x);
         }
 
         ++kv_len_;
@@ -739,6 +852,7 @@ public:
             auto nt0 = nowMs();
             if (!rmsNorm(x, tensorFloat("model.norm.weight", error), norm_, error))
                 { result.error = error; return result; }
+            traceVector("result_norm", norm_);
             result.norm_ms += nowMs() - nt0;
 
             auto st0 = nowMs();
@@ -761,7 +875,7 @@ public:
         if (token_id < 0 || token_id >= cfg.vocab_size) return emb;
         const uint16_t* row = embeddings_.data() + static_cast<std::size_t>(token_id) * cfg.hidden_size;
         for (int i = 0; i < cfg.hidden_size; ++i) {
-            emb[i] = bf16ToFloat(row[i]);
+        emb[i] = f16BitsToFloat(row[i]);
         }
         return emb;
     }
@@ -776,20 +890,8 @@ public:
             if (t < 0 || t >= cfg.vocab_size) continue;
             const uint16_t* row = embeddings_.data() + static_cast<std::size_t>(t) * cfg.hidden_size;
             
-            int i = 0;
-#ifdef __AVX2__
-            __m256 vacc[4]; // unroll by 4
-            for (int k = 0; k < 4; ++k) vacc[k] = _mm256_setzero_ps();
-            
-            for (; i <= cfg.hidden_size - 32; i += 32) {
-                // Vectorized bf16->float load and add (simplified for speed)
-                // In practice, since this runs once per generated token, simple scalar loop is fine.
-                // But for SOTA speed, we just use scalar here unless it bottlenecks.
-            }
-#endif
-            for (; i < cfg.hidden_size; ++i) {
-                centroid[i] += bf16ToFloat(row[i]);
-            }
+            for (int i = 0; i < cfg.hidden_size; ++i)
+                centroid[i] += f16BitsToFloat(row[i]);
         }
         const float inv = 1.0f / static_cast<float>(tokens.size());
         for (float& v : centroid) v *= inv;
@@ -798,13 +900,11 @@ public:
 
 private:
     // -------------------------------------------------------------------------
-    // KV cache — int8 quantized per head to halve memory bandwidth
+    // KV cache — IEEE FP16 storage at the same boundary as the reference
     // -------------------------------------------------------------------------
     struct LayerKV {
-        std::vector<int8_t> keys;    // [max_seq × kv_dim] quantized
-        std::vector<int8_t> values;  // [max_seq × kv_dim] quantized
-        std::vector<float>  k_scales; // [max_seq × num_kv_heads]
-        std::vector<float>  v_scales;
+        std::vector<uint16_t> keys;   // [max_seq × kv_dim], official FP16 cache
+        std::vector<uint16_t> values; // [max_seq × kv_dim], official FP16 cache
     };
 
     // -------------------------------------------------------------------------
@@ -821,10 +921,12 @@ private:
             if ((int)x.size() == source_size && valid) return; // already done for this input
             source_size = static_cast<int>(x.size());
             data.resize(static_cast<std::size_t>(source_size));
-            float x_max = 1e-9f;
+            // Match llama.cpp's quantize_row_i8_s: the scale is derived from
+            // the exact row maximum, with no artificial epsilon floor.
+            float x_max = 0.0f;
             int j = 0;
 #ifdef __AVX2__
-            __m256 vmax = _mm256_set1_ps(1e-9f);
+            __m256 vmax = _mm256_setzero_ps();
             for (; j <= source_size - 8; j += 8) {
                 __m256 vx = _mm256_loadu_ps(x.data() + j);
                 vmax = _mm256_max_ps(vmax, _mm256_andnot_ps(_mm256_set1_ps(-0.0f), vx));
@@ -834,21 +936,15 @@ private:
 #endif
             for (; j < source_size; ++j) x_max = std::max(x_max, std::abs(x[static_cast<std::size_t>(j)]));
             gamma = x_max / 127.0f;
-            inv   = 1.0f / gamma;
-            j = 0;
-#ifdef __AVX2__
-            __m256 vinv = _mm256_set1_ps(inv);
-            for (; j <= source_size - 8; j += 8) {
-                __m256 vs = _mm256_mul_ps(_mm256_loadu_ps(x.data() + j), vinv);
-                __m256i vi = _mm256_cvtps_epi32(vs);
-                int32_t t[8]; _mm256_storeu_si256(reinterpret_cast<__m256i*>(t), vi);
-                for (int i = 0; i < 8; ++i)
-                    data[static_cast<std::size_t>(j + i)] = static_cast<int8_t>(std::clamp(t[i], -127, 127));
-            }
-#endif
-            for (; j < source_size; ++j)
+            inv   = gamma == 0.0f ? 0.0f : 1.0f / gamma;
+
+            // llama.cpp uses roundf, whose tie rule is away from zero.  The
+            // AVX conversion instruction uses the current integer rounding
+            // mode (normally ties-to-even), so keep this small quantization
+            // loop scalar to preserve the reference result exactly.
+            for (j = 0; j < source_size; ++j)
                 data[static_cast<std::size_t>(j)] = static_cast<int8_t>(
-                    std::round(std::clamp(x[static_cast<std::size_t>(j)] * inv, -127.0f, 127.0f)));
+                    std::round(std::clamp(x[static_cast<std::size_t>(j)] * inv, -128.0f, 127.0f)));
             valid = true;
         }
 
@@ -876,6 +972,7 @@ private:
     std::vector<int8_t>  x_q_scratch_;
     QuantizedActivation  qkv_act_;   // shared for Q/K/V input
     QuantizedActivation  mlp_act_;   // shared for gate/up input
+    std::ofstream debugTrace_;
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -891,6 +988,25 @@ private:
     static long long nowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+    }
+
+    void traceVector(const std::string& name, const std::vector<float>& values) {
+        if (!debugTrace_) return;
+        const std::size_t keep = std::min<std::size_t>(8, values.size());
+        debugTrace_ << "position " << kv_len_ << " node " << name
+                    << " count " << values.size() << " values:"
+                    << std::setprecision(9);
+        for (std::size_t index = 0; index < keep; ++index)
+            debugTrace_ << " " << values[index];
+        debugTrace_ << " last_values:";
+        const std::size_t first_last = values.size() - keep;
+        for (std::size_t index = first_last; index < values.size(); ++index)
+            debugTrace_ << " " << values[index];
+        if (std::getenv("TRIT_BITNET_TRACE_ALL") != nullptr) {
+            debugTrace_ << " all_values:";
+            for (float value : values) debugTrace_ << " " << value;
+        }
+        debugTrace_ << "\n";
     }
 
     const std::vector<float>& tensorFloat(const std::string& name, std::string& error) {
@@ -917,18 +1033,8 @@ private:
         out.resize(static_cast<std::size_t>(cfg.hidden_size));
         const uint16_t* row = embeddings_.data()
             + static_cast<std::size_t>(tokenId) * cfg.hidden_size;
-        int j = 0;
-#ifdef __AVX2__
-        for (; j <= cfg.hidden_size - 8; j += 8) {
-            __m128i vraw = _mm_loadu_si128(reinterpret_cast<const __m128i*>(row + j));
-            __m256i v32  = _mm256_cvtepu16_epi32(vraw);
-            __m256i vs   = _mm256_slli_epi32(v32, 16);
-            __m256  vf   = _mm256_castsi256_ps(vs);
-            _mm256_storeu_ps(out.data() + j, vf);
-        }
-#endif
-        for (; j < cfg.hidden_size; ++j)
-            out[static_cast<std::size_t>(j)] = bf16ToFloat(row[j]);
+        for (int j = 0; j < cfg.hidden_size; ++j)
+            out[static_cast<std::size_t>(j)] = f16BitsToFloat(row[j]);
         return true;
     }
 
@@ -936,21 +1042,19 @@ private:
                  std::vector<float>& out, std::string& error) {
         if (w.size() != x.size()) { error = "RMSNorm shape mismatch"; return false; }
         const int n = static_cast<int>(x.size());
-        float sumSq = 0.0f;
-        int j = 0;
-#ifdef __AVX2__
-        __m256 vacc = _mm256_setzero_ps();
-        for (; j <= n - 8; j += 8) {
-            __m256 vx = _mm256_loadu_ps(x.data() + j);
-            vacc = _mm256_add_ps(vacc, _mm256_mul_ps(vx, vx));
+        // Match the pinned ggml CPU RMSNorm reduction: each float product is
+        // widened before the sum, then the mean is rounded back to float
+        // before sqrtf.  A float/AVX reduction can change activation
+        // quantization at the output of the attention sub-norm.
+        double sumSq = 0.0;
+        for (int j = 0; j < n; ++j) {
+            const float value = x[static_cast<std::size_t>(j)];
+            sumSq += static_cast<double>(value * value);
         }
-        float tmp[8]; _mm256_storeu_ps(tmp, vacc);
-        for (int i = 0; i < 8; ++i) sumSq += tmp[i];
-#endif
-        for (; j < n; ++j) sumSq += x[static_cast<std::size_t>(j)] * x[static_cast<std::size_t>(j)];
-        const float invRms = 1.0f / std::sqrt(sumSq / static_cast<float>(n) + cfg.rms_norm_eps);
+        const float mean = static_cast<float>(sumSq / static_cast<double>(n));
+        const float invRms = 1.0f / std::sqrt(mean + cfg.rms_norm_eps);
         out.resize(static_cast<std::size_t>(n));
-        j = 0;
+        int j = 0;
 #ifdef __AVX2__
         __m256 vi = _mm256_set1_ps(invRms);
         for (; j <= n - 8; j += 8) {
@@ -977,7 +1081,12 @@ private:
             out[static_cast<std::size_t>(j)] = a[static_cast<std::size_t>(j)] + b[static_cast<std::size_t>(j)];
     }
 
-    static float relu2(float x) { return x <= 0.0f ? 0.0f : x * x; }
+    // The pinned BitNet graph uses the parallel gated-FFN form
+    // SiLU(gate) * up.  Keep this in single precision, matching ggml's
+    // ggml_silu_f32 definition (x / (1 + expf(-x))).
+    static float silu(float x) {
+        return x / (1.0f + std::exp(-x));
+    }
 
     void rotateHead(float* head, int pos) const {
         const int half = cfg.head_dim / 2;
@@ -1051,10 +1160,10 @@ private:
         // Quantize activation
         if (x_q_scratch_.size() < static_cast<std::size_t>(cols))
             x_q_scratch_.resize(static_cast<std::size_t>(cols));
-        float x_max = 1e-9f;
+        float x_max = 0.0f;
         int j = 0;
 #ifdef __AVX2__
-        __m256 vmax = _mm256_set1_ps(1e-9f);
+        __m256 vmax = _mm256_setzero_ps();
         for (; j <= cols - 8; j += 8)
             vmax = _mm256_max_ps(vmax, _mm256_andnot_ps(_mm256_set1_ps(-0.0f),
                                          _mm256_loadu_ps(x.data() + j)));
@@ -1064,19 +1173,10 @@ private:
         for (; j < cols; ++j) x_max = std::max(x_max, std::abs(x[static_cast<std::size_t>(j)]));
         const float x_gamma = x_max / 127.0f;
         const float x_inv   = 1.0f / x_gamma;
-        j = 0;
-#ifdef __AVX2__
-        __m256 vinv = _mm256_set1_ps(x_inv);
-        for (; j <= cols - 8; j += 8) {
-            __m256i vi = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(x.data() + j), vinv));
-            int32_t t[8]; _mm256_storeu_si256(reinterpret_cast<__m256i*>(t), vi);
-            for (int i = 0; i < 8; ++i)
-                x_q_scratch_[static_cast<std::size_t>(j + i)] = static_cast<int8_t>(std::clamp(t[i], -127, 127));
-        }
-#endif
-        for (; j < cols; ++j)
+        const float x_inv_safe = x_max == 0.0f ? 0.0f : x_inv;
+        for (j = 0; j < cols; ++j)
             x_q_scratch_[static_cast<std::size_t>(j)] = static_cast<int8_t>(
-                std::round(std::clamp(x[static_cast<std::size_t>(j)] * x_inv, -127.0f, 127.0f)));
+                std::round(std::clamp(x[static_cast<std::size_t>(j)] * x_inv_safe, -128.0f, 127.0f)));
 
         const float combined = w_scale * x_gamma;
         const int   nw       = pool_.size();
@@ -1187,99 +1287,99 @@ private:
         };
         linearPackedMulti(specs, H, qkv_act_, &matmul_ms);
 
-        applyRoPE(q, k, position);
+        traceVector("Qcur-pre", q);
+        traceVector("Kcur-pre", k);
+        traceVector("Vcur-pre", v);
 
-        // Store int8-quantized K and V in the KV cache
+        applyRoPE(q, k, position);
+        traceVector("Qcur", q);
+        traceVector("Kcur", k);
+        traceVector("Vcur", v);
+
+        // Store K and V at the pinned runner's FP16 cache boundary.
         LayerKV& cache = kv_[static_cast<std::size_t>(layer)];
         for (int h = 0; h < cfg.num_kv_heads; ++h) {
             const float* kH = k.data() + h * cfg.head_dim;
             const float* vH = v.data() + h * cfg.head_dim;
-            float km = 1e-9f, vm = 1e-9f;
+            uint16_t* kSlot = cache.keys.data() + position * kv_dim_ + h * cfg.head_dim;
+            uint16_t* vSlot = cache.values.data() + position * kv_dim_ + h * cfg.head_dim;
             for (int d = 0; d < cfg.head_dim; ++d) {
-                km = std::max(km, std::abs(kH[d]));
-                vm = std::max(vm, std::abs(vH[d]));
-            }
-            const float kg = km / 127.0f, vg = vm / 127.0f;
-            cache.k_scales[static_cast<std::size_t>(position * cfg.num_kv_heads + h)] = kg;
-            cache.v_scales[static_cast<std::size_t>(position * cfg.num_kv_heads + h)] = vg;
-            const float ki = 1.0f / kg, vi2 = 1.0f / vg;
-            int8_t* kSlot = cache.keys.data()   + position * kv_dim_ + h * cfg.head_dim;
-            int8_t* vSlot = cache.values.data() + position * kv_dim_ + h * cfg.head_dim;
-            for (int d = 0; d < cfg.head_dim; ++d) {
-                kSlot[d] = static_cast<int8_t>(std::round(std::clamp(kH[d] * ki,  -127.0f, 127.0f)));
-                vSlot[d] = static_cast<int8_t>(std::round(std::clamp(vH[d] * vi2, -127.0f, 127.0f)));
+                kSlot[d] = floatToF16Bits(kH[d]);
+                vSlot[d] = floatToF16Bits(vH[d]);
             }
         }
 
-        // Attention scores + context aggregation
+        // Attention scores + context aggregation.  The pinned runner's CPU
+        // flash-attention path converts Q to FP16 for the dot product, then
+        // performs online softmax while keeping the value accumulator in
+        // FP16.  Reproducing those boundaries matters for the official
+        // BitNet token contract; a mathematically equivalent F32 softmax
+        // produces measurably different logits after 30 layers.
         std::vector<float> attn(static_cast<std::size_t>(H), 0.0f);
         const int   groups = cfg.num_heads / cfg.num_kv_heads;
         const float scale  = 1.0f / std::sqrt(static_cast<float>(cfg.head_dim));
-        std::vector<float> scores(static_cast<std::size_t>(position + 1));
+        std::vector<uint16_t> qHalf(static_cast<std::size_t>(cfg.head_dim));
+        std::vector<uint16_t> valueAcc(static_cast<std::size_t>(cfg.head_dim));
 
         for (int head = 0; head < cfg.num_heads; ++head) {
             const int    kvH   = head / groups;
             const float* qHead = q.data() + static_cast<std::size_t>(head) * cfg.head_dim;
-            float maxScore = -std::numeric_limits<float>::infinity();
+            for (int d = 0; d < cfg.head_dim; ++d)
+                qHalf[static_cast<std::size_t>(d)] = floatToF16Bits(qHead[d]);
+            std::fill(valueAcc.begin(), valueAcc.end(), static_cast<uint16_t>(0));
 
+            float sum = 0.0f;
+            float maxScore = -std::numeric_limits<float>::infinity();
             for (int t = 0; t <= position; ++t) {
-                const int8_t* kHead = cache.keys.data()
+                const uint16_t* kHead = cache.keys.data()
                     + static_cast<std::size_t>(t) * kv_dim_
                     + static_cast<std::size_t>(kvH) * cfg.head_dim;
-                const float kscale = cache.k_scales[static_cast<std::size_t>(t * cfg.num_kv_heads + kvH)];
                 float dot = 0.0f;
-#ifdef __AVX2__
-                __m256 vacc = _mm256_setzero_ps();
-                for (int d = 0; d <= cfg.head_dim - 8; d += 8) {
-                    __m128i vraw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(kHead + d));
-                    __m256i v32  = _mm256_cvtepi8_epi32(vraw);
-                    __m256  vf   = _mm256_cvtepi32_ps(v32);
-                    vacc = _mm256_add_ps(vacc, _mm256_mul_ps(vf, _mm256_loadu_ps(qHead + d)));
+                for (int d = 0; d < cfg.head_dim; ++d) {
+                    dot = std::fma(f16BitsToFloat(qHalf[static_cast<std::size_t>(d)]),
+                                   f16BitsToFloat(kHead[d]), dot);
                 }
-                float tmp[8]; _mm256_storeu_ps(tmp, vacc);
-                for (int i = 0; i < 8; ++i) dot += tmp[i];
-#else
-                for (int d = 0; d < cfg.head_dim; ++d) dot += qHead[d] * static_cast<float>(kHead[d]);
-#endif
-                scores[static_cast<std::size_t>(t)] = dot * kscale * scale;
-                maxScore = std::max(maxScore, scores[static_cast<std::size_t>(t)]);
-            }
+                const float score = dot * scale;
 
-            float denom = 0.0f;
-            for (int t = 0; t <= position; ++t) {
-                float e = std::exp(scores[static_cast<std::size_t>(t)] - maxScore);
-                scores[static_cast<std::size_t>(t)] = e;
-                denom += e;
+                const float oldMax = maxScore;
+                float valueScale = 1.0f;
+                float weight = 1.0f;
+                if (score > maxScore) {
+                    maxScore = score;
+                    valueScale = std::exp(oldMax - maxScore);
+                    for (int d = 0; d < cfg.head_dim; ++d) {
+                        const float scaled = f16BitsToFloat(valueAcc[static_cast<std::size_t>(d)]) * valueScale;
+                        valueAcc[static_cast<std::size_t>(d)] = floatToF16Bits(scaled);
+                    }
+                } else {
+                    weight = std::exp(score - maxScore);
+                }
+
+                const uint16_t* vHead = cache.values.data()
+                    + static_cast<std::size_t>(t) * kv_dim_
+                    + static_cast<std::size_t>(kvH) * cfg.head_dim;
+                for (int d = 0; d < cfg.head_dim; ++d) {
+                    const float oldValue = f16BitsToFloat(valueAcc[static_cast<std::size_t>(d)]);
+                    const float vValue = f16BitsToFloat(vHead[d]);
+                    valueAcc[static_cast<std::size_t>(d)] =
+                        floatToF16Bits(std::fma(vValue, weight, oldValue));
+                }
+                sum = sum * valueScale + weight;
             }
-            if (denom == 0.0f || !std::isfinite(denom)) { error = "Softmax NaN"; return false; }
+            if (sum == 0.0f || !std::isfinite(sum)) { error = "Softmax NaN"; return false; }
 
             float* outHead = attn.data() + static_cast<std::size_t>(head) * cfg.head_dim;
-            for (int t = 0; t <= position; ++t) {
-                const int8_t* vHead = cache.values.data()
-                    + static_cast<std::size_t>(t) * kv_dim_
-                    + static_cast<std::size_t>(kvH) * cfg.head_dim;
-                const float vscale = cache.v_scales[static_cast<std::size_t>(t * cfg.num_kv_heads + kvH)];
-                const float prob   = (scores[static_cast<std::size_t>(t)] / denom) * vscale;
-#ifdef __AVX2__
-                __m256 vprob = _mm256_set1_ps(prob);
-                for (int d = 0; d <= cfg.head_dim - 8; d += 8) {
-                    __m128i vraw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(vHead + d));
-                    __m256i v32  = _mm256_cvtepi8_epi32(vraw);
-                    __m256  vf   = _mm256_cvtepi32_ps(v32);
-                    __m256  vo   = _mm256_loadu_ps(outHead + d);
-                    _mm256_storeu_ps(outHead + d, _mm256_add_ps(vo, _mm256_mul_ps(vf, vprob)));
-                }
-#else
-                for (int d = 0; d < cfg.head_dim; ++d)
-                    outHead[d] += prob * static_cast<float>(vHead[d]);
-#endif
-            }
+            const float invSum = 1.0f / sum;
+            for (int d = 0; d < cfg.head_dim; ++d)
+                outHead[d] = f16BitsToFloat(valueAcc[static_cast<std::size_t>(d)]) * invSum;
         }
 
         // Attention sub-norm + output projection
+        traceVector("kqv_out-" + std::to_string(layer), attn);
         std::vector<float> attnNorm;
         if (!rmsNorm(attn, tensorFloat(pfx + "self_attn.attn_sub_norm.weight", error), attnNorm, error))
             return false;
+        traceVector("attn_sub_norm-" + std::to_string(layer), attnNorm);
 
         const int8_t* wo = nullptr; float so = 1.0f;
         if (!resolve(pfx + "self_attn.o_proj.weight", H, wo, so)) return false;
@@ -1291,6 +1391,7 @@ private:
         out.assign(static_cast<std::size_t>(H), 0.0f);
         const std::vector<LinearSpec> ospec = {{ wo, H, oact.gamma * so, &out }};
         linearPackedMulti(ospec, H, oact, &matmul_ms);
+        traceVector("attn_out-" + std::to_string(layer), out);
         return true;
     }
 
@@ -1327,15 +1428,20 @@ private:
         };
         linearPackedMulti(specs, H, mlp_act_, &matmul_ms);
 
-        // relu2 activation: gate²×up with FFN sub-norm
+        // Pinned graph activation: SiLU(gate) × up with FFN sub-norm.
         std::vector<float> activated(static_cast<std::size_t>(I));
         for (int i = 0; i < I; ++i)
-            activated[static_cast<std::size_t>(i)] = relu2(gate[static_cast<std::size_t>(i)])
+            activated[static_cast<std::size_t>(i)] = silu(gate[static_cast<std::size_t>(i)])
                                                     * up[static_cast<std::size_t>(i)];
 
         std::vector<float> ffnNorm;
         if (!rmsNorm(activated, tensorFloat(pfx + "mlp.ffn_sub_norm.weight", error), ffnNorm, error))
             return false;
+        const std::size_t layer_marker = pfx.find("layers.");
+        const std::string layer_name = layer_marker == std::string::npos
+            ? pfx
+            : pfx.substr(layer_marker + 7, pfx.find('.', layer_marker + 7) - (layer_marker + 7));
+        traceVector("ffn_sub_norm-" + layer_name, ffnNorm);
 
         const int8_t* wdown = nullptr; float sdown = 1.0f;
         auto resolve2 = [&](const std::string& wname, int rows, int cols, const int8_t*& ptr, float& scale) -> bool {
@@ -1353,6 +1459,7 @@ private:
         out.assign(static_cast<std::size_t>(H), 0.0f);
         const std::vector<LinearSpec> dspec = {{ wdown, H, dact.gamma * sdown, &out }};
         linearPackedMulti(dspec, I, dact, &matmul_ms);
+        traceVector("ffn_down-" + layer_name, out);
         return true;
     }
 
@@ -1385,21 +1492,8 @@ private:
                 const uint16_t* row = embeddings_.data()
                     + static_cast<std::size_t>(token) * cfg.hidden_size;
                 float acc = 0.0f;
-                int j = 0;
-#ifdef __AVX2__
-                __m256 vacc = _mm256_setzero_ps();
-                for (; j <= cfg.hidden_size - 8; j += 8) {
-                    __m128i vraw = _mm_loadu_si128(reinterpret_cast<const __m128i*>(row + j));
-                    __m256i v32  = _mm256_cvtepu16_epi32(vraw);
-                    __m256i vs   = _mm256_slli_epi32(v32, 16);
-                    __m256  vf   = _mm256_castsi256_ps(vs);
-                    vacc = _mm256_add_ps(vacc, _mm256_mul_ps(vf, _mm256_loadu_ps(hidden.data() + j)));
-                }
-                float tmp[8]; _mm256_storeu_ps(tmp, vacc);
-                for (int i = 0; i < 8; ++i) acc += tmp[i];
-#endif
-                for (; j < cfg.hidden_size; ++j)
-                    acc += bf16ToFloat(row[j]) * hidden[static_cast<std::size_t>(j)];
+                for (int j = 0; j < cfg.hidden_size; ++j)
+                    acc += f16BitsToFloat(row[j]) * hidden[static_cast<std::size_t>(j)];
                 if (allLogits) (*allLogits)[static_cast<std::size_t>(token)] = acc;
                 if (acc > local.score) { local.score = acc; local.token = token; }
             }

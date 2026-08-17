@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "luna-remaining-gaps-waves",
+  "updated_by": "codex-primary-integration-2026-08-17",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -19,15 +19,21 @@
     {
       "id": "compiler-runtime",
       "status": "verified",
-      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, ABI v2 compatibility, opt-in ABI v3 aggregate sret, runtime wrappers, linking, and TCL assembly have focused and quantitative coverage.",
+      "summary": "SSA IR is the sole target-code source; global optimization, graph coloring/coalescing, iterative spills, ABI v2 compatibility, executable and vector ABI v3 contracts, runtime wrappers, linking, TCL assembly, and dynamic-control JIT lowering have focused coverage. ABI v3 is the release-image default while v2 remains readable and explicitly selectable; the accepted controlled host selects NativeX64Jit by default on x86-64 and retains the cached interpreter elsewhere.",
       "evidence": [
         "test_phase7_compiler",
         "test_compiler_abi_contract",
         "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",
-        "test_layer1_hal"
-      ]
+        "test_layer1_hal",
+        "test_execution_backends_benchmark",
+        "test_executable_abi_v3",
+        "test_host_runtime",
+        "next_full_system_release",
+        "build/native-x64-jit-acceptance/native_x64_jit_acceptance.v1.json (accepted 2026-08-17)"
+      ],
+      "open_items": []
     },
     {
       "id": "kernel-vfs-process",
@@ -89,8 +95,8 @@
     },
     {
       "id": "system-benchmarks",
-      "status": "implemented",
-      "summary": "Use deterministic Doom-class interactive and BitNet-style inference workloads as OS capability and performance baselines before importing full external assets.",
+      "status": "verified",
+      "summary": "Synthetic Doom-class and BitNet-style workloads remain the offline defaults; cache-backed Freedoom slice/full rendering and official BitNet slice/full execution are implemented as an explicit manual suite with deterministic hashes and fail-closed missing-cache behavior.",
       "evidence": [
         "docs/10_Benchmarks/system_benchmark_plan.md",
         "docs/10_Benchmarks/doom.md",
@@ -102,30 +108,48 @@
         "benchmarks/assets/external_assets.v1.json",
         "test_performance_baseline",
         "test_external_benchmark_assets",
+        "test_bitnet_external_execution",
         "system_benchmark_gate",
-        "system_release_gate"
+        "system_release_gate",
+        "2026-08-17 local-cache Freedoom slice/full frame-hash acceptance",
+        "2026-08-17 local-cache BitNet slice/full token-hash and two-run reference acceptance"
+      ],
+      "open_items": []
+    },
+    {
+      "id": "encrypted-host-volumes",
+      "status": "in_progress",
+      "summary": "Opt-in host-only TRITENC1 AES-256-GCM envelope parsing, canonical tDisk validation, strict key-file provider, stable inspect/encrypt/decrypt/attach-run lifecycle, atomic replacement, fail-closed provider behavior, and cleanup tests are implemented; release use remains explicitly gated on independent review.",
+      "evidence": [
+        "encrypted_volume_host.h",
+        "encrypted_volume_openssl.cpp",
+        "test_encrypted_volume",
+        "test_encrypted_volume_parser",
+        "test_encrypted_volume_cli",
+        "trit_volume",
+        "docs/09_Host_Runtime/encrypted_volumes.md",
+        "independent cryptographic review 2026-08-16"
       ],
       "open_items": [
-        "Materialize the validated Freedoom WAD payloads and connect a reviewed renderer",
-        "Materialize validated BitNet sliced/full model shards when storage policy permits",
-        "Archive controlled-host timing baselines before enforcing tighter workload regressions"
+        "Resolve nonce uniqueness, replay/rollback, plaintext crash cleanup, key-file race, provider policy, and fuzz coverage findings through the required independent review; any format-affecting remediation requires a new envelope version",
+        "Do not close the gap while high-severity review findings remain unresolved"
       ]
     },
     {
       "id": "ternary-symbolic-encodings",
-      "status": "in_progress",
-      "summary": "ASCII, UTF-8, and hexadecimal remain compatibility encodings; fixed TASCII-81, exact trits, and compact base-27/base-81 notation are implemented for host tools and both assemblers.",
+      "status": "verified",
+      "summary": "ASCII, UTF-8, and hexadecimal remain compatibility encodings; fixed TASCII-81, exact trits, compact base-27/base-81 notation, allocation-free guest SDK conversions, and backward-compatible symbolic selectors for human and JSON dump surfaces are implemented.",
       "evidence": [
         "docs/04_Binary_Contract/symbolic_encodings.md",
         "ternary_symbolic_encoding.h",
         "tools/trit_tool.py symbolic",
+        "tools/trit_tool.py inspect-image/export-diagnostics symbolic selectors",
         "test_symbolic_encodings",
-        "test_tcl_asm"
+        "test_tcl_asm",
+        "tests/test_symbolic_guest.py",
+        "tests/test_symbolic_diagnostics.py"
       ],
-      "open_items": [
-        "Add conversion APIs in the guest app SDK",
-        "Teach image and memory dump tools to print ternary-native notation alongside host hexadecimal"
-      ]
+      "open_items": []
     }
   ]
 }

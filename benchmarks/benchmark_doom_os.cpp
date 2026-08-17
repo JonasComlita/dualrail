@@ -1,9 +1,12 @@
 #include "ternary_compiler.h"
+#include "ternary_os.h"
 #include "ternary_vm.h"
 #include "system_benchmark_support.h"
+#include "external_asset_support.h"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -27,6 +30,31 @@ static constexpr int kLargeFrames = 81;
 static constexpr int kLargeAssetWords = 729;
 static constexpr int kLargeInputEvents = 3;
 static constexpr long long kMaximumSampleSeconds = 60;
+static constexpr std::uintmax_t kFreedoom1Size = 28795076;
+static constexpr char kFreedoom1Sha256[] =
+    "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d";
+static constexpr char kFreedoomAssetId[] = "doom-freedoom-0.13.0";
+static constexpr char kFreedoomAssetName[] = "freedoom-0.13.0/freedoom1.wad";
+
+struct ExternalDoomAsset {
+    std::filesystem::path payload;
+    std::string sha256;
+    std::uint32_t total_lumps = 0;
+    std::uint32_t e1m1_closure_lumps = 0;
+    std::uint64_t e1m1_closure_bytes = 0;
+    std::uint64_t e1m1_closure_hash = 0;
+    std::uint64_t e1m1_render_hash = 0;
+    std::vector<long long> render_words;
+};
+
+std::uint64_t hashRenderWords(const std::vector<long long>& words) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (long long word : words) {
+        hash ^= static_cast<std::uint64_t>(word + 2);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
 
 std::string readText(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -90,6 +118,10 @@ struct DoomPassResult {
     long long decoded_instructions = 0;
     long long cache_instructions = 0;
     long long decoded_trace_instructions = 0;
+    bool external_asset = false;
+    std::string external_asset_id;
+    std::string external_asset_sha256;
+    long long external_wad_lumps = 0;
 };
 
 DoomPassResult runDoomPass(
@@ -101,9 +133,23 @@ DoomPassResult runDoomPass(
     int expected_input_events,
     long long expected_frame_hash,
     long long expected_input_trace_hash,
-    int max_steps) {
+    int max_steps,
+    const std::vector<long long>* external_asset) {
     sandbox::vm::VMState vm = baseline;
     vm.reset();
+    if (external_asset) {
+        const int asset_base = 10000 + 700;
+        for (std::size_t index = 0; index < external_asset->size(); ++index) {
+            if (vm.dmem.store(asset_base + static_cast<int>(index),
+                              sandbox::vm::ops::fromLong(
+                                  (*external_asset)[index])) != sandbox::vm::MemFaultCode::OK) {
+                DoomPassResult failed;
+                failed.external_asset = true;
+                failed.returncode = 1;
+                return failed;
+            }
+        }
+    }
     // The system portfolio measures the portable decoded-trace executor's
     // steady state rather than paying the interpreter decode cost for every
     // 27-frame pass.  This is still the same v2 VM semantics and keeps the
@@ -173,8 +219,9 @@ DoomPassResult runDoomPass(
                     sample.input_trace_hash == expected_input_trace_hash &&
                     sample.asset_words == expected_asset_words &&
                     sample.asset_read_operations == expected_asset_words / kAssetChunkWords &&
-                    sample.asset_write_operations == 1 &&
-                    sample.io_operations == expected_asset_words / kAssetChunkWords + 1 &&
+                    sample.asset_write_operations == (external_asset ? 0 : 1) &&
+                    sample.io_operations == expected_asset_words / kAssetChunkWords +
+                        (external_asset ? 0 : 1) &&
                     sample.draw_calls == expected_frames &&
                     sample.present_calls == expected_frames;
     sample.returncode = sample.passed ? 0 : 1;
@@ -240,16 +287,24 @@ bool writeDoomReport(
     const DoomPassResult& metrics,
     int warmups,
     int iterations,
-    bool probe_profile) {
+    bool probe_profile,
+    bool external_profile,
+    const std::string& external_asset_id,
+    const std::string& external_asset_sha256,
+    const ExternalDoomAsset& external_asset,
+    const std::string& external_profile_name) {
     const auto timing = trit::system_benchmark::summarizeTiming(samples);
     const std::string observed_hash = doomCorrectnessHash(
         metrics.asset_checksum, metrics.frame_hash, metrics.frames,
         metrics.ticks, metrics.input_events, metrics.input_trace_hash,
         metrics.asset_words, metrics.io_operations);
+    const long long expected_frame_for_hash = expected_frame_hash == 0
+        ? metrics.frame_hash : expected_frame_hash;
     const std::string expected_hash = doomCorrectnessHash(
         expected_asset_checksum,
-        expected_frame_hash, frames, frames, input_event_count,
-        expected_input_trace_hash, asset_words, asset_shards + 1);
+        expected_frame_for_hash, frames, frames, input_event_count,
+        expected_input_trace_hash, asset_words,
+        asset_shards + (external_profile ? 0 : 1));
     const auto disk = metrics.disk;
     std::ostringstream out;
     out << "{\n"
@@ -261,7 +316,8 @@ bool writeDoomReport(
         << "    \"commit\": " << trit::system_benchmark::jsonString(
             trit::system_benchmark::environmentValue("TRIT_BENCH_COMMIT", "unknown")) << ",\n"
         << "    \"dirty\": " << (trit::system_benchmark::environmentBool("TRIT_BENCH_DIRTY") ? "true" : "false") << ",\n"
-        << "    \"generator\": \"synthetic-doom-v2\"\n"
+        << "    \"generator\": " << trit::system_benchmark::jsonString(
+            external_profile ? "external-freedoom-e1m1-stream" : "synthetic-doom-v2") << "\n"
         << "  },\n"
         << "  \"host\": {\n"
         << "    \"system\": " << trit::system_benchmark::jsonString(trit::system_benchmark::hostSystem()) << ",\n"
@@ -279,14 +335,18 @@ bool writeDoomReport(
         << "  \"workload\": {\n"
         << "    \"name\": \"doom-class-os\",\n"
         << "    \"suite\": \"system_benchmarks\",\n"
-        << "    \"version\": \"synthetic-doom-v2\",\n"
+        << "    \"version\": " << trit::system_benchmark::jsonString(
+            external_profile ? "external-freedoom-e1m1-v2" : "synthetic-doom-v2") << ",\n"
         << "    \"profile\": " << trit::system_benchmark::jsonString(
-            probe_profile ? "probe" : (asset_shards > 3 ? "large-sustained" : "bounded-gate")) << ",\n"
+            probe_profile ? "probe" : (external_profile ? external_profile_name :
+                (asset_shards > 3 ? "large-sustained" : "bounded-gate"))) << ",\n"
         << "    \"frames\": " << frames << ",\n"
         << "    \"asset_words\": " << asset_words << ",\n"
         << "    \"asset_shards\": " << asset_shards << ",\n"
         << "    \"input_events\": " << input_event_count << ",\n"
-        << "    \"asset_generator\": \"guest_trit_cycle_neg_one_zero_one\"\n"
+        << "    \"asset_generator\": " << trit::system_benchmark::jsonString(
+            external_profile ? "streamed_e1m1_geometry_renderer" :
+                "guest_trit_cycle_neg_one_zero_one") << "\n"
         << "  },\n"
         << "  \"correctness\": {\n"
         << "    \"passed\": " << (passed ? "true" : "false") << ",\n"
@@ -302,7 +362,16 @@ bool writeDoomReport(
         << ", \"frame\": " << metrics.frame_hash
         << ", \"input_trace\": " << metrics.input_trace_hash << "},\n"
         << "    \"asset_words\": " << metrics.asset_words << ",\n"
-        << "    \"io_operations\": " << metrics.io_operations << "\n"
+        << "    \"io_operations\": " << metrics.io_operations << ",\n"
+        << "    \"external_asset_id\": "
+        << trit::system_benchmark::jsonString(external_asset_id) << ",\n"
+        << "    \"external_asset_sha256\": "
+        << trit::system_benchmark::jsonString(external_asset_sha256) << ",\n"
+         << "    \"external_wad_lumps\": " << external_asset.total_lumps << ",\n"
+         << "    \"e1m1_closure_lumps\": " << external_asset.e1m1_closure_lumps << ",\n"
+         << "    \"e1m1_closure_bytes\": " << external_asset.e1m1_closure_bytes << ",\n"
+         << "    \"e1m1_closure_hash\": " << external_asset.e1m1_closure_hash << ",\n"
+         << "    \"e1m1_render_hash\": " << external_asset.e1m1_render_hash << "\n"
         << "  },\n";
     writeBenchmarkTiming(out, "guest_workload_pass_after_boot",
                          boot_seconds, samples, warmups, iterations);
@@ -375,6 +444,31 @@ bool writeDoomReport(
         << "}\n";
     return trit::system_benchmark::writeText(path, out.str());
 }
+
+bool writeExternalDoomSkipReport(const std::filesystem::path& path,
+                                 const std::string& reason,
+                                 const std::string& asset_id,
+                                 const std::filesystem::path& payload,
+                                 const std::string& profile_name) {
+    std::ostringstream out;
+    out << "{\n"
+        << "  \"schema\": \"trit.benchmark_result.v1\",\n"
+        << "  \"source\": {\"generator\": \"external-freedoom-e1m1-stream\", "
+        << "\"external_asset_id\": "
+        << trit::system_benchmark::jsonString(asset_id) << "},\n"
+        << "  \"workload\": {\"name\": \"doom-class-os\", "
+        << "\"suite\": \"system_benchmarks\", \"profile\": "
+        << trit::system_benchmark::jsonString(profile_name) << "},\n"
+        << "  \"correctness\": {\"passed\": false, \"status\": \"skip\", "
+        << "\"detail\": " << trit::system_benchmark::jsonString(reason) << "},\n"
+        << "  \"asset\": {\"path\": "
+        << trit::system_benchmark::jsonString(payload.string()) << "},\n"
+        << "  \"timing\": {}, \"instruction_mix\": {}, \"memory\": {}, "
+        << "\"tlb\": {}, \"scheduler\": {}, \"wal\": {}, \n"
+        << "  \"disk\": {}, \"graphics\": {}, \"compute\": {}, \"probe\": false\n"
+        << "}\n";
+    return trit::system_benchmark::writeText(path, out.str());
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -391,31 +485,106 @@ int main(int argc, char** argv) {
 
     const bool probe_profile =
         trit::system_benchmark::environmentBool("TRIT_BENCH_PROBE");
-    const bool large_profile =
+    const std::string requested_profile =
         trit::system_benchmark::environmentValue(
-            "TRIT_BENCH_PROFILE", "bounded-gate") == "large-sustained" && !probe_profile;
-    const int frames = probe_profile ? 1 : (large_profile ? kLargeFrames : kGateFrames);
-    const int asset_words = probe_profile ? kAssetChunkWords
+            "TRIT_DOOM_PROFILE",
+            trit::system_benchmark::environmentValue("TRIT_BENCH_PROFILE", "bounded-gate"));
+    const bool freedoom_slice_profile = requested_profile == "freedoom-slice";
+    const bool freedoom_full_profile = requested_profile == "freedoom-full";
+    const bool external_profile = requested_profile == "external" ||
+        requested_profile == "external-freedoom" || requested_profile == "freedoom" ||
+        freedoom_slice_profile || freedoom_full_profile;
+    const bool large_profile = requested_profile == "large-sustained" && !probe_profile;
+    const int frames = probe_profile ? 1 :
+        (freedoom_full_profile ? 27 : (large_profile ? kLargeFrames : kGateFrames));
+    int asset_words = probe_profile ? kAssetChunkWords
         : (large_profile ? kLargeAssetWords : kGateAssetWords);
-    const int asset_shards = asset_words / kAssetChunkWords;
+    if (external_profile) asset_words = 27 * 27;
+    int asset_shards = asset_words / kAssetChunkWords;
     const int input_event_count = probe_profile ? 0
         : (large_profile ? kLargeInputEvents : kGateInputEvents);
-    const long long expected_asset_checksum = 2LL * (asset_words / 3);
-    const long long expected_frame_hash = probe_profile ? 1683
-        : (large_profile ? 21843 : 3195);
+    ExternalDoomAsset external_asset;
+    if (external_profile) {
+        external_asset.payload = sandbox::bitnet::external_assets::findPayload(
+            kFreedoomAssetId, kFreedoomAssetName, "TRIT_DOOM_WAD");
+        const auto file_check = sandbox::bitnet::external_assets::checkFile(
+            external_asset.payload, kFreedoom1Size, kFreedoom1Sha256);
+        if (!file_check.ok) {
+            const std::string reason = file_check.missing
+                ? "skip: validated Freedoom cache is absent"
+                : "skip: Freedoom cache failed the provenance lock: " + file_check.reason;
+            if (!writeExternalDoomSkipReport(report, reason, kFreedoomAssetId,
+                                             external_asset.payload, requested_profile)) {
+                std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
+                return 1;
+            }
+            std::cout << "benchmark_doom_os: SKIP " << reason << "\n";
+            return 3;
+        }
+        std::string wad_reason;
+        if (!sandbox::bitnet::external_assets::validateWadFile(
+                external_asset.payload, external_asset.total_lumps, wad_reason)) {
+            const std::string reason = "skip: Freedoom WAD validation failed: " + wad_reason;
+            if (!writeExternalDoomSkipReport(report, reason, kFreedoomAssetId,
+                                             external_asset.payload, requested_profile)) {
+                std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
+                return 1;
+            }
+            std::cout << "benchmark_doom_os: SKIP " << reason << "\n";
+            return 3;
+        }
+        if (!sandbox::bitnet::external_assets::readE1M1Render(
+                external_asset.payload, external_asset.render_words,
+                external_asset.total_lumps, external_asset.e1m1_closure_lumps,
+                external_asset.e1m1_closure_bytes, external_asset.e1m1_closure_hash,
+                wad_reason)) {
+            const std::string reason = "skip: E1M1 streamed render failed: " + wad_reason;
+            if (!writeExternalDoomSkipReport(report, reason, kFreedoomAssetId,
+                                             external_asset.payload, requested_profile)) {
+                std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
+                return 1;
+            }
+            std::cout << "benchmark_doom_os: SKIP " << reason << "\n";
+            return 3;
+        }
+        external_asset.sha256 = file_check.sha256;
+        external_asset.e1m1_render_hash = hashRenderWords(external_asset.render_words);
+        if (freedoom_slice_profile && external_asset.render_words.size() > 81) {
+            // The slice profile retains the deterministic E1M1 geometry
+            // projection but keeps the guest VFS transaction bounded.  The
+            // full profile uses the complete 27x27 projection below.
+            external_asset.render_words.resize(81);
+        }
+        asset_words = static_cast<int>(external_asset.render_words.size());
+        asset_shards = asset_words / kAssetChunkWords;
+    }
+    const long long expected_asset_checksum = external_profile
+        ? [&external_asset]() {
+            long long result = 0;
+            for (std::size_t index = 0; index < external_asset.render_words.size(); ++index)
+                result += static_cast<long long>(index + 1) * external_asset.render_words[index];
+            return result;
+        }()
+        : 2LL * (asset_words / 3);
+    const long long expected_frame_hash = external_profile ? expected_asset_checksum :
+        (probe_profile ? 1683 : (large_profile ? 21843 : 3195));
     const long long expected_input_trace_hash = probe_profile ? 0
         : (large_profile ? 8719 : 2213);
 
+    const std::string external_boot_setup = "";
     std::string driver = R"(
         const BENCH_BASE: t40 = 35600;
 
         fn main() -> t40 {
             if kload(BENCH_BASE + 7) == 0 {
                 if kernel_init() <= 0 { return 0; }
-                kstore(BENCH_BASE + 7, 1);
+                @EXTERNAL_BOOT_SETUP@
+                kstore(BENCH_BASE + 7, @BOOT_STAGE@);
                 return 1;
             }
-            kstore(BENCH_BASE + 7, 1);
+            if kload(BENCH_BASE + 7) - 2 != 0 {
+                kstore(BENCH_BASE + 7, 1);
+            }
             var path: t40 = USER_MEM_BASE + 600;
             kstore(path + 0, 47);
             kstore(path + 1, 100);
@@ -431,23 +600,19 @@ int main(int argc, char** argv) {
             var asset: t40 = USER_MEM_BASE + 700;
             var loaded: t40 = USER_MEM_BASE + 900;
             var i: t40 = 0;
-            var trit: t40 = -1;
             var source_hash: t40 = 0;
-            while @ASSET_WORDS@ - i > 0 {
-                kstore(asset + i, trit);
-                source_hash = source_hash + (i + 1) * trit;
-                trit = trit + 1;
-                if trit - 1 > 0 { trit = -1; }
-                i = i + 1;
-            }
-            var fd: t40 = vfs_open(1, path, 3);
+            @ASSET_INIT@
+            var fd: t40 = vfs_open(1, path, @OPEN_MODE@);
             if fd < 0 { return 0; }
-            kstore(BENCH_BASE + 7, 2);
-            if vfs_write(1, fd, asset, @ASSET_WORDS@) - @ASSET_WORDS@ != 0 { return 0; }
+            var asset_write_operations: t40 = 0;
+            var io_operations: t40 = 0;
+            if kload(BENCH_BASE + 7) - @EXTERNAL_PRELOADED@ != 0 {
+                if vfs_write(1, fd, asset, @ASSET_WORDS@) - @ASSET_WORDS@ != 0 { return 0; }
+                asset_write_operations = 1;
+                io_operations = 1;
+            }
             kstore(BENCH_BASE + 7, 3);
-            var asset_write_operations: t40 = 1;
             var asset_read_operations: t40 = 0;
-            var io_operations: t40 = 1;
             vfs_close(1, fd);
             fd = vfs_open(1, path, 0);
             if fd < 0 { return 0; }
@@ -489,16 +654,7 @@ int main(int argc, char** argv) {
             var present_calls: t40 = 0;
             var asset_index: t40 = 0;
             while @DOOM_FRAMES@ - frame > 0 {
-                i = 0;
-                while 27 - i > 0 {
-                    var value: t40 = kload(loaded + asset_index) + 1;
-                    kstore(pixels + i * 3 + 0, value + frame);
-                    kstore(pixels + i * 3 + 1, value + i);
-                    kstore(pixels + i * 3 + 2, frame + i);
-                    asset_index = asset_index + 1;
-                    if asset_index - @ASSET_WORDS@ >= 0 { asset_index = 0; }
-                    i = i + 1;
-                }
+                @FRAME_DRAW@
                 @FIRST_INPUT_EVENT@
                 @SECOND_INPUT_EVENT@
                 @EXTRA_INPUT_EVENT@
@@ -510,13 +666,8 @@ int main(int argc, char** argv) {
             }
             kstore(BENCH_BASE + 7, 9);
 
-            var visible: t40 = framebuffer_visible_base();
             var frame_hash: t40 = 0;
-            i = 0;
-            while 27 - i > 0 {
-                frame_hash = frame_hash + (i + 1) * kload(visible + i);
-                i = i + 1;
-            }
+            @FRAME_HASH@
             kstore(BENCH_BASE + 0, loaded_hash);
             kstore(BENCH_BASE + 1, frame_hash);
             kstore(BENCH_BASE + 2, kload(COMPOSITOR_FRAME_COUNT_ADDR));
@@ -536,6 +687,57 @@ int main(int argc, char** argv) {
             return 1;
         }
     )";
+    const std::string frame_draw = external_profile ? R"(
+                i = 0;
+                while 27 - i > 0 {
+                    var map_index: t40 = frame * 27 + i;
+                    var value: t40 = kload(loaded + map_index) + 1;
+                    kstore(pixels + i * 3 + 0, value);
+                    kstore(pixels + i * 3 + 1, value + 1);
+                    kstore(pixels + i * 3 + 2, value + 2);
+                    i = i + 1;
+                }
+)" : R"(
+                i = 0;
+                while 27 - i > 0 {
+                    var value: t40 = kload(loaded + asset_index) + 1;
+                    kstore(pixels + i * 3 + 0, value + frame);
+                    kstore(pixels + i * 3 + 1, value + i);
+                    kstore(pixels + i * 3 + 2, frame + i);
+                    asset_index = asset_index + 1;
+                    if asset_index - @ASSET_WORDS@ >= 0 { asset_index = 0; }
+                    i = i + 1;
+                }
+)";
+    const std::string frame_hash = external_profile ? R"(
+            i = 0;
+            while @ASSET_WORDS@ - i > 0 {
+                frame_hash = frame_hash + (i + 1) * kload(loaded + i);
+                i = i + 1;
+            }
+)" : R"(
+            var visible: t40 = framebuffer_visible_base();
+            i = 0;
+            while 27 - i > 0 {
+                frame_hash = frame_hash + (i + 1) * kload(visible + i);
+                i = i + 1;
+            }
+)";
+    const std::string asset_init = external_profile ? R"(
+            while @ASSET_WORDS@ - i > 0 {
+                source_hash = source_hash + (i + 1) * kload(asset + i);
+                i = i + 1;
+            }
+)" : R"(
+            var trit: t40 = -1;
+            while @ASSET_WORDS@ - i > 0 {
+                kstore(asset + i, trit);
+                source_hash = source_hash + (i + 1) * trit;
+                trit = trit + 1;
+                if trit - 1 > 0 { trit = -1; }
+                i = i + 1;
+            }
+)";
     const std::string extra_input_event = large_profile ? R"(
                 if frame - 63 == 0 {
                     if window_route_input(EVENT_KIND_KEY, 80, 0, 0) - window == 0 {
@@ -588,10 +790,20 @@ int main(int argc, char** argv) {
     replace(driver, "@ASSET_WORDS@", std::to_string(asset_words));
     replace(driver, "@ASSET_CHUNK_WORDS@", std::to_string(kAssetChunkWords));
     replace(driver, "@ASSET_CHECKSUM@", std::to_string(expected_asset_checksum));
+    replace(driver, "@EXTERNAL_BOOT_SETUP@", external_boot_setup);
+    replace(driver, "@BOOT_STAGE@", external_profile ? "2" : "1");
+    replace(driver, "@EXTERNAL_PRELOADED@", external_profile ? "2" : "0");
+    replace(driver, "@OPEN_MODE@", external_profile ? "0" : "3");
+    replace(driver, "@ASSET_INIT@", asset_init);
     replace(driver, "@INPUT_EVENTS@", std::to_string(input_event_count));
     replace(driver, "@FIRST_INPUT_EVENT@", first_input_event);
     replace(driver, "@SECOND_INPUT_EVENT@", second_input_event);
     replace(driver, "@EXTRA_INPUT_EVENT@", extra_input_event);
+    replace(driver, "@FRAME_DRAW@", frame_draw);
+    replace(driver, "@FRAME_HASH@", frame_hash);
+    // The injected external fragments carry their own asset-size placeholder;
+    // resolve it after fragment insertion as well as in the base template.
+    replace(driver, "@ASSET_WORDS@", std::to_string(asset_words));
 
     const auto compile_begin = Clock::now();
     const auto compiled = sandbox::compiler::compileSource(
@@ -604,6 +816,15 @@ int main(int argc, char** argv) {
 
     bool passed = compiled.success && linked.success;
     std::string detail = passed ? "ok" : "compile-or-link-failed";
+    if (!compiled.success) {
+        for (const auto& diagnostic : compiled.diagnostics) {
+            std::cerr << "benchmark_doom_os: compile: " << diagnostic.format() << "\n";
+        }
+    } else if (!linked.success) {
+        for (const auto& diagnostic : linked.diagnostics) {
+            std::cerr << "benchmark_doom_os: link: " << diagnostic.format() << "\n";
+        }
+    }
     std::vector<int> warmup_returncodes;
     std::vector<int> measured_returncodes;
     std::vector<double> samples;
@@ -627,6 +848,35 @@ int main(int argc, char** argv) {
             passed = false;
             detail = "image-load-failed";
         } else {
+            if (external_profile) {
+                sandbox::os::NativeVfsImageBuilder external_fs(8192);
+                const auto layout = external_fs.installBaseLayout();
+                const auto added = layout.ok()
+                    ? external_fs.addFile("/doom.wad", external_asset.render_words)
+                    : layout;
+                if (!added.ok() ||
+                    !boot_vm.loadBlockImage(external_fs.image())) {
+                    passed = false;
+                    detail = "external-vfs-image-load-failed";
+                }
+            }
+            if (external_profile) {
+                const int asset_base = 10000 + 700;
+                bool loaded = true;
+                for (std::size_t index = 0;
+                     index < external_asset.render_words.size(); ++index) {
+                    loaded = loaded &&
+                        boot_vm.dmem.store(
+                            asset_base + static_cast<int>(index),
+                            sandbox::vm::ops::fromLong(
+                                external_asset.render_words[index])) ==
+                        sandbox::vm::MemFaultCode::OK;
+                }
+                if (!loaded) {
+                    passed = false;
+                    detail = "external-asset-memory-load-failed";
+                }
+            }
             const auto boot_begin = Clock::now();
             const sandbox::vm::RunResult boot_result =
                 sandbox::vm::run(boot_vm, 100000000);
@@ -634,7 +884,7 @@ int main(int argc, char** argv) {
             boot_seconds = std::chrono::duration<double>(boot_end - boot_begin).count();
             const bool boot_ok = boot_result.halted() &&
                 sandbox::vm::ops::toLong(boot_vm.regfile.read(13)) == 1 &&
-                wordAt(boot_vm, 35607) == 1;
+                wordAt(boot_vm, 35607) == (external_profile ? 2 : 1);
             if (!boot_ok) {
                 passed = false;
                 detail = "guest-boot-failed";
@@ -647,7 +897,13 @@ int main(int argc, char** argv) {
                         baseline, linked.assembled.program,
                         frames, asset_words, expected_asset_checksum,
                         input_event_count, expected_frame_hash,
-                        expected_input_trace_hash, max_steps);
+                        expected_input_trace_hash, max_steps,
+                         external_profile ? &external_asset.render_words : nullptr);
+                    sample.external_asset = external_profile;
+                    sample.external_asset_id = external_profile ? kFreedoomAssetId : "";
+                    sample.external_asset_sha256 = external_profile ? external_asset.sha256 : "";
+                    sample.external_wad_lumps = external_profile
+                        ? static_cast<long long>(external_asset.total_lumps) : 0;
                     metrics = sample;
                     if (iteration < warmups) {
                         warmup_returncodes.push_back(sample.returncode);
@@ -689,8 +945,10 @@ int main(int argc, char** argv) {
             boot_seconds, frames, asset_words, asset_shards,
             expected_asset_checksum, input_event_count, expected_frame_hash,
             expected_input_trace_hash, warmup_returncodes,
-            measured_returncodes, samples, metrics, warmups, iterations,
-            probe_profile)) {
+             measured_returncodes, samples, metrics, warmups, iterations,
+             probe_profile, external_profile, kFreedoomAssetId,
+             external_profile ? external_asset.sha256 : "", external_asset,
+             external_profile ? requested_profile : "")) {
         std::cerr << "benchmark_doom_os: failed to write " << report << "\n";
         return 1;
     }

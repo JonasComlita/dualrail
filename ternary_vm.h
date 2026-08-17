@@ -1072,6 +1072,51 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
     InstructionWord iw =
         VersionedInstructionCodec::decode(
             raw, IsaEncodingVersion::V2);
+    // VCTXSTORE/VCTXLOAD occupy the v3 private escape encoding and therefore
+    // are not part of the legacy InstructionWord opcode table. Decode and
+    // validate them before the v2 RESERVED check so v2 remains fail-closed.
+    const VectorContextInstruction vector_context = decodeVectorContext(raw);
+    if (vector_context.valid) {
+        const std::uint64_t context_feature =
+            featureBit(architecture::v3::FEATURE_VECTOR_CONTEXT);
+        if (vm.executable_version != architecture::v3::EXECUTABLE_VERSION ||
+            vm.privilege != PrivilegeMode::Kernel ||
+            (vm.required_features & context_feature) == 0 ||
+            (vm.supported_features & context_feature) == 0) {
+            vm.trapWithCause(
+                TrapCode::TRAP_ILLEGAL_OP,
+                vm.privilege == PrivilegeMode::Kernel
+                    ? OS_CAUSE_ILLEGAL_INSTRUCTION
+                    : OS_CAUSE_PROTECTION_FAULT,
+                vm.pc);
+            return vm.status;
+        }
+        const TernaryValue address_word =
+            vm.regfile.read(vector_context.context_register);
+        if (!isNumericMode(address_word.mode) || address_word.isInvalid()) {
+            vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                             OS_CAUSE_ILLEGAL_INSTRUCTION, vm.pc);
+            return vm.status;
+        }
+        const long long address = ops::toLong(address_word) +
+            static_cast<long long>(vector_context.offset);
+        if (address < 0 || address > std::numeric_limits<int>::max() ||
+            address % architecture::v2::STACK_ALIGNMENT_WORDS != 0) {
+            vm.trapWithCause(TrapCode::TRAP_MEM_FAULT,
+                             OS_CAUSE_LOAD_FAULT, vm.pc);
+            return vm.status;
+        }
+        const bool ok = vector_context.opcode == Opcode::VCTXSTORE
+            ? vctxstore(vm, vm.dmem, static_cast<int>(address))
+            : vctxload(vm, vm.dmem, static_cast<int>(address));
+        if (!ok) {
+            vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                             OS_CAUSE_ILLEGAL_INSTRUCTION, vm.pc);
+            return vm.status;
+        }
+        vm.completeInstruction(vm.pc + 1);
+        return vm.status;
+    }
     if (record) {
         record->has_instruction = true;
         record->malformed = iw.malformed;
@@ -3531,6 +3576,11 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
         case VMMicroOpcode::Ret:
         case VMMicroOpcode::CallR:
         case VMMicroOpcode::Jmpr:
+            if (op.op == VMMicroOpcode::CallR ||
+                op.op == VMMicroOpcode::Jmpr) {
+                op.guards |= VM_MICRO_GUARD_RS1_NUMERIC;
+            }
+            op.side_exits.push_back(VMMicroSideExit::InvalidOperand);
             op.side_exits.push_back(VMMicroSideExit::BranchLeavesTrace);
             break;
         case VMMicroOpcode::Unsupported:
@@ -3945,8 +3995,11 @@ struct VMNativeRunContext {
         std::uint64_t* dmem_write_generation = nullptr;
         std::uint64_t* dmem_page_generations = nullptr;
         long long dmem_page_count = 0;
+        long long imem_capacity = 0;
         long long privilege = 0;
         long long mmu_enable = 0;
+        long long user_imem_base = 0;
+        long long user_imem_limit = 0;
         long long user_dmem_base = 0;
         long long user_dmem_limit = 0;
         long long atomic_reservation_valid = 0;
@@ -3975,8 +4028,11 @@ nativeX64StateAccess(VMState& vm) {
         dmem.write_generation,
         dmem.page_generations,
         static_cast<long long>(dmem.page_count),
+        static_cast<long long>(vm.imem.size()),
         static_cast<long long>(static_cast<int8_t>(vm.privilege)),
         vm.mmu_enable ? 1LL : 0LL,
+        static_cast<long long>(vm.user_imem_base),
+        static_cast<long long>(vm.user_imem_limit),
         static_cast<long long>(vm.user_dmem_base),
         static_cast<long long>(vm.user_dmem_limit),
         vm.atomic_reservation_valid ? 1LL : 0LL,
@@ -4004,12 +4060,15 @@ struct VMNativeX64Instruction {
     TernaryValue* destination = nullptr;
     const TernaryValue* source = nullptr;
     const TernaryValue* source2 = nullptr;
+    const TernaryValue* control_source = nullptr;
+    const TernaryMode* control_mode = nullptr;
     const TernaryValue* address_source = nullptr;
     const TernaryMode* address_mode = nullptr;
     const TernaryValue* store_source = nullptr;
     int expected_privilege = 0;
     const TernaryMode* destination_previous_mode = nullptr;
     TernaryMode* destination_mode = nullptr;
+    bool static_control_target_validated = false;
     bool ends_trace = false;
 };
 
@@ -4228,8 +4287,17 @@ inline int nativeX64DirectControl(
         }
         case VMMicroOpcode::CallR:
         case VMMicroOpcode::Jmpr: {
-            const int target = exec::pcFromValue(
-                vm.regfile.read(instruction->word.rs1));
+            const TernaryValue target_value =
+                vm.regfile.read(instruction->word.rs1);
+            // The portable CALLR/JMPR path rejects non-numeric and invalid
+            // operands before it can write LR or advance PC.  Keep the
+            // helper fallback equally precise; the native inline path has a
+            // stricter T40/integral guard below.
+            if (!isNumericMode(target_value.mode) || target_value.isInvalid()) {
+                return nativeX64SideExit(
+                    context, instruction, VMNativeX64ExitReason::GuardFailure);
+            }
+            const int target = exec::pcFromValue(target_value);
             if (!vm.validateControlTarget(target)) {
                 return nativeX64SideExit(
                     context, instruction, VMNativeX64ExitReason::GuardFailure);
@@ -4355,12 +4423,17 @@ struct VMNativeX64CodeBlock {
                    instruction.source != nullptr &&
                    instruction.source2 != nullptr;
         case VMMicroOpcode::Jmp:
+            return instruction.branch_target_index >= 0 &&
+                   instruction.branch_target_index < block_length &&
+                   instruction.word.rs_branch < REG_COUNT;
         case VMMicroOpcode::Brn:
         case VMMicroOpcode::Brz:
         case VMMicroOpcode::Brp:
             return instruction.branch_target_index >= 0 &&
-                   instruction.branch_target_index < block_length &&
-                   instruction.word.rs_branch < REG_COUNT;
+                       instruction.branch_target_index < block_length &&
+                       instruction.word.rs_branch < REG_COUNT ||
+                   instruction.static_control_target_validated &&
+                       instruction.word.rs_branch < REG_COUNT;
         case VMMicroOpcode::Add:
         case VMMicroOpcode::Sub:
             return instruction.mode == TernaryMode::T40 &&
@@ -4384,8 +4457,19 @@ struct VMNativeX64CodeBlock {
                    instruction.destination_mode != nullptr &&
                    instruction.destination_previous_mode != nullptr;
         case VMMicroOpcode::Ret:
-        case VMMicroOpcode::CallR:
         case VMMicroOpcode::Jmpr:
+            // Dynamic control is inline-capable when the source and its
+            // non-architectural view tag are available.  Runtime guards
+            // below restrict the actual fast path to a valid integral T40;
+            // failures return to the portable instruction without mutation.
+            return instruction.control_source != nullptr &&
+                   instruction.control_mode != nullptr;
+        case VMMicroOpcode::CallR:
+            return instruction.control_source != nullptr &&
+                   instruction.control_mode != nullptr &&
+                   instruction.destination != nullptr &&
+                   instruction.destination_mode != nullptr &&
+                   instruction.destination_previous_mode != nullptr;
         case VMMicroOpcode::MovH:
         case VMMicroOpcode::Unsupported:
             return false;
@@ -4603,6 +4687,49 @@ struct VMNativeX64Emitter {
             static_cast<std::uint32_t>(
                 offsetof(VMNativeRunContext, direct_executed)),
             1);
+    }
+    void commitDynamicControl() {
+        // RET/CALLR/JMPR leave their validated target in RAX.  The target is
+        // already a signed, non-negative int-sized value, so commit it
+        // directly and leave the trace.  No architectural state is touched
+        // before all operand, range, privilege, and LR-pair guards pass.
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, pc)));
+        movMemDispReg(11, 0, 0);
+        movMemDispReg(
+            12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, next_pc)),
+            0);
+        movRegMemDisp(
+            11, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, cycle_count)));
+        addMemDispImm8(11, 0, 1);
+        addMemDispImm8(
+            12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, executed)),
+            1);
+        addMemDispImm8(
+            12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, direct_executed)),
+            1);
+        movImm64(
+            10,
+            static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(
+                    VMNativeX64ExitReason::BranchExit)));
+        movMemDispReg(
+            12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, exit_reason)),
+            10);
     }
     void movByteMemImm(
         std::uint8_t base, std::uint32_t displacement, std::uint8_t value) {
@@ -5094,6 +5221,93 @@ struct VMNativeX64Emitter {
         patchRelative(zero_jump, zero_label);
         patchRelative(skip_zero, end);
     }
+    void emitDynamicControlGuards(
+        const VMNativeX64Instruction& instruction,
+        std::vector<std::size_t>& guard_jumps) {
+        // The portable interpreter accepts several numeric widths, but the
+        // native control lowering is deliberately narrower: only the
+        // canonical T40 view with an exactly integral, valid payload may
+        // commit in generated code.  The view guard is separate from the
+        // physical TernaryValue guard because RegFile stores a canonical T40
+        // word while preserving a non-architectural width tag.
+        movRegMemDisp(
+            0, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, privilege)));
+        movImm64(
+            10,
+            static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(instruction.expected_privilege)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x85)); // jne
+
+        emitGuardT40Mode(instruction.control_mode, guard_jumps);
+        emitLoadT40Integer(instruction.control_source, guard_jumps);
+
+        // The decoder returns a signed int-sized architectural PC.  Reject
+        // negative and >INT_MAX values before any LR or PC mutation.
+        movImm64(10, 0);
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x8C)); // jl
+        movImm64(
+            10,
+            static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(std::numeric_limits<int>::max())));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x8F)); // jg
+
+        if (instruction.expected_privilege ==
+            static_cast<int>(static_cast<int8_t>(PrivilegeMode::Kernel))) {
+            movRegMemDisp(
+                10, 12,
+                static_cast<std::uint32_t>(
+                    offsetof(VMNativeRunContext, state) +
+                    offsetof(VMNativeRunContext::StateAccess,
+                             imem_capacity)));
+            cmpRegReg(0, 10);
+            guard_jumps.push_back(jccRel32(0x8D)); // jge
+            return;
+        }
+
+        // validateControlTarget() intentionally permits every non-negative
+        // virtual target while user MMU translation is enabled; the next
+        // portable fetch owns page-table and execute-permission faults.
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess, mmu_enable)));
+        testRegReg(10, 10);
+        const std::size_t mmu_enabled_jump = jccRel32(0x85); // jne
+
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess,
+                         imem_capacity)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x8D)); // jge
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess,
+                         user_imem_base)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x8C)); // jl
+        movRegMemDisp(
+            10, 12,
+            static_cast<std::uint32_t>(
+                offsetof(VMNativeRunContext, state) +
+                offsetof(VMNativeRunContext::StateAccess,
+                         user_imem_limit)));
+        cmpRegReg(0, 10);
+        guard_jumps.push_back(jccRel32(0x8D)); // jge
+
+        patchRelative(mmu_enabled_jump, code.size());
+    }
     void emitEncodeT40Integer(std::vector<std::size_t>& guard_jumps) {
         const std::uint64_t kPow3Mantissa =
             native_ops::detail::pow3(33).toUint64();
@@ -5283,16 +5497,42 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     &vm.regfile.view_mode[instruction.word.rd - 1];
             }
         }
-        if (instruction.op == VMMicroOpcode::Call) {
-            // CALL's B-type encoding does not carry an architectural `rd`,
-            // but its link-register write still has ordinary RegFile::write
-            // pair invalidation semantics.  Point the native lowering at LR
-            // explicitly so the same destination-pair guard can protect it.
+        if (instruction.op == VMMicroOpcode::Call ||
+            instruction.op == VMMicroOpcode::CallR) {
+            // CALL's B-type encoding and CALLR's indirect target encoding do
+            // not carry an architectural `rd`, but both link-register writes
+            // still have ordinary RegFile::write pair invalidation semantics.
+            // Point the native lowering at LR explicitly so the same
+            // destination-pair guard can protect both forms.
             instruction.destination = &vm.regfile.reg[R25_LR];
             instruction.destination_mode =
                 &vm.regfile.view_mode[R25_LR];
             instruction.destination_previous_mode =
                 &vm.regfile.view_mode[R25_LR - 1];
+        }
+        if (instruction.op == VMMicroOpcode::Ret) {
+            instruction.control_source = &vm.regfile.reg[R25_LR];
+            instruction.control_mode = &vm.regfile.view_mode[R25_LR];
+        } else if ((instruction.op == VMMicroOpcode::CallR ||
+                    instruction.op == VMMicroOpcode::Jmpr) &&
+                   instruction.word.rs1 < REG_COUNT) {
+            instruction.control_source =
+                &vm.regfile.reg[instruction.word.rs1];
+            instruction.control_mode =
+                &vm.regfile.view_mode[instruction.word.rs1];
+        }
+        if ((instruction.op == VMMicroOpcode::Brn ||
+             instruction.op == VMMicroOpcode::Brz ||
+             instruction.op == VMMicroOpcode::Brp) &&
+            instruction.branch_target != -1) {
+            // The emitter has a direct external-target branch commit, but it
+            // must only be used after the same static privilege/range check
+            // as the portable dispatcher.  User/MMU targets remain virtual;
+            // the subsequent fetch owns page-table and execute permission
+            // faults.  Mapping fields are part of the trace cache key, so a
+            // later range change cannot reuse this classification.
+            instruction.static_control_target_validated =
+                vm.validateControlTarget(instruction.branch_target);
         }
         if (instruction.op == VMMicroOpcode::Copy &&
             instruction.word.rs1 != R0_ZERO &&
@@ -5743,14 +5983,6 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
             case VMMicroOpcode::Brn:
             case VMMicroOpcode::Brz:
             case VMMicroOpcode::Brp: {
-                if (instruction.branch_target_index < 0 ||
-                    instruction.branch_target_index >=
-                        static_cast<int>(block->lowered.size())) {
-                    emitter.callHelper(
-                        reinterpret_cast<const void*>(&nativeX64DirectControl),
-                        &instruction);
-                    break;
-                }
                 emitter.budgetGuard();
                 if (instruction.word.rs_branch >= REG_COUNT) {
                     emitter.callHelper(
@@ -5892,11 +6124,52 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
             }
             case VMMicroOpcode::Ret:
             case VMMicroOpcode::CallR:
-            case VMMicroOpcode::Jmpr:
-                emitter.callHelper(
-                    reinterpret_cast<const void*>(&nativeX64DirectControl),
-                    &instruction);
+            case VMMicroOpcode::Jmpr: {
+                if (!nativeX64InstructionIsDirect(
+                        instruction, block->lowered.size())) {
+                    emitter.callHelper(
+                        reinterpret_cast<const void*>(&nativeX64DirectControl),
+                        &instruction);
+                    break;
+                }
+                emitter.budgetGuard();
+                std::vector<std::size_t> guard_jumps;
+                if (instruction.op == VMMicroOpcode::CallR) {
+                    // Guard the LR destination before loading the dynamic
+                    // source: CALLR may alias its target with LR, and the
+                    // write must preserve RegFile's wide-pair invalidation
+                    // contract without touching the target first.
+                    emitter.emitGuardDestinationPair(
+                        instruction.destination_mode,
+                        instruction.destination_previous_mode,
+                        guard_jumps);
+                }
+                emitter.emitDynamicControlGuards(instruction, guard_jumps);
+                if (instruction.op == VMMicroOpcode::CallR) {
+                    // CALLR writes a new LR after reading the target.  Keep
+                    // the validated target away from the return-PC encoder,
+                    // which uses RAX/RDX for the value being stored.
+                    emitter.movRegReg(8, 0);
+                    const TernaryValue return_pc = ops::fromLong(
+                        static_cast<long long>(instruction.pc) + 1);
+                    emitter.movImm64(0, return_pc.bits.lo);
+                    emitter.movImm64(2, return_pc.bits.hi);
+                    emitter.emitStoreT40Result(
+                        instruction.destination,
+                        instruction.destination_mode);
+                    emitter.movRegReg(0, 8);
+                }
+                emitter.commitDynamicControl();
+                const std::size_t branch_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(branch_exit);
+                const std::size_t guard_offset = emitter.code.size();
+                emitter.emitGuardFailure(instruction.pc);
+                const std::size_t guard_exit = emitter.jmpRel32();
+                emitter.exit_jumps.push_back(guard_exit);
+                for (const std::size_t jump : guard_jumps)
+                    emitter.patchRelative(jump, guard_offset);
                 break;
+            }
             case VMMicroOpcode::MovH:
             case VMMicroOpcode::Unsupported:
                 return {};

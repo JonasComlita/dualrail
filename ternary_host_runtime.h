@@ -96,6 +96,15 @@ struct TosRuntimeConfig {
     bool start_paused = false;
     bool debug_overlay = false;
     bool record_syscall_trace = false;
+#if defined(_M_X64) || defined(__x86_64__)
+    // The accepted NativeX64Jit path is the host-runtime default on x86-64.
+    // Callers on any host can still select a portable backend explicitly.
+    vm::VMExecutionBackend execution_backend =
+        vm::VMExecutionBackend::NativeX64Jit;
+#else
+    vm::VMExecutionBackend execution_backend =
+        vm::VMExecutionBackend::CachedBlockInterpreter;
+#endif
 };
 
 enum class TosFramebufferMode {
@@ -1432,7 +1441,7 @@ constexpr int kInputLastMouseBtnAddr = 3031;
 constexpr int kInputLastMouseXAddr = 3034;
 constexpr int kInputLastMouseYAddr = 3035;
 constexpr int kProcessMax = 100;
-constexpr int kProcessRowWords = 8;
+constexpr int kProcessRowWords = 9;
 constexpr int kProcPid = 0;
 constexpr int kProcNamespace = 1;
 constexpr int kProcState = 2;
@@ -1441,6 +1450,7 @@ constexpr int kProcQuota = 4;
 constexpr int kProcContext = 5;
 constexpr int kProcWaitChannel = 6;
 constexpr int kProcVersion = 7;
+constexpr int kProcVectorContext = 8;
 constexpr int kProcRunnable = 1;
 constexpr int kProcRunning = 2;
 constexpr int kProcBlocked = 3;
@@ -1727,10 +1737,22 @@ inline bool writeSparseDiskFile(const std::string& path,
         detail::appendPod<std::int32_t>(records, block);
         const int base = block * vm::STORAGE_BLOCK_WORDS;
         for (int word = 0; word < vm::STORAGE_BLOCK_WORDS; ++word) {
-            const std::uint64_t raw = vm::convertValue(
-                vm::ops::fromLong(
-                    block_image[static_cast<std::size_t>(base + word)]),
-                TernaryMode::T40).asTriple().data;
+            const long long value =
+                block_image[static_cast<std::size_t>(base + word)];
+            constexpr std::uint64_t kTritWord27Mask =
+                (std::uint64_t{1} << 54) - 1;
+            const bool executable_text =
+                block >= vm::TDISK_EXECUTABLE_TEXT_FIRST_BLOCK;
+            if (executable_text &&
+                (value < 0 || static_cast<std::uint64_t>(value) > kTritWord27Mask)) {
+                detail::setError(error, "executable text block contains invalid TritWord27 bits");
+                return false;
+            }
+            const std::uint64_t raw = executable_text
+                ? static_cast<std::uint64_t>(value)
+                : vm::convertValue(
+                      vm::ops::fromLong(value),
+                      TernaryMode::T40).asTriple().data;
             detail::appendPod<std::uint64_t>(records, raw);
         }
     }
@@ -1960,6 +1982,7 @@ public:
         if (!config_.profile_name.empty()) image.manifest.profile_name = config_.profile_name;
         vm::ProductionProfile profile = profileForManifest(image.manifest);
         auto machine = std::make_unique<vm::VMState>(profile);
+        machine->setExecutionBackend(config_.execution_backend);
         if (!loadBootImageIntoVm(*machine, image, config_.disk_path, error)) return false;
 
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1983,6 +2006,7 @@ public:
         if (!validateBootImage(image, error)) return false;
         vm::ProductionProfile profile = profileForManifest(image.manifest);
         auto machine = std::make_unique<vm::VMState>(profile);
+        machine->setExecutionBackend(config_.execution_backend);
         if (!loadBootImageIntoVm(*machine, image, config_.disk_path, error)) return false;
 
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2101,6 +2125,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
         machine_->enqueueConsoleInput(word);
+        machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
             static_cast<std::uint64_t>(std::max<long long>(
@@ -2118,6 +2143,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
         machine_->enqueueConsoleAscii(text);
+        machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
             static_cast<std::uint64_t>(std::max<long long>(
@@ -2140,6 +2166,7 @@ public:
         machine_->mouse_x = x;
         machine_->mouse_y = y;
         machine_->mouse_btn = buttons;
+        machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
             static_cast<std::uint64_t>(std::max<long long>(
@@ -3055,14 +3082,17 @@ private:
         switch (event.kind) {
             case TosInputEventKind::KeyboardWord:
                 machine_->enqueueConsoleInput(event.value0);
+                machine_->resumeFromEvent();
                 break;
             case TosInputEventKind::Text:
                 machine_->enqueueConsoleAscii(event.text);
+                machine_->resumeFromEvent();
                 break;
             case TosInputEventKind::Mouse:
                 machine_->mouse_x = event.value0;
                 machine_->mouse_y = event.value1;
                 machine_->mouse_btn = event.value2;
+                machine_->resumeFromEvent();
                 break;
         }
     }

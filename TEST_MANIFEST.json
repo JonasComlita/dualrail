@@ -23,7 +23,8 @@
         "test_ternary_lanes",
         "test_native_ops",
         "test_numeric_workloads",
-        "test_encrypted_volume"
+        "test_encrypted_volume",
+        "test_encrypted_volume_parser"
       ]
     },
     {
@@ -32,6 +33,7 @@
       "targets": [
         "test_phase7_compiler",
         "test_compiler_abi_contract",
+        "test_executable_abi_v3",
         "test_compiler_corpus_gate",
         "test_tcl_asm",
         "test_malloc_micro",
@@ -128,6 +130,23 @@
       ]
     },
     {
+      "name": "native_jit_acceptance",
+      "description": "Controlled-host NativeX64Jit timing, fingerprint, and direct-control acceptance evidence.",
+      "targets": [
+        "test_execution_backends_benchmark"
+      ],
+      "manual": true,
+      "status": "accepted",
+      "commands": [
+        "python tools/trit_tool.py bench native-jit --controlled --archive-if-passed"
+      ],
+      "docs": [
+        "docs/03_Execution_Engine/decoded_trace_and_native_jit.md",
+        "tools/collect_native_x64_jit_acceptance.py"
+      ],
+      "acceptance_evidence": "build/native-x64-jit-acceptance/native_x64_jit_acceptance.v1.json"
+    },
+    {
       "name": "system_benchmarks",
       "description": "Deterministic manual OS portfolio workloads for Doom-class interactivity and BitNet-style inference.",
       "targets": [
@@ -153,15 +172,57 @@
       ]
     },
     {
+      "name": "external_system_benchmarks",
+      "description": "Manual, cache-backed real Freedoom and official BitNet acceptance profiles.",
+      "targets": [],
+      "ctest_tests": [
+        "test_external_benchmark_assets",
+        "test_bitnet_external_execution"
+      ],
+      "manual": true,
+      "status": "accepted_local_cache",
+      "commands": [
+      "python tools/import_external_benchmark_assets.py validate",
+      "python tools/import_external_benchmark_assets.py cache --asset-id doom-freedoom-0.13.0",
+      "python tools/import_external_benchmark_assets.py cache --asset-id bitnet-b1.58-2B-4T-safetensors",
+      "python tools/import_external_benchmark_assets.py cache --asset-id bitnet-b1.58-2B-4T-gguf",
+      "$env:TRIT_BENCH_PROBE='1'; $env:TRIT_DOOM_PROFILE='freedoom-slice'; build/benchmark_doom_os.exe build/external-freedoom-slice.json",
+      "$env:TRIT_BENCH_PROBE='1'; $env:TRIT_DOOM_PROFILE='freedoom-full'; build/benchmark_doom_os.exe build/external-freedoom-full.json",
+      "$env:TRIT_BITNET_CONVERTED_DIR='build/external-assets/bitnet-b1.58-2B-4T-safetensors/converted-official-slice'; $env:TRIT_BITNET_INPUT_TOKEN_IDS='128000,791,7438,315,2324,374'; $env:TRIT_BITNET_GUEST_EXECUTOR='build/bitnet_guest_executor.exe'; $env:TRIT_BITNET_PROFILE='official-slice'; $env:TRIT_BITNET_FORMAT='safetensors'; build/benchmark_bitnet_os.exe build/external-bitnet-slice.json",
+      "$env:TRIT_BITNET_CONVERTED_DIR='build/external-assets/bitnet-b1.58-2B-4T-safetensors/converted-official-full'; $env:TRIT_BITNET_REFERENCE_EVIDENCE='build/external-assets/bitnet-b1.58-2B-4T-safetensors/derived-reference/reference.v1.json'; $env:TRIT_BITNET_GUEST_EXECUTOR='build/bitnet_guest_executor.exe'; $env:TRIT_BITNET_PROFILE='official-full'; $env:TRIT_BITNET_FORMAT='safetensors'; build/benchmark_bitnet_os.exe build/external-bitnet-full.json"
+      ],
+      "docs": [
+        "docs/10_Benchmarks/external_assets.md",
+        "docs/10_Benchmarks/doom.md",
+        "docs/10_Benchmarks/bitnet.md",
+        "benchmarks/assets/external_assets.v1.json"
+      ],
+      "acceptance_evidence": [
+        "build/external-freedoom-slice.json",
+        "build/external-freedoom-full.json",
+        "build/external-bitnet-slice.json",
+        "build/external-bitnet-full.json",
+        "build/external-assets/bitnet-b1.58-2B-4T-safetensors/derived-reference/reference.v1.json"
+      ]
+    },
+    {
       "name": "symbolic_encodings",
       "description": "ASCII/UTF-8 compatibility, fixed TASCII-81, exact trits, and compact base-27/base-81 notation.",
       "targets": [
         "test_symbolic_encodings",
         "test_tcl_asm"
       ],
-      "status": "active",
+      "ctest_tests": [
+        "test_symbolic_guest",
+        "test_symbolic_diagnostics"
+      ],
+      "status": "verified",
       "docs": [
         "docs/04_Binary_Contract/symbolic_encodings.md"
+      ],
+      "acceptance_evidence": [
+        "tests/test_symbolic_guest.py",
+        "tests/test_symbolic_diagnostics.py"
       ]
     },
     {

@@ -46,6 +46,25 @@
       6
     ]
   },
+  "abi_v3": {
+    "executable_version": 3,
+    "function_abi_version": 3,
+    "vector_abi_version": 1,
+    "syscall_abi_version": 2,
+    "vector_length": 27,
+    "vector_register_count": 8,
+    "vector_context_words": 279,
+    "vector_spill_words": 27,
+    "vector_stack_slot_alignment": 9,
+    "vector_stack_slot_words": 27,
+    "vector_argument_registers": [0, 1, 2, 3],
+    "vector_return_register": 0,
+    "vector_temporary_registers": [4, 5, 6, 7],
+    "vector_registers_caller_saved": true,
+    "vector_accumulator_caller_saved": true,
+    "vector_lane_fault_state_caller_saved": true,
+    "vlen_callee_preserved": true
+  },
   "executable_header_v2": {
     "words": 15,
     "fields": [
@@ -65,6 +84,39 @@
       "flags",
       "header_checksum"
     ]
+  },
+  "executable_header_v3": {
+    "words": 20,
+    "fields": [
+      "magic",
+      "executable_version",
+      "function_abi_version",
+      "header_words",
+      "isa_version",
+      "required_features",
+      "entry_pc",
+      "text_words",
+      "data_words",
+      "stack_words",
+      "syscall_abi_version",
+      "scalar_word_trits",
+      "base_page_words",
+      "flags",
+      "header_checksum",
+      "vector_register_count",
+      "vector_lane_count",
+      "vector_lane_word_trits",
+      "vector_context_words",
+      "vector_spill_words"
+    ],
+    "fixed_geometry": {
+      "vector_abi_version": 1,
+      "vector_register_count": 8,
+      "vector_lane_count": 27,
+      "vector_lane_word_trits": 40,
+      "vector_context_words": 279,
+      "vector_spill_words": 27
+    }
   },
   "isa": {
     "escape_opcode": 80,

@@ -83,6 +83,16 @@ struct CompilerOptions {
     bool allow_ast_replay = false;
     bool debug_bounds_checks = false;
     bool dump_pass_pipeline = false;
+    // v3 vector boundaries are opt-in.  The fixed profile is deliberately
+    // tied to the VM's 8x27 geometry; enabling spilling gives each vector
+    // value one 27-word stack slot instead of silently using scalar spacing.
+    // Keep these fields last so older aggregate initialization remains valid.
+    bool enable_vector_abi = false;
+    bool enable_vector_spilling = false;
+    int vector_length = architecture::v3::VECTOR_LANE_COUNT;
+    // The executable envelope is independently selected. v3 vector
+    // boundaries require the v3 header profile as well as function ABI v3.
+    int target_executable_version = architecture::v2::EXECUTABLE_VERSION;
 };
 
 // The compiler-facing function ABI is deliberately narrower than the full
@@ -91,9 +101,10 @@ struct CompilerOptions {
 // growing emitter-local conventions. ABI v2 supports scalar/T50 values and
 // one-word caller-owned pointers for aggregate parameters. ABI v3 is an
 // opt-in compiler function profile: aggregate returns use a hidden
-// caller-owned sret pointer in the first ABI word. The executable envelope
-// remains the v2 image format until its header/kernel contract grows a
-// corresponding version.
+// caller-owned sret pointer in the first ABI word, and vector boundaries use
+// the fixed v3 register/stack contract. Image emission remains an explicit
+// linker/image-owner decision; a compiler-only v3 function profile must not
+// silently be treated as a v3 executable.
 struct FunctionAbiContract {
     static constexpr int version_v2 = architecture::v2::FUNCTION_ABI_VERSION;
     static constexpr int version_v3 = version_v2 + 1;
@@ -129,12 +140,29 @@ struct FunctionAbiContract {
     }
     [[nodiscard]] static constexpr const char* vectorBoundaryForVersion(
         int candidate) {
-        // v3 reserves a named boundary profile, but vector execution is still
-        // fail-closed until VM/vector-state ownership and spill encoding are
-        // implemented outside this compiler layer.
         return candidate == version_v3
-            ? "unsupported-vm-vector-register-boundary"
+            ? vectorBoundaryOptIn()
             : "unsupported";
+    }
+    [[nodiscard]] static constexpr const char* vectorBoundaryOptIn() {
+        return "v3.fixed-vlen27.v0-v3.args-v0.return";
+    }
+    [[nodiscard]] static constexpr const char* vectorSpillOptIn() {
+        return "v3.vector-spill.27-words";
+    }
+    [[nodiscard]] static constexpr const char* vectorBoundaryForVersion(
+        int candidate,
+        bool enabled) {
+        return candidate == version_v3 && enabled
+            ? vectorBoundaryOptIn()
+            : vectorBoundaryForVersion(candidate);
+    }
+    [[nodiscard]] static constexpr bool vectorBoundarySupported(
+        int candidate,
+        bool enabled,
+        int vector_length = architecture::v3::VECTOR_LANE_COUNT) {
+        return candidate == version_v3 && enabled &&
+               vector_length == architecture::v3::VECTOR_LANE_COUNT;
     }
     [[nodiscard]] static constexpr bool aggregateReturnsSupported(int candidate) {
         return candidate == version_v3;
@@ -355,6 +383,13 @@ struct TypeRef {
     return type.kind == TypeKind::Numeric || type.kind == TypeKind::Trit;
 }
 
+[[nodiscard]] inline bool isVectorLike(const TypeRef& type) {
+    return type.kind == TypeKind::Vector && type.element &&
+           (type.element->kind == TypeKind::Numeric ||
+            type.element->kind == TypeKind::Lane ||
+            type.element->kind == TypeKind::Trit);
+}
+
 [[nodiscard]] inline bool isOwnershipWrapper(const TypeRef& type) {
     return type.kind == TypeKind::Owned ||
            type.kind == TypeKind::Borrow ||
@@ -417,6 +452,14 @@ struct TypeRef {
 
 [[nodiscard]] inline bool canWiden(const TypeRef& from, const TypeRef& to) {
     if (from.kind == TypeKind::Unknown || to.kind == TypeKind::Unknown) return true;
+    // The v3 vector ISA has no implicit vector element-width conversion in
+    // the source compiler.  Keep vector boundaries exact until an explicit
+    // vector-conversion instruction is added; this also prevents a scalar
+    // widening rule from silently changing a 27-lane value's ABI class.
+    if (from.kind == TypeKind::Vector || to.kind == TypeKind::Vector) {
+        return from.kind == TypeKind::Vector && to.kind == TypeKind::Vector &&
+               sameType(from, to);
+    }
     if (from.kind == TypeKind::Shared && to.kind == TypeKind::Shared) {
         if (from.element && to.element) {
             return canWiden(*from.element, *to.element);
@@ -439,6 +482,9 @@ struct TypeRef {
 }
 
 [[nodiscard]] inline TypeRef commonNumericType(const TypeRef& a, const TypeRef& b) {
+    if (a.kind == TypeKind::Unknown && isVectorLike(b)) return b;
+    if (b.kind == TypeKind::Unknown && isVectorLike(a)) return a;
+    if (isVectorLike(a) && isVectorLike(b) && sameType(a, b)) return a;
     if (a.kind == TypeKind::Unknown && (b.kind == TypeKind::Numeric || b.kind == TypeKind::Trit)) return b;
     if (b.kind == TypeKind::Unknown && (a.kind == TypeKind::Numeric || a.kind == TypeKind::Trit)) return a;
     bool isANum = (a.kind == TypeKind::Numeric || a.kind == TypeKind::Trit);
@@ -597,6 +643,11 @@ inline bool unify(TypeRef left,
     if (left.kind == TypeKind::Numeric && right.kind == TypeKind::Numeric) {
         subst.last_numeric_widening = commonNumericType(left, right);
         return true;
+    }
+    if (left.kind == TypeKind::Vector || right.kind == TypeKind::Vector) {
+        diagnostics.push_back({DiagnosticSeverity::Error,
+            reason + ": expected " + right.str() + ", found " + left.str(), span});
+        return false;
     }
     if (left.kind == right.kind && left.kind == TypeKind::Pointer &&
         left.element && right.element &&

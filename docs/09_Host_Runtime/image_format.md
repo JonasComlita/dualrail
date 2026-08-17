@@ -39,7 +39,7 @@ Version 3 payload fields are serialized in this order:
 | `required_features` | `uint64` | Required v2 feature bits |
 | `scalar_word_trits` | `int32` | Must be 40 |
 | `base_page_words` | `int32` | Must be 729 |
-| `function_abi_version` | `int32` | Must be 2 |
+| `function_abi_version` | `int32` | Executable function ABI, currently 2 or 3 |
 | `syscall_abi_version` | `int32` | Must be 2 |
 | `section_count` | `uint32` | Number of section table entries |
 | `sections` | `TosImageSection[]` | Kernel and app section metadata |
@@ -80,10 +80,16 @@ plain `std::string` byte sequences.
 | `stack_words` | `int32` | Stack hint chosen by the builder/linker |
 | `isa_version` | `int32` | Must be ISA v2 |
 | `required_features` | `uint64` | Required v2 feature bits |
-| `function_abi_version` | `int32` | Must be 2 |
+| `function_abi_version` | `int32` | Executable function ABI, currently 2 or 3 |
 | `syscall_abi_version` | `int32` | Must be 2 |
 
-Version 3 images do not embed mutable root filesystem state. That data is
+Version 3 images do not embed mutable root filesystem state. The release
+builder emits executable ABI v3 app descriptors by default; setting
+`TRIT_BUNDLED_APP_FUNCTION_ABI=2` or passing `--function-abi 2` explicitly
+produces a compatibility image.
+Both executable descriptor versions remain readable by the host loader. The
+image payload itself remains version 3 and does not embed mutable root
+filesystem state. That data is
 written as the companion `.tdisk` artifact. Legacy v1/v2 images may contain an
 embedded rootfs word array, but only the offline migrator reads that field.
 
@@ -107,7 +113,15 @@ Each block record is:
 | Field | Type | Notes |
 | --- | --- | --- |
 | `block_index` | `int32` | Guest block number |
-| `words` | `uint64[27]` | One block of canonical raw T40 words |
+| `words` | `uint64[27]` | Canonical raw T40 words for ordinary blocks; direct `TritWord27.bits` for bundled executable-text blocks |
+
+The native VFS reserves blocks `0..8042` for ordinary numeric metadata and
+payload data. Blocks `8043` and above hold bundled executable text, whose
+values are 27-trit instruction bit patterns rather than numeric T40 values;
+the writer and reader preserve those low-54-bit patterns exactly. Values
+outside the valid `TritWord27` range are rejected. This distinction is part of
+the v2 tDisk contract and prevents instruction words from losing a bit during
+numeric conversion.
 
 `writeSparseDiskFile()` writes a compact seed image by scanning a full rootfs
 word vector and emitting only blocks that contain at least one nonzero word.

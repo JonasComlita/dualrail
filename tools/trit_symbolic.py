@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import Iterable
 
+INT64_MIN = -(1 << 63)
+INT64_MAX = (1 << 63) - 1
+
 TASCII81_TABLE = (
     " \t\n\"',.:;!-_+=/[]{}"
     "0123456789"
@@ -37,7 +40,7 @@ def ascii_to_tascii81(value: str) -> list[int]:
 def tascii81_to_ascii(values: Iterable[int]) -> str:
     chars: list[str] = []
     for value in values:
-        if not isinstance(value, int) or not 0 <= value < len(TASCII81_TABLE):
+        if type(value) is not int or not 0 <= value < len(TASCII81_TABLE):
             raise ValueError("invalid TASCII-81 symbol index")
         chars.append(TASCII81_TABLE[value])
     return "".join(chars)
@@ -62,7 +65,7 @@ def utf8_to_codepoints(value: str | bytes) -> list[int]:
 def codepoints_to_utf8(values: Iterable[int]) -> bytes:
     chars: list[str] = []
     for value in values:
-        if not isinstance(value, int) or not 0 <= value <= 0x10FFFF:
+        if type(value) is not int or not 0 <= value <= 0x10FFFF:
             raise ValueError("invalid Unicode scalar value")
         if 0xD800 <= value <= 0xDFFF:
             raise ValueError("surrogate code point is not valid UTF-8")
@@ -80,10 +83,13 @@ def hex_decode(value: str) -> bytes:
     text = value[2:] if value.startswith(("0x", "0X")) else value
     if len(text) % 2:
         raise ValueError("hex string has odd length")
-    try:
-        return bytes.fromhex(text)
-    except ValueError as exc:
-        raise ValueError("invalid hex digit") from exc
+    digits = "0123456789abcdefABCDEF"
+    if any(char not in digits for char in text):
+        raise ValueError("invalid hex digit")
+    return bytes(
+        (int(text[index], 16) << 4) | int(text[index + 1], 16)
+        for index in range(0, len(text), 2)
+    )
 
 
 def balanced_trits(value: int, minimum_width: int = 1) -> list[int]:
@@ -173,6 +179,29 @@ def _decode_grouped(value: str, alphabet: str, width: int, prefix: str) -> list[
     return out
 
 
+def _parse_grouped_checked(
+    value: str,
+    alphabet: str,
+    width: int,
+    prefix: str,
+) -> int | None:
+    if not value.startswith(prefix) or len(value) == len(prefix):
+        return None
+    result = 0
+    for char in value[len(prefix) :]:
+        try:
+            digit = alphabet.index(char)
+        except ValueError:
+            return None
+        for shift in range(width - 1, -1, -1):
+            power = 3**shift
+            ordinary, digit = divmod(digit, power)
+            result = result * 3 + ordinary - 1
+            if not INT64_MIN <= result <= INT64_MAX:
+                return None
+    return result
+
+
 def format_base27(value: int | Iterable[int]) -> str:
     trits = balanced_trits(value) if isinstance(value, int) else list(value)
     return _encode_grouped(trits, BASE27_ALPHABET, 3, "0z27:")
@@ -205,26 +234,36 @@ def looks_like_numeric_literal(value: str) -> bool:
 
 
 def parse_numeric_literal(value: str) -> int | None:
-    try:
-        if is_trit_literal(value):
-            return trits_to_int(parse_trit_literal(value))
-        if value.startswith("0z27:"):
-            return trits_to_int(parse_base27(value))
-        if value.startswith("0z81:"):
-            return trits_to_int(parse_base81(value))
-        sign = -1 if value.startswith("-") else 1
-        unsigned = value[1:] if value[:1] in "+-" else value
-        base = 16 if unsigned.startswith(("0x", "0X")) else 10
-        if base == 16:
-            unsigned = unsigned[2:]
-            if not unsigned:
+    if is_trit_literal(value):
+        result = 0
+        for trit in parse_trit_literal(value):
+            result = result * 3 + trit
+            if not INT64_MIN <= result <= INT64_MAX:
                 return None
-        allowed = "0123456789abcdefABCDEF" if base == 16 else "0123456789"
-        if not unsigned or any(char not in allowed for char in unsigned):
-            return None
-        return sign * int(unsigned, base)
-    except (ValueError, OverflowError):
+        return result
+    if value.startswith("0z27:"):
+        return _parse_grouped_checked(value, BASE27_ALPHABET, 3, "0z27:")
+    if value.startswith("0z81:"):
+        return _parse_grouped_checked(value, BASE81_ALPHABET, 4, "0z81:")
+
+    negative = value.startswith("-")
+    unsigned = value[1:] if value[:1] in "+-" else value
+    base = 16 if unsigned.startswith(("0x", "0X")) else 10
+    if base == 16:
+        unsigned = unsigned[2:]
+    if not unsigned:
         return None
+    allowed = "0123456789abcdefABCDEF" if base == 16 else "0123456789"
+    if any(char not in allowed for char in unsigned):
+        return None
+    limit = (1 << 63) if negative else INT64_MAX
+    magnitude = 0
+    for char in unsigned:
+        digit = int(char, base)
+        if magnitude > (limit - digit) // base:
+            return None
+        magnitude = magnitude * base + digit
+    return -magnitude if negative else magnitude
 
 
 def format_integer_dump(value: int) -> str:

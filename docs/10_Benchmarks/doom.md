@@ -33,6 +33,24 @@ timers, asset loading, memory allocation, and diagnostics.
 6. **Implemented:** the manual CMake/manifest target emits
    `build/benchmarks/doom-os.json`.
 
+## External Freedoom profiles
+
+The normal synthetic workload remains the offline default. External profiles
+are explicit opt-ins and use the ignored cache rooted at
+`build/external-assets` (or `TRIT_EXTERNAL_ASSET_ROOT`). The provenance lock in
+`benchmarks/assets/external_assets.v1.json` is authoritative; local presence is
+recorded separately in `inventory.v1.json`. Acquisition streams to a partial
+file, verifies the pinned size and SHA-256, and promotes atomically. Validation
+never downloads and a missing cache is a skip/non-pass, never synthetic
+fallback.
+
+The profiles are `freedoom-slice` (seven deterministic E1M1 frames over the
+streamed map geometry) and `freedoom-full` (27 deterministic frames over the
+same closure). Both validate the locked IWAD, stream the E1M1 lump closure,
+project VERTEXES/LINEDEFS/THINGS into a fixed 27x27 ternary framebuffer, and
+record closure and render hashes. They remain manual external evidence and do
+not alter the synthetic offline default.
+
 ## Correctness Checks
 
 - deterministic startup state
