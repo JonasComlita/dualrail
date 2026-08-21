@@ -69,6 +69,7 @@ completion gates, use
 ### Binary / ABI Contract
 - **[04_Binary_Contract/abi_spec.md](04_Binary_Contract/abi_spec.md)** — Calling convention
 - **[04_Binary_Contract/asm_syntax.md](04_Binary_Contract/asm_syntax.md)** — Assembler syntax
+- **[04_Binary_Contract/v1_v2_architecture_revision_paper.md](04_Binary_Contract/v1_v2_architecture_revision_paper.md)** — v1/v2 architecture revision study and engineering test cases
 - **[04_Binary_Contract/symbolic_encodings.md](04_Binary_Contract/symbolic_encodings.md)** - ASCII, UTF-8, hex, and planned ternary-native symbolic encodings
 
 ### Compiler Infrastructure

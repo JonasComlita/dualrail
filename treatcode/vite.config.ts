@@ -23,6 +23,7 @@ export default defineConfig({
         learn: "learn/index.html",
         operations: "operations/index.html",
         arena: "arena/index.html",
+        intelligence: "intelligence/index.html",
       },
     },
   },

@@ -1,9 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const AUTH_API_SCHEMA_VERSION = "treatcode.auth.api.v1" as const;
 export const AUTH_AUDIT_SCHEMA_VERSION = "treatcode.auth.audit.v1" as const;
+export const AUTH_STATE_SCHEMA_VERSION = "treatcode.auth.state.v1" as const;
 export const AUTH_POLICY_VERSION = "treatcode.authz.policy.v1" as const;
 export const DEFAULT_PROJECT_ID = "tc:project:trit";
 
@@ -24,6 +25,16 @@ export const PERMISSION_ACTIONS = [
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 export type IdentityKind = "human" | "collaborator" | "service" | "agent";
+
+/** Actions granted to pseudonymous community participants. Keep this list deliberately narrow. */
+export const PARTICIPANT_PERMISSION_ACTIONS = ["read", "test", "benchmark", "artifact"] as const;
+export type ParticipantPermissionAction = (typeof PARTICIPANT_PERMISSION_ACTIONS)[number];
+
+export const PARTICIPANT_HANDLE_MIN_LENGTH = 3;
+export const PARTICIPANT_HANDLE_MAX_LENGTH = 24;
+export const PARTICIPANT_PASSWORD_MIN_LENGTH = 12;
+export const PARTICIPANT_PASSWORD_MAX_LENGTH = 128;
+const PARTICIPANT_HANDLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,23}$/;
 
 const MUTATING_ACTIONS = new Set<PermissionAction>([
   "workspace",
@@ -73,6 +84,8 @@ export interface IdentityView {
   id: string;
   kind: IdentityKind;
   display_name: string;
+  /** Pseudonymous participant handle, when this identity has one. */
+  handle?: string;
   roles: string[];
   status: "active" | "revoked";
 }
@@ -169,6 +182,25 @@ interface StoredIdentity extends IdentityView {
   interactive_login: boolean;
 }
 
+interface PersistedIdentity {
+  id: string;
+  kind: IdentityKind;
+  display_name: string;
+  handle?: string;
+  roles: string[];
+  status: "active" | "revoked";
+  access_key_salt: string;
+  access_key_hash: string;
+  grants: PermissionGrant[];
+  interactive_login: boolean;
+}
+
+interface PersistedAuthState {
+  schema_version: typeof AUTH_STATE_SCHEMA_VERSION;
+  updated_at: string;
+  identities: PersistedIdentity[];
+}
+
 interface StoredCredential extends CredentialView {
   token_hash: string;
   expires_at_ms: number;
@@ -192,8 +224,19 @@ interface AuditFields {
 export interface AuthStoreOptions {
   now?: () => number;
   audit_path?: string | null;
+  /** Durable identity state. `null` explicitly disables persistence. */
+  identity_path?: string | null;
+  /** Backwards/embedding aliases for the durable identity state path. */
+  identity_store_path?: string | null;
+  auth_state_path?: string | null;
+  state_path?: string | null;
   session_ttl_seconds?: number;
   task_ttl_seconds?: number;
+}
+
+export interface ParticipantLoginInput {
+  handle: string;
+  password: string;
 }
 
 function canonicalJson(value: unknown): string {
@@ -253,6 +296,7 @@ function publicIdentity(identity: StoredIdentity): IdentityView {
     id: identity.id,
     kind: identity.kind,
     display_name: identity.display_name,
+    ...(identity.handle ? { handle: identity.handle } : {}),
     roles: [...identity.roles],
     status: identity.status,
   };
@@ -260,6 +304,79 @@ function publicIdentity(identity: StoredIdentity): IdentityView {
 
 function safeTimingEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function defaultIdentityPath(): string {
+  return process.env.TREATCODE_AUTH_IDENTITY_PATH || resolve("build/treatcode-auth/identities.json");
+}
+
+function normalizeHandleForLookup(handle: string): string {
+  return handle.normalize("NFKC").toLocaleLowerCase("en-US");
+}
+
+function validateParticipantHandle(handle: unknown): string {
+  if (typeof handle !== "string") throw new Error("handle_required");
+  if (handle.length < PARTICIPANT_HANDLE_MIN_LENGTH || handle.length > PARTICIPANT_HANDLE_MAX_LENGTH || !PARTICIPANT_HANDLE_PATTERN.test(handle)) {
+    throw new Error("invalid_handle");
+  }
+  // Reject visually/semantically ambiguous variants instead of silently changing
+  // the account name the caller asked to register.
+  const normalized = handle.normalize("NFKC");
+  if (normalized !== handle || normalizeHandleForLookup(handle) !== handle.toLowerCase()) throw new Error("invalid_handle");
+  return handle;
+}
+
+function validateParticipantPassword(password: unknown): string {
+  if (typeof password !== "string") throw new Error("password_required");
+  if (password.length < PARTICIPANT_PASSWORD_MIN_LENGTH || password.length > PARTICIPANT_PASSWORD_MAX_LENGTH) {
+    throw new Error("invalid_password_length");
+  }
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(password)) throw new Error("invalid_password");
+  return password;
+}
+
+export function isValidParticipantHandle(handle: unknown): handle is string {
+  try {
+    validateParticipantHandle(handle);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidParticipantPassword(password: unknown): password is string {
+  try {
+    validateParticipantPassword(password);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function persistedIdentity(identity: StoredIdentity): PersistedIdentity {
+  return {
+    id: identity.id,
+    kind: identity.kind,
+    display_name: identity.display_name,
+    ...(identity.handle ? { handle: identity.handle } : {}),
+    roles: [...identity.roles],
+    status: identity.status,
+    access_key_salt: identity.access_key_salt.toString("base64").replace(/=+$/g, ""),
+    access_key_hash: identity.access_key_hash.toString("base64").replace(/=+$/g, ""),
+    grants: identity.grants.map((grant) => ({
+      project_id: grant.project_id,
+      task_id: grant.task_id,
+      actions: [...grant.actions],
+    })),
+    interactive_login: identity.interactive_login,
+  };
+}
+
+function restoredBuffer(value: unknown, expectedLength: number, field: string): Buffer {
+  if (typeof value !== "string" || !value) throw new Error(`auth_state_invalid:${field}`);
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== expectedLength) throw new Error(`auth_state_invalid:${field}`);
+  return decoded;
 }
 
 export class AuditLog {
@@ -340,20 +457,167 @@ export class AuthStore {
   private readonly now: () => number;
   private readonly identities = new Map<string, StoredIdentity>();
   private readonly credentials = new Map<string, StoredCredential>();
+  private readonly identity_path: string | null;
   private readonly session_ttl_seconds: number;
   private readonly task_ttl_seconds: number;
 
   constructor(options: AuthStoreOptions = {}) {
     this.now = options.now || (() => Date.now());
     this.audit = new AuditLog(options.audit_path);
+    const configuredIdentityPath = options.identity_path !== undefined
+      ? options.identity_path
+      : options.identity_store_path !== undefined
+        ? options.identity_store_path
+        : options.auth_state_path !== undefined
+          ? options.auth_state_path
+          : options.state_path !== undefined
+            ? options.state_path
+            : defaultIdentityPath();
+    this.identity_path = configuredIdentityPath === null ? null : resolve(configuredIdentityPath || defaultIdentityPath());
+    this.loadIdentities();
     this.session_ttl_seconds = Math.max(30, Math.floor(options.session_ttl_seconds || DEFAULT_SESSION_TTL_SECONDS));
     this.task_ttl_seconds = clampTtl(options.task_ttl_seconds, DEFAULT_TASK_TTL_SECONDS);
+  }
+
+  private loadIdentities(): void {
+    if (!this.identity_path || !existsSync(this.identity_path)) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(this.identity_path, "utf8")) as unknown;
+    } catch {
+      throw new Error("auth_state_invalid:json");
+    }
+    if (!parsed || typeof parsed !== "object") throw new Error("auth_state_invalid:root");
+    const state = parsed as Partial<PersistedAuthState>;
+    if (state.schema_version !== AUTH_STATE_SCHEMA_VERSION || !Array.isArray(state.identities)) {
+      throw new Error("auth_state_invalid:schema");
+    }
+    for (const record of state.identities) {
+      if (!record || typeof record !== "object") throw new Error("auth_state_invalid:identity");
+      if (typeof record.id !== "string" || !IDENTITY_ID_PATTERN.test(record.id)) throw new Error("auth_state_invalid:identity_id");
+      if (!["human", "collaborator", "service", "agent"].includes(record.kind)) throw new Error("auth_state_invalid:identity_kind");
+      if (typeof record.display_name !== "string" || !Array.isArray(record.roles) || !Array.isArray(record.grants)) {
+        throw new Error("auth_state_invalid:identity_fields");
+      }
+      const handle = record.handle === undefined ? undefined : validateParticipantHandle(record.handle);
+      const grants: PermissionGrant[] = record.grants.map((grant) => {
+        if (!grant || typeof grant !== "object" || typeof grant.project_id !== "string" || !isValidProjectId(grant.project_id) && grant.project_id !== "*") {
+          throw new Error("auth_state_invalid:grant");
+        }
+        const taskId = grant.task_id === null || grant.task_id === undefined ? null : grant.task_id;
+        if (taskId !== null && !isValidTaskId(taskId)) throw new Error("auth_state_invalid:grant_task");
+        if (!Array.isArray(grant.actions)) throw new Error("auth_state_invalid:grant_actions");
+        const actions = [...new Set(grant.actions)].filter((action): action is PermissionAction => typeof action === "string" && isPermissionAction(action));
+        if (actions.length !== grant.actions.length) throw new Error("auth_state_invalid:grant_actions");
+        return { project_id: grant.project_id, task_id: taskId, actions };
+      });
+      const salt = restoredBuffer(record.access_key_salt, 16, "access_key_salt");
+      const hash = restoredBuffer(record.access_key_hash, 32, "access_key_hash");
+      const restored: StoredIdentity = {
+        id: record.id,
+        kind: record.kind,
+        display_name: record.display_name,
+        ...(handle ? { handle } : {}),
+        roles: [...new Set(record.roles.filter((role): role is string => typeof role === "string"))],
+        status: record.status === "revoked" ? "revoked" : record.status === "active" ? "active" : (() => { throw new Error("auth_state_invalid:identity_status"); })(),
+        access_key_salt: salt,
+        access_key_hash: hash,
+        grants,
+        interactive_login: record.interactive_login !== false,
+      };
+      const existingHandle = restored.handle && this.identityForHandle(restored.handle);
+      if (existingHandle && existingHandle.id !== restored.id) throw new Error("auth_state_invalid:duplicate_handle");
+      this.identities.set(restored.id, restored);
+    }
+  }
+
+  private persistIdentities(): void {
+    if (!this.identity_path) return;
+    const state: PersistedAuthState = {
+      schema_version: AUTH_STATE_SCHEMA_VERSION,
+      updated_at: new Date(this.now()).toISOString(),
+      identities: [...this.identities.values()].map(persistedIdentity),
+    };
+    const temporaryPath = `${this.identity_path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+    mkdirSync(dirname(this.identity_path), { recursive: true });
+    try {
+      writeFileSync(temporaryPath, `${JSON.stringify(state)}\n`, { encoding: "utf8", mode: 0o600 });
+      renameSync(temporaryPath, this.identity_path);
+    } catch (error) {
+      try { if (existsSync(temporaryPath)) unlinkSync(temporaryPath); } catch { /* Preserve the original persistence failure. */ }
+      throw error;
+    }
+  }
+
+  private identityForHandle(handle: string): StoredIdentity | undefined {
+    const normalized = normalizeHandleForLookup(handle);
+    return [...this.identities.values()].find((identity) => identity.handle && normalizeHandleForLookup(identity.handle) === normalized);
+  }
+
+  participant(handle: string): IdentityView | null {
+    const identity = this.identityForHandle(handle);
+    return identity?.roles.includes("participant") ? publicIdentity(identity) : null;
+  }
+
+  identityByHandle(handle: string): IdentityView | null {
+    const identity = this.identityForHandle(handle);
+    return identity ? publicIdentity(identity) : null;
+  }
+
+  registerParticipant(input: { handle: string; password: string; display_name?: string }): IdentityView {
+    if (!input || typeof input !== "object") throw new Error("registration_invalid");
+    const handle = validateParticipantHandle(input.handle);
+    const password = validateParticipantPassword(input?.password);
+    if (this.identityForHandle(handle)) throw new Error("duplicate_handle");
+    if (password === handle || password.toLocaleLowerCase("en-US") === handle.toLocaleLowerCase("en-US")) throw new Error("password_must_differ_from_handle");
+    if (input.display_name !== undefined && typeof input.display_name !== "string") throw new Error("invalid_display_name");
+    const displayName = input.display_name === undefined ? handle : input.display_name;
+    if (!displayName.trim() || displayName.length > 80 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(displayName)) throw new Error("invalid_display_name");
+    if (displayName.includes(password)) throw new Error("invalid_display_name");
+    const identity = this.registerIdentity({
+      id: newId("tc:identity:participant-"),
+      // Keep the established identity-kind union/API intact. The `participant`
+      // role plus handle identifies this least-privilege account class.
+      kind: "human",
+      handle,
+      display_name: displayName,
+      roles: ["participant"],
+      access_key: password,
+      grants: [{ project_id: "*", task_id: null, actions: [...PARTICIPANT_PERMISSION_ACTIONS] }],
+      interactive_login: true,
+    });
+    return identity;
+  }
+
+  /** Alias used by account-oriented callers. */
+  registerAccount(input: { handle: string; password: string; display_name?: string }): IdentityView {
+    return this.registerParticipant(input);
+  }
+
+  createParticipant(input: { handle: string; password: string; display_name?: string }): IdentityView {
+    return this.registerParticipant(input);
+  }
+
+  registerAndLoginParticipant(input: ParticipantLoginInput & { display_name?: string }): { identity: IdentityView; credential: IssuedCredential } {
+    const identity = this.registerParticipant(input);
+    const login = this.login(input);
+    if (!login.ok) throw new Error("participant_registration_login_failed");
+    return { identity, credential: login.credential };
+  }
+
+  loginParticipant(handle: string, password: string): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial } {
+    return this.login(handle, password);
+  }
+
+  loginAccount(input: ParticipantLoginInput): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial } {
+    return this.login(input);
   }
 
   registerIdentity(input: {
     id: string;
     kind: IdentityKind;
     display_name: string;
+    handle?: string;
     roles?: string[];
     access_key: string;
     grants: PermissionGrant[];
@@ -361,6 +625,9 @@ export class AuthStore {
   }): IdentityView {
     if (!IDENTITY_ID_PATTERN.test(input.id)) throw new Error(`invalid_identity_id:${input.id}`);
     if (!input.access_key || input.access_key.length < 8) throw new Error("access_key_too_short");
+    const handle = input.handle === undefined ? undefined : validateParticipantHandle(input.handle);
+    const existingHandle = handle && this.identityForHandle(handle);
+    if (existingHandle && existingHandle.id !== input.id) throw new Error("duplicate_handle");
     const salt = randomBytes(16);
     const normalizedGrants = input.grants.map((grant) => ({
       project_id: grant.project_id,
@@ -371,6 +638,7 @@ export class AuthStore {
       id: input.id,
       kind: input.kind,
       display_name: input.display_name,
+      ...(handle ? { handle } : {}),
       roles: [...new Set(input.roles || [])],
       status: "active",
       access_key_salt: salt,
@@ -379,6 +647,7 @@ export class AuthStore {
       interactive_login: input.interactive_login ?? input.kind !== "agent",
     };
     this.identities.set(stored.id, stored);
+    this.persistIdentities();
     return publicIdentity(stored);
   }
 
@@ -386,6 +655,7 @@ export class AuthStore {
     const identity = this.identities.get(identityId);
     if (!identity) return false;
     identity.status = "revoked";
+    this.persistIdentities();
     return true;
   }
 
@@ -394,8 +664,15 @@ export class AuthStore {
     return identity ? publicIdentity(identity) : null;
   }
 
-  login(identityId: string, accessKey: string): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial } {
-    const identity = this.identities.get(identityId);
+  login(input: ParticipantLoginInput): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial };
+  login(identityIdOrHandle: string, accessKey: string): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial };
+  login(identityIdOrHandleOrInput: string | ParticipantLoginInput, suppliedAccessKey?: string): { ok: true; identity: IdentityView; credential: IssuedCredential } | { ok: false; denial: AuthorizationDenial } {
+    // The identity-id/access-key contract remains the primary compatibility
+    // path. Participant handles are an additional lookup key and never alter
+    // the credential or authorization semantics.
+    const identityIdOrHandle = typeof identityIdOrHandleOrInput === "string" ? identityIdOrHandleOrInput : identityIdOrHandleOrInput.handle;
+    const accessKey = typeof identityIdOrHandleOrInput === "string" ? suppliedAccessKey || "" : identityIdOrHandleOrInput.password;
+    const identity = this.identities.get(identityIdOrHandle) || this.identityForHandle(identityIdOrHandle);
     if (!identity || identity.status !== "active" || !identity.interactive_login || !this.verifyAccessKey(identity, accessKey)) {
       const denial = this.recordDenial({
         code: "invalid_credentials",

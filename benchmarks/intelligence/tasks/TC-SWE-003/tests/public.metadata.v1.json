@@ -1,0 +1,10 @@
+{
+  "schema": "treatcode.intelligence.public-tests.v1",
+  "version": 1,
+  "visibility": "public",
+  "cases": [
+    { "id": "public-first-word", "name": "first valid word", "a": 0, "b": 0, "c": 0, "expected": 0 },
+    { "id": "public-middle-word", "name": "middle valid word", "a": 3, "b": 0, "c": 0, "expected": 3 },
+    { "id": "public-last-word", "name": "last valid word", "a": 7, "b": 0, "c": 0, "expected": 7 }
+  ]
+}

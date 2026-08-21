@@ -584,6 +584,42 @@
         ],
         "date": "2026-08-01T20:36:12.286321Z"
       }
+    },
+    {
+      "id": "P14",
+      "version": 1,
+      "plan_file": "docs/11_TreatCode_Platform/plans/P14_intelligence_benchmark.md",
+      "depends_on": ["P06", "P07", "P09", "P10"],
+      "status": "in_progress",
+      "verification_commands": [
+        {"id": "community-tests", "command": "npm.cmd --prefix treatcode run test:community"},
+        {"id": "intelligence-tests", "command": "npm.cmd --prefix treatcode run test:intelligence"},
+        {"id": "intelligence-suite", "command": "npm.cmd --prefix treatcode run test:intelligence:suite"},
+        {"id": "intelligence-e2e", "command": "npm.cmd --prefix treatcode run test:e2e:intelligence"},
+        {"id": "participant-journey", "command": "npm.cmd --prefix treatcode run test:participant-journey"},
+        {"id": "doctor", "command": "tools/trit-doctor.ps1"},
+        {"id": "smoke", "command": "tools/trit-test.ps1 smoke"},
+        {"id": "production", "command": "python tools/trit_tool.py test production --no-build"},
+        {"id": "knowledge", "command": "python tools/trit_tool.py knowledge status"},
+        {"id": "plans-validate", "command": "python tools/trit_tool.py website plans validate"},
+        {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P14"}
+      ],
+      "evidence": [
+        {"id": "result", "path": "build/treatcode-plan-evidence/P14/result.json", "description": "Machine-readable P14 verification result"},
+        {"id": "community-tests", "path": "build/treatcode-plan-evidence/P14/community-tests.json", "description": "Account, solution, submission, and discussion persistence report"},
+        {"id": "intelligence-tests", "path": "build/treatcode-plan-evidence/P14/intelligence-tests.json", "description": "Intelligence manifest, isolation, verifier, and score contract report"},
+        {"id": "intelligence-suite", "path": "build/treatcode-plan-evidence/P14/intelligence-suite-e2e.json", "description": "Full five-task, twenty-trial bounded-compiler suite run"},
+        {"id": "intelligence-e2e", "path": "build/treatcode-plan-evidence/P14/intelligence-e2e.json", "description": "Intelligence API/browser route report"},
+        {"id": "participant-journey", "path": "build/treatcode-plan-evidence/P14/participant-journey.json", "description": "Participant-facing route and artifact journey report"},
+        {"id": "luna-max-four-trials", "path": "build/treatcode-plan-evidence/P14/luna-max-four-trials.json", "description": "Four independent gpt-5.6-luna max trial evidence and attestation"}
+      ],
+      "gates": [
+        {"type": "structural", "required": true},
+        {"type": "security", "required": true},
+        {"type": "correctness", "required": true},
+        {"type": "human", "required": true}
+      ],
+      "required_approvals": ["Product owner", "Architecture owner", "Security owner"]
     }
   ]
 }

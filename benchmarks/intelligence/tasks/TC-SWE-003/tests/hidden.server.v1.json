@@ -1,0 +1,15 @@
+{
+  "schema": "treatcode.intelligence.hidden-tests.v1",
+  "version": 1,
+  "visibility": "server-only",
+  "cases": [
+    { "id": "hidden-negative-one", "suite": "validated-range", "a": -1, "b": 0, "c": 0, "expected": -1 },
+    { "id": "hidden-zero", "suite": "validated-range", "a": 0, "b": 0, "c": 0, "expected": 0 },
+    { "id": "hidden-one", "suite": "validated-range", "a": 1, "b": 0, "c": 0, "expected": 1 },
+    { "id": "hidden-seven", "suite": "validated-range", "a": 7, "b": 0, "c": 0, "expected": 7 },
+    { "id": "hidden-eight", "suite": "validated-range", "a": 8, "b": 0, "c": 0, "expected": -1 },
+    { "id": "hidden-nine", "suite": "validated-range", "a": 9, "b": 0, "c": 0, "expected": -1 },
+    { "id": "hidden-safe-high", "suite": "validated-range", "a": 1000000, "b": 0, "c": 0, "expected": -1 },
+    { "id": "hidden-safe-low", "suite": "validated-range", "a": -1000000, "b": 0, "c": 0, "expected": -1 }
+  ]
+}

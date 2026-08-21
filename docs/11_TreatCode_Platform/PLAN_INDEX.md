@@ -20,6 +20,7 @@ Status values are `not_started`, `in_progress`, `blocked`, `complete`, or
 | P11 | [Uploads, contributions, and GitHub](plans/P11_uploads_contributions_github.md) | P07, P08, P09 | complete | `build/treatcode-plan-evidence/P11/result.json` |
 | P12 | [Operations and mobile collaboration](plans/P12_operations_mobile.md) | P08, P09, P11 | complete | `build/treatcode-plan-evidence/P12/result.json` |
 | P13 | [Launch closure](plans/P13_launch_closure.md) | P04–P12 | complete | `build/treatcode-plan-evidence/P13/result.json` |
+| P14 | [Intelligence benchmark and participant journey](plans/P14_intelligence_benchmark.md) | P06, P07, P09, P10 | in_progress | `build/treatcode-plan-evidence/P14/result.json` |
 
 ## Parallel Work
 

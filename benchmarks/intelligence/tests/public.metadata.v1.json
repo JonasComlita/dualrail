@@ -1,0 +1,10 @@
+{
+  "schema": "treatcode.intelligence.public-tests.v1",
+  "version": 1,
+  "visibility": "public",
+  "cases": [
+    { "id": "public-distinct-ascending", "name": "ascending distinct values", "a": 1, "b": 2, "c": 3, "expected": 2 },
+    { "id": "public-distinct-rotated-left", "name": "rotated distinct values", "a": 3, "b": 1, "c": 2, "expected": 2 },
+    { "id": "public-distinct-rotated-right", "name": "reverse rotation", "a": 2, "b": 3, "c": 1, "expected": 2 }
+  ]
+}

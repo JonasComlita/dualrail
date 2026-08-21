@@ -1,0 +1,15 @@
+{
+  "schema": "treatcode.intelligence.hidden-tests.v1",
+  "version": 1,
+  "visibility": "server-only",
+  "cases": [
+    { "id": "hidden-error-one", "suite": "kernel-return-contract", "a": -1, "b": 1, "c": 0, "expected": -1 },
+    { "id": "hidden-error-large", "suite": "kernel-return-contract", "a": -27, "b": 999999, "c": 0, "expected": -27 },
+    { "id": "hidden-success-one", "suite": "kernel-return-contract", "a": 0, "b": 1, "c": 0, "expected": 1 },
+    { "id": "hidden-success-negative-value", "suite": "kernel-return-contract", "a": 0, "b": -9, "c": 0, "expected": -9 },
+    { "id": "hidden-success-large", "suite": "kernel-return-contract", "a": 0, "b": 531441, "c": 0, "expected": 531441 },
+    { "id": "hidden-success-safe", "suite": "kernel-return-contract", "a": 0, "b": -1000000, "c": 0, "expected": -1000000 },
+    { "id": "hidden-error-zero-value", "suite": "kernel-return-contract", "a": -2, "b": 0, "c": 0, "expected": -2 },
+    { "id": "hidden-success-max", "suite": "kernel-return-contract", "a": 0, "b": 999999, "c": 0, "expected": 999999 }
+  ]
+}

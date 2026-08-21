@@ -1,10 +1,10 @@
 {
   "schema_version": "treatcode.public.api.v1",
   "snapshot": {
-    "id": "tc:snapshot:371c93041dbe",
+    "id": "tc:snapshot:81f1abd05966",
     "repository": "https://github.com/JonasComlita/dualrail",
-    "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
-    "generated_at": "2026-08-12T22:26:36-07:00",
+    "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
+    "generated_at": "2026-08-17T12:50:23-07:00",
     "source": "root registries, TEST_MANIFEST.json, and tracked source paths"
   },
   "data": [
@@ -18,7 +18,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -27,7 +27,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -43,7 +43,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -52,7 +52,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -68,7 +68,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -77,7 +77,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -93,7 +93,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -102,7 +102,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -118,7 +118,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -127,7 +127,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -143,7 +143,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -152,7 +152,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -168,7 +168,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -177,7 +177,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -193,7 +193,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -202,7 +202,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -218,7 +218,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -227,7 +227,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -243,7 +243,7 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved",
           "role": "gap_entry"
@@ -252,7 +252,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -268,14 +268,14 @@
       "source_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "docs/04_Binary_Contract/symbolic_encodings.md",
           "status": "resolved",
           "role": "gap_entry"
         },
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }
@@ -283,7 +283,7 @@
       "evidence_refs": [
         {
           "repository": "https://github.com/JonasComlita/dualrail",
-          "commit": "37fd0da68e764f3755485f6906c6c859ebb6e496",
+          "commit": "7b0854c3cf0b69b957d092878bd8758c7ce551e2",
           "path": "KNOWN_GAPS.md",
           "status": "resolved"
         }

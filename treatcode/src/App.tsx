@@ -96,6 +96,19 @@ interface AuthUiState {
   onLogout: () => void;
 }
 
+interface PracticeDiscussion {
+  id: string;
+  handle?: string;
+  body: string;
+  createdAt?: string;
+}
+
+interface PracticeSolution {
+  id?: string;
+  version?: number;
+  updatedAt?: string;
+}
+
 const PROPOSALS = [
   { id: "UP-001", title: "ulib/ternary_map.trit", author: "trit_wizard", status: "review", votes: 14, desc: "Bidirectional probing hash map with TCMP-driven collision resolution." },
   { id: "UP-002", title: "ulib/trie_compressed.trit", author: "balanced_0xff", status: "draft", votes: 7, desc: "Compressed trie optimized for 9-trit sub-word key fragments." },
@@ -262,6 +275,10 @@ function Nav({ view, setView, auth }: { view: string; setView: (v: string) => vo
           </button>
         ))}
       </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <a href="/intelligence" data-testid="intelligence-nav" style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none" }}>Intelligence</a>
+        <a href="/arena" data-testid="arena-nav" style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none" }}>P10 Arena</a>
+      </div>
       <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
         {auth?.identityLabel ? (
           <>
@@ -296,12 +313,13 @@ function Nav({ view, setView, auth }: { view: string; setView: (v: string) => vo
             >
               log in
             </button>
+            <a href="/intelligence#account" data-testid="practice-signup-link" style={{ fontSize: 12, padding: "5px 10px", color: "var(--color-text-secondary)", alignSelf: "center" }}>sign up</a>
             {auth.error ? <span role="status" style={{ fontSize: 10, color: "var(--color-accent-red, #b33)" }}>{auth.error}</span> : null}
           </>
         ) : (
           <>
-            <button type="button" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}>log in</button>
-            <button type="button" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", cursor: "pointer", color: "var(--color-text-primary)", fontWeight: 500 }}>sign up</button>
+            <a href="/intelligence#account" data-testid="practice-login-link" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", color: "var(--color-text-secondary)", textDecoration: "none" }}>log in</a>
+            <a href="/intelligence#account" data-testid="practice-signup-link" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontWeight: 500, textDecoration: "none" }}>sign up</a>
           </>
         )}
       </div>
@@ -331,7 +349,6 @@ export default function App() {
   const [outputTab, setOutputTab] = useState<"tasm" | "vm" | "registers" | "telemetry" | "leaderboard">("vm");
 
   // Selection states next to editor controls
-  const [username, setUsername] = useState("CoderTrit");
   const [compilerEngine, setCompilerEngine] = useState<"native" | "bootstrap">("native");
   const [optLevel, setOptLevel] = useState("-O2");
 
@@ -352,10 +369,20 @@ export default function App() {
 
   // Dynamic leaderboard loaded from Express API
   const [dynamicLeaderboard, setDynamicLeaderboard] = useState<LeaderboardData[]>([]);
-  const [authToken, setAuthToken] = useState(() => window.localStorage.getItem("treatcode.auth.token") || "");
+  const [authToken, setAuthToken] = useState(() => window.localStorage.getItem("treatcode.auth.token") || window.localStorage.getItem("treatcode.intelligence.token") || "");
   const [authIdentity, setAuthIdentity] = useState<string | null>(null);
   const [authActions, setAuthActions] = useState<string[]>(["read"]);
   const [authError, setAuthError] = useState("");
+  const [savedSolution, setSavedSolution] = useState<PracticeSolution | null>(null);
+  const [solutionBusy, setSolutionBusy] = useState(false);
+  const [solutionMessage, setSolutionMessage] = useState("");
+  const [solutionError, setSolutionError] = useState("");
+  const [discussionBody, setDiscussionBody] = useState("");
+  const [discussions, setDiscussions] = useState<PracticeDiscussion[]>([]);
+  const [discussionBusy, setDiscussionBusy] = useState(false);
+  const [discussionMessage, setDiscussionMessage] = useState("");
+  const [discussionError, setDiscussionError] = useState("");
+  const [discussionLoading, setDiscussionLoading] = useState(false);
 
   const loadAuthCapabilities = async (token: string) => {
     try {
@@ -365,6 +392,7 @@ export default function App() {
       const payload = await response.json();
       if (!response.ok) {
         window.localStorage.removeItem("treatcode.auth.token");
+        window.localStorage.removeItem("treatcode.intelligence.token");
         setAuthToken("");
         setAuthIdentity(null);
         setAuthActions(["read"]);
@@ -408,6 +436,7 @@ export default function App() {
 
   const logout = () => {
     window.localStorage.removeItem("treatcode.auth.token");
+    window.localStorage.removeItem("treatcode.intelligence.token");
     setAuthToken("");
     setAuthIdentity(null);
     setAuthActions(["read"]);
@@ -427,6 +456,107 @@ export default function App() {
     error: authError,
     onLogin: (accessKey) => { void login(accessKey); },
     onLogout: logout,
+  };
+
+  const intelligenceRequest = async (paths: string[], init: RequestInit = {}) => {
+    let lastError = new Error("Participant community API unavailable");
+    const participantToken = authToken || window.localStorage.getItem("treatcode.intelligence.token") || "";
+    for (const path of paths) {
+      try {
+        const headers = new Headers(init.headers);
+        headers.set("Accept", "application/json");
+        if (init.body) headers.set("Content-Type", "application/json");
+        if (participantToken) headers.set("Authorization", `Bearer ${participantToken}`);
+        const response = await fetch(path, { ...init, headers });
+        const text = await response.text();
+        let payload: any = {};
+        try { payload = text ? JSON.parse(text) : {}; } catch { payload = { error: text }; }
+        if (response.ok) return payload;
+        const reason = payload?.error?.reason || payload?.error || payload?.message || `Intelligence API returned ${response.status}`;
+        lastError = new Error(String(reason));
+        (lastError as Error & { status?: number }).status = response.status;
+        if (response.status !== 404 && response.status !== 405) throw lastError;
+      } catch (error: any) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const status = error?.status;
+        if (status !== 404 && status !== 405 && !String(lastError.message).includes("404")) throw lastError;
+      }
+    }
+    throw lastError;
+  };
+
+  const loadPracticeCommunity = async (problemId: string) => {
+    setDiscussionLoading(true);
+    setDiscussionError("");
+    try {
+      const [solutionPayload, discussionPayload] = await Promise.all([
+        intelligenceRequest([`/api/intelligence/v1/solutions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/solutions?task_id=${encodeURIComponent(problemId)}`, `/api/community/v1/solutions?challenge_id=${encodeURIComponent(problemId)}`]).catch(() => null),
+        intelligenceRequest([`/api/intelligence/v1/discussions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/discussions?task_id=${encodeURIComponent(problemId)}`, `/api/community/v1/discussions?challenge_id=${encodeURIComponent(problemId)}`]).catch((reason) => { throw reason; }),
+      ]);
+      const solution = solutionPayload?.data?.solution || solutionPayload?.solution || solutionPayload?.data;
+      if (solution && typeof solution === "object") {
+        setSavedSolution({ id: solution.id || solution.solution_id, version: Number.isFinite(solution.version) ? solution.version : undefined, updatedAt: solution.updated_at || solution.created_at });
+      } else {
+        setSavedSolution(null);
+      }
+      const rawDiscussions = discussionPayload?.data?.discussions || discussionPayload?.discussions || discussionPayload?.data || [];
+      setDiscussions(Array.isArray(rawDiscussions) ? rawDiscussions.map((item: any, index: number) => ({ id: String(item.id || `discussion-${index}`), handle: item.handle || item.author_handle, body: String(item.body || item.content || ""), createdAt: item.created_at || item.createdAt })).filter((item: PracticeDiscussion) => item.body) : []);
+    } catch (error: any) {
+      setDiscussions([]);
+      setDiscussionError(error?.message || "Discussion list unavailable.");
+    } finally {
+      setDiscussionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeProblem) void loadPracticeCommunity(activeProblem.id);
+    else {
+      setSavedSolution(null);
+      setDiscussions([]);
+      setDiscussionError("");
+    }
+  }, [activeProblem?.id, authToken]);
+
+  const savePracticeSolution = async () => {
+    if (!activeProblem) return;
+    setSolutionBusy(true);
+    setSolutionMessage("");
+    setSolutionError("");
+    try {
+      const payload = await intelligenceRequest(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "/api/community/v1/solutions"], {
+        method: "POST",
+        body: JSON.stringify({ task_id: activeProblem.id, challenge_id: activeProblem.id, title: `${activeProblem.id} solution`, code, language: "trit" }),
+      });
+      const solution = payload?.data?.solution || payload?.solution || payload?.data || {};
+      setSavedSolution({ id: solution.id || solution.solution_id, version: Number.isFinite(solution.version) ? solution.version : undefined, updatedAt: solution.updated_at || solution.created_at });
+      setSolutionMessage("Saved solution version.");
+    } catch (error: any) {
+      setSolutionError(error?.message || "Unable to save this solution.");
+    } finally {
+      setSolutionBusy(false);
+    }
+  };
+
+  const publishPracticeDiscussion = async () => {
+    if (!activeProblem || !discussionBody.trim()) return;
+    setDiscussionBusy(true);
+    setDiscussionMessage("");
+    setDiscussionError("");
+    try {
+      const payload = await intelligenceRequest(["/api/intelligence/v1/discussions", "/api/intelligence/discussions", "/api/community/v1/discussions"], {
+        method: "POST",
+        body: JSON.stringify({ task_id: activeProblem.id, challenge_id: activeProblem.id, solution_id: savedSolution?.id, body: discussionBody.trim() }),
+      });
+      const item = payload?.data?.discussion || payload?.discussion || payload?.data || {};
+      setDiscussions((current) => [{ id: String(item.id || `discussion-${Date.now()}`), handle: item.handle || item.author_handle || authIdentity || "participant", body: String(item.body || item.content || discussionBody.trim()), createdAt: item.created_at || new Date().toISOString() }, ...current]);
+      setDiscussionBody("");
+      setDiscussionMessage("Discussion published.");
+    } catch (error: any) {
+      setDiscussionError(error?.message || "Unable to publish discussion.");
+    } finally {
+      setDiscussionBusy(false);
+    }
   };
 
   // Fetch API leaderboard
@@ -452,7 +582,8 @@ export default function App() {
   }, [authToken]);
 
   const canTest = authActions.includes("test");
-  const canSubmit = authActions.includes("edit") && authActions.includes("test");
+  const canSubmit = authActions.includes("test");
+  const hasParticipantSession = Boolean(authToken || window.localStorage.getItem("treatcode.intelligence.token"));
 
   const filteredProblems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -574,7 +705,7 @@ export default function App() {
     if (!activeProblem) return;
     setRunning(true);
     setTasmOutput("");
-    setVmConsoleOutput(`Submitting solution for verification...\nUser: ${username}\nRunning all test cases...\n`);
+    setVmConsoleOutput("Submitting solution for verification...\nAuthenticated participant session\nRunning all test cases...\n");
     setOutputTab("vm");
 
     try {
@@ -585,7 +716,6 @@ export default function App() {
           problemId: activeProblem.id,
           code,
           engine: compilerEngine,
-          username,
           optLevel,
         }),
       });
@@ -866,6 +996,36 @@ export default function App() {
                 ))}
               </div>
             </div>
+            <div data-testid="practice-community" style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14, marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
+                <span style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Solution discussion</span>
+                <a href="/intelligence#account" style={{ fontSize: 10, color: "var(--color-accent-blue)", textDecoration: "none" }}>account</a>
+              </div>
+              <textarea
+                aria-label="Solution explanation or pseudocode"
+                data-testid="practice-discussion-editor"
+                value={discussionBody}
+                onChange={(event) => setDiscussionBody(event.target.value)}
+                placeholder="Explain your approach or pseudocode…"
+                style={{ width: "100%", minHeight: 72, resize: "vertical", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: 8, fontSize: 11, lineHeight: 1.45 }}
+              />
+              <button
+                type="button"
+                data-testid="practice-publish-discussion"
+                onClick={() => void publishPracticeDiscussion()}
+                disabled={discussionBusy || !hasParticipantSession || !discussionBody.trim()}
+                style={{ marginTop: 7, fontSize: 11, padding: "5px 9px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: discussionBusy || !hasParticipantSession ? "default" : "pointer", opacity: discussionBusy || !hasParticipantSession ? 0.6 : 1 }}
+              >
+                {discussionBusy ? "publishing…" : "publish discussion"}
+              </button>
+              {!hasParticipantSession ? <p style={{ marginTop: 7, fontSize: 10, color: "var(--color-text-muted)" }}>Log in or sign up to save and discuss.</p> : null}
+              {discussionLoading ? <p role="status" aria-live="polite" style={{ marginTop: 7, fontSize: 10, color: "var(--color-text-secondary)" }}>Loading discussions…</p> : null}
+              {discussionError ? <p role="alert" style={{ marginTop: 7, fontSize: 10, color: "#b33" }}>{discussionError}</p> : null}
+              {solutionMessage || solutionError || discussionMessage ? <p role="status" aria-live="polite" style={{ marginTop: 7, fontSize: 10, color: solutionError ? "#b33" : "var(--color-text-secondary)" }}>{solutionError || solutionMessage || discussionMessage}</p> : null}
+              <div aria-label="Published solution discussions" style={{ marginTop: 10 }}>
+                {discussions.length ? discussions.map((discussion) => <article key={discussion.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", padding: "8px 0" }}><div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--color-text-secondary)" }}>{discussion.handle || "participant"}</div><p style={{ marginTop: 4, whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.45, color: "var(--color-text-secondary)" }}>{discussion.body}</p></article>) : <p data-testid="practice-discussion-empty" style={{ marginTop: 9, fontSize: 10, color: "var(--color-text-muted)" }}>No discussions yet.</p>}
+              </div>
+            </div>
           </div>
 
           {/* Editor + output tabs split */}
@@ -898,22 +1058,6 @@ export default function App() {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>User:</label>
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Username"
-                      maxLength={20}
-                      style={{
-                        padding: "3px 6px",
-                        fontSize: "11px",
-                        width: 90,
-                      }}
-                    />
-                  </div>
-                  
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Engine:</label>
                     <select
@@ -998,6 +1142,25 @@ export default function App() {
                     }}
                   >
                     🚀 submit
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="practice-save-solution"
+                    onClick={() => void savePracticeSolution()}
+                    disabled={solutionBusy || !hasParticipantSession}
+                    title={hasParticipantSession ? "Save a versioned solution" : "Log in or sign up to save a solution"}
+                    style={{
+                      fontSize: 12,
+                      padding: "4px 12px",
+                      borderRadius: 4,
+                      border: "0.5px solid var(--color-border-secondary)",
+                      background: "var(--color-background-primary)",
+                      color: "var(--color-text-secondary)",
+                      cursor: solutionBusy || !hasParticipantSession ? "default" : "pointer",
+                      opacity: solutionBusy || !hasParticipantSession ? 0.6 : 1,
+                    }}
+                  >
+                    {solutionBusy ? "saving…" : "save solution"}
                   </button>
                 </div>
               </div>

@@ -1,0 +1,15 @@
+{
+  "schema": "treatcode.intelligence.hidden-tests.v1",
+  "version": 1,
+  "visibility": "server-only",
+  "cases": [
+    { "id": "hidden-zero-zero", "suite": "event-ordering", "a": 0, "b": 0, "c": 0, "expected": 0 },
+    { "id": "hidden-one-positive", "suite": "event-ordering", "a": 1, "b": 1, "c": 0, "expected": 2 },
+    { "id": "hidden-one-negative", "suite": "event-ordering", "a": 1, "b": -1, "c": 0, "expected": 0 },
+    { "id": "hidden-negative-positive", "suite": "event-ordering", "a": -9, "b": 1, "c": 0, "expected": -8 },
+    { "id": "hidden-negative-negative", "suite": "event-ordering", "a": -9, "b": -1, "c": 0, "expected": -10 },
+    { "id": "hidden-large-positive", "suite": "event-ordering", "a": 999999, "b": 1, "c": 0, "expected": 1000000 },
+    { "id": "hidden-large-negative", "suite": "event-ordering", "a": -999999, "b": -1, "c": 0, "expected": -1000000 },
+    { "id": "hidden-safe-zero", "suite": "event-ordering", "a": 531441, "b": 0, "c": 0, "expected": 531441 }
+  ]
+}

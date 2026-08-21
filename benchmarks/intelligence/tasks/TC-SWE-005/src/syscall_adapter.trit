@@ -1,0 +1,6 @@
+// TC-SWE-005 starter defect: the adapter negates successful syscall returns.
+// Negative kernel statuses must remain errors; successful values pass through.
+fn abi_return(status: t40, value: t40) -> t40 {
+    if status < 0 { return status; }
+    return 0 - value;
+}

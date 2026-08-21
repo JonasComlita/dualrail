@@ -6,6 +6,7 @@ const normalizedPath = window.location.pathname.replace(/\/index\.html$/, "").re
 const isOperationsRoute = normalizedPath === "/operations" || normalizedPath.startsWith("/operations/");
 const isWorkspaceRoute = normalizedPath === "/workspaces" || normalizedPath.startsWith("/workspaces/");
 const isImplementationArenaRoute = normalizedPath === "/arena" || normalizedPath.startsWith("/arena/");
+const isIntelligenceRoute = normalizedPath === "/intelligence" || normalizedPath.startsWith("/intelligence/");
 const isPublicReadingRoute =
   normalizedPath === "/" ||
   normalizedPath === "/stack" ||
@@ -16,6 +17,8 @@ const isPublicReadingRoute =
 
 const RouteApp = isImplementationArenaRoute
   ? React.lazy(() => import("./ImplementationArena"))
+  : isIntelligenceRoute
+  ? React.lazy(() => import("./IntelligenceApp"))
   : isOperationsRoute
   ? React.lazy(() => import("./OperationsApp"))
   : isWorkspaceRoute

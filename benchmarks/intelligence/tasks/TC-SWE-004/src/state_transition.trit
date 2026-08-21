@@ -1,0 +1,9 @@
+// TC-SWE-004 starter defect: increment and decrement event arms are swapped.
+// Event -1 decrements, 0 preserves, and +1 increments the state.
+fn state_transition(state: t40, event: t40) -> t40 {
+    match event {
+        neg => { return state + 1; }
+        zero => { return state; }
+        pos => { return state - 1; }
+    }
+}

@@ -1,0 +1,15 @@
+{
+  "schema": "treatcode.intelligence.hidden-tests.v1",
+  "version": 1,
+  "visibility": "server-only",
+  "cases": [
+    { "id": "hidden-zero", "suite": "round-trip-boundaries", "a": 0, "b": 0, "c": 0, "expected": 0 },
+    { "id": "hidden-neg-one", "suite": "round-trip-boundaries", "a": -1, "b": 0, "c": 0, "expected": -1 },
+    { "id": "hidden-nine", "suite": "round-trip-boundaries", "a": 9, "b": 0, "c": 0, "expected": 9 },
+    { "id": "hidden-base27", "suite": "round-trip-boundaries", "a": 27, "b": 0, "c": 0, "expected": 27 },
+    { "id": "hidden-large", "suite": "round-trip-boundaries", "a": 531441, "b": 0, "c": 0, "expected": 531441 },
+    { "id": "hidden-negative-large", "suite": "round-trip-boundaries", "a": -531441, "b": 0, "c": 0, "expected": -531441 },
+    { "id": "hidden-safe-max", "suite": "round-trip-boundaries", "a": 999999, "b": 0, "c": 0, "expected": 999999 },
+    { "id": "hidden-safe-min", "suite": "round-trip-boundaries", "a": -1000000, "b": 0, "c": 0, "expected": -1000000 }
+  ]
+}

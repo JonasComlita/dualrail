@@ -1,0 +1,10 @@
+{
+  "schema": "treatcode.intelligence.public-tests.v1",
+  "version": 1,
+  "visibility": "public",
+  "cases": [
+    { "id": "public-preserve", "name": "preserve state", "a": 10, "b": 0, "c": 0, "expected": 10 },
+    { "id": "public-increment", "name": "increment event", "a": 10, "b": 1, "c": 0, "expected": 11 },
+    { "id": "public-decrement", "name": "decrement event", "a": 10, "b": -1, "c": 0, "expected": 9 }
+  ]
+}

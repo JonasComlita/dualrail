@@ -1,0 +1,7 @@
+// TC-SWE-003 starter defect: the upper bound is inclusive when the buffer
+// contains eight words. Repair pointer_guard to return -1 outside [0, 7].
+fn pointer_guard(address: t40) -> t40 {
+    if address < 0 { return -1; }
+    if address > 8 { return -1; }
+    return address;
+}

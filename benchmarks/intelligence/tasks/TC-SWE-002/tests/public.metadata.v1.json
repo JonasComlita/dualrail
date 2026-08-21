@@ -1,0 +1,10 @@
+{
+  "schema": "treatcode.intelligence.public-tests.v1",
+  "version": 1,
+  "visibility": "public",
+  "cases": [
+    { "id": "public-empty-token", "name": "empty token", "a": 0, "b": 0, "c": 0, "expected": 0 },
+    { "id": "public-identifier-token", "name": "identifier token", "a": 27, "b": 0, "c": 0, "expected": 27 },
+    { "id": "public-number-token", "name": "number token", "a": -9, "b": 0, "c": 0, "expected": -9 }
+  ]
+}

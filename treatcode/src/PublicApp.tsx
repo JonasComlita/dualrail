@@ -118,6 +118,7 @@ function Header({ route, onNavigate }: { route: Route; onNavigate: (href: string
       {nav("/learn", "Learn", route.page === "learn")}
       {nav("/practice", "Practice", false)}
       {nav("/arena", "Implementation Arena", false)}
+      <a href="/intelligence">Intelligence Benchmark</a>
       <a href="/api/public/v1/openapi.json">API</a>
     </nav>
   </header>;

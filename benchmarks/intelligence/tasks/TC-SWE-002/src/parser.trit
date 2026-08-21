@@ -1,0 +1,5 @@
+// TC-SWE-002 starter defect: serialization adds a sentinel to every token.
+// Repair parse_serialize so the token value survives a parse/serialize round trip.
+fn parse_serialize(token: t40) -> t40 {
+    return token + 1;
+}

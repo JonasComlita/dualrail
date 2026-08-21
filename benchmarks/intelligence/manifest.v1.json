@@ -1,0 +1,52 @@
+{
+  "schema": "treatcode.intelligence.benchmark-manifest.v1",
+  "version": 1,
+  "task": {
+    "id": "TC-SWE-001",
+    "title": "Repair the Three-Way Median Package",
+    "kind": "mini-repository-repair",
+    "description": "Repair the compare and median helpers in a small Trit package. The public examples are deliberately simple; the sealed verifier exercises permutations, duplicates, signed values, and representative safe-range values.",
+    "source_root": "src",
+    "allowlisted_files": [
+      "src/compare.trit",
+      "src/median.trit"
+    ],
+    "max_file_bytes": 65536,
+    "trial_count": 4,
+    "score": {
+      "formula": "passed / 4 * 100",
+      "unit": "percent",
+      "minimum_trial_count": 4
+    },
+    "runner": { "kind": "trit-scalar-return", "entrypoint": "median", "arity": 3 }
+  },
+  "public_tests": {
+    "schema": "treatcode.intelligence.public-tests.v1",
+    "metadata_path": "tests/public.metadata.v1.json",
+    "cases": [
+      { "id": "public-distinct-ascending", "name": "ascending distinct values", "a": 1, "b": 2, "c": 3, "expected": 2 },
+      { "id": "public-distinct-rotated-left", "name": "rotated distinct values", "a": 3, "b": 1, "c": 2, "expected": 2 },
+      { "id": "public-distinct-rotated-right", "name": "reverse rotation", "a": 2, "b": 3, "c": 1, "expected": 2 }
+    ]
+  },
+  "hidden_tests": {
+    "schema": "treatcode.intelligence.hidden-tests.v1",
+    "server_only": true,
+    "path": "tests/hidden.server.v1.json",
+    "case_count": 20,
+    "suites": [
+      { "id": "permutations", "case_count": 3 },
+      { "id": "duplicates", "case_count": 5 },
+      { "id": "negative-zero-mixed", "case_count": 6 },
+      { "id": "safe-range", "case_count": 6 }
+    ]
+  },
+  "protocol": {
+    "schema": "treatcode.intelligence.protocol.v1",
+    "trial_count": 4,
+    "hidden_submissions_per_trial": 1,
+    "public_tests_repeatable": true,
+    "hidden_results": "sealed_until_all_trials_complete",
+    "fresh_fixture_per_trial": true
+  }
+}
