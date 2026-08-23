@@ -97,6 +97,14 @@ TCL's numeric types are the native ternary floating-point widths from the ISA:
 | `T40` | 40 | Native word: 33 mantissa + 7 exponent trits |
 | `T50` | 50 | Extended: 41 mantissa + 9 exponent trits |
 
+T40 is the language-level native word because the architecture's explicit
+design goal is a **ternary equivalent of a 64-bit computer**. Its 40 raw trits
+provide `3^40` states, while a 41-trit word would exceed `2^64`; equivalence
+means scalar capacity and software role, not binary-compatible representation
+or the physical size of every host/wire encoding.
+The 27-trit instruction word, 27 vector lanes, and T50 extended values are
+separate dimensions and do not redefine the native scalar width.
+
 Lane types (SIMD transport view of the same widths) are `L1`, `L5`, `L10`, `L20`, `L40`, `L50`.
 
 `T1` is the native ternary boolean replacement. It is not a boolean — it carries three distinct logical values: negative (−1), zero (0), and positive (+1). The compiler enforces exhaustive matching on `T1` the same way it enforces exhaustive matching on any enum.

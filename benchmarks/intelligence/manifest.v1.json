@@ -1,15 +1,19 @@
 {
   "schema": "treatcode.intelligence.benchmark-manifest.v1",
-  "version": 1,
+  "version": 2,
   "task": {
     "id": "TC-SWE-001",
-    "title": "Repair the Three-Way Median Package",
+    "title": "Repair the Resilient Sensor Consensus Package",
     "kind": "mini-repository-repair",
-    "description": "Repair the compare and median helpers in a small Trit package. The public examples are deliberately simple; the sealed verifier exercises permutations, duplicates, signed values, and representative safe-range values.",
+    "description": "Repair a four-file sensor-consensus package. Readings in [-729, 729] are valid, -1000 means missing, and every other value is invalid. Reject any invalid input with -1001; return -1000 when all readings are missing; return the sole reading when one remains; average two readings with integer division toward zero; otherwise return the median. Helper ordering and validation contracts must remain compatible.",
+    "difficulty": "hard",
+    "capabilities": ["multi-file reasoning", "sentinel semantics", "validation precedence", "signed rounding", "order statistics"],
     "source_root": "src",
     "allowlisted_files": [
+      "src/validation.trit",
       "src/compare.trit",
-      "src/median.trit"
+      "src/median.trit",
+      "src/consensus.trit"
     ],
     "max_file_bytes": 65536,
     "trial_count": 4,
@@ -18,27 +22,30 @@
       "unit": "percent",
       "minimum_trial_count": 4
     },
-    "runner": { "kind": "trit-scalar-return", "entrypoint": "median", "arity": 3 }
+    "runner": { "kind": "trit-scalar-return", "entrypoint": "consensus", "arity": 3 }
   },
   "public_tests": {
     "schema": "treatcode.intelligence.public-tests.v1",
     "metadata_path": "tests/public.metadata.v1.json",
     "cases": [
-      { "id": "public-distinct-ascending", "name": "ascending distinct values", "a": 1, "b": 2, "c": 3, "expected": 2 },
-      { "id": "public-distinct-rotated-left", "name": "rotated distinct values", "a": 3, "b": 1, "c": 2, "expected": 2 },
-      { "id": "public-distinct-rotated-right", "name": "reverse rotation", "a": 2, "b": 3, "c": 1, "expected": 2 }
+      { "id": "public-three-valid", "name": "three valid readings use the median", "a": 1, "b": 3, "c": 2, "expected": 2 },
+      { "id": "public-one-missing", "name": "one missing reading averages the remaining pair", "a": -1000, "b": 4, "c": 8, "expected": 6 },
+      { "id": "public-two-missing", "name": "two missing readings preserve the sole value", "a": -1000, "b": 27, "c": -1000, "expected": 27 },
+      { "id": "public-all-missing", "name": "all missing readings return the missing sentinel", "a": -1000, "b": -1000, "c": -1000, "expected": -1000 },
+      { "id": "public-invalid-precedence", "name": "invalid readings reject the sample", "a": 730, "b": -1000, "c": 1, "expected": -1001 },
+      { "id": "public-duplicate-median", "name": "duplicates preserve the ordinary median", "a": 9, "b": 4, "c": 4, "expected": 4 }
     ]
   },
   "hidden_tests": {
     "schema": "treatcode.intelligence.hidden-tests.v1",
     "server_only": true,
     "path": "tests/hidden.server.v1.json",
-    "case_count": 20,
+    "case_count": 28,
     "suites": [
-      { "id": "permutations", "case_count": 3 },
-      { "id": "duplicates", "case_count": 5 },
-      { "id": "negative-zero-mixed", "case_count": 6 },
-      { "id": "safe-range", "case_count": 6 }
+      { "id": "three-readings", "case_count": 8 },
+      { "id": "missing-readings", "case_count": 8 },
+      { "id": "invalid-readings", "case_count": 8 },
+      { "id": "signed-rounding", "case_count": 4 }
     ]
   },
   "protocol": {

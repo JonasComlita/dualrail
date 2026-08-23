@@ -1,8 +1,8 @@
 // TC-SWE-001 starter defect: this implementation trusts only the first
-// comparison and returns an endpoint for several valid orderings. Repair it
-// using compare(a, b) and the ordinary median(a, b, c) contract.
+// comparison and returns an endpoint for several valid orderings. Repair the
+// ordinary median helper. Inputs passed here are already valid and nonmissing.
 
-fn median(a: t40, b: t40, c: t40) -> t40 {
+fn median3(a: t40, b: t40, c: t40) -> t40 {
     var ab: t40 = compare(a, b);
     match ab {
         neg => { return a; }

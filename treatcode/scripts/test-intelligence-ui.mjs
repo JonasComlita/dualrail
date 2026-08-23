@@ -28,6 +28,11 @@ try {
   assert(app.includes("/api/intelligence/catalog") && app.includes("/api/intelligence/tasks/"), "legacy suite/task route aliases are missing from the fallback chain");
   assert(app.includes("task_id: task.id") && app.includes("benchmark_id: task.id") && app.includes("run_id: runId"), "trial submission is not scoped to the selected task and run");
   assert(app.includes("leaderboard?task_id=") && app.includes("self_reported_leaderboard"), "leaderboards are not task-scoped or self-reported-aware");
+  assert(app.includes('data-testid="external-reference"') && app.includes("not TreatCode") && app.includes("externalReference.model.score") && app.includes("externalReference.task_count"), "external DeepSWE calibration is not visibly separated from local scores");
+  assert(app.includes('data-testid="model-suite-score-empty"') && app.includes("provenance-bound model rollout"), "the UI does not explain why a local task score is not a model-suite score");
+  assert(app.includes("harness fixture") && app.includes("unclassified") && app.includes("entry.evaluation_kind"), "official rows do not reveal whether a result is a harness proof or a model rollout");
+  assert(app.includes("runner_ready") && app.includes("Runner pending"), "runner readiness is not surfaced before a suite task can submit");
+  assert(app.includes("repository_shape") && app.includes("Capabilities under test") && app.includes("Hidden coverage"), "v2 difficulty, repository shape, or capability coverage is not surfaced");
   assert(app.includes("allowlisted files") && app.includes("parseSerializedSolution") && app.includes("// FILE:"), "task file contract or multi-file solution restoration is missing");
   assert(app.includes("IDENTITY_KEY") && app.includes("RUN_KEY_PREFIX"), "identity and run metadata are not persisted for reload recovery");
   assert(app.includes('aria-live="polite"') && app.includes('aria-label={`${task.id} allowlisted files`}'), "loading, selection, or file controls lack accessible live/name hooks");
@@ -37,6 +42,8 @@ try {
   assert(vite.includes('intelligence: "intelligence/index.html"'), "Vite does not build the intelligence entry point");
   checks.push("five task contracts remain discoverable in the app and static shell");
   checks.push("selection, allowlisted files, trial/run, and task-scoped leaderboards have stable hooks");
+  checks.push("hard-task capability labels and public/hidden repository shape are visible without exposing hidden cases");
+  checks.push("external 67% calibration stays labeled as a reference while local model-suite publication remains provenance-gated");
   checks.push("versioned and legacy suite/task metadata routes have resilient fallbacks");
   checks.push("identity, run receipt, and serialized multi-file solution state rehydrate on reload");
   checks.push("suite cards, live status, tabs, editor labels, and static shell metadata are accessible");

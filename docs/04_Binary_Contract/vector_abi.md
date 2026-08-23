@@ -24,6 +24,11 @@ bits identify the v3 executable profile, vector geometry, vector context, and
 vector spill support. `executable_header_v3.h` provides versioned validation
 and round-trip helpers while the v2 decoder remains unchanged.
 
+Each of the 27 lanes carries one architectural T40 word. Thus, `VLEN = 27`
+means 27 lanes and a spill size of 27 T40 words; it never means a 27-trit lane.
+This preserves the T40 native scalar contract and the design goal of a ternary
+equivalent of a 64-bit computer.
+
 The vector function rules are:
 
 - `v0`–`v3` carry vector arguments and `v0` carries a vector return;

@@ -283,6 +283,14 @@ alignment. The later ABI v3 work adds an explicit caller-owned aggregate
 return pointer and a defined vector boundary rather than silently treating
 vectors as scalar arguments.
 
+The width is deliberate: v2's explicit design goal is a **ternary equivalent
+of a 64-bit computer**. T40 is the largest whole-trit word whose valid ternary
+state space fits within 64 bits (`3^40 < 2^64 < 3^41`). This is an equivalence
+of native scalar capacity and general-purpose software role, not an assertion
+of binary compatibility or the physical size of every host/wire encoding. The
+T27 instruction format, 27-lane vector geometry, and paired T50 extended values
+remain separate architectural axes.
+
 This makes a compiler spill, a syscall marshal, a VM register write, and a
 native JIT store agree about the same physical object.
 

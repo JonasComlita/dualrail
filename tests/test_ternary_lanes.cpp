@@ -106,6 +106,40 @@ void expectFloatRoundtrip(FloatT value, LaneT lane, FloatT back, int mantissaTri
     }
 }
 
+void testBackendPrimitiveContract() {
+    std::cout << "[0] backend primitive encoding and invalid-state contract\n";
+    using namespace sandbox;
+
+    for (int trit = -1; trit <= 1; ++trit) {
+        const uint8_t raw = backend::encodeTritPair(static_cast<int8_t>(trit));
+        expect(backend::validTritPair(raw), "encoded balanced trit is valid");
+        expect(backend::decodeTritPair(raw) == trit, "valid trit encode/decode roundtrip");
+        expect(backend::decodeTritPair(backend::negateTritPair(raw)) == -trit,
+               "valid trit negation");
+    }
+
+    expect(backend::encodeTritPair(-2) == 0x3U,
+           "out-of-range negative trit canonicalizes to invalid");
+    expect(backend::encodeTritPair(2) == 0x3U,
+           "out-of-range positive trit canonicalizes to invalid");
+    expect(backend::decodeTritPair(0x3U) == 0,
+           "invalid pair decodes to the HDL fallback value");
+    expect(backend::decodeTritPair(0xFFU) == 0,
+           "non-pair input decodes to the HDL fallback value");
+    expect(backend::negateTritPair(0x3U) == 0x3U,
+           "invalid pair remains canonically invalid under negation");
+    expect(backend::negateTritPair(0xFFU) == 0x3U,
+           "non-pair input canonicalizes to invalid under negation");
+
+    for (int original = -10; original <= 10; ++original) {
+        int normalized = original;
+        const int8_t result = backend::normalizeTritSum(normalized);
+        expect(result >= -1 && result <= 1, "normalized trit sum is balanced");
+        expect(normalized == result, "normalizer mutates sum to returned digit");
+        expect((original - normalized) % 3 == 0, "normalizer preserves value modulo three");
+    }
+}
+
 void testLaneRawValidation() {
     std::cout << "[1] lane raw validation and spare-state rejection\n";
     using namespace sandbox;
@@ -638,6 +672,7 @@ void testBackendKernelWrappers() {
 int main() {
     sandbox::LongTriple::initPowTable();
 
+    testBackendPrimitiveContract();
     testLaneRawValidation();
     testConversionBoundary();
     testLaneTritwiseOps();

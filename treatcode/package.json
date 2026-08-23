@@ -2,7 +2,7 @@
   "name": "treatcode",
   "version": "1.0.0",
   "description": "TreatCode DSA Learning and Optimization Platform for Trit",
-  "packageManager": "bun@1.3.14",
+  "packageManager": "bun@1.4.0",
   "main": "server.ts",
   "scripts": {
     "dev": "vite",

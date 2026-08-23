@@ -1,6 +1,7 @@
-// TC-SWE-005 starter defect: the adapter negates successful syscall returns.
-// Negative kernel statuses must remain errors; successful values pass through.
-fn abi_return(status: t40, value: t40) -> t40 {
-    if status < 0 { return status; }
-    return 0 - value;
+// TC-SWE-005 starter defect: status and partial-result precedence are wrong.
+fn adapt_syscall(status: t40, value: t40, policy: t40) -> t40 {
+    if valid_policy(policy) == 0 { return -4; }
+    if status < 0 { return 0 - status; }
+    if status > 0 { return value; }
+    return apply_policy(value, policy);
 }

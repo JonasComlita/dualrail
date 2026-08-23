@@ -1,23 +1,32 @@
 {
   "schema": "treatcode.intelligence.benchmark-manifest.v1",
-  "version": 1,
+  "version": 2,
   "task": {
     "id": "TC-SWE-004",
-    "title": "Repair the Atomic State Transition",
+    "title": "Repair the Ordered Saturating State Machine",
     "kind": "mini-repository-repair",
-    "description": "Repair a three-way state transition used by concurrent workers so event ordering remains deterministic.",
+    "description": "Repair a two-file state machine. Initial state must be in [-9,9] or return -28. Events are -2 reset, -1 decrement, 0 preserve, +1 increment, and +2 sign-toggle; any other event returns -27. Increment/decrement saturate at the bounds. Apply event1 and then event2, preserving order and short-circuiting errors.",
+    "difficulty": "hard",
+    "capabilities": ["multi-file reasoning", "ordered composition", "state machine", "saturation", "sentinel errors", "short-circuiting"],
     "source_root": "src",
-    "allowlisted_files": ["src/state_transition.trit"],
+    "allowlisted_files": ["src/events.trit", "src/state_transition.trit"],
     "max_file_bytes": 65536,
     "trial_count": 4,
     "score": { "formula": "passed / 4 * 100", "unit": "percent", "minimum_trial_count": 4 },
-    "runner": { "kind": "trit-scalar-return", "entrypoint": "state_transition", "arity": 2 }
+    "runner": { "kind": "trit-scalar-return", "entrypoint": "apply_two_events", "arity": 3 }
   },
   "public_tests": { "schema": "treatcode.intelligence.public-tests.v1", "metadata_path": "tests/public.metadata.v1.json", "cases": [
-    { "id": "public-preserve", "name": "preserve state", "a": 10, "b": 0, "c": 0, "expected": 10 },
-    { "id": "public-increment", "name": "increment event", "a": 10, "b": 1, "c": 0, "expected": 11 },
-    { "id": "public-decrement", "name": "decrement event", "a": 10, "b": -1, "c": 0, "expected": 9 }
+    { "id": "public-two-increments", "name": "ordered increments", "a": 0, "b": 1, "c": 1, "expected": 2 },
+    { "id": "public-saturation", "name": "upper saturation", "a": 9, "b": 1, "c": 1, "expected": 9 },
+    { "id": "public-reset-then-increment", "name": "reset then increment", "a": 5, "b": -2, "c": 1, "expected": 1 },
+    { "id": "public-toggle-then-decrement", "name": "toggle then decrement", "a": 5, "b": 2, "c": -1, "expected": -6 },
+    { "id": "public-invalid-state", "name": "invalid initial state", "a": 10, "b": 0, "c": 0, "expected": -28 },
+    { "id": "public-invalid-event", "name": "invalid event", "a": 0, "b": 3, "c": 0, "expected": -27 }
   ] },
-  "hidden_tests": { "schema": "treatcode.intelligence.hidden-tests.v1", "server_only": true, "path": "tests/hidden.server.v1.json", "case_count": 8, "suites": [{ "id": "event-ordering", "case_count": 8 }] },
+  "hidden_tests": { "schema": "treatcode.intelligence.hidden-tests.v1", "server_only": true, "path": "tests/hidden.server.v1.json", "case_count": 28, "suites": [
+    { "id": "ordered-sequences", "case_count": 12 },
+    { "id": "saturation", "case_count": 8 },
+    { "id": "validation-precedence", "case_count": 8 }
+  ] },
   "protocol": { "schema": "treatcode.intelligence.protocol.v1", "trial_count": 4, "hidden_submissions_per_trial": 1, "public_tests_repeatable": true, "hidden_results": "sealed_until_all_trials_complete", "fresh_fixture_per_trial": true }
 }

@@ -28,7 +28,12 @@ The balanced trit `t` at position `i` contributes `(t + 1) × 3^i` to the intege
 | T40   | 40    | `uint64_t` | ~1.22×10¹⁹ |
 | T50   | 50    | `UInt128`  | ~7.18×10²³ |
 
-**Key invariant:** `3^40 < 2^64`, so T40 (the native word size) fits exactly in one `uint64_t`. This is exploited for efficiency.
+**Key invariant:** `3^40 < 2^64 < 3^41`, so T40 is the largest whole-trit
+positional value whose valid ternary state space fits in one `uint64_t`. This is the basis for the
+explicit design goal of a **ternary equivalent of a 64-bit computer**. The
+equivalence is about native scalar capacity and role, not binary compatibility
+or the physical size of every host/wire encoding. The 27-trit instruction and
+27-lane vector geometry are independently specified.
 
 **Special sentinels** live at the top of the storage range (unreachable by `pack()`):
 - `OVERFLOW_DATA` = `std::numeric_limits<Storage>::max()`

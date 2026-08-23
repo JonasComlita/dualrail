@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import "./treatcode-theme.css";
 import {
   PublicRecord,
   PublicSnapshot,
@@ -109,9 +110,12 @@ function SearchBox({ initialQuery, initialMode, onSearch }: { initialQuery: stri
 }
 
 function Header({ route, onNavigate }: { route: Route; onNavigate: (href: string) => void }) {
-  const nav = (href: string, label: string, active: boolean) => <a href={href} aria-current={active ? "page" : undefined} onClick={(event) => { event.preventDefault(); onNavigate(href); }}>{label}</a>;
+  const nav = (href: string, label: string, active: boolean) => {
+    const isPublicRoute = href === "/" || href === "/stack" || href === "/learn" || href === "/search";
+    return <a href={href} aria-current={active ? "page" : undefined} onClick={isPublicRoute ? (event) => { event.preventDefault(); onNavigate(href); } : undefined}>{label}</a>;
+  };
   return <header className="tc-topbar">
-    <a className="tc-brand" href="/" onClick={(event) => { event.preventDefault(); onNavigate("/"); }}>Treat<span className="tc-brand-mark">Code</span></a>
+    <a className="tc-brand" href="/" onClick={(event) => { event.preventDefault(); onNavigate("/"); }}>TREATCODE</a>
     <nav className="tc-nav" aria-label="Primary navigation">
       {nav("/", "Overview", route.page === "home")}
       {nav("/stack", "Stack Explorer", route.page === "stack")}

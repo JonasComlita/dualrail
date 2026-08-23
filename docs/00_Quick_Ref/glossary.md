@@ -15,8 +15,9 @@ The ternary equivalent of a binary bit. One trit holds one of three values: {−
 **Tryte**
 Three trits. Analogous to a byte (3 bits in binary). Rarely used in this codebase — `Word` is more common.
 
-**Word**
-27 trits. The native instruction word size of the ISA. 27 = 3^3, a power of three.
+**Word (instruction word)**
+27 trits. The fixed instruction word size of the ISA. 27 = 3^3, a power of
+three. Do not confuse this with the T40 native scalar/data word.
 
 **T_NEG / T_ZER / T_POS**
 Symbolic constants for the three trit values: `T_NEG = -1`, `T_ZER = 0`, `T_POS = +1`.
@@ -38,7 +39,7 @@ Symbolic constants for the three trit values: `T_NEG = -1`, `T_ZER = 0`, `T_POS 
 20-trit floating-point. 14-trit mantissa, 6-trit exponent. Stored as `uint32_t`. Alias for `TernaryScalar<20>`.
 
 **Triple / T40**
-40-trit floating-point. 33-trit mantissa, 7-trit exponent. The **native word size** of the ISA. Stored in a single `uint64_t` (3^40 < 2^64). Alias for `TernaryScalar<40>`.
+40-trit floating-point. 33-trit mantissa, 7-trit exponent. The **native scalar and ordinary data-memory word size** of the ISA. It is the largest whole-trit positional value whose valid state space fits in one `uint64_t` (`3^40 < 2^64 < 3^41`) and implements the design goal of a ternary equivalent of a 64-bit computer. This means equivalent scalar capacity and role, not binary-compatible or fixed-size physical encoding. Alias for `TernaryScalar<40>`.
 
 **LongTriple / T50**
 50-trit floating-point. 41-trit mantissa, 9-trit exponent. The widest standard type. Stored in `UInt128`. Alias for `TernaryScalar<50>`.

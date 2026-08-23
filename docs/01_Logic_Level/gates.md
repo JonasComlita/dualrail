@@ -35,17 +35,31 @@ bool validTritPair(uint8_t raw);       // raw < 3
 uint8_t negateTritPair(uint8_t raw);   // 2U - raw
 ```
 
+The primitive boundary canonicalizes invalid input to match `trit_pkg.sv`:
+
+- `encodeTritPair()` returns `0b11` for values outside `{-1,0,+1}`;
+- `decodeTritPair()` returns the HDL fallback value `0` for invalid input, so
+  callers that need to distinguish invalid from balanced zero must call
+  `validTritPair()` first;
+- `negateTritPair()` preserves or canonicalizes invalid input as `0b11`.
+
 ---
 
-## Ternary Full-Adder
+## Trit-Sum Normalization
 
-The balanced ternary full-adder rule: if `sum > 1`, emit `sum−3, carry=+1`; if `sum < −1`, emit `sum+3, carry=−1`:
+The balanced ternary normalization rule subtracts three while `sum > 1` and
+adds three while `sum < -1`. The helper mutates `sum` to the resulting balanced
+digit and returns that same digit:
 
 ```cpp
-int8_t normalizeTritSum(int& sum);     // clamps sum ∈ {-1,0,+1}, sets carry
+int8_t normalizeTritSum(int& sum);     // reduces sum modulo 3 into {-1,0,+1}
 ```
 
-Used by `addSubLane64` and `addSubLane128`.
+This helper does **not** report a carry and is therefore not, by itself, a full
+adder. `addSubLane64` and `addSubLane128` currently perform digit normalization
+and carry propagation directly in their own loops. The hardware full-adder is
+`trit_add3` in `hdl/rtl/trit_pkg.sv`, exposed by `trit_full_adder` in
+`hdl/rtl/trit_gates.sv`.
 
 ---
 

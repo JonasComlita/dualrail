@@ -26,7 +26,37 @@ export const INTELLIGENCE_TRIAL_COUNT = 4 as const;
 export const INTELLIGENCE_MAX_FILE_BYTES = 65_536 as const;
 export const INTELLIGENCE_SAFE_INPUT_BOUND = 1_000_000 as const;
 
-const ALLOWLISTED_FILES = ["src/compare.trit", "src/median.trit"] as const;
+export type IntelligenceEvaluationKind = "model_rollout" | "harness_fixture";
+
+/**
+ * External comparison data is deliberately not treated as a TreatCode score.
+ * It is shown as a calibration reference so a small local pilot cannot be
+ * mistaken for a 113-task DeepSWE result.
+ */
+export interface IntelligenceExternalReference {
+  schema: "treatcode.intelligence.external-reference.v1";
+  source: string;
+  source_title: string;
+  snapshot_date: string;
+  metric: "task_pass_rate";
+  task_count: number;
+  model: {
+    provider: string;
+    id: string;
+    reasoning_effort: string;
+    score: number;
+    confidence_interval: number;
+  };
+  methodology: {
+    harness: string;
+    repositories: number;
+    languages: string[];
+    verifier: string;
+    note: string;
+  };
+}
+
+const ALLOWLISTED_FILES = ["src/validation.trit", "src/compare.trit", "src/median.trit", "src/consensus.trit"] as const;
 type AllowlistedFile = string;
 
 export type IntelligenceTrialStatus =
@@ -94,6 +124,8 @@ interface BenchmarkManifest {
     description: string;
     category?: string;
     summary?: string;
+    difficulty?: string;
+    capabilities?: string[];
     source_root: string;
     allowlisted_files: string[];
     max_file_bytes: number;
@@ -154,6 +186,16 @@ export interface IntelligenceTaskCatalog {
     allowlisted_files: Array<{ path: string; max_bytes: number; starter: string }>;
     trial_count: typeof INTELLIGENCE_TRIAL_COUNT;
     score_formula: "passed / 4 * 100";
+    score_scope: "task_trial_reliability";
+    runner_ready: boolean;
+    difficulty: string;
+    capabilities: string[];
+    repository_shape: {
+      editable_files: number;
+      public_cases: number;
+      hidden_cases: number;
+      hidden_suites: number;
+    };
   };
   public_tests: {
     schema: typeof INTELLIGENCE_PUBLIC_TEST_SCHEMA;
@@ -171,6 +213,26 @@ export interface IntelligenceSuiteCatalog {
   schema: typeof INTELLIGENCE_SUITE_SCHEMA;
   version: number;
   tasks: IntelligenceTaskCatalog[];
+  score_formula: "sum(passed_trials) / sum(trial_count) * 100";
+  score_scope: "suite_task_pass_rate";
+  external_reference?: IntelligenceExternalReference;
+}
+
+export interface IntelligenceSuiteLeaderboardRecord {
+  schema: "treatcode.intelligence.suite-leaderboard-record.v1";
+  benchmark_version: number;
+  provider: string;
+  model: string;
+  reasoning_effort: string;
+  participant_id: string | null;
+  score: number;
+  completed_tasks: number;
+  task_count: number;
+  passed_trials: number;
+  trial_count: number;
+  official: boolean;
+  status: "complete" | "partial";
+  task_scores: Array<{ task_id: string; score: number; passed_trials: number; trial_count: number }>;
 }
 
 export interface IntelligenceSuiteTaskDescriptor {
@@ -213,6 +275,11 @@ export interface IntelligenceRunView {
   task_id: string;
   status: IntelligenceRunStatus;
   participant_id: string | null;
+  benchmark_version: number;
+  evaluation_kind: IntelligenceEvaluationKind | null;
+  provider: string | null;
+  model: string | null;
+  reasoning_effort: string | null;
   source_commit: string;
   created_at: string;
   trials: IntelligenceTrialView[];
@@ -225,11 +292,13 @@ export interface IntelligenceAggregate {
   schema: "treatcode.intelligence.aggregate.v1";
   run_id: string;
   task_id: string;
+  benchmark_version: number;
   trial_count: typeof INTELLIGENCE_TRIAL_COUNT;
   completed_trials: typeof INTELLIGENCE_TRIAL_COUNT;
   passed_trials: number;
   score: number;
   formula: "passed / 4 * 100";
+  score_scope: "task_trial_reliability";
   sealed: true;
   official_eligible: boolean;
   published: boolean;
@@ -271,11 +340,20 @@ export interface IntelligenceLeaderboardRecord {
   id: string;
   view: "official";
   task_id: string;
+  benchmark_version: number;
   run_id: string;
   participant_id: string | null;
   score: number;
   passed_trials: number;
   trial_count: typeof INTELLIGENCE_TRIAL_COUNT;
+  evaluation_kind: IntelligenceEvaluationKind;
+  provider: string | null;
+  model: string | null;
+  reasoning_effort: string | null;
+  harness: string | null;
+  prompt_hash: string | null;
+  rollout_ids: string[];
+  artifact_hashes: string[];
   tested_commit: string;
   published_at: string;
   attested: boolean;
@@ -296,7 +374,14 @@ export interface IntelligenceSelfReportedRecord {
 export interface IntelligenceAttestationRequest {
   run_id: string;
   principal: string;
+  evaluation_kind: IntelligenceEvaluationKind;
   model: string;
+  provider?: string;
+  reasoning_effort?: string;
+  harness?: string;
+  prompt_hash?: string;
+  rollout_ids?: string[];
+  artifact_hashes?: string[];
   model_configuration?: string;
   tested_commit?: string;
   evidence_hashes?: string[];
@@ -307,7 +392,14 @@ export interface IntelligenceAttestationRecord {
   id: string;
   run_id: string;
   principal: string;
+  evaluation_kind: IntelligenceEvaluationKind;
+  provider: string | null;
   model: string;
+  reasoning_effort: string | null;
+  harness: string | null;
+  prompt_hash: string | null;
+  rollout_ids: string[];
+  artifact_hashes: string[];
   model_configuration: string | null;
   tested_commit: string;
   evidence_hash: string;
@@ -369,6 +461,16 @@ export interface IntelligenceRunInput {
   participantId?: string;
   source_commit?: string;
   sourceCommit?: string;
+  evaluation_kind?: IntelligenceEvaluationKind;
+  evaluationKind?: IntelligenceEvaluationKind;
+  provider?: string;
+  model?: string;
+  reasoning_effort?: string;
+  reasoningEffort?: string;
+  harness?: string;
+  prompt_hash?: string;
+  rollout_ids?: string[];
+  artifact_hashes?: string[];
 }
 
 interface InternalTrial {
@@ -389,6 +491,15 @@ interface InternalRun {
   id: string;
   taskId: string;
   participantId: string | null;
+  benchmarkVersion: number;
+  evaluationKind: IntelligenceEvaluationKind | null;
+  provider: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  harness: string | null;
+  promptHash: string | null;
+  rolloutIds: string[];
+  artifactHashes: string[];
   sourceCommit: string;
   createdAt: string;
   root: string;
@@ -435,6 +546,36 @@ function safeId(value: string, label: string): string {
     throw new IntelligenceServiceError("invalid_request", `${label} contains an unsafe identifier`, 400);
   }
   return value;
+}
+
+function optionalText(value: unknown, label: string, maxLength: number): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > maxLength) {
+    throw new IntelligenceServiceError("invalid_request", `${label} must be a bounded string`, 400);
+  }
+  return value;
+}
+
+function boundedStringList(value: unknown, label: string, maxItems: number, maxLength: number): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > maxItems || value.some((item) => typeof item !== "string" || item.length === 0 || item.length > maxLength)) {
+    throw new IntelligenceServiceError("invalid_request", `${label} must be a bounded string list`, 400);
+  }
+  return [...new Set(value as string[])];
+}
+
+function isSha256(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/i.test(value);
+}
+
+function hasBoundOfficialProvenance(record: Partial<IntelligenceLeaderboardRecord>): boolean {
+  if (typeof record.benchmark_version !== "number" || (record.evaluation_kind !== "model_rollout" && record.evaluation_kind !== "harness_fixture")) return false;
+  if (typeof record.model !== "string" || typeof record.harness !== "string") return false;
+  if (!Array.isArray(record.rollout_ids) || !Array.isArray(record.artifact_hashes)) return false;
+  if (record.evaluation_kind === "model_rollout") {
+    return typeof record.provider === "string" && typeof record.reasoning_effort === "string" && typeof record.prompt_hash === "string" && isSha256(record.prompt_hash) && record.rollout_ids.length === INTELLIGENCE_TRIAL_COUNT && record.artifact_hashes.length >= INTELLIGENCE_TRIAL_COUNT && record.artifact_hashes.every((hash) => typeof hash === "string" && isSha256(hash));
+  }
+  return record.harness.length > 0;
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -486,8 +627,8 @@ function validateCase(value: unknown, location: string): BenchmarkCase {
 function validateFixture(fixtureRoot: string, expectedTaskId?: string): LoadedFixture {
   const manifestPath = path.join(fixtureRoot, "manifest.v1.json");
   const manifest = parseJson<BenchmarkManifest>(manifestPath);
-  if (manifest.schema !== INTELLIGENCE_MANIFEST_SCHEMA || manifest.version !== 1) {
-    throw new IntelligenceServiceError("invalid_manifest", "The intelligence benchmark manifest is not version 1", 500);
+  if (manifest.schema !== INTELLIGENCE_MANIFEST_SCHEMA || !Number.isInteger(manifest.version) || manifest.version < 1 || manifest.version > 2) {
+    throw new IntelligenceServiceError("invalid_manifest", "The intelligence benchmark manifest version is unsupported", 500);
   }
   if (!manifest.task.id || (expectedTaskId && manifest.task.id !== expectedTaskId) || manifest.task.trial_count !== INTELLIGENCE_TRIAL_COUNT || manifest.protocol.trial_count !== INTELLIGENCE_TRIAL_COUNT) {
     throw new IntelligenceServiceError("invalid_manifest", "Intelligence tasks must declare exactly four trials and a matching task id", 500);
@@ -558,6 +699,28 @@ function defaultFixtureRoot(): string {
 
 function defaultRepositoryRoot(): string {
   return path.resolve(__dirname, "..", "..");
+}
+
+function loadExternalReference(fixtureRoot: string): IntelligenceExternalReference | undefined {
+  const referencePath = path.join(fixtureRoot, "deepswe-reference.v1.json");
+  if (!existsSync(referencePath)) return undefined;
+  const reference = parseJson<IntelligenceExternalReference>(referencePath);
+  if (
+    reference.schema !== "treatcode.intelligence.external-reference.v1" ||
+    typeof reference.source !== "string" ||
+    reference.metric !== "task_pass_rate" ||
+    !reference.model ||
+    typeof reference.model.id !== "string" ||
+    typeof reference.model.score !== "number" ||
+    typeof reference.model.confidence_interval !== "number"
+  ) {
+    throw new IntelligenceServiceError("invalid_manifest", "The external benchmark reference is malformed", 500);
+  }
+  return {
+    ...reference,
+    model: { ...reference.model },
+    methodology: { ...reference.methodology, languages: [...reference.methodology.languages] },
+  };
 }
 
 function defaultStorageRoot(): string {
@@ -669,11 +832,13 @@ export class IntelligenceBenchmarkService {
     this.sourceCommit = options.sourceCommit || "tc-swe-001-v1";
     this.customExecutor = options.executor;
     // The HTTP adapter still performs normal bearer authorization.  The
-    // built-in hook only accepts the pre-provisioned service identity; tests
-    // and embedders may replace it with a stronger external attestor.
+    // built-in hook only attests deterministic harness fixtures.  A real
+    // model rollout must be checked by an externally provisioned attestor that
+    // can verify the provider/session/artifact evidence; merely posting
+    // model="gpt-5.6-luna" must never create an official model score.
     this.privilegedAttestor = options.privilegedAttestor || ((context) => {
       const principal = context.request.principal;
-      return principal === "tc:identity:demo-service" || principal.startsWith("tc:identity:service-");
+      return context.request.evaluation_kind === "harness_fixture" && (principal === "tc:identity:demo-service" || principal.startsWith("tc:identity:service-"));
     });
     this.fixture = validateFixture(this.fixtureRoot, options.taskId);
     this.taskId = this.fixture.taskId;
@@ -710,6 +875,16 @@ export class IntelligenceBenchmarkService {
         allowlisted_files: this.fixture.allowlistedFiles.map((relative) => ({ path: relative, max_bytes: this.maxFileBytes, starter: this.fixture.files.get(relative) || "" })),
         trial_count: INTELLIGENCE_TRIAL_COUNT,
         score_formula: "passed / 4 * 100",
+        score_scope: "task_trial_reliability",
+        runner_ready: Boolean(manifest.task.runner),
+        difficulty: manifest.task.difficulty || "unrated",
+        capabilities: Array.isArray(manifest.task.capabilities) ? [...manifest.task.capabilities] : [],
+        repository_shape: {
+          editable_files: this.fixture.allowlistedFiles.length,
+          public_cases: this.fixture.publicCases.length,
+          hidden_cases: this.fixture.hiddenCases.length,
+          hidden_suites: manifest.hidden_tests.suites.length,
+        },
       },
       public_tests: {
         schema: INTELLIGENCE_PUBLIC_TEST_SCHEMA,
@@ -740,6 +915,20 @@ export class IntelligenceBenchmarkService {
     }
     const participantValue = normalizedInput.participant_id ?? normalizedInput.participantId;
     const commitValue = normalizedInput.source_commit ?? normalizedInput.sourceCommit;
+    const evaluationKind = normalizedInput.evaluation_kind ?? normalizedInput.evaluationKind ?? null;
+    if (evaluationKind !== null && evaluationKind !== "model_rollout" && evaluationKind !== "harness_fixture") {
+      throw new IntelligenceServiceError("invalid_request", "Unknown intelligence evaluation kind", 400);
+    }
+    const model = optionalText(normalizedInput.model, "model", 160);
+    const provider = optionalText(normalizedInput.provider, "provider", 80);
+    const reasoningEffort = optionalText(normalizedInput.reasoning_effort ?? normalizedInput.reasoningEffort, "reasoning effort", 80);
+    const harness = optionalText(normalizedInput.harness, "harness", 160);
+    const promptHash = optionalText(normalizedInput.prompt_hash, "prompt hash", 100);
+    const rolloutIds = boundedStringList(normalizedInput.rollout_ids, "rollout ids", INTELLIGENCE_TRIAL_COUNT, 240);
+    const artifactHashes = boundedStringList(normalizedInput.artifact_hashes, "artifact hashes", INTELLIGENCE_TRIAL_COUNT * 4, 100);
+    if (evaluationKind === null && (model || provider || reasoningEffort || harness || promptHash || rolloutIds.length || artifactHashes.length)) {
+      throw new IntelligenceServiceError("invalid_request", "Model provenance fields require an evaluation_kind", 400);
+    }
     const participantId = participantValue === undefined ? null : safeId(participantValue, "participant id");
     const sourceCommit = commitValue === undefined ? this.sourceCommit : safeId(commitValue, "source commit");
     await mkdir(this.storageRoot, { recursive: true });
@@ -777,6 +966,15 @@ export class IntelligenceBenchmarkService {
       id: runId,
       taskId: this.taskId,
       participantId,
+      benchmarkVersion: this.fixture.manifest.version,
+      evaluationKind,
+      provider,
+      model,
+      reasoningEffort,
+      harness,
+      promptHash,
+      rolloutIds,
+      artifactHashes,
       sourceCommit,
       createdAt: new Date().toISOString(),
       root: runRoot,
@@ -1001,17 +1199,44 @@ export class IntelligenceBenchmarkService {
     if (run.attestation) return { ...run.attestation };
     if (!this.privilegedAttestor) throw new IntelligenceServiceError("attestation_required", "A privileged attestation hook is not configured", 403);
     if (typeof request.principal !== "string" || request.principal.length === 0 || typeof request.model !== "string" || request.model.length === 0) {
-      throw new IntelligenceServiceError("invalid_request", "Attestation principal and model are required", 400);
+      throw new IntelligenceServiceError("invalid_request", "Attestation principal, evaluation kind, and model are required", 400);
+    }
+    if (request.evaluation_kind !== "model_rollout" && request.evaluation_kind !== "harness_fixture") {
+      throw new IntelligenceServiceError("invalid_request", "Attestation evaluation_kind must be model_rollout or harness_fixture", 400);
+    }
+    const provider = optionalText(request.provider, "provider", 80);
+    const reasoningEffort = optionalText(request.reasoning_effort, "reasoning effort", 80);
+    const harness = optionalText(request.harness, "harness", 160);
+    const promptHash = optionalText(request.prompt_hash, "prompt hash", 100);
+    const rolloutIds = boundedStringList(request.rollout_ids, "rollout ids", INTELLIGENCE_TRIAL_COUNT, 240);
+    const artifactHashes = boundedStringList(request.artifact_hashes, "artifact hashes", INTELLIGENCE_TRIAL_COUNT * 4, 100);
+    const evidenceHashes = boundedStringList(request.evidence_hashes, "evidence hashes", 64, 100);
+    if (request.evaluation_kind === "model_rollout") {
+      if (!provider || !reasoningEffort || !harness || !promptHash || !isSha256(promptHash) || rolloutIds.length !== INTELLIGENCE_TRIAL_COUNT || artifactHashes.length < INTELLIGENCE_TRIAL_COUNT || artifactHashes.some((hash) => !isSha256(hash))) {
+        throw new IntelligenceServiceError("attestation_required", "A model rollout requires provider, exact effort, harness, prompt hash, four rollout IDs, and per-trial artifact hashes", 403);
+      }
+      if (run.evaluationKind !== "model_rollout" || run.provider !== provider || run.model !== request.model || run.reasoningEffort !== reasoningEffort || run.harness !== harness || run.promptHash !== promptHash || run.rolloutIds.join("\u0000") !== rolloutIds.join("\u0000")) {
+        throw new IntelligenceServiceError("attestation_rejected", "Model provenance does not match the run metadata", 403);
+      }
+    } else if (run.evaluationKind === "model_rollout") {
+      throw new IntelligenceServiceError("attestation_rejected", "A model rollout cannot be attested as a fixture harness run", 403);
     }
     const accepted = await this.privilegedAttestor({ run_id: run.id, aggregate, request: { ...request } });
     if (!accepted) throw new IntelligenceServiceError("attestation_rejected", "The privileged attestation hook rejected this run", 403);
-    const evidenceHash = `sha256:${sha256(stableJson({ aggregate, principal: request.principal, model: request.model, model_configuration: request.model_configuration || null, evidence_hashes: [...(request.evidence_hashes || [])].sort() }))}`;
+    const evidenceHash = `sha256:${sha256(stableJson({ aggregate, principal: request.principal, evaluation_kind: request.evaluation_kind, provider, model: request.model, reasoning_effort: reasoningEffort, harness, prompt_hash: promptHash, rollout_ids: [...rolloutIds].sort(), artifact_hashes: [...artifactHashes].sort(), model_configuration: request.model_configuration || null, evidence_hashes: [...evidenceHashes].sort() }))}`;
     const record: IntelligenceAttestationRecord = {
       schema: "treatcode.intelligence.attestation.v1",
       id: `att_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "")}`,
       run_id: run.id,
       principal: request.principal.slice(0, 160),
+      evaluation_kind: request.evaluation_kind,
+      provider,
       model: request.model.slice(0, 160),
+      reasoning_effort: reasoningEffort,
+      harness,
+      prompt_hash: promptHash,
+      rollout_ids: [...rolloutIds],
+      artifact_hashes: [...artifactHashes],
       model_configuration: request.model_configuration ? request.model_configuration.slice(0, 500) : null,
       tested_commit: request.tested_commit || aggregate.tested_commit,
       evidence_hash: evidenceHash,
@@ -1024,17 +1249,34 @@ export class IntelligenceBenchmarkService {
     if (official) {
       official.attested = true;
       official.attestation_id = record.id;
+      official.evaluation_kind = request.evaluation_kind;
+      official.provider = provider;
+      official.model = request.model.slice(0, 160);
+      official.reasoning_effort = reasoningEffort;
+      official.harness = harness;
+      official.prompt_hash = promptHash;
+      official.rollout_ids = [...rolloutIds];
+      official.artifact_hashes = [...artifactHashes];
     } else {
       this.officialRecords.push({
         schema: "treatcode.intelligence.leaderboard-record.v1",
         id: `official_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "")}`,
         view: "official",
         task_id: run.taskId,
+        benchmark_version: run.benchmarkVersion,
         run_id: run.id,
         participant_id: run.participantId,
         score: aggregate.score,
         passed_trials: aggregate.passed_trials,
         trial_count: INTELLIGENCE_TRIAL_COUNT,
+        evaluation_kind: request.evaluation_kind,
+        provider,
+        model: request.model.slice(0, 160),
+        reasoning_effort: reasoningEffort,
+        harness,
+        prompt_hash: promptHash,
+        rollout_ids: [...rolloutIds],
+        artifact_hashes: [...artifactHashes],
         tested_commit: aggregate.tested_commit,
         published_at: aggregate.completed_at,
         attested: true,
@@ -1069,11 +1311,11 @@ export class IntelligenceBenchmarkService {
       if (!record || record.schema !== "treatcode.intelligence.leaderboard-record.v1" || record.view !== "official" || record.task_id !== this.taskId || typeof record.run_id !== "string" || typeof record.score !== "number") {
         throw new IntelligenceServiceError("fixture_unavailable", "The persisted official leaderboard contains an invalid record", 500);
       }
-      if (record.attested !== true || typeof record.attestation_id !== "string" || record.attestation_id.length === 0) {
-        // Before attestation-gated publication was introduced, clean pilot
-        // aggregates were persisted as official rows. Preserve their score,
-        // but do not let an unbound historical record violate the current
-        // official leaderboard contract.
+      if (record.attested !== true || typeof record.attestation_id !== "string" || record.attestation_id.length === 0 || !hasBoundOfficialProvenance(record)) {
+        // Before provenance-bound publication was introduced, clean pilot
+        // aggregates could be persisted as official rows or have a caller-
+        // supplied model label. Preserve their score as self-reported, but do
+        // not let an unbound historical record violate the current contract.
         this.selfReportedRecords.push({
           schema: "treatcode.intelligence.self-reported-leaderboard.v1",
           id: `legacy_${record.id}`,
@@ -1081,7 +1323,7 @@ export class IntelligenceBenchmarkService {
           task_id: record.task_id,
           participant_id: record.participant_id || "legacy-participant",
           score: record.score,
-          note: "Legacy score retained before attestation-gated official publication",
+          note: "Legacy score retained before provenance-bound official publication",
           reported_at: record.published_at,
         });
         continue;
@@ -1198,6 +1440,11 @@ export class IntelligenceBenchmarkService {
       task_id: run.taskId,
       status: run.status,
       participant_id: run.participantId,
+      benchmark_version: run.benchmarkVersion,
+      evaluation_kind: run.evaluationKind,
+      provider: run.provider,
+      model: run.model,
+      reasoning_effort: run.reasoningEffort,
       source_commit: run.sourceCommit,
       created_at: run.createdAt,
       trials: [...run.trials.values()].map((trial) => this.viewTrial(run, trial)),
@@ -1297,11 +1544,13 @@ export class IntelligenceBenchmarkService {
       schema: "treatcode.intelligence.aggregate.v1",
       run_id: run.id,
       task_id: run.taskId,
+      benchmark_version: run.benchmarkVersion,
       trial_count: INTELLIGENCE_TRIAL_COUNT,
       completed_trials: INTELLIGENCE_TRIAL_COUNT,
       passed_trials: passedTrials,
       score: (passedTrials / INTELLIGENCE_TRIAL_COUNT) * 100,
       formula: "passed / 4 * 100",
+      score_scope: "task_trial_reliability",
       sealed: true,
       official_eligible: officialEligible,
       // A clean aggregate is eligible for official publication, but the
@@ -1329,6 +1578,7 @@ export interface IntelligenceSuiteServiceOptions extends IntelligenceServiceOpti
 export class IntelligenceSuiteService {
   readonly suiteRoot: string;
   readonly storageRoot: string;
+  readonly externalReference?: IntelligenceExternalReference;
   private readonly manifest: IntelligenceSuiteManifest;
   private readonly descriptors = new Map<string, IntelligenceSuiteTaskDescriptor>();
   private readonly services = new Map<string, IntelligenceBenchmarkService>();
@@ -1337,8 +1587,9 @@ export class IntelligenceSuiteService {
   constructor(options: IntelligenceSuiteServiceOptions = {}) {
     this.suiteRoot = path.resolve(options.suiteRoot || options.fixtureRoot || defaultFixtureRoot());
     this.storageRoot = path.resolve(options.storageRoot || defaultStorageRoot());
+    this.externalReference = loadExternalReference(this.suiteRoot);
     this.manifest = parseJson<IntelligenceSuiteManifest>(path.join(this.suiteRoot, "suite.v1.json"));
-    if (this.manifest.schema !== INTELLIGENCE_SUITE_SCHEMA || this.manifest.version !== 1 || this.manifest.trial_count !== INTELLIGENCE_TRIAL_COUNT || this.manifest.task_count !== this.manifest.tasks.length || this.manifest.tasks.length < 5) {
+    if (this.manifest.schema !== INTELLIGENCE_SUITE_SCHEMA || !Number.isInteger(this.manifest.version) || this.manifest.version < 1 || this.manifest.version > 2 || this.manifest.trial_count !== INTELLIGENCE_TRIAL_COUNT || this.manifest.task_count !== this.manifest.tasks.length || this.manifest.tasks.length < 5) {
       throw new IntelligenceServiceError("invalid_manifest", "The intelligence suite must be versioned and contain at least five four-trial tasks", 500);
     }
     for (const descriptor of this.manifest.tasks) {
@@ -1388,6 +1639,9 @@ export class IntelligenceSuiteService {
       schema: INTELLIGENCE_SUITE_SCHEMA,
       version: this.manifest.version,
       tasks: this.taskIds().map((taskId) => this.catalog(taskId)),
+      score_formula: "sum(passed_trials) / sum(trial_count) * 100",
+      score_scope: "suite_task_pass_rate",
+      ...(this.externalReference ? { external_reference: { ...this.externalReference, model: { ...this.externalReference.model }, methodology: { ...this.externalReference.methodology, languages: [...this.externalReference.methodology.languages] } } } : {}),
     };
   }
 
@@ -1475,6 +1729,49 @@ export class IntelligenceSuiteService {
 
   getSelfReportedLeaderboard(): IntelligenceSelfReportedRecord[] {
     return this.taskIds().flatMap((taskId) => this.taskService(taskId).getSelfReportedLeaderboard()).sort((left, right) => right.score - left.score).map((row) => ({ ...row }));
+  }
+
+  /**
+   * Aggregate only provenance-bound model rollouts across the full suite.
+   * Harness fixtures are intentionally excluded: they prove the grader, not
+   * model capability. Partial model coverage is returned as `partial` and is
+   * never marked official, so a single easy task cannot become a suite score.
+   */
+  getModelSuiteLeaderboard(): IntelligenceSuiteLeaderboardRecord[] {
+    const groups = new Map<string, { rows: IntelligenceLeaderboardRecord[]; byTask: Map<string, IntelligenceLeaderboardRecord> }>();
+    for (const row of this.getOfficialLeaderboard().filter((candidate) => candidate.evaluation_kind === "model_rollout" && candidate.provider && candidate.model && candidate.reasoning_effort)) {
+      const key = [row.benchmark_version, row.provider, row.model, row.reasoning_effort, row.participant_id || "anonymous"].join("\u0000");
+      const group = groups.get(key) || { rows: [], byTask: new Map<string, IntelligenceLeaderboardRecord>() };
+      group.rows.push(row);
+      const existing = group.byTask.get(row.task_id);
+      if (!existing || existing.published_at < row.published_at) group.byTask.set(row.task_id, row);
+      groups.set(key, group);
+    }
+    return [...groups.values()].map((group) => {
+      const rows = [...group.byTask.values()];
+      const first = rows[0];
+      const passedTrials = rows.reduce((sum, row) => sum + row.passed_trials, 0);
+      const trialCount = rows.reduce((sum, row) => sum + row.trial_count, 0);
+      const taskScores = rows.map((row) => ({ task_id: row.task_id, score: row.score, passed_trials: row.passed_trials, trial_count: row.trial_count })).sort((left, right) => left.task_id.localeCompare(right.task_id));
+      const taskCount = this.taskIds().length;
+      const completedTasks = rows.length;
+      return {
+        schema: "treatcode.intelligence.suite-leaderboard-record.v1" as const,
+        benchmark_version: first.benchmark_version,
+        provider: first.provider!,
+        model: first.model!,
+        reasoning_effort: first.reasoning_effort!,
+        participant_id: first.participant_id,
+        score: trialCount === 0 ? 0 : Math.round((passedTrials / trialCount) * 10000) / 100,
+        completed_tasks: completedTasks,
+        task_count: taskCount,
+        passed_trials: passedTrials,
+        trial_count: trialCount,
+        official: completedTasks === taskCount,
+        status: completedTasks === taskCount ? "complete" as const : "partial" as const,
+        task_scores: taskScores,
+      };
+    }).sort((left, right) => Number(right.official) - Number(left.official) || right.score - left.score);
   }
 
   async attest(request: IntelligenceAttestationRequest): Promise<IntelligenceAttestationRecord> {

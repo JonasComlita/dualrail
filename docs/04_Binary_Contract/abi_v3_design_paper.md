@@ -222,9 +222,15 @@ vector geometry:
 | Syscall ABI | v2 |
 | Vector registers | 8 |
 | Vector lanes | 27 |
-| Lane word width | 27 trits |
+| Lane word width | 40 trits (one architectural T40 word) |
 | Vector context | 279 words |
 | Vector spill | 27 words |
+
+The repeated number 27 describes `VLEN`, the lane count, and therefore the
+number of T40 words in a vector spill. It does not describe each lane's width.
+Keeping every lane at T40 preserves the native scalar contract and the explicit
+design goal of a ternary equivalent of a 64-bit computer; instruction width
+remains the separate T27 contract.
 
 Required feature bits identify the v3 profile, vector geometry, vector context,
 and vector spilling. The checksum covers both the common fields and the v3

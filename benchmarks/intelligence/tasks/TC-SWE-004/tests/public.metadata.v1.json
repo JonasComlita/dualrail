@@ -1,10 +1,13 @@
 {
   "schema": "treatcode.intelligence.public-tests.v1",
-  "version": 1,
+  "version": 2,
   "visibility": "public",
   "cases": [
-    { "id": "public-preserve", "name": "preserve state", "a": 10, "b": 0, "c": 0, "expected": 10 },
-    { "id": "public-increment", "name": "increment event", "a": 10, "b": 1, "c": 0, "expected": 11 },
-    { "id": "public-decrement", "name": "decrement event", "a": 10, "b": -1, "c": 0, "expected": 9 }
+    { "id": "public-two-increments", "name": "ordered increments", "a": 0, "b": 1, "c": 1, "expected": 2 },
+    { "id": "public-saturation", "name": "upper saturation", "a": 9, "b": 1, "c": 1, "expected": 9 },
+    { "id": "public-reset-then-increment", "name": "reset then increment", "a": 5, "b": -2, "c": 1, "expected": 1 },
+    { "id": "public-toggle-then-decrement", "name": "toggle then decrement", "a": 5, "b": 2, "c": -1, "expected": -6 },
+    { "id": "public-invalid-state", "name": "invalid initial state", "a": 10, "b": 0, "c": 0, "expected": -28 },
+    { "id": "public-invalid-event", "name": "invalid event", "a": 0, "b": 3, "c": 0, "expected": -27 }
   ]
 }

@@ -1,8 +1,8 @@
 {
   "schema": "treatcode.intelligence.suite.v1",
-  "version": 1,
-  "title": "TreatCode Intelligence Repair Suite",
-  "description": "Versioned, isolated Trit repair tasks spanning algorithms, parsing, memory safety, state coordination, and syscall/ABI contracts.",
+  "version": 2,
+  "title": "TreatCode Intelligence Systems Repair Suite",
+  "description": "Versioned, isolated multi-file Trit repairs that require compound invariants across algorithms, balanced-ternary encoding, memory safety, ordered state transitions, and syscall/ABI policy contracts.",
   "task_count": 5,
   "trial_count": 4,
   "tasks": [
@@ -10,31 +10,31 @@
       "id": "TC-SWE-001",
       "category": "algorithmic-trit-repair",
       "fixture_path": ".",
-      "summary": "Repair the Three-Way Median Package"
+      "summary": "Repair resilient three-sensor consensus with missing and invalid readings"
     },
     {
       "id": "TC-SWE-002",
       "category": "parser-serialization",
       "fixture_path": "tasks/TC-SWE-002",
-      "summary": "Repair the token round-trip serializer"
+      "summary": "Repair a checked balanced-ternary token codec"
     },
     {
       "id": "TC-SWE-003",
       "category": "memory-pointer-safety",
       "fixture_path": "tasks/TC-SWE-003",
-      "summary": "Repair the bounded pointer guard"
+      "summary": "Repair aligned half-open pointer-span validation"
     },
     {
       "id": "TC-SWE-004",
       "category": "concurrency-state",
       "fixture_path": "tasks/TC-SWE-004",
-      "summary": "Repair the atomic state transition"
+      "summary": "Repair a saturating ordered two-event state machine"
     },
     {
       "id": "TC-SWE-005",
       "category": "syscall-abi-integration",
       "fixture_path": "tasks/TC-SWE-005",
-      "summary": "Repair the syscall return adapter"
+      "summary": "Repair syscall status and result-policy normalization"
     }
   ]
 }

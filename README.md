@@ -5,6 +5,15 @@ VM, lane/SIMD layer, and future ISA extensions. The core rule is that numeric
 formats and lane/wire formats are separate families with explicit conversion
 boundaries.
 
+The explicit architecture goal is a **ternary equivalent of a 64-bit
+computer**. Here, "equivalent" means the native scalar register and ordinary
+data-memory word occupy the 64-bit general-purpose computing class: T40 is the
+largest whole-trit word whose valid ternary state space satisfies
+`3^40 < 2^64` (`3^41 > 2^64`). It does not mean binary-compatible encoding or
+that every host/wire representation occupies exactly 64 physical bits.
+Instructions remain 27 trits, vectors remain 27 lanes, and T50 remains an
+explicit extended/wide value.
+
 Optimization before/after measurements are tracked in
 `optimization_baseline.md`. Add a new dated entry there before accepting any
 hot-path optimization.
@@ -534,7 +543,7 @@ Goal: resolve core architectural correctness bugs, finalize the ternary ISA expa
 #### Track 6.0: Correctness and Architectural Foundations (Completed)
 - **Bug Fixes**: Corrected `MOVH` register masking, eliminated silent denormal precision loss in `fromLane` for `T10/T20`, aligned AVX2 SIMD validity checking with scalar paths, added `TernaryValue` equality operators for optimization passes, and ensured copy constructor exception safety in `TernaryMemory`.
 - **Architectural Unification**: Established canonical in-memory representations unifying raw lanes, typed `TritLane<N>`, `Triple`/`LongTriple`, and `TernaryValue`.
-- **Native Word & Width Semantics**: Unified machine word configuration to default to `T40` (80 bits packed in `uint64_t`), transitioning `T50` into an explicit extended precision target. Configured default vector lengths to ternary-native powers of 3 (`DEFAULT_VECTOR_LENGTH = 27`), and standardized `STORE` source register addressing conventions.
+- **Native Word & Width Semantics**: Unified the native scalar and ordinary data-memory word as `T40`, the ternary equivalent of a binary 64-bit computer's general-purpose word (`3^40 < 2^64 < 3^41`), while transitioning `T50` into an explicit extended-precision target. Configured default vector length independently as the ternary-native power of 3 `DEFAULT_VECTOR_LENGTH = 27`, and standardized `STORE` source-register addressing conventions.
 
 #### Track 6.1: ISA Expansion (Verified)
 - **Indirect Control Flow**: Implement register-indirect branches (`CALLR`, `JMPR`) to support function pointers, dynamic dispatch, and vtables.

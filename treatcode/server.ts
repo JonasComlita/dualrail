@@ -71,7 +71,7 @@ if (fs.existsSync(distPath)) {
   app.get("/learn", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "learn", "index.html")));
   app.get("/operations", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "operations", "index.html")));
   app.get("/intelligence", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "intelligence", "index.html")));
-  app.get("/practice", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "index.html")));
+  app.get("/practice", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "practice", "index.html")));
   app.get("/arena", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "arena", "index.html")));
   app.use(express.static(distPath));
 }
@@ -539,8 +539,12 @@ function publicTrialView(trial: Record<string, unknown> | null | undefined, hidd
     ...(trial || {}),
     trial_id: trial?.id,
     label: trial?.id,
-    score,
-    passed: score === 100 ? true : undefined,
+    // A trial is binary, while the aggregate is a run-level score.  Never
+    // copy the run percentage onto every trial row (75% must not look like
+    // four separate 75% trials).
+    score: null,
+    aggregate_score: score,
+    aggregate_score_scope: "task_trial_reliability",
     sealed: true,
   };
 }
@@ -579,6 +583,7 @@ routeAliases(["/api/intelligence/v1/benchmark", "/api/intelligence/benchmark", "
       const requestedTaskId = typeof req.query.task_id === "string" ? req.query.task_id : typeof req.query.taskId === "string" ? req.query.taskId : INTELLIGENCE_TASK_ID;
       const catalog = intelligenceService.catalog(requestedTaskId);
       const suite = intelligenceService.suiteCatalog();
+      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json({
         schema_version: "treatcode.intelligence.api.v1",
@@ -590,16 +595,18 @@ routeAliases(["/api/intelligence/v1/benchmark", "/api/intelligence/benchmark", "
           public_tests: catalog.public_tests,
           hidden_tests: catalog.hidden_tests,
           public_leaderboard: [],
-          official_leaderboard: intelligenceLeaderboardView("official"),
-          self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
+           official_leaderboard: intelligenceLeaderboardView("official"),
+           self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
+           model_suite_leaderboard: modelSuiteLeaderboard,
         },
         suite,
         tasks: suite.tasks,
         task: catalog.task,
         public_tests: catalog.public_tests,
         hidden_tests: catalog.hidden_tests,
-        official_leaderboard: intelligenceLeaderboardView("official"),
-        self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
+         official_leaderboard: intelligenceLeaderboardView("official"),
+         self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
+         model_suite_leaderboard: modelSuiteLeaderboard,
         protocol_schema: catalog.protocol_schema,
         manifest_schema: INTELLIGENCE_MANIFEST_SCHEMA,
       });
@@ -616,8 +623,9 @@ routeAliases(["/api/intelligence/v1/suite", "/api/intelligence/suite"], (route) 
   app.get(route, (_req: Request, res: Response) => {
     try {
       const suite = intelligenceService.suiteCatalog();
+      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
       res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks }, suite, tasks: suite.tasks });
+      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard }, suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard });
     } catch (error) {
       intelligenceErrorResponse(res, error);
     }
@@ -632,8 +640,9 @@ routeAliases(["/api/intelligence/v1/catalog", "/api/intelligence/catalog"], (rou
   app.get(route, (_req: Request, res: Response) => {
     try {
       const suite = intelligenceService.suiteCatalog();
+      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
       res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks }, suite, tasks: suite.tasks });
+      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard }, suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard });
     } catch (error) {
       intelligenceErrorResponse(res, error);
     }
@@ -672,12 +681,14 @@ routeAliases(["/api/intelligence/v1/leaderboard", "/api/intelligence/leaderboard
       const taskId = typeof req.query.task_id === "string" ? req.query.task_id : typeof req.query.taskId === "string" ? req.query.taskId : undefined;
       const official = intelligenceLeaderboardView("official", taskId);
       const selfReported = intelligenceLeaderboardView("self-reported", taskId);
+      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
       res.json({
         schema_version: "treatcode.intelligence.api.v1",
-        data: { official_leaderboard: official, self_reported_leaderboard: selfReported, ...(taskId ? { task_id: taskId } : {}) },
+        data: { official_leaderboard: official, self_reported_leaderboard: selfReported, model_suite_leaderboard: modelSuiteLeaderboard, ...(taskId ? { task_id: taskId } : {}) },
         ...(taskId ? { task_id: taskId } : {}),
         official_leaderboard: official,
         self_reported_leaderboard: selfReported,
+        model_suite_leaderboard: modelSuiteLeaderboard,
       });
     } catch (error) {
       intelligenceErrorResponse(res, error);
@@ -758,7 +769,19 @@ app.post("/api/intelligence/v1/runs", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const requestedTaskId = typeof body.task_id === "string" ? body.task_id : typeof body.taskId === "string" ? body.taskId : undefined;
     const requestedCommit = typeof body.source_commit === "string" ? body.source_commit : typeof body.sourceCommit === "string" ? body.sourceCommit : publicSnapshot.snapshot.commit || undefined;
-    const run = await intelligenceService.startRun({ task_id: requestedTaskId, participant_id: decision.actor.id, source_commit: requestedCommit });
+    const run = await intelligenceService.startRun({
+      task_id: requestedTaskId,
+      participant_id: decision.actor.id,
+      source_commit: requestedCommit,
+      evaluation_kind: body.evaluation_kind === "model_rollout" || body.evaluation_kind === "harness_fixture" ? body.evaluation_kind : undefined,
+      provider: typeof body.provider === "string" ? body.provider : undefined,
+      model: typeof body.model === "string" ? body.model : undefined,
+      reasoning_effort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
+      harness: typeof body.harness === "string" ? body.harness : undefined,
+      prompt_hash: typeof body.prompt_hash === "string" ? body.prompt_hash : undefined,
+      rollout_ids: Array.isArray(body.rollout_ids) ? body.rollout_ids.filter((item): item is string => typeof item === "string") : undefined,
+      artifact_hashes: Array.isArray(body.artifact_hashes) ? body.artifact_hashes.filter((item): item is string => typeof item === "string") : undefined,
+    });
     intelligenceRunByParticipant.set(intelligenceRunKey(decision.actor.id, run.task_id), run.run_id);
     res.status(201).json({ schema_version: "treatcode.intelligence.api.v1", data: { run }, run });
   } catch (error) {
@@ -900,10 +923,22 @@ app.post("/api/intelligence/v1/runs/:runId/attest", async (req: Request, res: Re
   try {
     const run = await intelligenceService.getRun(req.params.runId);
     const body = (req.body || {}) as Record<string, unknown>;
+    const evaluationKind = body.evaluation_kind === "model_rollout" || body.evaluation_kind === "harness_fixture" ? body.evaluation_kind : undefined;
+    if (!evaluationKind) {
+      res.status(400).json({ schema_version: "treatcode.intelligence.api.v1", error: { code: "invalid_request", reason: "evaluation_kind is required; model scores must declare model_rollout or harness_fixture provenance." } });
+      return;
+    }
     const record = await intelligenceService.attest({
       run_id: run.run_id,
       principal: decision.actor.id,
-      model: typeof body.model === "string" ? body.model : "gpt-5.6-luna",
+      evaluation_kind: evaluationKind,
+      model: typeof body.model === "string" ? body.model : evaluationKind === "harness_fixture" ? "bounded-suite-proof" : "",
+      provider: typeof body.provider === "string" ? body.provider : undefined,
+      reasoning_effort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
+      harness: typeof body.harness === "string" ? body.harness : undefined,
+      prompt_hash: typeof body.prompt_hash === "string" ? body.prompt_hash : undefined,
+      rollout_ids: Array.isArray(body.rollout_ids) ? body.rollout_ids.filter((item): item is string => typeof item === "string") : undefined,
+      artifact_hashes: Array.isArray(body.artifact_hashes) ? body.artifact_hashes.filter((item): item is string => typeof item === "string") : undefined,
       model_configuration: typeof body.model_configuration === "string" ? body.model_configuration : "max",
       tested_commit: typeof body.tested_commit === "string" ? body.tested_commit : run.source_commit,
       evidence_hashes: Array.isArray(body.evidence_hashes) ? body.evidence_hashes.filter((item): item is string => typeof item === "string") : [],

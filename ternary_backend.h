@@ -28,10 +28,12 @@ namespace sandbox {
 namespace backend {
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint8_t encodeTritPair(int8_t trit) {
+    if (trit < -1 || trit > 1) return 0x3U;
     return static_cast<uint8_t>(trit + 1);
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE int8_t decodeTritPair(uint8_t raw) {
+    if (raw >= 3U) return 0;
     return static_cast<int8_t>(raw) - 1;
 }
 
@@ -40,6 +42,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validTritPair(uint8_t raw) {
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint8_t negateTritPair(uint8_t raw) {
+    if (raw >= 3U) return 0x3U;
     return static_cast<uint8_t>(2U - raw);
 }
 

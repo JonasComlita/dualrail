@@ -116,22 +116,27 @@ packing density, vectorization, branchless host emulation, and conversion cost.
 
 Primary file:
 
-1. `ternary_isa.h`
+1. `ARCHITECTURE_MANIFEST.json`
+2. `docs/04_Binary_Contract/architecture_v2.md`
+3. `ternary_isa.h`
 
 Read with:
 
-2. `docs/00_Quick_Ref/opcode_table.md`
-3. `docs/00_Quick_Ref/register_map.md`
-4. `docs/02_Hardware_ISA/encoding.md`
-5. `docs/02_Hardware_ISA/immediate_decoding.md`
-6. `docs/02_Hardware_ISA/interrupts.md`
-7. `docs/04_Binary_Contract/abi_spec.md`
-8. `docs/04_Binary_Contract/vector_abi.md`
-9. `tests/test_isa_asm.cpp`
-10. `tests_next/01_isa/next_isa_encoding.cpp`
+4. `docs/00_Quick_Ref/opcode_table.md`
+5. `docs/00_Quick_Ref/register_map.md`
+6. `docs/02_Hardware_ISA/encoding.md`
+7. `docs/02_Hardware_ISA/immediate_decoding.md`
+8. `docs/02_Hardware_ISA/interrupts.md`
+9. `docs/04_Binary_Contract/abi_spec.md`
+10. `docs/04_Binary_Contract/vector_abi.md`
+11. `tests/test_isa_asm.cpp`
+12. `tests_next/01_isa/next_isa_encoding.cpp`
 
 Review:
 
+- the explicit goal of a ternary equivalent of a 64-bit computer, including
+  why it selects a T40 scalar/DMEM word without changing T27 instruction,
+  27-lane vector, or paired T50 geometry;
 - opcode spaces, instruction formats, field widths, and canonical decoding;
 - general, special, predicate, and vector registers;
 - immediates, address formation, alignment, endianness, and atomicity;

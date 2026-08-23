@@ -1,0 +1,10 @@
+// TC-SWE-005 starter defect: policy validation and clamping are incomplete.
+fn valid_policy(policy: t40) -> t40 {
+    if policy >= 0 { return 1; }
+    return 0;
+}
+
+fn apply_policy(value: t40, policy: t40) -> t40 {
+    if policy == 3 { return value; }
+    return value;
+}

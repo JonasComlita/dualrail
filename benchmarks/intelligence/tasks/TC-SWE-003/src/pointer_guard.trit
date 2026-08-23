@@ -1,7 +1,11 @@
-// TC-SWE-003 starter defect: the upper bound is inclusive when the buffer
-// contains eight words. Repair pointer_guard to return -1 outside [0, 7].
-fn pointer_guard(address: t40) -> t40 {
+// Validate [address, address + length) inside a fixed 27-word region.
+// Error precedence: unsupported alignment => -2, invalid range => -1,
+// misalignment => -3. Success returns address + length - 1.
+// Starter defects use an inclusive upper bound and skip length/alignment.
+
+fn checked_span(address: t40, length: t40, alignment: t40) -> t40 {
+    if valid_alignment(alignment) == 0 { return -2; }
     if address < 0 { return -1; }
-    if address > 8 { return -1; }
-    return address;
+    if address > 27 { return -1; }
+    return address + length;
 }

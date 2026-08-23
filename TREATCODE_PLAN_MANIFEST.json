@@ -611,7 +611,7 @@
         {"id": "intelligence-suite", "path": "build/treatcode-plan-evidence/P14/intelligence-suite-e2e.json", "description": "Full five-task, twenty-trial bounded-compiler suite run"},
         {"id": "intelligence-e2e", "path": "build/treatcode-plan-evidence/P14/intelligence-e2e.json", "description": "Intelligence API/browser route report"},
         {"id": "participant-journey", "path": "build/treatcode-plan-evidence/P14/participant-journey.json", "description": "Participant-facing route and artifact journey report"},
-        {"id": "luna-max-four-trials", "path": "build/treatcode-plan-evidence/P14/luna-max-four-trials.json", "description": "Four independent gpt-5.6-luna max trial evidence and attestation"}
+          {"id": "luna-max-four-trials", "path": "build/treatcode-plan-evidence/P14/luna-max-four-trials.json", "description": "Blind Luna task candidate evidence; provenance-verifiable suite rollout remains required for an official Luna score"}
       ],
       "gates": [
         {"type": "structural", "required": true},

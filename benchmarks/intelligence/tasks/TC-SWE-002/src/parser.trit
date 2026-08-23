@@ -1,5 +1,26 @@
-// TC-SWE-002 starter defect: serialization adds a sentinel to every token.
-// Repair parse_serialize so the token value survives a parse/serialize round trip.
-fn parse_serialize(token: t40) -> t40 {
-    return token + 1;
+// Repair the checked codec. Validation precedence is token (-102), checksum
+// (-100), then mode (-101). Mode 0 round-trips, mode 1 converts to a balanced
+// value, and mode 2 rotates [low, middle, high] to [middle, high, low].
+// Starter defects: checksum observes one digit, serialization reverses the
+// weights, and every valid request is treated as mode 0.
+
+fn token_checksum(token: t40) -> t40 {
+    return balanced_digit(encoded_low(token));
+}
+
+fn balanced_value(token: t40) -> t40 {
+    return balanced_digit(encoded_low(token)) * 9
+        + balanced_digit(encoded_middle(token)) * 3
+        + balanced_digit(encoded_high(token));
+}
+
+fn rotate_token(token: t40) -> t40 {
+    return encoded_low(token) + encoded_middle(token) * 3 + encoded_high(token) * 9;
+}
+
+fn token_codec(token: t40, claimed_checksum: t40, mode: t40) -> t40 {
+    if token < 0 { return -102; }
+    if token > 26 { return -102; }
+    if token_checksum(token) != claimed_checksum { return -100; }
+    return token;
 }

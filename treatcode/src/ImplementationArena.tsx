@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import "./treatcode-theme.css";
 
 type Metric = { unit: string; samples: number[] };
 type BenchmarkRun = {
@@ -132,7 +133,7 @@ export default function ImplementationArena() {
   return (
     <div className="p10-arena" data-testid="implementation-arena">
       <header className="p10-arena-header">
-        <a className="p10-brand" href="/">Treat<span>Code</span></a>
+        <a className="p10-brand" href="/">TREATCODE</a>
         <nav aria-label="Arena navigation"><a href="/stack">Stack Explorer</a><a href="/learn">Learn</a><a href="/practice">Practice</a><a href="/intelligence">Intelligence Benchmark</a></nav>
         <a className="p10-api-link" href="/api/benchmarks/p10">Evidence API</a>
       </header>

@@ -2,6 +2,12 @@
 
 Source of truth: `ternary_isa.h` (register constants), `SYSCALL_MANIFEST.json` (syscall ABI), `ternary_compiler_codegen.h` (compiler enforcement).
 
+The ABI implements the architecture's explicit design goal of a **ternary
+equivalent of a 64-bit computer**: one native scalar ABI word is T40 because
+`3^40 < 2^64 < 3^41`. Equivalence describes scalar capacity and software role,
+not binary-compatible encoding. The T27 instruction width, fixed VLEN of 27
+lanes, and paired T50 wide values are independent geometry.
+
 ---
 
 ## Calling Convention

@@ -16,14 +16,23 @@ const errors = [];
 let serverProcess;
 let serverOutput = "";
 
-const compareFix = `fn compare(a: t40, b: t40) -> t40 {
-    match a - b {
-        neg => { return -1; }
-        zero => { return 0; }
-        pos => { return 1; }
-    }
-}`;
-const medianFix = `fn median(a: t40, b: t40, c: t40) -> t40 {
+const consensusFixes = {
+  "src/validation.trit": `fn is_missing(reading: t40) -> t40 {
+    if reading == -1000 { return 1; }
+    return 0;
+}
+fn is_valid_reading(reading: t40) -> t40 {
+    if reading == -1000 { return 1; }
+    if reading < -729 { return 0; }
+    if reading > 729 { return 0; }
+    return 1;
+}`,
+  "src/compare.trit": `fn compare(a: t40, b: t40) -> t40 {
+    if a < b { return -1; }
+    if a > b { return 1; }
+    return 0;
+}`,
+  "src/median.trit": `fn median3(a: t40, b: t40, c: t40) -> t40 {
     if a <= b {
         if b <= c { return b; }
         if a <= c { return c; }
@@ -32,7 +41,29 @@ const medianFix = `fn median(a: t40, b: t40, c: t40) -> t40 {
     if a <= c { return a; }
     if b <= c { return c; }
     return b;
-}`;
+}`,
+  "src/consensus.trit": `fn consensus(a: t40, b: t40, c: t40) -> t40 {
+    if is_valid_reading(a) == 0 { return -1001; }
+    if is_valid_reading(b) == 0 { return -1001; }
+    if is_valid_reading(c) == 0 { return -1001; }
+    var ma: t40 = is_missing(a);
+    var mb: t40 = is_missing(b);
+    var mc: t40 = is_missing(c);
+    var missing: t40 = ma + mb + mc;
+    if missing == 3 { return -1000; }
+    if missing == 2 {
+        if ma == 0 { return a; }
+        if mb == 0 { return b; }
+        return c;
+    }
+    if missing == 1 {
+        if ma == 1 { return (b + c) / 2; }
+        if mb == 1 { return (a + c) / 2; }
+        return (a + b) / 2;
+    }
+    return median3(a, b, c);
+}`,
+};
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -125,16 +156,21 @@ try {
   const catalogText = JSON.stringify(catalog.body);
   assert(catalog.response.ok, `benchmark catalog returned HTTP ${catalog.response.status}`);
   assert(catalog.body?.data?.task?.id === "TC-SWE-001", "TC-SWE-001 is missing from the benchmark catalog");
-  assert(catalog.body?.data?.task?.allowlisted_files?.length === 2, "catalog does not expose the two allowlisted files");
+  assert(catalog.body?.data?.task?.allowlisted_files?.length === 4, "catalog does not expose the four allowlisted files");
+  assert(catalog.body?.data?.task?.difficulty === "hard" && catalog.body?.data?.task?.repository_shape?.hidden_cases === 28, "catalog does not expose v2 difficulty/repository-shape metadata");
   assert(catalog.body?.data?.tasks?.length === 5, "benchmark catalog does not expose the five-task suite");
   assert(catalog.body.data.tasks.map((task) => task.task.category).join(",") === "algorithmic-trit-repair,parser-serialization,memory-pointer-safety,concurrency-state,syscall-abi-integration", "suite task categories are incomplete or reordered");
-  assert(!catalogText.includes("perm-132") && !catalogText.includes("-1000000") && !catalogText.includes("hidden.server"), "hidden verifier details leaked into the public catalog");
+  assert(catalog.body.data.tasks.every((task) => task.task.runner_ready === true), "published suite tasks are not marked runner-ready");
+  assert(catalog.body.data.suite?.external_reference?.model?.score === 67, "external DeepSWE calibration reference is missing");
+  assert(Array.isArray(catalog.body.data.model_suite_leaderboard), "catalog does not expose the provenance-gated model suite leaderboard");
+  assert(!catalogText.includes("three-neg-mixed") && !catalogText.includes("missing-edge-average") && !catalogText.includes("hidden.server"), "hidden verifier details leaked into the public catalog");
   checks.push("benchmark catalog exposes public tests/starter files while withholding hidden cases");
 
   const suiteRoute = await request("/api/intelligence/v1/suite");
   assert(suiteRoute.response.ok && suiteRoute.body?.data?.suite?.tasks?.length === 5, "versioned suite endpoint did not expose all task descriptors");
+  assert(Array.isArray(suiteRoute.body?.data?.model_suite_leaderboard), "versioned suite endpoint does not expose the model suite leaderboard");
   const parserCatalog = await request("/api/intelligence/v1/benchmark?task_id=TC-SWE-002");
-  assert(parserCatalog.response.ok && parserCatalog.body?.data?.task?.id === "TC-SWE-002" && parserCatalog.body?.data?.task?.allowlisted_files?.length === 1, "task-aware benchmark catalog did not select TC-SWE-002");
+  assert(parserCatalog.response.ok && parserCatalog.body?.data?.task?.id === "TC-SWE-002" && parserCatalog.body?.data?.task?.allowlisted_files?.length === 2, "task-aware benchmark catalog did not select TC-SWE-002");
   checks.push("suite and task-aware catalog adapters expose all five public task projections");
 
   let session = await register(handle);
@@ -145,22 +181,26 @@ try {
   session = await login(handle);
   checks.push("participant account and handle/password login survive a server restart");
 
-  const solution = await request("/api/intelligence/v1/solutions", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001", title: "Median repair", code: `// FILE: src/compare.trit\n${compareFix}\n\n// FILE: src/median.trit\n${medianFix}`, language: "trit" }) }, session.token);
+  const serializedConsensus = Object.entries(consensusFixes).map(([file, content]) => `// FILE: ${file}\n${content}`).join("\n\n");
+  const solution = await request("/api/intelligence/v1/solutions", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001", title: "Resilient sensor consensus repair", code: serializedConsensus, language: "trit" }) }, session.token);
   assert(solution.response.status === 201, `solution save returned HTTP ${solution.response.status}`);
   assert(solution.body?.solution?.owner_handle === handle, "saved solution owner was not derived from the authenticated handle");
-  const discussion = await request("/api/intelligence/v1/discussions", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001", solution_id: solution.body.solution.id, body: "Pseudocode: compare the three values, keep the middle value, and preserve the three-way sign invariant." }) }, session.token);
+  const discussion = await request("/api/intelligence/v1/discussions", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001", solution_id: solution.body.solution.id, body: "Pseudocode: reject invalid readings first; count missing sentinels; select the sole value, average the surviving pair toward zero, or return the median for three valid readings." }) }, session.token);
   assert(discussion.response.status === 201, `discussion publish returned HTTP ${discussion.response.status}`);
   assert(discussion.body?.discussion?.author_handle === handle, "discussion author was not derived from the authenticated handle");
   checks.push("participant can save a versioned solution and publish a linked plain-text explanation");
 
-  const runResult = await request("/api/intelligence/v1/runs", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001" }) }, session.token);
+  // This script is a deterministic API/browser harness proof. It intentionally
+  // does not claim that a model generated the patch; real model rollouts must
+  // provide provenance-bound contexts and artifact hashes to the attestor.
+  const runResult = await request("/api/intelligence/v1/runs", { method: "POST", body: JSON.stringify({ task_id: "TC-SWE-001", evaluation_kind: "harness_fixture", harness: "known-correct-fixture-replay" }) }, session.token);
   assert(runResult.response.status === 201, `intelligence run start returned HTTP ${runResult.response.status}`);
   const runId = runResult.body.run.run_id;
   const trials = runResult.body.run.trials;
   assert(trials.length === 4, "intelligence run did not create four trials");
   for (let index = 0; index < trials.length; index += 1) {
     const trialId = trials[index].id;
-    for (const [file, content] of [["src/compare.trit", compareFix], ["src/median.trit", medianFix]]) {
+    for (const [file, content] of Object.entries(consensusFixes)) {
       const written = await request(`/api/intelligence/v1/runs/${runId}/trials/${trialId}/files`, { method: "POST", body: JSON.stringify({ path: file, content }) }, session.token);
       assert(written.response.ok, `${file} write failed for trial ${index + 1}: HTTP ${written.response.status}`);
     }
@@ -172,17 +212,18 @@ try {
     }
     const hidden = await request(`/api/intelligence/v1/runs/${runId}/trials/${trialId}/submit`, { method: "POST", body: "{}" }, session.token);
     assert(hidden.response.ok && hidden.body.hidden?.sealed === true, `hidden submission did not seal trial ${index + 1}`);
-    assert(!JSON.stringify(hidden.body).includes("perm-132"), "hidden case identifier leaked in a trial receipt");
+    assert(!JSON.stringify(hidden.body).includes("three-neg-mixed"), "hidden case identifier leaked in a trial receipt");
   }
   const aggregate = await request(`/api/intelligence/v1/runs/${runId}/aggregate`, {}, session.token);
   assert(aggregate.response.ok && aggregate.body.aggregate?.score === 100, "four-trial aggregate did not produce a sealed 100 score");
   const serviceLogin = await request("/api/auth/v1/login", { method: "POST", body: JSON.stringify({ identity_id: "tc:identity:demo-service", access_key: "local-service-key" }) });
   assert(serviceLogin.response.ok, "privileged attestor service login failed");
-  const attestation = await request(`/api/intelligence/v1/runs/${runId}/attest`, { method: "POST", body: JSON.stringify({ model: "gpt-5.6-luna", model_configuration: "max", evidence_hashes: ["sha256:p14-api-proof"] }) }, serviceLogin.body.data.credential.token);
-  assert(attestation.response.ok && attestation.body.attestation?.evidence_hash?.startsWith("sha256:"), "privileged model attestation was not recorded");
+  const attestation = await request(`/api/intelligence/v1/runs/${runId}/attest`, { method: "POST", body: JSON.stringify({ evaluation_kind: "harness_fixture", provider: "treatcode", model: "bounded-suite-proof", reasoning_effort: "not-applicable", harness: "known-correct-fixture-replay", evidence_hashes: ["sha256:p14-api-proof"] }) }, serviceLogin.body.data.credential.token);
+  assert(attestation.response.ok && attestation.body.attestation?.evaluation_kind === "harness_fixture" && attestation.body.attestation?.evidence_hash?.startsWith("sha256:"), "privileged fixture attestation was not recorded");
   const intelligenceLeaderboard = await request("/api/intelligence/v1/leaderboard");
-  assert(intelligenceLeaderboard.body?.official_leaderboard?.some((entry) => entry.handle === handle && entry.score === 100), "official intelligence leaderboard did not publish the participant score");
-  checks.push("one-shot public-gated four-trial run produces a sealed passed/4*100 official score");
+  assert(intelligenceLeaderboard.body?.official_leaderboard?.some((entry) => entry.handle === handle && entry.score === 100 && entry.evaluation_kind === "harness_fixture"), "official fixture leaderboard did not publish the deterministic harness proof");
+  assert(!intelligenceLeaderboard.body?.official_leaderboard?.some((entry) => entry.handle === handle && entry.model === "gpt-5.6-luna"), "fixture proof was mislabeled as a Luna model score");
+  checks.push("one-shot public-gated four-trial harness proof is explicitly separated from model evaluation");
 
   const challenge = await request("/api/problems");
   const signCode = "import ulib; fn sign_test(x: t40) -> t40 { match x { neg => { return -1; } zero => { return 0; } pos => { return 1; } } }";
@@ -202,7 +243,8 @@ try {
   const evidence = {
     schema: "trit.treatcode_p14_intelligence_e2e.v1",
     ok: true,
-    model: { name: "gpt-5.6-luna", reasoning_effort: "max", role: "external browser agent proof follows" },
+    evaluation: { kind: "harness_fixture", model_generated: false, harness: "known-correct-fixture-replay" },
+    external_reference: { provider: "openai", model: "gpt-5.6-luna", reasoning_effort: "max", score: 67, confidence_interval: 4, source: "https://deepswe.datacurve.ai/" },
     participant: { handle, identity_id: session.identity.id },
     run_id: runId,
     trial_ids: trials.map((trial) => trial.id),

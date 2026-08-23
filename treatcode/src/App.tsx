@@ -230,20 +230,21 @@ function Nav({ view, setView, auth }: { view: string; setView: (v: string) => vo
         height: 52,
       }}
     >
-      <span
-        onClick={() => setView("home")}
+      <a
+        href="/"
+        data-testid="practice-home-link"
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: 15,
           fontWeight: 500,
-          cursor: "pointer",
           color: "var(--color-text-primary)",
           letterSpacing: "0.06em",
           userSelect: "none",
+          textDecoration: "none",
         }}
       >
         TREATCODE
-      </span>
+      </a>
       <div style={{ display: "flex", gap: 2 }}>
         {[
           ["problems", "Problems"],

@@ -13,7 +13,11 @@ For a software emulator to be a valid Trit-Stack implementation, it MUST adhere 
 The VM **must** maintain a physically separate Instruction Memory (IMEM) and Data Memory (DMEM).
 *   **Isolation**: No instruction (e.g., `STORE`) can modify IMEM.
 *   **Addressing**: Address `0` in IMEM is distinct from Address `0` in DMEM.
-*   **Word Width**: IMEM words are 27 trits; DMEM words are 50 trits.
+*   **Word Width**: IMEM words are 27-trit instructions; ordinary DMEM words
+    and scalar registers are T40. T40 is the largest whole-trit word whose
+    valid ternary state space satisfies `3^40 < 2^64` and is the architecture's
+    ternary equivalent of a 64-bit computer. T50 is an explicit extended/wide
+    pair, not the DMEM word width.
 
 ### 2. Register File Integrity
 *   **Count**: 27 General Purpose Registers (`r0` to `r26`).

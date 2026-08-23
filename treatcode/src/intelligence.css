@@ -44,6 +44,11 @@
 .intelligence-status, .intelligence-error { margin: 0 0 15px; padding: 12px 15px; border-radius: 8px; font-size: 12px; }
 .intelligence-status { border: 1px solid #cddfe2; background: #eff9fa; color: #24636a; }
 .intelligence-error { border: 1px solid #f2c9c9; background: #fff5f5; color: #9e2d2d; }
+.intelligence-calibration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.intelligence-calibration-grid a { color: #087f78; font-weight: 700; }
+.intelligence-reference-list { display: grid; gap: 7px; margin-top: 12px; }
+.intelligence-reference-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px; border-radius: 7px; background: #f1f6f7; color: #5e737b; font-size: 11px; }
+.intelligence-reference-row strong { color: #17665f; font-family: var(--font-mono); }
 .intelligence-suite-panel { margin-bottom: 14px; }
 .intelligence-suite-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .intelligence-suite-card { display: flex; flex-direction: column; min-width: 0; gap: 6px; padding: 12px; border: 1px solid #d8e5e8; border-radius: 9px; background: #fbfdfe; color: #27434d; text-align: left; cursor: pointer; }
@@ -136,7 +141,7 @@
 @media (max-width: 860px) {
   .intelligence-header { align-items: flex-start; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
   .intelligence-account-summary { margin-left: 0; }
-  .intelligence-hero, .intelligence-task-grid, .intelligence-community-grid, .intelligence-leaderboards { grid-template-columns: 1fr; }
+  .intelligence-hero, .intelligence-calibration-grid, .intelligence-task-grid, .intelligence-community-grid, .intelligence-leaderboards { grid-template-columns: 1fr; }
   .intelligence-suite-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-task-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

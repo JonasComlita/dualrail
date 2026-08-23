@@ -1,0 +1,23 @@
+// A token is an integer 0..26 containing three base-3 encoded trits.
+// Encoded digit 0/1/2 represents balanced value -1/0/+1.
+// Starter defects: remainder uses base 2 and balanced_digit omits the -1 bias.
+
+fn trit_remainder(value: t40) -> t40 {
+    return value - (value / 2) * 2;
+}
+
+fn encoded_low(token: t40) -> t40 {
+    return trit_remainder(token);
+}
+
+fn encoded_middle(token: t40) -> t40 {
+    return trit_remainder(token / 3);
+}
+
+fn encoded_high(token: t40) -> t40 {
+    return token / 9;
+}
+
+fn balanced_digit(encoded: t40) -> t40 {
+    return encoded;
+}

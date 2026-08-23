@@ -107,7 +107,7 @@ completion gates, use
 | Trit values | -1 (T_NEG), 0 (T_ZER), +1 (T_POS) |
 | Trit encoding in wire format | `0b00`=−1, `0b01`=0, `0b10`=+1, `0b11`=INVALID |
 | Instruction word | 27 trits packed as 54 bits in `uint64_t` |
-| Native word size | **T40** = 40-trit float in `uint64_t` |
+| Native scalar/data word | **T40** = 40-trit positional value in `uint64_t`; numeric T40 uses the native floating format |
 | General registers | r0 (zero) … r26, r27 (trap, read-only) |
 | Link register | **r25** |
 | Stack pointer | **r26** (grows downward) |
@@ -116,6 +116,13 @@ completion gates, use
 | Privilege modes | Kernel=T_NEG, Supervisor=T_ZER, User=T_POS |
 | Source extension | `.trit` |
 | Boot image | `.tboot` (magic `0x31544f4f424f5354`) |
+
+The explicit design goal is a **ternary equivalent of a 64-bit computer**.
+That phrase applies to the T40 native scalar register and ordinary DMEM word:
+`3^40 < 2^64 < 3^41`. It describes capacity and architectural role, not binary
+encoding compatibility or every physical host/wire encoding; the 27-trit
+instruction width, 27-lane vector length, and explicit T50 wide format remain
+independent contracts.
 | Disk image | `.tdisk` (magic `0x54524954535031`) |
 
 ---

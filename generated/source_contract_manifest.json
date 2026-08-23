@@ -31,7 +31,7 @@
     },
     {
       "path": "ARCHITECTURE_MANIFEST.json",
-      "sha256": "0def8429e71ae47813704fea047a1c868a3b89a81587ea1d1ef366920905bced"
+      "sha256": "1a99bbb71c63e9ea6ba65f03c1f9decf78d25916482bb50374dfd2b67b9dc890"
     }
   ],
   "syscalls": {

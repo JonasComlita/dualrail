@@ -148,3 +148,119 @@ button { cursor: pointer; }
   .tc-app-root .tc-search input { flex-basis: 100%; }
   .tc-app-root .tc-search select, .tc-app-root .tc-search button { min-height: 40px; }
 }
+
+/* Static fallbacks use the same compact language as the original Practice app. */
+.tc-static-shell {
+  width: min(1012px, calc(100% - 48px));
+  color: #111827;
+}
+
+.tc-static-nav {
+  min-height: 52px;
+  padding: 0;
+  border-bottom-color: #e5e7eb;
+}
+
+.tc-wordmark {
+  color: #111827;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .06em;
+}
+
+.tc-wordmark span,
+.tc-kicker,
+.tc-static-links a:hover,
+.tc-static-links a:focus-visible {
+  color: #2563eb;
+}
+
+.tc-static-links {
+  gap: 14px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.tc-static-hero {
+  max-width: 760px;
+  padding: 28px 0 24px;
+}
+
+.tc-kicker {
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.tc-static-hero h1 {
+  margin: 10px 0 12px;
+  color: #111827;
+  font-size: clamp(28px, 4vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+
+.tc-static-hero p {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.tc-static-actions {
+  gap: 7px;
+  margin-top: 18px;
+}
+
+.tc-button {
+  border-radius: 5px;
+  padding: 8px 12px;
+  border-color: #2563eb;
+  background: #2563eb;
+  font-size: 12px;
+}
+
+.tc-button.secondary {
+  border-color: #d1d5db;
+  color: #111827;
+}
+
+.tc-static-grid {
+  gap: 10px;
+  padding-bottom: 28px;
+}
+
+.tc-static-card {
+  border-color: #e5e7eb;
+  border-radius: 7px;
+  padding: 13px;
+  background: #f9fafb;
+}
+
+.tc-static-card strong {
+  font-size: 21px;
+}
+
+.tc-static-card span,
+.tc-static-footer {
+  color: #4b5563;
+}
+
+.tc-static-note {
+  border-left-color: #0891b2;
+  padding: 11px 13px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.tc-static-footer {
+  padding: 18px 0 32px;
+  border-top-color: #e5e7eb;
+  font-size: 11px;
+}
+
+@media (max-width: 520px) {
+  .tc-static-shell { width: min(100% - 48px, 1012px); }
+  .tc-static-nav { align-items: flex-start; flex-direction: column; padding: 12px 0; }
+  .tc-static-hero { padding: 25px 0 22px; }
+}

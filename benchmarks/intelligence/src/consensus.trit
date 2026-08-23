@@ -1,0 +1,11 @@
+// Repair consensus(a, b, c) with this precedence:
+//   1. Any invalid reading rejects the sample with -1001.
+//   2. Missing readings (-1000) are removed.
+//   3. Zero remaining values -> -1000; one -> that value; two -> their
+//      integer average (division toward zero); three -> median3.
+// Starter defect: missing/invalid handling and two-reading averaging are
+// bypassed completely.
+
+fn consensus(a: t40, b: t40, c: t40) -> t40 {
+    return median3(a, b, c);
+}

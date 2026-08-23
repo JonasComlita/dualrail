@@ -4,6 +4,11 @@
 `ARCHITECTURE_MANIFEST.json` is authoritative. Regenerate with
 `python tools/generate_architecture_contract.py`.
 
+**Design goal:** ternary equivalent of a 64-bit computer. This goal applies to native scalar registers and ordinary data-memory words:
+T40 is the largest whole-trit word whose valid ternary state space fits in 64 bits
+(`3^40 < 2^64 < 3^41`). It describes scalar capacity and software role,
+not binary compatibility or the physical size of every host/wire encoding. Instruction width, vector lane count, and explicit wide values are independent contracts.
+
 ## Native geometry
 
 | Contract | Value |

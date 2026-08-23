@@ -3,6 +3,8 @@
   "schema": "trit.architecture_manifest.v1",
   "architecture": {
     "name": "trit-v2",
+    "design_goal": "ternary equivalent of a 64-bit computer",
+    "design_goal_scope": "native scalar registers and ordinary data-memory words",
     "isa_version": 2,
     "instruction_trits": 27,
     "scalar_word_trits": 40,

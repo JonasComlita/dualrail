@@ -1,6 +1,6 @@
 // TC-SWE-001 starter defect: the ordering arms are accidentally reversed.
-// Keep the compare(a, b) signature while repairing the three-way result:
-// negative when a < b, zero when equal, positive when a > b.
+// Keep the three-way result contract used by median3:
+// -1 when a < b, 0 when equal, and +1 when a > b.
 
 fn compare(a: t40, b: t40) -> t40 {
     match a - b {

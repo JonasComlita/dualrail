@@ -33,9 +33,12 @@ try {
   assert(stack.includes("Trace every dependency") && stack.includes("/api/public/v1/stack-nodes"), "stack route has no useful static content");
   const learn = fs.readFileSync(path.join(appRoot, "dist", "learn", "index.html"), "utf8");
   assert(learn.includes("Learn from the boundary") && learn.includes("/practice"), "learn route has no useful static content");
+  const practice = fs.readFileSync(path.join(appRoot, "dist", "practice", "index.html"), "utf8");
+  assert(practice.includes("<title>Practice · TreatCode</title>") && practice.includes("id=\"root\""), "practice route has no dedicated production entry");
   checks.push("/, /stack, and /learn expose meaningful HTML before JavaScript executes");
   checks.push("public routes declare language, identity, navigation, and viewport metadata");
   checks.push("public pages link to the versioned API and practice boundary");
+  checks.push("practice has a dedicated production entry instead of falling back to the homepage shell");
 } catch (error) {
   errors.push(String(error?.message || error));
 }
