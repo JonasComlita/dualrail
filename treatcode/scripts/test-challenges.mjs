@@ -10,6 +10,7 @@ const serverData = JSON.parse(fs.readFileSync(path.join(appRoot, "src", "generat
 const clientData = JSON.parse(fs.readFileSync(path.join(appRoot, "src", "generated", "challenges.client.json"), "utf8"));
 const serverSource = fs.readFileSync(path.join(appRoot, "server.ts"), "utf8");
 const appSource = fs.readFileSync(path.join(appRoot, "src", "App.tsx"), "utf8");
+const solutionGuides = fs.readFileSync(path.join(appRoot, "src", "solutionGuides.ts"), "utf8");
 const errors = [];
 const checks = [];
 
@@ -67,6 +68,10 @@ try {
   assert(!appSource.includes("const PROBLEMS"), "frontend retains an independent challenge catalog");
   assert(serverSource.includes("challenges.server.json") && appSource.includes("challenges.client.json"), "client/server do not consume generated challenge data");
   assert(appSource.includes("function openProblem") && appSource.includes('aria-label="Search challenges"'), "challenge browse/editor journey is not wired");
+  assert(appSource.includes("PRACTICE_SOLUTION_GUIDES") && appSource.includes('data-testid="practice-solution-guide"') && appSource.includes("Discussion · why it works"), "practice solution learning notes are not visible from the problem view");
+  for (const challengeId of ["T001", "T002", "T005", "T056", "T057", "T058"]) {
+    assert(solutionGuides.includes(`${challengeId}:`), `${challengeId} is missing a published practice solution guide`);
+  }
   assert(appSource.includes('fetch("/api/run"') && appSource.includes('fetch("/api/submit"'), "challenge execution actions are not wired");
   checks.push("frontend and server contain no independent catalog and preserve browse/editor/run/submit wiring");
 } catch (error) {

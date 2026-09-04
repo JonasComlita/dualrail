@@ -57,9 +57,12 @@ int8_t normalizeTritSum(int& sum);     // reduces sum modulo 3 into {-1,0,+1}
 
 This helper does **not** report a carry and is therefore not, by itself, a full
 adder. `addSubLane64` and `addSubLane128` currently perform digit normalization
-and carry propagation directly in their own loops. The hardware full-adder is
-`trit_add3` in `hdl/rtl/trit_pkg.sv`, exposed by `trit_full_adder` in
-`hdl/rtl/trit_gates.sv`.
+and carry propagation directly in their own loops. The hardware full-adder
+truth table has one source of truth: `trit_add3` in `hdl/rtl/trit_pkg.sv`. The
+`trit_full_adder` module in `hdl/rtl/trit_gates.sv` delegates directly to that
+function. Packed HDL lane addition composes each digit's three possible carry
+transitions with a parallel-prefix network, so carry depth grows
+logarithmically with lane width rather than rippling through every trit.
 
 ---
 
@@ -87,13 +90,20 @@ uint64_t addLane64(uint64_t a, uint64_t b, int trits);
 // Subtract: a - b
 uint64_t subLane64(uint64_t a, uint64_t b, int trits);
 
-// Compare MST-first: returns -1, 0, or +1
+// Compare MST-first: valid result {-1,0,+1}; malformed input TRIT_COMPARE_INVALID
 int8_t compareLane64(uint64_t a, uint64_t b, int trits);
 
 // Min/Max
 uint64_t minLane64(uint64_t a, uint64_t b, int trits);
 uint64_t maxLane64(uint64_t a, uint64_t b, int trits);
 ```
+
+Valid raw64 widths are 1 through 32 trits, and valid pair positions are 0
+through 31. Out-of-range widths are rejected before calculating shifts;
+out-of-range reads return `0b11`, while out-of-range writes return a fully
+poisoned `uint64_t`. Comparison returns `TRIT_COMPARE_INVALID` (`2`) for a
+malformed operand. Passing that sentinel to `compareResultLane1Raw()` produces
+the canonical invalid one-trit encoding `0b11`, rather than valid zero/equal.
 
 ---
 
@@ -115,6 +125,10 @@ int8_t compareLane128(RawUInt128 a, RawUInt128 b, int trits);
 RawUInt128 minLane128(RawUInt128 a, RawUInt128 b, int trits);
 RawUInt128 maxLane128(RawUInt128 a, RawUInt128 b, int trits);
 ```
+
+Valid raw128 widths are 1 through 64 trits, and valid pair positions are 0
+through 63. Invalid widths and positions follow the same rejection and poison
+rules as raw64 operations.
 
 ---
 

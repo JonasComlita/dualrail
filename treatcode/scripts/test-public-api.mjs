@@ -20,10 +20,12 @@ function readJson(name) {
 try {
   const snapshot = readJson("snapshot.json");
   const openapi = readJson("openapi.json");
+  const stackManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, "STACK_MANIFEST.json"), "utf8"));
+  const expectedStackCount = Array.isArray(stackManifest.layers) ? stackManifest.layers.length : 0;
   assert(snapshot.schema_version === "treatcode.public.snapshot.v1", "snapshot schema version is incorrect");
   assert(/^[0-9a-f]{7,64}$/.test(snapshot.snapshot.commit), "snapshot does not carry a commit provenance value");
   assert(snapshot.snapshot.repository.startsWith("https://"), "snapshot repository provenance is not a URL");
-  assert(snapshot.stack_nodes.length === 21, "all 21 stack phases must be exposed");
+  assert(expectedStackCount > 0 && snapshot.stack_nodes.length === expectedStackCount, "snapshot stack phase count must match STACK_MANIFEST.json");
   for (const resource of ["projects", "stack_nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps"]) {
     assert(Array.isArray(snapshot[resource]) && snapshot[resource].length > 0, `${resource} collection is empty`);
     for (const entity of snapshot[resource]) {
@@ -43,7 +45,7 @@ try {
 
   assert(openapi.openapi === "3.1.0", "OpenAPI version is not 3.1.0");
   assert(openapi["x-treatcode-schema-version"] === undefined || openapi["x-treatcode-schema-version"] === "treatcode.public.api.v1", "OpenAPI schema extension is incorrect");
-  for (const requiredPath of ["/", "/snapshot.json", "/openapi.json", "/projects", "/stack-nodes", "/sources", "/symbols", "/search", "/{resource}/{id}"]) assert(requiredPath in openapi.paths, `OpenAPI is missing ${requiredPath}`);
+  for (const requiredPath of ["/", "/snapshot.json", "/openapi.json", "/coverage.json", "/relationship-index.json", "/freshness.json", "/projects", "/stack-nodes", "/sources", "/symbols", "/search", "/{resource}/{id}", "/{resource}/{id}/relations"]) assert(requiredPath in openapi.paths, `OpenAPI is missing ${requiredPath}`);
   assert(openapi.components.schemas.Provenance && openapi.components.schemas.SnapshotInfo && openapi.components.schemas.SearchEnvelope, "OpenAPI provenance schemas are incomplete");
   checks.push("OpenAPI v1 paths and provenance schemas");
 

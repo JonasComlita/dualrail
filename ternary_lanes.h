@@ -270,7 +270,7 @@ template<int Trits, typename Storage>
     TritLane<Trits, Storage> a,
     TritLane<Trits, Storage> b) {
 
-    if (!a.isValid() || !b.isValid()) return 0;
+    if (!a.isValid() || !b.isValid()) return backend::TRIT_COMPARE_INVALID;
 
     if constexpr (sizeof(Storage) <= 8) {
         uint64_t ra = static_cast<uint64_t>(a.rawForKernel());

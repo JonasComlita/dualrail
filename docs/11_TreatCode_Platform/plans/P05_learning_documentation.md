@@ -8,6 +8,14 @@
 - **Depends on:** P03, P04
 - **Scope owner:** Education and documentation
 
+> **Historical v1 notice:** P05's completion record proves Markdown migration,
+> path wiring, provenance, and a small representative lesson set only. It does
+> not prove a complete curriculum, sufficient lesson depth, coverage of every
+> stack phase, or traversal of every exercise and path. The completeness work
+> is specified in [P16](P16_P05_curriculum_completeness_amendment.md). Keep the
+> v1 record for audit, but do not use it to claim that the full course is
+> finished.
+
 ## Objective
 
 Provide repository-backed, beginner-friendly learning paths from ternary

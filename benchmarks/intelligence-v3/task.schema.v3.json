@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence-task.v3.json",
+  "title": "TreatCode Intelligence V3 Executable Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "id", "category", "title", "initial_signal", "design_features", "repository", "grader", "budgets", "provenance", "packaging", "calibration", "holdout"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.task.v3" },
+    "version": { "const": 3 },
+    "id": { "type": "string", "pattern": "^TC-V3-[0-9]{3}$" },
+    "category": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 8 },
+    "initial_signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symptom", "underspecified", "known_failing_command"],
+      "properties": {
+        "symptom": { "type": "string", "minLength": 24 },
+        "underspecified": { "const": true },
+        "known_failing_command": { "type": "string", "minLength": 1 }
+      }
+    },
+    "design_features": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "items": { "enum": ["repository_exploration_required", "multi_module_change", "initial_build_failure", "misleading_or_incomplete_tests", "performance_constraint", "abi_or_integration_bug", "conflicting_invariants"] }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participant_root", "minimum_modules", "languages", "public_commands"],
+      "properties": {
+        "participant_root": { "type": "string", "minLength": 1 },
+        "minimum_modules": { "type": "integer", "minimum": 2 },
+        "languages": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+        "public_commands": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "grader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["privileged_root", "behavioral", "required_suites", "adversarial_suites"],
+      "properties": {
+        "privileged_root": { "type": "string", "minLength": 1 },
+        "behavioral": { "const": true },
+        "required_suites": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+        "adversarial_suites": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
+      }
+    },
+    "budgets": { "type": "object", "minProperties": 4 },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author_id", "reviewer_ids", "subject_model_independent", "review_record_hash", "provenance_bundle_hash"],
+      "properties": {
+        "author_id": { "type": "string", "minLength": 1 },
+        "reviewer_ids": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "subject_model_independent": { "const": true },
+        "review_record_hash": { "$ref": "#/$defs/hash" },
+        "provenance_bundle_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "packaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participant_bundle_hash", "grader_bundle_hash", "isolation_audit_hash"],
+      "properties": {
+        "participant_bundle_hash": { "$ref": "#/$defs/hash" },
+        "grader_bundle_hash": { "$ref": "#/$defs/hash" },
+        "isolation_audit_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "weak_pass_rate", "medium_pass_rate", "frontier_pass_rate", "item_discrimination", "human_reviewed"],
+      "properties": {
+        "status": { "const": "accepted" },
+        "weak_pass_rate": { "$ref": "#/$defs/rate" },
+        "medium_pass_rate": { "$ref": "#/$defs/rate" },
+        "frontier_pass_rate": { "$ref": "#/$defs/rate" },
+        "item_discrimination": { "type": "number", "minimum": 0.1, "maximum": 1 },
+        "human_reviewed": { "const": true }
+      }
+    },
+    "holdout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frozen", "manifest_hash", "frozen_at"],
+      "properties": {
+        "frozen": { "const": true },
+        "manifest_hash": { "$ref": "#/$defs/hash" },
+        "frozen_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^(sha256:)?[a-fA-F0-9]{64}$" },
+    "rate": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(appRoot, "..");
 const evidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P04");
+const p15EvidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P15");
 const budgetBytes = 100 * 1024;
 const checks = [];
 const errors = [];
@@ -44,6 +45,37 @@ try {
 const report = { schema: "treatcode.public_bundle_budget.v1", ok: errors.length === 0, budget_bytes_gzip: budgetBytes, checks, errors };
 fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(evidenceRoot, "bundle-budget.json"), `${JSON.stringify(report, null, 2)}\n`);
+fs.mkdirSync(p15EvidenceRoot, { recursive: true });
+fs.writeFileSync(path.join(p15EvidenceRoot, "bundle-budget.json"), `${JSON.stringify({ ...report, schema: "treatcode.public.bundle-budget.v1", routes: ["/", "/stack", "/learn", "/resources/*", "/evidence", "/search"] }, null, 2)}\n`);
+const requiredEvidence = ["stack-coverage.json", "resource-coverage.json", "no-truncation.json", "search-coverage.json", "provenance-audit.json", "static-route-e2e.json", "public-browser-e2e.json", "accessibility.json", "security.json", "bundle-budget.json"];
+const evidenceStatus = Object.fromEntries(requiredEvidence.map((name) => {
+  const file = path.join(p15EvidenceRoot, name);
+  if (!fs.existsSync(file)) return [name, { present: false, ok: false }];
+  try { const value = JSON.parse(fs.readFileSync(file, "utf8")); return [name, { present: true, ok: value.ok === true }]; } catch { return [name, { present: true, ok: false }]; }
+}));
+const p15Result = {
+  schema: "treatcode.public.plan-result.v1",
+  plan_id: "P15",
+  status: "in_progress",
+  complete: false,
+  completion_blocked_until: ["complete evidence review", "Product owner approval", "Architecture owner approval", "Accessibility reviewer approval"],
+  command_order: [
+    "python tools/trit_tool.py knowledge status",
+    "npm.cmd --prefix treatcode run build",
+    "npm.cmd --prefix treatcode run test:api",
+    "npm.cmd --prefix treatcode run test:public-coverage",
+    "npm.cmd --prefix treatcode run test:e2e:public-complete",
+    "npm.cmd --prefix treatcode run test:a11y",
+    "npm.cmd --prefix treatcode run test:public-security",
+    "npm.cmd --prefix treatcode run check:bundle-budget",
+    "python tools/trit_tool.py website plans validate",
+    "python tools/trit_tool.py website plan verify P15",
+  ],
+  evidence: evidenceStatus,
+  human_approvals: { "Product owner": null, "Architecture owner": null, "Accessibility reviewer": null },
+  note: "Automated implementation evidence is not a substitute for the named review artifacts; P15 remains in_progress until they are attached.",
+};
+fs.writeFileSync(path.join(p15EvidenceRoot, "result.json"), `${JSON.stringify(p15Result, null, 2)}\n`);
 console.log(`P04 bundle budget: ${report.ok ? "passed" : "failed"}`);
 for (const check of checks) console.log(`  [ok] ${check}`);
 for (const error of errors) console.error(`  [fail] ${error}`);

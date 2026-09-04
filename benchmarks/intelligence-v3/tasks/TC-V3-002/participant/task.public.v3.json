@@ -1,0 +1,16 @@
+{
+  "schema": "treatcode.intelligence.public-task.v3",
+  "version": 3,
+  "task_id": "TC-V3-002",
+  "title": "Overflow-safe interval merge",
+  "initial_signal": "Touching intervals merge inconsistently when the earlier interval is supplied second or an endpoint is near the codec boundary.",
+  "source_files": ["src/interval_codec.trit", "src/interval_merge.trit"],
+  "entrypoint": "merge_touching",
+  "arity": 2,
+  "public_cases_path": "tests/public.v3.json",
+  "limits": {
+    "maximum_file_bytes": 65536,
+    "wall_clock_ms_per_case": 15000,
+    "maximum_cases": 64
+  }
+}

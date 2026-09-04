@@ -64,6 +64,21 @@ compiler, kernel, app, or TCL sources if symbol navigation matters.
 
 Default CMake build directory is `build` unless `TRIT_BUILD_DIR` is set.
 
+### TreatCode generated artifacts
+
+TreatCode's public snapshot, static Learn routes, Vite bundle, and generated
+JSON are build products. They live under `treatcode/public/api/v1/`,
+`treatcode/learn/`, `treatcode/dist/`, and `treatcode/src/generated/` and are
+intentionally ignored by Git. `treatcode/src/content/learn/*.md` is the
+reviewable lesson source; the catalog and curriculum matrix beside it are
+derived JSON.
+
+From `treatcode/`, use `npm run prepare:generated` when only derived data is
+needed. `npm run dev` starts both the API server on port 3000 and Vite on port
+5173 after preparing generated data. `npm run build` and `npm start` also run
+that preparation automatically. Run `npm run generate:learning` only when
+intentionally regenerating the canonical Markdown lesson source.
+
 Useful targets:
 
 ```powershell

@@ -2007,8 +2007,8 @@ def _plan_index_report() -> dict[str, Any]:
         return report
     row_re = re.compile(r"^\|\s*(P\d+)\s*\|\s*\[([^]]+)\]\(([^)]+)\)\s*\|\s*([^|]+)\|\s*([^|]+)\|", re.MULTILINE)
     rows = row_re.findall(index_path.read_text(encoding="utf-8", errors="replace"))
-    if len(rows) != 14:
-        report["errors"].append(f"plan index must contain 14 plan rows, found {len(rows)}")
+    if len(rows) != 17:
+        report["errors"].append(f"plan index must contain 17 plan rows, found {len(rows)}")
     seen: set[str] = set()
     status_values = {"not_started", "in_progress", "blocked", "complete", "superseded"}
     for plan_id, title, path_value, depends, status in rows:

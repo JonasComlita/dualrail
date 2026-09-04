@@ -1,7 +1,7 @@
 {
   "version": 1,
   "schema": "trit.roadmap_status.v1",
-  "updated_by": "codex-primary-integration-2026-08-17",
+  "updated_by": "codex-future-platform-scope-2026-08-24",
   "authoritative_gate": "tools/trit-test.ps1 production",
   "phases": [
     {
@@ -150,6 +150,27 @@
         "tests/test_symbolic_diagnostics.py"
       ],
       "open_items": []
+    },
+    {
+      "id": "future-platform-architecture",
+      "status": "in_progress",
+      "summary": "The cross-layer scope is documented for binary device interoperability, physical driver software, TritUI, modular and unikernel profiles, portable vector/matrix acceleration, ACE lowering, and NVFP4 boundaries; these are real future requirements and are not claimed as implemented.",
+      "evidence": [
+        "docs/12_Future_Architecture/platform_evolution_plan.md",
+        "KNOWN_GAPS.md",
+        "ternary_simd.h existing AVX2 backend",
+        "apps/libwidget.trit existing widget seed",
+        "kernel/hal.trit existing CSR/DTB seed"
+      ],
+      "open_items": [
+        "Define exact-width binary types, endian and packed layouts, byte buffers, MMIO, DMA/coherency, IOMMU, and general interrupt contracts",
+        "Define hierarchical device discovery and driver lifecycle, shared virtual devices, and phased physical bus/controller drivers",
+        "Promote libwidget into modular TritUI with stable desktop application SDK and accessibility contracts",
+        "Define versioned desktop, server, embedded, appliance, and unikernel system profiles with capability closure and reproducible image metadata",
+        "Formalize portable vector and matrix semantics before adding future ACE or other hardware lowering",
+        "Specify NVFP4 as an explicit tensor compatibility/backend format with conversion and accuracy gates",
+        "Defer Qt and Python/TritUI compatibility ports until the native ABI and platform services they consume are stable"
+      ]
     }
   ]
 }

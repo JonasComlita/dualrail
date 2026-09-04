@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.protocol.v3.1",
+  "version": "3.1",
+  "status": "development",
+  "score_scope": "held_out_repository_task_pass_rate",
+  "execution_modes": ["scalar", "repository"],
+  "legacy_diagnostic_tasks": ["TC-V3-001", "TC-V3-002"],
+  "legacy_tasks_holdout_eligible": false,
+  "replication_target": {
+    "subject_configurations": [
+      { "model": "gpt-5.6-luna", "reasoning_effort": "max" },
+      { "model": "gpt-5.6-sol", "reasoning_effort": "high" }
+    ],
+    "score_band": { "minimum": 60, "maximum": 75 },
+    "sol_lead_tasks": { "minimum": 1, "maximum": 4 },
+    "exact_69_67_required": false,
+    "retune_after_unblinding": false
+  },
+  "task_budget": {
+    "wall_clock_ms": 1200000,
+    "maximum_single_command_ms": 120000,
+    "tool_calls": 160,
+    "input_tokens": 200000,
+    "output_tokens": 60000,
+    "repository_reads": 400,
+    "test_runs": 40,
+    "patch_attempts": 30
+  },
+  "controls": {
+    "one_attempt_per_task": true,
+    "fresh_context_per_task": true,
+    "cross_task_memory_disabled": true,
+    "clock_starts_before_release": true,
+    "participant_only_release": true,
+    "raw_manifest_commands_forbidden": true,
+    "shell_disabled": true,
+    "network_disabled": true,
+    "required_trit_change": true,
+    "private_grader_outside_subject_workspace": true,
+    "immutable_evidence": true
+  },
+  "statistics": {
+    "confidence_level": 0.95,
+    "bootstrap_iterations": 10000,
+    "bootstrap_unit": "task",
+    "pairwise_method": "paired_task_bootstrap_and_exact_sign_test",
+    "report_task_matrix": true,
+    "ceiling_threshold": 0.9,
+    "floor_threshold": 0.1,
+    "maximum_ceiling_fraction": 0.15,
+    "maximum_floor_fraction": 0.15,
+    "minimum_item_discrimination": 0.1
+  },
+  "publication_policy": {
+    "pilot_tasks_disposable": true,
+    "pilot_tasks_holdout_eligible": false,
+    "freeze_before_luna_sol_release": true,
+    "failed_replication_is_reported_without_retry": true,
+    "next_attempt_requires_new_versioned_holdout": "v3.2",
+    "discussion_in_executable_score": false,
+    "official_requires_independent_authors_and_two_reviews": true
+  }
+}

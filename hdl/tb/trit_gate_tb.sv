@@ -4,6 +4,8 @@ module trit_gate_tb;
     import trit_pkg::*;
 
     localparam int TRITS = 5;
+    localparam int T40_TRITS = 40;
+    localparam int T50_TRITS = 50;
     localparam trit_t TB_NEG     = 2'b00;
     localparam trit_t TB_ZERO    = 2'b01;
     localparam trit_t TB_POS     = 2'b10;
@@ -41,6 +43,16 @@ module trit_gate_tb;
     logic lane_valid_add;
     logic lane_valid_sub;
     logic lane_valid_tsel;
+    logic [2*T40_TRITS-1:0] lane40_a;
+    logic [2*T40_TRITS-1:0] lane40_b;
+    logic [2*T40_TRITS-1:0] lane40_y;
+    logic lane40_valid;
+    logic [2*T50_TRITS-1:0] lane50_a;
+    logic [2*T50_TRITS-1:0] lane50_b;
+    logic [2*T50_TRITS-1:0] lane50_y;
+    logic lane50_valid;
+    logic [2*T50_TRITS-1:0] lane50_sub_y;
+    logic lane50_sub_valid;
 
     int failures = 0;
 
@@ -97,6 +109,27 @@ module trit_gate_tb;
         .b_i(lane_b),
         .lane_o(lane_y_sub),
         .valid_o(lane_valid_sub)
+    );
+
+    trit_lane_add #(.TRITS(T40_TRITS)) lane40_add_gate (
+        .a_i(lane40_a),
+        .b_i(lane40_b),
+        .lane_o(lane40_y),
+        .valid_o(lane40_valid)
+    );
+
+    trit_lane_add #(.TRITS(T50_TRITS)) lane50_add_gate (
+        .a_i(lane50_a),
+        .b_i(lane50_b),
+        .lane_o(lane50_y),
+        .valid_o(lane50_valid)
+    );
+
+    trit_lane_add #(.TRITS(T50_TRITS), .SUBTRACT_B(1'b1)) lane50_sub_gate (
+        .a_i(lane50_a),
+        .b_i(lane50_b),
+        .lane_o(lane50_sub_y),
+        .valid_o(lane50_sub_valid)
     );
 
     trit_lane_tsel #(.TRITS(TRITS)) lane_tsel_gate (
@@ -336,10 +369,52 @@ module trit_gate_tb;
         expect_lane(lane_y_tsel, invalid_lane_model(), "lane tsel invalid predicate sentinel");
     endtask
 
+    task automatic test_wide_lane_prefix_add();
+        logic [2*T40_TRITS-1:0] expected40;
+        logic [2*T50_TRITS-1:0] expected50;
+
+        for (int i = 0; i < T40_TRITS; i++) begin
+            lane40_a[2*i +: 2] = (i == T40_TRITS - 1) ? TB_ZERO : TB_POS;
+            lane40_b[2*i +: 2] = (i == 0) ? TB_POS : TB_ZERO;
+            expected40[2*i +: 2] = (i == T40_TRITS - 1) ? TB_POS : TB_NEG;
+        end
+        #1;
+        expect_bit(lane40_valid, 1'b1, "T40 prefix add valid");
+        if (lane40_y !== expected40) begin
+            $display("FAIL T40 prefix add: got %b expected %b", lane40_y, expected40);
+            failures++;
+        end
+
+        for (int i = 0; i < T50_TRITS; i++) begin
+            lane50_a[2*i +: 2] = (i == T50_TRITS - 1) ? TB_ZERO : TB_POS;
+            lane50_b[2*i +: 2] = (i == 0) ? TB_POS : TB_ZERO;
+            expected50[2*i +: 2] = (i == T50_TRITS - 1) ? TB_POS : TB_NEG;
+        end
+        #1;
+        expect_bit(lane50_valid, 1'b1, "T50 prefix add valid");
+        if (lane50_y !== expected50) begin
+            $display("FAIL T50 prefix add: got %b expected %b", lane50_y, expected50);
+            failures++;
+        end
+
+        for (int i = 0; i < T50_TRITS; i++) begin
+            lane50_a[2*i +: 2] = (i == T50_TRITS - 1) ? TB_ZERO : TB_NEG;
+            lane50_b[2*i +: 2] = (i == 0) ? TB_POS : TB_ZERO;
+            expected50[2*i +: 2] = (i == T50_TRITS - 1) ? TB_NEG : TB_POS;
+        end
+        #1;
+        expect_bit(lane50_sub_valid, 1'b1, "T50 prefix subtract valid");
+        if (lane50_sub_y !== expected50) begin
+            $display("FAIL T50 prefix subtract: got %b expected %b", lane50_sub_y, expected50);
+            failures++;
+        end
+    endtask
+
     initial begin
         test_single_trit_gates();
         test_lane_gates();
         test_lane_tsel();
+        test_wide_lane_prefix_add();
 
         if (failures == 0) begin
             $display("All SystemVerilog trit gate tests passed");

@@ -53,6 +53,8 @@ export interface PublicRelation {
   type: string;
   to: string;
   source_refs?: SourceRef[];
+  source_span?: { start_line: number; end_line: number };
+  origin?: string;
 }
 
 export interface PublicSnapshot {
@@ -73,6 +75,9 @@ export interface PublicSnapshot {
   gaps: PublicRecord[];
   relations: PublicRelation[];
   statistics: Record<string, number>;
+  coverage?: PublicRecord;
+  relationship_index?: PublicRecord;
+  freshness?: PublicRecord;
 }
 
 export interface PublicApiEnvelope<T> {
@@ -98,6 +103,7 @@ export interface SearchMatch {
   match_type: SearchMode;
   score: number;
   matched_fields: string[];
+  match_reason: string;
   provenance: SourceRef[];
 }
 
@@ -131,24 +137,26 @@ export function normalizeSearchMode(mode: string | null | undefined): SearchMode
 }
 
 function searchableText(record: PublicRecord): string {
-  return [
-    record.id,
-    record.name,
-    record.title,
-    record.description,
-    record.slug,
-    record.path,
-    record.symbol,
-    record.role,
-    record.capability_class,
-    record.component_kind,
-    record.contract_kind,
-    ...(Array.isArray(record.tags) ? record.tags : []),
-    ...(Array.isArray(record.search_terms) ? record.search_terms : []),
-  ]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .toLowerCase();
+  const values: string[] = [];
+  const collect = (value: unknown, depth = 0): void => {
+    if (depth > 3 || value === null || value === undefined) return;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      values.push(String(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) collect(item, depth + 1);
+      return;
+    }
+    if (typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        values.push(key);
+        collect(item, depth + 1);
+      }
+    }
+  };
+  collect(record);
+  return values.join(" ").toLowerCase();
 }
 
 const SEMANTIC_STOP_WORDS = new Set([
@@ -187,7 +195,7 @@ function entityTypeFor(resource: PublicResource): string {
 }
 
 function provenanceFor(record: PublicRecord): SourceRef[] {
-  return [...(record.source_refs || []), ...(record.evidence_refs || [])].slice(0, 6);
+  return [...(record.source_refs || []), ...(record.evidence_refs || [])];
 }
 
 function resultFor(
@@ -196,6 +204,7 @@ function resultFor(
   matchType: SearchMode,
   score: number,
   matchedFields: string[],
+  matchReason?: string,
 ): SearchMatch {
   return {
     entity_type: record.entity_type || entityTypeFor(resource),
@@ -203,7 +212,8 @@ function resultFor(
     name: recordName(record),
     match_type: matchType,
     score: Math.round(score * 100) / 100,
-    matched_fields: matchedFields,
+    matched_fields: [...new Set(matchedFields)],
+    match_reason: matchReason || `${matchType} match on ${[...new Set(matchedFields)].join(", ") || "the public graph"}.`,
     provenance: provenanceFor(record),
   };
 }
@@ -247,9 +257,13 @@ function indexedRecords(snapshot: PublicSnapshot): IndexedRecord[] {
     sourceTermsByPath.set(sourcePath, new Set(terms));
   }
 
+  const namesById = new Map<string, string>();
+  for (const resource of Object.keys(RESOURCE_KEYS) as PublicResource[]) {
+    for (const record of collectionFor(snapshot, resource) || []) namesById.set(record.id, recordName(record));
+  }
   const relatedTextById = new Map<string, string[]>();
   for (const relation of snapshot.relations || []) {
-    const relationText = normalizeSearchText(`${relation.from} ${relation.type} ${relation.to}`);
+    const relationText = normalizeSearchText(`${relation.from} ${namesById.get(relation.from) || ""} ${relation.type} ${relation.to} ${namesById.get(relation.to) || ""}`);
     relatedTextById.set(relation.from, [...(relatedTextById.get(relation.from) || []), relationText]);
     relatedTextById.set(relation.to, [...(relatedTextById.get(relation.to) || []), relationText]);
   }
@@ -314,7 +328,7 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
               : resource === "sources" ? 105
                 : resource === "symbols" ? 80
                   : 100;
-          results.push(resultFor(resource, record, mode, exactScore, matchedFields));
+          results.push(resultFor(resource, record, mode, exactScore, matchedFields, `Exact query matched ${matchedFields.join(" and ")} on this record.`));
         }
         continue;
       }
@@ -326,7 +340,7 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
         if (!matchedFields.length && (name.includes(query) || symbol.includes(query))) {
           matchedFields.push("symbol");
         }
-        if (matchedFields.length) results.push(resultFor(resource, record, mode, matchedFields.includes("id") ? 100 : 80, matchedFields));
+        if (matchedFields.length) results.push(resultFor(resource, record, mode, matchedFields.includes("id") ? 100 : 80, matchedFields, `Symbol query matched ${matchedFields.join(" and ")} in the indexed symbol inventory.`));
         continue;
       }
 
@@ -334,7 +348,7 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
         const related = relationshipText.includes(query);
         if (related) {
           matchedFields.push("relationship");
-          results.push(resultFor(resource, record, mode, 70, matchedFields));
+          results.push(resultFor(resource, record, mode, 70, matchedFields, `This record participates in a relationship containing “${rawQuery.trim()}”.`));
         }
         continue;
       }
@@ -410,14 +424,13 @@ export function searchSnapshot(snapshot: PublicSnapshot, rawQuery: string, rawMo
       }
       if (matchedTerms.size === terms.length) score += 30;
       score += 12 * (matchedTerms.size / terms.length);
+      if (matchedTerms.size === 0) continue;
       if (["components", "capabilities", "contracts", "decisions"].includes(resource)) score += 20;
       else if (resource === "stack_nodes") score += 16;
       else if (["tests", "benchmarks", "gaps", "releases"].includes(resource)) score += 10;
       if (resource === "symbols" && !(symbol === query || name === query)) score -= 12;
-      if (score > 0) results.push(resultFor(resource, record, mode, score, [...new Set(matchedFields)]));
+      if (score > 0) results.push(resultFor(resource, record, mode, score, [...new Set(matchedFields)], `Semantic query matched ${[...new Set(matchedFields)].join(", ")} across the complete public record and relationship index.`));
   }
 
-  return results
-    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
-    .slice(0, 100);
+  return results.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
 }

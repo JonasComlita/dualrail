@@ -10,11 +10,15 @@
 
 ## Objective
 
-Add a first-class DeepSWE-style intelligence benchmark for Trit coding agents,
-durable participant accounts and community artifacts, and evidence-backed
-end-to-end proof with four independent, provenance-verifiable model trials.
-TreatCode task/suite scores must remain separate from the external DeepSWE
-reference (currently `gpt-5.6-luna[max]` at `67% ±4%` over 113 tasks).
+Add a first-class repository-repair intelligence benchmark for Trit coding
+agents, durable participant accounts and community artifacts, and
+evidence-backed end-to-end proof. The v2 five-task/four-trial protocol remains
+an end-to-end product and grader regression suite. It is not a model-ranking
+benchmark because repeated execution of one authored solution is not an
+independent observation. V3 must use at least 100 distinct repository tasks and
+one fresh, bounded model attempt per task. TreatCode scores remain separate
+from the external DeepSWE reference (currently `gpt-5.6-luna[max]` at
+`67% ±4%` over 113 tasks).
 
 ## Deliverables
 
@@ -32,6 +36,15 @@ reference (currently `gpt-5.6-luna[max]` at `67% ±4%` over 113 tasks).
    controls.
 5. API, security, persistence, browser E2E, and Luna proof evidence under
    `build/treatcode-plan-evidence/P14/`.
+6. Versioned v3 protocol requiring 100 distinct tasks, independent author and
+   reviewer provenance, participant/grader bundle isolation, fixed pre-release
+   clocks and tool/token budgets, a frozen holdout, and weak/medium/frontier
+   calibration.
+7. V3 scoring with separately reported correctness, robustness, efficiency,
+   and agent-execution dimensions; length-controlled discussion review remains
+   secondary and contributes zero weight to the executable score.
+8. Task-bootstrap confidence intervals, paired task comparison, exact sign
+   tests, and enforced ceiling/floor/discrimination gates.
 
 ## Non-Goals
 
@@ -64,6 +77,23 @@ reference (currently `gpt-5.6-luna[max]` at `67% ±4%` over 113 tasks).
       limits, and existing challenge/auth regressions pass.
 - [ ] P14 evidence records the tested commit, model configuration, trial IDs,
       route assertions, command exit codes, and artifact hashes.
+- [ ] V3 contains at least 100 executable, independently authored and
+      two-reviewer-approved repository tasks. Candidate identifiers or generated
+      briefs do not satisfy this criterion.
+- [ ] Every v3 task is attempted once in a fresh context with the wall clock
+      started before task release, fixed tool/token/test/patch budgets, and
+      cross-task memory disabled.
+- [ ] Hidden graders and reference solutions are packaged under a privileged
+      root outside the participant tree; package and access-trace hashes prove
+      that the participant could not read them.
+- [ ] Weak, medium, and frontier pilot cohorts calibrate every task; excessive
+      ceiling/floor items and items below the discrimination threshold are
+      revised or removed before the holdout is frozen.
+- [ ] Full-suite model comparisons use identical task sets and report task-level
+      results, dimension scores, bootstrap confidence intervals, paired deltas,
+      and significance. Partial coverage is never official.
+- [ ] Discussion grading is length-controlled, human-calibrated, reported
+      separately, and never changes the executable model score.
 
 ## Verification
 
@@ -71,6 +101,8 @@ reference (currently `gpt-5.6-luna[max]` at `67% ±4%` over 113 tasks).
 npm.cmd --prefix treatcode run test:community
 npm.cmd --prefix treatcode run test:intelligence
 npm.cmd --prefix treatcode run test:intelligence:suite
+npm.cmd --prefix treatcode run test:intelligence:v3
+npm.cmd --prefix treatcode run validate:intelligence:v3
 npm.cmd --prefix treatcode run test:e2e:intelligence
 npm.cmd --prefix treatcode run test:participant-journey
 tools/trit-doctor.ps1
@@ -90,12 +122,36 @@ python tools/trit_tool.py website plan verify P14
 - `build/treatcode-plan-evidence/P14/intelligence-e2e.json`
 - `build/treatcode-plan-evidence/P14/participant-journey.json`
 - `build/treatcode-plan-evidence/P14/luna-max-four-trials.json`
+- `benchmarks/intelligence-v3/protocol.v3.json`
+- `benchmarks/intelligence-v3/corpus.candidates.v3.json`
+- `benchmarks/intelligence-v3/calibration-observations.schema.v3.json`
+- `benchmarks/intelligence-v3/calibration-plan.v3.json`
+- `benchmarks/intelligence-v3/discussion-rubric.v3.json`
+- `benchmarks/intelligence-v3/provenance-bundle.schema.v3.json`
+- `benchmarks/intelligence-v3/trusted-contributors.schema.v3.json`
+- `benchmarks/intelligence-v3/executable-drafts.v3.json`
+- `build/treatcode-plan-evidence/P14/intelligence-v3-foundation.json`
+- `build/treatcode-plan-evidence/P14/intelligence-v3-readiness.json`
 
 The Luna artifact above is retained as a blind task-candidate record. It shows
 that a `gpt-5.6-luna[max]` agent can derive and submit the pilot repair, but it
 does not prove four independent provider-issued model contexts or a complete
 suite rollout. Until provenance-verifiable rollout evidence is captured, it
 must not be used as an official model score.
+
+The v3 candidate registry contains 100 unique authoring briefs and two
+separately registered executable development drafts, but remains deliberately
+non-official. `TC-V3-001` has a two-module participant repository and a grader
+outside the subject workspace; its starter fails 0/5 public and 0/12 hidden
+cases, and a private known-good fixture passes 5/5 and 12/12. `TC-V3-002`
+adds interval normalization and boundary reasoning; its starter passes only
+1/5 public and 4/14 hidden, while the private known-good passes 5/5 and 14/14.
+Independent authors, two reviewers per task, the other 98 executable packages,
+pilot cohort results, and a frozen holdout are still required. The workspace
+owner authorized continued nonofficial development in
+`owner-confirmation.v3.json`; its explicit nonclaims prevent that authorization
+from being counted as independent review or calibration. The validator treats
+every missing official artifact as a publication blocker.
 
 ## Required Approvals
 

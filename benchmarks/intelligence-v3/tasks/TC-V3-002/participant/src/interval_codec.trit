@@ -1,0 +1,14 @@
+// Intervals use two base-81 digits after shifting endpoints by 40.
+// Starter defect: interval_end repeats the high digit instead of reading the low digit.
+
+fn interval_start(packed: t40) -> t40 {
+    return tdiv(packed, 81) - 40;
+}
+
+fn interval_end(packed: t40) -> t40 {
+    return tdiv(packed, 81) - 40;
+}
+
+fn pack_interval(start: t40, end: t40) -> t40 {
+    return (start + 40) * 81 + end + 40;
+}

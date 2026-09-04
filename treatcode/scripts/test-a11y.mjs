@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const treatcodeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(treatcodeRoot, "..");
 const evidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P05");
+const p16EvidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P16");
 const appPath = path.join(treatcodeRoot, "src", "App.tsx");
 const publicAppPath = path.join(treatcodeRoot, "src", "PublicApp.tsx");
 const indexPath = path.join(treatcodeRoot, "index.html");
@@ -47,7 +48,20 @@ try {
 
 fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(evidenceRoot, "accessibility.json"), `${JSON.stringify(report, null, 2)}\n`);
+const publicShell = fs.readFileSync(path.join(treatcodeRoot, "public", "public-shell.css"), "utf8");
+const staticLearningRoutes = fs.existsSync(path.join(treatcodeRoot, "learn", "beginner"))
+  ? fs.readdirSync(path.join(treatcodeRoot, "learn", "beginner"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).length
+  : 0;
+const p16Report = {
+  schema: "trit.treatcode_accessibility_report.v2",
+  ok: report.ok && publicShell.includes("@media (max-width: 820px)") && publicShell.includes("@media (max-width: 520px)") && staticLearningRoutes >= 42,
+  checks: [...report.checks, "responsive 820px and 520px layouts", "static no-JavaScript lesson routes retain a readable landmark"],
+  errors: [...report.errors, ...(staticLearningRoutes >= 42 ? [] : [`only ${staticLearningRoutes} beginner static lesson routes are present`])],
+  route_counts: { beginner_static_lessons: staticLearningRoutes },
+};
+fs.mkdirSync(p16EvidenceRoot, { recursive: true });
+fs.writeFileSync(path.join(p16EvidenceRoot, "accessibility.json"), `${JSON.stringify(p16Report, null, 2)}\n`);
 console.log(`P05 accessibility: ${report.ok ? "passed" : "failed"}`);
 for (const check of report.checks) console.log(`  [ok] ${check}`);
 for (const error of report.errors) console.error(`  [fail] ${error}`);
-process.exitCode = report.ok ? 0 : 1;
+process.exitCode = report.ok && p16Report.ok ? 0 : 1;

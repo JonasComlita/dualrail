@@ -1,4 +1,5 @@
 import catalog from "./content/learn/learning-catalog.json";
+import curriculumMatrix from "./content/learn/P05_CURRICULUM_MATRIX.json";
 
 export interface LearningSource {
   path: string;
@@ -20,12 +21,45 @@ export interface LearningInteractiveCode {
   title: string;
   starter: string;
   expectedIncludes: string[];
+  exercise_id: string;
+  runner: string;
+  explanation: string;
+}
+
+export interface LearningTraceStep {
+  label: string;
+  state: string;
+  explanation: string;
+}
+
+export interface LearningInteractiveTrace {
+  kind: "trace";
+  title: string;
+  prompt: string;
+  steps: LearningTraceStep[];
+}
+
+export interface LearningInteractiveSource {
+  kind: "source";
+  title: string;
+  prompt: string;
+  sourcePath: string;
+  sourceHref: string;
+  expectedIncludes: string[];
   explanation: string;
 }
 
 export type LearningInteractive =
   | LearningInteractiveChoice
-  | LearningInteractiveCode;
+  | LearningInteractiveCode
+  | LearningInteractiveTrace
+  | LearningInteractiveSource;
+
+export interface LearningStackLinks {
+  phase: string;
+  source: string | null;
+  tests: string;
+}
 
 export interface LearningPage {
   schema: string;
@@ -35,9 +69,20 @@ export interface LearningPage {
   level: "beginner" | "programmer" | "eecs";
   order: number;
   summary: string;
+  phase_id: string;
+  phase_slug: string;
+  phase_name: string;
+  lesson_kind: "mental-model" | "build-trace";
+  implementation_status: string;
+  canonical_terms: string[];
+  objectives: string[];
   prerequisites: string[];
   sources: LearningSource[];
   evidence: LearningSource[];
+  test_ids: string[];
+  benchmark_ids: string[];
+  gap_ids: string[];
+  stack_links: LearningStackLinks;
   next: string | null;
   interactive: LearningInteractive;
   content: string;
@@ -49,20 +94,81 @@ export interface LearningPath {
   audience: string;
   description: string;
   page_ids: string[];
+  starting_phase?: string;
+  terminal_lesson_id?: string;
+  required_phase_coverage?: "all" | "partial";
+  capstone?: string;
 }
 
 export interface GlossaryEntry {
   term: string;
   definition: string;
   page_id: string;
+  phase_id: string;
+  source_paths: string[];
+  related_terms: string[];
 }
 
 export interface LearningCatalog {
   schema: string;
+  generated_from: string;
+  snapshot_commit: string;
+  phase_ids: string[];
   paths: LearningPath[];
   prerequisite_graph: Array<{ from: string; to: string }>;
   glossary: GlossaryEntry[];
   interactive_module_kinds: string[];
+  counts: { phases: number; lessons: number; glossary_terms: number };
+}
+
+export interface CurriculumLessonRow {
+  id: string;
+  title: string;
+  kind: string;
+  objectives: string[];
+  sources: string[];
+  evidence: string[];
+  test_ids: string[];
+  benchmark_ids: string[];
+  gap_ids: string[];
+  exercise: {
+    interaction_kind: string;
+    execution_kind: string;
+    id: string;
+  };
+  prerequisites: string[];
+  next: string | null;
+  stack_phase_id: string;
+}
+
+export interface CurriculumPhaseRow {
+  phase_id: string;
+  ordinal: number;
+  slug: string;
+  name: string;
+  required_focus: string;
+  entry: string;
+  exit: string;
+  implementation_status: string;
+  lessons: CurriculumLessonRow[];
+  canonical_lesson_ids: string[];
+  glossary_terms: string[];
+  source_paths: string[];
+  test_ids: string[];
+  benchmark_ids: string[];
+  gap_ids: string[];
+}
+
+export interface CurriculumMatrix {
+  schema: string;
+  generated_from: string;
+  snapshot: { id: string; repository: string; commit: string; generated_at: string; source: string };
+  phase_count: number;
+  lesson_count: number;
+  phases: CurriculumPhaseRow[];
+  paths: Array<{ id: string; page_ids: string[]; terminal_lesson_id: string; required_phase_coverage: string }>;
+  glossary_count: number;
+  prerequisite_edge_count: number;
 }
 
 const rawLearningDocuments = import.meta.glob(
@@ -90,10 +196,19 @@ function parseLearningDocument(source: string, filename: string): LearningPage {
 }
 
 export const LEARNING_CATALOG = catalog as LearningCatalog;
+export const LEARNING_MATRIX = curriculumMatrix as CurriculumMatrix;
 
 export const LEARNING_PAGES: LearningPage[] = Object.entries(rawLearningDocuments)
   .map(([filename, source]) => parseLearningDocument(source, filename))
   .sort((left, right) => left.order - right.order);
+
+export const LEARNING_PAGE_BY_ID = new Map(LEARNING_PAGES.map((page) => [page.id, page]));
+
+export function learningPathPages(path: LearningPath): LearningPage[] {
+  return path.page_ids
+    .map((pageId) => LEARNING_PAGE_BY_ID.get(pageId))
+    .filter((page): page is LearningPage => Boolean(page));
+}
 
 export interface Block {
   type: "p" | "h2" | "h3" | "h4" | "code" | "ul" | "ol" | "table";

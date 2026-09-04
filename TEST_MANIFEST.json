@@ -130,6 +130,36 @@
       ]
     },
     {
+      "name": "treatcode_intelligence_v3",
+      "description": "Independent repository-task intelligence benchmark protocol, scoring, statistics, and participant/grader isolation foundation.",
+      "targets": [],
+      "status": "development",
+      "manual": true,
+      "commands": [
+        "npm.cmd --prefix treatcode run generate:intelligence:v3",
+        "npm.cmd --prefix treatcode run validate:intelligence:v3",
+        "npm.cmd --prefix treatcode run test:intelligence:v3",
+        "npm.cmd --prefix treatcode run test:e2e:intelligence"
+      ],
+      "docs": [
+        "benchmarks/intelligence-v3/README.md",
+        "benchmarks/intelligence-v3/protocol.v3.json",
+        "benchmarks/intelligence-v3/task.schema.v3.json",
+        "benchmarks/intelligence-v3/calibration-observations.schema.v3.json",
+        "benchmarks/intelligence-v3/calibration-plan.v3.json",
+        "benchmarks/intelligence-v3/discussion-rubric.v3.json",
+        "benchmarks/intelligence-v3/provenance-bundle.schema.v3.json",
+        "benchmarks/intelligence-v3/trusted-contributors.schema.v3.json",
+        "benchmarks/intelligence-v3/corpus.candidates.v3.json",
+        "benchmarks/intelligence-v3/executable-drafts.v3.json",
+        "docs/11_TreatCode_Platform/plans/P14_intelligence_benchmark.md"
+      ],
+      "acceptance_evidence": [
+        "build/treatcode-plan-evidence/P14/intelligence-v3-foundation.json",
+        "build/treatcode-plan-evidence/P14/intelligence-e2e.json"
+      ]
+    },
+    {
       "name": "native_jit_acceptance",
       "description": "Controlled-host NativeX64Jit timing, fingerprint, and direct-control acceptance evidence.",
       "targets": [

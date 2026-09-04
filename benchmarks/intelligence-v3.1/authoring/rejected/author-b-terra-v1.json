@@ -1,0 +1,2088 @@
+{
+  "schema": "treatcode.intelligence.author-contribution.v3.1",
+  "version": "3.1",
+  "authorship": {
+    "contributor_id": "model-agent-terra-author-b",
+    "contributor_kind": "model_agent",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "high",
+    "completed_at": "2026-08-28T00:00:00-07:00",
+    "attestation": "Authored from this repository's visible source and TEST_MANIFEST.json. These are candidate task designs only; no bundle hash, review, calibration, execution result, or frozen-suite status is claimed."
+  },
+  "tasks": [
+    {
+      "task_id": "TC-V31-FINAL-035",
+      "category": "algorithm_and_data_structure",
+      "title": "Scheduler ring capacity preserves deterministic dequeue",
+      "initial_signal": "A mixed-priority runnable set returns the right count but changes the first dequeue after the ready ring wraps.",
+      "participant_files": [
+        "kernel.trit",
+        "math_utils.trit",
+        "tcl_ir.trit",
+        "tcl_frontend.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_host_runtime.h",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_ir.trit"
+      ],
+      "distractor_files": [
+        "ternary_vm.h",
+        "ternary_lanes.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "next_scheduler_acceptance",
+        "test_ternary_ir"
+      ],
+      "mutations": [
+        {
+          "before": "const KERNEL_MAGIC: t40 = 40404;",
+          "after": "const KERNEL_MAGIC: t40 = 40405;",
+          "path": "kernel.trit",
+          "invariant": "A wraparound dequeue is deterministic without changing boot-state identity.",
+          "hidden_test_rationale": "Hidden runs vary ring occupancy and reload a saved state, exposing an implementation that only fixes one boundary."
+        },
+        {
+          "before": "    Alloca,",
+          "after": "    Alloca = 1,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A wraparound dequeue is deterministic without changing boot-state identity.",
+          "hidden_test_rationale": "Hidden runs vary ring occupancy and reload a saved state, exposing an implementation that only fixes one boundary."
+        }
+      ],
+      "required_interaction": "Repair both surfaces so emitted state records and kernel-side ring initialization retain a stable key and operation ordering.",
+      "invariant": "A wraparound dequeue is deterministic without changing boot-state identity.",
+      "hidden_test_rationale": "Hidden runs vary ring occupancy and reload a saved state, exposing an implementation that only fixes one boundary.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "os",
+        "core"
+      ],
+      "public_signal": "The OS suite reports only a nondeterministic scheduler acceptance failure."
+    },
+    {
+      "task_id": "TC-V31-FINAL-036",
+      "category": "algorithm_and_data_structure",
+      "title": "Stable process-index tombstone probing",
+      "initial_signal": "Process lookup succeeds until a delete-and-reinsert sequence crosses a tombstone cluster.",
+      "participant_files": [
+        "kernel.trit",
+        "ulib_hmap.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_host_runtime.h",
+        "TEST_MANIFEST.json",
+        "ROADMAP_STATUS.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ulib_hmap.trit"
+      ],
+      "distractor_files": [
+        "ternary_dataflow.trit",
+        "ternary_vm_state.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_process_handoff",
+        "test_os_platform"
+      ],
+      "mutations": [
+        {
+          "before": "const STORAGE_BLOCK_WORDS: t40 = 27;",
+          "after": "const STORAGE_BLOCK_WORDS: t40 = 26;",
+          "path": "kernel.trit",
+          "invariant": "Tombstones never hide a live PID and probe cost stays bounded.",
+          "hidden_test_rationale": "Hidden cases form dense clusters, restart the handoff path, and reject a table that merely passes sparse inserts."
+        },
+        {
+          "before": "    Param,",
+          "after": "    Param = 0,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Tombstones never hide a live PID and probe cost stays bounded.",
+          "hidden_test_rationale": "Hidden cases form dense clusters, restart the handoff path, and reject a table that merely passes sparse inserts."
+        }
+      ],
+      "required_interaction": "Restore the storage stride together with the producer ordering used when handoff records are constructed.",
+      "invariant": "Tombstones never hide a live PID and probe cost stays bounded.",
+      "hidden_test_rationale": "Hidden cases form dense clusters, restart the handoff path, and reject a table that merely passes sparse inserts.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "Only the process handoff target is named; no failing PID sequence is published."
+    },
+    {
+      "task_id": "TC-V31-FINAL-037",
+      "category": "algorithm_and_data_structure",
+      "title": "Timer-wheel cancellation under bucket reuse",
+      "initial_signal": "Canceling a deadline then reusing its bucket occasionally wakes the replacement task early.",
+      "participant_files": [
+        "kernel.trit",
+        "tcl_ir.trit",
+        "tcl_backend.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm.h",
+        "TEST_MANIFEST.json",
+        "SCHEDULER_ACCEPTANCE_SCHEMA.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_backend.trit"
+      ],
+      "distractor_files": [
+        "ternary_redo_wal.h",
+        "tests_next",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "next_scheduler_acceptance",
+        "test_phase_d_kernel"
+      ],
+      "mutations": [
+        {
+          "before": "const MMU_PAGE_WORDS: t40 = 729;",
+          "after": "const MMU_PAGE_WORDS: t40 = 728;",
+          "path": "kernel.trit",
+          "invariant": "Canceled entries cannot wake a later owner of the same bucket.",
+          "hidden_test_rationale": "Hidden tests force several generations through one bucket and enforce a bounded tick budget."
+        },
+        {
+          "before": "    Const,",
+          "after": "    Const = 2,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Canceled entries cannot wake a later owner of the same bucket.",
+          "hidden_test_rationale": "Hidden tests force several generations through one bucket and enforce a bounded tick budget."
+        }
+      ],
+      "required_interaction": "Repair the page-sized wheel backing calculation and the literal representation consumed by timer setup.",
+      "invariant": "Canceled entries cannot wake a later owner of the same bucket.",
+      "hidden_test_rationale": "Hidden tests force several generations through one bucket and enforce a bounded tick budget.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "os"
+      ],
+      "public_signal": "The scheduler suite exposes a timeout-order failure without task identifiers."
+    },
+    {
+      "task_id": "TC-V31-FINAL-038",
+      "category": "algorithm_and_data_structure",
+      "title": "Extent coalescing keeps ordered free ranges",
+      "initial_signal": "Adjacent freed extents are retained as two records after a page-boundary allocation cycle.",
+      "participant_files": [
+        "kernel.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_host_runtime.h",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "TEST_MANIFEST.json",
+        "KNOWN_GAPS.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_ir.trit"
+      ],
+      "distractor_files": [
+        "encrypted_volume_host.h",
+        "migrate_tos_artifacts.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_vfs_reclamation",
+        "test_os_platform"
+      ],
+      "mutations": [
+        {
+          "before": "const MMU_SUPERPAGE_WORDS: t40 = 19683;",
+          "after": "const MMU_SUPERPAGE_WORDS: t40 = 19682;",
+          "path": "kernel.trit",
+          "invariant": "Free extents remain ordered, nonoverlapping, and maximally coalesced.",
+          "hidden_test_rationale": "Hidden fragmentation patterns cross page and superpage boundaries while checking reclaim work is not quadratic."
+        },
+        {
+          "before": "    Copy,",
+          "after": "    Copy = 3,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Free extents remain ordered, nonoverlapping, and maximally coalesced.",
+          "hidden_test_rationale": "Hidden fragmentation patterns cross page and superpage boundaries while checking reclaim work is not quadratic."
+        }
+      ],
+      "required_interaction": "Restore both range-boundary arithmetic and the transfer operation’s stable encoding.",
+      "invariant": "Free extents remain ordered, nonoverlapping, and maximally coalesced.",
+      "hidden_test_rationale": "Hidden fragmentation patterns cross page and superpage boundaries while checking reclaim work is not quadratic.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "The VFS reclaim test identifies only leaked capacity."
+    },
+    {
+      "task_id": "TC-V31-FINAL-039",
+      "category": "algorithm_and_data_structure",
+      "title": "Window event queue retains FIFO across full drain",
+      "initial_signal": "A full event queue accepts the next close event but returns it before an older key event.",
+      "participant_files": [
+        "kernel.trit",
+        "apps/os_sdk.trit",
+        "apps/libwidget.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_host_runtime.h",
+        "TEST_MANIFEST.json",
+        "APP_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "apps/os_sdk.trit"
+      ],
+      "distractor_files": [
+        "ternary_consumer_shell.h",
+        "run_tos_sdl.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_native_apps",
+        "test_os_platform"
+      ],
+      "mutations": [
+        {
+          "before": "const PTR_STATE_NULL: t40 = -1;",
+          "after": "const PTR_STATE_NULL: t40 = 0;",
+          "path": "kernel.trit",
+          "invariant": "Queue fullness never reverses the established FIFO order.",
+          "hidden_test_rationale": "Hidden GUI traces combine close, key, and mouse records over multiple wraps."
+        },
+        {
+          "before": "    Add,",
+          "after": "    Add = 4,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Queue fullness never reverses the established FIFO order.",
+          "hidden_test_rationale": "Hidden GUI traces combine close, key, and mouse records over multiple wraps."
+        }
+      ],
+      "required_interaction": "Reestablish the distinct empty sentinel and corresponding index arithmetic across SDK-produced events and kernel consumption.",
+      "invariant": "Queue fullness never reverses the established FIFO order.",
+      "hidden_test_rationale": "Hidden GUI traces combine close, key, and mouse records over multiple wraps.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "apps",
+        "os"
+      ],
+      "public_signal": "Native-app coverage shows an event-order regression only after a full queue."
+    },
+    {
+      "task_id": "TC-V31-FINAL-040",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Signed half-division preserves negative odd rounding",
+      "initial_signal": "The arithmetic helper agrees on positive constants but diverges for negative odd operands at a word boundary.",
+      "participant_files": [
+        "math_utils.trit",
+        "kernel.trit",
+        "tcl_frontend.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "TEST_MANIFEST.json",
+        "TCL_Spec_1.0.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "math_utils.trit"
+      ],
+      "distractor_files": [
+        "ternary_scalar.h",
+        "ternary_uint128.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_numeric_workloads",
+        "test_ternary_ir"
+      ],
+      "mutations": [
+        {
+          "before": "const PTR_STATE_UNKNOWN: t40 = 0;",
+          "after": "const PTR_STATE_UNKNOWN: t40 = -1;",
+          "path": "kernel.trit",
+          "invariant": "The numeric helper’s rounding rule is symmetric and pointer-state checks preserve neutral as distinct.",
+          "hidden_test_rationale": "Hidden cases use negative odd values after a compiler-lowered subtraction, not just direct helper calls."
+        },
+        {
+          "before": "    Sub,",
+          "after": "    Sub = 5,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "The numeric helper’s rounding rule is symmetric and pointer-state checks preserve neutral as distinct.",
+          "hidden_test_rationale": "Hidden cases use negative odd values after a compiler-lowered subtraction, not just direct helper calls."
+        }
+      ],
+      "required_interaction": "Recover the neutral pointer-state value and signed subtraction encoding before updating the checked division path.",
+      "invariant": "The numeric helper’s rounding rule is symmetric and pointer-state checks preserve neutral as distinct.",
+      "hidden_test_rationale": "Hidden cases use negative odd values after a compiler-lowered subtraction, not just direct helper calls.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "core"
+      ],
+      "public_signal": "Core numeric coverage reports a single arithmetic mismatch without the operand."
+    },
+    {
+      "task_id": "TC-V31-FINAL-041",
+      "category": "balanced_ternary_and_numeric",
+      "title": "WAL checksum accumulation rejects wrapped lane",
+      "initial_signal": "A record with a negative lane transition is accepted after checksum accumulation wraps.",
+      "participant_files": [
+        "kernel.trit",
+        "ternary_redo_wal.h",
+        "ternary_scalar.h",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_host_runtime.h",
+        "TEST_MANIFEST.json",
+        "IMAGE_FORMAT_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_redo_wal.h"
+      ],
+      "distractor_files": [
+        "encrypted_volume_host.h",
+        "migrate_tos_artifacts.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_redo_wal_v2",
+        "test_numeric_workloads"
+      ],
+      "mutations": [
+        {
+          "before": "const PTR_STATE_VALID: t40 = 1;",
+          "after": "const PTR_STATE_VALID: t40 = 2;",
+          "path": "kernel.trit",
+          "invariant": "Only a canonical, fully checked record advances recovery state.",
+          "hidden_test_rationale": "Hidden recovery images include a wrap at the negative lane and ensure no partial durable state is exposed."
+        },
+        {
+          "before": "    Mul,",
+          "after": "    Mul = 6,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Only a canonical, fully checked record advances recovery state.",
+          "hidden_test_rationale": "Hidden recovery images include a wrap at the negative lane and ensure no partial durable state is exposed."
+        }
+      ],
+      "required_interaction": "Make the valid marker and multiply encoding agree before correcting lane-wise checksum validation.",
+      "invariant": "Only a canonical, fully checked record advances recovery state.",
+      "hidden_test_rationale": "Hidden recovery images include a wrap at the negative lane and ensure no partial durable state is exposed.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "os",
+        "core"
+      ],
+      "public_signal": "Redo-WAL coverage reports recovery rejection only for one opaque record."
+    },
+    {
+      "task_id": "TC-V31-FINAL-042",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Ternary lane conversion preserves signed boundary",
+      "initial_signal": "A vector conversion passes interior values but changes one representable signed boundary during scalar fallback.",
+      "participant_files": [
+        "ternary_lanes.h",
+        "ternary_scalar.h",
+        "kernel.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "TEST_MANIFEST.json",
+        "BENCHMARK_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_lanes.h"
+      ],
+      "distractor_files": [
+        "ternary_simd.h",
+        "ternary_gpu_kernels.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_ternary_lanes",
+        "test_benchmark"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_NOT_FOUND: t40 = -1;",
+          "after": "const ERR_NOT_FOUND: t40 = -2;",
+          "path": "kernel.trit",
+          "invariant": "Every representable signed lane round-trips and invalid conversion retains its error class.",
+          "hidden_test_rationale": "Hidden vectors mix boundary lanes with invalid widths and enforce the allocation/cycle ceiling."
+        },
+        {
+          "before": "    Div,",
+          "after": "    Div = 7,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every representable signed lane round-trips and invalid conversion retains its error class.",
+          "hidden_test_rationale": "Hidden vectors mix boundary lanes with invalid widths and enforce the allocation/cycle ceiling."
+        }
+      ],
+      "required_interaction": "Restore the distinct error identity and division fallback encoding used by checked lane conversion.",
+      "invariant": "Every representable signed lane round-trips and invalid conversion retains its error class.",
+      "hidden_test_rationale": "Hidden vectors mix boundary lanes with invalid widths and enforce the allocation/cycle ceiling.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "core",
+        "benchmark"
+      ],
+      "public_signal": "The lanes target emits a boundary-only assertion."
+    },
+    {
+      "task_id": "TC-V31-FINAL-043",
+      "category": "compiler_and_codegen",
+      "title": "Spill metadata survives addressable local lowering",
+      "initial_signal": "A nested call under register pressure reads an older local only when an addressable temporary is spilled.",
+      "participant_files": [
+        "tcl_frontend.trit",
+        "tcl_ir.trit",
+        "tcl_backend.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_compiler_cfg.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_backend.trit"
+      ],
+      "distractor_files": [
+        "ternary_compiler_parser.h",
+        "ternary_asm.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_compiler_abi_contract",
+        "test_phase7_compiler"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_EXISTS: t40 = -2;",
+          "after": "const ERR_EXISTS: t40 = -3;",
+          "path": "kernel.trit",
+          "invariant": "Distinct addressable locals cannot alias a reused spill slot across a call.",
+          "hidden_test_rationale": "Hidden modules force a call at a branch join and verify both result and diagnostic class."
+        },
+        {
+          "before": "    Tmod,",
+          "after": "    Tmod = 8,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Distinct addressable locals cannot alias a reused spill slot across a call.",
+          "hidden_test_rationale": "Hidden modules force a call at a branch join and verify both result and diagnostic class."
+        }
+      ],
+      "required_interaction": "Reconcile allocation-conflict propagation with the ternary-modulo lowering used in spill address calculation.",
+      "invariant": "Distinct addressable locals cannot alias a reused spill slot across a call.",
+      "hidden_test_rationale": "Hidden modules force a call at a branch join and verify both result and diagnostic class.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler",
+        "production"
+      ],
+      "public_signal": "The compiler target stops at a generic ABI-contract failure."
+    },
+    {
+      "task_id": "TC-V31-FINAL-044",
+      "category": "compiler_and_codegen",
+      "title": "Phi predecessor labels remain canonical after recovery",
+      "initial_signal": "After one malformed conditional, the next valid merge receives a phi input under the wrong predecessor label.",
+      "participant_files": [
+        "tcl_parser.trit",
+        "tcl_frontend.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_cfg.h",
+        "ternary_compiler_codegen.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_frontend.trit"
+      ],
+      "distractor_files": [
+        "tcl_token.trit",
+        "ternary_compiler_ast.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_compiler_corpus_gate",
+        "test_phase7_compiler"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_NO_SPACE: t40 = -3;",
+          "after": "const ERR_NO_SPACE: t40 = -4;",
+          "path": "kernel.trit",
+          "invariant": "Every phi incoming edge names one reachable predecessor exactly once.",
+          "hidden_test_rationale": "Hidden parsing cases recover from nested syntax errors before exercising a multi-edge join."
+        },
+        {
+          "before": "    Cvt,",
+          "after": "    Cvt = 9,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every phi incoming edge names one reachable predecessor exactly once.",
+          "hidden_test_rationale": "Hidden parsing cases recover from nested syntax errors before exercising a multi-edge join."
+        }
+      ],
+      "required_interaction": "Restore error classification and conversion operation ordering while repairing predecessor construction.",
+      "invariant": "Every phi incoming edge names one reachable predecessor exactly once.",
+      "hidden_test_rationale": "Hidden parsing cases recover from nested syntax errors before exercising a multi-edge join.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler"
+      ],
+      "public_signal": "Corpus-gate output names the module but suppresses the recovery fixture."
+    },
+    {
+      "task_id": "TC-V31-FINAL-045",
+      "category": "compiler_and_codegen",
+      "title": "Vector call-area width follows executable ABI",
+      "initial_signal": "A vector argument call succeeds in dry run but overwrites the next frame on executable emission.",
+      "participant_files": [
+        "ternary_compiler_codegen.h",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_types.h",
+        "executable_header_v3.h",
+        "kernel.trit",
+        "apps/os_sdk.trit",
+        "SYSCALL_MANIFEST.json",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h"
+      ],
+      "distractor_files": [
+        "ternary_vm_state.h",
+        "architecture_v2_support.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_executable_abi_v3",
+        "test_compiler_abi_contract"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_BAD_FD: t40 = -4;",
+          "after": "const ERR_BAD_FD: t40 = -5;",
+          "path": "kernel.trit",
+          "invariant": "Vector arguments occupy their ABI-mandated width without overlapping a caller frame.",
+          "hidden_test_rationale": "Hidden call graphs combine scalar and vector calls with a post-call observable local."
+        },
+        {
+          "before": "    Cmp,",
+          "after": "    Cmp = 10,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Vector arguments occupy their ABI-mandated width without overlapping a caller frame.",
+          "hidden_test_rationale": "Hidden call graphs combine scalar and vector calls with a post-call observable local."
+        }
+      ],
+      "required_interaction": "Restore the call-resource error identity and comparison guard encoding before aligning vector call-area allocation.",
+      "invariant": "Vector arguments occupy their ABI-mandated width without overlapping a caller frame.",
+      "hidden_test_rationale": "Hidden call graphs combine scalar and vector calls with a post-call observable local.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler",
+        "production"
+      ],
+      "public_signal": "Executable ABI tests report only a stack-boundary mismatch."
+    },
+    {
+      "task_id": "TC-V31-FINAL-046",
+      "category": "compiler_and_codegen",
+      "title": "Weak module initialization has a reproducible order",
+      "initial_signal": "Two equivalent builds choose different initializer order when a weak import cycle is present.",
+      "participant_files": [
+        "tcl_frontend.trit",
+        "tcl_backend.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_compiler.h",
+        "CMakeLists.txt",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h"
+      ],
+      "distractor_files": [
+        "ternary_compiler_parser.h",
+        "tools/trit_tool.py",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_phase7_compiler",
+        "test_source_manifest_generation"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_BAD_PTR: t40 = -5;",
+          "after": "const ERR_BAD_PTR: t40 = -6;",
+          "path": "kernel.trit",
+          "invariant": "Equivalent module graphs produce byte-identical initialization order.",
+          "hidden_test_rationale": "Hidden builds permute input order and include a weak cycle plus a late strong import."
+        },
+        {
+          "before": "    Tsel,",
+          "after": "    Tsel = 11,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Equivalent module graphs produce byte-identical initialization order.",
+          "hidden_test_rationale": "Hidden builds permute input order and include a weak cycle plus a late strong import."
+        }
+      ],
+      "required_interaction": "Repair the distinct pointer failure and select operation representation so linking can impose one order.",
+      "invariant": "Equivalent module graphs produce byte-identical initialization order.",
+      "hidden_test_rationale": "Hidden builds permute input order and include a weak cycle plus a late strong import.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler",
+        "agent_tooling"
+      ],
+      "public_signal": "The public compiler run says only that output is nonreproducible."
+    },
+    {
+      "task_id": "TC-V31-FINAL-047",
+      "category": "compiler_and_codegen",
+      "title": "Checked constant folding retains runtime trap semantics",
+      "initial_signal": "A folded boundary expression returns a value where the non-folded form preserves a checked-arithmetic failure.",
+      "participant_files": [
+        "tcl_frontend.trit",
+        "tcl_infer.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_scalar.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_infer.trit"
+      ],
+      "distractor_files": [
+        "math_utils.trit",
+        "ternary_uint128.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_compiler_corpus_gate",
+        "test_numeric_workloads"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_NOT_DIR: t40 = -6;",
+          "after": "const ERR_NOT_DIR: t40 = -7;",
+          "path": "kernel.trit",
+          "invariant": "Folding changes neither the value nor the observable checked failure mode.",
+          "hidden_test_rationale": "Hidden programs take folded and non-folded paths through the same module boundary."
+        },
+        {
+          "before": "    Phi,",
+          "after": "    Phi = 12,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Folding changes neither the value nor the observable checked failure mode.",
+          "hidden_test_rationale": "Hidden programs take folded and non-folded paths through the same module boundary."
+        }
+      ],
+      "required_interaction": "Restore error mapping and phi representation before making folded and runtime checked paths agree.",
+      "invariant": "Folding changes neither the value nor the observable checked failure mode.",
+      "hidden_test_rationale": "Hidden programs take folded and non-folded paths through the same module boundary.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler",
+        "core"
+      ],
+      "public_signal": "The public corpus test emits a generic constant-evaluation discrepancy."
+    },
+    {
+      "task_id": "TC-V31-FINAL-048",
+      "category": "memory_and_pointer_safety",
+      "title": "User span validation rejects wrapped end address",
+      "initial_signal": "Two individually valid spans are accepted as disjoint after their checked end address wraps.",
+      "participant_files": [
+        "kernel.trit",
+        "tcl_pointer_dataflow.trit",
+        "tcl_type.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm_state.h",
+        "SYSCALL_MANIFEST.json",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_pointer_dataflow.trit"
+      ],
+      "distractor_files": [
+        "ternary_host_runtime.h",
+        "ternary_scalar.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_syscall_pointer_fuzz",
+        "test_compiler_abi_contract"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_IS_DIR: t40 = -7;",
+          "after": "const ERR_IS_DIR: t40 = -8;",
+          "path": "kernel.trit",
+          "invariant": "A user span is validated before any derived end or alias decision is trusted.",
+          "hidden_test_rationale": "Hidden fuzz cases use near-limit, adjacent, and wrapped spans under both read and write services."
+        },
+        {
+          "before": "    FieldAddr,",
+          "after": "    FieldAddr = 13,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A user span is validated before any derived end or alias decision is trusted.",
+          "hidden_test_rationale": "Hidden fuzz cases use near-limit, adjacent, and wrapped spans under both read and write services."
+        }
+      ],
+      "required_interaction": "Restore span-kind diagnostics and field-address encoding before enforcing overflow-safe half-open range checks.",
+      "invariant": "A user span is validated before any derived end or alias decision is trusted.",
+      "hidden_test_rationale": "Hidden fuzz cases use near-limit, adjacent, and wrapped spans under both read and write services.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "compiler"
+      ],
+      "public_signal": "Pointer fuzzing reports a rejected expectation without publishing addresses."
+    },
+    {
+      "task_id": "TC-V31-FINAL-049",
+      "category": "memory_and_pointer_safety",
+      "title": "Arena rollback invalidates stale generation",
+      "initial_signal": "A failed nested allocation restores capacity but a saved handle remains readable after rollback.",
+      "participant_files": [
+        "kernel.trit",
+        "tcl_pointer_dataflow.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm.h",
+        "TEST_MANIFEST.json",
+        "ROADMAP_STATUS.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_pointer_dataflow.trit"
+      ],
+      "distractor_files": [
+        "ternary_device_allocators.h",
+        "ternary_host_runtime.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_phase_d_kernel",
+        "test_phase7_compiler"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_INVALID: t40 = -8;",
+          "after": "const ERR_INVALID: t40 = -9;",
+          "path": "kernel.trit",
+          "invariant": "Rollback restores allocation state and makes every escaped newer generation invalid.",
+          "hidden_test_rationale": "Hidden tests nest checkpoints, reuse capacity, and access handles through an indexed alias."
+        },
+        {
+          "before": "    IndexAddr,",
+          "after": "    IndexAddr = 14,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Rollback restores allocation state and makes every escaped newer generation invalid.",
+          "hidden_test_rationale": "Hidden tests nest checkpoints, reuse capacity, and access handles through an indexed alias."
+        }
+      ],
+      "required_interaction": "Coordinate generation invalidation with the address calculation encoded for handles.",
+      "invariant": "Rollback restores allocation state and makes every escaped newer generation invalid.",
+      "hidden_test_rationale": "Hidden tests nest checkpoints, reuse capacity, and access handles through an indexed alias.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "compiler"
+      ],
+      "public_signal": "Only a stale-handle assertion appears in the focused suite."
+    },
+    {
+      "task_id": "TC-V31-FINAL-050",
+      "category": "memory_and_pointer_safety",
+      "title": "Move analysis clears every join-path read permission",
+      "initial_signal": "A moved value is rejected on one branch but still accepted after the other branch rejoins.",
+      "participant_files": [
+        "tcl_infer.trit",
+        "tcl_pointer_dataflow.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_cfg.h",
+        "ternary_compiler_codegen.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_infer.trit"
+      ],
+      "distractor_files": [
+        "tcl_type.trit",
+        "ternary_compiler_ast.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_compiler_corpus_gate",
+        "test_phase7_compiler"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_EOF: t40 = -9;",
+          "after": "const ERR_EOF: t40 = -10;",
+          "path": "kernel.trit",
+          "invariant": "A move revokes readability on every reachable successor until reinitialization.",
+          "hidden_test_rationale": "Hidden modules merge a move path with a no-op path and then pass the value through an address-taking call."
+        },
+        {
+          "before": "    AddrOf,",
+          "after": "    AddrOf = 15,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A move revokes readability on every reachable successor until reinitialization.",
+          "hidden_test_rationale": "Hidden modules merge a move path with a no-op path and then pass the value through an address-taking call."
+        }
+      ],
+      "required_interaction": "Restore the terminal error distinction and address-of encoding while propagating moved state across all joins.",
+      "invariant": "A move revokes readability on every reachable successor until reinitialization.",
+      "hidden_test_rationale": "Hidden modules merge a move path with a no-op path and then pass the value through an address-taking call.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler"
+      ],
+      "public_signal": "A compiler corpus case reports use-after-move with no path trace."
+    },
+    {
+      "task_id": "TC-V31-FINAL-051",
+      "category": "concurrency_and_state",
+      "title": "IPC wait handoff uses one wake generation",
+      "initial_signal": "A timeout racing with send produces duplicate runnable entries for one receiver.",
+      "participant_files": [
+        "kernel.trit",
+        "apps/os_sdk.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm.h",
+        "TEST_MANIFEST.json",
+        "SYSCALL_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "apps/os_sdk.trit"
+      ],
+      "distractor_files": [
+        "ternary_host_runtime.h",
+        "ternary_consumer_shell.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "next_scheduler_acceptance",
+        "test_os_platform"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_TIMEOUT: t40 = -10;",
+          "after": "const ERR_TIMEOUT: t40 = -11;",
+          "path": "kernel.trit",
+          "invariant": "Exactly one runnable transition occurs for each wait completion.",
+          "hidden_test_rationale": "Hidden schedules interleave timeout, send, cancellation, and PID reuse deterministically."
+        },
+        {
+          "before": "    Deref,",
+          "after": "    Deref = 16,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Exactly one runnable transition occurs for each wait completion.",
+          "hidden_test_rationale": "Hidden schedules interleave timeout, send, cancellation, and PID reuse deterministically."
+        }
+      ],
+      "required_interaction": "Restore the timeout status and dereference encoding before assigning a single wake generation.",
+      "invariant": "Exactly one runnable transition occurs for each wait completion.",
+      "hidden_test_rationale": "Hidden schedules interleave timeout, send, cancellation, and PID reuse deterministically.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os"
+      ],
+      "public_signal": "OS coverage reports a scheduler-order mismatch after a blocked IPC call."
+    },
+    {
+      "task_id": "TC-V31-FINAL-052",
+      "category": "concurrency_and_state",
+      "title": "Redo replay stops before incomplete transaction fence",
+      "initial_signal": "Recovery publishes a later durable watermark when a commit record follows an incomplete data record.",
+      "participant_files": [
+        "kernel.trit",
+        "ternary_redo_wal.h",
+        "ternary_host_runtime.h",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "TEST_MANIFEST.json",
+        "tests/test_redo_wal_v2.cpp"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_redo_wal.h"
+      ],
+      "distractor_files": [
+        "encrypted_volume_openssl.cpp",
+        "migrate_tos_artifacts.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_redo_wal_v2",
+        "test_migration_v2"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_AGAIN: t40 = -11;",
+          "after": "const ERR_AGAIN: t40 = -12;",
+          "path": "kernel.trit",
+          "invariant": "Recovery never advances beyond the last complete, validated transaction.",
+          "hidden_test_rationale": "Hidden disk images interrupt writes at each record field and replay twice for idempotence."
+        },
+        {
+          "before": "    Load,",
+          "after": "    Load = 17,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Recovery never advances beyond the last complete, validated transaction.",
+          "hidden_test_rationale": "Hidden disk images interrupt writes at each record field and replay twice for idempotence."
+        }
+      ],
+      "required_interaction": "Repair retry classification and load operation encoding before fencing durable-watermark advancement.",
+      "invariant": "Recovery never advances beyond the last complete, validated transaction.",
+      "hidden_test_rationale": "Hidden disk images interrupt writes at each record field and replay twice for idempotence.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "The WAL target reports a watermark assertion only."
+    },
+    {
+      "task_id": "TC-V31-FINAL-053",
+      "category": "concurrency_and_state",
+      "title": "Priority queue promotes once after quota refill",
+      "initial_signal": "A refilled process appears twice in the runnable tiers after its deferred promotion races a tick.",
+      "participant_files": [
+        "kernel.trit",
+        "tcl_ir.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm_state.h",
+        "TEST_MANIFEST.json",
+        "SCHEDULER_ACCEPTANCE_SCHEMA.json",
+        "ROADMAP_STATUS.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_ir.trit"
+      ],
+      "distractor_files": [
+        "ternary_dataflow.trit",
+        "ternary_host_runtime.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "next_scheduler_acceptance",
+        "test_production_layers"
+      ],
+      "mutations": [
+        {
+          "before": "const ERR_CANCELED: t40 = -12;",
+          "after": "const ERR_CANCELED: t40 = -13;",
+          "path": "kernel.trit",
+          "invariant": "A runnable PID has one tier membership at any time.",
+          "hidden_test_rationale": "Hidden schedules refill quotas around cancellation and verify queue membership plus deterministic selection."
+        },
+        {
+          "before": "    Store,",
+          "after": "    Store = 18,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A runnable PID has one tier membership at any time.",
+          "hidden_test_rationale": "Hidden schedules refill quotas around cancellation and verify queue membership plus deterministic selection."
+        }
+      ],
+      "required_interaction": "Restore cancellation identity and store encoding while making promotion idempotent across tick and refill paths.",
+      "invariant": "A runnable PID has one tier membership at any time.",
+      "hidden_test_rationale": "Hidden schedules refill quotas around cancellation and verify queue membership plus deterministic selection.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "Scheduler acceptance provides only the final queue length."
+    },
+    {
+      "task_id": "TC-V31-FINAL-054",
+      "category": "syscall_and_abi",
+      "title": "SDK path syscall keeps status and payload registers distinct",
+      "initial_signal": "A failing path call returns a plausible payload because the SDK reads the kernel status register as data.",
+      "participant_files": [
+        "kernel.trit",
+        "apps/os_sdk.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "ternary_vm_state.h",
+        "SYSCALL_MANIFEST.json",
+        "TEST_MANIFEST.json",
+        "KNOWN_GAPS.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "apps/os_sdk.trit"
+      ],
+      "distractor_files": [
+        "ternary_host_runtime.h",
+        "tcl_asm.trit",
+        "APP_MANIFEST.json"
+      ],
+      "focused_targets": [
+        "test_os_platform",
+        "test_compiler_abi_contract"
+      ],
+      "mutations": [
+        {
+          "before": "const SYS_BLOCKED: t40 = 2;",
+          "after": "const SYS_BLOCKED: t40 = 3;",
+          "path": "kernel.trit",
+          "invariant": "r13 status, r14 payload, and r15 detail remain distinct across every syscall outcome.",
+          "hidden_test_rationale": "Hidden calls mix success, blocked, and invalid-path outcomes through compiled apps and raw trap invocation."
+        },
+        {
+          "before": "    SpillLoad,",
+          "after": "    SpillLoad = 19,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "r13 status, r14 payload, and r15 detail remain distinct across every syscall outcome.",
+          "hidden_test_rationale": "Hidden calls mix success, blocked, and invalid-path outcomes through compiled apps and raw trap invocation."
+        }
+      ],
+      "required_interaction": "Restore blocked status and reload representation while correcting the SDK register mapping.",
+      "invariant": "r13 status, r14 payload, and r15 detail remain distinct across every syscall outcome.",
+      "hidden_test_rationale": "Hidden calls mix success, blocked, and invalid-path outcomes through compiled apps and raw trap invocation.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "compiler"
+      ],
+      "public_signal": "The platform test exposes only a wrong return value for an invalid path."
+    },
+    {
+      "task_id": "TC-V31-FINAL-055",
+      "category": "syscall_and_abi",
+      "title": "Generated rename wrapper preserves both copied paths",
+      "initial_signal": "A rename crossing path-buffer boundaries replaces the old path with the new path before dispatch.",
+      "participant_files": [
+        "kernel.trit",
+        "apps/os_sdk.trit",
+        "ternary_compiler_codegen.h",
+        "ternary_compiler_ir.h",
+        "SYSCALL_MANIFEST.json",
+        "tcl_asm.trit",
+        "TEST_MANIFEST.json",
+        "tests/test_vfs_rename.cpp"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "apps/os_sdk.trit"
+      ],
+      "distractor_files": [
+        "ternary_host_runtime.h",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_vfs_rename",
+        "test_native_apps"
+      ],
+      "mutations": [
+        {
+          "before": "const KIND_FREE: t40 = 0;",
+          "after": "const KIND_FREE: t40 = 1;",
+          "path": "kernel.trit",
+          "invariant": "Rename reads two independently copied canonical paths before mutating either directory.",
+          "hidden_test_rationale": "Hidden cases use overlapping scratch boundaries, same-parent renames, and a failed second lookup."
+        },
+        {
+          "before": "    SpillStore,",
+          "after": "    SpillStore = 20,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Rename reads two independently copied canonical paths before mutating either directory.",
+          "hidden_test_rationale": "Hidden cases use overlapping scratch boundaries, same-parent renames, and a failed second lookup."
+        }
+      ],
+      "required_interaction": "Restore the vacancy marker and spill-store representation while separating old/new wrapper buffers.",
+      "invariant": "Rename reads two independently copied canonical paths before mutating either directory.",
+      "hidden_test_rationale": "Hidden cases use overlapping scratch boundaries, same-parent renames, and a failed second lookup.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "apps"
+      ],
+      "public_signal": "The rename target reports one opaque path mismatch."
+    },
+    {
+      "task_id": "TC-V31-FINAL-056",
+      "category": "syscall_and_abi",
+      "title": "Executable loader rejects ABI mismatch before app entry",
+      "initial_signal": "A v2 application reaches the first instruction under a v3 image instead of failing the ABI check.",
+      "participant_files": [
+        "kernel.trit",
+        "ternary_host_runtime.h",
+        "executable_header_v3.h",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "APP_MANIFEST.json",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "ternary_host_runtime.h"
+      ],
+      "distractor_files": [
+        "migrate_tos_artifacts.cpp",
+        "build_tos_image.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_executable_abi_v3",
+        "test_first_silicon_bringup"
+      ],
+      "mutations": [
+        {
+          "before": "const KIND_FILE: t40 = 1;",
+          "after": "const KIND_FILE: t40 = 2;",
+          "path": "kernel.trit",
+          "invariant": "An incompatible executable cannot execute user code or acquire process state.",
+          "hidden_test_rationale": "Hidden images vary ISA, function ABI, syscall ABI, and feature flags independently."
+        },
+        {
+          "before": "    SpillStore,\r\n    Syscall,\r\n    Wait,",
+          "after": "    SpillStore,\r\n    Syscall = 21,\r\n    Wait,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "An incompatible executable cannot execute user code or acquire process state.",
+          "hidden_test_rationale": "Hidden images vary ISA, function ABI, syscall ABI, and feature flags independently."
+        }
+      ],
+      "required_interaction": "Restore executable-kind identity and syscall opcode encoding before moving ABI rejection ahead of entry.",
+      "invariant": "An incompatible executable cannot execute user code or acquire process state.",
+      "hidden_test_rationale": "Hidden images vary ISA, function ABI, syscall ABI, and feature flags independently.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "compiler",
+        "os"
+      ],
+      "public_signal": "The executable ABI target signals a late loader failure."
+    },
+    {
+      "task_id": "TC-V31-FINAL-057",
+      "category": "multi_module_repository_repair",
+      "title": "Image builder and manifest agree on application feature mask",
+      "initial_signal": "The staged image lists an app whose required feature bit is absent from the emitted boot metadata.",
+      "participant_files": [
+        "build_tos_image.cpp",
+        "ternary_host_runtime.h",
+        "APP_MANIFEST.json",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "CMakeLists.txt",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "build_tos_image.cpp"
+      ],
+      "distractor_files": [
+        "migrate_tos_artifacts.cpp",
+        "run_tos_sdl.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_first_silicon_bringup",
+        "test_native_apps"
+      ],
+      "mutations": [
+        {
+          "before": "const KIND_DIR: t40 = 2;",
+          "after": "const KIND_DIR: t40 = 3;",
+          "path": "kernel.trit",
+          "invariant": "Every bundled app’s declared feature mask is represented in its staged image metadata.",
+          "hidden_test_rationale": "Hidden release images combine base-only and optional-feature apps and inspect the serialized output."
+        },
+        {
+          "before": "    Wait,",
+          "after": "    Wait = 22,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every bundled app’s declared feature mask is represented in its staged image metadata.",
+          "hidden_test_rationale": "Hidden release images combine base-only and optional-feature apps and inspect the serialized output."
+        }
+      ],
+      "required_interaction": "Restore manifest node typing and operation encoding while making builder, runtime, and manifest share one feature mask.",
+      "invariant": "Every bundled app’s declared feature mask is represented in its staged image metadata.",
+      "hidden_test_rationale": "Hidden release images combine base-only and optional-feature apps and inspect the serialized output.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "production",
+        "apps"
+      ],
+      "public_signal": "Release smoke emits only a feature-contract mismatch."
+    },
+    {
+      "task_id": "TC-V31-FINAL-058",
+      "category": "multi_module_repository_repair",
+      "title": "Migration keeps section alignment on second payload",
+      "initial_signal": "A migrated image boots with one section but the next section begins at an unaligned offset.",
+      "participant_files": [
+        "migrate_tos_artifacts.cpp",
+        "ternary_host_runtime.h",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "build_tos_image.cpp",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "CMakeLists.txt",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "migrate_tos_artifacts.cpp"
+      ],
+      "distractor_files": [
+        "encrypted_volume_host.h",
+        "executable_header_v3.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_migration_v2",
+        "test_first_silicon_bringup"
+      ],
+      "mutations": [
+        {
+          "before": "const KIND_EXEC: t40 = 3;",
+          "after": "const KIND_EXEC: t40 = 4;",
+          "path": "kernel.trit",
+          "invariant": "Every migrated section obeys declared alignment while preserving payload and compatibility fields.",
+          "hidden_test_rationale": "Hidden images contain multiple differently sized segments and verify a second migration is idempotent."
+        },
+        {
+          "before": "    TlbInv,",
+          "after": "    TlbInv = 23,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every migrated section obeys declared alignment while preserving payload and compatibility fields.",
+          "hidden_test_rationale": "Hidden images contain multiple differently sized segments and verify a second migration is idempotent."
+        }
+      ],
+      "required_interaction": "Restore executable-section identity and mapping invalidation encoding as migration aligns each section.",
+      "invariant": "Every migrated section obeys declared alignment while preserving payload and compatibility fields.",
+      "hidden_test_rationale": "Hidden images contain multiple differently sized segments and verify a second migration is idempotent.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "Migration coverage identifies a section-layout regression but not the section index."
+    },
+    {
+      "task_id": "TC-V31-FINAL-059",
+      "category": "multi_module_repository_repair",
+      "title": "Source manifest follows transitive Trit import",
+      "initial_signal": "Changing a type module rebuilds its direct consumer but leaves a downstream generated artifact stale.",
+      "participant_files": [
+        "tools/generate_source_manifests.py",
+        "CMakeLists.txt",
+        "tcl_type.trit",
+        "tcl_frontend.trit",
+        "ternary_compiler_ir.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json",
+        "COMPILER_CORPUS_SCHEMA.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tools/generate_source_manifests.py"
+      ],
+      "distractor_files": [
+        "tools/trit_tool.py",
+        "tcl_parser.trit",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_source_manifest_generation",
+        "test_compiler_corpus_gate"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOTSTRAP_MAX_PAGES: t40 = 96;",
+          "after": "const BOOTSTRAP_MAX_PAGES: t40 = 95;",
+          "path": "kernel.trit",
+          "invariant": "A transitive import edit invalidates every affected generated compiler artifact exactly once.",
+          "hidden_test_rationale": "Hidden checks edit nested imports under an incremental build and reject both stale and overbroad rebuilds."
+        },
+        {
+          "before": "    Fence,",
+          "after": "    Fence = 24,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A transitive import edit invalidates every affected generated compiler artifact exactly once.",
+          "hidden_test_rationale": "Hidden checks edit nested imports under an incremental build and reject both stale and overbroad rebuilds."
+        }
+      ],
+      "required_interaction": "Restore capacity and fence encoding while tracking transitive Trit imports in generated dependency data.",
+      "invariant": "A transitive import edit invalidates every affected generated compiler artifact exactly once.",
+      "hidden_test_rationale": "Hidden checks edit nested imports under an incremental build and reject both stale and overbroad rebuilds.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "agent_tooling",
+        "compiler"
+      ],
+      "public_signal": "Agent-tooling passes clean builds but fails after one incremental type edit."
+    },
+    {
+      "task_id": "TC-V31-FINAL-060",
+      "category": "multi_module_repository_repair",
+      "title": "VFS quota policy shares namespace default path",
+      "initial_signal": "A manifest default applies to new namespaces in the service path but not after kernel restart.",
+      "participant_files": [
+        "kernel.trit",
+        "SYSCALL_MANIFEST.json",
+        "ARCHITECTURE_MANIFEST.json",
+        "ternary_host_runtime.h",
+        "ternary_compiler_ir.h",
+        "apps/os_sdk.trit",
+        "TEST_MANIFEST.json",
+        "ROADMAP_STATUS.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "SYSCALL_MANIFEST.json"
+      ],
+      "distractor_files": [
+        "APP_MANIFEST.json",
+        "ternary_consumer_shell.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_os_platform",
+        "test_production_layers"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOTSTRAP_RESERVED_PAGES: t40 = 16;",
+          "after": "const BOOTSTRAP_RESERVED_PAGES: t40 = 15;",
+          "path": "kernel.trit",
+          "invariant": "The same namespace default is effective before and after restart unless explicitly overridden.",
+          "hidden_test_rationale": "Hidden scenarios combine manifest defaults, runtime overrides, restart, and a new namespace."
+        },
+        {
+          "before": "    Tldr,",
+          "after": "    Tldr = 25,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "The same namespace default is effective before and after restart unless explicitly overridden.",
+          "hidden_test_rationale": "Hidden scenarios combine manifest defaults, runtime overrides, restart, and a new namespace."
+        }
+      ],
+      "required_interaction": "Restore reserved bootstrap capacity and policy-load encoding while unifying manifest, SDK, and restart initialization precedence.",
+      "invariant": "The same namespace default is effective before and after restart unless explicitly overridden.",
+      "hidden_test_rationale": "Hidden scenarios combine manifest defaults, runtime overrides, restart, and a new namespace.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "os",
+        "production"
+      ],
+      "public_signal": "The production suite reports only a namespace quota mismatch after recovery."
+    },
+    {
+      "task_id": "TC-V31-FINAL-061",
+      "category": "multi_module_repository_repair",
+      "title": "Native app registry uses canonical guest paths",
+      "initial_signal": "An app is compiled into the image but its launcher resolves a path that differs only in canonicalization.",
+      "participant_files": [
+        "build_tos_image.cpp",
+        "APP_MANIFEST.json",
+        "apps/os_sdk.trit",
+        "kernel.trit",
+        "ternary_host_runtime.h",
+        "ternary_compiler_ir.h",
+        "TEST_MANIFEST.json",
+        "CMakeLists.txt"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "build_tos_image.cpp"
+      ],
+      "distractor_files": [
+        "apps/libwidget.trit",
+        "run_tos_sdl.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_all_apps",
+        "test_consumer_shell_productization"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOTSTRAP_KERNEL_IMAGE_PAGES: t40 = 12;",
+          "after": "const BOOTSTRAP_KERNEL_IMAGE_PAGES: t40 = 11;",
+          "path": "kernel.trit",
+          "invariant": "Every manifest app has one compiled image entry and one identical launchable guest path.",
+          "hidden_test_rationale": "Hidden manifests include paths with equivalent separators and nested application directories."
+        },
+        {
+          "before": "    Tstr,",
+          "after": "    Tstr = 26,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every manifest app has one compiled image entry and one identical launchable guest path.",
+          "hidden_test_rationale": "Hidden manifests include paths with equivalent separators and nested application directories."
+        }
+      ],
+      "required_interaction": "Restore layout reservation and path-store encoding while deriving registry paths from one canonical source.",
+      "invariant": "Every manifest app has one compiled image entry and one identical launchable guest path.",
+      "hidden_test_rationale": "Hidden manifests include paths with equivalent separators and nested application directories.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "apps",
+        "production"
+      ],
+      "public_signal": "The apps suite shows a missing launcher entry with no emitted path."
+    },
+    {
+      "task_id": "TC-V31-FINAL-062",
+      "category": "build_test_and_tooling",
+      "title": "Focused runner forwards configured build directory",
+      "initial_signal": "A focused suite silently uses the default build tree even when the environment selects an alternate tree.",
+      "participant_files": [
+        "tools/trit_tool.py",
+        "tools/trit-test.ps1",
+        "TEST_MANIFEST.json",
+        "CMakeLists.txt",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_frontend.trit",
+        "DEBUGGING.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tools/trit_tool.py"
+      ],
+      "distractor_files": [
+        "tools/trit-doctor.ps1",
+        "tools/trit-export-diagnostics.ps1",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_agent_tooling",
+        "test_host_runtime"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOTSTRAP_BUFFER_POOL_HEADER_PAGES: t40 = 2;",
+          "after": "const BOOTSTRAP_BUFFER_POOL_HEADER_PAGES: t40 = 1;",
+          "path": "kernel.trit",
+          "invariant": "Every runner invocation uses one explicitly resolved build directory end to end.",
+          "hidden_test_rationale": "Hidden runs set an alternate build tree and verify focused targets and diagnostics resolve there."
+        },
+        {
+          "before": "    Csrr,",
+          "after": "    Csrr = 27,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Every runner invocation uses one explicitly resolved build directory end to end.",
+          "hidden_test_rationale": "Hidden runs set an alternate build tree and verify focused targets and diagnostics resolve there."
+        }
+      ],
+      "required_interaction": "Restore reserve size and configuration-read encoding while preserving the selected build directory through the runner.",
+      "invariant": "Every runner invocation uses one explicitly resolved build directory end to end.",
+      "hidden_test_rationale": "Hidden runs set an alternate build tree and verify focused targets and diagnostics resolve there.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "agent_tooling",
+        "smoke"
+      ],
+      "public_signal": "The smoke command passes locally but its artifact path is absent from diagnostics."
+    },
+    {
+      "task_id": "TC-V31-FINAL-063",
+      "category": "build_test_and_tooling",
+      "title": "Production discovery includes nested Windows test shard",
+      "initial_signal": "Focused execution finds a nested shard but production discovery omits it under backslash paths.",
+      "participant_files": [
+        "tools/trit_tool.py",
+        "tools/trit-test.ps1",
+        "TEST_MANIFEST.json",
+        "CMakeLists.txt",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tests_next",
+        "DEBUGGING.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tools/trit-test.ps1"
+      ],
+      "distractor_files": [
+        "tools/trit-run.ps1",
+        "tools/trit-inspect-image.ps1",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_posix_wrappers",
+        "test_production_hardening"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOTSTRAP_WAL_RING_PAGES: t40 = 2;",
+          "after": "const BOOTSTRAP_WAL_RING_PAGES: t40 = 3;",
+          "path": "kernel.trit",
+          "invariant": "Production discovers the same manifest-selected tests on Windows and POSIX path forms.",
+          "hidden_test_rationale": "Hidden fixtures place an adversarial shard below multiple directory levels and assert it was executed."
+        },
+        {
+          "before": "    Csrw,",
+          "after": "    Csrw = 28,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Production discovers the same manifest-selected tests on Windows and POSIX path forms.",
+          "hidden_test_rationale": "Hidden fixtures place an adversarial shard below multiple directory levels and assert it was executed."
+        }
+      ],
+      "required_interaction": "Restore the WAL reserve and configuration-write encoding while normalizing shard discovery paths.",
+      "invariant": "Production discovers the same manifest-selected tests on Windows and POSIX path forms.",
+      "hidden_test_rationale": "Hidden fixtures place an adversarial shard below multiple directory levels and assert it was executed.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "agent_tooling",
+        "production"
+      ],
+      "public_signal": "Production prints a passing summary while one nested acceptance test never appears."
+    },
+    {
+      "task_id": "TC-V31-FINAL-064",
+      "category": "build_test_and_tooling",
+      "title": "Generated source manifest has deterministic evidence order",
+      "initial_signal": "Equivalent input paths produce different generated manifest hashes between two host filesystems.",
+      "participant_files": [
+        "tools/generate_source_manifests.py",
+        "TEST_MANIFEST.json",
+        "TREATCODE_PLAN_MANIFEST.json",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_token.trit",
+        "CMakeLists.txt",
+        "KNOWN_GAPS.md"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tools/generate_source_manifests.py"
+      ],
+      "distractor_files": [
+        "tools/trit_tool.py",
+        "graphify-out",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_source_manifest_generation",
+        "test_compiler_corpus_gate"
+      ],
+      "mutations": [
+        {
+          "before": "const KERNEL_STATE_BASE: t40 = 3000;",
+          "after": "const KERNEL_STATE_BASE: t40 = 3001;",
+          "path": "kernel.trit",
+          "invariant": "Identical source content yields identical generated manifest and evidence hashes independent of enumeration order.",
+          "hidden_test_rationale": "Hidden runs vary case and separator order while retaining the same semantic path set."
+        },
+        {
+          "before": "    Csrrw,",
+          "after": "    Csrrw = 29,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Identical source content yields identical generated manifest and evidence hashes independent of enumeration order.",
+          "hidden_test_rationale": "Hidden runs vary case and separator order while retaining the same semantic path set."
+        }
+      ],
+      "required_interaction": "Restore the state base and configuration-exchange encoding while sorting canonicalized manifest entries before hashing.",
+      "invariant": "Identical source content yields identical generated manifest and evidence hashes independent of enumeration order.",
+      "hidden_test_rationale": "Hidden runs vary case and separator order while retaining the same semantic path set.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "agent_tooling",
+        "compiler"
+      ],
+      "public_signal": "The generator check reports only an evidence-hash mismatch."
+    },
+    {
+      "task_id": "TC-V31-FINAL-065",
+      "category": "build_test_and_tooling",
+      "title": "Release staging copies manifest-declared image metadata",
+      "initial_signal": "Staging succeeds, but the copied release image lacks the metadata file needed by inspection tooling.",
+      "participant_files": [
+        "CMakeLists.txt",
+        "build_tos_image.cpp",
+        "IMAGE_FORMAT_MANIFEST.json",
+        "tools/trit-inspect-image.ps1",
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "TEST_MANIFEST.json",
+        "APP_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "CMakeLists.txt"
+      ],
+      "distractor_files": [
+        "packaging",
+        "run_tos_sdl.cpp",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_first_silicon_bringup",
+        "test_agent_tooling"
+      ],
+      "mutations": [
+        {
+          "before": "const KERNEL_BOOTED_ADDR: t40 = 3000;",
+          "after": "const KERNEL_BOOTED_ADDR: t40 = 3002;",
+          "path": "kernel.trit",
+          "invariant": "A staged release contains every image-inspection input declared by the format manifest.",
+          "hidden_test_rationale": "Hidden staging uses a fresh output tree and rejects stale files masking a missing copy rule."
+        },
+        {
+          "before": "    Call,",
+          "after": "    Call = 30,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "A staged release contains every image-inspection input declared by the format manifest.",
+          "hidden_test_rationale": "Hidden staging uses a fresh output tree and rejects stale files masking a missing copy rule."
+        }
+      ],
+      "required_interaction": "Restore boot-marker identity and helper-call encoding while declaring the metadata artifact as a staging dependency.",
+      "invariant": "A staged release contains every image-inspection input declared by the format manifest.",
+      "hidden_test_rationale": "Hidden staging uses a fresh output tree and rejects stale files masking a missing copy rule.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "focused_suites": [
+        "production",
+        "agent_tooling"
+      ],
+      "public_signal": "The staged release target exits successfully before inspection fails."
+    },
+    {
+      "task_id": "TC-V31-FINAL-066",
+      "category": "performance_and_resource_constraints",
+      "title": "Translation span cache retains page-local permission key",
+      "initial_signal": "Translation remains correct but repeated alternating writable spans exceed the fixed slow-path budget.",
+      "participant_files": [
+        "kernel.trit",
+        "ternary_vm_state.h",
+        "ternary_vm.h",
+        "tcl_pointer_dataflow.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "TEST_MANIFEST.json",
+        "BENCHMARK_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_pointer_dataflow.trit"
+      ],
+      "distractor_files": [
+        "ternary_host_runtime.h",
+        "ternary_lanes.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_scaling_profile_compact",
+        "test_benchmark"
+      ],
+      "mutations": [
+        {
+          "before": "const BOOT_ALLOC_COUNT_ADDR: t40 = 3001;",
+          "after": "const BOOT_ALLOC_COUNT_ADDR: t40 = 3000;",
+          "path": "kernel.trit",
+          "invariant": "Permission changes invalidate only affected spans and repeated valid translation remains within the fixed slow-path budget.",
+          "hidden_test_rationale": "Hidden traffic alternates pages, permissions, and aliases while checking correctness and counters."
+        },
+        {
+          "before": "    CallR,",
+          "after": "    CallR = 31,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "Permission changes invalidate only affected spans and repeated valid translation remains within the fixed slow-path budget.",
+          "hidden_test_rationale": "Hidden traffic alternates pages, permissions, and aliases while checking correctness and counters."
+        }
+      ],
+      "required_interaction": "Restore independent metric addressing and indirect-call encoding while retaining page-local permission cache keys.",
+      "invariant": "Permission changes invalidate only affected spans and repeated valid translation remains within the fixed slow-path budget.",
+      "hidden_test_rationale": "Hidden traffic alternates pages, permissions, and aliases while checking correctness and counters.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "production",
+        "benchmark"
+      ],
+      "public_signal": "The performance profile reports a slow-path count above budget without a trace."
+    },
+    {
+      "task_id": "TC-V31-FINAL-067",
+      "category": "performance_and_resource_constraints",
+      "title": "Packed lane transform avoids scalar materialization",
+      "initial_signal": "The lane transform returns correct values but allocates one temporary per lane under the compact benchmark.",
+      "participant_files": [
+        "ternary_lanes.h",
+        "ternary_simd.h",
+        "ternary_gpu_kernels.h",
+        "tcl_backend.trit",
+        "ternary_compiler_ir.h",
+        "ternary_compiler_codegen.h",
+        "kernel.trit",
+        "TEST_MANIFEST.json"
+      ],
+      "editable_files": [
+        "kernel.trit",
+        "ternary_compiler_ir.h",
+        "tcl_backend.trit"
+      ],
+      "distractor_files": [
+        "ternary_gpu_validation.h",
+        "ternary_transformer_runtime.h",
+        "KNOWN_GAPS.md"
+      ],
+      "focused_targets": [
+        "test_benchmark",
+        "test_ternary_lanes"
+      ],
+      "mutations": [
+        {
+          "before": "const REL_ONLINE_ADDR: t40 = 3002;",
+          "after": "const REL_ONLINE_ADDR: t40 = 3003;",
+          "path": "kernel.trit",
+          "invariant": "The packed transform is bit-exact and does not allocate per lane.",
+          "hidden_test_rationale": "Hidden inputs use mixed-sign packed lanes, repeated transforms, and both cycle and allocation ceilings."
+        },
+        {
+          "before": "    Ret,",
+          "after": "    Ret = 32,",
+          "path": "ternary_compiler_ir.h",
+          "invariant": "The packed transform is bit-exact and does not allocate per lane.",
+          "hidden_test_rationale": "Hidden inputs use mixed-sign packed lanes, repeated transforms, and both cycle and allocation ceilings."
+        }
+      ],
+      "required_interaction": "Restore transform-state addressing and return encoding while preserving packed values through the fused lowering.",
+      "invariant": "The packed transform is bit-exact and does not allocate per lane.",
+      "hidden_test_rationale": "Hidden inputs use mixed-sign packed lanes, repeated transforms, and both cycle and allocation ceilings.",
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "focused_suites": [
+        "benchmark",
+        "core"
+      ],
+      "public_signal": "The benchmark exposes a cycle ceiling failure but publishes no allocation trace."
+    }
+  ]
+}

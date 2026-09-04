@@ -14,7 +14,9 @@ function assert(condition, message) {
 
 try {
   const app = fs.readFileSync(path.join(appRoot, "src", "IntelligenceApp.tsx"), "utf8");
+  const v31Panel = fs.readFileSync(path.join(appRoot, "src", "IntelligenceV31Panel.tsx"), "utf8");
   const css = fs.readFileSync(path.join(appRoot, "src", "intelligence.css"), "utf8");
+  const solutionGuides = fs.readFileSync(path.join(appRoot, "src", "solutionGuides.ts"), "utf8");
   const shell = fs.readFileSync(path.join(appRoot, "intelligence", "index.html"), "utf8");
   const vite = fs.readFileSync(path.join(appRoot, "vite.config.ts"), "utf8");
 
@@ -34,9 +36,19 @@ try {
   assert(app.includes("runner_ready") && app.includes("Runner pending"), "runner readiness is not surfaced before a suite task can submit");
   assert(app.includes("repository_shape") && app.includes("Capabilities under test") && app.includes("Hidden coverage"), "v2 difficulty, repository shape, or capability coverage is not surfaced");
   assert(app.includes("allowlisted files") && app.includes("parseSerializedSolution") && app.includes("// FILE:"), "task file contract or multi-file solution restoration is missing");
+  assert(app.includes("INTELLIGENCE_SOLUTION_GUIDES") && app.includes('data-testid="intelligence-learning-guide"') && app.includes("Plain English") && app.includes("Pseudocode"), "public solution learning notes are missing from the intelligence task view");
+  for (const taskId of ["TC-SWE-001", "TC-SWE-002", "TC-SWE-003", "TC-SWE-004", "TC-SWE-005"]) {
+    assert(solutionGuides.includes(`"${taskId}":`), `${taskId} is missing a public intelligence solution guide`);
+  }
   assert(app.includes("IDENTITY_KEY") && app.includes("RUN_KEY_PREFIX"), "identity and run metadata are not persisted for reload recovery");
   assert(app.includes('aria-live="polite"') && app.includes('aria-label={`${task.id} allowlisted files`}'), "loading, selection, or file controls lack accessible live/name hooks");
   assert(css.includes(".intelligence-suite-grid") && css.includes(".intelligence-suite-card"), "suite catalog styles are missing");
+  assert(app.includes("IntelligenceV31Panel") && app.includes("<IntelligenceV31Panel"), "the v3.1 benchmark panel is not mounted in the Intelligence tab");
+  assert(v31Panel.includes("/api/intelligence/v3.1/catalog") && v31Panel.includes("/api/intelligence/v3.1/comparisons/latest"), "the v3.1 panel does not load catalog and paired-comparison data");
+  for (const phase of ["diagnostic", "pilot", "calibration", "frozen", "official"]) assert(v31Panel.includes(phase), `the v3.1 panel does not distinguish the ${phase} phase`);
+  assert(v31Panel.includes("Task pass matrix") && v31Panel.includes("95% paired CI") && v31Panel.includes("Exact sign test") && v31Panel.includes("Publication blockers"), "the v3.1 panel omits paired statistics, task matrix, or explicit blockers");
+  assert(v31Panel.includes("scoreBand.minimum ?? 60") && v31Panel.includes("scoreBand.maximum ?? 75") && v31Panel.includes("lead.minimum ?? 1") && v31Panel.includes("lead.maximum ?? 4") && v31Panel.includes("not official"), "the v3.1 directional target or development label is missing");
+  assert(css.includes(".intelligence-v31") && css.includes(".intelligence-v31-matrix"), "v3.1 phase and task-matrix styles are missing");
   assert(/<html[^>]+lang="[a-z-]+"/.test(shell) && /name="viewport"/.test(shell), "intelligence shell lacks language or responsive viewport metadata");
   assert(shell.includes("aria-label=\"Intelligence benchmark suite\""), "static intelligence shell lacks a named suite landmark");
   assert(vite.includes('intelligence: "intelligence/index.html"'), "Vite does not build the intelligence entry point");
@@ -47,6 +59,7 @@ try {
   checks.push("versioned and legacy suite/task metadata routes have resilient fallbacks");
   checks.push("identity, run receipt, and serialized multi-file solution state rehydrate on reload");
   checks.push("suite cards, live status, tabs, editor labels, and static shell metadata are accessible");
+  checks.push("v3.1 phase status, paired statistics, task-pass matrix, target, and publication blockers are visible without claiming an official run");
 } catch (error) {
   errors.push(String(error?.message || error));
 }

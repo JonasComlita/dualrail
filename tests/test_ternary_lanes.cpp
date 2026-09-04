@@ -68,6 +68,7 @@ Lane expectedMax(Lane a, Lane b) {
 }
 
 sandbox::TritLane1 compareLane(int8_t value) {
+    if (value == sandbox::backend::TRIT_COMPARE_INVALID) return sandbox::TritLane1::invalid();
     sandbox::TritLane1 out;
     out.setTrit(0, value);
     return out;
@@ -130,6 +131,28 @@ void testBackendPrimitiveContract() {
            "invalid pair remains canonically invalid under negation");
     expect(backend::negateTritPair(0xFFU) == 0x3U,
            "non-pair input canonicalizes to invalid under negation");
+
+    expect(!backend::validLane64(0, 0), "zero-width raw64 lane is rejected");
+    expect(!backend::validLane64(0, 33), "oversized raw64 lane is rejected");
+    expect(backend::getPair64(0, -1) == 0x3U, "negative raw64 position returns invalid");
+    expect(backend::getPair64(0, 32) == 0x3U, "oversized raw64 position returns invalid");
+    expect(backend::setPair64(0, -1, 0x1U) == UINT64_MAX,
+           "negative raw64 position poisons the result");
+    expect(backend::setPair64(0, 32, 0x1U) == UINT64_MAX,
+           "oversized raw64 position poisons the result");
+
+    const backend::RawUInt128 zero128{};
+    const backend::RawUInt128 poison128{UINT64_MAX, UINT64_MAX};
+    expect(!backend::validLane128(zero128, 0), "zero-width raw128 lane is rejected");
+    expect(!backend::validLane128(zero128, 65), "oversized raw128 lane is rejected");
+    expect(backend::getPair128(zero128, -1) == 0x3U,
+           "negative raw128 position returns invalid");
+    expect(backend::getPair128(zero128, 64) == 0x3U,
+           "oversized raw128 position returns invalid");
+    expect(backend::equalRaw128(backend::setPair128(zero128, -1, 0x1U), poison128),
+           "negative raw128 position poisons the result");
+    expect(backend::equalRaw128(backend::setPair128(zero128, 64, 0x1U), poison128),
+           "oversized raw128 position poisons the result");
 
     for (int original = -10; original <= 10; ++original) {
         int normalized = original;
@@ -649,6 +672,18 @@ void testBackendKernelWrappers() {
            "raw64 valid lane rejects padding");
     expect(!backend::validLane64(backend::invalidLane64(TritLane20::trits), TritLane20::trits),
            "raw64 valid lane rejects spare pair");
+    const uint64_t valid20 = laneFromInt20(1).rawForKernel();
+    const uint64_t invalid20 = backend::invalidLane64(TritLane20::trits);
+    expect(backend::compareLane64(invalid20, valid20, TritLane20::trits) ==
+               backend::TRIT_COMPARE_INVALID,
+           "raw64 invalid comparison returns the invalid sentinel");
+    expect(backend::compareResultLane1Raw(backend::TRIT_COMPARE_INVALID) == 0x3U,
+           "raw64 invalid comparison encodes as an invalid one-trit lane");
+    uint8_t raw64Comparison = 0;
+    backend::kernel::batchTritwiseCompareRaw64(
+        &invalid20, &valid20, &raw64Comparison, 1, TritLane20::trits);
+    expect(raw64Comparison == 0x3U,
+           "raw64 batch comparison propagates an invalid operand");
 
     backend::RawUInt128 raw40 = raw128FromUInt(laneFromInt40(1).rawForKernel());
     expect(backend::validLane128(raw40, TritLane40::trits),
@@ -658,6 +693,27 @@ void testBackendKernelWrappers() {
            "raw128 valid lane rejects padding");
     expect(!backend::validLane128(backend::invalidLane128(TritLane50::trits), TritLane50::trits),
            "raw128 valid lane rejects spare pair");
+    const backend::RawUInt128 invalid40 = backend::invalidLane128(TritLane40::trits);
+    expect(backend::compareLane128(invalid40, raw128FromUInt(laneFromInt40(1).rawForKernel()),
+                                   TritLane40::trits) == backend::TRIT_COMPARE_INVALID,
+           "raw128 invalid comparison returns the invalid sentinel");
+    expect(tritwiseCompare(TritLane40::invalid(), laneFromInt40(1)) ==
+               backend::TRIT_COMPARE_INVALID,
+           "typed invalid comparison returns the invalid sentinel");
+    backend::RawUInt128 valid40 = raw128FromUInt(laneFromInt40(1).rawForKernel());
+    uint8_t raw128Comparison = 0;
+    backend::kernel::batchTritwiseCompareRaw128(
+        &invalid40, &valid40, &raw128Comparison, 1, TritLane40::trits);
+    expect(raw128Comparison == 0x3U,
+           "raw128 batch comparison propagates an invalid operand");
+
+    TritLane40 invalidTyped40 = TritLane40::invalid();
+    TritLane40 validTyped40 = laneFromInt40(1);
+    TritLane1 typedComparison;
+    simd::batchTritwiseCompareScalar(
+        &invalidTyped40, &validTyped40, &typedComparison, 1);
+    expect(!typedComparison.isValid(),
+           "typed SIMD batch comparison propagates an invalid operand");
 
     runRaw64KernelCase<TritLane1>("TritLane1", laneFromInt1);
     runRaw64KernelCase<TritLane5>("TritLane5", laneFromInt5);

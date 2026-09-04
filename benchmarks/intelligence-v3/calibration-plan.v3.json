@@ -1,0 +1,30 @@
+{
+  "schema": "treatcode.intelligence.calibration-plan.v3",
+  "version": 3,
+  "status": "awaiting_executable_corpus_and_model_assignment",
+  "official": false,
+  "candidate_manifest": {
+    "path": "corpus.candidates.v3.json",
+    "sha256": "10e31a3a67d9787d4ec95a6ac9a76db3dc8319ef4330d0dfcc69e757e321a18b",
+    "task_count": 100
+  },
+  "design": {
+    "cohorts": ["weak", "medium", "frontier"],
+    "models_per_cohort": 2,
+    "runs_per_configuration": 3,
+    "tasks_per_run": 100,
+    "full_suite_run_units": 18,
+    "required_task_observations": 1800,
+    "fresh_context_per_task": true,
+    "one_attempt_per_task_per_run": true,
+    "identical_task_set": true,
+    "model_weighting": "equal_within_cohort",
+    "item_discrimination": "point_biserial_against_leave_one_task_out_run_score"
+  },
+  "assignments": {
+    "weak": [null, null],
+    "medium": [null, null],
+    "frontier": [null, null]
+  },
+  "publication_gate": "Calibration output can become ready_for_human_review but never becomes official without independent task review, accepted dispositions, and holdout freeze."
+}

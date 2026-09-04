@@ -8,6 +8,7 @@ import {
   type LearningPage,
 } from "./learningContent";
 import challengeData from "./generated/challenges.client.json";
+import { PRACTICE_SOLUTION_GUIDES } from "./solutionGuides";
 
 type ChallengeFacetKey =
   | "domain"
@@ -796,6 +797,7 @@ export default function App() {
 
   // ── PROBLEM VIEW ────────────────────────────────────────────────────────────
   if (view === "problem" && activeProblem) {
+    const solutionGuide = PRACTICE_SOLUTION_GUIDES[activeProblem.id];
     return (
       <div
         style={{
@@ -888,10 +890,11 @@ export default function App() {
                     color: "var(--color-text-secondary)",
                   }}
                 >
-                  {t}
-                </span>
+                {t}
+              </span>
               ))}
             </div>
+            {solutionGuide ? <a href="#solution-guide" style={{ display: "inline-block", marginBottom: 14, color: "var(--color-accent-blue)", fontSize: 11, textDecoration: "none" }}>Read the solution approach ↓</a> : null}
 
             <div
               style={{
@@ -997,11 +1000,51 @@ export default function App() {
                 ))}
               </div>
             </div>
+
+            <section
+              id="solution-guide"
+              data-testid="practice-solution-guide"
+              aria-labelledby="practice-solution-guide-title"
+              style={{
+                borderTop: "0.5px solid var(--color-border-tertiary)",
+                paddingTop: 14,
+                marginTop: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
+                <span id="practice-solution-guide-title" style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Learn the approach
+                </span>
+                <span style={{ fontSize: 9, color: "var(--color-accent-blue)", fontFamily: "var(--font-mono)" }}>public note</span>
+              </div>
+              {solutionGuide ? (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Plain English</div>
+                    <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55, color: "var(--color-text-secondary)" }}>{solutionGuide.plainEnglish}</p>
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Pseudocode</div>
+                    <pre style={{ margin: 0, padding: 9, overflowX: "auto", whiteSpace: "pre-wrap", borderRadius: 5, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)", fontFamily: "var(--font-mono)", fontSize: 10, lineHeight: 1.55 }}><code>{solutionGuide.pseudocode}</code></pre>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Discussion · why it works</div>
+                    <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55, color: "var(--color-text-secondary)" }}>{solutionGuide.discussion}</p>
+                  </div>
+                </>
+              ) : (
+                <p style={{ margin: 0, fontSize: 11, lineHeight: 1.55, color: "var(--color-text-muted)" }}>
+                  This challenge is still compile-only. Its verified learning note will appear when the correctness contract is published.
+                </p>
+              )}
+            </section>
+
             <div data-testid="practice-community" style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14, marginTop: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
-                <span style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Solution discussion</span>
+                <span style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Community discussion</span>
                 <a href="/intelligence#account" style={{ fontSize: 10, color: "var(--color-accent-blue)", textDecoration: "none" }}>account</a>
               </div>
+              <p style={{ margin: "0 0 8px", fontSize: 10, lineHeight: 1.45, color: "var(--color-text-muted)" }}>Read the public learning note above first, then compare approaches or add your own explanation here.</p>
               <textarea
                 aria-label="Solution explanation or pseudocode"
                 data-testid="practice-discussion-editor"
@@ -1674,6 +1717,7 @@ export default function App() {
                     </td>
                     <td style={{ padding: "10px 14px", fontWeight: 500 }}>
                       <div>{p.title}</div>
+                      {PRACTICE_SOLUTION_GUIDES[p.id] && <div style={{ marginTop: 3, fontSize: 10, color: "var(--color-accent-blue)", fontFamily: "var(--font-mono)" }}>read solution guide</div>}
                       {p.lifecycle !== "published" && <div style={{ marginTop: 3, fontSize: 10, color: "var(--color-text-secondary)", fontFamily: "var(--font-mono)" }}>draft / compile-only</div>}
                     </td>
                     <td style={{ padding: "10px 14px" }}>
@@ -2944,6 +2988,8 @@ function LearningInteractiveModule({
   const [selected, setSelected] = useState<number | null>(null);
   const [feedback, setFeedback] = useState("");
   const [code, setCode] = useState(module.kind === "code" ? module.starter : "");
+  const [traceStep, setTraceStep] = useState(-1);
+  const [running, setRunning] = useState(false);
 
   const panelStyle = {
     margin: "0 0 28px",
@@ -3053,6 +3099,32 @@ function LearningInteractiveModule({
     );
   }
 
+  if (module.kind === "trace") {
+    return (
+      <section data-testid="learning-trace" style={panelStyle} aria-labelledby="learning-check-title">
+        <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-muted)", marginBottom: 6 }}>State trace</div>
+        <h2 id="learning-check-title" style={{ fontSize: 17, margin: "0 0 10px", fontWeight: 600 }}>{module.title}</h2>
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)", marginBottom: 10 }}>{module.prompt}</p>
+        <ol style={{ display: "grid", gap: 7, paddingLeft: 22, margin: "0 0 14px" }}>
+          {module.steps.map((step, index) => <li key={step.label} style={{ color: "var(--color-text-secondary)" }}><strong>{step.label}</strong><code style={{ display: "block", marginTop: 3, padding: 7, background: "var(--color-background-primary)", overflowWrap: "anywhere" }}>{index <= traceStep ? step.state : "locked until the prior boundary"}</code></li>)}
+        </ol>
+        <button type="button" className="tc-secondary" onClick={() => { const next = Math.min(traceStep + 1, module.steps.length - 1); setTraceStep(next); setFeedback(module.steps[next].explanation); }} disabled={traceStep >= module.steps.length - 1}>{traceStep < 0 ? "Start trace" : traceStep >= module.steps.length - 1 ? "Trace complete" : "Advance trace"}</button>
+        <p aria-live="polite" className="tc-learning-feedback">{feedback || "Advance one state at a time; this trace is deterministic and bounded."}</p>
+      </section>
+    );
+  }
+
+  if (module.kind === "source") {
+    return (
+      <section data-testid="learning-source-investigation" style={panelStyle} aria-labelledby="learning-check-title">
+        <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-muted)", marginBottom: 6 }}>Source investigation</div>
+        <h2 id="learning-check-title" style={{ fontSize: 17, margin: "0 0 10px", fontWeight: 600 }}>{module.title}</h2>
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--color-text-secondary)" }}>{module.prompt}</p>
+        <p style={{ marginTop: 9 }}><a href={module.sourceHref} target="_blank" rel="noreferrer" style={{ color: "var(--color-accent-blue)" }}>Open {module.sourcePath}</a></p>
+      </section>
+    );
+  }
+
   const validateCode = () => {
     const missing = module.expectedIncludes.filter((fragment) => !code.includes(fragment));
     setFeedback(
@@ -3060,6 +3132,32 @@ function LearningInteractiveModule({
         ? `Example shape verified. ${module.explanation}`
         : `Add the expected TCL shape: ${missing.join(", ")}.`
     );
+  };
+
+  const runExercise = async () => {
+    if (module.kind !== "code") return;
+    setRunning(true);
+    setFeedback("Submitting to the bounded repository-backed compiler…");
+    try {
+      const token = window.localStorage.getItem("treatcode.auth.token") || window.localStorage.getItem("treatcode.intelligence.token") || "";
+      const response = await fetch("/api/learn/exercises/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-TreatCode-Project": "tc:project:trit",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ exercise_id: module.exercise_id, code }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload.error || `runner returned ${response.status}`));
+      setFeedback(payload.success ? `Compiler/VM execution passed. ${payload.summary || module.explanation}` : `Compiler/VM execution reported a real failure. ${payload.error || module.explanation}`);
+    } catch (error) {
+      setFeedback(`Exercise unavailable: ${String(error instanceof Error ? error.message : error)}. The local shape check remains available.`);
+    } finally {
+      setRunning(false);
+    }
   };
 
   return (
@@ -3130,6 +3228,23 @@ function LearningInteractiveModule({
           }}
         >
           Validate example
+        </button>
+        <button
+          type="button"
+          onClick={() => void runExercise()}
+          disabled={running}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 5,
+            border: "1px solid var(--color-border-primary)",
+            background: "var(--color-background-tertiary)",
+            color: "var(--color-text-primary)",
+            cursor: running ? "wait" : "pointer",
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          {running ? "Running…" : "Run compiler / VM"}
         </button>
         <button
           type="button"

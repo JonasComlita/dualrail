@@ -32,7 +32,7 @@ try {
   const bundle = bundles.join("\n");
 
   assert(indexHtml.includes('<div id="root"'), "built app has no root mount");
-  assert(bundle.includes("Beginner path") && bundle.includes("Programmer path") && bundle.includes("EECS path"), "built app does not contain all learning paths");
+  assert(bundle.includes("Beginner path") && bundle.includes("Programmer path") && bundle.includes("EECS/systems"), "built app does not contain all learning paths");
   assert(bundle.includes("Representation boundaries") && bundle.includes("Applications and validation"), "built public Learn route does not contain the Markdown page catalog");
   assert(bundle.includes("Source and evidence") && bundle.includes("Production source"), "built public Learn route does not contain provenance panels");
   assert(bundle.includes("Try the first function") && bundle.includes("Open challenges"), "built app does not contain the first-program interaction");

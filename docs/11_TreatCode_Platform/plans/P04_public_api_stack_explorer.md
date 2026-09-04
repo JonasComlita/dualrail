@@ -8,6 +8,14 @@
 - **Depends on:** P02, P03
 - **Scope owner:** Public platform
 
+> **Historical v1 notice:** P04's completion record proves the API/snapshot
+> plumbing and a representative Stack Explorer surface only. It does not prove
+> exhaustive phase/entity coverage, complete relationship navigation,
+> non-truncated collections, or full browser journeys. The completeness work
+> is specified in [P15](P15_P04_completeness_amendment.md). Keep the v1 record
+> for audit, but do not use it to claim that the complete public knowledge
+> browser is finished.
+
 ## Objective
 
 Expose read-only, provenance-preserving project knowledge through a versioned API

@@ -1,0 +1,43 @@
+// Stable three-way partition of the four decoded values.
+// Starter defect: the scan walks backward, so each group is reversed.
+
+fn append_matching_group(input: t40, pivot: t40, group: t40, output: t40, output_count: t40) -> t40 {
+    var packed: t40 = output;
+    var count: t40 = output_count;
+    var index: t40 = 3;
+    while index >= 0 {
+        let value: t40 = value_at(input, index);
+        var matches: t40 = 0;
+        if group == -1 {
+            if value < pivot { matches = 1; }
+        }
+        if group == 0 {
+            if value == pivot { matches = 1; }
+        }
+        if group == 1 {
+            if value > pivot { matches = 1; }
+        }
+        if matches == 1 {
+            packed = append_value(packed, count, value);
+            count = count + 1;
+        }
+        index = index - 1;
+    }
+    // Count is encoded in a disjoint high place for the caller.
+    return packed + count * 2401;
+}
+
+fn stable_partition4(packed: t40, pivot: t40) -> t40 {
+    var staged: t40 = append_matching_group(packed, pivot, -1, 0, 0);
+    var count: t40 = staged / 2401;
+    let completed: t40 = count * 2401;
+    var output: t40 = staged - completed;
+    staged = append_matching_group(packed, pivot, 0, output, count);
+    count = staged / 2401;
+    let completed_equal: t40 = count * 2401;
+    output = staged - completed_equal;
+    staged = append_matching_group(packed, pivot, 1, output, count);
+    count = staged / 2401;
+    let completed_all: t40 = count * 2401;
+    return staged - completed_all;
+}

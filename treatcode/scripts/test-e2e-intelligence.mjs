@@ -166,6 +166,38 @@ try {
   assert(!catalogText.includes("three-neg-mixed") && !catalogText.includes("missing-edge-average") && !catalogText.includes("hidden.server"), "hidden verifier details leaked into the public catalog");
   checks.push("benchmark catalog exposes public tests/starter files while withholding hidden cases");
 
+  const v3Catalog = await request("/api/intelligence/v3/catalog");
+  const v3CatalogText = JSON.stringify(v3Catalog.body);
+  assert(v3Catalog.response.ok && v3Catalog.body?.data?.catalog?.corpus?.task_count === 100, "v3 catalog does not expose the 100-task authoring registry");
+  assert(v3Catalog.body.data.catalog.official === false, "unreviewed v3 candidate corpus was presented as official");
+  assert(v3Catalog.body.data.catalog.corpus.readiness?.required === 100 && v3Catalog.body.data.catalog.corpus.readiness?.authored === 0, "v3 readiness gaps are not explicit");
+  assert(!v3CatalogText.includes("author_id") && !v3CatalogText.includes("grader_bundle_hash") && !v3CatalogText.includes("cohort_pass_rates"), "private v3 provenance, package, or calibration fields leaked through the public catalog");
+  const v3Protocol = await request("/api/intelligence/v3/protocol");
+  assert(v3Protocol.response.ok && v3Protocol.body?.data?.protocol?.official_requirements?.minimum_distinct_tasks === 100, "v3 protocol endpoint is unavailable or weakened");
+  assert(v3Protocol.body.data.protocol.official_requirements.attempts_per_task === 1, "v3 protocol permits repeated attempts to masquerade as independent tasks");
+  const v3DiscussionRubric = await request("/api/intelligence/v3/discussion-rubric");
+  assert(v3DiscussionRubric.response.ok && v3DiscussionRubric.body?.data?.rubric?.rubric_id === "treatcode-discussion-v3", "v3 secondary discussion rubric endpoint is unavailable");
+  assert(v3DiscussionRubric.body.data.rubric.included_in_executable_score === false && v3DiscussionRubric.body.data.rubric.length.maximum_words === 400, "v3 discussion rubric can inflate the executable score or is not length controlled");
+  assert(v3DiscussionRubric.body.data.rubric.status === "draft_pending_human_calibration", "uncalibrated discussion rubric was presented as calibrated");
+  checks.push("v3 public catalog exposes 100 non-official briefs and readiness gaps without private evaluator material");
+
+  const v31Catalog = await request("/api/intelligence/v3.1/catalog");
+  const v31CatalogText = JSON.stringify(v31Catalog.body);
+  assert(v31Catalog.response.ok && v31Catalog.body?.data?.catalog?.version === "3.1", "v3.1 catalog endpoint is unavailable");
+  assert(v31Catalog.body.data.catalog.official === false, "unfinished v3.1 development evidence was presented as official");
+  assert(v31Catalog.body.data.catalog.phases?.pilot?.task_count === 30 && v31Catalog.body.data.catalog.phases.pilot.qualified_then_disposed === 30, "v3.1 pilot disposal status is inaccurate");
+  assert(v31Catalog.body.data.catalog.final_contract?.task_count === 100 && v31Catalog.body.data.catalog.phases?.frozen?.task_count === 0, "v3.1 final holdout readiness is inaccurate");
+  assert(v31Catalog.body.data.catalog.blockers?.some((item) => item.includes("independent authorship")) && v31Catalog.body.data.catalog.blockers.some((item) => item.includes("held-out 100-task")), "v3.1 publication blockers are incomplete");
+  assert(!v31CatalogText.includes("grader_bundle_hash") && !v31CatalogText.includes("stdout") && !v31CatalogText.includes("stderr"), "private v3.1 grader or command evidence leaked through the public catalog");
+  const v31Protocol = await request("/api/intelligence/v3.1/protocol");
+  assert(v31Protocol.response.ok && v31Protocol.body?.data?.protocol?.execution_modes?.join(",") === "scalar,repository", "v3.1 protocol does not preserve scalar and repository modes");
+  assert(v31Protocol.body.data.protocol.replication_target?.score_band?.minimum === 60 && v31Protocol.body.data.protocol.replication_target?.score_band?.maximum === 75, "v3.1 subject score band changed");
+  assert(v31Protocol.body.data.protocol.replication_target?.sol_lead_tasks?.minimum === 1 && v31Protocol.body.data.protocol.replication_target?.sol_lead_tasks?.maximum === 4 && v31Protocol.body.data.protocol.replication_target?.exact_69_67_required === false, "v3.1 directional comparison target was weakened or fitted to exactly 69/67");
+  const v31Comparison = await request("/api/intelligence/v3.1/comparisons/latest");
+  assert(v31Comparison.response.ok && v31Comparison.body?.data?.comparison?.phase === "pilot" && v31Comparison.body.data.comparison.official === false, "disposable pilot evidence was mislabeled as an official v3.1 holdout");
+  assert(v31Comparison.body.data.comparison.comparison?.task_count === 30 && v31Comparison.body.data.comparison.comparison?.result === "ceiling_family_discarded", "the complete disposable pilot comparison is not visible in the v3.1 adapter");
+  checks.push("v3.1 API separates diagnostic, pilot, calibration, frozen, and official phases while withholding grader evidence");
+
   const suiteRoute = await request("/api/intelligence/v1/suite");
   assert(suiteRoute.response.ok && suiteRoute.body?.data?.suite?.tasks?.length === 5, "versioned suite endpoint did not expose all task descriptors");
   assert(Array.isArray(suiteRoute.body?.data?.model_suite_leaderboard), "versioned suite endpoint does not expose the model suite leaderboard");

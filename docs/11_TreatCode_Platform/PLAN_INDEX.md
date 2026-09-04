@@ -21,6 +21,24 @@ Status values are `not_started`, `in_progress`, `blocked`, `complete`, or
 | P12 | [Operations and mobile collaboration](plans/P12_operations_mobile.md) | P08, P09, P11 | complete | `build/treatcode-plan-evidence/P12/result.json` |
 | P13 | [Launch closure](plans/P13_launch_closure.md) | P04–P12 | complete | `build/treatcode-plan-evidence/P13/result.json` |
 | P14 | [Intelligence benchmark and participant journey](plans/P14_intelligence_benchmark.md) | P06, P07, P09, P10 | in_progress | `build/treatcode-plan-evidence/P14/result.json` |
+| P15 | [P04 completeness amendment — full Stack Explorer](plans/P15_P04_completeness_amendment.md) | P02, P03, P04 | in_progress | `build/treatcode-plan-evidence/P15/result.json` |
+| P16 | [P05 completeness amendment — full learning curriculum](plans/P16_P05_curriculum_completeness_amendment.md) | P03, P04, P05, P15 | in_progress | `build/treatcode-plan-evidence/P16/result.json` |
+
+## Completeness amendments
+
+P04 and P05 remain complete historical v1 baselines under the change-control
+rule. Their records establish that the original plumbing and representative
+content slices worked; they do not satisfy the broader user-facing goals now
+requested. P15 and P16 are the execution authority for those complete goals.
+An agent must finish P15 and P16, including their coverage and human-review
+evidence, before describing the Stack Explorer or Learn experience as complete.
+
+After both amendments are complete, P13 launch closure must be re-run against
+the amended evidence before issuing a new launch claim.
+
+Paste-ready handoff prompts are available for the original agents in [the P04
+prompt](plans/P04_AGENT_COMPLETION_PROMPT.md) and [the P05
+prompt](plans/P05_AGENT_COMPLETION_PROMPT.md).
 
 ## Parallel Work
 

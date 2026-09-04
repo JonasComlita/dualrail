@@ -1,0 +1,3740 @@
+{
+  "schema": "treatcode.intelligence.corpus-candidates.v3",
+  "version": 3,
+  "status": "authoring",
+  "official": false,
+  "task_count": 100,
+  "warning": "These are independently scoped authoring briefs, not executable or calibrated benchmark tasks. Never publish a model score from this file.",
+  "category_counts": {
+    "algorithm_and_data_structure": 15,
+    "balanced_ternary_and_numeric": 10,
+    "compiler_and_codegen": 15,
+    "memory_and_pointer_safety": 10,
+    "concurrency_and_state": 10,
+    "syscall_and_abi": 10,
+    "multi_module_repository_repair": 15,
+    "build_test_and_tooling": 10,
+    "performance_and_resource_constraints": 5
+  },
+  "design_feature_counts": {
+    "repository_exploration_required": 100,
+    "multi_module_change": 100,
+    "initial_build_failure": 20,
+    "misleading_or_incomplete_tests": 25,
+    "performance_constraint": 15,
+    "abi_or_integration_bug": 20,
+    "conflicting_invariants": 30
+  },
+  "tasks": [
+    {
+      "id": "TC-V3-001",
+      "category": "algorithm_and_data_structure",
+      "title": "Stable three-way partition",
+      "symptom": "Repair a partitioner that loses stable order when sentinel values are present.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-002",
+      "category": "algorithm_and_data_structure",
+      "title": "Overflow-safe interval merge",
+      "symptom": "Diagnose interval merging that wraps endpoint arithmetic at the representable boundary.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-003",
+      "category": "algorithm_and_data_structure",
+      "title": "Dependency cycle witness",
+      "symptom": "Repair topological sorting so it returns a deterministic cycle witness instead of a partial order.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-004",
+      "category": "algorithm_and_data_structure",
+      "title": "Bounded streaming median",
+      "symptom": "Fix two-heap balancing and duplicate handling under a fixed memory budget.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-005",
+      "category": "algorithm_and_data_structure",
+      "title": "Weighted path tie-breaking",
+      "symptom": "Repair shortest-path selection with blocked cells and a deterministic lexicographic tie contract.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-006",
+      "category": "algorithm_and_data_structure",
+      "title": "Rollback union-find",
+      "symptom": "Restore parent, rank, and component-count invariants across nested rollback checkpoints.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-007",
+      "category": "algorithm_and_data_structure",
+      "title": "Wrapping ring buffer",
+      "symptom": "Fix full-versus-empty ambiguity and multi-step wraparound without reallocating storage.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-008",
+      "category": "algorithm_and_data_structure",
+      "title": "Sparse vector intersection",
+      "symptom": "Repair ordered sparse dot product with duplicate coordinates and bounded accumulation.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-009",
+      "category": "algorithm_and_data_structure",
+      "title": "Signed ternary radix ordering",
+      "symptom": "Fix stable digit passes for negative, zero, and positive balanced-ternary keys.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-010",
+      "category": "algorithm_and_data_structure",
+      "title": "Capacity-safe LRU",
+      "symptom": "Repair list/map coherence during update, eviction, and zero-capacity operation.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-011",
+      "category": "algorithm_and_data_structure",
+      "title": "Rotated search with duplicates",
+      "symptom": "Fix boundary elimination when a rotated sorted sequence contains repeated pivots.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-012",
+      "category": "algorithm_and_data_structure",
+      "title": "Stable interval scheduler",
+      "symptom": "Repair endpoint semantics and original-index tie-breaking in activity selection.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-013",
+      "category": "algorithm_and_data_structure",
+      "title": "DAG longest-path sentinel",
+      "symptom": "Distinguish unreachable nodes from valid negative path totals in a DAG solver.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-014",
+      "category": "algorithm_and_data_structure",
+      "title": "Prefix trie deletion",
+      "symptom": "Repair reference counts so deleting one key never removes a shared prefix.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-015",
+      "category": "algorithm_and_data_structure",
+      "title": "K-way cursor merge",
+      "symptom": "Fix exhausted-cursor handling and stable source ordering without materializing all inputs.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-016",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Canonical token decoder",
+      "symptom": "Reject noncanonical balanced-ternary encodings before numeric conversion.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-017",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Carry-chain addition",
+      "symptom": "Repair multiword balanced-ternary carry propagation across positive and negative lanes.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-018",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Checked ternary multiply",
+      "symptom": "Detect representational overflow without rejecting valid negative products.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-019",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Fixed-point rounding",
+      "symptom": "Implement ties-to-even balanced-ternary rounding for signed fixed-point values.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-020",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Syndrome checksum",
+      "symptom": "Repair a ternary checksum that confuses digit value with encoded digit position.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-021",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Packed lane mask",
+      "symptom": "Fix tritwise masking without scalar unpack/repack or cross-lane contamination.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-022",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Euclidean division",
+      "symptom": "Repair quotient and remainder signs for negative balanced-ternary operands.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-023",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Bounded base conversion",
+      "symptom": "Reject out-of-range decimal conversion before partial output becomes observable.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-024",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Ternary parity recovery",
+      "symptom": "Locate and repair one corrupted trit while rejecting ambiguous two-error syndromes.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-025",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Normalized rational",
+      "symptom": "Repair signed gcd normalization and checked numerator/denominator arithmetic.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-026",
+      "category": "compiler_and_codegen",
+      "title": "Expression precedence parser",
+      "symptom": "Repair associativity and recovery after a malformed nested ternary expression.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-027",
+      "category": "compiler_and_codegen",
+      "title": "Comment-aware lexer",
+      "symptom": "Fix token locations across nested comments, newlines, and unterminated input.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-028",
+      "category": "compiler_and_codegen",
+      "title": "Shadowed scope resolver",
+      "symptom": "Prevent symbol leakage across sibling blocks while preserving legal shadowing.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-029",
+      "category": "compiler_and_codegen",
+      "title": "SSA phi construction",
+      "symptom": "Insert minimal phi nodes for a loop with multiple backedges and unreachable predecessors.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-030",
+      "category": "compiler_and_codegen",
+      "title": "Overflow-safe folding",
+      "symptom": "Stop constant folding from changing checked-arithmetic failure behavior.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-031",
+      "category": "compiler_and_codegen",
+      "title": "Side-effect-aware DCE",
+      "symptom": "Preserve volatile loads and trapping expressions whose result is otherwise unused.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-032",
+      "category": "compiler_and_codegen",
+      "title": "Spill slot allocator",
+      "symptom": "Repair overlapping spill slots across nested calls and exceptional control flow.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-033",
+      "category": "compiler_and_codegen",
+      "title": "Nested-call ABI",
+      "symptom": "Restore caller/callee saved registers and stack alignment across a nested call chain.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-034",
+      "category": "compiler_and_codegen",
+      "title": "Exhaustive match checker",
+      "symptom": "Distinguish guarded arms from total coverage and report the missing sign case.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-035",
+      "category": "compiler_and_codegen",
+      "title": "Relocation range repair",
+      "symptom": "Choose or synthesize a long relocation when a short branch no longer reaches.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-036",
+      "category": "compiler_and_codegen",
+      "title": "Weak symbol resolution",
+      "symptom": "Repair deterministic strong/weak symbol selection across archive orderings.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-037",
+      "category": "compiler_and_codegen",
+      "title": "Debug line mapping",
+      "symptom": "Preserve source locations through desugaring and instruction scheduling.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-038",
+      "category": "compiler_and_codegen",
+      "title": "Alias-safe load folding",
+      "symptom": "Prevent an optimization from reusing a load across a potentially aliasing store.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-039",
+      "category": "compiler_and_codegen",
+      "title": "Tail-call eligibility",
+      "symptom": "Reject tail-call conversion when ABI cleanup or result adaptation remains.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-040",
+      "category": "compiler_and_codegen",
+      "title": "Narrow-value extension",
+      "symptom": "Repair signed versus unsigned extension at a ternary machine-code boundary.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-041",
+      "category": "memory_and_pointer_safety",
+      "title": "Overflowing span validator",
+      "symptom": "Validate half-open spans without trusting address-plus-length arithmetic.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-042",
+      "category": "memory_and_pointer_safety",
+      "title": "Arena ownership boundary",
+      "symptom": "Reject pointers from a sibling arena even when numeric offsets overlap.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-043",
+      "category": "memory_and_pointer_safety",
+      "title": "Exact alignment contract",
+      "symptom": "Distinguish unsupported alignment from supported-but-misaligned addresses.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-044",
+      "category": "memory_and_pointer_safety",
+      "title": "Generation-tagged handles",
+      "symptom": "Prevent a recycled allocation slot from validating a stale handle.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-045",
+      "category": "memory_and_pointer_safety",
+      "title": "Reference-count handoff",
+      "symptom": "Repair a retain/release transfer that frees an object during callback reentrancy.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-046",
+      "category": "memory_and_pointer_safety",
+      "title": "Negative-length copy",
+      "symptom": "Reject malformed lengths before pointer normalization or destination writes.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-047",
+      "category": "memory_and_pointer_safety",
+      "title": "Overlapping move",
+      "symptom": "Repair copy direction for partially overlapping source and destination spans.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-048",
+      "category": "memory_and_pointer_safety",
+      "title": "Allocator coalescing",
+      "symptom": "Merge only physically adjacent free blocks while preserving ordered free lists.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-049",
+      "category": "memory_and_pointer_safety",
+      "title": "Stack red-zone check",
+      "symptom": "Detect a frame-size rounding bug that writes across the protected boundary.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-050",
+      "category": "memory_and_pointer_safety",
+      "title": "Capability permissions",
+      "symptom": "Require bounds and permissions before deriving a writable child capability.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-051",
+      "category": "concurrency_and_state",
+      "title": "Linearizable bounded queue",
+      "symptom": "Repair a lost wakeup and full-slot publication race under two producers.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-052",
+      "category": "concurrency_and_state",
+      "title": "Mutex ownership transfer",
+      "symptom": "Reject unlock by a non-owner without stranding an eligible waiter.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-053",
+      "category": "concurrency_and_state",
+      "title": "Saturating semaphore",
+      "symptom": "Prevent overflow and preserve FIFO wake ordering across release bursts.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-054",
+      "category": "concurrency_and_state",
+      "title": "Ordered event reducer",
+      "symptom": "Apply reset, toggle, and saturation events in observable input order.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-055",
+      "category": "concurrency_and_state",
+      "title": "ABA-resistant stack",
+      "symptom": "Repair a compare-and-swap stack with generation-tagged head updates.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-056",
+      "category": "concurrency_and_state",
+      "title": "Cancellation handoff",
+      "symptom": "Ensure exactly one completion wins when cancellation races successful delivery.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-057",
+      "category": "concurrency_and_state",
+      "title": "Channel close protocol",
+      "symptom": "Drain buffered items before closed status and wake all blocked endpoints once.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-058",
+      "category": "concurrency_and_state",
+      "title": "Priority donation",
+      "symptom": "Propagate and revoke inherited priority through a nested lock dependency.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-059",
+      "category": "concurrency_and_state",
+      "title": "Once initialization",
+      "symptom": "Retry after initialization failure without exposing partially initialized state.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-060",
+      "category": "concurrency_and_state",
+      "title": "Transactional rollback",
+      "symptom": "Restore all state fields when the second ordered transition fails.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-061",
+      "category": "syscall_and_abi",
+      "title": "Kernel status normalization",
+      "symptom": "Preserve negative kernel errors while validating successful result policies.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-062",
+      "category": "syscall_and_abi",
+      "title": "User pointer syscall",
+      "symptom": "Validate range, ownership, and write permission before dispatching a syscall.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-063",
+      "category": "syscall_and_abi",
+      "title": "Partial I/O accounting",
+      "symptom": "Return transferred length with correct restart behavior after an interrupt.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-064",
+      "category": "syscall_and_abi",
+      "title": "Errno precedence",
+      "symptom": "Repair wrapper ordering so kernel failure outranks caller-side result adaptation.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-065",
+      "category": "syscall_and_abi",
+      "title": "Descriptor lifecycle",
+      "symptom": "Prevent double-close and stale descriptor reuse across process handoff.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-066",
+      "category": "syscall_and_abi",
+      "title": "Capability-gated dispatch",
+      "symptom": "Check caller capability before argument-dependent kernel side effects.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-067",
+      "category": "syscall_and_abi",
+      "title": "Restartable signal boundary",
+      "symptom": "Restore arguments and program counter only for restartable interruptions.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-068",
+      "category": "syscall_and_abi",
+      "title": "Monotonic time conversion",
+      "symptom": "Detect unit-conversion overflow and reject invalid clock identifiers first.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-069",
+      "category": "syscall_and_abi",
+      "title": "Tagged ioctl payload",
+      "symptom": "Validate variant tag, payload size, and direction before copying user memory.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-070",
+      "category": "syscall_and_abi",
+      "title": "Wait status adapter",
+      "symptom": "Distinguish exited, signaled, stopped, and no-child outcomes without value collisions.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "abi_or_integration_bug"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-071",
+      "category": "multi_module_repository_repair",
+      "title": "Atomic configuration reload",
+      "symptom": "Repair parse, validate, publish, and rollback behavior across configuration modules.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-072",
+      "category": "multi_module_repository_repair",
+      "title": "Dependency-aware cache",
+      "symptom": "Invalidate transitive dependents without evicting unrelated cached artifacts.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-073",
+      "category": "multi_module_repository_repair",
+      "title": "Session rotation",
+      "symptom": "Repair authentication token rotation, revocation, persistence, and audit ordering.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-074",
+      "category": "multi_module_repository_repair",
+      "title": "Crash-safe file journal",
+      "symptom": "Recover committed entries and discard torn writes across storage modules.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-075",
+      "category": "multi_module_repository_repair",
+      "title": "Package constraint resolver",
+      "symptom": "Repair backtracking, prerelease rules, and deterministic conflict explanations.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-076",
+      "category": "multi_module_repository_repair",
+      "title": "Predicate pushdown planner",
+      "symptom": "Preserve null semantics while moving filters across an outer join.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-077",
+      "category": "multi_module_repository_repair",
+      "title": "Message retry router",
+      "symptom": "Prevent duplicate delivery while retaining dead-letter provenance.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-078",
+      "category": "multi_module_repository_repair",
+      "title": "Image manifest upgrader",
+      "symptom": "Migrate versioned image entries without changing content hashes or boot order.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-079",
+      "category": "multi_module_repository_repair",
+      "title": "Plugin dependency loader",
+      "symptom": "Reject cycles and incompatible APIs before running plugin initialization.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-080",
+      "category": "multi_module_repository_repair",
+      "title": "Snapshot restore",
+      "symptom": "Restore schema, data, indexes, and sequence state as one validated operation.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-081",
+      "category": "multi_module_repository_repair",
+      "title": "Idempotent migration",
+      "symptom": "Make a partially applied multi-step migration safe to resume.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-082",
+      "category": "multi_module_repository_repair",
+      "title": "Tamper-evident audit log",
+      "symptom": "Repair hash chaining and concurrent append ordering across log segments.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-083",
+      "category": "multi_module_repository_repair",
+      "title": "Offline sync conflict",
+      "symptom": "Resolve delete/update conflicts consistently across client and server replicas.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-084",
+      "category": "multi_module_repository_repair",
+      "title": "Feature flag snapshot",
+      "symptom": "Keep request-scoped flag decisions stable during concurrent configuration updates.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-085",
+      "category": "multi_module_repository_repair",
+      "title": "Generated API pipeline",
+      "symptom": "Repair schema generation, client emission, validation, and stale-artifact detection.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "conflicting_invariants"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 4,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-086",
+      "category": "build_test_and_tooling",
+      "title": "Incremental dependency invalidation",
+      "symptom": "Rebuild transitive consumers when a generated interface changes.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-087",
+      "category": "build_test_and_tooling",
+      "title": "Deterministic flaky-test replay",
+      "symptom": "Capture and replay randomness, ordering, and timing inputs for a failing test.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-088",
+      "category": "build_test_and_tooling",
+      "title": "Cross-platform command quoting",
+      "symptom": "Repair argument preservation for spaces, quotes, and literal metacharacters.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-089",
+      "category": "build_test_and_tooling",
+      "title": "Environment precedence",
+      "symptom": "Resolve command, project, user, and default configuration without leaking host values.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-090",
+      "category": "build_test_and_tooling",
+      "title": "Artifact hash manifest",
+      "symptom": "Detect missing, extra, stale, and content-modified release artifacts.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-091",
+      "category": "build_test_and_tooling",
+      "title": "Cache poisoning guard",
+      "symptom": "Bind build-cache entries to compiler, flags, inputs, and target architecture.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-092",
+      "category": "build_test_and_tooling",
+      "title": "Cross-compile probe",
+      "symptom": "Separate runnable host probes from compile-only target capability checks.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-093",
+      "category": "build_test_and_tooling",
+      "title": "Test discovery isolation",
+      "symptom": "Prevent generated fixtures and quarantined tests from entering the production suite.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-094",
+      "category": "build_test_and_tooling",
+      "title": "Schema code generation",
+      "symptom": "Reject incompatible schema evolution and remove obsolete generated members.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-095",
+      "category": "build_test_and_tooling",
+      "title": "Release package closure",
+      "symptom": "Include runtime dependencies while excluding secrets, caches, and developer evidence.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-096",
+      "category": "performance_and_resource_constraints",
+      "title": "Linear-time tokenization",
+      "symptom": "Remove quadratic rescanning while preserving exact error locations.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "misleading_or_incomplete_tests",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-097",
+      "category": "performance_and_resource_constraints",
+      "title": "Allocation-bounded traversal",
+      "symptom": "Eliminate per-node allocation in a hot graph walk under a fixed memory cap.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-098",
+      "category": "performance_and_resource_constraints",
+      "title": "Vectorized trit packing",
+      "symptom": "Use lane-parallel operations without changing scalar reference results.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-099",
+      "category": "performance_and_resource_constraints",
+      "title": "Batched syscall writer",
+      "symptom": "Reduce kernel crossings while preserving partial-write and error semantics.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    },
+    {
+      "id": "TC-V3-100",
+      "category": "performance_and_resource_constraints",
+      "title": "Content-addressed image dedupe",
+      "symptom": "Avoid duplicate payload storage without corrupting offsets or integrity hashes.",
+      "design_features": [
+        "repository_exploration_required",
+        "multi_module_change",
+        "initial_build_failure",
+        "misleading_or_incomplete_tests",
+        "performance_constraint"
+      ],
+      "state": "needs_independent_author",
+      "authoring_contract": {
+        "minimum_modules": 2,
+        "require_behavioral_hidden_grader": true,
+        "require_adversarial_suite": true,
+        "require_misleading_or_incomplete_initial_signal": true,
+        "require_reference_solution_outside_participant_bundle": true
+      },
+      "provenance": {
+        "author_id": null,
+        "reviewer_ids": [],
+        "subject_model_independence_verified": false
+      },
+      "packaging": {
+        "participant_bundle_hash": null,
+        "grader_bundle_hash": null,
+        "isolation_audit_hash": null
+      },
+      "calibration": {
+        "status": "not_started",
+        "cohort_pass_rates": {}
+      },
+      "holdout": {
+        "frozen": false,
+        "manifest_hash": null
+      }
+    }
+  ]
+}

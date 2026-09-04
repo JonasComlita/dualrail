@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import "./intelligence.css";
 import "./treatcode-theme.css";
+import { INTELLIGENCE_SOLUTION_GUIDES } from "./solutionGuides";
+import { IntelligenceV31Panel } from "./IntelligenceV31Panel";
 
 type ApiRecord = Record<string, unknown>;
 
@@ -768,6 +770,8 @@ export default function IntelligenceApp() {
     }
   }
 
+  const solutionGuide = INTELLIGENCE_SOLUTION_GUIDES[task.id];
+
   return (
     <div className="intelligence-app" data-testid="intelligence-app">
       <header className="intelligence-header">
@@ -809,6 +813,8 @@ export default function IntelligenceApp() {
           </article>
         </section>
 
+        <IntelligenceV31Panel />
+
         {loading ? <div className="intelligence-status" role="status" aria-live="polite" data-testid="intelligence-loading">Loading benchmark evidence…</div> : null}
         {error ? <div className="intelligence-error" role="alert" data-testid="intelligence-error">Unable to load the intelligence benchmark: {error}</div> : null}
 
@@ -841,6 +847,16 @@ export default function IntelligenceApp() {
             <div className="intelligence-trial-list">{task.trials.map((trial, index) => <button type="button" key={trial.id} className={`intelligence-trial ${selectedTrial?.id === trial.id ? "selected" : ""}`} onClick={() => setSelectedTrialId(trial.id)} data-testid={`trial-${index + 1}`} aria-label={`${trial.label || `Trial ${index + 1}`}: ${trialStatusLabel(trial)}`}><span><strong>{trial.label || `Trial ${index + 1}`}</strong><small>{trialStatusLabel(trial)}</small></span><b>{trial.passed === true ? "pass" : trial.passed === false ? "fail" : "—"}</b></button>)}</div>
             <div className="intelligence-trial-detail"><span className="intelligence-eyebrow">Selected trial</span><strong>{selectedTrial?.label || "Trial 1"}</strong><p>{task.availability !== "ready" ? "This task is cataloged; sealed submissions open when its runner is published." : selectedTrial && trialIsComplete(selectedTrial) ? "This sealed receipt is already recorded." : "Ready for an authenticated one-shot submission."}</p><button className="intelligence-primary" type="button" onClick={() => void startTrial()} disabled={busyAction === "trial" || task.availability !== "ready"} data-testid="submit-sealed-trial">{busyAction === "trial" ? "Submitting…" : task.availability !== "ready" ? "Runner pending" : "Submit sealed trial"}</button></div>
           </aside>
+        </section>
+
+        <section className="intelligence-panel intelligence-learning-panel" data-testid="intelligence-learning-guide" aria-labelledby="intelligence-learning-title">
+          <div className="intelligence-section-heading"><div><span className="intelligence-eyebrow">Public learning note · {task.id}</span><h2 id="intelligence-learning-title">Read the solution approach</h2></div><span className="intelligence-badge">plain English · pseudocode</span></div>
+          <p className="intelligence-muted">Use this explanation before opening the editor. It is a public teaching note, separate from private saved source and sealed verifier cases.</p>
+          {solutionGuide ? <div className="intelligence-learning-grid">
+            <article className="intelligence-learning-block"><h3>Plain English</h3><p>{solutionGuide.plainEnglish}</p></article>
+            <article className="intelligence-learning-block"><h3>Pseudocode</h3><pre><code>{solutionGuide.pseudocode}</code></pre></article>
+            <article className="intelligence-learning-block intelligence-learning-discussion"><h3>Discussion · why it works</h3><p>{solutionGuide.discussion}</p></article>
+          </div> : <p className="intelligence-empty">This task does not have a public learning note yet.</p>}
         </section>
 
         <section className="intelligence-panel intelligence-solution-panel" data-testid="solution-workspace">

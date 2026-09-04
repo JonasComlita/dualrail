@@ -1,0 +1,13 @@
+{
+  "schema": "treatcode.intelligence.cases.v3",
+  "version": 3,
+  "visibility": "public",
+  "task_id": "TC-V3-001",
+  "cases": [
+    { "id": "mixed-order", "args": [509, 0], "expected": 1871, "suite": "behavior" },
+    { "id": "equal-pivot", "args": [1494, 0], "expected": 1542, "suite": "stability" },
+    { "id": "already-partitioned", "args": [1134, -2], "expected": 1134, "suite": "behavior" },
+    { "id": "descending", "args": [1266, 2], "expected": 2328, "suite": "stability" },
+    { "id": "alternating-sides", "args": [1500, 0], "expected": 1584, "suite": "stability" }
+  ]
+}

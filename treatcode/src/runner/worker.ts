@@ -130,7 +130,13 @@ export async function executeTritRequest(envelope: WorkerEnvelope): Promise<Work
   const tasmPath = path.join(workspaceRoot, "submission.tasm");
   if (!path.relative(workspaceRoot, sourcePath) || path.relative(workspaceRoot, sourcePath).startsWith("..")) throw new Error("source path escaped workspace");
   const ulibPath = path.join(repositoryRoot, "ulib_mini.trit");
-  const driverPath = path.join(path.dirname(repositoryRoot), "treatcode", "compiler_driver.txe");
+  const driverCandidates = [
+    path.join(repositoryRoot, "treatcode", "compiler_driver.txe"),
+    path.join(repositoryRoot, "compiler_driver.txe"),
+    path.join(path.dirname(repositoryRoot), "treatcode", "compiler_driver.txe"),
+  ];
+  const driverPath = driverCandidates.find((candidate) => fs.existsSync(candidate));
+  if (!driverPath) throw new Error("the fixed compiler driver image is unavailable");
   const compiler = findCompiler(repositoryRoot);
   const ulib = await readFile(ulibPath, "utf8");
   await writeFile(sourcePath, `${ulib}\n${safeSource(envelope.request.code)}`, { encoding: "utf8", mode: 0o600 });

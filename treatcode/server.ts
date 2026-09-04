@@ -54,6 +54,8 @@ import {
   IntelligenceServiceError,
   intelligenceService,
 } from "./src/intelligenceService";
+import { intelligenceV3CatalogService } from "./src/intelligenceV3Catalog";
+import { intelligenceV31CatalogService } from "./src/intelligenceV31Catalog";
 
 export const app = express();
 const PORT = process.env.PORT || 3000;
@@ -64,11 +66,18 @@ app.use(express.json({ limit: "8mb" }));
 // In production, Vite builds static files to 'dist'. Serve them.
 const distPath = path.join(__dirname, "dist");
 if (fs.existsSync(distPath)) {
-  // Avoid a redirect-only response for the public entry points. This keeps
-  // direct requests useful to crawlers and clients with JavaScript disabled.
-  app.get("/", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "index.html")));
-  app.get("/stack", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "stack", "index.html")));
-  app.get("/learn", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "learn", "index.html")));
+  // Render the public reading routes from the same snapshot that powers the
+  // JSON API. This keeps direct links useful to crawlers and clients with
+  // JavaScript disabled while leaving the editor, runner, and operator routes
+  // on their existing static entry points.
+  app.get("/", (req: Request, res: Response) => sendPublicPage(req, res, "home"));
+  app.get("/stack", (req: Request, res: Response) => sendPublicPage(req, res, "stack"));
+  app.get("/stack/:slug", (req: Request, res: Response) => sendPublicPage(req, res, "stack-detail"));
+  app.get("/resources/:resource/:id", (req: Request, res: Response) => sendPublicPage(req, res, "resource-detail"));
+  app.get("/resources/:resource", (req: Request, res: Response) => sendPublicPage(req, res, "resource"));
+  app.get("/evidence/:id", (req: Request, res: Response) => sendPublicPage(req, res, "evidence-detail"));
+  app.get("/evidence", (req: Request, res: Response) => sendPublicPage(req, res, "evidence"));
+  app.get("/search", (req: Request, res: Response) => sendPublicPage(req, res, "search"));
   app.get("/operations", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "operations", "index.html")));
   app.get("/intelligence", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "intelligence", "index.html")));
   app.get("/practice", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "practice", "index.html")));
@@ -108,9 +117,38 @@ function loadPublicSnapshot(): PublicSnapshot {
 }
 
 const publicSnapshot = loadPublicSnapshot();
+function loadPublicRelationshipIndex(snapshot: PublicSnapshot): Record<string, unknown> {
+  const candidates = [
+    path.join(__dirname, "public", "api", "v1", "relationship-index.json"),
+    path.join(process.cwd(), "public", "api", "v1", "relationship-index.json"),
+    path.join(process.cwd(), "treatcode", "public", "api", "v1", "relationship-index.json"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as Record<string, unknown>;
+      if (parsed.schema === "treatcode.public.relationship-index.v1" && Array.isArray(parsed.edges)) return parsed;
+    } catch {
+      // Try the next workspace layout used by Bun, node, and the built server.
+    }
+  }
+  const edges = Array.isArray(snapshot.relations) ? snapshot.relations : [];
+  return {
+    schema: "treatcode.public.relationship-index.v1",
+    snapshot: snapshot.snapshot,
+    edges,
+    unresolved_external_edges: [],
+    counts: { public_edges: edges.length, unresolved_external_edges: 0, by_type: {} },
+    complete: false,
+  };
+}
+const publicRelationshipIndex = loadPublicRelationshipIndex(publicSnapshot);
 const publicResources = new Set([
   "projects", "stack-nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps",
 ]);
+
+function isPublicResource(resource: string): boolean {
+  return publicResources.has(resource) || publicResources.has(resource.replace(/_/g, "-"));
+}
 
 function publicEnvelope<T>(data: T, resource: string, prefix: string, meta: Record<string, unknown> = {}) {
   return {
@@ -139,16 +177,256 @@ function publicEntityById(id: string): PublicRecord | null {
   return null;
 }
 
+const publicCollectionNames = ["projects", "stack_nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps"] as const;
+const publicHtmlPageSize = 50;
+
+function escapePublicHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function publicRecordName(record: PublicRecord): string {
+  return String(record.name || record.title || record.symbol || record.path || record.id);
+}
+
+function publicResourceForRecord(record: PublicRecord): string | null {
+  const explicit = String(record.public_resource || "");
+  if ((publicCollectionNames as readonly string[]).includes(explicit)) return explicit;
+  const entityType = String(record.entity_type || "");
+  const derived = entityType === "stack_node" ? "stack_nodes" : `${entityType}s`;
+  return (publicCollectionNames as readonly string[]).includes(derived) ? derived : null;
+}
+
+function publicHtmlRecordHref(record: PublicRecord): string {
+  if (record.entity_type === "stack_node") return `/stack/${encodeURIComponent(String(record.slug || record.id.split(":").slice(2).join(":") || record.id))}`;
+  const resource = publicResourceForRecord(record);
+  return resource ? `/resources/${resource}/${encodeURIComponent(record.id)}` : `/evidence/${encodeURIComponent(record.id)}`;
+}
+
+function publicHtmlEvidenceHref(record: PublicRecord): string {
+  return `/evidence/${encodeURIComponent(record.id)}`;
+}
+
+function publicHtmlSourceHref(reference: Record<string, unknown>): string | null {
+  const repository = typeof reference.repository === "string" ? reference.repository : publicSnapshot.snapshot.repository;
+  const commit = typeof reference.commit === "string" ? reference.commit : publicSnapshot.snapshot.commit;
+  const sourcePath = typeof reference.path === "string" ? reference.path : "";
+  if (!repository || !commit || commit === "unknown" || !sourcePath || sourcePath.startsWith("build/") || sourcePath.includes("\\") || sourcePath.includes("..")) return null;
+  const span = reference.source_span && typeof reference.source_span === "object" ? `#L${Number((reference.source_span as Record<string, unknown>).start_line || 1)}` : "";
+  return `${repository}/blob/${encodeURIComponent(commit)}/${sourcePath.split("/").map((part) => encodeURIComponent(part)).join("/")}${span}`;
+}
+
+function publicHtmlCollectionName(value: string): string | null {
+  const normalized = value.replace(/-/g, "_");
+  return (publicCollectionNames as readonly string[]).includes(normalized) ? normalized : null;
+}
+
+function publicHtmlValue(value: unknown, depth = 0): string {
+  if (value === null || value === undefined) return "<span class=\"tc-muted\">—</span>";
+  if (depth > 3) return escapePublicHtml(value);
+  if (Array.isArray(value)) return value.length ? `<ul>${value.map((item) => `<li>${publicHtmlValue(item, depth + 1)}</li>`).join("")}</ul>` : "<span class=\"tc-muted\">none</span>";
+  if (typeof value === "object") return `<dl>${Object.entries(value as Record<string, unknown>).map(([key, item]) => `<div><dt>${escapePublicHtml(key)}</dt><dd>${publicHtmlValue(item, depth + 1)}</dd></div>`).join("")}</dl>`;
+  if (typeof value === "string") {
+    const record = value.startsWith("tc:") ? publicEntityById(value) : null;
+    return record ? `<a href=\"${escapePublicHtml(publicHtmlRecordHref(record))}\">${escapePublicHtml(value)}</a>` : escapePublicHtml(value);
+  }
+  return escapePublicHtml(value);
+}
+
+function publicHtmlSourceRefs(refs: unknown): string {
+  const references = Array.isArray(refs) ? refs : [];
+  if (!references.length) return "<p class=\"tc-empty\">No provenance recorded.</p>";
+  return `<ul>${references.map((item, index) => {
+    const reference = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    const label = `${String(reference.path || reference.artifact_hash || "immutable evidence")}${reference.source_span && typeof reference.source_span === "object" ? `:${String((reference.source_span as Record<string, unknown>).start_line || "")}` : ""}`;
+    const href = publicHtmlSourceHref(reference);
+    const link = href ? `<a href=\"${escapePublicHtml(href)}\" target=\"_blank\" rel=\"noreferrer\">${escapePublicHtml(label)}</a>` : escapePublicHtml(label);
+    return `<li>${link} <span class=\"tc-citation\">${escapePublicHtml(reference.role || reference.status || reference.reason || "")}</span></li>`;
+  }).join("")}</ul>`;
+}
+
+function publicHtmlRecordSummary(record: PublicRecord): string {
+  const summary = record.description || record.title || record.path || record.status || record.result || "Repository-backed public record.";
+  return `<article class=\"tc-card\"><span class=\"tc-eyebrow\">${escapePublicHtml(record.entity_type || "entity")}</span><h2><a href=\"${escapePublicHtml(publicHtmlRecordHref(record))}\">${escapePublicHtml(publicRecordName(record))}</a></h2><p>${escapePublicHtml(summary)}</p><p class=\"tc-citation\">${escapePublicHtml(record.id)} · <a href=\"${escapePublicHtml(publicHtmlEvidenceHref(record))}\">evidence</a></p></article>`;
+}
+
+function publicHtmlRelations(record: PublicRecord): string {
+  const relations = (publicSnapshot.relations || []).filter((relation) => relation.from === record.id || relation.to === record.id);
+  if (!relations.length) return "<p class=\"tc-empty\">No relationship edge is recorded for this entity.</p>";
+  return `<ul>${relations.map((relation) => {
+    const outgoing = relation.from === record.id;
+    const otherId = outgoing ? relation.to : relation.from;
+    const other = publicEntityById(otherId);
+    const label = other ? `<a href=\"${escapePublicHtml(publicHtmlRecordHref(other))}\">${escapePublicHtml(publicRecordName(other))}</a>` : escapePublicHtml(otherId);
+    return `<li><span class=\"tc-citation\">${escapePublicHtml(outgoing ? relation.type : `inverse ${relation.type}`)}</span> ${label} <span class=\"tc-citation\">· ${escapePublicHtml(relation.origin || "public registry")}</span></li>`;
+  }).join("")}</ul>`;
+}
+
+function publicHtmlRecordDetail(record: PublicRecord, evidenceMode = false): string {
+  const fields = Object.entries(record)
+    .filter(([key]) => !["id", "entity_type", "name", "title", "source_refs", "evidence_refs"].includes(key))
+    .sort(([left], [right]) => left.localeCompare(right));
+  const resource = publicResourceForRecord(record);
+  return `<article class=\"tc-detail\"><header class=\"tc-detail-header\"><span class=\"tc-eyebrow\">${escapePublicHtml(evidenceMode ? "Evidence record" : `${resource || "Public record"} detail`)}</span><h1>${escapePublicHtml(publicRecordName(record))}</h1><p class=\"tc-lede\">${escapePublicHtml(record.description || record.title || "Repository-backed public record.")}</p><span class=\"tc-detail-id\">${escapePublicHtml(record.id)} · ${escapePublicHtml(record.entity_type || "entity")}</span><p><a href=\"${escapePublicHtml(publicHtmlRecordHref(record))}\">Canonical resource route</a> · <a href=\"${escapePublicHtml(publicHtmlEvidenceHref(record))}\">Evidence view</a></p></header><section class=\"tc-panel\"><h2>Record fields</h2><dl>${fields.map(([key, value]) => `<div><dt>${escapePublicHtml(key)}</dt><dd>${publicHtmlValue(value)}</dd></div>`).join("")}</dl></section><section class=\"tc-panel\"><h2>Source provenance</h2>${publicHtmlSourceRefs(record.source_refs)}</section><section class=\"tc-panel\"><h2>Evidence provenance</h2>${publicHtmlSourceRefs(record.evidence_refs)}</section><section class=\"tc-panel\"><h2>Relationships (${(publicSnapshot.relations || []).filter((relation) => relation.from === record.id || relation.to === record.id).length})</h2>${publicHtmlRelations(record)}</section></article>`;
+}
+
+function publicHtmlPageChrome(title: string, body: string): string {
+  let stylesheet = "";
+  let script = "";
+  try {
+    const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    const stylesheetMatch = indexHtml.match(/<link[^>]+rel=[\"']stylesheet[\"'][^>]+href=[\"']([^\"']+)[\"']/i);
+    const scriptMatch = indexHtml.match(/<script[^>]+type=[\"']module[\"'][^>]+src=[\"']([^\"']+)[\"']/i);
+    if (stylesheetMatch) stylesheet = `<link rel=\"stylesheet\" href=\"${escapePublicHtml(stylesheetMatch[1])}\">`;
+    if (scriptMatch) script = `<script type=\"module\" crossorigin src=\"${escapePublicHtml(scriptMatch[1])}\"></script>`;
+  } catch {
+    // The API and direct static shell remain usable during an unbuilt checkout.
+  }
+  return `<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>${escapePublicHtml(title)} · TREATCODE</title>${stylesheet}</head><body><div id=\"root\"><div class=\"tc-shell\"><header class=\"tc-topbar\"><a class=\"tc-brand\" href=\"/\">TREATCODE</a><nav class=\"tc-nav\" aria-label=\"Primary navigation\"><a href=\"/\">Overview</a><a href=\"/stack\">Stack Explorer</a><a href=\"/learn\">Learn</a><a href=\"/evidence\">Evidence</a><a href=\"/practice\">Practice</a><a href=\"/arena\">Implementation Arena</a><a href=\"/intelligence\">Intelligence Benchmark</a><a href=\"/api/public/v1/openapi.json\">API</a></nav></header><main class=\"tc-main\">${body}</main><footer class=\"tc-footer\">Snapshot ${escapePublicHtml(publicSnapshot.snapshot.id)} · commit ${escapePublicHtml(publicSnapshot.snapshot.commit)} · Read-only public route · <a href=\"/api/public/v1/snapshot.json\">Static snapshot</a></footer></div></div>${script}</body></html>`;
+}
+
+function publicHtmlPagination(baseHref: string, page: number, total: number): string {
+  const pages = Math.max(1, Math.ceil(total / publicHtmlPageSize));
+  const makeHref = (targetPage: number): string => {
+    const [pathname, query = ""] = baseHref.split("?", 2);
+    const params = new URLSearchParams(query);
+    if (targetPage <= 1) params.delete("page"); else params.set("page", String(targetPage));
+    const serialized = params.toString();
+    return serialized ? `${pathname}?${serialized}` : pathname;
+  };
+  const previous = page > 1 ? `<a href=\"${escapePublicHtml(makeHref(page - 1))}\">← Previous</a>` : "<span aria-hidden=\"true\">← Previous</span>";
+  const next = page < pages ? `<a href=\"${escapePublicHtml(makeHref(page + 1))}\">Next →</a>` : "<span aria-hidden=\"true\">Next →</span>";
+  return `<nav class=\"tc-pagination\" aria-label=\"Pagination\"><span>Page ${Math.min(page, pages)} of ${pages} · ${total} total records</span><span>${previous} ${next}</span></nav>`;
+}
+
+function publicHtmlCollection(resource: string, requestedPage: number): string {
+  const normalized = publicHtmlCollectionName(resource);
+  if (!normalized) return `<section class=\"tc-empty\"><h1>Unknown public resource</h1><p>Choose a versioned public collection from the <a href=\"/evidence\">evidence index</a>.</p></section>`;
+  const collection = collectionFor(publicSnapshot, normalized) || [];
+  const page = Math.max(1, requestedPage);
+  const start = (page - 1) * publicHtmlPageSize;
+  const records = collection.filter((_record, index) => index >= start && index < start + publicHtmlPageSize);
+  const cards = records.length ? `<div class=\"tc-card-grid\">${records.map(publicHtmlRecordSummary).join("")}</div>` : "<p class=\"tc-empty\">This authoritative collection is empty.</p>";
+  return `<div class=\"tc-hero-row\"><div><span class=\"tc-eyebrow\">Public resource collection</span><h1>${escapePublicHtml(normalized)}</h1><p class=\"tc-lede\">Every record in this collection is reachable through a deterministic, read-only route and carries source and evidence provenance.</p></div><div><p class=\"tc-citation\">Snapshot ${escapePublicHtml(publicSnapshot.snapshot.id)}</p><p class=\"tc-citation\">${collection.length} total records · page size ${publicHtmlPageSize}</p></div></div>${publicHtmlPagination(`/resources/${normalized}`, page, collection.length)}<section class=\"tc-panel\"><h2>${escapePublicHtml(normalized)} records</h2>${cards}</section>`;
+}
+
+function publicHtmlStackIndex(): string {
+  const nodes = [...publicSnapshot.stack_nodes].sort((left, right) => Number(left.ordinal || 0) - Number(right.ordinal || 0));
+  return `<div class=\"tc-hero-row\"><div><span class=\"tc-eyebrow\">Public stack explorer</span><h1>Trace every dependency.</h1><p class=\"tc-lede\">All ${nodes.length} declared phases are directly linked to their phase detail and evidence records.</p></div><div><p class=\"tc-citation\">${nodes.length} phases · snapshot ${escapePublicHtml(publicSnapshot.snapshot.commit)}</p></div></div><section class=\"tc-panel\"><h2>Stack phases (${nodes.length})</h2><div class=\"tc-card-grid\">${nodes.map((node) => `<article class=\"tc-card\"><span class=\"tc-eyebrow\">Phase ${escapePublicHtml(String(node.ordinal).padStart(2, "0"))}</span><h2><a href=\"${escapePublicHtml(publicHtmlRecordHref(node))}\">${escapePublicHtml(publicRecordName(node))}</a></h2><p>${escapePublicHtml(node.problem || node.description || "Repository-backed stack phase.")}</p><p class=\"tc-citation\">${escapePublicHtml(node.implementation_status || "unrecorded")} · <a href=\"${escapePublicHtml(publicHtmlEvidenceHref(node))}\">evidence</a></p></article>`).join("")}</div></section>`;
+}
+
+function publicHtmlStackDetail(slug: string): string {
+  const node = publicSnapshot.stack_nodes.find((candidate) => String(candidate.slug || "") === slug || candidate.id.endsWith(`:${slug}`));
+  if (!node) return `<section class=\"tc-empty\"><h1>Stack phase not found</h1><p><a href=\"/stack\">Return to the complete stack explorer.</a></p></section>`;
+  const dependents = Array.isArray(node.dependent_ids) ? node.dependent_ids : [];
+  const dependencies = Array.isArray(node.depends_on) ? node.depends_on : [];
+  return `<div class=\"tc-detail\"><header class=\"tc-detail-header\"><span class=\"tc-eyebrow\">Phase ${escapePublicHtml(String(node.ordinal).padStart(2, "0"))}</span><h1>${escapePublicHtml(publicRecordName(node))}</h1><p class=\"tc-lede\">${escapePublicHtml(node.problem || node.description || "No problem statement recorded.")}</p><span class=\"tc-detail-id\">${escapePublicHtml(node.id)} · implementation ${escapePublicHtml(node.implementation_status || "unrecorded")}</span></header><section class=\"tc-panel\"><h2>Phase contract</h2><dl>${[["Problem", node.problem || node.description], ["Inputs", node.inputs], ["Outputs", node.outputs], ["Implementation status", node.implementation_status]].map(([key, value]) => `<div><dt>${escapePublicHtml(key)}</dt><dd>${publicHtmlValue(value)}</dd></div>`).join("")}</dl></section><section class=\"tc-panel\"><h2>Dependencies (${dependencies.length})</h2>${dependencies.length ? `<ul>${dependencies.map((id) => { const target = publicEntityById(String(id)); return `<li>${target ? `<a href=\"${escapePublicHtml(publicHtmlRecordHref(target))}\">${escapePublicHtml(publicRecordName(target))}</a>` : escapePublicHtml(id)}</li>`; }).join("")}</ul>` : "<p class=\"tc-empty\">This is the root phase.</p>"}</section><section class=\"tc-panel\"><h2>Dependent phases (${dependents.length})</h2>${dependents.length ? `<ul>${dependents.map((id) => { const target = publicEntityById(String(id)); return `<li>${target ? `<a href=\"${escapePublicHtml(publicHtmlRecordHref(target))}\">${escapePublicHtml(publicRecordName(target))}</a>` : escapePublicHtml(id)}</li>`; }).join("")}</ul>` : "<p class=\"tc-empty\">No later phase declares this phase as a dependency.</p>"}</section><section class=\"tc-panel\"><h2>Phase records</h2><dl>${["component_ids", "capability_ids", "contract_ids", "decision_ids", "test_ids", "benchmark_ids", "gap_ids", "release_ids"].map((key) => `<div><dt>${key}</dt><dd>${publicHtmlValue(node[key])}</dd></div>`).join("")}</dl></section><section class=\"tc-panel\"><h2>Source provenance</h2>${publicHtmlSourceRefs(node.source_refs)}</section><section class=\"tc-panel\"><h2>Evidence provenance</h2>${publicHtmlSourceRefs(node.evidence_refs)}</section></div>`;
+}
+
+function publicHtmlEvidenceIndex(): string {
+  return `<div class=\"tc-hero-row\"><div><span class=\"tc-eyebrow\">Evidence index</span><h1>Follow every public claim to its source.</h1><p class=\"tc-lede\">Browse complete versioned collections, then open any record's evidence route for source spans, artifact hashes, and relationship context.</p></div><div><p class=\"tc-citation\">${publicCollectionNames.reduce((sum, resource) => sum + (publicSnapshot[resource] || []).length, 0)} public records · ${(publicSnapshot.relations || []).length} relationships</p></div></div><div class=\"tc-card-grid\">${publicCollectionNames.map((resource) => `<article class=\"tc-card\"><span class=\"tc-eyebrow\">${resource}</span><h2>${publicSnapshot[resource].length} records</h2><p>Every record has a deterministic collection route and evidence route.</p><p><a href=\"/resources/${resource}\">Browse ${resource} →</a></p></article>`).join("")}</div>`;
+}
+
+function publicHtmlSearch(req: Request): string {
+  const query = String(req.query.q || "").trim();
+  const mode = normalizeSearchMode(String(req.query.mode || "semantic"));
+  const requestedPage = Number.parseInt(String(req.query.page || "1"), 10);
+  const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
+  const results = query ? searchSnapshot(publicSnapshot, query, mode) : [];
+  const start = (page - 1) * publicHtmlPageSize;
+  const visible = results.filter((_result, index) => index >= start && index < start + publicHtmlPageSize);
+  const cards = visible.map((result) => {
+    const record = publicEntityById(result.entity_id);
+    const href = record ? publicHtmlRecordHref(record) : `/search?q=${encodeURIComponent(result.entity_id)}&mode=exact`;
+    return `<article class=\"tc-card\"><span class=\"tc-eyebrow\">${escapePublicHtml(result.entity_type)} · score ${escapePublicHtml(result.score)}</span><h2><a href=\"${escapePublicHtml(href)}\">${escapePublicHtml(result.name)}</a></h2><p>${escapePublicHtml(result.matched_fields.join(", "))} match · ${escapePublicHtml(result.match_type)} search</p><p>${escapePublicHtml(result.match_reason)}</p>${publicHtmlSourceRefs(result.provenance)}</article>`;
+  }).join("");
+  return `<div class=\"tc-hero-row\"><div><span class=\"tc-eyebrow\">Provenance search</span><h1>Find the exact boundary.</h1><p class=\"tc-lede\">Search IDs, paths, symbols, relationships, and semantic concepts across the complete public inventory.</p></div><div><form class=\"tc-search\" method=\"get\" action=\"/search\"><label for=\"public-search\">Search the public graph</label><input id=\"public-search\" name=\"q\" value=\"${escapePublicHtml(query)}\" placeholder=\"Search source, symbol, contract, gap…\"><select name=\"mode\"><option value=\"semantic\"${mode === "semantic" ? " selected" : ""}>Semantic</option><option value=\"exact\"${mode === "exact" ? " selected" : ""}>Exact</option><option value=\"symbol\"${mode === "symbol" ? " selected" : ""}>Symbol</option><option value=\"relationship\"${mode === "relationship" ? " selected" : ""}>Relationship</option></select><button type=\"submit\">Search</button></form></div></div><div class=\"tc-section-heading\"><h2>${query ? `Results for “${escapePublicHtml(query)}”` : "Search the public graph"}</h2><span class=\"tc-muted\">${results.length} total matches · ${escapePublicHtml(mode)}</span></div>${query ? publicHtmlPagination(`/search?q=${encodeURIComponent(query)}&mode=${mode}`, page, results.length) : ""}${cards ? `<div class=\"tc-card-grid\">${cards}</div>` : `<p class=\"tc-empty\">${query ? "No authoritative records matched this query." : "Enter a query to search the snapshot."}</p>`}`;
+}
+
+function sendPublicPage(req: Request, res: Response, kind: "home" | "stack" | "stack-detail" | "resource" | "resource-detail" | "evidence" | "evidence-detail" | "search"): void {
+  if (publicSnapshot.snapshot.commit === "unknown" || !publicSnapshot.stack_nodes.length) {
+    res.status(503).type("html").send(publicHtmlPageChrome("Snapshot unavailable", `<section class=\"tc-error\"><h1>Public snapshot unavailable</h1><p>The repository-backed public snapshot has not been generated.</p></section>`));
+    return;
+  }
+  let title = "Overview";
+  let body = "";
+  if (kind === "home") {
+    title = "Overview";
+    body = `<div class=\"tc-hero-row\"><div><span class=\"tc-eyebrow\">Public platform knowledge</span><h1>Understand the stack. Follow the evidence.</h1><p class=\"tc-lede\">A static-first map of Trit from silicon to user surfaces. Every layer stays connected to the source, contract, test, benchmark, decision, release, and gap that qualify its claims.</p></div><div><p class=\"tc-citation\">Snapshot ${escapePublicHtml(publicSnapshot.snapshot.id)} · commit ${escapePublicHtml(publicSnapshot.snapshot.commit)}</p></div></div><div class=\"tc-metrics\" aria-label=\"Snapshot metrics\"><div class=\"tc-metric\"><strong>${publicSnapshot.stack_nodes.length}</strong><span>stack phases</span></div><div class=\"tc-metric\"><strong>${publicSnapshot.capabilities.length}</strong><span>capabilities</span></div><div class=\"tc-metric\"><strong>${publicSnapshot.contracts.length}</strong><span>contracts</span></div><div class=\"tc-metric\"><strong>${publicSnapshot.sources.length}</strong><span>source records</span></div></div><section class=\"tc-panel\"><h2>Complete public graph</h2><p>All public collections, relationship edges, and evidence records are available from the <a href=\"/evidence\">evidence index</a>.</p><p><a href=\"/stack\">Open all stack phases →</a> · <a href=\"/search\">Search the complete inventory →</a></p></section>`;
+  } else if (kind === "stack") {
+    title = "Stack Explorer";
+    body = publicHtmlStackIndex();
+  } else if (kind === "stack-detail") {
+    title = "Stack phase";
+    body = publicHtmlStackDetail(String(req.params.slug || ""));
+  } else if (kind === "resource" || kind === "resource-detail") {
+    const resource = String(req.params.resource || "");
+    if (kind === "resource-detail") {
+      const collection = collectionFor(publicSnapshot, resource) || [];
+      const record = collection.find((candidate) => candidate.id === String(req.params.id || "")) || null;
+      title = record ? publicRecordName(record) : "Record not found";
+      body = record ? publicHtmlRecordDetail(record) : `<section class=\"tc-error\"><h1>Public record not found</h1><p><a href=\"/resources/${escapePublicHtml(resource)}\">Return to the collection.</a></p></section>`;
+      if (!record) res.status(404);
+    } else {
+      title = resource;
+      body = publicHtmlCollection(resource, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+    }
+  } else if (kind === "evidence" || kind === "evidence-detail") {
+    if (kind === "evidence-detail") {
+      const record = publicEntityById(String(req.params.id || ""));
+      title = record ? `Evidence · ${publicRecordName(record)}` : "Evidence not found";
+      body = record ? publicHtmlRecordDetail(record, true) : `<section class=\"tc-error\"><h1>Evidence record not found</h1><p><a href=\"/evidence\">Return to the evidence index.</a></p></section>`;
+      if (!record) res.status(404);
+    } else {
+      title = "Evidence";
+      body = publicHtmlEvidenceIndex();
+    }
+  } else {
+    title = "Search";
+    body = publicHtmlSearch(req);
+  }
+  res.setHeader("Cache-Control", "public, max-age=60");
+  res.type("html").send(publicHtmlPageChrome(title, body));
+}
+
 function registerPublicApi(prefix: string) {
   app.get(prefix, (_req: Request, res: Response) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
     const counts = Object.fromEntries([...publicResources].map((resource) => [resource, collectionFor(publicSnapshot, resource)?.length || 0]));
     res.json(publicEnvelope({ api_schema: PUBLIC_API_SCHEMA_VERSION, snapshot_schema: publicSnapshot.schema_version, resources: counts }, "", prefix, { read_only: true }));
   });
 
   app.get(`${prefix}/snapshot.json`, (_req: Request, res: Response) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
     res.setHeader("Cache-Control", "public, max-age=60");
     res.json(publicSnapshot);
   });
+
+  for (const artifact of ["coverage", "relationship-index", "freshness"] as const) {
+    app.get(`${prefix}/${artifact}.json`, (_req: Request, res: Response) => {
+      if (!publicSnapshotAvailable()) {
+        publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+        return;
+      }
+      const data = artifact === "coverage" ? publicSnapshot.coverage : artifact === "relationship-index" ? publicRelationshipIndex : publicSnapshot.freshness;
+      if (!data) {
+        publicError(res, 404, "artifact_unavailable", `The public ${artifact} artifact is unavailable.`, prefix);
+        return;
+      }
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(publicEnvelope(data, artifact, prefix, { read_only: true }));
+    });
+  }
 
   app.get(`${prefix}/openapi.json`, (_req: Request, res: Response) => {
     const contractCandidates = [
@@ -169,6 +447,10 @@ function registerPublicApi(prefix: string) {
   });
 
   app.get(`${prefix}/search`, (req: Request, res: Response) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
     const query = String(req.query.q || "").trim();
     if (!query) {
       publicError(res, 400, "query_required", "Search requires a non-empty q parameter.", prefix);
@@ -176,19 +458,46 @@ function registerPublicApi(prefix: string) {
     }
     const mode = normalizeSearchMode(String(req.query.mode || "semantic"));
     const requestedLimit = Number.parseInt(String(req.query.limit || "25"), 10);
+    const requestedOffset = Number.parseInt(String(req.query.offset || "0"), 10);
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 25;
-    const results = searchSnapshot(publicSnapshot, query, mode).slice(0, limit);
-    res.json(publicEnvelope(results, "search", prefix, { count: results.length, query, mode, limit }));
+    const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
+    const allResults = searchSnapshot(publicSnapshot, query, mode);
+    const results = allResults.slice(offset, offset + limit);
+    res.json({ ...publicEnvelope(results, "search", prefix, { count: results.length, total: allResults.length, query, mode, offset, limit }), links: publicPaginationLinks(prefix, "search", offset, limit, allResults.length, { q: query, mode }) });
+  });
+
+  app.get(`${prefix}/:resource/:id/relations`, (req: Request, res: Response) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
+    const resource = String(req.params.resource);
+    if (!isPublicResource(resource)) {
+      publicError(res, 404, "resource_not_found", `Unknown public resource: ${resource}.`, prefix);
+      return;
+    }
+    const collection = collectionFor(publicSnapshot, resource) || [];
+    const record = collection.find((candidate) => candidate.id === req.params.id) || null;
+    if (!record) {
+      publicError(res, 404, "entity_not_found", `No ${resource} entity exists for id ${req.params.id}.`, prefix);
+      return;
+    }
+    const relations = (publicSnapshot.relations || []).filter((relation) => relation.from === record.id || relation.to === record.id);
+    res.json(publicEnvelope(relations, `${resource}/${encodeURIComponent(record.id)}/relations`, prefix, { count: relations.length, total: relations.length }));
   });
 
   app.get(`${prefix}/:resource/:id`, (req: Request, res: Response) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
     const resource = String(req.params.resource);
-    if (!publicResources.has(resource)) {
+    if (!isPublicResource(resource)) {
       publicError(res, 404, "resource_not_found", `Unknown public resource: ${resource}.`, prefix);
       return;
     }
     const collection = collectionFor(publicSnapshot, resource);
-    const record = collection?.find((candidate) => candidate.id === req.params.id) || publicEntityById(req.params.id);
+    const record = collection?.find((candidate) => candidate.id === req.params.id) || null;
     if (!record) {
       publicError(res, 404, "entity_not_found", `No ${resource} entity exists for id ${req.params.id}.`, prefix);
       return;
@@ -197,12 +506,16 @@ function registerPublicApi(prefix: string) {
   });
 
   app.get(`${prefix}/:resource`, (req: Request, res: Response, next) => {
+    if (!publicSnapshotAvailable()) {
+      publicError(res, 503, "snapshot_unavailable", "The repository-backed public snapshot is unavailable.", prefix);
+      return;
+    }
     const resource = String(req.params.resource);
     if (resource.endsWith(".json")) {
       next();
       return;
     }
-    if (!publicResources.has(resource)) {
+    if (!isPublicResource(resource)) {
       publicError(res, 404, "resource_not_found", `Unknown public resource: ${resource}.`, prefix);
       return;
     }
@@ -212,7 +525,7 @@ function registerPublicApi(prefix: string) {
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 25;
     const offset = Number.isFinite(requestedOffset) ? Math.max(0, requestedOffset) : 0;
     const data = collection.slice(offset, offset + limit);
-    res.json(publicEnvelope(data, resource, prefix, { count: data.length, total: collection.length, offset, limit }));
+    res.json({ ...publicEnvelope(data, resource, prefix, { count: data.length, total: collection.length, offset, limit }), links: publicPaginationLinks(prefix, resource, offset, limit, collection.length) });
   });
 }
 
@@ -382,6 +695,24 @@ function participantAuthError(res: Response, error: unknown): void {
     error: { code, reason: code === "duplicate_handle" ? "That participant handle is already registered." : "The participant account details are invalid." },
     meta: { policy_version: "treatcode.authz.policy.v1" },
   });
+}
+
+function publicSnapshotAvailable(): boolean {
+  return publicSnapshot.snapshot.commit !== "unknown" && publicSnapshot.stack_nodes.length > 0;
+}
+
+function publicRequestHref(prefix: string, resource: string, query: Record<string, string | number | undefined> = {}): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
+  const serialized = params.toString();
+  return `${prefix}/${resource}${serialized ? `?${serialized}` : ""}`;
+}
+
+function publicPaginationLinks(prefix: string, resource: string, offset: number, limit: number, total: number, query: Record<string, string | number | undefined> = {}): Record<string, string> {
+  const links: Record<string, string> = { self: publicRequestHref(prefix, resource, { ...query, offset, limit }) };
+  if (offset > 0) links.previous = publicRequestHref(prefix, resource, { ...query, offset: Math.max(0, offset - limit), limit });
+  if (offset + limit < total) links.next = publicRequestHref(prefix, resource, { ...query, offset: offset + limit, limit });
+  return links;
 }
 
 function loginHandler(req: Request, res: Response): void {
@@ -614,6 +945,44 @@ routeAliases(["/api/intelligence/v1/benchmark", "/api/intelligence/benchmark", "
       intelligenceErrorResponse(res, error);
     }
   });
+});
+
+// V3 is intentionally additive. V1/v2 remain the end-to-end regression API;
+// this catalog exposes the independent-task protocol and honest authoring
+// readiness without presenting candidate briefs as executable model scores.
+app.get("/api/intelligence/v3/catalog", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const catalog = intelligenceV3CatalogService.catalog();
+  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { catalog }, catalog });
+});
+
+app.get("/api/intelligence/v3/protocol", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { protocol: intelligenceV3CatalogService.protocol }, protocol: intelligenceV3CatalogService.protocol });
+});
+
+app.get("/api/intelligence/v3/discussion-rubric", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const rubric = intelligenceV3CatalogService.discussionRubric;
+  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { rubric }, rubric });
+});
+
+app.get("/api/intelligence/v3.1/catalog", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const catalog = intelligenceV31CatalogService.catalog();
+  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { catalog }, catalog });
+});
+
+app.get("/api/intelligence/v3.1/protocol", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const protocol = intelligenceV31CatalogService.protocol;
+  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { protocol }, protocol });
+});
+
+app.get("/api/intelligence/v3.1/comparisons/latest", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const comparison = intelligenceV31CatalogService.latestComparison();
+  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { comparison }, comparison });
 });
 
 // A stable suite endpoint lets clients discover task-specific fixtures before
@@ -1765,6 +2134,94 @@ async function compileAndRunTrit(
 function normalizeRunnerEngine(value: unknown): RunnerEngine | null {
   return value === "native" || value === "bootstrap" ? value : null;
 }
+
+interface LearningExerciseContract {
+  id: string;
+  runner: string;
+}
+
+function loadLearningExerciseContracts(): Map<string, LearningExerciseContract> {
+  const roots = [
+    path.join(__dirname, "src", "content", "learn"),
+    path.join(process.cwd(), "src", "content", "learn"),
+    path.join(process.cwd(), "treatcode", "src", "content", "learn"),
+  ];
+  for (const root of roots) {
+    try {
+      const contracts = new Map<string, LearningExerciseContract>();
+      for (const name of fs.readdirSync(root)) {
+        if (!name.endsWith(".md")) continue;
+        const source = fs.readFileSync(path.join(root, name), "utf8");
+        const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+        if (!match) continue;
+        const metadata = JSON.parse(match[1]) as { interactive?: { kind?: string; exercise_id?: string; runner?: string } };
+        if (metadata.interactive?.kind === "code" && metadata.interactive.exercise_id && metadata.interactive.runner) {
+          contracts.set(metadata.interactive.exercise_id, { id: metadata.interactive.exercise_id, runner: metadata.interactive.runner });
+        }
+      }
+      if (contracts.size > 0) return contracts;
+    } catch {
+      // Try the next workspace layout used by Bun, node, and the built server.
+    }
+  }
+  return new Map();
+}
+
+const learningExerciseContracts = loadLearningExerciseContracts();
+
+app.post("/api/learn/exercises/run", async (req: Request, res: Response) => {
+  const decision = requireAction(req, res, "test", { require_nonce: false });
+  if (!decision) return;
+  const exerciseId = String(req.body?.exercise_id || "");
+  const code = req.body?.code;
+  const contract = learningExerciseContracts.get(exerciseId);
+  if (!contract) {
+    res.status(404).json({ schema: "treatcode.learning.exercise-run.v1", success: false, error: "Learning exercise not found." });
+    return;
+  }
+  if (typeof code !== "string" || code.length === 0 || code.length > 64 * 1024 || code.includes("\u0000")) {
+    res.status(400).json({ schema: "treatcode.learning.exercise-run.v1", success: false, error: "Exercise source must be non-empty, text-only, and at most 64 KiB." });
+    return;
+  }
+  const runnerEngine = req.body?.engine === undefined ? "bootstrap" as const : normalizeRunnerEngine(req.body.engine);
+  if (!runnerEngine) {
+    res.status(400).json({ schema: "treatcode.learning.exercise-run.v1", success: false, error: "Exercise runner must be native or bootstrap." });
+    return;
+  }
+
+  // The lesson starter deliberately contains a named function instead of a
+  // hidden entry point. Add only the bounded harness needed to execute that
+  // function; submissions that omit or change it receive a real compiler
+  // diagnostic from the isolated runner.
+  const executableSource = /\bfn\s+main\s*\(/.test(code)
+    ? code
+    : `${code}\n\nfn main() -> t40 {\n    return first_value();\n}\n`;
+  try {
+    const result = await compileAndRunTrit(executableSource, runnerEngine, "-O0");
+    const compilerOutput = result.compilerOutput ? result.compilerOutput.slice(-16_384) : "";
+    res.json({
+      schema: "treatcode.learning.exercise-run.v1",
+      exercise_id: exerciseId,
+      runner: contract.runner,
+      engine: runnerEngine,
+      success: result.success,
+      state: result.state,
+      summary: result.success
+        ? `Bounded compiler/VM execution completed for ${exerciseId}.`
+        : `Bounded compiler/VM execution reported ${result.error || "a real failure"}.`,
+      error: result.error || null,
+      compilerOutput,
+      run_id: result.runId,
+      evidence: {
+        record_hash: result.evidence.recordHash,
+        record_path: result.evidence.recordPath,
+        run: `/api/runs/${encodeURIComponent(result.runId)}`,
+      },
+    });
+  } catch (error) {
+    res.status(503).json({ schema: "treatcode.learning.exercise-run.v1", success: false, exercise_id: exerciseId, error: `Learning runner unavailable: ${String(error)}` });
+  }
+});
 
 app.get("/api/problems", (req: Request, res: Response) => {
   // Retired entries remain in the manifest for auditability but never enter

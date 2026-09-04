@@ -213,7 +213,19 @@ inline std::vector<uint8_t> expectedCompare64(
 
     std::vector<uint8_t> out(a.size());
     for (std::size_t i = 0; i < a.size(); ++i) {
-        out[i] = static_cast<uint8_t>(compareResultLane1Raw(compareLane64(a[i], b[i], trits)));
+        if (!validLane64(a[i], trits) || !validLane64(b[i], trits)) {
+            out[i] = 0x3U;
+            continue;
+        }
+
+        int8_t comparison = 0;
+        for (int pos = trits - 1; pos >= 0; --pos) {
+            const uint8_t av = getPair64(a[i], pos);
+            const uint8_t bv = getPair64(b[i], pos);
+            if (av < bv) { comparison = -1; break; }
+            if (av > bv) { comparison = 1; break; }
+        }
+        out[i] = encodeTritPair(comparison);
     }
     return out;
 }
@@ -225,7 +237,19 @@ inline std::vector<uint8_t> expectedCompare128(
 
     std::vector<uint8_t> out(a.size());
     for (std::size_t i = 0; i < a.size(); ++i) {
-        out[i] = static_cast<uint8_t>(compareResultLane1Raw(compareLane128(a[i], b[i], trits)));
+        if (!validLane128(a[i], trits) || !validLane128(b[i], trits)) {
+            out[i] = 0x3U;
+            continue;
+        }
+
+        int8_t comparison = 0;
+        for (int pos = trits - 1; pos >= 0; --pos) {
+            const uint8_t av = getPair128(a[i], pos);
+            const uint8_t bv = getPair128(b[i], pos);
+            if (av < bv) { comparison = -1; break; }
+            if (av > bv) { comparison = 1; break; }
+        }
+        out[i] = encodeTritPair(comparison);
     }
     return out;
 }

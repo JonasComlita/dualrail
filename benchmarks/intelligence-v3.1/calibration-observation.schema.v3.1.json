@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/calibration-observation.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 non-subject calibration observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "task_id", "participant_bundle_hash", "attempt_id", "cohort", "model_family", "configuration", "run_number", "fresh_context", "subject_family_excluded", "network_isolation_verified", "resource_limits_verified", "append_only_evidence_verified", "passed", "completion_status", "released_at", "submitted_at", "evidence_hash", "official"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.calibration-observation.v3.1" },
+    "version": { "const": "3.1" },
+    "task_id": { "type": "string", "pattern": "^TC-V31-FINAL-[0-9]{3}$" },
+    "participant_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "attempt_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "cohort": { "enum": ["weak", "medium", "frontier"] },
+    "model_family": { "type": "string", "not": { "enum": ["gpt-5.6-luna", "gpt-5.6-sol"] } },
+    "configuration": { "type": "string", "minLength": 3 },
+    "run_number": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "fresh_context": { "const": true },
+    "subject_family_excluded": { "const": true },
+    "network_isolation_verified": { "const": true },
+    "resource_limits_verified": { "const": true },
+    "append_only_evidence_verified": { "const": true },
+    "passed": { "type": "boolean" },
+    "completion_status": { "enum": ["completed", "timeout", "invalid_submission", "infrastructure_interruption"] },
+    "released_at": { "type": "string", "format": "date-time" },
+    "submitted_at": { "type": ["string", "null"], "format": "date-time" },
+    "evidence_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "official": { "const": false }
+  }
+}

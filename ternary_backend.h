@@ -27,6 +27,8 @@
 namespace sandbox {
 namespace backend {
 
+inline constexpr int8_t TRIT_COMPARE_INVALID = 2;
+
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint8_t encodeTritPair(int8_t trit) {
     if (trit < -1 || trit > 1) return 0x3U;
     return static_cast<uint8_t>(trit + 1);
@@ -57,19 +59,37 @@ struct RawUInt128 {
     uint64_t hi = 0;
 };
 
+TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLaneWidth64(int trits) {
+    return trits > 0 && trits <= 32;
+}
+
+TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLanePosition64(int pos) {
+    return pos >= 0 && pos < 32;
+}
+
+TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLaneWidth128(int trits) {
+    return trits > 0 && trits <= 64;
+}
+
+TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLanePosition128(int pos) {
+    return pos >= 0 && pos < 64;
+}
+
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint64_t payloadMask64(int trits) {
+    if (!validLaneWidth64(trits)) return 0;
     const int usedBits = 2 * trits;
-    if (usedBits >= 64) return UINT64_MAX;
-    if (usedBits <= 0) return 0;
+    if (usedBits == 64) return UINT64_MAX;
     return (1ULL << usedBits) - 1ULL;
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool paddingClear64(uint64_t raw, int trits) {
+    if (!validLaneWidth64(trits)) return false;
     const uint64_t mask = payloadMask64(trits);
     return (raw & ~mask) == 0;
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint8_t getPair64(uint64_t raw, int pos) {
+    if (!validLanePosition64(pos)) return 0x3U;
     return static_cast<uint8_t>((raw >> (2 * pos)) & 0x3ULL);
 }
 
@@ -78,12 +98,14 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint64_t setPair64(
     int pos,
     uint8_t pair) {
 
+    if (!validLanePosition64(pos)) return UINT64_MAX;
     const int bit = 2 * pos;
     const uint64_t mask = 0x3ULL << bit;
     return (raw & ~mask) | (static_cast<uint64_t>(pair & 0x3U) << bit);
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLane64(uint64_t raw, int trits) {
+    if (!validLaneWidth64(trits)) return false;
     if (!paddingClear64(raw, trits)) return false;
     for (int i = 0; i < trits; ++i) {
         if (getPair64(raw, i) == 0x3U) return false;
@@ -92,6 +114,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLane64(uint64_t raw, int trit
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint64_t invalidLane64(int trits) {
+    if (!validLaneWidth64(trits)) return UINT64_MAX;
     uint64_t raw = 0;
     for (int i = 0; i < trits; ++i) raw = setPair64(raw, i, 0x3U);
     return raw;
@@ -150,7 +173,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint64_t subLane64(uint64_t a, uint64_t
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE int8_t compareLane64(uint64_t a, uint64_t b, int trits) {
-    if (!validLane64(a, trits) || !validLane64(b, trits)) return 0;
+    if (!validLane64(a, trits) || !validLane64(b, trits)) return TRIT_COMPARE_INVALID;
     for (int i = trits - 1; i >= 0; --i) {
         const int8_t av = decodeTritPair(getPair64(a, i));
         const int8_t bv = decodeTritPair(getPair64(b, i));
@@ -182,9 +205,9 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool equalRaw128(RawUInt128 a, RawUInt1
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool paddingClear128(RawUInt128 raw, int trits) {
+    if (!validLaneWidth128(trits)) return false;
     const int usedBits = 2 * trits;
-    if (usedBits >= 128) return true;
-    if (usedBits <= 0) return raw.lo == 0 && raw.hi == 0;
+    if (usedBits == 128) return true;
     if (usedBits <= 64) {
         const uint64_t mask = usedBits == 64 ? UINT64_MAX : ((1ULL << usedBits) - 1ULL);
         return raw.hi == 0 && (raw.lo & ~mask) == 0;
@@ -196,6 +219,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool paddingClear128(RawUInt128 raw, in
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE uint8_t getPair128(RawUInt128 raw, int pos) {
+    if (!validLanePosition128(pos)) return 0x3U;
     const int bit = 2 * pos;
     if (bit < 64) return static_cast<uint8_t>((raw.lo >> bit) & 0x3ULL);
     return static_cast<uint8_t>((raw.hi >> (bit - 64)) & 0x3ULL);
@@ -206,6 +230,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE RawUInt128 setPair128(
     int pos,
     uint8_t pair) {
 
+    if (!validLanePosition128(pos)) return RawUInt128{UINT64_MAX, UINT64_MAX};
     const int bit = 2 * pos;
     if (bit < 64) {
         const uint64_t mask = 0x3ULL << bit;
@@ -219,6 +244,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE RawUInt128 setPair128(
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLane128(RawUInt128 raw, int trits) {
+    if (!validLaneWidth128(trits)) return false;
     if (!paddingClear128(raw, trits)) return false;
     for (int i = 0; i < trits; ++i) {
         if (getPair128(raw, i) == 0x3U) return false;
@@ -227,6 +253,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE bool validLane128(RawUInt128 raw, int t
 }
 
 TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE RawUInt128 invalidLane128(int trits) {
+    if (!validLaneWidth128(trits)) return RawUInt128{UINT64_MAX, UINT64_MAX};
     RawUInt128 raw{};
     for (int i = 0; i < trits; ++i) raw = setPair128(raw, i, 0x3U);
     return raw;
@@ -293,7 +320,7 @@ TERNARY_HOST_DEVICE TERNARY_FORCE_INLINE int8_t compareLane128(
     RawUInt128 b,
     int trits) {
 
-    if (!validLane128(a, trits) || !validLane128(b, trits)) return 0;
+    if (!validLane128(a, trits) || !validLane128(b, trits)) return TRIT_COMPARE_INVALID;
     for (int i = trits - 1; i >= 0; --i) {
         const int8_t av = decodeTritPair(getPair128(a, i));
         const int8_t bv = decodeTritPair(getPair128(b, i));

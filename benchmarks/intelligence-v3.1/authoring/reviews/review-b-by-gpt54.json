@@ -1,0 +1,411 @@
+{
+  "schema": "treatcode.intelligence.review-contribution.v3.1",
+  "version": "3.1",
+  "reviewer": {
+    "reviewer_id": "model-agent-gpt54-reviewer-b1",
+    "reviewer_kind": "model_agent",
+    "model": "gpt-5.4",
+    "reasoning_effort": "xhigh",
+    "completed_at": "2026-08-28T22:39:54.6364923-07:00",
+    "attestation": "Reviewed only the contributed JSON and live repository/test sources; decisions reflect development evidence and anchor-to-behavior alignment, not hypothetical hidden fixes."
+  },
+  "reviewed_contribution_sha256": "f89eb8fe18af8f9395912c5e015c7b09152d299711abcd4007783ec36f93da9e",
+  "reviews": [
+    {
+      "task_id": "TC-V31-FINAL-035",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Scheduler dequeue behavior lives in tier1_enqueue/tier1_dequeue, while changing KERNEL_MAGIC and renumbering Alloca alters boot/VFS identity and the global IR ABI instead of ring-wrap logic."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-036",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Process-index tombstone probing is implemented in PID_INDEX/ulib_hmap tombstone code; STORAGE_BLOCK_WORDS and Param = 0 change storage geometry and opcode numbering rather than probe behavior."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-037",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Timer cancellation under bucket reuse should touch TIMER_WHEEL scheduling paths, but MMU_PAGE_WORDS is page geometry and Const = 2 is only an explicit no-op ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-038",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Extent coalescing belongs in VFS extent management, not MMU_SUPERPAGE_WORDS, and Copy = 3 merely restates the existing opcode value."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-039",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Window FIFO behavior is in window_queue_event/window_read_event and WIN_EVENT_* state; PTR_STATE_NULL plus Add = 4 does not target queue ordering."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-040",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Negative odd half-division is math_utils lowering logic, while PTR_STATE_UNKNOWN is pointer classification and Sub = 5 is an explicit no-op ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-041",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "WAL checksum rejection is exercised in ternary_redo_wal replay/checksum paths; PTR_STATE_VALID and Mul = 6 are unrelated to wrapped-lane validation."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-042",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Signed boundary conversion lives in ternary_lanes.h and its tests, but ERR_NOT_FOUND and Div = 7 do not touch lane conversion semantics."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-043",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Spill metadata survives in tcl_backend spill/local-lowering code; ERR_EXISTS and Tmod = 8 neither anchor nor implement that compiler interaction."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-044",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Phi predecessor canonicalization is covered in test_phase7_compiler phi recovery cases, while ERR_NO_SPACE and Cvt = 9 are unrelated surfaces."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-045",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Executable ABI vector call-area width is enforced by codegen and test_executable_abi_v3, not by ERR_BAD_FD, and Cmp = 10 is only the existing opcode ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-046",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "No module-initialization ordering evidence points to ERR_BAD_PTR or Tsel = 11; the proposed mutations do not reach any real ordering mechanism."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-047",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Checked constant-folding trap behavior is tested in compiler/runtime paths, but ERR_NOT_DIR and Phi = 12 do not participate in folding or trap preservation."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-048",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Wrapped end-address rejection is implemented in user_validate_span; ERR_IS_DIR and FieldAddr = 13 are unrelated to span arithmetic or validation."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-049",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Generation invalidation should land in arena/generation bookkeeping, not ERR_INVALID, and IndexAddr = 14 only restates the current opcode number."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-050",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Join-path move-permission clearing is exercised in compiler move-analysis tests, whereas ERR_EOF and AddrOf = 15 do not touch that dataflow."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-051",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "IPC wake-generation handoff lives in wait/scheduler wake paths; ERR_TIMEOUT and Deref = 16 do not implement or evidence a single-generation wake contract."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-052",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Redo replay fence handling belongs in WAL replay/commit-chain logic, not ERR_AGAIN, and Load = 17 is a no-op explicit ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-053",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Quota refill promotion should modify scheduler/quota code, but ERR_CANCELED and Store = 18 do not reach priority-queue refill behavior."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-054",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Keeping syscall status and payload registers distinct belongs in syscall wrappers/ABI packing, while SYS_BLOCKED and SpillLoad = 19 are unrelated."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-055",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Rename wrapper path preservation is an SDK/syscall buffer-copy concern, not KIND_FREE, and SpillStore = 20 only restates the current opcode value."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-056",
+      "decision": "reject",
+      "source_anchor_valid": false,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "The kernel KIND_FILE constant is unrelated to loader ABI checks, and the ternary_compiler_ir.h anchor does not match the live file verbatim; even isolated, Syscall = 21 would be a no-op ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-057",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Application feature-mask agreement is implemented in build_tos_image.cpp and APP_MANIFEST surfaces, not KIND_DIR, and Wait = 22 only restates the existing opcode value."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-058",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Second-payload section alignment is an image/migration concern, while KIND_EXEC and TlbInv = 23 do not touch layout or packing logic."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-059",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Transitive Trit import discovery lives in tools/generate_source_manifests.py, not BOOTSTRAP_MAX_PAGES, and Fence = 24 merely repeats the current opcode ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-060",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Namespace-default quota persistence is handled by quota load/sync paths in kernel.trit, whereas BOOTSTRAP_RESERVED_PAGES and Tldr = 25 are unrelated."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-061",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Canonical guest paths and app registry generation are built in build_tos_image.cpp and validated by app/consumer-shell tests, not BOOTSTRAP_KERNEL_IMAGE_PAGES, and Tstr = 26 is a no-op ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-062",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Configured build-directory forwarding already runs through trit_tool.py default_build_dir/cmd_test and wrapper tests; BOOTSTRAP_BUFFER_POOL_HEADER_PAGES and Csrr = 27 do not target the runner path."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-063",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Production discovery for nested Windows shards would need runner/discovery changes, but tools/trit-test.ps1 is only a trampoline and BOOTSTRAP_WAL_RING_PAGES plus Csrw = 28 do not touch discovery."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-064",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Deterministic evidence ordering is already implemented with canonicalization and sorted traversals in generate_source_manifests.py; KERNEL_STATE_BASE and Csrrw = 29 are unrelated."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-065",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Release-staging image metadata should anchor in staging/image-builder dependencies, not KERNEL_BOOTED_ADDR, and Call = 30 only restates the current opcode value."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-066",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Page-local permission caching belongs in translation-span/TLB or VM permission-key logic, whereas BOOT_ALLOC_COUNT_ADDR and CallR = 31 do not implement that cache."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-067",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "Packed lane transform behavior belongs in lane/vector lowering or VM vector ops, not REL_ONLINE_ADDR, and Ret = 32 simply restates the current opcode ordinal."
+      ]
+    }
+  ]
+}

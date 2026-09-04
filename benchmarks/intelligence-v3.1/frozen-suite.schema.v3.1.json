@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/frozen-suite.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 frozen suite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "frozen_at", "subject_model_families", "task_order", "tasks", "protocol_sha256", "suite_sha256"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.frozen-suite.v3.1" },
+    "version": { "const": "3.1" },
+    "frozen_at": { "type": "string", "format": "date-time" },
+    "subject_model_families": { "const": ["gpt-5.6-luna", "gpt-5.6-sol"] },
+    "task_order": { "type": "array", "minItems": 100, "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "pattern": "^TC-V31-[A-Z0-9-]+$" } },
+    "tasks": {
+      "type": "array",
+      "minItems": 100,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "participant_bundle_hash", "grader_bundle_hash"],
+        "properties": {
+          "task_id": { "type": "string", "pattern": "^TC-V31-[A-Z0-9-]+$" },
+          "participant_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "grader_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "protocol_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "suite_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

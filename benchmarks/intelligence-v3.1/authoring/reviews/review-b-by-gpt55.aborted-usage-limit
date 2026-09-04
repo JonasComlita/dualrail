@@ -1,0 +1,444 @@
+{
+  "schema": "treatcode.intelligence.review-contribution.v3.1",
+  "version": "3.1",
+  "reviewer": {
+    "reviewer_id": "model-agent-gpt55-reviewer-b1",
+    "reviewer_kind": "model_agent",
+    "model": "gpt-5.5",
+    "reasoning_effort": "high",
+    "completed_at": "2026-08-28T15:22:55.0010441-07:00",
+    "attestation": "Reviewed as development evidence only against the visible repository source and TEST_MANIFEST.json. I verified source anchors separately from semantic task quality and did not repair any candidate."
+  },
+  "reviewed_contribution_sha256": "f89eb8fe18af8f9395912c5e015c7b09152d299711abcd4007783ec36f93da9e",
+  "reviews": [
+    {
+      "task_id": "TC-V31-FINAL-035",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "The anchors exist, but KERNEL_MAGIC and the Alloca enum ordinal do not reasonably explain a scheduler ready-ring wrap/dequeue defect.",
+        "The candidate is a shallow constant/opcode mutation pair; solving it would be restoration of obvious values, not scheduler reasoning."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-036",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "STORAGE_BLOCK_WORDS and Param ordinal anchors exist, but the title points to PID tombstone probing, whose real code uses PID_INDEX_* tables rather than this storage stride.",
+        "The two mutations are independent and do not create the claimed handoff-record ordering interaction."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-037",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "MMU_PAGE_WORDS and Const are real anchors, but the timer wheel has explicit TIMER_WHEEL_* structures; the mutation is not a bucket-generation cancellation bug.",
+        "The hidden-test story cannot be supported because the defect can be inferred by restoring a global page-size constant and enum ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-038",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "The superpage constant and Copy opcode anchors exist, but the VFS extent coalescing code is not specifically exercised by this paired ordinal change.",
+        "The claimed range-boundary/transfer interaction is unsupported; it is two unrelated shallow numeric edits."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-039",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "PTR_STATE_NULL and Add exist, but window FIFO behavior is implemented in WINDOW_EVENT_* queue state, not pointer-state classification.",
+        "The title would not lead a participant to the mutated surfaces, and the cross-SDK/kernel interaction is asserted rather than anchored."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-040",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "The mutation mixes PTR_STATE_UNKNOWN with the Sub opcode, but negative odd half-division should anchor in math_utils or numeric lowering rather than kernel pointer states.",
+        "Any fix is obvious restoration of constants/opcode numbering, so the hidden negative-boundary rationale is not nontrivial."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-041",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "PTR_STATE_VALID and Mul are valid anchors, but WAL checksum acceptance should involve ternary_redo_wal.h or WAL recovery state, not pointer-valid classification.",
+        "The paired edits are not an interacting WAL/numeric bug and do not support the claimed recovery hidden tests."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-042",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_NOT_FOUND and Div exist, but ternary lane conversion boundaries live in lane/scalar conversion code, not in a kernel filesystem-style error value.",
+        "The mutation does not require repository exploration beyond spotting two simple numeric changes."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-043",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_EXISTS and Tmod anchors exist, but neither maps to addressable-local spill metadata preservation.",
+        "The claimed initial build failure is unsupported because assigning an enum ordinal and changing an error constant are syntactically valid edits."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-044",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_NO_SPACE and Cvt exist, but phi predecessor label canonicalization should involve Phi/CFG or recovery metadata, not this unrelated error constant.",
+        "The multi-module and ABI claims are not supported by the concrete mutations."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-045",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_BAD_FD and Cmp exist, but vector call-area ABI width is not anchored to either mutation.",
+        "The title points to executable ABI surfaces while the actual edits are generic constant/opcode ordinal changes."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-046",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_BAD_PTR and Tsel are real anchors, but weak module initialization ordering is not evidenced by these surfaces.",
+        "The alleged restart/order interaction is not connected to the mutations and remains a shallow transcription fix."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-047",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_NOT_DIR and Phi anchors exist, but checked constant folding and runtime trap semantics would need frontend/backend or evaluator anchors.",
+        "Changing Phi's ordinal does not create a meaningful constant-folding/trap interaction."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-048",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_IS_DIR and FieldAddr exist, but user span wrap validation is implemented around user_validate_span and page arithmetic, not directory error classes.",
+        "The title does not reasonably guide participants to the mutated enum ordinal or error constant."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-049",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_INVALID and IndexAddr exist, but arena rollback generation invalidation is not anchored in arena code or generation state.",
+        "The proposed cross-module interaction is unsupported by the actual files changed."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-050",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_EOF and AddrOf are real anchors, but move analysis permissions should be tied to pointer dataflow/move-state logic, not an EOF error.",
+        "The candidate relies on a generic opcode ordinal mutation and lacks a defensible hidden-test interaction."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-051",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_TIMEOUT and Deref exist, but IPC wait handoff generation should anchor in wait_queue/process_block_on state rather than this opcode/error pair.",
+        "The mutated surfaces are independent and do not force the claimed wake-generation repair."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-052",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_AGAIN and Load exist, but redo replay transaction fencing should anchor in WAL replay records and durability checks.",
+        "The task can be solved by obvious restoration of a constant and opcode ordinal, so the replay hidden tests are not credible."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-053",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "ERR_CANCELED and Store exist, but priority-queue quota refill promotion is implemented in scheduler/quota paths, not this cancellation error value.",
+        "The alleged fairness interaction is not supported by the concrete mutations."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-054",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "SYS_BLOCKED and SpillLoad anchors exist, but SDK path syscall status/payload register separation should involve syscall wrappers and kernel return packing.",
+        "The build-failure and ABI flags are overstated for syntactically valid shallow value changes."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-055",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KIND_FREE and SpillStore exist, but generated rename-wrapper preservation of copied paths is not anchored to the mutated opcode/error-class-style value.",
+        "The candidate conflates VFS kind constants with wrapper path-copy behavior without showing an interaction."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-056",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KIND_FILE and Syscall ordinal anchors exist, but executable ABI mismatch rejection should involve executable-header/loader ABI fields.",
+        "The reference solution is inferable by restoring obvious values, not by understanding loader entry validation."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-057",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KIND_DIR and Wait anchors exist, but application feature masks are declared in app/image manifests and builder code rather than inode kind ordinals.",
+        "The feature-mask hidden scenario is unsupported by the selected mutations."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-058",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KIND_EXEC and TlbInv anchors exist, but migration section alignment is an image/migration concern rather than an executable inode kind plus TLB opcode ordinal.",
+        "The edits are unrelated and do not support the claimed second-payload alignment failure."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-059",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOTSTRAP_MAX_PAGES and Fence anchors exist, but transitive Trit import discovery belongs in source-manifest tooling.",
+        "The initial signal would lead to tools/generate_source_manifests.py, while the actual mutations are generic kernel capacity and opcode ordinal edits."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-060",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOTSTRAP_RESERVED_PAGES and Tldr anchors exist, but namespace quota default persistence is handled by quota policy load/sync paths rather than bootstrap reserve size.",
+        "The claimed manifest/SDK/restart precedence interaction is not grounded in the selected mutations."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-061",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOTSTRAP_KERNEL_IMAGE_PAGES and Tstr anchors exist, but canonical guest paths should anchor in APP_MANIFEST/build_tos_image path construction.",
+        "The candidate uses a layout-reservation constant and opcode ordinal instead of a path canonicalization defect."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-062",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOTSTRAP_BUFFER_POOL_HEADER_PAGES and Csrr anchors exist, but focused runner build-dir forwarding is in tools/trit_tool.py and tools/trit-test.ps1.",
+        "The kernel/IR mutations do not align with the tooling signal and do not support the multi-module claim."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-063",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOTSTRAP_WAL_RING_PAGES and Csrw anchors exist, but Windows nested test-shard discovery is a runner/path-normalization issue.",
+        "The selected mutations are unrelated to production discovery and make the hidden shard rationale unsupported."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-064",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KERNEL_STATE_BASE and Csrrw anchors exist, but deterministic generated manifest evidence order belongs in tools/generate_source_manifests.py sorting/canonicalization.",
+        "The title would not reasonably lead to restoring a kernel state-base constant and IR opcode ordinal."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-065",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "KERNEL_BOOTED_ADDR and Call anchors exist, but release staging metadata copying is a CMake/staging dependency issue.",
+        "The mutations do not create or require the claimed image-metadata copy repair."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-066",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "BOOT_ALLOC_COUNT_ADDR and CallR anchors exist, but translation span cache permission keys should anchor in VM state or pointer-dataflow cache code.",
+        "The performance claim is unsupported because the mutations are shallow address/opcode changes, not cache-invalidation logic."
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-067",
+      "decision": "reject",
+      "source_anchor_valid": true,
+      "semantic_alignment": false,
+      "cross_module_interaction": false,
+      "hidden_tests_nontrivial": false,
+      "feature_claims_supported": false,
+      "findings": [
+        "REL_ONLINE_ADDR and Ret anchors exist, but packed lane transform allocation behavior should anchor in tcl_backend or lane/SIMD transformation code.",
+        "The candidate does not force bit-exact packed lowering work; it is an unrelated state-address and return-op ordinal mutation."
+      ]
+    }
+  ]
+}

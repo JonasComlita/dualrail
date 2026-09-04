@@ -16,6 +16,15 @@
     "/openapi.json": {
       "get": {"operationId": "getOpenApi", "responses": {"200": {"description": "This OpenAPI document"}}}
     },
+    "/coverage.json": {
+      "get": {"operationId": "getCoverage", "responses": {"200": {"description": "Complete collection and stack coverage report", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}}
+    },
+    "/relationship-index.json": {
+      "get": {"operationId": "getRelationshipIndex", "responses": {"200": {"description": "Complete public relationship edge index", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}}
+    },
+    "/freshness.json": {
+      "get": {"operationId": "getFreshness", "responses": {"200": {"description": "Snapshot and repository-index freshness report", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}}
+    },
     "/projects": {"$ref": "#/components/pathItems/collection"},
     "/stack-nodes": {"$ref": "#/components/pathItems/collection"},
     "/components": {"$ref": "#/components/pathItems/collection"},
@@ -36,6 +45,13 @@
         "responses": {"200": {"description": "One provenance-backed entity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}
       }
     },
+    "/{resource}/{id}/relations": {
+      "get": {
+        "operationId": "getResourceRelations",
+        "parameters": [{"$ref": "#/components/parameters/resource"}, {"$ref": "#/components/parameters/id"}],
+        "responses": {"200": {"description": "All public relationship edges touching an entity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}, "404": {"$ref": "#/components/responses/NotFound"}}
+      }
+    },
     "/search": {
       "get": {
         "operationId": "searchPublicGraph",
@@ -43,6 +59,7 @@
           {"name": "q", "in": "query", "required": true, "schema": {"type": "string", "minLength": 1}},
           {"name": "mode", "in": "query", "schema": {"type": "string", "enum": ["exact", "symbol", "relationship", "semantic"], "default": "semantic"}},
           {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25}}
+          ,{"name": "offset", "in": "query", "schema": {"type": "integer", "minimum": 0, "default": 0}}
         ],
         "responses": {"200": {"description": "Ranked search matches with provenance", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SearchEnvelope"}}}}}
       }
@@ -134,13 +151,16 @@
           "runs": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
           "releases": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
           "gaps": {"type": "array", "items": {"$ref": "#/components/schemas/Entity"}},
-          "relations": {"type": "array", "items": {"type": "object", "required": ["from", "type", "to"]}},
+          "relations": {"type": "array", "items": {"type": "object", "required": ["from", "type", "to"], "properties": {"from": {"type": "string"}, "type": {"type": "string"}, "to": {"type": "string"}, "source_refs": {"type": "array", "items": {"$ref": "#/components/schemas/Provenance"}}, "source_span": {"type": "object", "properties": {"start_line": {"type": "integer"}, "end_line": {"type": "integer"}}}, "origin": {"type": "string"}}}},
+          "coverage": {"type": "object", "description": "Machine-readable complete-inventory coverage manifest.", "additionalProperties": true},
+          "relationship_index": {"type": "object", "description": "Complete public relationship edges and explicitly explained external edges.", "additionalProperties": true},
+          "freshness": {"type": "object", "description": "Snapshot and P03 repository-index freshness and provenance state.", "additionalProperties": true},
           "statistics": {"type": "object", "additionalProperties": {"type": "integer"}}
         }
       },
       "SearchMatch": {
         "type": "object",
-        "required": ["entity_type", "entity_id", "name", "match_type", "score", "provenance"],
+        "required": ["entity_type", "entity_id", "name", "match_type", "score", "match_reason", "provenance"],
         "properties": {
           "entity_type": {"type": "string"},
           "entity_id": {"type": "string"},
@@ -148,6 +168,7 @@
           "match_type": {"type": "string"},
           "score": {"type": "number"},
           "matched_fields": {"type": "array", "items": {"type": "string"}},
+          "match_reason": {"type": "string"},
           "provenance": {"type": "array", "items": {"$ref": "#/components/schemas/Provenance"}}
         }
       },

@@ -1,0 +1,40 @@
+{
+  "schema": "treatcode.intelligence.calibration-plan.v3.1",
+  "version": "3.1",
+  "status": "configurations_assigned_awaiting_validated_executable_candidates",
+  "official": false,
+  "excluded_model_families": ["gpt-5.6-luna", "gpt-5.6-sol"],
+  "cohorts": {
+    "weak": {
+      "assignments": [
+        { "model_family": "gpt-5.4", "reasoning_effort": "low" },
+        { "model_family": "gpt-5.5", "reasoning_effort": "low" },
+        { "model_family": "gpt-5.6-terra", "reasoning_effort": "low" }
+      ],
+      "minimum_models": 2
+    },
+    "medium": {
+      "assignments": [
+        { "model_family": "gpt-5.4", "reasoning_effort": "high" },
+        { "model_family": "gpt-5.5", "reasoning_effort": "high" },
+        { "model_family": "gpt-5.6-terra", "reasoning_effort": "high" }
+      ],
+      "minimum_models": 2
+    },
+    "frontier": {
+      "assignments": [
+        { "model_family": "gpt-5.4", "reasoning_effort": "xhigh" },
+        { "model_family": "gpt-5.5", "reasoning_effort": "xhigh" },
+        { "model_family": "gpt-5.6-terra", "reasoning_effort": "max" }
+      ],
+      "minimum_models": 2
+    }
+  },
+  "authorship_contamination_policy": "For each task, exclude its author model family. The remaining two distinct model families supply all three cohorts, preserving two models per cohort without subject-family or author-family exposure.",
+  "expected_observations_per_task": 18,
+  "expected_total_observations_for_100_tasks": 1800,
+  "runs_per_configuration": 3,
+  "fresh_context_per_task": true,
+  "one_attempt_per_task_per_run": true,
+  "selection_policy": "Accept only complete, provenance-bound observations; revise or replace rejected items without exposing accepted candidates to Luna or Sol."
+}

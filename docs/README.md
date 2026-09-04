@@ -18,6 +18,11 @@ For the agent-sized TreatCode platform implementation plans and objective
 completion gates, use
 [`11_TreatCode_Platform/PLAN_INDEX.md`](11_TreatCode_Platform/PLAN_INDEX.md).
 
+For the cross-layer future plan covering device interoperability, native GUI
+framework work, modular/unikernel profiles, and vector/matrix/low-precision
+acceleration, use
+[`12_Future_Architecture/platform_evolution_plan.md`](12_Future_Architecture/platform_evolution_plan.md).
+
 ---
 
 ## Layer Map (Bottom to Top)
@@ -97,6 +102,9 @@ completion gates, use
 - **[11_TreatCode_Platform/README.md](11_TreatCode_Platform/README.md)** - Program purpose and execution rules
 - **[11_TreatCode_Platform/PLAN_INDEX.md](11_TreatCode_Platform/PLAN_INDEX.md)** - Bounded plan dependency order
 - **[11_TreatCode_Platform/COMPLETION_PROTOCOL.md](11_TreatCode_Platform/COMPLETION_PROTOCOL.md)** - Verifiable completion requirements
+
+### Future Platform Architecture
+- **[12_Future_Architecture/platform_evolution_plan.md](12_Future_Architecture/platform_evolution_plan.md)** - Cross-layer plan for accelerators, system profiles/unikernels, TritUI, and binary device interoperability
 
 ---
 

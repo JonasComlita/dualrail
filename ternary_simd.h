@@ -87,6 +87,7 @@ template<>
 template<typename Lane>
 [[nodiscard]] inline TritLane1 compareResult(int8_t value) {
     (void)sizeof(Lane);
+    if (value == backend::TRIT_COMPARE_INVALID) return TritLane1::invalid();
     TritLane1 out;
     out.setTrit(0, value);
     return out;

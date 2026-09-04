@@ -35,7 +35,7 @@ class TreatCodePlanVerifierTests(unittest.TestCase):
     def test_manifest_covers_index(self) -> None:
         report = self.validate_manifest(self.load_manifest())
         self.assertTrue(report["ok"], report)
-        self.assertEqual(report["plan_count"], 14)
+        self.assertEqual(report["plan_count"], 17)
 
     def test_missing_dependency_is_rejected(self) -> None:
         manifest = self.load_manifest()

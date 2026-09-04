@@ -109,4 +109,42 @@ package trit_pkg;
         endcase
         return result;
     endfunction
+
+    function automatic trit_t trit_add_sum(
+        input trit_t a,
+        input trit_t b,
+        input trit_t carry_i
+    );
+        trit_add_result_t result;
+
+        result = trit_add3(a, b, carry_i);
+        return result.sum;
+    endfunction
+
+    function automatic trit_t trit_add_carry(
+        input trit_t a,
+        input trit_t b,
+        input trit_t carry_i
+    );
+        trit_add_result_t result;
+
+        result = trit_add3(a, b, carry_i);
+        return result.carry;
+    endfunction
+
+    function automatic trit_t trit_transfer_apply(
+        input trit_t carry_i,
+        input trit_t carry_if_neg,
+        input trit_t carry_if_zero,
+        input trit_t carry_if_pos
+    );
+        // A carry transition is a three-entry function. Composing these
+        // functions is associative, which permits a parallel-prefix network.
+        case (carry_i)
+            TRIT_NEG:  return carry_if_neg;
+            TRIT_ZERO: return carry_if_zero;
+            TRIT_POS:  return carry_if_pos;
+            default:   return TRIT_INVALID;
+        endcase
+    endfunction
 endpackage

@@ -215,5 +215,7 @@ docs/
 ├── 07_OS_Substrate/           # Kernel and syscalls
 ├── 08_Applications/           # App SDK and bundled apps
 ├── 09_Host_Runtime/           # Build system, image format, host tools
-└── 10_Benchmarks/             # Doom-class and BitNet-class system benchmarks
+├── 10_Benchmarks/             # Doom-class and BitNet-class system benchmarks
+├── 11_TreatCode_Platform/     # Collaboration, learning, and project operations
+└── 12_Future_Architecture/    # Accepted future scope and dependency plans
 ```

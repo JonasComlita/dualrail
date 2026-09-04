@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(appRoot, "..");
 const evidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P04");
+const p15EvidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P15");
 const checks = [];
 const errors = [];
 
@@ -25,6 +26,8 @@ try {
   assert(app.includes('aria-label="Search mode"'), "search mode control has no accessible name");
   assert(app.includes('aria-live="polite"'), "snapshot fallback has no live status");
   assert(app.includes('aria-label="Stack phases"'), "stack navigation has no accessible name");
+  assert(app.includes('aria-label="Pagination"'), "paginated public collections have no accessible navigation name");
+  assert(app.includes('route.page === "evidence"') && app.includes('route.page === "resource"'), "evidence and resource routes are not represented in the accessible public app");
   assert(app.includes('target="_blank"') && app.includes('rel="noreferrer"'), "source citations lack external-link behavior");
   const css = fs.readFileSync(path.join(appRoot, "public", "public-shell.css"), "utf8");
   assert(css.includes("overflow-x: hidden") && css.includes("max-width: 520px"), "responsive overflow safeguards are missing");
@@ -38,6 +41,8 @@ try {
 const report = { schema: "treatcode.public_accessibility.v1", ok: errors.length === 0, checks, errors };
 fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(evidenceRoot, "accessibility.json"), `${JSON.stringify(report, null, 2)}\n`);
+fs.mkdirSync(p15EvidenceRoot, { recursive: true });
+fs.writeFileSync(path.join(p15EvidenceRoot, "accessibility.json"), `${JSON.stringify({ ...report, schema: "treatcode.public.accessibility.v1", viewport_contracts: [390, 768, 1280] }, null, 2)}\n`);
 console.log(`P04 accessibility: ${report.ok ? "passed" : "failed"}`);
 for (const check of checks) console.log(`  [ok] ${check}`);
 for (const error of errors) console.error(`  [fail] ${error}`);

@@ -58,27 +58,7 @@ module trit_full_adder (
 );
     import trit_pkg::*;
 
-    always_comb begin
-        if (!trit_pkg::trit_valid(a) ||
-            !trit_pkg::trit_valid(b) ||
-            !trit_pkg::trit_valid(carry_i)) begin
-            sum     = TRIT_INVALID;
-            carry_o = TRIT_INVALID;
-        end else begin
-            case (trit_pkg::trit_decode(a) +
-                  trit_pkg::trit_decode(b) +
-                  trit_pkg::trit_decode(carry_i))
-                -3'sd3: begin sum = TRIT_ZERO; carry_o = TRIT_NEG;  end
-                -3'sd2: begin sum = TRIT_POS;  carry_o = TRIT_NEG;  end
-                -3'sd1: begin sum = TRIT_NEG;  carry_o = TRIT_ZERO; end
-                 3'sd0: begin sum = TRIT_ZERO; carry_o = TRIT_ZERO; end
-                 3'sd1: begin sum = TRIT_POS;  carry_o = TRIT_ZERO; end
-                 3'sd2: begin sum = TRIT_NEG;  carry_o = TRIT_POS;  end
-                 3'sd3: begin sum = TRIT_ZERO; carry_o = TRIT_POS;  end
-                default: begin sum = TRIT_INVALID; carry_o = TRIT_INVALID; end
-            endcase
-        end
-    end
+    always_comb {sum, carry_o} = trit_pkg::trit_add3(a, b, carry_i);
 endmodule
 
 module trit_tsel #(

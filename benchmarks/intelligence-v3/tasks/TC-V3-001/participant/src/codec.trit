@@ -1,0 +1,30 @@
+// Four values in [-3, 3] are stored as least-significant-first base-7 digits.
+// Starter defect: digit_at still uses the old base-3 codec.
+
+fn place_weight(slot: t40) -> t40 {
+    if slot == 0 { return 1; }
+    if slot == 1 { return 7; }
+    if slot == 2 { return 49; }
+    return 343;
+}
+
+fn digit_at(packed: t40, slot: t40) -> t40 {
+    var shifted: t40 = packed;
+    if slot == 1 { shifted = packed / 7; }
+    if slot == 2 { shifted = packed / 49; }
+    if slot == 3 { shifted = packed / 343; }
+    let quotient: t40 = shifted / 3;
+    let multiple: t40 = quotient * 3;
+    return shifted - multiple;
+}
+
+fn value_at(packed: t40, slot: t40) -> t40 {
+    return digit_at(packed, slot) - 3;
+}
+
+fn append_value(packed: t40, slot: t40, value: t40) -> t40 {
+    if slot == 0 { return packed + value + 3; }
+    if slot == 1 { return packed + (value + 3) * 7; }
+    if slot == 2 { return packed + (value + 3) * 49; }
+    return packed + (value + 3) * 343;
+}

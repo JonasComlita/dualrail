@@ -23,7 +23,7 @@ tag-preserving select behavior.
 
 - `rtl/trit_pkg.sv`: shared encoding constants and synthesizable helper functions.
 - `rtl/trit_gates.sv`: single-trit gates, TSEL, and balanced ternary full adder.
-- `rtl/trit_lane.sv`: parameterized packed-lane gates and ripple add/subtract.
+- `rtl/trit_lane.sv`: parameterized packed-lane gates and parallel-prefix add/subtract.
 - `rtl/trit_lane_alu.sv`: parameterized lane ALU wrapper over NEG/AND/OR/XSUM/ADD/SUB/TSEL.
 - `tb/trit_gate_tb.sv`: self-checking unit testbench.
 - `tb/trit_lane_alu_tb.sv`: self-checking lane ALU testbench.

@@ -13,7 +13,10 @@ const isPublicReadingRoute =
   normalizedPath.startsWith("/stack/") ||
   normalizedPath === "/learn" ||
   normalizedPath.startsWith("/learn/") ||
-  normalizedPath === "/search";
+  normalizedPath === "/search" ||
+  normalizedPath.startsWith("/resources") ||
+  normalizedPath === "/evidence" ||
+  normalizedPath.startsWith("/evidence/");
 
 const RouteApp = isImplementationArenaRoute
   ? React.lazy(() => import("./ImplementationArena"))
