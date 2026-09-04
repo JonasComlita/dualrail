@@ -16,7 +16,6 @@ try {
   const app = fs.readFileSync(path.join(appRoot, "src", "IntelligenceApp.tsx"), "utf8");
   const v31Panel = fs.readFileSync(path.join(appRoot, "src", "IntelligenceV31Panel.tsx"), "utf8");
   const css = fs.readFileSync(path.join(appRoot, "src", "intelligence.css"), "utf8");
-  const solutionGuides = fs.readFileSync(path.join(appRoot, "src", "solutionGuides.ts"), "utf8");
   const shell = fs.readFileSync(path.join(appRoot, "intelligence", "index.html"), "utf8");
   const vite = fs.readFileSync(path.join(appRoot, "vite.config.ts"), "utf8");
 
@@ -36,10 +35,8 @@ try {
   assert(app.includes("runner_ready") && app.includes("Runner pending"), "runner readiness is not surfaced before a suite task can submit");
   assert(app.includes("repository_shape") && app.includes("Capabilities under test") && app.includes("Hidden coverage"), "v2 difficulty, repository shape, or capability coverage is not surfaced");
   assert(app.includes("allowlisted files") && app.includes("parseSerializedSolution") && app.includes("// FILE:"), "task file contract or multi-file solution restoration is missing");
-  assert(app.includes("INTELLIGENCE_SOLUTION_GUIDES") && app.includes('data-testid="intelligence-learning-guide"') && app.includes("Plain English") && app.includes("Pseudocode"), "public solution learning notes are missing from the intelligence task view");
-  for (const taskId of ["TC-SWE-001", "TC-SWE-002", "TC-SWE-003", "TC-SWE-004", "TC-SWE-005"]) {
-    assert(solutionGuides.includes(`"${taskId}":`), `${taskId} is missing a public intelligence solution guide`);
-  }
+  assert(!app.includes("INTELLIGENCE_SOLUTION_GUIDES") && !app.includes('data-testid="intelligence-learning-guide"') && !app.includes('data-testid="discussion-panel"'), "practice solution guides or discussions are incorrectly mounted on the intelligence task view");
+  assert(app.includes('href="/practice"'), "intelligence view does not link participants to the practice problem solutions");
   assert(app.includes("IDENTITY_KEY") && app.includes("RUN_KEY_PREFIX"), "identity and run metadata are not persisted for reload recovery");
   assert(app.includes('aria-live="polite"') && app.includes('aria-label={`${task.id} allowlisted files`}'), "loading, selection, or file controls lack accessible live/name hooks");
   assert(css.includes(".intelligence-suite-grid") && css.includes(".intelligence-suite-card"), "suite catalog styles are missing");
@@ -58,6 +55,7 @@ try {
   checks.push("external 67% calibration stays labeled as a reference while local model-suite publication remains provenance-gated");
   checks.push("versioned and legacy suite/task metadata routes have resilient fallbacks");
   checks.push("identity, run receipt, and serialized multi-file solution state rehydrate on reload");
+  checks.push("practice solution guides and discussions stay attached to the practice problem view");
   checks.push("suite cards, live status, tabs, editor labels, and static shell metadata are accessible");
   checks.push("v3.1 phase status, paired statistics, task-pass matrix, target, and publication blockers are visible without claiming an official run");
 } catch (error) {

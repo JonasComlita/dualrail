@@ -97,16 +97,36 @@ interface AuthUiState {
   onLogout: () => void;
 }
 
-interface PracticeDiscussion {
-  id: string;
-  handle?: string;
-  body: string;
-  createdAt?: string;
-}
-
 interface PracticeSolution {
   id?: string;
   version?: number;
+  updatedAt?: string;
+}
+
+interface PublicSolutionMetrics {
+  runtime_ms: number | null;
+  memory_kib: number | null;
+  cycles: number | null;
+  compile_cycles: number | null;
+  tests_passed: number;
+  tests_total: number;
+  engine: string | null;
+  opt_level: string | null;
+}
+
+interface PublicPracticeSolution {
+  id: string;
+  title: string;
+  code: string;
+  language: string;
+  handle: string;
+  version?: number;
+  solved: boolean;
+  upvotes: number;
+  discussion: string;
+  metrics: PublicSolutionMetrics | null;
+  viewerHasUpvoted?: boolean;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -376,13 +396,16 @@ export default function App() {
   const [authActions, setAuthActions] = useState<string[]>(["read"]);
   const [authError, setAuthError] = useState("");
   const [savedSolution, setSavedSolution] = useState<PracticeSolution | null>(null);
+  const [postedSolutions, setPostedSolutions] = useState<PublicPracticeSolution[]>([]);
   const [solutionBusy, setSolutionBusy] = useState(false);
   const [solutionMessage, setSolutionMessage] = useState("");
   const [solutionError, setSolutionError] = useState("");
-  const [discussionBody, setDiscussionBody] = useState("");
-  const [discussions, setDiscussions] = useState<PracticeDiscussion[]>([]);
-  const [discussionBusy, setDiscussionBusy] = useState(false);
-  const [discussionMessage, setDiscussionMessage] = useState("");
+  const [problemTab, setProblemTab] = useState<"general" | "discussions">("general");
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
+  const [postExplanation, setPostExplanation] = useState("");
+  const [postPseudocode, setPostPseudocode] = useState("");
+  const [verifiedSubmission, setVerifiedSubmission] = useState<{ code: string; engine: string; optLevel: string } | null>(null);
+  const [voteBusySolutionId, setVoteBusySolutionId] = useState<string | null>(null);
   const [discussionError, setDiscussionError] = useState("");
   const [discussionLoading, setDiscussionLoading] = useState(false);
 
@@ -430,6 +453,7 @@ export default function App() {
       setAuthToken(token);
       setAuthIdentity(payload.data.identity?.display_name || null);
       setAuthActions(payload.data.credential.credential?.actions || []);
+      setVerifiedSubmission(null);
       setAuthError("");
     } catch {
       setAuthError("Auth service unavailable");
@@ -442,6 +466,7 @@ export default function App() {
     setAuthToken("");
     setAuthIdentity(null);
     setAuthActions(["read"]);
+    setVerifiedSubmission(null);
     setAuthError("");
   };
 
@@ -459,6 +484,8 @@ export default function App() {
     onLogin: (accessKey) => { void login(accessKey); },
     onLogout: logout,
   };
+
+  const hasParticipantSession = Boolean(authToken || window.localStorage.getItem("treatcode.intelligence.token"));
 
   const intelligenceRequest = async (paths: string[], init: RequestInit = {}) => {
     let lastError = new Error("Participant community API unavailable");
@@ -491,9 +518,9 @@ export default function App() {
     setDiscussionLoading(true);
     setDiscussionError("");
     try {
-      const [solutionPayload, discussionPayload] = await Promise.all([
-        intelligenceRequest([`/api/intelligence/v1/solutions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/solutions?task_id=${encodeURIComponent(problemId)}`, `/api/community/v1/solutions?challenge_id=${encodeURIComponent(problemId)}`]).catch(() => null),
-        intelligenceRequest([`/api/intelligence/v1/discussions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/discussions?task_id=${encodeURIComponent(problemId)}`, `/api/community/v1/discussions?challenge_id=${encodeURIComponent(problemId)}`]).catch((reason) => { throw reason; }),
+      const [solutionPayload, publicSolutionsPayload] = await Promise.all([
+        intelligenceRequest([`/api/intelligence/v1/solutions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/solutions?task_id=${encodeURIComponent(problemId)}`]).catch(() => null),
+        intelligenceRequest([`/api/community/v1/solutions?challenge_id=${encodeURIComponent(problemId)}&limit=25`]).catch(() => null),
       ]);
       const solution = solutionPayload?.data?.solution || solutionPayload?.solution || solutionPayload?.data;
       if (solution && typeof solution === "object") {
@@ -501,12 +528,34 @@ export default function App() {
       } else {
         setSavedSolution(null);
       }
-      const rawDiscussions = discussionPayload?.data?.discussions || discussionPayload?.discussions || discussionPayload?.data || [];
-      setDiscussions(Array.isArray(rawDiscussions) ? rawDiscussions.map((item: any, index: number) => ({ id: String(item.id || `discussion-${index}`), handle: item.handle || item.author_handle, body: String(item.body || item.content || ""), createdAt: item.created_at || item.createdAt })).filter((item: PracticeDiscussion) => item.body) : []);
-    } catch (error: any) {
-      setDiscussions([]);
-      setDiscussionError(error?.message || "Discussion list unavailable.");
-    } finally {
+      const rawPostedSolutions = publicSolutionsPayload?.data?.solutions || publicSolutionsPayload?.solutions || [];
+      setPostedSolutions(Array.isArray(rawPostedSolutions) ? rawPostedSolutions.map((item: any, index: number) => ({
+        id: String(item.id || item.solution_id || `posted-solution-${index}`),
+        title: String(item.title || "Solution"),
+        code: String(item.code || item.content || ""),
+        language: String(item.language || "trit"),
+         handle: String(item.owner_handle || item.handle || "participant"),
+         version: typeof item.version === "number" ? item.version : undefined,
+         solved: item.solved === true,
+         upvotes: typeof item.upvotes === "number" && Number.isFinite(item.upvotes) ? item.upvotes : 0,
+         discussion: String(item.discussion || item.discussion_body || ""),
+         metrics: item.metrics && typeof item.metrics === "object" ? {
+           runtime_ms: typeof item.metrics.runtime_ms === "number" ? item.metrics.runtime_ms : null,
+           memory_kib: typeof item.metrics.memory_kib === "number" ? item.metrics.memory_kib : null,
+           cycles: typeof item.metrics.cycles === "number" ? item.metrics.cycles : null,
+           compile_cycles: typeof item.metrics.compile_cycles === "number" ? item.metrics.compile_cycles : null,
+           tests_passed: typeof item.metrics.tests_passed === "number" ? item.metrics.tests_passed : 0,
+           tests_total: typeof item.metrics.tests_total === "number" ? item.metrics.tests_total : 0,
+           engine: typeof item.metrics.engine === "string" ? item.metrics.engine : null,
+           opt_level: typeof item.metrics.opt_level === "string" ? item.metrics.opt_level : null,
+         } : null,
+         viewerHasUpvoted: item.viewer_has_upvoted === true,
+         createdAt: item.created_at || item.createdAt,
+         updatedAt: item.updated_at || item.updatedAt,
+       })).filter((item: PublicPracticeSolution) => item.code) : []);
+     } catch (error: any) {
+       setDiscussionError(error?.message || "Discussion list unavailable.");
+     } finally {
       setDiscussionLoading(false);
     }
   };
@@ -515,24 +564,56 @@ export default function App() {
     if (activeProblem) void loadPracticeCommunity(activeProblem.id);
     else {
       setSavedSolution(null);
-      setDiscussions([]);
+      setPostedSolutions([]);
       setDiscussionError("");
     }
   }, [activeProblem?.id, authToken]);
 
+  const currentCodeIsVerified = Boolean(
+    verifiedSubmission
+    && verifiedSubmission.code === code
+    && verifiedSubmission.engine === compilerEngine
+    && verifiedSubmission.optLevel === optLevel,
+  );
+  const canPostSolution = Boolean(activeProblem?.lifecycle === "published" && hasParticipantSession && authActions.includes("artifact") && currentCodeIsVerified);
+
+  const openPostSolution = () => {
+    if (!canPostSolution) return;
+    setSolutionMessage("");
+    setSolutionError("");
+    setPostComposerOpen(true);
+  };
+
   const savePracticeSolution = async () => {
-    if (!activeProblem) return;
+    if (!activeProblem || !canPostSolution) return;
     setSolutionBusy(true);
     setSolutionMessage("");
     setSolutionError("");
     try {
-      const payload = await intelligenceRequest(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "/api/community/v1/solutions"], {
+      if (!postExplanation.trim()) {
+        throw new Error("Add a plain-English explanation before posting this solution.");
+      }
+      const payload = await intelligenceRequest(["/api/community/v1/solutions"], {
         method: "POST",
-        body: JSON.stringify({ task_id: activeProblem.id, challenge_id: activeProblem.id, title: `${activeProblem.id} solution`, code, language: "trit" }),
+        body: JSON.stringify({
+          task_id: activeProblem.id,
+          challenge_id: activeProblem.id,
+          solution_id: savedSolution?.id,
+          title: `${activeProblem.id} solution`,
+          code,
+          language: "trit",
+          visibility: "public",
+          explanation: postExplanation.trim(),
+          pseudocode: postPseudocode.trim() || undefined,
+        }),
       });
       const solution = payload?.data?.solution || payload?.solution || payload?.data || {};
       setSavedSolution({ id: solution.id || solution.solution_id, version: Number.isFinite(solution.version) ? solution.version : undefined, updatedAt: solution.updated_at || solution.created_at });
-      setSolutionMessage("Saved solution version.");
+      setSolutionMessage("Posted solution version publicly.");
+      setPostComposerOpen(false);
+      setPostExplanation("");
+      setPostPseudocode("");
+      await loadPracticeCommunity(activeProblem.id);
     } catch (error: any) {
       setSolutionError(error?.message || "Unable to save this solution.");
     } finally {
@@ -540,24 +621,28 @@ export default function App() {
     }
   };
 
-  const publishPracticeDiscussion = async () => {
-    if (!activeProblem || !discussionBody.trim()) return;
-    setDiscussionBusy(true);
-    setDiscussionMessage("");
+  const toggleSolutionVote = async (solutionId: string) => {
+    if (!hasParticipantSession) {
+      setDiscussionError("Log in or sign up to vote on community solutions.");
+      return;
+    }
+    setVoteBusySolutionId(solutionId);
     setDiscussionError("");
     try {
-      const payload = await intelligenceRequest(["/api/intelligence/v1/discussions", "/api/intelligence/discussions", "/api/community/v1/discussions"], {
+      const payload = await intelligenceRequest([`/api/community/v1/solutions/${encodeURIComponent(solutionId)}/vote`], {
         method: "POST",
-        body: JSON.stringify({ task_id: activeProblem.id, challenge_id: activeProblem.id, solution_id: savedSolution?.id, body: discussionBody.trim() }),
+        body: JSON.stringify({}),
       });
-      const item = payload?.data?.discussion || payload?.discussion || payload?.data || {};
-      setDiscussions((current) => [{ id: String(item.id || `discussion-${Date.now()}`), handle: item.handle || item.author_handle || authIdentity || "participant", body: String(item.body || item.content || discussionBody.trim()), createdAt: item.created_at || new Date().toISOString() }, ...current]);
-      setDiscussionBody("");
-      setDiscussionMessage("Discussion published.");
+      const vote = payload?.data || payload || {};
+      setPostedSolutions((current) => current.map((solution) => solution.id === solutionId ? {
+        ...solution,
+        upvotes: typeof vote.upvotes === "number" ? vote.upvotes : solution.upvotes,
+        viewerHasUpvoted: vote.upvoted === true,
+      } : solution));
     } catch (error: any) {
-      setDiscussionError(error?.message || "Unable to publish discussion.");
+      setDiscussionError(error?.message || "Unable to vote on this solution.");
     } finally {
-      setDiscussionBusy(false);
+      setVoteBusySolutionId(null);
     }
   };
 
@@ -585,7 +670,6 @@ export default function App() {
 
   const canTest = authActions.includes("test");
   const canSubmit = authActions.includes("test");
-  const hasParticipantSession = Boolean(authToken || window.localStorage.getItem("treatcode.intelligence.token"));
 
   const filteredProblems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -612,6 +696,13 @@ export default function App() {
   function openProblem(p: Problem) {
     setActiveProblem(p);
     setCode(p.template || DEFAULT_STARTER_CODE);
+    setProblemTab("general");
+    setPostComposerOpen(false);
+    setPostExplanation("");
+    setPostPseudocode("");
+    setVerifiedSubmission(null);
+    setSolutionMessage("");
+    setSolutionError("");
     setTasmOutput("");
     setVmConsoleOutput("TreatCode Terminal initialized. Select a problem and click Run Code to begin.");
     setRegisters({});
@@ -654,6 +745,7 @@ export default function App() {
           code,
           engine: compilerEngine,
           optLevel,
+          solutionId: savedSolution?.id,
         }),
       });
 
@@ -706,6 +798,7 @@ export default function App() {
   const handleSubmit = async () => {
     if (!activeProblem) return;
     setRunning(true);
+    setVerifiedSubmission(null);
     setTasmOutput("");
     setVmConsoleOutput("Submitting solution for verification...\nAuthenticated participant session\nRunning all test cases...\n");
     setOutputTab("vm");
@@ -719,6 +812,7 @@ export default function App() {
           code,
           engine: compilerEngine,
           optLevel,
+          solutionId: savedSolution?.id,
         }),
       });
 
@@ -758,6 +852,7 @@ export default function App() {
         successText += `Test Case ${tc.testCase}: PASSED (${(tc.cycles || 0).toLocaleString()} cycles)\n`;
       });
       setVmConsoleOutput(successText);
+      setVerifiedSubmission({ code, engine: compilerEngine, optLevel });
 
       // Save previous registers for highlighting delta updates
       setPrevRegisters(registers);
@@ -774,6 +869,10 @@ export default function App() {
 
       // Reload leaderboard to show the updated rank
       await loadLeaderboard();
+      // Refresh the public feed so an accepted post immediately shows its
+      // author-specific solved state (and keep the code-hash check on the
+      // server authoritative when the editor differs from the posted code).
+      await loadPracticeCommunity(activeProblem.id);
 
       // Automatically switch to leaderboard tab
       setTimeout(() => {
@@ -894,9 +993,42 @@ export default function App() {
               </span>
               ))}
             </div>
-            {solutionGuide ? <a href="#solution-guide" style={{ display: "inline-block", marginBottom: 14, color: "var(--color-accent-blue)", fontSize: 11, textDecoration: "none" }}>Read the solution approach ↓</a> : null}
-
             <div
+              role="tablist"
+              aria-label="Problem information"
+              style={{ display: "flex", gap: 0, borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 16 }}
+            >
+              {([
+                ["general", "General information"],
+                ["discussions", `Discussions${postedSolutions.length ? ` · ${postedSolutions.length}` : ""}`],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={problemTab === tab}
+                  onClick={() => setProblemTab(tab)}
+                  style={{
+                    border: "none",
+                    borderBottom: problemTab === tab ? "2px solid var(--color-text-primary)" : "2px solid transparent",
+                    background: "transparent",
+                    color: problemTab === tab ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: problemTab === tab ? 600 : 400,
+                    padding: "7px 10px",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {solutionMessage || solutionError ? <p role="status" aria-live="polite" style={{ margin: "-4px 0 12px", fontSize: 10, color: solutionError ? "#b33" : "var(--color-text-secondary)" }}>{solutionError || solutionMessage}</p> : null}
+
+            {problemTab === "general" ? (
+              <>
+                {solutionGuide ? <a href="#solution-guide" style={{ display: "inline-block", marginBottom: 14, color: "var(--color-accent-blue)", fontSize: 11, textDecoration: "none" }}>Read the solution approach ↓</a> : null}
+                <div
               style={{
                 fontSize: 13,
                 lineHeight: 1.7,
@@ -1039,37 +1171,88 @@ export default function App() {
               )}
             </section>
 
-            <div data-testid="practice-community" style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 14, marginTop: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
-                <span style={{ fontSize: 10, fontWeight: 500, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Community discussion</span>
-                <a href="/intelligence#account" style={{ fontSize: 10, color: "var(--color-accent-blue)", textDecoration: "none" }}>account</a>
-              </div>
-              <p style={{ margin: "0 0 8px", fontSize: 10, lineHeight: 1.45, color: "var(--color-text-muted)" }}>Read the public learning note above first, then compare approaches or add your own explanation here.</p>
-              <textarea
-                aria-label="Solution explanation or pseudocode"
-                data-testid="practice-discussion-editor"
-                value={discussionBody}
-                onChange={(event) => setDiscussionBody(event.target.value)}
-                placeholder="Explain your approach or pseudocode…"
-                style={{ width: "100%", minHeight: 72, resize: "vertical", border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: 8, fontSize: 11, lineHeight: 1.45 }}
-              />
-              <button
-                type="button"
-                data-testid="practice-publish-discussion"
-                onClick={() => void publishPracticeDiscussion()}
-                disabled={discussionBusy || !hasParticipantSession || !discussionBody.trim()}
-                style={{ marginTop: 7, fontSize: 11, padding: "5px 9px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: discussionBusy || !hasParticipantSession ? "default" : "pointer", opacity: discussionBusy || !hasParticipantSession ? 0.6 : 1 }}
+              </>
+            ) : (
+              <section
+                id="community-solutions"
+                data-testid="practice-discussions-tab"
+                aria-labelledby="practice-discussions-title"
+                style={{ paddingTop: 2 }}
               >
-                {discussionBusy ? "publishing…" : "publish discussion"}
-              </button>
-              {!hasParticipantSession ? <p style={{ marginTop: 7, fontSize: 10, color: "var(--color-text-muted)" }}>Log in or sign up to save and discuss.</p> : null}
-              {discussionLoading ? <p role="status" aria-live="polite" style={{ marginTop: 7, fontSize: 10, color: "var(--color-text-secondary)" }}>Loading discussions…</p> : null}
-              {discussionError ? <p role="alert" style={{ marginTop: 7, fontSize: 10, color: "#b33" }}>{discussionError}</p> : null}
-              {solutionMessage || solutionError || discussionMessage ? <p role="status" aria-live="polite" style={{ marginTop: 7, fontSize: 10, color: solutionError ? "#b33" : "var(--color-text-secondary)" }}>{solutionError || solutionMessage || discussionMessage}</p> : null}
-              <div aria-label="Published solution discussions" style={{ marginTop: 10 }}>
-                {discussions.length ? discussions.map((discussion) => <article key={discussion.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)", padding: "8px 0" }}><div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--color-text-secondary)" }}>{discussion.handle || "participant"}</div><p style={{ marginTop: 4, whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.45, color: "var(--color-text-secondary)" }}>{discussion.body}</p></article>) : <p data-testid="practice-discussion-empty" style={{ marginTop: 9, fontSize: 10, color: "var(--color-text-muted)" }}>No discussions yet.</p>}
-              </div>
-            </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", marginBottom: 8 }}>
+                  <div>
+                    <div id="practice-discussions-title" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>Community discussions</div>
+                    <div style={{ marginTop: 3, fontSize: 10, color: "var(--color-text-muted)" }}>Verified solution posts, ranked by community approval.</div>
+                  </div>
+                  <span style={{ fontSize: 9, color: "var(--color-accent-blue)", fontFamily: "var(--font-mono)" }}>{postedSolutions.length} posts</span>
+                </div>
+                <p style={{ margin: "0 0 12px", fontSize: 10, lineHeight: 1.5, color: "var(--color-text-muted)" }}>
+                  Each post keeps the author&apos;s code, plain-English explanation, and measured verification results together. Use the helpful vote to move the clearest approaches to the top.
+                </p>
+                {discussionLoading ? <p role="status" aria-live="polite" style={{ margin: "0 0 10px", fontSize: 10, color: "var(--color-text-secondary)" }}>Loading community posts…</p> : null}
+                {discussionError ? <p role="alert" style={{ margin: "0 0 10px", fontSize: 10, color: "#b33" }}>{discussionError}</p> : null}
+                {!hasParticipantSession ? <p style={{ margin: "0 0 10px", fontSize: 10, color: "var(--color-text-muted)" }}>Log in or sign up to vote. To publish, first submit a passing solution from the workspace.</p> : null}
+                {postedSolutions.length ? (
+                  <div data-testid="practice-public-solutions" aria-label="Community solution discussions">
+                    {postedSolutions.map((solution, index) => (
+                      <article key={solution.id} data-testid="practice-discussion-post" style={{ borderTop: "0.5px solid var(--color-border-tertiary)", padding: "14px 0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                              <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>#{index + 1}</span>
+                              <strong style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{solution.title}</strong>
+                              <span style={{ fontSize: 10, color: "var(--color-text-secondary)", fontFamily: "var(--font-mono)" }}>by {solution.handle}</span>
+                            </div>
+                            <div style={{ marginTop: 4, fontSize: 9, color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>{solution.language}{solution.version ? ` · v${solution.version}` : ""}{solution.updatedAt ? ` · ${new Date(solution.updatedAt).toLocaleDateString()}` : ""}</div>
+                          </div>
+                          <span style={{ flexShrink: 0, fontSize: 9, fontFamily: "var(--font-mono)", color: solution.solved ? "#3B6D11" : "var(--color-text-secondary)" }}>{solution.solved ? "verified ✓" : "posted"}</span>
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 5, marginTop: 11 }}>
+                          {[
+                            ["runtime", solution.metrics?.runtime_ms === null || solution.metrics?.runtime_ms === undefined ? "—" : `${solution.metrics.runtime_ms} ms`],
+                            ["memory (RSS)", solution.metrics?.memory_kib === null || solution.metrics?.memory_kib === undefined ? "—" : `${solution.metrics.memory_kib} KiB`],
+                            ["cycles", solution.metrics?.cycles === null || solution.metrics?.cycles === undefined ? "—" : solution.metrics.cycles.toLocaleString()],
+                            ["tests", solution.metrics?.tests_total ? `${solution.metrics.tests_passed}/${solution.metrics.tests_total}` : "—"],
+                          ].map(([label, value]) => (
+                            <div key={label} style={{ background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 4, padding: "5px 6px" }}>
+                              <div style={{ fontSize: 8, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+                              <div style={{ marginTop: 2, fontSize: 10, color: "var(--color-text-primary)", fontFamily: "var(--font-mono)" }}>{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ marginTop: 5, fontSize: 9, color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>
+                          {solution.metrics?.engine || "engine unavailable"}{solution.metrics?.opt_level ? ` · ${solution.metrics.opt_level}` : ""}{solution.metrics?.compile_cycles !== null && solution.metrics?.compile_cycles !== undefined ? ` · compile ${solution.metrics.compile_cycles.toLocaleString()} cycles` : ""}
+                        </div>
+
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Plain-English discussion</div>
+                          {solution.discussion ? <p style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.5, color: "var(--color-text-secondary)" }}>{solution.discussion}</p> : <p style={{ margin: 0, fontSize: 10, color: "var(--color-text-muted)" }}>This post predates the explanation field.</p>}
+                        </div>
+
+                        <details style={{ marginTop: 10 }}>
+                          <summary style={{ cursor: "pointer", fontSize: 10, color: "var(--color-accent-blue)" }}>View code</summary>
+                          <pre style={{ margin: "7px 0 0", padding: 9, overflowX: "auto", whiteSpace: "pre-wrap", borderRadius: 5, background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-tertiary)", color: "var(--color-text-primary)", fontFamily: "var(--font-mono)", fontSize: 10, lineHeight: 1.55 }}><code>{solution.code}</code></pre>
+                        </details>
+
+                        <button
+                          type="button"
+                          data-testid="practice-solution-vote"
+                          onClick={() => void toggleSolutionVote(solution.id)}
+                          disabled={!hasParticipantSession || voteBusySolutionId === solution.id}
+                          title={hasParticipantSession ? "Mark this approach as helpful" : "Log in or sign up to vote"}
+                          style={{ marginTop: 11, fontSize: 10, padding: "5px 8px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: solution.viewerHasUpvoted ? "var(--color-background-secondary)" : "var(--color-background-primary)", color: "var(--color-text-secondary)", cursor: !hasParticipantSession || voteBusySolutionId === solution.id ? "default" : "pointer", opacity: !hasParticipantSession || voteBusySolutionId === solution.id ? 0.6 : 1 }}
+                        >
+                          👍 {solution.upvotes} {solution.viewerHasUpvoted ? "helpful" : "helpful"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p data-testid="practice-public-solutions-empty" style={{ margin: 0, fontSize: 10, color: "var(--color-text-muted)" }}>No verified solution discussions have been posted for this challenge yet.</p>
+                )}
+              </section>
+            )}
           </div>
 
           {/* Editor + output tabs split */}
@@ -1106,7 +1289,10 @@ export default function App() {
                     <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Engine:</label>
                     <select
                       value={compilerEngine}
-                      onChange={(e) => setCompilerEngine(e.target.value as "native" | "bootstrap")}
+                      onChange={(e) => {
+                        setCompilerEngine(e.target.value as "native" | "bootstrap");
+                        setVerifiedSubmission(null);
+                      }}
                       style={{
                         padding: "2px 4px",
                         fontSize: "11px",
@@ -1121,7 +1307,10 @@ export default function App() {
                     <label style={{ fontSize: 11, color: "var(--color-text-secondary)", fontWeight: 500 }}>Optim:</label>
                     <select
                       value={optLevel}
-                      onChange={(e) => setOptLevel(e.target.value)}
+                      onChange={(e) => {
+                        setOptLevel(e.target.value);
+                        setVerifiedSubmission(null);
+                      }}
                       style={{
                         padding: "2px 4px",
                         fontSize: "11px",
@@ -1136,7 +1325,10 @@ export default function App() {
 
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => setCode(activeProblem.template || DEFAULT_STARTER_CODE)}
+                    onClick={() => {
+                      setCode(activeProblem.template || DEFAULT_STARTER_CODE);
+                      setVerifiedSubmission(null);
+                    }}
                     style={{
                       fontSize: 12,
                       padding: "4px 12px",
@@ -1190,9 +1382,9 @@ export default function App() {
                   <button
                     type="button"
                     data-testid="practice-save-solution"
-                    onClick={() => void savePracticeSolution()}
-                    disabled={solutionBusy || !hasParticipantSession}
-                    title={hasParticipantSession ? "Save a versioned solution" : "Log in or sign up to save a solution"}
+                    onClick={openPostSolution}
+                    disabled={solutionBusy || !canPostSolution}
+                    title={canPostSolution ? "Post this verified solution publicly" : "Submit a passing solution before posting"}
                     style={{
                       fontSize: 12,
                       padding: "4px 12px",
@@ -1200,11 +1392,11 @@ export default function App() {
                       border: "0.5px solid var(--color-border-secondary)",
                       background: "var(--color-background-primary)",
                       color: "var(--color-text-secondary)",
-                      cursor: solutionBusy || !hasParticipantSession ? "default" : "pointer",
-                      opacity: solutionBusy || !hasParticipantSession ? 0.6 : 1,
+                      cursor: solutionBusy || !canPostSolution ? "default" : "pointer",
+                      opacity: solutionBusy || !canPostSolution ? 0.6 : 1,
                     }}
                   >
-                    {solutionBusy ? "saving…" : "save solution"}
+                    {solutionBusy ? "posting…" : "post solution"}
                   </button>
                 </div>
               </div>
@@ -1212,7 +1404,10 @@ export default function App() {
               {/* Textarea Code Input */}
               <textarea
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setVerifiedSubmission(null);
+                }}
                 spellCheck={false}
                 style={{
                   flex: 1,
@@ -1480,6 +1675,52 @@ export default function App() {
               </div>
             </div>
           </div>
+          {postComposerOpen ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="practice-post-solution-title"
+              data-testid="practice-post-composer"
+              style={{ position: "fixed", inset: 0, zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "rgba(0, 0, 0, 0.28)" }}
+            >
+              <div style={{ width: "min(620px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: 8, padding: 18, boxShadow: "0 12px 32px rgba(0,0,0,0.18)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+                  <div>
+                    <h2 id="practice-post-solution-title" style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Post solution</h2>
+                    <p style={{ margin: "5px 0 0", fontSize: 10, lineHeight: 1.45, color: "var(--color-text-muted)" }}>Your verified code and measured results will be posted with this explanation.</p>
+                  </div>
+                  <span style={{ fontSize: 9, color: "#3B6D11", fontFamily: "var(--font-mono)" }}>verification passed ✓</span>
+                </div>
+                <label style={{ display: "block", marginTop: 16, fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)" }}>
+                  Plain-English explanation <span style={{ color: "#A32D2D" }}>*</span>
+                  <textarea
+                    aria-label="Plain-English explanation"
+                    data-testid="practice-post-explanation"
+                    value={postExplanation}
+                    onChange={(event) => setPostExplanation(event.target.value)}
+                    placeholder="Explain your approach, why it works, and the important tradeoffs…"
+                    style={{ display: "block", width: "100%", minHeight: 112, resize: "vertical", marginTop: 6, border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: 9, fontSize: 11, lineHeight: 1.5, fontFamily: "var(--font-sans)" }}
+                  />
+                </label>
+                <label style={{ display: "block", marginTop: 13, fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)" }}>
+                  Pseudocode <span style={{ fontWeight: 400, color: "var(--color-text-muted)" }}>(optional)</span>
+                  <textarea
+                    aria-label="Pseudocode"
+                    data-testid="practice-post-pseudocode"
+                    value={postPseudocode}
+                    onChange={(event) => setPostPseudocode(event.target.value)}
+                    placeholder="Describe the steps without Trit syntax…"
+                    style={{ display: "block", width: "100%", minHeight: 82, resize: "vertical", marginTop: 6, border: "0.5px solid var(--color-border-secondary)", borderRadius: 5, padding: 9, fontSize: 11, lineHeight: 1.5, fontFamily: "var(--font-mono)" }}
+                  />
+                </label>
+                {solutionError ? <p role="alert" style={{ margin: "10px 0 0", fontSize: 10, color: "#b33" }}>{solutionError}</p> : null}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                  <button type="button" onClick={() => { setPostComposerOpen(false); setSolutionError(""); }} style={{ fontSize: 11, padding: "6px 11px", borderRadius: 4, border: "0.5px solid var(--color-border-secondary)", background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer" }}>cancel</button>
+                  <button type="button" data-testid="practice-confirm-post-solution" onClick={() => void savePracticeSolution()} disabled={solutionBusy || !postExplanation.trim()} style={{ fontSize: 11, padding: "6px 12px", borderRadius: 4, border: "none", background: "var(--color-border-primary)", color: "var(--color-background-primary)", cursor: solutionBusy || !postExplanation.trim() ? "default" : "pointer", opacity: solutionBusy || !postExplanation.trim() ? 0.6 : 1 }}>{solutionBusy ? "posting…" : "post solution"}</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );

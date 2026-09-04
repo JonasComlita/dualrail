@@ -43,6 +43,7 @@ try {
   });
   assert.equal(solution.owner_identity_id, restartedLogin.identity.id);
   assert.equal(solution.owner_handle, "ternary_dev");
+  assert.equal(solution.visibility, "private");
   assert.deepEqual(solution.metadata, { username: "caller-controlled-name" });
   const submission = community.recordChallengeSubmission(actor, {
     problem_id: "T001",
@@ -52,14 +53,61 @@ try {
   });
   assert.equal(submission.owner_handle, "ternary_dev");
   assert.notEqual(submission.owner_handle, "spoofed");
+  assert.equal(community.listPublicSolutions({ challenge_id: "T001" }).length, 0, "private benchmark drafts must not appear in the public solution feed");
+
+  const postedSolutionId = "tc:solution:posted";
+  const postedSubmission = community.recordChallengeSubmission(actor, {
+    problem_id: "T001",
+    solution_id: postedSolutionId,
+    code: "fn main() -> t40 { return 1; }",
+    outcome: "accepted",
+    engine: "bootstrap",
+    cycles: 12,
+    metrics: {
+      runtime_ms: 14,
+      memory_kib: 1024,
+      cycles: 12,
+      compile_cycles: 88,
+      tests_passed: 3,
+      tests_total: 3,
+      engine: "bootstrap",
+      opt_level: "-O2",
+    },
+  });
+  const published = community.publishSolution(actor, {
+    challenge_id: "T001",
+    solution_id: postedSolutionId,
+    title: "A posted practice solution",
+    code: "fn main() -> t40 { return 1; }",
+    visibility: "public",
+    explanation: "Return the required value directly after verification confirms the contract.",
+    pseudocode: "return 1",
+  });
+  const postedSolution = published.solution;
+  assert.equal(postedSubmission.solution_id, postedSolution.solution_id);
+  assert.equal(postedSubmission.metrics.runtime_ms, 14);
+  assert.equal(postedSubmission.metrics.memory_kib, 1024);
+  const publicSolutions = community.listPublicSolutions({ challenge_id: "T001" });
+  assert.equal(publicSolutions.length, 1);
+  assert.equal(publicSolutions[0].owner_handle, "ternary_dev");
+  assert.equal(publicSolutions[0].code, postedSolution.code);
+  assert.equal(publicSolutions[0].solved, true);
+  assert.equal(publicSolutions[0].upvotes, 0);
+  assert.equal(publicSolutions[0].metrics?.runtime_ms, 14);
+  assert(publicSolutions[0].discussion_body.includes("Plain-English explanation"));
+  assert.equal(community.toggleSolutionVote(actor, postedSolution.solution_id).upvotes, 1);
+  assert.equal(community.toggleSolutionVote(actor, postedSolution.solution_id).upvotes, 0);
+  assert.equal(community.toggleSolutionVote(actor, postedSolution.solution_id).upvotes, 1);
   const discussion = community.addDiscussion(actor, { challenge_id: "T001", body: "<script>alert(1)</script>A plain-text note." });
   assert.equal(discussion.author_handle, "ternary_dev");
   assert.equal(discussion.body, "alert(1)A plain-text note.");
 
   const communityRestart = new CommunityStore({ state_path: communityPath, now: () => now });
-  assert.equal(communityRestart.listSolutionRevisions({ challenge_id: "T001" }).length, 1);
-  assert.equal(communityRestart.listChallengeSubmissions({ challenge_id: "T001" }).length, 1);
-  assert.equal(communityRestart.listDiscussions({ challenge_id: "T001" }).length, 1);
+  assert.equal(communityRestart.listSolutionRevisions({ challenge_id: "T001" }).length, 2);
+  assert.equal(communityRestart.listChallengeSubmissions({ challenge_id: "T001" }).length, 2);
+  assert.equal(communityRestart.listPublicSolutions({ challenge_id: "T001" })[0].solved, true);
+  assert.equal(communityRestart.listPublicSolutions({ challenge_id: "T001" })[0].upvotes, 1);
+  assert.equal(communityRestart.listDiscussions({ challenge_id: "T001" }).length, 2);
   const state = readFileSync(communityPath, "utf8");
   assert(state.includes('"schema_version":"treatcode.community.state.v1"'));
   assert(!state.includes("must-not-persist"));

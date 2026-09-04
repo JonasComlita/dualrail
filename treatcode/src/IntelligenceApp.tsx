@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import "./intelligence.css";
 import "./treatcode-theme.css";
-import { INTELLIGENCE_SOLUTION_GUIDES } from "./solutionGuides";
 import { IntelligenceV31Panel } from "./IntelligenceV31Panel";
 
 type ApiRecord = Record<string, unknown>;
@@ -80,14 +79,6 @@ type SuiteModelScore = {
   official?: boolean;
 };
 
-type Discussion = {
-  id: string;
-  handle?: string;
-  body: string;
-  created_at?: string;
-  solution_id?: string;
-};
-
 type Solution = {
   id?: string;
   task_id?: string;
@@ -110,7 +101,6 @@ type IntelligencePayload = {
   tasks?: unknown[];
   catalog?: unknown[] | ApiRecord;
   task_catalog?: unknown[];
-  discussions?: Discussion[];
   solution?: Solution | null;
   latest_solution?: Solution | null;
   participant?: ApiRecord | null;
@@ -472,7 +462,6 @@ export default function IntelligenceApp() {
   const [modelSuiteLeaderboard, setModelSuiteLeaderboard] = useState<SuiteModelScore[]>([]);
   const [externalReference, setExternalReference] = useState<ExternalReference | null>(null);
   const [aggregateScore, setAggregateScore] = useState<number | null>(null);
-  const [discussions, setDiscussions] = useState<Discussion[]>([]);
   const [solution, setSolution] = useState<Solution | null>(null);
   const [code, setCode] = useState("// Start your TC-SWE-001 solution here.\n");
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
@@ -491,7 +480,6 @@ export default function IntelligenceApp() {
   const [password, setPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authError, setAuthError] = useState("");
-  const [discussionBody, setDiscussionBody] = useState("");
 
   const selectedTrial = useMemo(
     () => task.trials.find((trial) => trial.id === selectedTrialId) || task.trials[0],
@@ -508,16 +496,14 @@ export default function IntelligenceApp() {
       requestWithFallback([`${INTELLIGENCE_API}/catalog`, `${INTELLIGENCE_API}/tasks`, "/api/intelligence/catalog", "/api/intelligence/tasks"], {}, token).catch(() => ({})),
       requestWithFallback([`${INTELLIGENCE_API}/tasks/${encodeURIComponent(activeTaskId)}`, `${INTELLIGENCE_API}/benchmark?task_id=${encodeURIComponent(activeTaskId)}`, `/api/intelligence/tasks/${encodeURIComponent(activeTaskId)}`, `/api/intelligence/benchmark?task_id=${encodeURIComponent(activeTaskId)}`, `/api/intelligence?task_id=${encodeURIComponent(activeTaskId)}`]),
       requestWithFallback([`${INTELLIGENCE_API}/leaderboard?task_id=${encodeURIComponent(activeTaskId)}`, `/api/intelligence/leaderboard?task_id=${encodeURIComponent(activeTaskId)}`], {}, token).catch(() => ({})),
-      requestWithFallback([`${INTELLIGENCE_API}/discussions?task_id=${encodeURIComponent(activeTaskId)}`, `/api/intelligence/discussions?task_id=${encodeURIComponent(activeTaskId)}`, `/api/community/v1/discussions?challenge_id=${encodeURIComponent(activeTaskId)}`], {}, token).catch(() => ({})),
       token ? requestWithFallback([`${INTELLIGENCE_API}/solutions?task_id=${encodeURIComponent(activeTaskId)}`, `/api/intelligence/solutions?task_id=${encodeURIComponent(activeTaskId)}`, `/api/community/v1/solutions?challenge_id=${encodeURIComponent(activeTaskId)}`], {}, token).catch(() => ({})) : Promise.resolve({}),
       token && savedRunId ? requestJson(`${INTELLIGENCE_API}/runs/${encodeURIComponent(savedRunId)}`, {}, token).catch(() => ({})) : Promise.resolve({}),
-    ]).then(([catalogValue, taskValue, leaderboardValue, discussionValue, solutionValue, runValue]) => {
+    ]).then(([catalogValue, taskValue, leaderboardValue, solutionValue, runValue]) => {
       if (cancelled) return;
       const catalogPayload = unwrapPayload(catalogValue);
       const taskPayload = unwrapPayload(taskValue);
       const benchmark = payloadTaskId(taskPayload) === activeTaskId ? taskPayload : {} as IntelligencePayload;
       const leaderboard = unwrapPayload(leaderboardValue);
-      const discussionPayload = unwrapPayload(discussionValue);
       const solutionPayload = unwrapPayload(solutionValue);
       const catalogFromService = normalizeCatalog(catalogPayload);
       const suitePayload = asRecord(catalogPayload.suite || asRecord(catalogPayload.data).suite);
@@ -548,10 +534,6 @@ export default function IntelligenceApp() {
       const officialRows = normalizeLeaderboard(benchmark.official_leaderboard || benchmark.officialLeaderboard || leaderboard.official_leaderboard || leaderboard.official || leaderboard.leaderboard || leaderboard);
       setPublicLeaderboard(publicRows);
       setOfficialLeaderboard(officialRows);
-      setDiscussions(asArray<unknown>(benchmark.discussions || discussionPayload.discussions).map((item, index) => {
-        const value = asRecord(item);
-        return { id: stringValue(value.id, `discussion-${index}`), handle: stringValue(value.handle || value.username), body: stringValue(value.body || value.content), created_at: stringValue(value.created_at), solution_id: stringValue(value.solution_id) };
-      }).filter((item) => item.body));
       const loadedSolution = normalizeSolution(benchmark.solution || benchmark.latest_solution || solutionPayload.solution || solutionPayload.latest_solution);
       const parsedSolution = loadedSolution ? parseSerializedSolution(loadedSolution.code, normalizedTask.files) : {};
       const nextFiles = { ...starterFiles, ...parsedSolution };
@@ -602,7 +584,6 @@ export default function IntelligenceApp() {
     setFileContents(Object.fromEntries(nextTask.files.map((file) => [file.path, file.content || ""])));
     setCode(nextTask.files[0]?.content || "");
     setSolution(null);
-    setDiscussions([]);
     setPublicLeaderboard([]);
     setOfficialLeaderboard([]);
     setAggregateScore(null);
@@ -742,36 +723,6 @@ export default function IntelligenceApp() {
     }
   }
 
-  async function publishDiscussion(event: FormEvent) {
-    event.preventDefault();
-    setActionError("");
-    setActionMessage("");
-    if (!token) {
-      setActionError("Sign in or create an account before publishing a discussion.");
-      return;
-    }
-    if (!discussionBody.trim()) {
-      setActionError("Write an explanation or pseudocode before publishing.");
-      return;
-    }
-    setBusyAction("discussion");
-    try {
-      const value = await requestWithFallback([`${INTELLIGENCE_API}/discussions`, "/api/intelligence/discussions", "/api/community/v1/discussions"], { method: "POST", body: JSON.stringify({ task_id: task.id, challenge_id: task.id, solution_id: solution?.id, body: discussionBody.trim() }) }, token);
-      const payload = unwrapPayload(value);
-      const raw = asRecord(payload.discussion || payload.data || value);
-      const published: Discussion = { id: stringValue(raw.id, `discussion-${Date.now()}`), handle: identity || "participant", body: stringValue(raw.body || raw.content, discussionBody.trim()), created_at: stringValue(raw.created_at, new Date().toISOString()), solution_id: stringValue(raw.solution_id || solution?.id) };
-      setDiscussions((current) => [published, ...current]);
-      setDiscussionBody("");
-      setActionMessage("Discussion published and linked to this task.");
-    } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message || "Unable to publish the discussion." : "Unable to publish the discussion.");
-    } finally {
-      setBusyAction("");
-    }
-  }
-
-  const solutionGuide = INTELLIGENCE_SOLUTION_GUIDES[task.id];
-
   return (
     <div className="intelligence-app" data-testid="intelligence-app">
       <header className="intelligence-header">
@@ -849,16 +800,6 @@ export default function IntelligenceApp() {
           </aside>
         </section>
 
-        <section className="intelligence-panel intelligence-learning-panel" data-testid="intelligence-learning-guide" aria-labelledby="intelligence-learning-title">
-          <div className="intelligence-section-heading"><div><span className="intelligence-eyebrow">Public learning note · {task.id}</span><h2 id="intelligence-learning-title">Read the solution approach</h2></div><span className="intelligence-badge">plain English · pseudocode</span></div>
-          <p className="intelligence-muted">Use this explanation before opening the editor. It is a public teaching note, separate from private saved source and sealed verifier cases.</p>
-          {solutionGuide ? <div className="intelligence-learning-grid">
-            <article className="intelligence-learning-block"><h3>Plain English</h3><p>{solutionGuide.plainEnglish}</p></article>
-            <article className="intelligence-learning-block"><h3>Pseudocode</h3><pre><code>{solutionGuide.pseudocode}</code></pre></article>
-            <article className="intelligence-learning-block intelligence-learning-discussion"><h3>Discussion · why it works</h3><p>{solutionGuide.discussion}</p></article>
-          </div> : <p className="intelligence-empty">This task does not have a public learning note yet.</p>}
-        </section>
-
         <section className="intelligence-panel intelligence-solution-panel" data-testid="solution-workspace">
           <div className="intelligence-section-heading"><div><span className="intelligence-eyebrow">Participant workspace · {task.id}</span><h2>Save a versioned solution</h2></div><span className={`intelligence-badge ${solution ? "saved" : "pending"}`}>{solution ? `saved${solution.version ? ` · v${solution.version}` : ""}` : "unsaved"}</span></div>
           <div className="intelligence-file-tabs" role="tablist" aria-label={`${task.id} allowlisted files`}>{task.files.map((file) => <button key={file.path} type="button" role="tab" aria-selected={selectedFilePath === file.path} aria-controls="intelligence-solution-code" className={selectedFilePath === file.path ? "selected" : ""} onClick={() => { setSelectedFilePath(file.path); setCode(fileContents[file.path] ?? file.content ?? ""); }}>{file.path}</button>)}</div>
@@ -870,22 +811,9 @@ export default function IntelligenceApp() {
 
         <div className="intelligence-feedback" role="status" aria-live="polite" data-testid="intelligence-action-status">{actionMessage || actionError ? <span className={actionError ? "is-error" : ""}>{actionError || actionMessage}</span> : null}</div>
 
-        <section className="intelligence-community-grid">
-          <article className="intelligence-panel" data-testid="discussion-panel">
-            <div className="intelligence-section-heading"><div><span className="intelligence-eyebrow">Community artifact</span><h2>Solution discussion</h2></div><span className="intelligence-badge">plain text</span></div>
-            <p className="intelligence-muted">Publish an explanation, tradeoff, or pseudocode linked to your saved solution. Discussions are attributable to the session handle.</p>
-            <form onSubmit={publishDiscussion}>
-              <label className="intelligence-field-label" htmlFor="intelligence-discussion-body">Explanation or pseudocode</label>
-              <textarea id="intelligence-discussion-body" data-testid="discussion-editor" aria-label="Solution explanation or pseudocode" value={discussionBody} onChange={(event) => setDiscussionBody(event.target.value)} placeholder="Explain the invariant, approach, or pseudocode…" />
-              <button className="intelligence-secondary" type="submit" data-testid="publish-discussion" disabled={busyAction === "discussion"}>{busyAction === "discussion" ? "Publishing…" : "Publish discussion"}</button>
-            </form>
-            <div className="intelligence-discussion-list" aria-label="Published solution discussions">{discussions.length ? discussions.map((discussion) => <article className="intelligence-discussion" key={discussion.id}><div><strong>{discussion.handle || "participant"}</strong><small>{formatDate(discussion.created_at)}</small></div><p>{discussion.body}</p></article>) : <p className="intelligence-empty" data-testid="discussion-empty">No discussions yet. Be the first to explain a solution.</p>}</div>
-          </article>
-
-          <aside className="intelligence-panel" data-testid="account">
+        <section className="intelligence-panel intelligence-account-panel" data-testid="account">
             <div className="intelligence-section-heading"><div><span className="intelligence-eyebrow">Participant account</span><h2>{token ? "Session active" : "Join the benchmark"}</h2></div><span className="intelligence-badge">least privilege</span></div>
             {token ? <div className="intelligence-account-active"><strong>{identity || "Authenticated participant"}</strong><p>Your saved solutions and trial submissions are scoped to this account. Public benchmark evidence remains readable without a session.</p><button className="intelligence-secondary" type="button" onClick={logout}>Sign out</button></div> : <form className="intelligence-auth-form" onSubmit={authenticate}><div className="intelligence-auth-tabs" role="tablist" aria-label="Participant account actions"><button type="button" role="tab" aria-selected={authMode === "login"} className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>Log in</button><button type="button" role="tab" aria-selected={authMode === "register"} className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>Sign up</button></div><label className="intelligence-field-label" htmlFor="intelligence-handle">Handle<input id="intelligence-handle" data-testid="account-handle" value={handle} onChange={(event) => setHandle(event.target.value)} autoComplete="username" /></label><label className="intelligence-field-label" htmlFor="intelligence-password">Password<input id="intelligence-password" data-testid="account-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={authMode === "register" ? "new-password" : "current-password"} /></label><button className="intelligence-primary" data-testid={authMode === "register" ? "signup" : "login"} type="submit" disabled={busyAction === "auth"}>{busyAction === "auth" ? "Working…" : authMode === "register" ? "Create participant account" : "Log in"}</button>{authError ? <p className="intelligence-form-error" role="alert">{authError}</p> : null}{authMessage ? <p className="intelligence-form-message" role="status">{authMessage}</p> : null}</form>}
-          </aside>
         </section>
 
         <section className="intelligence-leaderboards" aria-label="Intelligence leaderboards">

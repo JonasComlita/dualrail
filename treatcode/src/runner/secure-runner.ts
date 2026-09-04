@@ -55,6 +55,8 @@ export interface BoundedCommandResult {
   stdout: string;
   stderr: string;
   durationMs: number;
+  /** Peak resident memory observed for this bounded child process, in KiB. */
+  peakMemoryKib?: number | null;
   timedOut: boolean;
   outputLimitExceeded: boolean;
   spawnError?: string;
@@ -63,6 +65,10 @@ export interface BoundedCommandResult {
 
 export interface WorkerOutput {
   success: boolean;
+  /** Wall-clock duration of the final compiler/VM execution command. */
+  runtimeMs?: number | null;
+  /** Peak RSS of the isolated worker process, reported in KiB. */
+  peakMemoryKib?: number | null;
   compileTimeCycles?: number;
   assembly?: string;
   cycles?: number | null;
@@ -145,6 +151,8 @@ export interface ExecutionResult {
   runId: string;
   state: Exclude<RunState, "queued" | "running">;
   success: boolean;
+  runtimeMs?: number | null;
+  peakMemoryKib?: number | null;
   compileTimeCycles?: number;
   assembly?: string;
   cycles?: number | null;
@@ -441,6 +449,45 @@ async function killProcessTree(child: ChildProcess): Promise<void> {
   }
 }
 
+async function childPeakMemoryKib(pid: number | undefined): Promise<number | null> {
+  if (!pid) return null;
+  if (process.platform !== "win32") {
+    try {
+      const status = await readFile(`/proc/${pid}/status`, "utf8");
+      const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+      return match ? Number.parseInt(match[1], 10) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const systemRoot = process.env.SystemRoot || process.env.WINDIR || "C:\\Windows";
+  const tasklist = path.join(systemRoot, "System32", "tasklist.exe");
+  return await new Promise<number | null>((resolve) => {
+    let output = "";
+    let settled = false;
+    const probe = spawn(tasklist, ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const finish = (value: number | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    probe.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8").slice(0, 4096);
+    });
+    probe.once("error", () => finish(null));
+    probe.once("close", () => {
+      const line = output.split(/\r?\n/).find((candidate) => candidate.includes(`"${pid}"`));
+      const match = line?.match(/"([\d,]+)\s+K"/);
+      finish(match ? Number.parseInt(match[1].replace(/,/g, ""), 10) : null);
+    });
+  });
+}
+
 function appendOutput(chunks: Buffer[], incoming: Buffer, remaining: number): number {
   if (remaining <= 0) return 0;
   const accepted = incoming.subarray(0, remaining);
@@ -466,8 +513,11 @@ export async function spawnBounded(
   let terminationReason: BoundedCommandResult["terminationReason"];
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let memoryTimer: ReturnType<typeof setInterval> | undefined;
   let abortHandler: (() => void) | undefined;
   let child: ChildProcess;
+  let peakMemoryKib: number | null = null;
+  let samplingMemory = false;
 
   const finish = (result: BoundedCommandResult): BoundedCommandResult => {
     if (timer) clearTimeout(timer);
@@ -491,6 +541,7 @@ export async function spawnBounded(
       stdout: "",
       stderr: "",
       durationMs: Date.now() - started,
+      peakMemoryKib: null,
       timedOut: false,
       outputLimitExceeded: false,
       spawnError: String(error),
@@ -504,15 +555,28 @@ export async function spawnBounded(
   };
 
   const result = await new Promise<BoundedCommandResult>((resolve) => {
-    const maybeFinish = (code: number | null, signal: NodeJS.Signals | null, spawnError?: string) => {
+    const sampleMemory = () => {
+      if (settled || samplingMemory || !child.pid) return;
+      samplingMemory = true;
+      void childPeakMemoryKib(child.pid).then((value) => {
+        if (value !== null) peakMemoryKib = Math.max(peakMemoryKib || 0, value);
+      }).finally(() => {
+        samplingMemory = false;
+      });
+    };
+    const maybeFinish = async (code: number | null, signal: NodeJS.Signals | null, spawnError?: string) => {
       if (settled) return;
       settled = true;
+      if (memoryTimer) clearInterval(memoryTimer);
+      const finalMemory = await childPeakMemoryKib(child.pid);
+      if (finalMemory !== null) peakMemoryKib = Math.max(peakMemoryKib || 0, finalMemory);
       resolve(finish({
         code,
         signal,
         stdout: Buffer.concat(stdoutChunks).toString("utf8"),
         stderr: Buffer.concat(stderrChunks).toString("utf8"),
         durationMs: Date.now() - started,
+        peakMemoryKib,
         timedOut,
         outputLimitExceeded,
         spawnError,
@@ -547,6 +611,9 @@ export async function spawnBounded(
         kill("timeout");
       }
     }, options.limits.wallTimeMs);
+
+    sampleMemory();
+    memoryTimer = setInterval(sampleMemory, 25);
 
     abortHandler = () => {
       if (!settled) kill("cancelled");
@@ -608,6 +675,8 @@ async function executeWorkerProcess(request: TritExecutionRequest, context: Work
   if (processResult.terminationReason === "cancelled") {
     return {
       success: false,
+      runtimeMs: processResult.durationMs,
+      peakMemoryKib: null,
       compilerOutput: processResult.stdout,
       stdout: processResult.stdout,
       stderr: processResult.stderr,
@@ -621,6 +690,8 @@ async function executeWorkerProcess(request: TritExecutionRequest, context: Work
   if (processResult.terminationReason === "timeout" || processResult.terminationReason === "output-limit") {
     return {
       success: false,
+      runtimeMs: processResult.durationMs,
+      peakMemoryKib: null,
       compilerOutput: processResult.stdout,
       stdout: processResult.stdout,
       stderr: processResult.stderr,
@@ -888,6 +959,8 @@ export class SecureExecutionQueue {
       }),
       result: await this.store.putJson({
         success: safeOutput.success,
+        runtimeMs: safeOutput.runtimeMs ?? null,
+        peakMemoryKib: safeOutput.peakMemoryKib ?? null,
         compileTimeCycles: safeOutput.compileTimeCycles ?? null,
         cycles: safeOutput.cycles ?? null,
         status: safeOutput.status ?? null,
@@ -945,6 +1018,8 @@ export class SecureExecutionQueue {
       runId: job.runId,
       state,
       success: state === "succeeded" && safeOutput.success,
+      runtimeMs: safeOutput.runtimeMs ?? null,
+      peakMemoryKib: safeOutput.peakMemoryKib ?? null,
       compileTimeCycles: safeOutput.compileTimeCycles,
       assembly: safeOutput.assembly,
       cycles: safeOutput.cycles,

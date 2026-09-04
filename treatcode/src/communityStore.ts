@@ -23,6 +23,7 @@ export const COMMUNITY_LIMITS = Object.freeze({
 });
 
 export type CommunityWriteAction = "artifact" | "test";
+export type SolutionVisibility = "private" | "public";
 
 export interface CommunityStoreOptions {
   /** Durable JSON state path. `null` explicitly selects process-local state. */
@@ -56,6 +57,7 @@ export interface SavedSolutionRevision {
   title: string;
   code: string;
   language: string;
+  visibility: SolutionVisibility;
   owner_identity_id: string;
   owner_handle: string;
   metadata: Record<string, unknown>;
@@ -71,7 +73,24 @@ export interface SaveSolutionRevisionInput {
   title?: string;
   code: string;
   language?: string;
+  visibility?: SolutionVisibility;
   metadata?: Record<string, unknown>;
+}
+
+export interface SolutionPerformanceMetrics {
+  runtime_ms: number | null;
+  memory_kib: number | null;
+  cycles: number | null;
+  compile_cycles: number | null;
+  tests_passed: number;
+  tests_total: number;
+  engine: string | null;
+  opt_level: string | null;
+}
+
+export interface PublishSolutionInput extends SaveSolutionRevisionInput {
+  explanation: string;
+  pseudocode?: string;
 }
 
 export interface ChallengeSubmissionRecord {
@@ -90,6 +109,7 @@ export interface ChallengeSubmissionRecord {
   metadata: Record<string, unknown>;
   outcome: "accepted" | "rejected" | "pending" | "unknown";
   cycles: number | null;
+  metrics: SolutionPerformanceMetrics;
   created_at: string;
 }
 
@@ -105,6 +125,7 @@ export interface ChallengeSubmissionInput {
   outcome?: ChallengeSubmissionRecord["outcome"];
   accepted?: boolean;
   cycles?: number;
+  metrics?: Partial<SolutionPerformanceMetrics>;
 }
 
 export interface DiscussionPost {
@@ -135,6 +156,22 @@ export interface AddDiscussionInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface SolutionVoteRecord {
+  schema_version: typeof COMMUNITY_API_SCHEMA_VERSION;
+  id: string;
+  solution_id: string;
+  voter_identity_id: string;
+  created_at: string;
+}
+
+export interface PublicSolutionRecord extends SavedSolutionRevision {
+  solved: boolean;
+  upvotes: number;
+  viewer_has_upvoted: boolean;
+  discussion_body: string;
+  metrics: SolutionPerformanceMetrics | null;
+}
+
 interface CommunityState {
   schema_version: typeof COMMUNITY_STATE_SCHEMA_VERSION;
   revision: number;
@@ -142,6 +179,7 @@ interface CommunityState {
   solution_revisions: SavedSolutionRevision[];
   submissions: ChallengeSubmissionRecord[];
   discussions: DiscussionPost[];
+  solution_votes: SolutionVoteRecord[];
 }
 
 export class CommunityStoreError extends Error {
@@ -277,6 +315,44 @@ function stateCopy(state: CommunityState): CommunityState {
   return clone(state);
 }
 
+function storedNumber(value: unknown, fallback: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER
+    ? Math.floor(value)
+    : fallback;
+}
+
+function storedMetrics(item: Partial<ChallengeSubmissionRecord>): SolutionPerformanceMetrics {
+  const candidate = item.metrics && typeof item.metrics === "object" ? item.metrics as Partial<SolutionPerformanceMetrics> : {};
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const cycles = storedNumber(candidate.cycles, storedNumber(item.cycles, null));
+  const optLevel = typeof candidate.opt_level === "string"
+    ? candidate.opt_level
+    : typeof metadata.opt_level === "string" ? metadata.opt_level : null;
+  return {
+    runtime_ms: storedNumber(candidate.runtime_ms, null),
+    memory_kib: storedNumber(candidate.memory_kib, null),
+    cycles,
+    compile_cycles: storedNumber(candidate.compile_cycles, null),
+    tests_passed: storedNumber(candidate.tests_passed, 0) || 0,
+    tests_total: storedNumber(candidate.tests_total, 0) || 0,
+    engine: typeof candidate.engine === "string" ? candidate.engine : typeof item.engine === "string" ? item.engine : null,
+    opt_level: optLevel,
+  };
+}
+
+function emptyMetrics(): SolutionPerformanceMetrics {
+  return {
+    runtime_ms: null,
+    memory_kib: null,
+    cycles: null,
+    compile_cycles: null,
+    tests_passed: 0,
+    tests_total: 0,
+    engine: null,
+    opt_level: null,
+  };
+}
+
 export class CommunityStore {
   private readonly now: () => number;
   private readonly state_path: string | null;
@@ -311,6 +387,7 @@ export class CommunityStore {
       solution_revisions: [],
       submissions: [],
       discussions: [],
+      solution_votes: [],
     };
   }
 
@@ -332,9 +409,21 @@ export class CommunityStore {
       schema_version: COMMUNITY_STATE_SCHEMA_VERSION,
       revision: candidate.revision,
       updated_at: typeof candidate.updated_at === "string" ? candidate.updated_at : new Date(this.now()).toISOString(),
-      solution_revisions: clone(candidate.solution_revisions),
-      submissions: clone(candidate.submissions),
+      // Older durable state predates the explicit visibility field. Those
+      // revisions were benchmark drafts, so migrate them as private rather
+      // than accidentally publishing existing participant work.
+      solution_revisions: clone(candidate.solution_revisions).map((item) => ({
+        ...item,
+        visibility: item.visibility === "public" ? "public" : "private",
+      })),
+      submissions: clone(candidate.submissions).map((item) => ({
+        ...item,
+        metrics: storedMetrics(item),
+      })),
       discussions: clone(candidate.discussions),
+      solution_votes: Array.isArray(candidate.solution_votes)
+        ? clone(candidate.solution_votes).filter((item) => item && typeof item.solution_id === "string" && typeof item.voter_identity_id === "string")
+        : [],
     };
   }
 
@@ -370,6 +459,7 @@ export class CommunityStore {
     solution_revisions: SavedSolutionRevision[];
     submissions: ChallengeSubmissionRecord[];
     discussions: DiscussionPost[];
+    solution_votes: SolutionVoteRecord[];
   } {
     return stateCopy(this.state);
   }
@@ -380,6 +470,8 @@ export class CommunityStore {
     const title = plainText(input.title || "Solution", "title", this.limits.solution_title, true, true);
     const code = plainText(input.code, "code", this.limits.solution_code);
     const language = plainText(input.language || "trit", "language", 32);
+    const visibility = input.visibility || "private";
+    if (visibility !== "private" && visibility !== "public") throw new CommunityStoreError("visibility_invalid", "visibility must be private or public.");
     const metadata = safeMetadata(input.metadata, this.limits.metadata);
     const ownerIdentityId = context.identity.id;
     const ownerHandle = ownerHandleForIdentity(context.identity);
@@ -387,6 +479,14 @@ export class CommunityStore {
     const prior = this.state.solution_revisions.filter((revision) => revision.solution_id === solutionId);
     if (prior.length && prior.some((revision) => revision.owner_identity_id !== ownerIdentityId)) {
       throw new CommunityStoreError("solution_owner_mismatch", "A solution can only be revised by its owner.", 403);
+    }
+    if (visibility === "public" && !this.state.submissions.some((submission) => (
+      submission.problem_id === problemId
+      && submission.owner_identity_id === ownerIdentityId
+      && submission.outcome === "accepted"
+      && submission.code_hash === sha256Text(code)
+    ))) {
+      throw new CommunityStoreError("solution_not_verified", "A public solution must match a verified accepted submission before it can be posted.", 409);
     }
     const revision: SavedSolutionRevision = {
       schema_version: COMMUNITY_API_SCHEMA_VERSION,
@@ -399,6 +499,7 @@ export class CommunityStore {
       title,
       code,
       language,
+      visibility,
       owner_identity_id: ownerIdentityId,
       owner_handle: ownerHandle,
       metadata,
@@ -413,6 +514,24 @@ export class CommunityStore {
   /** Short alias for route adapters. */
   saveSolution(actor: CommunityActor, input: SaveSolutionRevisionInput): SavedSolutionRevision {
     return this.saveSolutionRevision(actor, input);
+  }
+
+  publishSolution(actor: CommunityActor, input: PublishSolutionInput): { solution: SavedSolutionRevision; discussion: DiscussionPost } {
+    const explanation = plainText(input.explanation, "explanation", this.limits.discussion_body, true, true);
+    const pseudocode = plainText(input.pseudocode, "pseudocode", this.limits.discussion_body, false, true);
+    const discussionBody = plainText([
+      "Plain-English explanation",
+      explanation,
+      ...(pseudocode ? ["", "Pseudocode", pseudocode] : []),
+    ].join("\n"), "body", this.limits.discussion_body, true, true);
+    const solution = this.saveSolutionRevision(actor, { ...input, visibility: "public" });
+    const discussion = this.addDiscussion(actor, {
+      problem_id: solution.problem_id,
+      solution_id: solution.solution_id,
+      title: solution.title,
+      body: discussionBody,
+    });
+    return { solution, discussion };
   }
 
   getSolutionRevision(id: string): SavedSolutionRevision | null {
@@ -434,6 +553,63 @@ export class CommunityStore {
       .map(clone);
   }
 
+  /**
+   * Return the latest revision of each explicitly published solution for a
+   * challenge. Private benchmark drafts never cross this boundary. A posted
+   * solution is marked solved only when its author has an accepted submission
+   * for the same source, which also supports submissions created before the
+   * UI started attaching a solution id.
+   */
+  listPublicSolutions(filter: { problem_id?: string; challenge_id?: string; task_id?: string; limit?: number; viewer_identity_id?: string } = {}): PublicSolutionRecord[] {
+    const problemId = filter.problem_id || filter.challenge_id || filter.task_id;
+    const limit = Math.min(this.limits.list_limit, Math.max(1, Math.floor(filter.limit || this.limits.list_limit)));
+    const latestBySolution = new Map<string, SavedSolutionRevision>();
+    for (const item of this.state.solution_revisions) {
+      if (problemId && item.problem_id !== problemId) continue;
+      const current = latestBySolution.get(item.solution_id);
+      if (!current || item.revision > current.revision || (item.revision === current.revision && item.updated_at > current.updated_at)) {
+        latestBySolution.set(item.solution_id, item);
+      }
+    }
+    const acceptedSubmissions = this.state.submissions.filter((item) => (!problemId || item.problem_id === problemId) && item.outcome === "accepted");
+    return [...latestBySolution.values()]
+      .filter((item) => item.visibility === "public")
+      .map((item) => {
+        const accepted = acceptedSubmissions
+          .filter((submission) => (
+            submission.owner_identity_id === item.owner_identity_id
+            && submission.code_hash === sha256Text(item.code)
+            && (submission.solution_id === null || submission.solution_id === item.solution_id)
+          ))
+          .sort((left, right) => {
+            const leftRuntime = left.metrics.runtime_ms ?? Number.MAX_SAFE_INTEGER;
+            const rightRuntime = right.metrics.runtime_ms ?? Number.MAX_SAFE_INTEGER;
+            if (leftRuntime !== rightRuntime) return leftRuntime - rightRuntime;
+            const leftCycles = left.metrics.cycles ?? left.cycles ?? Number.MAX_SAFE_INTEGER;
+            const rightCycles = right.metrics.cycles ?? right.cycles ?? Number.MAX_SAFE_INTEGER;
+            if (leftCycles !== rightCycles) return leftCycles - rightCycles;
+            return right.created_at.localeCompare(left.created_at);
+          });
+        const discussion = this.state.discussions
+          .filter((post) => post.solution_id === item.solution_id && post.parent_id === null)
+          .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
+        const voterIds = new Set(this.state.solution_votes
+          .filter((vote) => vote.solution_id === item.solution_id)
+          .map((vote) => vote.voter_identity_id));
+        return {
+          ...clone(item),
+          solved: accepted.length > 0,
+          upvotes: voterIds.size,
+          viewer_has_upvoted: Boolean(filter.viewer_identity_id && voterIds.has(filter.viewer_identity_id)),
+          discussion_body: discussion?.body || "",
+          metrics: accepted[0]?.metrics ? clone(accepted[0].metrics) : null,
+        };
+      })
+      .sort((left, right) => right.upvotes - left.upvotes || Number(right.solved) - Number(left.solved) || right.updated_at.localeCompare(left.updated_at))
+      .slice(0, limit)
+      .map((item) => item);
+  }
+
   recordChallengeSubmission(actor: CommunityActor, input: ChallengeSubmissionInput): ChallengeSubmissionRecord {
     const context = requireActor(actor, "test");
     const problemId = challengeKey(input);
@@ -443,6 +619,16 @@ export class CommunityStore {
     const metadata = safeMetadata(input.metadata, this.limits.metadata);
     const outcome = input.outcome || (input.accepted === true ? "accepted" : input.accepted === false ? "rejected" : "unknown");
     if (!["accepted", "rejected", "pending", "unknown"].includes(outcome)) throw new CommunityStoreError("outcome_invalid", "outcome is invalid.");
+    const cycles = finiteNumber(input.metrics?.cycles ?? input.cycles, "cycles");
+    const runtimeMs = finiteNumber(input.metrics?.runtime_ms, "metrics.runtime_ms");
+    const memoryKib = finiteNumber(input.metrics?.memory_kib, "metrics.memory_kib");
+    const compileCycles = finiteNumber(input.metrics?.compile_cycles, "metrics.compile_cycles");
+    const testsPassed = finiteNumber(input.metrics?.tests_passed, "metrics.tests_passed") ?? 0;
+    const testsTotal = finiteNumber(input.metrics?.tests_total, "metrics.tests_total") ?? 0;
+    if (testsPassed > testsTotal) throw new CommunityStoreError("metrics_invalid", "tests_passed cannot exceed tests_total.");
+    const optLevel = input.metrics?.opt_level === undefined || input.metrics?.opt_level === null
+      ? typeof metadata.opt_level === "string" ? plainText(metadata.opt_level, "opt_level", 32, false, true) || null : null
+      : plainText(input.metrics.opt_level, "opt_level", 32, false, true) || null;
     const record: ChallengeSubmissionRecord = {
       schema_version: COMMUNITY_API_SCHEMA_VERSION,
       id: newId("tc:submission:"),
@@ -458,12 +644,49 @@ export class CommunityStore {
       owner_handle: ownerHandleForIdentity(context.identity),
       metadata,
       outcome,
-      cycles: finiteNumber(input.cycles, "cycles"),
+      cycles,
+      metrics: {
+        runtime_ms: runtimeMs,
+        memory_kib: memoryKib,
+        cycles,
+        compile_cycles: compileCycles,
+        tests_passed: testsPassed,
+        tests_total: testsTotal,
+        engine,
+        opt_level: optLevel,
+      },
       created_at: new Date(this.now()).toISOString(),
     };
     this.state.submissions.push(record);
     this.commit();
     return clone(record);
+  }
+
+  toggleSolutionVote(actor: CommunityActor, solutionId: string): { solution_id: string; upvoted: boolean; upvotes: number } {
+    const context = requireActor(actor, "artifact");
+    const normalizedSolutionId = identifier(solutionId, "solution_id");
+    const latest = this.state.solution_revisions
+      .filter((item) => item.solution_id === normalizedSolutionId)
+      .sort((left, right) => right.revision - left.revision || right.updated_at.localeCompare(left.updated_at))[0];
+    if (!latest || latest.visibility !== "public") throw new CommunityStoreError("solution_not_found", "The public solution was not found.", 404);
+    const existingIndex = this.state.solution_votes.findIndex((vote) => vote.solution_id === normalizedSolutionId && vote.voter_identity_id === context.identity.id);
+    let upvoted: boolean;
+    if (existingIndex >= 0) {
+      this.state.solution_votes.splice(existingIndex, 1);
+      upvoted = false;
+    } else {
+      this.state.solution_votes.push({
+        schema_version: COMMUNITY_API_SCHEMA_VERSION,
+        id: newId("tc:solution-vote:"),
+        solution_id: normalizedSolutionId,
+        voter_identity_id: context.identity.id,
+        created_at: new Date(this.now()).toISOString(),
+      });
+      upvoted = true;
+    }
+    this.commit();
+    const upvotes = new Set(this.state.solution_votes.filter((vote) => vote.solution_id === normalizedSolutionId).map((vote) => vote.voter_identity_id)).size;
+    return { solution_id: normalizedSolutionId, upvoted, upvotes };
   }
 
   /** Alias emphasizing that caller-supplied usernames are not accepted. */

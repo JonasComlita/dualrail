@@ -102,9 +102,34 @@ function displayCommand(command: SafeCommand, workspaceRoot: string, repositoryR
   return sanitizeCommand(command, workspaceRoot, repositoryRoot);
 }
 
+function currentPeakMemoryKib(): number | null {
+  try {
+    const usage = typeof process.resourceUsage === "function" ? process.resourceUsage() : null;
+    return usage && typeof usage.maxRSS === "number" && Number.isFinite(usage.maxRSS)
+      ? Math.max(0, Math.round(usage.maxRSS))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function peakMemoryKib(commandResults: BoundedCommandResult[]): number | null {
+  const sampled = commandResults
+    .map((result) => result.peakMemoryKib)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return sampled.length ? Math.max(...sampled) : currentPeakMemoryKib();
+}
+
+function executionRuntimeMs(commandResults: BoundedCommandResult[]): number | null {
+  const last = commandResults[commandResults.length - 1];
+  return last && Number.isFinite(last.durationMs) ? Math.max(0, Math.round(last.durationMs)) : null;
+}
+
 function emptyOutput(commands: SafeCommand[], commandResults: BoundedCommandResult[], error: string, terminationReason?: WorkerOutput["terminationReason"]): WorkerOutput {
   return {
     success: false,
+    runtimeMs: executionRuntimeMs(commandResults),
+    peakMemoryKib: peakMemoryKib(commandResults),
     compilerOutput: "",
     stdout: "",
     stderr: "",
@@ -219,6 +244,8 @@ export async function executeTritRequest(envelope: WorkerEnvelope): Promise<Work
   const parsed = parseVmOutput(execution.stdout);
   return {
     success: true,
+    runtimeMs: executionRuntimeMs(commandResults),
+    peakMemoryKib: peakMemoryKib(commandResults),
     compileTimeCycles,
     assembly,
     cycles: parsed.cycles,

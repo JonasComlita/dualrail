@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,8 @@ const repoRoot = path.resolve(appRoot, "..");
 const evidenceRoot = path.join(repoRoot, "build", "treatcode-plan-evidence", "P06");
 const port = 4317;
 const baseUrl = `http://127.0.0.1:${port}`;
+const communityStateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "treatcode-p06-community-"));
+const communityStatePath = path.join(communityStateRoot, "state.json");
 const checks = [];
 const errors = [];
 let serverProcess;
@@ -41,7 +44,7 @@ async function waitForServer() {
 try {
   serverProcess = spawn("bun", ["run", "server.ts"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: String(port), TREATCODE_AUTH_AUDIT_PATH: path.join(repoRoot, "build", "treatcode-plan-evidence", "P06", "challenge-e2e-audit.jsonl") },
+    env: { ...process.env, PORT: String(port), TREATCODE_AUTH_AUDIT_PATH: path.join(repoRoot, "build", "treatcode-plan-evidence", "P06", "challenge-e2e-audit.jsonl"), TREATCODE_COMMUNITY_STATE_PATH: communityStatePath },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let serverOutput = "";
@@ -67,6 +70,69 @@ try {
   assert(login.response.ok, `demo login returned HTTP ${login.response.status}`);
   const token = login.body?.data?.credential?.token;
   assert(typeof token === "string" && token.length > 20, "login did not issue a session token");
+
+  const postedCode = `import ulib;
+
+fn sign_test(x: t40) -> t40 {
+    match x {
+        neg => { return -1; }
+        zero => { return 0; }
+        pos => { return 1; }
+    }
+}`;
+  const prematurePost = await request("/api/community/v1/solutions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Action-Nonce": `p06-premature-${Date.now()}` },
+    body: JSON.stringify({ challenge_id: "T001", title: "Premature post", code: postedCode, language: "trit", visibility: "public", explanation: "This must be verified first." }),
+  });
+  assert(prematurePost.response.status === 409 && prematurePost.body?.error?.code === "solution_not_verified", "public solution posting was not gated by accepted verification");
+  const solved = await request("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ problemId: "T001", code: postedCode, engine: "native", optLevel: "-O2" }),
+  });
+  assert(solved.response.ok && solved.body.success === true, `posted solution verification returned HTTP ${solved.response.status}: ${JSON.stringify(solved.body)}`);
+  assert(solved.body.submission?.metrics?.engine === "native", "accepted submission did not exercise the native engine");
+  assert(typeof solved.body.submission?.metrics?.runtime_ms === "number", "accepted submission did not persist measured runtime");
+  assert(typeof solved.body.submission?.metrics?.memory_kib === "number", "accepted submission did not persist measured memory");
+  checks.push("native compiler driver verifies all five sign-test cases and persists native execution metrics");
+
+  const posted = await request("/api/community/v1/solutions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Action-Nonce": `p06-post-${Date.now()}` },
+    body: JSON.stringify({ challenge_id: "T001", title: "A public sign solution", code: postedCode, language: "trit", visibility: "public", explanation: "Match the balanced ternary sign and return the corresponding answer.", pseudocode: "match input sign, then return its mapped value" }),
+  });
+  assert(posted.response.status === 201, `public solution post returned HTTP ${posted.response.status}`);
+  const postedSolutionId = posted.body?.data?.solution?.id || posted.body?.solution?.id;
+  assert(typeof postedSolutionId === "string" && postedSolutionId.length > 0, "public solution post did not return a solution id");
+  const privateDraft = await request("/api/intelligence/v1/solutions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Action-Nonce": `p06-private-${Date.now()}` },
+    body: JSON.stringify({ task_id: "T001", title: "A private draft", code: "private benchmark draft", language: "trit" }),
+  });
+  assert(privateDraft.response.status === 201, `private solution draft returned HTTP ${privateDraft.response.status}`);
+  const publicFeedAfterSubmit = await request("/api/community/v1/solutions?challenge_id=T001");
+  const publicSolutionsAfterSubmit = publicFeedAfterSubmit.body?.data?.solutions || publicFeedAfterSubmit.body?.solutions || [];
+  assert(publicFeedAfterSubmit.response.ok && publicSolutionsAfterSubmit.length === 1, "public solution feed must exclude private drafts and stay problem-scoped");
+  assert(publicSolutionsAfterSubmit[0].code === postedCode && publicSolutionsAfterSubmit[0].solved === true, "accepted submission did not mark the exact posted solution as solved");
+  assert(typeof publicSolutionsAfterSubmit[0].metrics?.runtime_ms === "number" && typeof publicSolutionsAfterSubmit[0].metrics?.memory_kib === "number", "public solution feed did not include measured code metrics");
+  assert(publicSolutionsAfterSubmit[0].discussion.includes("Plain-English explanation"), "public solution feed did not include the linked explanation");
+  assert(!JSON.stringify(publicSolutionsAfterSubmit).includes("owner_identity_id"), "public solution feed leaked an internal owner id");
+  checks.push("public solution posting is verification-gated; verified posts combine public code, explanation, metrics, and solved state while private drafts remain hidden");
+
+  const vote = await request(`/api/community/v1/solutions/${encodeURIComponent(postedSolutionId)}/vote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Action-Nonce": `p06-vote-${Date.now()}` },
+    body: JSON.stringify({}),
+  });
+  assert(vote.response.ok && vote.body.upvoted === true && vote.body.upvotes === 1, "authenticated solution vote was not persisted");
+  const rankedFeed = await request("/api/community/v1/solutions?challenge_id=T001");
+  const rankedSolutions = rankedFeed.body?.data?.solutions || rankedFeed.body?.solutions || [];
+  assert(rankedSolutions[0]?.upvotes === 1 && rankedSolutions[0]?.viewer_has_upvoted === false, "public solution feed did not expose the durable vote count without leaking viewer state");
+  const authenticatedFeed = await request("/api/community/v1/solutions?challenge_id=T001", { headers: { Authorization: `Bearer ${token}` } });
+  const authenticatedSolutions = authenticatedFeed.body?.data?.solutions || authenticatedFeed.body?.solutions || [];
+  assert(authenticatedSolutions[0]?.viewer_has_upvoted === true, "authenticated public feed did not restore the viewer vote state");
+  checks.push("community solution votes persist and feed ranking exposes approval counts");
 
   const before = await request("/api/leaderboard");
   const draftSubmission = await request("/api/submit", {
@@ -103,6 +169,7 @@ try {
   }
 } finally {
   if (serverProcess && !serverProcess.killed) serverProcess.kill();
+  fs.rmSync(communityStateRoot, { recursive: true, force: true });
 }
 
 const report = {

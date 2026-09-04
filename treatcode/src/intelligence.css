@@ -79,9 +79,9 @@
 .intelligence-availability.catalog { color: #6a777b; background: #eef2f3; }
 .intelligence-suite-selection { margin: 12px 0 0; color: #5e737b; font-size: 11px; }
 .intelligence-suite-selection code { color: #17665f; font-family: var(--font-mono); font-size: 10px; }
-.intelligence-task-grid, .intelligence-community-grid, .intelligence-leaderboards { display: grid; gap: 14px; }
+.intelligence-task-grid, .intelligence-leaderboards { display: grid; gap: 14px; }
 .intelligence-task-grid { grid-template-columns: minmax(0, 1.35fr) minmax(290px, .65fr); }
-.intelligence-community-grid, .intelligence-leaderboards { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+.intelligence-leaderboards { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
 .intelligence-panel { min-width: 0; padding: 21px; border: 1px solid #d6e2e6; border-radius: 12px; background: #fff; box-shadow: 0 7px 20px rgba(30, 59, 68, .035); }
 .intelligence-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 12px; }
 .intelligence-section-heading h2 { margin: 5px 0 0; color: #12242d; font-size: 20px; letter-spacing: -.03em; }
@@ -113,13 +113,7 @@
 .intelligence-trial-detail p { margin: 5px 0 12px; color: #5e737b; font-size: 11px; line-height: 1.5; }
 
 .intelligence-solution-panel { margin-top: 14px; }
-.intelligence-learning-panel { margin-top: 14px; }
-.intelligence-learning-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
-.intelligence-learning-block { min-width: 0; }
-.intelligence-learning-block h3 { margin: 0 0 7px; color: #17303a; font-size: 13px; }
-.intelligence-learning-block p { margin: 0; color: #5e737b; font-size: 12px; line-height: 1.6; }
-.intelligence-learning-block pre { margin: 0; min-height: 100%; box-sizing: border-box; overflow-x: auto; padding: 12px; border: 1px solid #dce8ea; border-radius: 7px; background: #f7fafb; color: #17303a; font: 11px/1.6 var(--font-mono); white-space: pre-wrap; }
-.intelligence-learning-discussion { grid-column: 1 / -1; padding-top: 14px; border-top: 1px solid #e7eff1; }
+.intelligence-account-panel { margin-top: 14px; }
 .intelligence-file-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .intelligence-file-tabs button { border: 1px solid var(--intelligence-border); background: transparent; color: var(--intelligence-muted); border-radius: 6px; padding: 7px 10px; font-family: var(--font-mono); font-size: 12px; cursor: pointer; }
 .intelligence-file-tabs button.selected { background: var(--intelligence-ink); color: var(--intelligence-paper); border-color: var(--intelligence-ink); }
@@ -137,12 +131,6 @@
 .intelligence-feedback { min-height: 25px; padding: 8px 2px; color: #287264; font-size: 12px; }
 .intelligence-feedback .is-error { color: #a03535; }
 
-.intelligence-discussion-list { margin-top: 20px; }
-.intelligence-discussion { padding: 12px 0; border-top: 1px solid #e7eff1; }
-.intelligence-discussion > div { display: flex; gap: 8px; align-items: baseline; }
-.intelligence-discussion strong { color: #244852; font-family: var(--font-mono); font-size: 11px; }
-.intelligence-discussion small { color: #829297; font-size: 10px; }
-.intelligence-discussion p { margin: 6px 0 0; color: #5e737b; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
 .intelligence-empty { margin: 14px 0 0; padding: 15px; border: 1px dashed #d4e1e4; border-radius: 7px; color: #7a8c91; font-size: 12px; text-align: center; }
 .intelligence-account-active p { color: #5e737b; font-size: 12px; line-height: 1.55; }
 .intelligence-account-active strong { color: #17303a; font-family: var(--font-mono); font-size: 13px; }
@@ -165,7 +153,7 @@
 @media (max-width: 860px) {
   .intelligence-header { align-items: flex-start; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
   .intelligence-account-summary { margin-left: 0; }
-  .intelligence-hero, .intelligence-calibration-grid, .intelligence-task-grid, .intelligence-community-grid, .intelligence-leaderboards, .intelligence-learning-grid, .intelligence-v31-target, .intelligence-v31-detail-grid, .intelligence-v31-statistics { grid-template-columns: 1fr; }
+  .intelligence-hero, .intelligence-calibration-grid, .intelligence-task-grid, .intelligence-leaderboards, .intelligence-v31-target, .intelligence-v31-detail-grid, .intelligence-v31-statistics { grid-template-columns: 1fr; }
   .intelligence-v31-phases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-suite-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-task-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -180,5 +168,4 @@
   .intelligence-suite-grid { grid-template-columns: 1fr; }
   .intelligence-v31-phases { grid-template-columns: 1fr; }
   .intelligence-section-heading { flex-direction: column; gap: 7px; }
-  .intelligence-learning-discussion { grid-column: auto; }
 }

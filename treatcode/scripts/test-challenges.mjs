@@ -19,6 +19,21 @@ function assert(condition, message) {
 }
 
 try {
+  const compilerDriverPath = path.join(appRoot, "compiler_driver.txe");
+  const compilerDriver = fs.readFileSync(compilerDriverPath);
+  assert(compilerDriver.length >= 72, "native compiler driver is too small to contain a TXE4 header");
+  assert(compilerDriver.toString("ascii", 0, 4) === "TXE4", "native compiler driver is stale or not a TXE4 image");
+  assert(compilerDriver.readUInt32LE(4) === 2, "native compiler driver does not use TXE version 2");
+  assert(compilerDriver.readUInt32LE(8) === 0x12345678, "native compiler driver has an invalid TXE4 endianness marker");
+  assert(compilerDriver.readUInt32LE(12) === 72, "native compiler driver has an invalid TXE4 header size");
+  assert(compilerDriver.readUInt32LE(16) === 2, "native compiler driver does not use ISA version 2");
+  assert((compilerDriver.readBigUInt64LE(24) & 1n) !== 0n, "native compiler driver does not require the base ISA v2 feature");
+  assert(compilerDriver.readUInt32LE(48) === 2, "native compiler driver does not use ABI version 2");
+  assert(compilerDriver.readUInt32LE(52) === 2, "native compiler driver does not use syscall ABI version 2");
+  assert(compilerDriver.readUInt32LE(56) === 40, "native compiler driver has an invalid scalar word width");
+  assert(compilerDriver.readUInt32LE(60) === 729, "native compiler driver has an invalid base page size");
+  checks.push("checked-in native compiler driver is TXE4/ISA v2");
+
   assert(manifest.schema === "treatcode.challenge_manifest.v1", "manifest schema version is incorrect");
   assert(serverData.source_of_truth === "CHALLENGE_MANIFEST.json", "server generated data is not manifest-backed");
   assert(clientData.source_of_truth === "CHALLENGE_MANIFEST.json", "client generated data is not manifest-backed");
@@ -69,6 +84,12 @@ try {
   assert(serverSource.includes("challenges.server.json") && appSource.includes("challenges.client.json"), "client/server do not consume generated challenge data");
   assert(appSource.includes("function openProblem") && appSource.includes('aria-label="Search challenges"'), "challenge browse/editor journey is not wired");
   assert(appSource.includes("PRACTICE_SOLUTION_GUIDES") && appSource.includes('data-testid="practice-solution-guide"') && appSource.includes("Discussion · why it works"), "practice solution learning notes are not visible from the problem view");
+  assert(appSource.includes('General information') && appSource.includes('Discussions') && appSource.includes('data-testid="practice-discussions-tab"'), "practice problem view does not expose the agreed two-tab information/discussion experience");
+  assert(appSource.includes("postedSolutions") && appSource.includes('data-testid="practice-public-solutions"') && appSource.includes('data-testid="practice-discussion-post"') && appSource.includes("Plain-English discussion"), "practice discussions do not render unified community solution posts");
+  assert(appSource.includes('visibility: "public"') && appSource.includes("solution_id: savedSolution?.id") && appSource.includes("solutionId: savedSolution?.id") && appSource.includes("currentCodeIsVerified"), "practice posts are not public, linked to accepted submissions, or verification-gated");
+  assert(appSource.includes("practice-post-explanation") && !appSource.includes("practice-publish-discussion") && !appSource.includes("publish discussion"), "practice still exposes a separate discussion publishing action");
+  assert(appSource.includes("runtime_ms") && appSource.includes("memory_kib") && appSource.includes("practice-solution-vote"), "practice discussion cards omit measured metrics or voting");
+  assert(serverSource.includes("listPublicSolutions") && serverSource.includes('app.get("/api/community/v1/solutions"') && serverSource.includes("toggleSolutionVote") && serverSource.includes("publishSolution"), "server does not expose the public verified solution discussion contract");
   for (const challengeId of ["T001", "T002", "T005", "T056", "T057", "T058"]) {
     assert(solutionGuides.includes(`${challengeId}:`), `${challengeId} is missing a published practice solution guide`);
   }

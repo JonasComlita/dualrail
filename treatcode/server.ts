@@ -863,6 +863,30 @@ function publicSolutionView(value: ReturnType<typeof latestParticipantSolution>)
   };
 }
 
+function publicPostedSolutionView(value: ReturnType<CommunityStore["listPublicSolutions"]>[number]) {
+  return {
+    schema_version: COMMUNITY_API_SCHEMA_VERSION,
+    id: value.solution_id,
+    solution_id: value.solution_id,
+    version: value.revision,
+    revision: value.revision,
+    problem_id: value.problem_id,
+    challenge_id: value.challenge_id,
+    task_id: value.task_id,
+    title: value.title,
+    code: value.code,
+    language: value.language,
+    owner_handle: value.owner_handle,
+    created_at: value.created_at,
+    updated_at: value.updated_at,
+    solved: value.solved,
+    upvotes: value.upvotes,
+    viewer_has_upvoted: value.viewer_has_upvoted,
+    discussion: value.discussion_body,
+    metrics: value.metrics,
+  };
+}
+
 function publicTrialView(trial: Record<string, unknown> | null | undefined, hidden?: Record<string, unknown> | null) {
   const aggregate = hidden && typeof hidden.remaining_trials === "number" && hidden.remaining_trials === 0 && hidden.aggregate && typeof hidden.aggregate === "object" ? hidden.aggregate as Record<string, unknown> : null;
   const score = aggregate && typeof aggregate.score === "number" ? aggregate.score : null;
@@ -1065,8 +1089,10 @@ routeAliases(["/api/intelligence/v1/leaderboard", "/api/intelligence/leaderboard
   });
 });
 
-// Community read routes are public; write routes always use the authenticated
-// decision as the owner and never trust a body-supplied username/handle.
+// Community discussion and explicitly posted practice-solution reads are
+// public. Private benchmark solution reads remain account-scoped; all writes
+// use the authenticated decision as the owner and never trust a body-supplied
+// username/handle.
 routeAliases(["/api/intelligence/v1/discussions", "/api/intelligence/discussions", "/api/community/v1/discussions"], (route) => {
   app.get(route, (req: Request, res: Response) => {
     try {
@@ -1096,7 +1122,7 @@ routeAliases(["/api/intelligence/v1/discussions", "/api/intelligence/discussions
   });
 });
 
-routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "/api/community/v1/solutions"], (route) => {
+routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions"], (route) => {
   app.get(route, (req: Request, res: Response) => {
     const taskId = String(req.query.task_id || req.query.challenge_id || req.query.problem_id || INTELLIGENCE_TASK_ID);
     const decision = intelligenceAction(req, res, "read", false);
@@ -1109,20 +1135,72 @@ routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "
       intelligenceErrorResponse(res, error);
     }
   });
+});
+
+// Practice solutions are public only after the author explicitly posts them.
+// This route never returns private benchmark drafts or internal owner ids.
+app.get("/api/community/v1/solutions", (req: Request, res: Response) => {
+  try {
+    const requestedTask = req.query.task_id || req.query.challenge_id || req.query.problem_id;
+    const taskId = typeof requestedTask === "string" && requestedTask.trim() ? requestedTask : undefined;
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? requestedLimit : undefined;
+    const capabilities = authStore.capabilities({ token: authToken(req), project_id: DEFAULT_PROJECT_ID, task_id: null });
+    const viewerIdentityId = capabilities.ok ? capabilities.principal?.id : undefined;
+    const solutions = communityStore.listPublicSolutions({ task_id: taskId, limit, viewer_identity_id: viewerIdentityId }).map(publicPostedSolutionView);
+    res.setHeader("Cache-Control", viewerIdentityId ? "private, max-age=10" : "public, max-age=10");
+    res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { solutions }, solutions });
+  } catch (error) {
+    intelligenceErrorResponse(res, error);
+  }
+});
+
+app.post("/api/community/v1/solutions/:solutionId/vote", (req: Request, res: Response) => {
+  const decision = intelligenceAction(req, res, "artifact");
+  if (!decision) return;
+  try {
+    const vote = communityStore.toggleSolutionVote(decision, req.params.solutionId);
+    res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: vote, ...vote });
+  } catch (error) {
+    intelligenceErrorResponse(res, error);
+  }
+});
+
+routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "/api/community/v1/solutions"], (route) => {
   app.post(route, (req: Request, res: Response) => {
     const decision = intelligenceAction(req, res, "artifact");
     if (!decision) return;
     try {
       const body = (req.body || {}) as Record<string, unknown>;
-      const solution = communityStore.saveSolution(decision, {
+      const visibility = body.visibility === "public" ? "public" : "private";
+      if (visibility === "public" && route !== "/api/community/v1/solutions") {
+        throw new CommunityStoreError("public_post_route_required", "Public practice solutions must be posted through the community solution route.", 400);
+      }
+      const input = {
         task_id: String(body.task_id || body.challenge_id || body.problem_id || INTELLIGENCE_TASK_ID),
         solution_id: typeof body.solution_id === "string" ? body.solution_id : undefined,
         title: typeof body.title === "string" ? body.title : undefined,
         code: typeof body.code === "string" ? body.code : typeof body.content === "string" ? body.content : "",
         language: typeof body.language === "string" ? body.language : "trit",
+        visibility: visibility as "public" | "private",
         metadata: body.metadata && typeof body.metadata === "object" ? body.metadata as Record<string, unknown> : undefined,
+      };
+      const published = visibility === "public"
+        ? communityStore.publishSolution(decision, {
+          ...input,
+          explanation: typeof body.explanation === "string" ? body.explanation : "",
+          pseudocode: typeof body.pseudocode === "string" ? body.pseudocode : undefined,
+        })
+        : null;
+      const solution = published?.solution || communityStore.saveSolution(decision, input);
+      const solutionView = publicSolutionView(solution);
+      res.status(201).json({
+        schema_version: COMMUNITY_API_SCHEMA_VERSION,
+        data: { solution: solutionView, revision: solution, ...(published ? { discussion: published.discussion } : {}) },
+        solution: solutionView,
+        revision: solution,
+        ...(published ? { discussion: published.discussion } : {}),
       });
-      res.status(201).json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { solution: publicSolutionView(solution), revision: solution }, solution: publicSolutionView(solution), revision: solution });
     } catch (error) {
       intelligenceErrorResponse(res, error);
     }
@@ -2325,16 +2403,26 @@ app.post("/api/submit", async (req: Request, res: Response) => {
   const results = [];
   let allPassed = true;
   let totalCycles = 0;
+  let totalRuntimeMs = 0;
+  let totalCompileCycles = 0;
+  let peakMemoryKib: number | null = null;
+  let testsPassed = 0;
 
   for (let i = 0; i < testCases.length; i++) {
     const tc = testCases[i];
     const wrappedCode = renderChallengeWrapper(challenge, code, tc.arg);
     const runResult = await compileAndRunTrit(wrappedCode, runnerEngine, optLevel);
+    if (typeof runResult.runtimeMs === "number" && Number.isFinite(runResult.runtimeMs)) totalRuntimeMs += Math.max(0, Math.round(runResult.runtimeMs));
+    if (typeof runResult.compileTimeCycles === "number" && Number.isFinite(runResult.compileTimeCycles)) totalCompileCycles += Math.max(0, Math.round(runResult.compileTimeCycles));
+    if (typeof runResult.peakMemoryKib === "number" && Number.isFinite(runResult.peakMemoryKib)) peakMemoryKib = Math.max(peakMemoryKib || 0, Math.round(runResult.peakMemoryKib));
 
     if (!runResult.success) {
       results.push({
         testCase: i + 1,
         passed: false,
+        runtimeMs: runResult.runtimeMs,
+        memoryKib: runResult.peakMemoryKib,
+        compileCycles: runResult.compileTimeCycles || 0,
         error: runResult.error,
         compilerOutput: runResult.compilerOutput
       });
@@ -2354,6 +2442,9 @@ app.post("/api/submit", async (req: Request, res: Response) => {
     results.push({
       testCase: i + 1,
       passed,
+      runtimeMs: runResult.runtimeMs,
+      memoryKib: runResult.peakMemoryKib,
+      compileCycles: runResult.compileTimeCycles || 0,
       cycles: runResult.cycles,
       consoleOutput: runResult.consoleOutput,
       r13: runResult.r13,
@@ -2361,6 +2452,7 @@ app.post("/api/submit", async (req: Request, res: Response) => {
     });
 
     if (!passed) allPassed = false;
+    if (passed) testsPassed += 1;
     totalCycles += runResult.cycles || 0;
   }
 
@@ -2389,7 +2481,17 @@ app.post("/api/submit", async (req: Request, res: Response) => {
       engine: runnerEngine,
       outcome: allPassed ? "accepted" : "rejected",
       accepted: allPassed,
-      cycles: allPassed ? Math.round(totalCycles / Math.max(testCases.length, 1)) : undefined,
+      cycles: totalCycles > 0 ? Math.round(totalCycles / Math.max(testsPassed, 1)) : undefined,
+      metrics: {
+        runtime_ms: totalRuntimeMs > 0 ? totalRuntimeMs : null,
+        memory_kib: peakMemoryKib,
+        cycles: totalCycles > 0 ? Math.round(totalCycles / Math.max(testsPassed, 1)) : null,
+        compile_cycles: totalCompileCycles > 0 ? totalCompileCycles : null,
+        tests_passed: testsPassed,
+        tests_total: testCases.length,
+        engine: runnerEngine,
+        opt_level: typeof optLevel === "string" && /^-O[0-3]$/.test(optLevel) ? optLevel : "-O2",
+      },
       metadata: { opt_level: typeof optLevel === "string" ? optLevel : "-O2" },
     });
   } catch (error) {

@@ -33,6 +33,16 @@ Once memory is populated, the loader performs a **Soft Reset**:
 3.  **r0** is confirmed as `0`.
 4.  **status** is set to `RUNNING`.
 
+### Interpreting the Stack Pointer in a Register Dump
+
+`r26` starts at `DMEM.size() - 1` and the stack grows downward. A normal
+function prologue subtracts its frame size and its epilogue adds that size back
+before `RET`, so a successful program commonly ends with `r26` at the original
+top-of-memory value. That final value is not the amount of stack used; peak
+usage is the difference between the initial `r26` and the lowest `r26` reached
+while the program ran. For example, decimal `999999` is the balanced-ternary
+value `+-0-0-++-+-000`.
+
 ---
 
 ## 🚩 Entry Point Invariants

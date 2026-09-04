@@ -23,8 +23,13 @@ from the external DeepSWE reference (currently `gpt-5.6-luna[max]` at
 ## Deliverables
 
 1. Durable handle/password accounts with least-privilege participant grants.
-2. Versioned saved solutions, authenticated submissions, and plain-text
-   solution discussions.
+2. Versioned saved solutions, explicit public practice-solution posts,
+   authenticated submissions, and plain-text solution discussions. Practice
+   uses a two-tab problem panel (`General information` and `Discussions`): a
+   discussion post is one verified solution, its code, explanation/pseudocode,
+   measured runtime/memory/cycle/test evidence, and durable community votes.
+   Benchmark workspace drafts remain private unless a future surface explicitly
+   opts into publication.
 3. Versioned v2 intelligence suite with five hard, executable multi-file
    mini-repository tasks and 140 hidden cases (560 hidden executions across
    the required four trials):
@@ -59,6 +64,14 @@ from the external DeepSWE reference (currently `gpt-5.6-luna[max]` at
 - [ ] A participant can register, log in after restart, solve T001, save the
       solution, submit it under the authenticated handle, and publish a linked
       explanation plus pseudocode.
+- [ ] A practice problem exposes `General information` and `Discussions` tabs;
+      the latter lists the latest explicitly posted, verified solutions from
+      the community as unified posts containing code, author handles,
+      plain-English explanation/pseudocode, runtime/memory/cycle/test metrics,
+      and durable thumbs-up ranking. A post is publishable only after its
+      author passes verification with the same source; private benchmark
+      drafts never enter this feed and there is no separate publish-discussion
+      action.
 - [ ] `TC-SWE-001` exposes only allowlisted files and public tests; hidden
       verifier data is absent from client payloads and trial workspaces.
 - [ ] Four clean one-shot trials produce a sealed `passed/4` score; incomplete,

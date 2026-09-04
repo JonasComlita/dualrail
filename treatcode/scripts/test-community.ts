@@ -10,5 +10,5 @@ mkdirSync(evidenceRoot, { recursive: true });
 writeFileSync(path.join(evidenceRoot, "community-tests.json"), `${JSON.stringify({
   schema: "trit.treatcode_p14_community_tests.v1",
   ok: true,
-  checks: ["durable participant account", "restart login", "versioned solution", "authenticated submission", "plain-text discussion", "metadata secret scrubbing"],
+  checks: ["durable participant account", "restart login", "versioned solution", "public posted solution discussion feed", "accepted-source solved marker", "measured runtime and memory metrics", "durable solution votes", "authenticated submission", "plain-text discussion", "metadata secret scrubbing"],
 }, null, 2)}\n`);
