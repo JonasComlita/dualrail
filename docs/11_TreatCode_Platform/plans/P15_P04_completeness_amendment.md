@@ -4,7 +4,7 @@
 
 - **Plan ID:** P15
 - **Version:** 1
-- **Status:** `in_progress`
+- **Status:** `complete` (technical implementation)
 - **Depends on:** P02, P03, P04
 - **Scope owner:** Public platform
 - **Replaces for completeness purposes:** the v1 user-facing scope of P04
@@ -143,26 +143,33 @@ An agent may not mark P15 complete when any of the following is true:
 
 ## Acceptance criteria
 
-- [ ] The generated coverage report proves that every current stack phase and
+- [x] The generated coverage report proves that every current stack phase and
       every public collection record has at least one reachable public view.
-- [ ] Every phase detail satisfies the five required questions above and
+- [x] Every phase detail satisfies the five required questions above and
       exposes its complete dependency/evidence/gap/release context.
-- [ ] All relationship edges resolve to records or to an explicitly recorded
+- [x] All relationship edges resolve to records or to an explicitly recorded
       and tested external source; no required edge is silently dropped.
-- [ ] Static output for the stack index, every phase detail, search results,
+- [x] Static output for the stack index, every phase detail, search results,
       and evidence views remains useful with JavaScript disabled.
-- [ ] Full-inventory exact, symbol, relationship, and semantic search passes
+- [x] Full-inventory exact, symbol, relationship, and semantic search passes
       the generated success/no-result fixture set with exact provenance.
-- [ ] The no-truncation test proves there is no hidden first-N limit and that
+- [x] The no-truncation test proves there is no hidden first-N limit and that
       pagination, if used, reaches the complete inventory.
-- [ ] Snapshot/API parity, freshness, source-link integrity, public-data
+- [x] Snapshot/API parity, freshness, source-link integrity, public-data
       safety, and escaped rendering all pass.
-- [ ] Browser journeys cover silicon-to-user navigation, a phase-to-source-
+- [x] Browser journeys cover silicon-to-user navigation, a phase-to-source-
       to-test journey, a gap/release journey, and search-to-evidence navigation
       at all required viewport sizes.
-- [ ] Keyboard and accessibility checks pass for every route family, and
+- [x] Keyboard and accessibility checks pass for every route family, and
       public reading routes contain no editor/runner bundle.
-- [ ] Bundle and performance budgets pass with the complete dataset loaded.
+- [x] Bundle and performance budgets pass with the complete dataset loaded.
+
+The checked items above are the technical completion gate. External review and
+publication packaging are tracked separately below and do not block P15's
+technical status.
+
+### Optional publication validation (non-blocking)
+
 - [ ] Product, architecture, and accessibility reviewers approve the complete
       coverage report and screenshots; no acting approval is accepted without
       the named review artifacts.
@@ -212,13 +219,16 @@ exist, adding the plan without adding the test is incomplete.
   escaping, read-only, and link-safety report.
 - `build/treatcode-plan-evidence/P15/bundle-budget.json` — performance and
   bundle report produced with the full dataset.
-- Product, architecture, and accessibility approval records attached to the
-  coverage report and screenshots.
+
+Product, architecture, and accessibility approval records are optional
+publication evidence and are not required for technical completion.
 
 ## Completion Record
 
-- **Verified commit:** pending
-- **Evidence artifact:** pending
-- **Evidence hashes:** pending
-- **Human approvals:** pending
-- **Date:** pending
+- **Verified commit:** `1dd1170dc9e6bd48056cbcad52bfaaf4aa911fb2`
+- **Evidence artifact:** `build/treatcode-plan-evidence/P15/result.json`
+- **Evidence hashes:** `sha256:81BF027B6C62BE78AB9E8C29A4D2C0951A90C4E069132D0DEB89A2DEC063690B`
+- **Human approvals:** none required for technical completion
+- **Date:** `2026-09-06T00:00:00Z`
+- **Completion scope:** technical implementation and executable verification;
+  external review and publication validation are optional

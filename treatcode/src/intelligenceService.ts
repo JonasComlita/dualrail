@@ -11,17 +11,17 @@ import {
 } from "./runner/secure-runner";
 
 /**
- * The intelligence benchmark is deliberately kept separate from the legacy
- * challenge catalogue.  This module owns the server-side state machine and
+ * The intelligence benchmark is deliberately kept separate from the challenge
+ * catalogue. This module owns the server-side state machine and
  * exposes plain data contracts for the HTTP layer to adapt.
  */
 
-export const INTELLIGENCE_MANIFEST_SCHEMA = "treatcode.intelligence.benchmark-manifest.v1" as const;
-export const INTELLIGENCE_PROTOCOL_SCHEMA = "treatcode.intelligence.protocol.v1" as const;
-export const INTELLIGENCE_PUBLIC_TEST_SCHEMA = "treatcode.intelligence.public-tests.v1" as const;
-export const INTELLIGENCE_HIDDEN_TEST_SCHEMA = "treatcode.intelligence.hidden-tests.v1" as const;
+export const INTELLIGENCE_MANIFEST_SCHEMA = "treatcode.intelligence.benchmark-manifest.diagnostic.v3.1" as const;
+export const INTELLIGENCE_PROTOCOL_SCHEMA = "treatcode.intelligence.protocol.diagnostic.v3.1" as const;
+export const INTELLIGENCE_PUBLIC_TEST_SCHEMA = "treatcode.intelligence.public-tests.diagnostic.v3.1" as const;
+export const INTELLIGENCE_HIDDEN_TEST_SCHEMA = "treatcode.intelligence.hidden-tests.diagnostic.v3.1" as const;
 export const INTELLIGENCE_TASK_ID = "TC-SWE-001" as const;
-export const INTELLIGENCE_SUITE_SCHEMA = "treatcode.intelligence.suite.v1" as const;
+export const INTELLIGENCE_SUITE_SCHEMA = "treatcode.intelligence.suite.diagnostic.v3.1" as const;
 export const INTELLIGENCE_TRIAL_COUNT = 4 as const;
 export const INTELLIGENCE_MAX_FILE_BYTES = 65_536 as const;
 export const INTELLIGENCE_SAFE_INPUT_BOUND = 1_000_000 as const;
@@ -34,7 +34,7 @@ export type IntelligenceEvaluationKind = "model_rollout" | "harness_fixture";
  * mistaken for a 113-task DeepSWE result.
  */
 export interface IntelligenceExternalReference {
-  schema: "treatcode.intelligence.external-reference.v1";
+  schema: "treatcode.intelligence.external-reference.diagnostic.v3.1";
   source: string;
   source_title: string;
   snapshot_date: string;
@@ -219,7 +219,7 @@ export interface IntelligenceSuiteCatalog {
 }
 
 export interface IntelligenceSuiteLeaderboardRecord {
-  schema: "treatcode.intelligence.suite-leaderboard-record.v1";
+  schema: "treatcode.intelligence.suite-leaderboard-record.diagnostic.v3.1";
   benchmark_version: number;
   provider: string;
   model: string;
@@ -270,7 +270,7 @@ export interface IntelligenceTrialView {
 }
 
 export interface IntelligenceRunView {
-  schema: "treatcode.intelligence.run.v1";
+  schema: "treatcode.intelligence.run.diagnostic.v3.1";
   run_id: string;
   task_id: string;
   status: IntelligenceRunStatus;
@@ -289,7 +289,7 @@ export interface IntelligenceRunView {
 }
 
 export interface IntelligenceAggregate {
-  schema: "treatcode.intelligence.aggregate.v1";
+  schema: "treatcode.intelligence.aggregate.diagnostic.v3.1";
   run_id: string;
   task_id: string;
   benchmark_version: number;
@@ -316,7 +316,7 @@ export interface IntelligencePublicCaseResult {
 }
 
 export interface IntelligencePublicTestReport {
-  schema: "treatcode.intelligence.public-test-report.v1";
+  schema: "treatcode.intelligence.public-test-report.diagnostic.v3.1";
   run_id: string;
   trial_id: string;
   attempt: number;
@@ -326,7 +326,7 @@ export interface IntelligencePublicTestReport {
 }
 
 export interface IntelligenceHiddenSubmissionReceipt {
-  schema: "treatcode.intelligence.hidden-submission-receipt.v1";
+  schema: "treatcode.intelligence.hidden-submission-receipt.diagnostic.v3.1";
   run_id: string;
   trial_id: string;
   accepted: true;
@@ -336,7 +336,7 @@ export interface IntelligenceHiddenSubmissionReceipt {
 }
 
 export interface IntelligenceLeaderboardRecord {
-  schema: "treatcode.intelligence.leaderboard-record.v1";
+  schema: "treatcode.intelligence.leaderboard-record.diagnostic.v3.1";
   id: string;
   view: "official";
   task_id: string;
@@ -361,7 +361,7 @@ export interface IntelligenceLeaderboardRecord {
 }
 
 export interface IntelligenceSelfReportedRecord {
-  schema: "treatcode.intelligence.self-reported-leaderboard.v1";
+  schema: "treatcode.intelligence.self-reported-leaderboard.diagnostic.v3.1";
   id: string;
   view: "self-reported";
   task_id: string;
@@ -388,7 +388,7 @@ export interface IntelligenceAttestationRequest {
 }
 
 export interface IntelligenceAttestationRecord {
-  schema: "treatcode.intelligence.attestation.v1";
+  schema: "treatcode.intelligence.attestation.diagnostic.v3.1";
   id: string;
   run_id: string;
   principal: string;
@@ -520,7 +520,7 @@ interface LoadedFixture {
 }
 
 interface PersistedIntelligenceState {
-  schema: "treatcode.intelligence.state.v1";
+  schema: "treatcode.intelligence.state.diagnostic.v3.1";
   official_records: IntelligenceLeaderboardRecord[];
   self_reported_records: IntelligenceSelfReportedRecord[];
   attestations: IntelligenceAttestationRecord[];
@@ -625,9 +625,9 @@ function validateCase(value: unknown, location: string): BenchmarkCase {
 }
 
 function validateFixture(fixtureRoot: string, expectedTaskId?: string): LoadedFixture {
-  const manifestPath = path.join(fixtureRoot, "manifest.v1.json");
+  const manifestPath = path.join(fixtureRoot, "manifest.json");
   const manifest = parseJson<BenchmarkManifest>(manifestPath);
-  if (manifest.schema !== INTELLIGENCE_MANIFEST_SCHEMA || !Number.isInteger(manifest.version) || manifest.version < 1 || manifest.version > 2) {
+  if (manifest.schema !== INTELLIGENCE_MANIFEST_SCHEMA || !Number.isFinite(manifest.version) || manifest.version !== 3.1) {
     throw new IntelligenceServiceError("invalid_manifest", "The intelligence benchmark manifest version is unsupported", 500);
   }
   if (!manifest.task.id || (expectedTaskId && manifest.task.id !== expectedTaskId) || manifest.task.trial_count !== INTELLIGENCE_TRIAL_COUNT || manifest.protocol.trial_count !== INTELLIGENCE_TRIAL_COUNT) {
@@ -694,7 +694,7 @@ function validateFixture(fixtureRoot: string, expectedTaskId?: string): LoadedFi
 }
 
 function defaultFixtureRoot(): string {
-  return path.resolve(__dirname, "..", "..", "benchmarks", "intelligence");
+  return path.resolve(__dirname, "..", "..", "benchmarks", "intelligence-diagnostic");
 }
 
 function defaultRepositoryRoot(): string {
@@ -702,11 +702,11 @@ function defaultRepositoryRoot(): string {
 }
 
 function loadExternalReference(fixtureRoot: string): IntelligenceExternalReference | undefined {
-  const referencePath = path.join(fixtureRoot, "deepswe-reference.v1.json");
+  const referencePath = path.join(fixtureRoot, "deepswe-reference.json");
   if (!existsSync(referencePath)) return undefined;
   const reference = parseJson<IntelligenceExternalReference>(referencePath);
   if (
-    reference.schema !== "treatcode.intelligence.external-reference.v1" ||
+    reference.schema !== "treatcode.intelligence.external-reference.diagnostic.v3.1" ||
     typeof reference.source !== "string" ||
     reference.metric !== "task_pass_rate" ||
     !reference.model ||
@@ -725,53 +725,6 @@ function loadExternalReference(fixtureRoot: string): IntelligenceExternalReferen
 
 function defaultStorageRoot(): string {
   return process.env.TREATCODE_INTELLIGENCE_ROOT || path.join(os.tmpdir(), "treatcode-intelligence");
-}
-
-/**
- * TC-SWE-001 originally persisted its state directly at <root>/state.v1.json.
- * The versioned suite stores each task under <root>/<task-id>/.  Preserve a
- * pilot score when a server upgrades to the suite without deleting or
- * rewriting the legacy file; the task service will validate the copied state
- * with its normal schema and task-id checks.
- */
-function migrateLegacyTaskState(storageRoot: string): void {
-  const legacyPath = path.join(storageRoot, "state.v1.json");
-  const taskStorageRoot = path.join(storageRoot, INTELLIGENCE_TASK_ID);
-  const taskPath = path.join(taskStorageRoot, "state.v1.json");
-  if (!existsSync(legacyPath) || existsSync(taskPath)) return;
-
-  let raw: string;
-  let parsed: unknown;
-  try {
-    raw = readFileSync(legacyPath, "utf8");
-    parsed = JSON.parse(raw) as unknown;
-  } catch {
-    // Leave malformed legacy state for the normal task-service error path.
-    return;
-  }
-  if (!parsed || typeof parsed !== "object") return;
-  const state = parsed as Record<string, unknown>;
-  if (state.schema !== "treatcode.intelligence.state.v1" || !Array.isArray(state.official_records) || !Array.isArray(state.self_reported_records) || !Array.isArray(state.attestations)) return;
-
-  // Never reinterpret a state file that belongs to another task.  Empty
-  // legacy state is safe to migrate and keeps the layout deterministic.
-  const records = [...state.official_records, ...state.self_reported_records];
-  if (records.some((item) => !item || typeof item !== "object" || (item as Record<string, unknown>).task_id !== INTELLIGENCE_TASK_ID)) return;
-
-  mkdirSync(taskStorageRoot, { recursive: true });
-  const temporaryPath = `${taskPath}.${process.pid}.${randomUUID().replace(/-/g, "")}.migration.tmp`;
-  try {
-    writeFileSync(temporaryPath, raw, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    try {
-      renameSync(temporaryPath, taskPath);
-    } catch (error) {
-      // Another suite instance may have migrated first; retain its valid
-      // destination and avoid treating that race as a server-start failure.
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST" && (error as NodeJS.ErrnoException).code !== "EPERM" && (error as NodeJS.ErrnoException).code !== "ENOTEMPTY") throw error;
-    }
-  } finally {
-    if (existsSync(temporaryPath)) rmSync(temporaryPath, { force: true });
-  }
 }
 
 function makeRunId(): string {
@@ -824,12 +777,12 @@ export class IntelligenceBenchmarkService {
   constructor(options: IntelligenceServiceOptions = {}) {
     this.fixtureRoot = path.resolve(options.fixtureRoot || defaultFixtureRoot());
     this.storageRoot = path.resolve(options.storageRoot || defaultStorageRoot());
-    this.statePath = path.resolve(options.statePath || path.join(this.storageRoot, "state.v1.json"));
+    this.statePath = path.resolve(options.statePath || path.join(this.storageRoot, "state.json"));
     this.repositoryRoot = path.resolve(options.repositoryRoot || defaultRepositoryRoot());
     this.artifactRoot = path.resolve(options.artifactRoot || path.join(this.storageRoot, "runner-evidence"));
     this.runnerEngine = options.runnerEngine || "bootstrap";
     this.optLevel = options.optLevel || "-O2";
-    this.sourceCommit = options.sourceCommit || "tc-swe-001-v1";
+    this.sourceCommit = options.sourceCommit || "tc-swe-001-diagnostic";
     this.customExecutor = options.executor;
     // The HTTP adapter still performs normal bearer authorization.  The
     // built-in hook only attests deterministic harness fixtures.  A real
@@ -1060,7 +1013,7 @@ export class IntelligenceBenchmarkService {
       trial.publicPassed = cases.every((item) => item.passed);
       trial.status = trial.publicPassed ? "public_passed" : "public_failed";
       return {
-        schema: "treatcode.intelligence.public-test-report.v1",
+        schema: "treatcode.intelligence.public-test-report.diagnostic.v3.1",
         run_id: run.id,
         trial_id: trial.id,
         attempt: trial.publicRuns,
@@ -1118,7 +1071,7 @@ export class IntelligenceBenchmarkService {
       await this.finishAggregateIfReady(run);
       const remaining = [...run.trials.values()].filter((item) => !item.hiddenSubmitted).length;
       return {
-        schema: "treatcode.intelligence.hidden-submission-receipt.v1",
+        schema: "treatcode.intelligence.hidden-submission-receipt.diagnostic.v3.1",
         run_id: run.id,
         trial_id: trial.id,
         accepted: true,
@@ -1161,7 +1114,7 @@ export class IntelligenceBenchmarkService {
     }
     const note = input.note === undefined ? null : String(input.note).slice(0, 2_000);
     const record: IntelligenceSelfReportedRecord = {
-      schema: "treatcode.intelligence.self-reported-leaderboard.v1",
+      schema: "treatcode.intelligence.self-reported-leaderboard.diagnostic.v3.1",
       id: `self_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "")}`,
       view: "self-reported",
       task_id: this.taskId,
@@ -1225,7 +1178,7 @@ export class IntelligenceBenchmarkService {
     if (!accepted) throw new IntelligenceServiceError("attestation_rejected", "The privileged attestation hook rejected this run", 403);
     const evidenceHash = `sha256:${sha256(stableJson({ aggregate, principal: request.principal, evaluation_kind: request.evaluation_kind, provider, model: request.model, reasoning_effort: reasoningEffort, harness, prompt_hash: promptHash, rollout_ids: [...rolloutIds].sort(), artifact_hashes: [...artifactHashes].sort(), model_configuration: request.model_configuration || null, evidence_hashes: [...evidenceHashes].sort() }))}`;
     const record: IntelligenceAttestationRecord = {
-      schema: "treatcode.intelligence.attestation.v1",
+      schema: "treatcode.intelligence.attestation.diagnostic.v3.1",
       id: `att_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "")}`,
       run_id: run.id,
       principal: request.principal.slice(0, 160),
@@ -1259,7 +1212,7 @@ export class IntelligenceBenchmarkService {
       official.artifact_hashes = [...artifactHashes];
     } else {
       this.officialRecords.push({
-        schema: "treatcode.intelligence.leaderboard-record.v1",
+        schema: "treatcode.intelligence.leaderboard-record.diagnostic.v3.1",
         id: `official_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "")}`,
         view: "official",
         task_id: run.taskId,
@@ -1300,7 +1253,7 @@ export class IntelligenceBenchmarkService {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       throw new IntelligenceServiceError("fixture_unavailable", `Unable to load intelligence state: ${String(error)}`, 500);
     }
-    if (!parsed || typeof parsed !== "object" || (parsed as Record<string, unknown>).schema !== "treatcode.intelligence.state.v1") {
+    if (!parsed || typeof parsed !== "object" || (parsed as Record<string, unknown>).schema !== "treatcode.intelligence.state.diagnostic.v3.1") {
       throw new IntelligenceServiceError("fixture_unavailable", "The persisted intelligence state has an unsupported schema", 500);
     }
     const state = parsed as PersistedIntelligenceState;
@@ -1308,7 +1261,7 @@ export class IntelligenceBenchmarkService {
       throw new IntelligenceServiceError("fixture_unavailable", "The persisted intelligence state is incomplete", 500);
     }
     for (const record of state.official_records) {
-      if (!record || record.schema !== "treatcode.intelligence.leaderboard-record.v1" || record.view !== "official" || record.task_id !== this.taskId || typeof record.run_id !== "string" || typeof record.score !== "number") {
+      if (!record || record.schema !== "treatcode.intelligence.leaderboard-record.diagnostic.v3.1" || record.view !== "official" || record.task_id !== this.taskId || typeof record.run_id !== "string" || typeof record.score !== "number") {
         throw new IntelligenceServiceError("fixture_unavailable", "The persisted official leaderboard contains an invalid record", 500);
       }
       if (record.attested !== true || typeof record.attestation_id !== "string" || record.attestation_id.length === 0 || !hasBoundOfficialProvenance(record)) {
@@ -1317,7 +1270,7 @@ export class IntelligenceBenchmarkService {
         // supplied model label. Preserve their score as self-reported, but do
         // not let an unbound historical record violate the current contract.
         this.selfReportedRecords.push({
-          schema: "treatcode.intelligence.self-reported-leaderboard.v1",
+          schema: "treatcode.intelligence.self-reported-leaderboard.diagnostic.v3.1",
           id: `legacy_${record.id}`,
           view: "self-reported",
           task_id: record.task_id,
@@ -1331,13 +1284,13 @@ export class IntelligenceBenchmarkService {
       this.officialRecords.push({ ...record });
     }
     for (const record of state.self_reported_records) {
-      if (!record || record.schema !== "treatcode.intelligence.self-reported-leaderboard.v1" || record.view !== "self-reported" || record.task_id !== this.taskId || typeof record.participant_id !== "string" || typeof record.score !== "number") {
+      if (!record || record.schema !== "treatcode.intelligence.self-reported-leaderboard.diagnostic.v3.1" || record.view !== "self-reported" || record.task_id !== this.taskId || typeof record.participant_id !== "string" || typeof record.score !== "number") {
         throw new IntelligenceServiceError("fixture_unavailable", "The persisted self-reported leaderboard contains an invalid record", 500);
       }
       this.selfReportedRecords.push({ ...record });
     }
     for (const record of state.attestations) {
-      if (!record || record.schema !== "treatcode.intelligence.attestation.v1" || typeof record.run_id !== "string" || typeof record.evidence_hash !== "string") {
+      if (!record || record.schema !== "treatcode.intelligence.attestation.diagnostic.v3.1" || typeof record.run_id !== "string" || typeof record.evidence_hash !== "string") {
         throw new IntelligenceServiceError("fixture_unavailable", "The persisted attestation metadata contains an invalid record", 500);
       }
       this.persistedAttestations.set(record.run_id, { ...record });
@@ -1347,7 +1300,7 @@ export class IntelligenceBenchmarkService {
 
   private persistState(): void {
     const state: PersistedIntelligenceState = {
-      schema: "treatcode.intelligence.state.v1",
+      schema: "treatcode.intelligence.state.diagnostic.v3.1",
       official_records: this.officialRecords.map((record) => ({ ...record })),
       self_reported_records: this.selfReportedRecords.map((record) => ({ ...record })),
       attestations: [...this.persistedAttestations.values()].map((record) => ({ ...record })),
@@ -1435,7 +1388,7 @@ export class IntelligenceBenchmarkService {
   private viewRun(run: InternalRun): IntelligenceRunView {
     const completedTrials = [...run.trials.values()].filter((trial) => trial.hiddenSubmitted).length;
     return {
-      schema: "treatcode.intelligence.run.v1",
+      schema: "treatcode.intelligence.run.diagnostic.v3.1",
       run_id: run.id,
       task_id: run.taskId,
       status: run.status,
@@ -1541,7 +1494,7 @@ export class IntelligenceBenchmarkService {
     const passedTrials = trials.filter((trial) => trial.hiddenPasses === this.fixture.hiddenCases.length).length;
     const officialEligible = run.status !== "tampered" && trials.every((trial) => trial.hiddenSubmitted && trial.hiddenClean);
     run.aggregate = {
-      schema: "treatcode.intelligence.aggregate.v1",
+      schema: "treatcode.intelligence.aggregate.diagnostic.v3.1",
       run_id: run.id,
       task_id: run.taskId,
       benchmark_version: run.benchmarkVersion,
@@ -1572,8 +1525,8 @@ export interface IntelligenceSuiteServiceOptions extends IntelligenceServiceOpti
 }
 
 /**
- * Dispatches the generic single-task engine across the versioned suite. The
- * legacy TC-SWE-001 calls intentionally remain valid when task_id is omitted.
+ * Dispatches the generic single-task engine across the diagnostic suite. The
+ * TC-SWE-001 compatibility calls remain valid when task_id is omitted.
  */
 export class IntelligenceSuiteService {
   readonly suiteRoot: string;
@@ -1588,8 +1541,8 @@ export class IntelligenceSuiteService {
     this.suiteRoot = path.resolve(options.suiteRoot || options.fixtureRoot || defaultFixtureRoot());
     this.storageRoot = path.resolve(options.storageRoot || defaultStorageRoot());
     this.externalReference = loadExternalReference(this.suiteRoot);
-    this.manifest = parseJson<IntelligenceSuiteManifest>(path.join(this.suiteRoot, "suite.v1.json"));
-    if (this.manifest.schema !== INTELLIGENCE_SUITE_SCHEMA || !Number.isInteger(this.manifest.version) || this.manifest.version < 1 || this.manifest.version > 2 || this.manifest.trial_count !== INTELLIGENCE_TRIAL_COUNT || this.manifest.task_count !== this.manifest.tasks.length || this.manifest.tasks.length < 5) {
+    this.manifest = parseJson<IntelligenceSuiteManifest>(path.join(this.suiteRoot, "suite.json"));
+    if (this.manifest.schema !== INTELLIGENCE_SUITE_SCHEMA || !Number.isFinite(this.manifest.version) || this.manifest.version !== 3.1 || this.manifest.trial_count !== INTELLIGENCE_TRIAL_COUNT || this.manifest.task_count !== this.manifest.tasks.length || this.manifest.tasks.length < 5) {
       throw new IntelligenceServiceError("invalid_manifest", "The intelligence suite must be versioned and contain at least five four-trial tasks", 500);
     }
     for (const descriptor of this.manifest.tasks) {
@@ -1598,15 +1551,14 @@ export class IntelligenceSuiteService {
       }
       const fixtureRoot = path.resolve(this.suiteRoot, descriptor.fixture_path);
       if (!isWithin(this.suiteRoot, fixtureRoot)) throw new IntelligenceServiceError("invalid_manifest", `Task fixture escaped the suite root: ${descriptor.id}`, 500);
-      if (descriptor.id === INTELLIGENCE_TASK_ID) migrateLegacyTaskState(this.storageRoot);
       const taskStorageRoot = path.join(this.storageRoot, descriptor.id);
       const taskService = new IntelligenceBenchmarkService({
         ...options,
         fixtureRoot,
         taskId: descriptor.id,
         storageRoot: taskStorageRoot,
-        statePath: path.join(taskStorageRoot, "state.v1.json"),
-        sourceCommit: options.sourceCommit || `${descriptor.id.toLowerCase()}-v1`,
+        statePath: path.join(taskStorageRoot, "state.json"),
+        sourceCommit: options.sourceCommit || `${descriptor.id.toLowerCase()}-diagnostic`,
       });
       this.descriptors.set(descriptor.id, { ...descriptor });
       this.services.set(descriptor.id, taskService);
@@ -1756,7 +1708,7 @@ export class IntelligenceSuiteService {
       const taskCount = this.taskIds().length;
       const completedTasks = rows.length;
       return {
-        schema: "treatcode.intelligence.suite-leaderboard-record.v1" as const,
+        schema: "treatcode.intelligence.suite-leaderboard-record.diagnostic.v3.1" as const,
         benchmark_version: first.benchmark_version,
         provider: first.provider!,
         model: first.model!,

@@ -73,7 +73,7 @@ not binary compatibility or the physical size of every host/wire encoding. Instr
 | `WAIT` | 37 |
 | `EXT` | 80 |
 
-Direct opcodes 38–79 are reserved.
+Unassigned direct opcode 15 and direct opcodes 38–79 are reserved.
 Opcode 80 is the v2 extension escape; no v1 operation encoding is accepted by production assemblers or VMs.
 
 ## PTE v2

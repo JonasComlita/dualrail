@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-007",
+  "title": "Canonical token decoder",
+  "phase": "pilot",
+  "initial_signal": "A token decoder accepts redundant leading trits and exposes partial output before checksum validation completes.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.ts",
+      "editable": true,
+      "sha256": "0c5d7998a119cb8104cc95c584004ac0f5ff8445a7dbce0fb6fbb5dc0f960de6"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "4d40d5ffbd5c6c004544733af760cb1b1a240f32e6c9c99f52b97c27958f3a56"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "9bf75d4d04ead0f73ee39642b354bf1851afa999752668494f57e729e4191d8e"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "bca3a9abff3adae3b546f4f41e441bb116612b3e4a61377b3897c3f371f10460"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "7b83d134b6d0c28f76a12f3e38c74992843e9f019b540e40459368d11522d793"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "6d0f2b3cf5708cb7be2be99ddeeeaf6a0a9be0e11999679b085c1e97920949c1"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "4fe03178864dd84f40fbf556f5e5b1e021a03de39a185d6553e43d11b5df7288"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "a07d9cb2af0134fe2a48cd16ea882fdbcf95d2b3a5961101d94090cd2db841b7"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

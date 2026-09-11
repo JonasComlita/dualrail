@@ -70,7 +70,7 @@ void testPhase35Infrastructure() {
                    "done text label address ignores data words");
             expect(mixed.data_labels.count("payload") && mixed.data_labels.at("payload") == 0,
                    "payload data label address ignores text words");
-            auto jmp = InstructionWord::decode(mixed.program[1]);
+            auto jmp = InstructionWord::decodeSemantic(mixed.program[1]);
             expect(jmp.opcode == Opcode::JMP && jmp.offset == 1,
                    "branch labels remain PC-relative text offsets");
         }
@@ -99,8 +99,8 @@ void testPhase35Infrastructure() {
                    ".org advances text addresses");
             expect(placed.program.size() == 4,
                    ".org pads text image with NOPs");
-            expect(InstructionWord::decode(placed.program[0]).opcode == Opcode::NOP &&
-                   InstructionWord::decode(placed.program[3]).opcode == Opcode::HALT,
+            expect(InstructionWord::decodeSemantic(placed.program[0]).opcode == Opcode::NOP &&
+                   InstructionWord::decodeSemantic(placed.program[3]).opcode == Opcode::HALT,
                    ".org text padding executes as NOPs before placed code");
             expect(placed.data_labels.count("pte") && placed.data_labels.at("pte") == 4,
                    ".org advances data addresses");

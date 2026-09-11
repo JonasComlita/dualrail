@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-030",
+  "title": "Packed-lane transform fusion",
+  "phase": "pilot",
+  "initial_signal": "A correct ternary lane transform repeatedly unpacks values and violates the cycle and allocation ceilings.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "33f834a6d776fc8aa41558329810710a9624cbceb6cc68dc5759a11585fcd876"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "6cda829bcff707b496d195e4559ed3b9410176d1a4d640f744a6d77bfbc11f0c"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "b06f756dca5826d78b40fcc87cc678cbc276b72df9c497fbb57002b169815e09"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "0044dfdacc13f0575604fcdbef6bd236c1edfe1d6dc2522dc21caf53fb65c1e3"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "185d0bc2a6d75092b0e54cabb2ce31e0cc7c147e714326a3a7782fb289324e34"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "a38a428bc7adc4bb4586bbcadb6b612d90053744e8d953e452ba81207d3f380d"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "3e6828f11e10a0566e339393eadf5ff423ff209556ef42ef8ee08c9d066fac44"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "8209bc2f5bd4cfe5d5d0bcf6f75b1786274f6a183d3bc2e6a977092547fe9f2a"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/model-execution-attestation.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 provider-signed model execution attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "payload", "signature_base64"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.model-execution-attestation.v3.1" },
+    "version": { "const": "3.1" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "version", "provider_id", "key_id", "issued_at", "expires_at", "released_at", "phase", "run_id", "task_id", "model", "reasoning_effort", "participant_bundle_sha256", "suite_sha256", "cohort", "configuration", "run_number", "fresh_context", "cross_task_memory_disabled", "attempt_count", "tool_trace_sha256"],
+      "properties": {
+        "schema": { "const": "treatcode.intelligence.model-execution-attestation-payload.v3.1" },
+        "version": { "const": "3.1" },
+        "provider_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "released_at": { "type": "string", "format": "date-time" },
+        "phase": { "enum": ["calibration", "subject"] },
+        "run_id": { "$ref": "#/$defs/id" },
+        "task_id": { "type": "string", "pattern": "^TC-V31-FINAL-[0-9]{3}$" },
+        "model": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "reasoning_effort": { "$ref": "#/$defs/id" },
+        "participant_bundle_sha256": { "$ref": "#/$defs/hash" },
+        "suite_sha256": { "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "cohort": { "oneOf": [{ "enum": ["weak", "medium", "frontier"] }, { "type": "null" }] },
+        "configuration": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "run_number": { "oneOf": [{ "enum": [1, 2, 3] }, { "type": "null" }] },
+        "fresh_context": { "const": true },
+        "cross_task_memory_disabled": { "const": true },
+        "attempt_count": { "const": 1 },
+        "tool_trace_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "phase": { "const": "calibration" } } },
+          "then": { "properties": { "cohort": { "enum": ["weak", "medium", "frontier"] }, "configuration": { "$ref": "#/$defs/id" }, "run_number": { "enum": [1, 2, 3] }, "suite_sha256": { "type": "null" } } },
+          "else": { "properties": { "cohort": { "type": "null" }, "configuration": { "type": "null" }, "run_number": { "type": "null" }, "suite_sha256": { "$ref": "#/$defs/hash" } } }
+        }
+      ]
+    },
+    "signature_base64": { "type": "string", "minLength": 80, "maxLength": 100 }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

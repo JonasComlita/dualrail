@@ -131,7 +131,7 @@
     },
     {
       "name": "treatcode_intelligence_v3",
-      "description": "Independent repository-task intelligence benchmark protocol, scoring, statistics, and participant/grader isolation foundation.",
+      "description": "Intelligence v3.1 multi-track portfolio protocol, recoverable authorship, signed execution identity, independent score dimensions, statistics, and participant/grader isolation foundation; legacy scalar tasks remain diagnostic-only.",
       "targets": [],
       "status": "development",
       "manual": true,
@@ -139,6 +139,17 @@
         "npm.cmd --prefix treatcode run generate:intelligence:v3",
         "npm.cmd --prefix treatcode run validate:intelligence:v3",
         "npm.cmd --prefix treatcode run test:intelligence:v3",
+        "npm.cmd --prefix treatcode run validate:intelligence:v31",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:author-shards",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:repository",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:calibration-assignments",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:calibration",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:infrastructure",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:comparison",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:catalog",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:tracks",
+        "npm.cmd --prefix treatcode run test:intelligence:v31:pilot-e2e",
+        "npm.cmd --prefix treatcode run test:intelligence-ui",
         "npm.cmd --prefix treatcode run test:e2e:intelligence"
       ],
       "docs": [
@@ -152,11 +163,23 @@
         "benchmarks/intelligence-v3/trusted-contributors.schema.v3.json",
         "benchmarks/intelligence-v3/corpus.candidates.v3.json",
         "benchmarks/intelligence-v3/executable-drafts.v3.json",
+        "benchmarks/intelligence-v3.1/README.md",
+        "benchmarks/intelligence-v3.1/protocol.v3.1.json",
+        "benchmarks/intelligence-v3.1/tracks.v3.1.json",
+        "benchmarks/intelligence-v3.1/score-observation.schema.v3.1.json",
+        "benchmarks/intelligence-v3.1/final-corpus-contract.v3.1.json",
+        "benchmarks/intelligence-v3.1/author-shard-plan.v3.1.json",
+        "benchmarks/intelligence-v3.1/author-shard-plan.schema.v3.1.json",
+        "benchmarks/intelligence-v3.1/author-shard-receipt.schema.v3.1.json",
+        "benchmarks/intelligence-v3.1/model-execution-attestation.schema.v3.1.json",
+        "benchmarks/intelligence-v3.1/calibration-plan.v3.1.json",
         "docs/11_TreatCode_Platform/plans/P14_intelligence_benchmark.md"
       ],
       "acceptance_evidence": [
         "build/treatcode-plan-evidence/P14/intelligence-v3-foundation.json",
-        "build/treatcode-plan-evidence/P14/intelligence-e2e.json"
+        "build/treatcode-plan-evidence/P14/intelligence-e2e.json",
+        "build/treatcode-plan-evidence/P14/intelligence-v31-corpus-validation.json",
+        "build/treatcode-plan-evidence/P14/intelligence-v31-authoring-validation.json"
       ]
     },
     {

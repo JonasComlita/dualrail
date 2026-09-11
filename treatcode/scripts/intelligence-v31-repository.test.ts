@@ -15,6 +15,7 @@ import {
   type IntelligenceV31RepositoryGraderManifest,
   type IntelligenceV31RepositoryTaskManifest,
 } from "../src/intelligenceV31Repository";
+import { INTELLIGENCE_V31_FINAL_TRACK_MIX, type IntelligenceV31TrackId } from "../src/intelligenceV31Tracks";
 import { IntelligenceV31FinalCommandRegistry } from "../src/intelligenceV31FinalRegistry";
 
 const repositoryRoot = path.resolve(import.meta.dir, "..", "..");
@@ -122,6 +123,7 @@ describe("Intelligence v3.1 repository executor", () => {
         task_id: "TC-V31-TEST-001", attempt_id: "attempt-1", repository_root: repositoryRoot,
         subject_workspace_root: item.subject, baseline_root: item.baseline, submission_root: item.submission,
         grader_root: item.grader, evidence_root: item.evidence, released_bundle_hash: item.releasedHash, command_registry: item.registry,
+        track: "repository_repair", metrics: { tool_calls: 4, successful_tool_calls: 3, tool_errors: 1, cpu_ms: 8, memory_mb: 32 },
       });
       assert.equal(report.passed, true);
       assert.equal(report.public_commands_passed, 1);
@@ -132,6 +134,9 @@ describe("Intelligence v3.1 repository executor", () => {
       assert.equal(report.changed_files, 1);
       assert.equal(report.trit_files_changed, 1);
       assert.equal(report.submission_kind, "snapshot");
+      assert.equal(report.track, "repository_repair");
+      assert.equal(report.successful_tool_calls, 3);
+      assert.equal(report.telemetry_source, "participant_completion");
       assert.ok(report.command_runtime_ms >= 0);
       assert.match(report.evidence_hash, /^[a-f0-9]{64}$/);
       const privateEvidence = JSON.parse(await readFile(path.join(item.evidence, "TC-V31-TEST-001-attempt-1.private.json"), "utf8"));
@@ -211,11 +216,14 @@ describe("Intelligence v3.1 repository executor", () => {
 
   test("detects frozen-suite mutation", () => {
     const hash = (value: string) => value.repeat(64);
-    const tasks = Array.from({ length: 100 }, (_, index) => ({ task_id: `TC-V31-FINAL-${String(index + 1).padStart(3, "0")}`, participant_bundle_hash: hash("a"), grader_bundle_hash: hash("b") }));
+    const trackOrder = Object.entries(INTELLIGENCE_V31_FINAL_TRACK_MIX).flatMap(([track, count]) => Array.from({ length: count }, () => track as IntelligenceV31TrackId));
+    const tasks = Array.from({ length: 100 }, (_, index) => ({ task_id: `TC-V31-FINAL-${String(index + 1).padStart(3, "0")}`, track: trackOrder[index], participant_bundle_hash: hash("a"), grader_bundle_hash: hash("b") }));
     const frozen = createIntelligenceV31FrozenSuite({ frozen_at: "2026-08-27T12:00:00Z", protocol_sha256: hash("c"), tasks });
     assert.deepEqual(verifyIntelligenceV31FrozenSuite(frozen), []);
     const mutated = { ...frozen, tasks: frozen.tasks.map((task, index) => index === 0 ? { ...task, participant_bundle_hash: hash("d") } : task) };
     assert.ok(verifyIntelligenceV31FrozenSuite(mutated).includes("frozen suite hash mismatch"));
+    const trackDrift = tasks.map((task, index) => index === 0 ? { ...task, track: "repository_repair" as const } : task);
+    assert.throws(() => createIntelligenceV31FrozenSuite({ frozen_at: "2026-08-27T12:00:00Z", protocol_sha256: hash("c"), tasks: trackDrift }), /track mix/);
   });
 
   test("final command registry exposes only fixed public and hidden command ids", () => {
@@ -257,6 +265,13 @@ describe("Intelligence v3.1 repository executor", () => {
     const item = await fixture({ phase: "calibration" });
     try {
       await assert.rejects(() => gradeIntelligenceV31RepositoryAttempt({ task_id: "TC-V31-TEST-001", attempt_id: "externally-frozen", repository_root: repositoryRoot, subject_workspace_root: item.subject, baseline_root: item.baseline, submission_root: item.submission, grader_root: item.grader, evidence_root: item.evidence, released_bundle_hash: item.releasedHash, command_registry: item.registry, require_verified_infrastructure: true }), /requires verified OS or container network isolation/);
+    } finally { await rm(item.root, { recursive: true, force: true }); }
+  });
+
+  test("official grading cannot be requested without the explicit verified-infrastructure gate", async () => {
+    const item = await fixture({ phase: "calibration" });
+    try {
+      await assert.rejects(() => gradeIntelligenceV31RepositoryAttempt({ task_id: "TC-V31-TEST-001", attempt_id: "fake-official", repository_root: repositoryRoot, subject_workspace_root: item.subject, baseline_root: item.baseline, submission_root: item.submission, grader_root: item.grader, evidence_root: item.evidence, released_bundle_hash: item.releasedHash, command_registry: item.registry, official_run: true }), /must explicitly require verified infrastructure/);
     } finally { await rm(item.root, { recursive: true, force: true }); }
   });
 });

@@ -1,19 +1,34 @@
 # Opcode Table
 
-Source of truth: `ternary_isa.h` — `enum class Opcode : uint8_t`
+Sources of truth: `ARCHITECTURE_MANIFEST.json` for ISA-v2 wire values and
+`ternary_isa.h` for semantic `Opcode` identities.
 
 ## How Opcodes Are Encoded
 
-The opcode occupies **4 trits** (positions [25:22]) of a 27-trit instruction word.
-It is read as an **unsigned base-3 integer** (0–80). The format discriminant (trit[26]) determines R/I/B type; the opcode selects the operation within that format.
+The wire opcode occupies **4 trits** (positions [25:22]) of a 27-trit
+instruction word and is read as an unsigned base-3 integer from 0 through 80.
+The C++ semantic ID listed below is not necessarily that wire value.
 
 `rawOp = sum over i of (trit[22+i] + 1) * 3^i` → unsigned base-3 → opcode index.
 
+ISA-v2 direct wire opcodes are 0–14 and 16–37. Direct value 15 and values
+38–79 are reserved; wire opcode 80 is `EXT`. Extended instructions carry a
+format-specific selector.
+Notable semantic-to-wire mappings are:
+
+| Semantic operation | ISA-v2 wire encoding |
+|---|---|
+| `TINV` | direct `NEG` opcode 10 |
+| `CALLR` through `TSTR` | direct opcodes 27 through 36 |
+| `WAIT` | direct opcode 37 |
+| Lane/vector/advanced operations | `EXT=80` plus their extension selector |
+| `VCTXSTORE` / `VCTXLOAD` | private v3 `EXT=80` selectors 81 / 82 |
+
 ---
 
-## Complete Opcode Table
+## Semantic Operation Table
 
-| ID | Mnemonic | Format | Operation |
+| Semantic ID | Mnemonic | Format | Operation |
 |----|----------|--------|-----------|
 | 0  | `NOP`    | Any    | No operation |
 | 1  | `HALT`   | Any    | Stop execution |
@@ -95,7 +110,11 @@ It is read as an **unsigned base-3 integer** (0–80). The format discriminant (
 | 77 | `CSRRW` | R      | `Rd ← CSR[imm]; CSR[imm] ← Rs1` (atomic RW) |
 | 78 | `TLDR`  | I      | Trit load (sub-word) |
 | 79 | `TSTR`  | I      | Trit store (sub-word) |
-| 80+ | (reserved) | — | TRAP_ILLEGAL_OP |
+| 80 | `WAIT` | B | Retire once and wait for an architectural event |
+| 81 | `TLBINV` | R | Invalidate selected TLB entries (`EXT` selector 80) |
+| 82 | `VCTXSTORE` | I/private | Privileged v3 vector-context save |
+| 83 | `VCTXLOAD` | I/private | Privileged v3 vector-context restore |
+| 255 | `RESERVED` | — | In-memory semantic sentinel; never encoded |
 
 ---
 

@@ -1,0 +1,19 @@
+fn finalize_result(value: t40, mode: t40) -> t40 {
+    var normalized: t40 = normalize_value(value);
+    if mode < 0 { return (0 - normalized) - 1; }
+    if mode == 0 { return normalized; }
+    return normalized * 3 + 1;
+}
+
+fn bounded_fold(seed: t40, steps: t40) -> t40 {
+    var acc: t40 = normalize_value(seed);
+    var direction: t40 = -1;
+    var i: t40 = 0;
+    while i < steps - 1 {
+        acc = normalize_value(acc + direction);
+        if direction < 1 { direction = direction + 1; }
+        else { direction = -1; }
+        i = i + 1;
+    }
+    return acc;
+}

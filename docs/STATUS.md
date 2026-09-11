@@ -28,7 +28,7 @@
 | Trit encoding (2-bit-per-trit) | ✅ Stable | `ternary_backend.h`, `ternary_scalar.h` |
 | Instruction word (TritWord27) | ✅ Stable | `ternary_isa.h` |
 | 64-bit-equivalent scalar design goal (T40) | ✅ Stable | `ARCHITECTURE_MANIFEST.json`, generated `architecture_v2.md` |
-| 80 opcodes (NOP–TSTR) | ✅ Stable | `ternary_isa.h` `Opcode` enum |
+| Versioned direct/extension opcode map | ✅ Stable | `ARCHITECTURE_MANIFEST.json`, `ternary_isa.h` |
 | CSR file (46 registers) | ✅ Stable | `ternary_isa.h` CSR_* constants |
 | Privilege modes (Kernel/Supervisor/User) | ✅ Stable | `ternary_isa.h` `PrivilegeMode` |
 | Trap codes + OS cause codes | ✅ Stable | `ternary_isa.h` |
@@ -49,7 +49,7 @@
 | Component | Status | Source of truth |
 |-----------|--------|----------------|
 | VMState (registers, memory, CSRs) | ✅ Stable | `ternary_vm_state.h` |
-| VM dispatcher (all 80 opcodes) | ✅ Stable | `ternary_vm.h` |
+| VM semantic-operation dispatcher | ✅ Stable | `ternary_vm.h` |
 | Vector register file (8 regs × N lanes) | ✅ Stable | `ternary_vm_state.h` |
 | AI accumulator | ✅ Stable | `ternary_vm_state.h` |
 | MMU / address translation | ✅ Stable | `ternary_vm_state.h` |

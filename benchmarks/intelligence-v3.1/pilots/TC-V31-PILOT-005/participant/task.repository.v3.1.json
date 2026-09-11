@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-005",
+  "title": "Multiword carry-chain addition",
+  "phase": "pilot",
+  "initial_signal": "Signed balanced-ternary carry propagation corrupts the adjacent word when positive and negative lanes cancel.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "54c49172dd66a6b73ff09748dc009c1950e5e596e90fce4e186cdeb79635bf6f"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "4153fedd55b3cc153121f203b333431895439f37607c5b8824b485b4836fddbc"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "92567a9ad0d06e8d8b4c2fdaf58104d0e14d4ff2389764ac0c65ddc7d32b62f7"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "261b6c894778c26785dd52270b12c881c6b87505c6fe63f1331057f90f9020d0"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "8a8c667dd65d65212fc74fab531bcd3b998bab6cca0086bf58bb53018829518a"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "5413b459c45189355e0bfdee503466dce6a8c4c7f9967224e1eca7776883940c"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "8209bc2f5bd4cfe5d5d0bcf6f75b1786274f6a183d3bc2e6a977092547fe9f2a"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

@@ -206,6 +206,7 @@ for (let taskOffset = 0; taskOffset < pilot.tasks.length; taskOffset += 1) {
   task.private_grader_status = "installed_outside_repository";
 }
 pilot.status = "executable_packages_ready_for_disposable_subject_pilots";
+pilot.warning = "Pilot packages may be regenerated for explicitly labeled development runs. They remain exposed, disposable evidence and are permanently ineligible for any Luna/Sol holdout.";
 pilot.executable_package_count = 30;
 pilot.private_grader_root_exposed_to_subjects = false;
 fs.writeFileSync(pilotPath, `${JSON.stringify(pilot, null, 2)}\n`);

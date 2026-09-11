@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/score-observation.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 independent score observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "task_id", "track", "correctness"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.score-observation.v3.1" },
+    "version": { "const": "3.1" },
+    "task_id": { "type": "string", "pattern": "^TC-V31-[A-Z0-9-]+$" },
+    "track": { "enum": ["fresh_coding", "repository_repair", "terminal_agent", "expert_reasoning", "frontier_math", "abstract_generalization", "multimodal_reasoning", "web_research"] },
+    "correctness": { "type": "boolean" },
+    "robustness": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "wall_clock_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "latency_budget_ms": { "type": ["integer", "null"], "minimum": 1 },
+    "cpu_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "cpu_budget_ms": { "type": ["integer", "null"], "minimum": 1 },
+    "memory_mb": { "type": ["integer", "null"], "minimum": 0 },
+    "memory_budget_mb": { "type": ["integer", "null"], "minimum": 1 },
+    "tool_calls": { "type": ["integer", "null"], "minimum": 0 },
+    "successful_tool_calls": { "type": ["integer", "null"], "minimum": 0 },
+    "tool_errors": { "type": ["integer", "null"], "minimum": 0 },
+    "discussion_quality": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "telemetry_source": { "enum": ["provider_attested", "participant_reported", "grader_measured"] }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-016",
+  "title": "ABA-safe queue handoff",
+  "phase": "pilot",
+  "initial_signal": "A bounded queue passes sequential tests but loses a slot when two claims wrap through the neutral generation.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "11a7d525216d32245b4b1493782f54e1c66aa6a29c5d5b1728cca98f34ff9ab6"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "391cefff00771d57bec3e64bea4b50e60373ce5242d2f14dbfc6dcf9b722ed62"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "7db63655db78358ddaeed2579d307572d6523e45b4f7095077781cd01a0db303"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "431c453d2787abf1f289a2ac092e6dbc06e2c1f4817d3de5c39f9d34feb8ac2a"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "34bc408141787f93af45d65570ffa1194885a3eda59d1d5a2b9b1f6ec78f3eb4"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "3c5439d648ec97ca2589bc4cfd1f25a47a2853198239328c01da3a84409b94cf"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "94e316ac3b4065befc0b234283bbc91da6df00ae9bacba3d26c92ca672cfb326"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "24a97738dfe56621fe961055420ce6fb7e3ea390919c81fa3472772b7d6fa5de"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

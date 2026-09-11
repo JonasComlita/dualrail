@@ -1,0 +1,13 @@
+{
+  "schema": "treatcode.intelligence.public-tests.diagnostic.v3.1",
+  "version": 3.1,
+  "visibility": "public",
+  "cases": [
+    { "id": "public-first-word", "name": "one-word aligned span", "a": 0, "b": 1, "c": 1, "expected": 0 },
+    { "id": "public-aligned-three", "name": "three-aligned span", "a": 3, "b": 6, "c": 3, "expected": 8 },
+    { "id": "public-aligned-nine", "name": "nine-aligned tail span", "a": 9, "b": 18, "c": 9, "expected": 26 },
+    { "id": "public-misaligned", "name": "misaligned valid span", "a": 1, "b": 1, "c": 3, "expected": -3 },
+    { "id": "public-overrun", "name": "end-exclusive overrun", "a": 26, "b": 2, "c": 1, "expected": -1 },
+    { "id": "public-bad-alignment", "name": "unsupported alignment", "a": 0, "b": 1, "c": 2, "expected": -2 }
+  ]
+}

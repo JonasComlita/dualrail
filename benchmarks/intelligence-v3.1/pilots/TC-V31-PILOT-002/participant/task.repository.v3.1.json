@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-002",
+  "title": "Bounded streaming median",
+  "phase": "pilot",
+  "initial_signal": "A fixed-capacity two-heap median drifts after duplicate-heavy eviction and signed boundary inputs.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.txt",
+      "editable": true,
+      "sha256": "245f759b1dbe7cdcbb71bf2b9d4c198fb3acbc48eb3a94c2d35056b005adbfc5"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "5ecb92b21429b628c9a770cbfaac42b3b442a24dc0518e1ce26ddeda65ab10ad"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "fee9d98fb29196bb53ca2d4a71e681a039320c81717c28df13e2b8f3b4da73e8"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "a3a0b7aca048c6335416f11998671dffb4670d81cd0b5c058b890c7126605767"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "ef5dc03fe673a6d6f3ff5a513ad72669d9fd3eb8bcc5c83f4404c2d92d255040"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "a38a428bc7adc4bb4586bbcadb6b612d90053744e8d953e452ba81207d3f380d"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "88dc13546fef5c39ba3654023d538f1b49c344608dec75266c8de8a963f7afce"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "a07d9cb2af0134fe2a48cd16ea882fdbcf95d2b3a5961101d94090cd2db841b7"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

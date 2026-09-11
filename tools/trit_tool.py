@@ -4808,6 +4808,9 @@ def validate_treatcode_plan_manifest(
                     elif command_id in command_ids:
                         errors.append(_plan_error("duplicate_verification_command_id", f"{plan_id} repeats command ID {command_id}", plan_id=plan_id))
                     command_ids.add(command_id)
+                    command_timeout = command.get("timeout_seconds")
+                    if command_timeout is not None and (not isinstance(command_timeout, int) or isinstance(command_timeout, bool) or command_timeout < 1 or command_timeout > 3600):
+                        errors.append(_plan_error("invalid_verification_command_timeout", f"{plan_id} command {command_id or command_position} has an invalid timeout_seconds", plan_id=plan_id))
 
         evidence = entry.get("evidence")
         if not isinstance(evidence, list) or not evidence:
@@ -5156,6 +5159,7 @@ def verify_treatcode_plan(
                     "id": str(command_id),
                     "command": command_text,
                     "required": command.get("required", True) if isinstance(command, dict) else True,
+                    "timeout_seconds": command.get("timeout_seconds", timeout) if isinstance(command, dict) else timeout,
                 }
                 if _plan_is_self_verification(command, normalized_id):
                     command_record.update({"status": "self_reference_skipped", "returncode": 0, "duration_seconds": 0.0, "stdout_sha256": "", "stderr_sha256": ""})
@@ -5165,7 +5169,7 @@ def verify_treatcode_plan(
                         commands_passed = False
                 else:
                     argv = _plan_command_argv(command)
-                    execution = run_command(argv, cwd=repo_root, capture=True, timeout=timeout)
+                    execution = run_command(argv, cwd=repo_root, capture=True, timeout=command_record["timeout_seconds"])
                     stdout = execution.get("stdout", "") or ""
                     stderr = execution.get("stderr", "") or ""
                     command_record.update(

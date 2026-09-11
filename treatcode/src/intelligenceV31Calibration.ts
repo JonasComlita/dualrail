@@ -15,6 +15,8 @@ export interface IntelligenceV31CalibrationObservation {
   run_number: 1 | 2 | 3;
   fresh_context: true;
   subject_family_excluded: true;
+  model_execution_verified: true;
+  execution_attestation_sha256: string;
   network_isolation_verified: true;
   resource_limits_verified: true;
   append_only_evidence_verified: true;
@@ -30,6 +32,8 @@ export interface IntelligenceV31CalibrationTaskInput {
   task_id: string;
   participant_bundle_hash: string;
   author_model_family: string;
+  calibration_model_families: [string, string];
+  calibration_configurations: Record<IntelligenceV31CalibrationCohort, [string, string]>;
   qualification: { reference_passed: boolean; starter_failed: boolean; mutants_caught: number; mutants_total: number };
 }
 
@@ -64,8 +68,16 @@ export interface IntelligenceV31CalibrationReport {
 
 const HASH = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9._-]+$/;
-const SUBJECT_FAMILIES = new Set(["gpt-5.6-luna", "gpt-5.6-sol"]);
+const CANONICAL_MODEL_FAMILY = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const COHORTS: IntelligenceV31CalibrationCohort[] = ["weak", "medium", "frontier"];
+
+export function canonicalIntelligenceV31ModelFamily(value: string): string {
+  return `${value || ""}`.trim().toLowerCase().split(/[/:]/).filter(Boolean).at(-1) || "";
+}
+
+export function isIntelligenceV31SubjectFamily(value: string): boolean {
+  return /^gpt-5\.6-(?:luna|sol)(?:$|[-.])/.test(canonicalIntelligenceV31ModelFamily(value));
+}
 
 function round(value: number, digits = 4): number {
   const scale = 10 ** digits;
@@ -114,10 +126,17 @@ export function calibrateIntelligenceV31Candidates(input: {
   const observationKeys = new Set<string>();
   const attemptIds = new Set<string>();
   const evidenceHashes = new Set<string>();
+  const executionAttestationHashes = new Set<string>();
 
   for (const task of input.tasks) {
     if (!/^TC-V31-FINAL-\d{3}$/.test(task.task_id) || !HASH.test(task.participant_bundle_hash)) issues.push(`${task.task_id}: invalid task identity or participant hash`);
-    if (SUBJECT_FAMILIES.has(task.author_model_family)) issues.push(`${task.task_id}: subject family authored a final candidate`);
+    if (!CANONICAL_MODEL_FAMILY.test(task.author_model_family) || task.author_model_family !== canonicalIntelligenceV31ModelFamily(task.author_model_family)) issues.push(`${task.task_id}: author model family identifier is not canonical`);
+    if (isIntelligenceV31SubjectFamily(task.author_model_family)) issues.push(`${task.task_id}: subject family authored a final candidate`);
+    if (!Array.isArray(task.calibration_model_families) || task.calibration_model_families.length !== 2 || new Set(task.calibration_model_families).size !== 2 || task.calibration_model_families.some((family) => !CANONICAL_MODEL_FAMILY.test(family) || isIntelligenceV31SubjectFamily(family) || canonicalIntelligenceV31ModelFamily(family) === canonicalIntelligenceV31ModelFamily(task.author_model_family))) issues.push(`${task.task_id}: deterministic non-author calibration-family assignment is invalid`);
+    for (const cohort of COHORTS) {
+      const configurations = task.calibration_configurations?.[cohort];
+      if (!Array.isArray(configurations) || configurations.length !== 2 || configurations.some((configuration, index) => !SAFE_ID.test(configuration) || !configuration.startsWith(`${task.calibration_model_families[index]}-`))) issues.push(`${task.task_id}: ${cohort} calibration configurations are invalid`);
+    }
   }
   for (const observation of input.observations) {
     const task = taskById.get(observation.task_id);
@@ -128,11 +147,21 @@ export function calibrateIntelligenceV31Candidates(input: {
     attemptIds.add(observation.attempt_id);
     if (!HASH.test(observation.evidence_hash) || evidenceHashes.has(observation.evidence_hash)) issues.push(`${observation.task_id}: evidence hash is invalid or reused`);
     evidenceHashes.add(observation.evidence_hash);
-    if (SUBJECT_FAMILIES.has(observation.model_family) || observation.subject_family_excluded !== true) issues.push(`${observation.task_id}: subject family exclusion failed`);
+    if (!CANONICAL_MODEL_FAMILY.test(observation.model_family) || observation.model_family !== canonicalIntelligenceV31ModelFamily(observation.model_family)) issues.push(`${observation.task_id}: model family identifier is not canonical`);
+    if (isIntelligenceV31SubjectFamily(observation.model_family) || observation.subject_family_excluded !== true) issues.push(`${observation.task_id}: subject family exclusion failed`);
+    if (observation.model_execution_verified !== true || !HASH.test(observation.execution_attestation_sha256) || executionAttestationHashes.has(observation.execution_attestation_sha256)) issues.push(`${observation.task_id}: provider-signed model execution identity is unverified or reused`);
+    executionAttestationHashes.add(observation.execution_attestation_sha256);
     if (observation.network_isolation_verified !== true || observation.resource_limits_verified !== true || observation.append_only_evidence_verified !== true) issues.push(`${observation.task_id}: calibration infrastructure isolation evidence is unverified`);
-    if (task && observation.model_family === task.author_model_family) issues.push(`${observation.task_id}: author-family calibration contamination`);
+    if (task && canonicalIntelligenceV31ModelFamily(observation.model_family) === canonicalIntelligenceV31ModelFamily(task.author_model_family)) issues.push(`${observation.task_id}: author-family calibration contamination`);
+    if (task && !task.calibration_model_families.includes(observation.model_family)) issues.push(`${observation.task_id}: observation model family is not assigned to this task`);
+    if (task) {
+      const familyIndex = task.calibration_model_families.indexOf(observation.model_family);
+      if (familyIndex < 0 || observation.configuration !== task.calibration_configurations?.[observation.cohort]?.[familyIndex]) issues.push(`${observation.task_id}: observation configuration is not assigned to this cohort and family`);
+    }
     if (observation.fresh_context !== true || ![1, 2, 3].includes(observation.run_number)) issues.push(`${observation.task_id}: observation is not a fresh valid run`);
-    if (!Number.isFinite(Date.parse(observation.released_at)) || (observation.submitted_at !== null && !Number.isFinite(Date.parse(observation.submitted_at)))) issues.push(`${observation.task_id}: observation timestamps are invalid`);
+    const releasedAt = Date.parse(observation.released_at);
+    const submittedAt = observation.submitted_at === null ? Number.NaN : Date.parse(observation.submitted_at);
+    if (!Number.isFinite(releasedAt) || (observation.submitted_at !== null && (!Number.isFinite(submittedAt) || submittedAt < releasedAt))) issues.push(`${observation.task_id}: observation timestamps are invalid or reversed`);
     if (observation.completion_status === "infrastructure_interruption") issues.push(`${observation.task_id}: infrastructure interruption cannot be used as calibration evidence`);
     if (observation.passed && observation.completion_status !== "completed") issues.push(`${observation.task_id}: non-completed observation cannot pass`);
     const key = observationKey(observation);
@@ -148,7 +177,7 @@ export function calibrateIntelligenceV31Candidates(input: {
     for (const cohort of COHORTS) {
       const cohortObservations = observations.filter((item) => item.cohort === cohort);
       const families = new Set(cohortObservations.map((item) => item.model_family));
-      if (families.size < 2) complete = false;
+      if (families.size !== 2 || task.calibration_model_families.some((family) => !families.has(family))) complete = false;
       for (const family of families) {
         const familyRuns = cohortObservations.filter((item) => item.model_family === family);
         if (new Set(familyRuns.map((item) => item.configuration)).size !== 1 || new Set(familyRuns.map((item) => item.run_number)).size !== 3) complete = false;

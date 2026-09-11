@@ -50,6 +50,15 @@
 .intelligence-v31-target { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
 .intelligence-v31-target span { padding: 11px; border: 1px solid #d5e8e4; border-radius: 8px; color: #47646b; background: #fff; font-size: 11px; line-height: 1.45; }
 .intelligence-v31-target b { display: block; margin-bottom: 4px; color: #17665f; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.intelligence-v31-track-section { margin: 16px 0 0; padding-top: 15px; border-top: 1px solid #dcebe8; }
+.intelligence-v31-track-section h3 { margin-bottom: 5px; }
+.intelligence-v31-track-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+.intelligence-v31-track { display: grid; gap: 6px; min-width: 0; padding: 10px; border: 1px solid #d8e5e8; border-radius: 8px; background: #fff; }
+.intelligence-v31-track-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.intelligence-v31-track-heading strong { color: #17303a; font-size: 11px; line-height: 1.25; }
+.intelligence-v31-track-heading span { flex: 0 0 auto; border-radius: 999px; padding: 2px 5px; color: #17665f; background: #e5f5f0; font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; }
+.intelligence-v31-track small { color: #71858b; font-size: 9px; line-height: 1.4; }
+.intelligence-v31-track em { color: #087f78; font-size: 9px; font-style: normal; line-height: 1.3; }
 .intelligence-v31-phases { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
 .intelligence-v31-phase { display: grid; gap: 4px; padding: 11px; border: 1px solid #d8e5e8; border-radius: 8px; background: #fff; }
 .intelligence-v31-phase span { color: #087f78; font-family: var(--font-mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
@@ -60,6 +69,12 @@
 .intelligence-v31-statistics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 10px 0; }
 .intelligence-v31-statistics span { display: grid; gap: 3px; padding: 9px; border: 1px solid #d8e5e8; border-radius: 7px; background: #fff; color: #60777e; font-size: 10px; }
 .intelligence-v31-statistics b { color: #17665f; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.intelligence-v31-dimensions { display: grid; gap: 1px; margin: 10px 0 14px; border: 1px solid #d8e5e8; border-radius: 7px; overflow: hidden; background: #d8e5e8; }
+.intelligence-v31-detail-grid h5 { margin: 12px 0 5px; color: #46626c; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.intelligence-v31-dimension-row { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(70px, .7fr)); gap: 8px; padding: 8px 9px; background: #fff; color: #5e737b; font-size: 10px; }
+.intelligence-v31-dimension-row span:nth-child(n+2) { color: #17665f; font-family: var(--font-mono); text-align: right; }
+.intelligence-v31-dimension-header { background: #f1f6f7; color: #6b8086; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.intelligence-v31-dimension-header span:nth-child(n+2) { color: #6b8086; }
 .intelligence-v31-matrix { max-height: 22rem; }
 .intelligence-v31-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
 .intelligence-v31-links a { color: #087f78; font-size: 10px; font-weight: 700; text-decoration: none; }
@@ -153,7 +168,8 @@
 @media (max-width: 860px) {
   .intelligence-header { align-items: flex-start; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
   .intelligence-account-summary { margin-left: 0; }
-  .intelligence-hero, .intelligence-calibration-grid, .intelligence-task-grid, .intelligence-leaderboards, .intelligence-v31-target, .intelligence-v31-detail-grid, .intelligence-v31-statistics { grid-template-columns: 1fr; }
+  .intelligence-hero, .intelligence-calibration-grid, .intelligence-task-grid, .intelligence-leaderboards, .intelligence-v31-target, .intelligence-v31-detail-grid, .intelligence-v31-statistics, .intelligence-v31-track-grid { grid-template-columns: 1fr; }
+  .intelligence-v31-track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-v31-phases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-suite-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intelligence-task-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -166,6 +182,7 @@
   .intelligence-panel { padding: 16px; }
   .intelligence-task-facts { grid-template-columns: 1fr; }
   .intelligence-suite-grid { grid-template-columns: 1fr; }
+  .intelligence-v31-track-grid { grid-template-columns: 1fr; }
   .intelligence-v31-phases { grid-template-columns: 1fr; }
   .intelligence-section-heading { flex-direction: column; gap: 7px; }
 }

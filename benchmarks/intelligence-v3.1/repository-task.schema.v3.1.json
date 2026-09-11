@@ -9,6 +9,7 @@
     "schema": { "const": "treatcode.intelligence.repository-task.v3.1" },
     "version": { "const": "3.1" },
     "task_id": { "type": "string", "pattern": "^TC-V31-[A-Z0-9-]+$" },
+    "track": { "enum": ["fresh_coding", "repository_repair", "terminal_agent", "expert_reasoning", "frontier_math", "abstract_generalization", "multimodal_reasoning", "web_research"] },
     "title": { "type": "string", "minLength": 1, "maxLength": 160 },
     "phase": { "enum": ["diagnostic", "pilot", "calibration", "frozen", "official"] },
     "initial_signal": { "type": "string", "minLength": 1, "maxLength": 2000 },

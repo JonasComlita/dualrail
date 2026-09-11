@@ -1,7 +1,8 @@
 # TreatCode Intelligence Benchmark v3
 
-V3 is a model-comparison benchmark, not a replacement for the v2 website and
-grader regression suite. V2 remains useful for end-to-end product validation.
+V3 is a model-comparison benchmark, not a replacement for the diagnostic
+scalar website and grader regression suite. The scalar suite remains useful for
+end-to-end product validation.
 
 An official v3 result requires at least 100 distinct repository tasks and one
 fresh, bounded model attempt per task. Re-executing one authored solution does

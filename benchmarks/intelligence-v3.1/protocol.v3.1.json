@@ -2,8 +2,35 @@
   "schema": "treatcode.intelligence.protocol.v3.1",
   "version": "3.1",
   "status": "development",
-  "score_scope": "held_out_repository_task_pass_rate",
-  "execution_modes": ["scalar", "repository"],
+  "score_scope": "held_out_multi_track_task_pass_rate",
+  "execution_modes": ["scalar", "repository", "terminal"],
+  "tracks_manifest": "tracks.v3.1.json",
+  "score_dimensions": {
+    "headline": "correctness",
+    "separate": ["correctness", "robustness", "latency", "resource_use", "tool_execution", "discussion_quality"],
+    "no_iq_composite": true,
+    "discussion_in_executable_score": false,
+    "missing_data_policy": "report_null_and_explain"
+  },
+  "dimension_observation_schema": "score-observation.schema.v3.1.json",
+  "evaluation_goals": {
+    "primary": [
+      "measure fresh coding, repository repair, terminal agency, expert reasoning, frontier mathematics, and abstract generalization",
+      "characterize robustness and transfer across unseen task families",
+      "report correctness, robustness, latency, resource use, tool execution, and discussion quality independently"
+    ],
+    "secondary": [
+      "estimate paired Luna/Sol separation when the selected holdout happens to support it"
+    ],
+    "not_a_single_iq_score": true
+  },
+  "development_execution": {
+    "phase": "development",
+    "official": false,
+    "requires_frozen_suite": false,
+    "requires_external_attestations": false,
+    "evidence_root": "build/intelligence-v31-development-evidence"
+  },
   "legacy_diagnostic_tasks": ["TC-V3-001", "TC-V3-002"],
   "legacy_tasks_holdout_eligible": false,
   "replication_target": {

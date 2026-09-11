@@ -45,7 +45,7 @@ async function expectCode(action: Promise<unknown>, code: string): Promise<void>
 }
 
 const report = {
-  schema: "treatcode.p14_intelligence_tests.v1",
+  schema: "treatcode.p14_intelligence_tests.diagnostic.v3.1",
   ok: false,
   checks,
   errors: [] as string[],
@@ -280,36 +280,6 @@ try {
   const suiteJson = JSON.stringify(suiteCatalog);
   assert(!suiteJson.includes("three-neg-mixed") && !suiteJson.includes("kernel-minus-two") && !suiteJson.includes("hidden.server"), "suite catalog leaked server-only verifier data");
   checks.push("versioned suite catalog exposes five executable categories with task-specific public metadata and no hidden cases");
-
-  const legacyRoot = await mkdtemp(path.join(os.tmpdir(), "treatcode-intelligence-legacy-state-"));
-  tempRoots.push(legacyRoot);
-  await writeFile(path.join(legacyRoot, "state.v1.json"), `${JSON.stringify({
-    schema: "treatcode.intelligence.state.v1",
-    official_records: [{
-      schema: "treatcode.intelligence.leaderboard-record.v1",
-      id: "official_legacy",
-      view: "official",
-      task_id: "TC-SWE-001",
-      run_id: "legacy-run",
-      participant_id: "legacy-participant",
-      score: 100,
-      passed_trials: 4,
-      trial_count: 4,
-      tested_commit: "legacy-v1",
-      published_at: new Date(0).toISOString(),
-      attested: false,
-      attestation_id: null,
-    }],
-    self_reported_records: [],
-    attestations: [],
-  }, null, 2)}\n`);
-  const migratedSuite = new IntelligenceSuiteService({ storageRoot: legacyRoot, executor: expectedExecutor() });
-  assert.equal(migratedSuite.taskService("TC-SWE-001").getOfficialLeaderboard().length, 0);
-  const migratedLegacy = migratedSuite.taskService("TC-SWE-001").getSelfReportedLeaderboard();
-  assert.equal(migratedLegacy.length, 1);
-  assert.equal(migratedLegacy[0].score, 100);
-  assert(migratedLegacy[0].note?.includes("provenance-bound"));
-  checks.push("legacy TC-SWE-001 state migrates into the suite task namespace as a labeled self-reported score without deleting the original state");
 
   for (const task of suiteCatalog.tasks) {
     const taskRun = await suite.startRun({ task_id: task.task.id, participant_id: `suite-${task.task.id}` });

@@ -952,7 +952,7 @@ struct LabelMaps {
         if (sl.address < 0) continue;  // label-only line, no instruction
 
         while (static_cast<int>(program.size()) < sl.address) {
-            program.push_back(InstructionWord::encodeI(Opcode::NOP, 0, 0, 0));
+            program.push_back(InstructionWord::encodeSemanticI(Opcode::NOP, 0, 0, 0));
         }
 
         MnemonicParts parts = splitMnemonic(sl.mnemonic);
@@ -1107,29 +1107,29 @@ struct LabelMaps {
         // ---- Encode by opcode ----
 
         if (mnemonic == "nop") {
-            word = InstructionWord::encodeI(Opcode::NOP, 0, 0, 0);
+            word = InstructionWord::encodeSemanticI(Opcode::NOP, 0, 0, 0);
 
         } else if (mnemonic == "halt") {
-            word = InstructionWord::encodeB(Opcode::HALT, 0, 0);
+            word = InstructionWord::encodeSemanticB(Opcode::HALT, 0, 0);
 
         } else if (mnemonic == "wait") {
             if (!ops.empty()) {
                 errors.push_back({line, "wait takes no operands"});
                 ok = false;
             } else {
-                word = InstructionWord::encodeB(Opcode::WAIT, 0, 0);
+                word = InstructionWord::encodeSemanticB(Opcode::WAIT, 0, 0);
             }
 
 
         } else if (mnemonic == "ret") {
-            word = InstructionWord::encodeR(Opcode::RET, 0, 0, 0);
+            word = InstructionWord::encodeSemanticR(Opcode::RET, 0, 0, 0);
 
         } else if (mnemonic == "eret") {
             if (!ops.empty()) {
                 errors.push_back({line, "eret takes no operands"});
                 ok = false;
             } else {
-                word = InstructionWord::encodeR(Opcode::ERET,
+                word = InstructionWord::encodeSemanticR(Opcode::ERET,
                     R0_ZERO,
                     R0_ZERO,
                     R0_ZERO,
@@ -1148,7 +1148,7 @@ struct LabelMaps {
                     ok = false;
                 }
                 if (ok) {
-                    word = InstructionWord::encodeI(Opcode::CSRR,
+                    word = InstructionWord::encodeSemanticI(Opcode::CSRR,
                         static_cast<uint8_t>(rd),
                         R0_ZERO,
                         csr);
@@ -1167,7 +1167,7 @@ struct LabelMaps {
                     ok = false;
                 }
                 if (ok) {
-                    word = InstructionWord::encodeI(Opcode::CSRW,
+                    word = InstructionWord::encodeSemanticI(Opcode::CSRW,
                         static_cast<uint8_t>(rs),
                         R0_ZERO,
                         csr);
@@ -1187,7 +1187,7 @@ struct LabelMaps {
                     ok = false;
                 }
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::CSRRW,
+                    word = InstructionWord::encodeSemanticR(Opcode::CSRRW,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(rs),
                         static_cast<uint8_t>(csr),
@@ -1202,7 +1202,7 @@ struct LabelMaps {
             } else {
                 int target = getReg(ops[0], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         R0_ZERO,
                         static_cast<uint8_t>(target),
                         R0_ZERO,
@@ -1220,7 +1220,7 @@ struct LabelMaps {
                     ok = false;
                 } else {
                     try {
-                        word = InstructionWord::encodeI(Opcode::SYSCALL,
+                        word = InstructionWord::encodeSemanticI(Opcode::SYSCALL,
                             R0_ZERO,
                             R0_ZERO,
                             service.value());
@@ -1249,7 +1249,7 @@ struct LabelMaps {
                     program.push_back(TritWord27{});
                     continue;
                 }
-                word = InstructionWord::encodeR(Opcode::FENCE,
+                word = InstructionWord::encodeSemanticR(Opcode::FENCE,
                     R0_ZERO,
                     R0_ZERO,
                     R0_ZERO,
@@ -1273,7 +1273,7 @@ struct LabelMaps {
                 int rd = getReg(ops[0], line);
                 int addr = getReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::TLDR,
+                    word = InstructionWord::encodeSemanticR(Opcode::TLDR,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(addr),
                         R0_ZERO,
@@ -1300,7 +1300,7 @@ struct LabelMaps {
                 int desired = getReg(ops[2], line);
                 int expected = getReg(ops[3], line);
                 if (ok) {
-                    word = InstructionWord::encodeR4(Opcode::TSTR,
+                    word = InstructionWord::encodeSemanticR4(Opcode::TSTR,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(addr),
                         static_cast<uint8_t>(desired),
@@ -1319,7 +1319,7 @@ struct LabelMaps {
                 if (!offset) { ok = false; }
                 else {
                     try {
-                        word = InstructionWord::encodeB(info.opcode, 0,
+                        word = InstructionWord::encodeSemanticB(info.opcode, 0,
                                                         offset.value());
                     } catch (std::out_of_range& e) {
                         errors.push_back({line, std::string(e.what())});
@@ -1339,7 +1339,7 @@ struct LabelMaps {
                 if (!offset) { ok = false; }
                 else {
                     try {
-                        word = InstructionWord::encodeB(info.opcode,
+                        word = InstructionWord::encodeSemanticB(info.opcode,
                             static_cast<uint8_t>(rs), offset.value());
                     } catch (std::out_of_range& e) {
                         errors.push_back({line, std::string(e.what())});
@@ -1365,14 +1365,14 @@ struct LabelMaps {
                     if (!imm) { ok = false; }
                     else {
                         try {
-                            word = InstructionWord::encodeI(info.opcode,
+                            word = InstructionWord::encodeSemanticI(info.opcode,
                                 static_cast<uint8_t>(rd), 0, imm.value());
                             if (parts.has_width && parts.func != FUNC_T40) {
                                 program.push_back(word);
                                 const uint8_t sourceFunc = isLaneWidthFunc(parts.func)
                                     ? matchingNumericFunc(parts.func)
                                     : R0_ZERO;
-                                program.push_back(InstructionWord::encodeR(
+                                program.push_back(InstructionWord::encodeSemanticR(
                                     Opcode::CVT,
                                     static_cast<uint8_t>(rd),
                                     static_cast<uint8_t>(rd),
@@ -1404,7 +1404,7 @@ struct LabelMaps {
                 }
                 if (ok) {
                     try {
-                        word = InstructionWord::encodeI(Opcode::LOAD,
+                        word = InstructionWord::encodeSemanticI(Opcode::LOAD,
                             static_cast<uint8_t>(rd),
                             static_cast<uint8_t>(rs1), imm);
                         if (parts.has_width && parts.func == FUNC_T50) {
@@ -1414,12 +1414,12 @@ struct LabelMaps {
                                 ok = false;
                             } else {
                                 program.push_back(word);
-                                program.push_back(InstructionWord::encodeI(
+                                program.push_back(InstructionWord::encodeSemanticI(
                                     Opcode::LOAD,
                                     static_cast<uint8_t>(rd + 1),
                                     static_cast<uint8_t>(rs1),
                                     imm + 1));
-                                program.push_back(InstructionWord::encodeR(
+                                program.push_back(InstructionWord::encodeSemanticR(
                                     Opcode::COPY,
                                     static_cast<uint8_t>(rd),
                                     static_cast<uint8_t>(rd),
@@ -1452,7 +1452,7 @@ struct LabelMaps {
                 }
                 if (ok) {
                     try {
-                        word = InstructionWord::encodeS(Opcode::STORE,
+                        word = InstructionWord::encodeSemanticS(Opcode::STORE,
                             static_cast<uint8_t>(src),
                             static_cast<uint8_t>(base), imm);
                         if (parts.has_width && parts.func == FUNC_T50) {
@@ -1462,7 +1462,7 @@ struct LabelMaps {
                                 ok = false;
                             } else {
                                 program.push_back(word);
-                                program.push_back(InstructionWord::encodeS(
+                                program.push_back(InstructionWord::encodeSemanticS(
                                     Opcode::STORE,
                                     static_cast<uint8_t>(src + 1),
                                     static_cast<uint8_t>(base),
@@ -1488,7 +1488,7 @@ struct LabelMaps {
                 int rzero = getReg(ops[3], line);
                 int rpos  = getReg(ops[4], line);
                 if (ok) {
-                    word = InstructionWord::encodeR5(Opcode::TSEL,
+                    word = InstructionWord::encodeSemanticR5(Opcode::TSEL,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(rcond),
                         static_cast<uint8_t>(rneg),
@@ -1507,7 +1507,7 @@ struct LabelMaps {
                 int low = getReg(ops[2], line);
                 int high = getReg(ops[3], line);
                 if (ok) {
-                    word = InstructionWord::encodeR4(info.opcode,
+                    word = InstructionWord::encodeSemanticR4(info.opcode,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(value),
                         static_cast<uint8_t>(low),
@@ -1547,7 +1547,7 @@ struct LabelMaps {
                 int rs1 = getReg(ops[1], line);
                 const uint8_t sourceFunc = parts.has_source_width ? parts.source_func : R0_ZERO;
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::CVT,
+                    word = InstructionWord::encodeSemanticR(Opcode::CVT,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(rs1),
                         sourceFunc,
@@ -1563,7 +1563,7 @@ struct LabelMaps {
                 int ra = getReg(ops[0], line);
                 int rb = getReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::SWAP,
+                    word = InstructionWord::encodeSemanticR(Opcode::SWAP,
                         static_cast<uint8_t>(ra),
                         static_cast<uint8_t>(rb),
                         R0_ZERO,
@@ -1579,7 +1579,7 @@ struct LabelMaps {
                 int ra = getReg(ops[0], line);
                 int rb = getReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::TMAC,
+                    word = InstructionWord::encodeSemanticR(Opcode::TMAC,
                         R0_ZERO,
                         static_cast<uint8_t>(ra),
                         static_cast<uint8_t>(rb),
@@ -1598,7 +1598,7 @@ struct LabelMaps {
                 int va = getVecReg(ops[1], line);
                 int vb = getVecReg(ops[2], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(va),
                         static_cast<uint8_t>(vb),
@@ -1614,7 +1614,7 @@ struct LabelMaps {
                 int vd = getVecReg(ops[0], line);
                 int vs = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VNEG,
+                    word = InstructionWord::encodeSemanticR(Opcode::VNEG,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vs),
                         R0_ZERO,
@@ -1630,7 +1630,7 @@ struct LabelMaps {
                 int vd = getVecReg(ops[0], line);
                 int rs = getReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VBCAST,
+                    word = InstructionWord::encodeSemanticR(Opcode::VBCAST,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(rs),
                         R0_ZERO,
@@ -1649,7 +1649,7 @@ struct LabelMaps {
                 int vzero = getVecReg(ops[3], line);
                 int vpos  = getVecReg(ops[4], line);
                 if (ok) {
-                    word = InstructionWord::encodeR5(Opcode::VSEL,
+                    word = InstructionWord::encodeSemanticR5(Opcode::VSEL,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vcond),
                         static_cast<uint8_t>(vneg),
@@ -1674,7 +1674,7 @@ struct LabelMaps {
                 }
                 if (ok) {
                     try {
-                        word = InstructionWord::encodeVectorMemory(info.opcode,
+                        word = InstructionWord::encodeSemanticVectorMemory(info.opcode,
                             static_cast<uint8_t>(vreg),
                             static_cast<uint8_t>(base),
                             imm,
@@ -1696,7 +1696,7 @@ struct LabelMaps {
             } else {
                 int rd = getReg(ops[0], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VLEN,
+                    word = InstructionWord::encodeSemanticR(Opcode::VLEN,
                         static_cast<uint8_t>(rd),
                         R0_ZERO,
                         R0_ZERO,
@@ -1709,7 +1709,7 @@ struct LabelMaps {
                 errors.push_back({line, "aclr takes no operands"});
                 ok = false;
             } else {
-                word = InstructionWord::encodeR(Opcode::ACLR, R0_ZERO, R0_ZERO, R0_ZERO, parts.func);
+                word = InstructionWord::encodeSemanticR(Opcode::ACLR, R0_ZERO, R0_ZERO, R0_ZERO, parts.func);
             }
 
         } else if (mnemonic == "aload" || mnemonic == "aadd" ||
@@ -1720,7 +1720,7 @@ struct LabelMaps {
             } else {
                 int rs = getReg(ops[0], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         R0_ZERO,
                         static_cast<uint8_t>(rs),
                         R0_ZERO,
@@ -1735,7 +1735,7 @@ struct LabelMaps {
             } else {
                 int rd = getReg(ops[0], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::ASTORE,
+                    word = InstructionWord::encodeSemanticR(Opcode::ASTORE,
                         static_cast<uint8_t>(rd),
                         R0_ZERO,
                         R0_ZERO,
@@ -1752,7 +1752,7 @@ struct LabelMaps {
                 int va = getVecReg(ops[1], line);
                 int vb = getVecReg(ops[2], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VDOT,
+                    word = InstructionWord::encodeSemanticR(Opcode::VDOT,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(va),
                         static_cast<uint8_t>(vb),
@@ -1768,7 +1768,7 @@ struct LabelMaps {
                 int va = getVecReg(ops[0], line);
                 int vb = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VMAC,
+                    word = InstructionWord::encodeSemanticR(Opcode::VMAC,
                         R0_ZERO,
                         static_cast<uint8_t>(va),
                         static_cast<uint8_t>(vb),
@@ -1784,7 +1784,7 @@ struct LabelMaps {
                 int vd = getVecReg(ops[0], line);
                 int vs = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VACT,
+                    word = InstructionWord::encodeSemanticR(Opcode::VACT,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vs),
                         R0_ZERO,
@@ -1800,7 +1800,7 @@ struct LabelMaps {
                 int vd = getVecReg(ops[0], line);
                 int vs = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vs),
                         parts.source_func,
@@ -1817,7 +1817,7 @@ struct LabelMaps {
                 int vs = getVecReg(ops[1], line);
                 int vi = getVecReg(ops[2], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VPERMUTE,
+                    word = InstructionWord::encodeSemanticR(Opcode::VPERMUTE,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vs),
                         static_cast<uint8_t>(vi),
@@ -1835,7 +1835,7 @@ struct LabelMaps {
                 int vf = getVecReg(ops[2], line);
                 int vt = getVecReg(ops[3], line);
                 if (ok) {
-                    word = InstructionWord::encodeR5(Opcode::VBLEND,
+                    word = InstructionWord::encodeSemanticR5(Opcode::VBLEND,
                         static_cast<uint8_t>(vd),
                         static_cast<uint8_t>(vc),
                         static_cast<uint8_t>(vf),
@@ -1853,7 +1853,7 @@ struct LabelMaps {
                 int va = getVecReg(ops[0], line);
                 int vb = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(Opcode::VSWAP,
+                    word = InstructionWord::encodeSemanticR(Opcode::VSWAP,
                         static_cast<uint8_t>(va),
                         static_cast<uint8_t>(vb),
                         R0_ZERO,
@@ -1870,7 +1870,7 @@ struct LabelMaps {
                 int base = getReg(ops[1], line);
                 int vi = getVecReg(ops[2], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         static_cast<uint8_t>(vreg),
                         static_cast<uint8_t>(base),
                         static_cast<uint8_t>(vi),
@@ -1886,7 +1886,7 @@ struct LabelMaps {
                 int rd = getReg(ops[0], line);
                 int vs = getVecReg(ops[1], line);
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(vs),
                         R0_ZERO,
@@ -1914,7 +1914,7 @@ struct LabelMaps {
                     ok = false;
                 }
                 if (ok) {
-                    word = InstructionWord::encodeR(info.opcode,
+                    word = InstructionWord::encodeSemanticR(info.opcode,
                         static_cast<uint8_t>(rd),
                         static_cast<uint8_t>(rs1),
                         static_cast<uint8_t>(rs2),
@@ -2226,7 +2226,7 @@ collectExecutableHeadersV3(
             // private intermediate directly, then emit the sole public ISA v2
             // representation. No v1 executable is produced or accepted here.
             const InstructionWord decoded =
-                InstructionWord::decode(result.program[pc]);
+                InstructionWord::decodeSemantic(result.program[pc]);
             const std::uint64_t missing =
                 requiredV2Features(decoded) & ~result.required_features;
             if (missing != 0) {
@@ -2395,7 +2395,7 @@ inline bool verifyAssembler() {
     {
         auto prog = assembleOrThrow("ADD r3, r1, r2\nHALT");
         ok &= (prog.size() == 2);
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (!iw.malformed && iw.opcode == Opcode::ADD);
         ok &= (iw.rd == 3 && iw.rs1 == 1 && iw.rs2 == 2);
     }
@@ -2403,7 +2403,7 @@ inline bool verifyAssembler() {
     // --- Register aliases ---
     {
         auto prog = assembleOrThrow("COPY r1, zero\nHALT");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (!iw.malformed && iw.opcode == Opcode::COPY);
         ok &= (iw.rs1 == 0);
     }
@@ -2411,14 +2411,14 @@ inline bool verifyAssembler() {
     // --- MOV immediate ---
     {
         auto prog = assembleOrThrow("MOV r5, -42\nHALT");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::MOV && iw.rd == 5 && iw.imm == -42);
     }
 
     // --- LOAD with offset ---
     {
         auto prog = assembleOrThrow("LOAD r4, sp, -8\nHALT");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::LOAD && iw.rd == 4 &&
                iw.rs1 == 26 && iw.imm == -8);
     }
@@ -2426,7 +2426,7 @@ inline bool verifyAssembler() {
     // --- STORE with offset ---
     {
         auto prog = assembleOrThrow("STORE r1, sp, -4\nHALT");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::STORE && iw.rs_store == 1 &&
                iw.rs1 == 26 && iw.imm == -4);
     }
@@ -2451,7 +2451,7 @@ loop:
         ok &= res.success;
         ok &= (res.labels.count("loop") && res.labels.at("loop") == 4);
         // BRN is at PC 8, loop is at PC 4: offset = 4 - 8 = -4
-        auto iw_brn = InstructionWord::decode(res.program[8]);
+        auto iw_brn = InstructionWord::decodeSemantic(res.program[8]);
         ok &= (iw_brn.opcode == Opcode::BRN && iw_brn.offset == -4);
     }
 
@@ -2467,7 +2467,7 @@ skip:
         auto res = assemble(src);
         ok &= res.success;
         // JMP at PC 1, skip at PC 3: offset = 3 - 1 = 2
-        auto iw_jmp = InstructionWord::decode(res.program[1]);
+        auto iw_jmp = InstructionWord::decodeSemantic(res.program[1]);
         ok &= (iw_jmp.opcode == Opcode::JMP && iw_jmp.offset == 2);
     }
 
@@ -2485,9 +2485,9 @@ add_one:
         auto res = assemble(src);
         ok &= res.success;
         // CALL at PC 1, add_one at PC 3: offset = 3 - 1 = 2
-        auto iw_call = InstructionWord::decode(res.program[1]);
+        auto iw_call = InstructionWord::decodeSemantic(res.program[1]);
         ok &= (iw_call.opcode == Opcode::CALL && iw_call.offset == 2);
-        auto iw_ret = InstructionWord::decode(res.program[5]);
+        auto iw_ret = InstructionWord::decodeSemantic(res.program[5]);
         ok &= (iw_ret.opcode == Opcode::RET);
     }
 
@@ -2527,41 +2527,41 @@ add_one:
     // --- Case insensitivity ---
     {
         auto prog = assembleOrThrow("add R3, R1, R2\nhalt");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::ADD && iw.rd == 3);
     }
 
     // --- Phase 4A base ISA additions ---
     {
         auto prog = assembleOrThrow("tsel r6, r3, r1, r2, r4\nhalt");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (!iw.malformed && iw.opcode == Opcode::TSEL && iw.r5_layout);
         ok &= (iw.rd == 6 && iw.rcond == 3 && iw.rneg == 1 &&
                iw.rzero == 2 && iw.rpos == 4);
     }
     {
         auto prog = assembleOrThrow("brz r1, 2\nbrp r2, -1\nhalt");
-        auto brz = InstructionWord::decode(prog[0]);
-        auto brp = InstructionWord::decode(prog[1]);
+        auto brz = InstructionWord::decodeSemantic(prog[0]);
+        auto brp = InstructionWord::decodeSemantic(prog[1]);
         ok &= (brz.opcode == Opcode::BRZ && brz.rs_branch == 1 && brz.offset == 2);
         ok &= (brp.opcode == Opcode::BRP && brp.rs_branch == 2 && brp.offset == -1);
     }
     {
         auto prog = assembleOrThrow("swap r1, r2\nhalt");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::SWAP && iw.rd == 1 && iw.rs1 == 2);
     }
     {
         auto prog = assembleOrThrow("cvt.t10.t20 r3, r2\nhalt");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::CVT && iw.rs2 == FUNC_T10 && iw.func == FUNC_T20);
     }
     {
         auto prog = assembleOrThrow("mov.l20 r1, 7\ntladd.l20 r3, r1, r1\ntlneg.l20 r4, r3\nhalt");
         ok &= (prog.size() == 5);
-        auto movCvt = InstructionWord::decode(prog[1]);
-        auto add = InstructionWord::decode(prog[2]);
-        auto neg = InstructionWord::decode(prog[3]);
+        auto movCvt = InstructionWord::decodeSemantic(prog[1]);
+        auto add = InstructionWord::decodeSemantic(prog[2]);
+        auto neg = InstructionWord::decodeSemantic(prog[3]);
         ok &= (movCvt.opcode == Opcode::CVT && movCvt.rs2 == FUNC_T20 && movCvt.func == FUNC_L20);
         ok &= (add.opcode == Opcode::TLADD && add.func == FUNC_L20);
         ok &= (neg.opcode == Opcode::TLNEG && neg.func == FUNC_L20);
@@ -2574,7 +2574,7 @@ add_one:
     }
     {
         auto prog = assembleOrThrow("vlen r3\nhalt");
-        auto iw = InstructionWord::decode(prog[0]);
+        auto iw = InstructionWord::decodeSemantic(prog[0]);
         ok &= (iw.opcode == Opcode::VLEN && iw.rd == 3);
         ok &= (parseVectorRegister("v7") == 7 && parseVectorRegister("v8") < 0);
         ok &= !assemble("vlen v0\nhalt").success;

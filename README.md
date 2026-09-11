@@ -145,7 +145,7 @@ These should be completed before any vector opcode work begins.
 2. Add the extended R5 decode path needed by `TSEL`. Implemented.
    - This is not a new format discriminant.
    - The opcode identifies the extended layout.
-   - `InstructionWord::decode()` sets decoded R5 fields when `opcode == TSEL`.
+   - `VersionedInstructionCodec::decode()` sets decoded R5 fields when `opcode == TSEL`.
 
 ### Phase 4 Implemented
 

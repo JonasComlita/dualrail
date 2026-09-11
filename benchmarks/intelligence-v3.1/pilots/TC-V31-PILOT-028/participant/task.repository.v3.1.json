@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-028",
+  "title": "Shard discovery isolation",
+  "phase": "pilot",
+  "initial_signal": "Focused tests pass, but production discovery silently omits a nested adversarial shard on Windows paths.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.ts",
+      "editable": true,
+      "sha256": "b8e032b5689bf88ab4387fa7f66e6891a016c6021f7f38b132360dd5e2ba53f7"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "ed49d3bcf97858c7e0178d5cc9d86c5595bd5fc82be3c353d8899a528467534c"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "f2c0f8224f7d6d6ba847483de6b2b89429ee5610da52f8ddcabd46c4e30d844e"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "ee372330913318a241f69d30280366b696099c1b4200184114a075462fb0e20c"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "3d5110b20ae11acf90c2cb51e2433e012e7e9ef3de2bcde64f053b81ff49e0ec"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "3c5439d648ec97ca2589bc4cfd1f25a47a2853198239328c01da3a84409b94cf"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "4fe03178864dd84f40fbf556f5e5b1e021a03de39a185d6553e43d11b5df7288"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "83188116c7bdbff37f09f37554e66f1f0f6d2b7421d8f0dbbb81138d4d4402c6"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

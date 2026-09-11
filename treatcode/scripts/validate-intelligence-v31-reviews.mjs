@@ -1,20 +1,26 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isExcludedSubjectModel } from "./intelligence-v31-author-shards.mjs";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(appRoot, "..");
-const localRoot = path.resolve(process.env.LOCALAPPDATA || "");
+const privateBase = process.env.TREATCODE_V31_FINAL_PRIVATE_ROOT || path.join(process.env.LOCALAPPDATA || os.tmpdir(), "TreatCode", "intelligence-v31-private");
 const stagedContributionRoot = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1", "authoring", "contributions");
-const privateContributionRoot = path.join(localRoot, "TreatCode", "intelligence-v31-private", "final-authoring", "contributions");
-const reviewRoot = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1", "authoring", "reviews");
+const privateContributionRoot = path.join(privateBase, "final-authoring", "contributions");
+const stagedReviewRoot = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1", "authoring", "reviews");
+const privateReviewRoot = path.join(privateBase, "final-authoring", "reviews");
 const rejectedContributionRoot = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1", "authoring", "rejected");
+const contractPath = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1", "final-corpus-contract.v3.1.json");
 const evidenceRoot = path.join(repositoryRoot, "build", "treatcode-plan-evidence", "P14");
+const ingestPath = path.join(evidenceRoot, "intelligence-v31-authoring-ingest.json");
+const reviewRoot = fs.existsSync(ingestPath) ? privateReviewRoot : stagedReviewRoot;
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const errors = [];
-const contributionRoot = fs.existsSync(stagedContributionRoot) ? stagedContributionRoot : privateContributionRoot;
-const contributionFiles = fs.existsSync(contributionRoot) ? fs.readdirSync(contributionRoot).filter((file) => file.endsWith(".json")).sort() : [];
+const contributionRoot = fs.existsSync(ingestPath) ? privateContributionRoot : stagedContributionRoot;
+const contributionFiles = fs.existsSync(contributionRoot) ? fs.readdirSync(contributionRoot).filter((file) => /^V31-SHARD-\d{3}\.json$/.test(file)).sort() : [];
 const contributions = contributionFiles.map((file) => {
   const text = fs.readFileSync(path.join(contributionRoot, file), "utf8");
   return { file, text, hash: sha(text), data: JSON.parse(text) };
@@ -31,10 +37,17 @@ for (const file of fs.existsSync(reviewRoot) ? fs.readdirSync(reviewRoot).filter
   let data;
   try { data = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch (error) { errors.push(`${file}: invalid JSON (${error.message})`); continue; }
   const reviewer = data.reviewer || {};
-  if (data.schema !== "treatcode.intelligence.review-contribution.v3.1" || data.version !== "3.1" || reviewer.reviewer_kind !== "model_agent" || ["gpt-5.6-luna", "gpt-5.6-sol"].includes(reviewer.model) || !Number.isFinite(Date.parse(reviewer.completed_at || "")) || `${reviewer.attestation || ""}`.length < 40) errors.push(`${file}: reviewer metadata is invalid`);
+  if (data.schema !== "treatcode.intelligence.review-contribution.v3.1" || data.version !== "3.1" || reviewer.reviewer_kind !== "model_agent" || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(reviewer.model || "") || isExcludedSubjectModel(reviewer.model) || !Number.isFinite(Date.parse(reviewer.completed_at || "")) || `${reviewer.attestation || ""}`.length < 40) errors.push(`${file}: reviewer metadata is invalid`);
   if (!Array.isArray(data.reviews) || data.reviews.length === 0 || new Set(data.reviews.map((item) => item.task_id)).size !== data.reviews.length) errors.push(`${file}: review list is empty or duplicates tasks`);
   const reviewedContribution = contributionsByHash.get(`${data.reviewed_contribution_sha256 || ""}`.toLowerCase());
   if (!reviewedContribution) errors.push(`${file}: reviewed contribution hash is unknown`);
+  const isCurrentContribution = contributions.some((contribution) => contribution.hash === reviewedContribution?.hash);
+  if (isCurrentContribution && (data.reviewed_shard_id !== reviewedContribution.data.shard_id || !/^V31-SHARD-\d{3}$/.test(data.reviewed_shard_id || ""))) errors.push(`${file}: reviewed_shard_id does not match the current hash-bound shard`);
+  if (isCurrentContribution) {
+    const expectedTaskIds = reviewedContribution.data.tasks.map((task) => task.task_id);
+    const reviewedTaskIds = (data.reviews || []).map((review) => review.task_id);
+    if (reviewedTaskIds.length !== 5 || JSON.stringify([...reviewedTaskIds].sort()) !== JSON.stringify([...expectedTaskIds].sort())) errors.push(`${file}: a current review must cover all five tasks in exactly one shard`);
+  }
   for (const review of data.reviews || []) {
     const owner = taskOwners.get(review.task_id);
     const label = `${file}/${review.task_id}`;
@@ -74,5 +87,10 @@ const report = {
 };
 fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(evidenceRoot, "intelligence-v31-review-validation.json"), `${JSON.stringify(report, null, 2)}\n`);
+if (fs.existsSync(contractPath)) {
+  const contract = JSON.parse(fs.readFileSync(contractPath, "utf8"));
+  contract.readiness.twice_reviewed = twiceReviewed;
+  fs.writeFileSync(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+}
 console.log(JSON.stringify({ status: report.status, task_count: report.task_count, review_count: report.review_count, superseded_review_items: report.superseded_review_items, twice_reviewed: report.twice_reviewed, twice_approved: report.twice_approved, rejected_after_two_reviews: report.rejected_after_two_reviews, errors: errors.slice(0, 50), error_count: errors.length }, null, 2));
 process.exitCode = errors.length ? 1 : 0;

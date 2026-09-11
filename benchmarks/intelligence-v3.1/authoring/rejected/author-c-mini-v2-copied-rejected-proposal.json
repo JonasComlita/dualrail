@@ -1,0 +1,1249 @@
+{
+  "schema": "treatcode.intelligence.author-contribution.v3.1",
+  "version": "3.1",
+  "authorship": {
+    "contributor_id": "model-agent-gpt54-author-c",
+    "contributor_kind": "model_agent",
+    "model": "gpt-5.4",
+    "reasoning_effort": "high",
+    "completed_at": "2026-08-28T23:20:00Z",
+    "attestation": "I inspected C:\\Users\\jonas\\Documents\\trit, reviewed TEST_MANIFEST.json plus the live compiler, kernel, manifest, app, and tooling sources named in this contribution, and authored only TC-V31-FINAL-068 through TC-V31-FINAL-100 here. Hash binding and later review metadata are intentionally deferred to the merge pipeline."
+  },
+  "tasks": [
+    {
+      "task_id": "TC-V31-FINAL-068",
+      "category": "algorithm_and_data_structure",
+      "title": "Window waiters requeue onto the wrong channel",
+      "initial_signal": "A desktop app can miss a deferred close event after an empty poll and then block forever even though input delivery still works for another window.",
+      "public_signal": "One GUI handoff path hangs only after an empty first wait.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "tests/test_os_platform.cpp", "tests_next/09_process_ipc_scheduler/next_scheduler_acceptance.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "SYSCALL_MANIFEST.json"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_phase_d_kernel.cpp"],
+      "distractor_files": ["apps/window_probe.trit", "ternary_os.h", "run_tos_sdl.cpp"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_phase_d_kernel", "test_process_handoff", "next_scheduler_acceptance"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    if event_read < 0 {\n        wait_complete_slot(slot, -1, 0, event_read);\n        return 1;\n    }\n    wait_queue_push(wait_channel, slot);\n    return 0;",
+          "after": "    wait_queue_push(WAIT_CHAN_INPUT, slot);\n    return 0;",
+          "invariant": "A waiter that sees no ready event must requeue onto the same keyed wait structure it was popped from.",
+          "hidden_test_rationale": "Hidden GUI cases park waiters on multiple window ids, force an empty first read, and then verify that only the matching window wake drains the requeued slot."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_wait_event(window_id, out_addr, timeout_ms);\n}",
+          "after": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_wait_event(-1, out_addr, timeout_ms);\n}",
+          "invariant": "The SDK wrapper must preserve the caller-selected window key when it forwards the blocking event ABI.",
+          "hidden_test_rationale": "The hidden desktop suite waits on two windows concurrently and catches cross-window wakeups that public single-window smoke coverage misses."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-069",
+      "category": "algorithm_and_data_structure",
+      "title": "Snapshot retention tracks the newest reader instead of the oldest",
+      "initial_signal": "Recovery occasionally replays metadata that should still be hidden behind an older live snapshot when a newer reader is also active.",
+      "public_signal": "A reboot path exposes too-recent metadata under concurrent readers.",
+      "participant_files": ["kernel.trit", "ternary_redo_wal.h", "tests/test_redo_wal_v2.cpp", "tests/test_os_platform.cpp", "tests/test_host_runtime.cpp", "tests/test_phase_d_kernel.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "DEBUGGING.md"],
+      "editable_files": ["kernel.trit", "ternary_redo_wal.h", "tests/test_redo_wal_v2.cpp"],
+      "distractor_files": ["ternary_host_runtime.h", "tools/trit_tool.py", "IMAGE_FORMAT_MANIFEST.json"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_redo_wal_v2", "test_os_platform", "test_host_runtime"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "            if rtxid - oldest < 0 { oldest = rtxid; }",
+          "after": "            if rtxid - oldest > 0 { oldest = rtxid; }",
+          "invariant": "Checkpoint reclamation must be pinned by the oldest active snapshot, not the newest one.",
+          "hidden_test_rationale": "Hidden WAL tests overlap an old reader with a newer one, then checkpoint and recover; the wrong comparison silently passes simpler single-reader cases."
+        },
+        {
+          "path": "ternary_redo_wal.h",
+          "before": "            required_lsn = std::max(\n                required_lsn,\n                dirty_lsn_[static_cast<std::size_t>(offset + i)]);",
+          "after": "            required_lsn = std::min(\n                required_lsn,\n                dirty_lsn_[static_cast<std::size_t>(offset + i)]);",
+          "invariant": "The host-side recovery oracle must compute the highest dirty dependency across the flushed range.",
+          "hidden_test_rationale": "Private oracle-comparison runs force mixed dirty LSNs in one page range and catch a mirrored host/kernel drift that normal public page writes do not isolate."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-070",
+      "category": "algorithm_and_data_structure",
+      "title": "Directory rename loses descendant protection and reverses paths",
+      "initial_signal": "A rename that targets a nested destination can create a subtree cycle or move the wrong pathname when the source and destination are both valid.",
+      "public_signal": "Ordinary file renames work, but one deep directory move poisons later lookups.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_vfs_rename.cpp", "tests/test_os_platform.cpp", "tests/test_syscall_pointer_fuzz.cpp", "tests/test_native_apps.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "SYSCALL_MANIFEST.json"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_os_platform.cpp"],
+      "distractor_files": ["ternary_os.h", "build_tos_image.cpp", "IMAGE_FORMAT_MANIFEST.json"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_vfs_rename", "test_os_platform", "test_syscall_pointer_fuzz"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "        if cursor - source_inode == 0 {\n            return 0;\n        }",
+          "after": "        if cursor - source_inode == 0 {\n            return 1;\n        }",
+          "invariant": "Rename must reject moving a directory into itself or any descendant to preserve an acyclic parent chain.",
+          "hidden_test_rationale": "Hidden namespace tests build multi-level directory chains and verify parent traversal after reboot, which exposes a false-safe ancestor check."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_rename(old_path_addr: t40, new_path_addr: t40) -> t40 {\n    return sys_rename(old_path_addr, new_path_addr);\n}",
+          "after": "fn os_rename(old_path_addr: t40, new_path_addr: t40) -> t40 {\n    return sys_rename(new_path_addr, old_path_addr);\n}",
+          "invariant": "The user SDK must preserve source and destination ordering for atomic rename.",
+          "hidden_test_rationale": "Hidden CLI and GUI rename flows invoke the SDK wrapper rather than raw syscalls and catch a reversal that public low-level coverage can miss."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-071",
+      "category": "algorithm_and_data_structure",
+      "title": "Scheduler accepts runnable slots without a live context",
+      "initial_signal": "A resumed process can be chosen by the ready queue even when its context slot was never restored, leading to a late handoff trap.",
+      "public_signal": "Scheduler epoch advances, but one resumed child traps immediately.",
+      "participant_files": ["kernel.trit", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "tests/test_os_platform.cpp", "tests_next/09_process_ipc_scheduler/next_scheduler_acceptance.cpp", "apps/os_sdk.trit", "ternary_os.h", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["kernel.trit", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp"],
+      "distractor_files": ["run_tos_sdl.cpp", "build_tos_image.cpp", "docs/12_Future_Architecture/platform_evolution_plan.md"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_phase_d_kernel", "test_process_handoff", "next_scheduler_acceptance"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "            if kload(row + PROC_CONTEXT) > 0 {\n                return process_slot;\n            }",
+          "after": "            if kload(row + PROC_CONTEXT) >= 0 {\n                return process_slot;\n            }",
+          "invariant": "A runnable process cannot be scheduled until it owns a valid saved context pointer.",
+          "hidden_test_rationale": "Hidden handoff cases create runnable-but-uninitialized slots through interrupted launch paths and catch a scheduler that only checks state bits."
+        },
+        {
+          "path": "tests/test_phase_d_kernel.cpp",
+          "before": "            ok = expect_eq(scheduler_epoch(), epoch + 1, ok);",
+          "after": "            ok = expect_eq(scheduler_epoch(), epoch, ok);",
+          "invariant": "Public scheduler tests must still assert a real context-switch progression signal, not just queue activity.",
+          "hidden_test_rationale": "The private suite relies on the public test staying strict enough to reveal epoch progress regressions before deeper VM handoff checks run."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-072",
+      "category": "algorithm_and_data_structure",
+      "title": "Required-LSN tracking becomes non-monotonic under buffer pressure",
+      "initial_signal": "Large writes remain readable, but an older buffered page image can become flush-eligible again after a later update.",
+      "public_signal": "Persistence drifts only after multiple writes to the same inode.",
+      "participant_files": ["kernel.trit", "tests/test_os_platform.cpp", "tests/test_redo_wal_v2.cpp", "tests/test_phase_d_kernel.cpp", "ternary_redo_wal.h", "ternary_os.h", "TEST_MANIFEST.json", "CMakeLists.txt", "DEBUGGING.md"],
+      "editable_files": ["kernel.trit", "tests/test_os_platform.cpp", "ternary_redo_wal.h"],
+      "distractor_files": ["ternary_host_runtime.h", "tools/trit_tool.py", "ROADMAP_STATUS.json"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_os_platform", "test_redo_wal_v2", "test_production_layers"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    if lsn - kload(addr) > 0 {\n        kstore(addr, lsn);\n    }",
+          "after": "    if lsn - kload(addr) < 0 {\n        kstore(addr, lsn);\n    }",
+          "invariant": "Per-inode required durability metadata must only move forward as newer writes commit.",
+          "hidden_test_rationale": "Hidden multi-write cases force an inode through repeated partial writes and reclaim; the inversion is invisible when each inode is written once."
+        },
+        {
+          "path": "tests/test_os_platform.cpp",
+          "before": "            if inode_required_lsn(inode) - required_before_growth <= 0 {\n                return -13;\n            }",
+          "after": "            if inode_required_lsn(inode) - required_before_growth < 0 {\n                return -13;\n            }",
+          "invariant": "Public regression coverage must reject unchanged dependency metadata after growth, not only decreasing values.",
+          "hidden_test_rationale": "Private stress runs depend on public checks preserving a strict monotonicity oracle before they add cache-eviction interleavings."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-073",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Base-27 grouped formatting drifts away from canonical 0z27",
+      "initial_signal": "The guest SDK and host symbolic helpers still round-trip digits, but one grouped spelling no longer matches the canonical prefix contract.",
+      "public_signal": "A symbolic dump looks almost right except for its prefix.",
+      "participant_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tools/trit_tool.py", "tests/test_symbolic_encodings.cpp", "tests/test_symbolic_guest.py", "tests/test_symbolic_diagnostics.py", "tests/test_tcl_asm.cpp", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tools/trit_tool.py"],
+      "distractor_files": ["docs/04_Binary_Contract/symbolic_encodings.md", "tcl_asm.trit", "SYSCALL_MANIFEST.json"],
+      "focused_suites": ["symbolic_encodings"],
+      "focused_targets": ["test_symbolic_encodings", "test_tcl_asm", "test_symbolic_guest"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "    os_symbolic_store(out_addr, 1, 122);",
+          "after": "    os_symbolic_store(out_addr, 1, 121);",
+          "invariant": "The guest formatter must emit the exact canonical grouped prefix accepted by the rest of the stack.",
+          "hidden_test_rationale": "Hidden guest parity tests compare exact byte-for-byte symbolic text, not just parsed numeric equality."
+        },
+        {
+          "path": "ternary_symbolic_encoding.h",
+          "before": "    return encodeGroupedDigits(trits, kBase27Alphabet, 3, \"0z27:\");",
+          "after": "    return encodeGroupedDigits(trits, kBase27Alphabet, 3, \"0y27:\");",
+          "invariant": "Host tooling and guest formatting must share the same stable textual contract for base-27 dumps.",
+          "hidden_test_rationale": "Private diagnostics tests diff host and guest symbolic artifacts directly and catch a prefix drift even when both sides still parse their own output."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-074",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Uppercase exact-trit literals stop classifying as numeric",
+      "initial_signal": "Lowercase 0t literals still work, but one uppercase exact-trit spelling falls back into the non-numeric path in part of the stack.",
+      "public_signal": "One assembler literal works in lowercase only.",
+      "participant_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tests/test_symbolic_encodings.cpp", "tests/test_symbolic_guest.py", "tests/test_tcl_asm.cpp", "tcl_asm.trit", "tools/trit_tool.py", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tests/test_tcl_asm.cpp"],
+      "distractor_files": ["tcl_lexer.trit", "README.md", "docs/04_Binary_Contract/symbolic_encodings.md"],
+      "focused_suites": ["symbolic_encodings", "compiler"],
+      "focused_targets": ["test_symbolic_encodings", "test_tcl_asm", "test_compiler_corpus_gate"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "            if second == 84 { return os_symbolic_parse_exact_value(src_addr, src_len); }",
+          "after": "            if second == 84 { return OS_SYMBOLIC_ERR_INVALID; }",
+          "invariant": "Guest numeric parsing must treat uppercase and lowercase exact-trit prefixes consistently.",
+          "hidden_test_rationale": "Hidden guest probes feed both public and compatibility spellings through the same parser and reject case-sensitive drift."
+        },
+        {
+          "path": "ternary_symbolic_encoding.h",
+          "before": "    return token.size() >= i + 2 && token[i] == '0' &&\n           (token[i + 1] == 't' || token[i + 1] == 'T' ||\n            token[i + 1] == 'y' || token[i + 1] == 'Y' ||\n            token[i + 1] == 'z' || token[i + 1] == 'Z');",
+          "after": "    return token.size() >= i + 2 && token[i] == '0' &&\n           (token[i + 1] == 't' || token[i + 1] == 'Y' ||\n            token[i + 1] == 'y' || token[i + 1] == 'Y' ||\n            token[i + 1] == 'z' || token[i + 1] == 'Z');",
+          "invariant": "Host numeric-literal classification must preserve the exact accepted exact-trit prefix set.",
+          "hidden_test_rationale": "Private assembler and tool-path tests route tokens through both classification and full parsing, so a one-character whitelist drift becomes visible."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-075",
+      "category": "balanced_ternary_and_numeric",
+      "title": "Host and guest disagree on the checked integer boundary",
+      "initial_signal": "A boundary value is accepted by one numeric surface and rejected by another even though both claim the same exact T40 contract.",
+      "public_signal": "Only one maximum-magnitude number fails to round-trip.",
+      "participant_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tools/trit_tool.py", "tests/test_symbolic_encodings.cpp", "tests/test_symbolic_guest.py", "tests/test_symbolic_diagnostics.py", "tests/test_tcl_asm.cpp", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["apps/os_sdk.trit", "ternary_symbolic_encoding.h", "tools/trit_tool.py"],
+      "distractor_files": ["ternary_scalar.h", "math_utils.trit", "docs/04_Binary_Contract/symbolic_encodings.md"],
+      "focused_suites": ["symbolic_encodings"],
+      "focused_targets": ["test_symbolic_encodings", "test_symbolic_guest", "test_symbolic_diagnostics"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "const OS_SYMBOLIC_MAX_INTEGER: t40 = 10000000;",
+          "after": "const OS_SYMBOLIC_MAX_INTEGER: t40 = 9999999;",
+          "invariant": "Guest symbolic conversions must expose the same checked integer range everywhere they promise exact T40 behavior.",
+          "hidden_test_rationale": "Hidden parity tests target only the cliff-edge values near the published maximum, where most public random cases never land."
+        },
+        {
+          "path": "ternary_symbolic_encoding.h",
+          "before": "        if (value > (max_magnitude - digit) / base) return std::nullopt;",
+          "after": "        if (value >= (max_magnitude - digit) / base) return std::nullopt;",
+          "invariant": "The host parser must admit the maximum representable magnitude while still rejecting true overflow.",
+          "hidden_test_rationale": "Private tool tests exercise exact-limit decimal and hexadecimal spellings and compare them against guest SDK acceptance."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-076",
+      "category": "compiler_and_codegen",
+      "title": "Rename lowers as reboot in the runtime wrapper table",
+      "initial_signal": "A wrapper name is accepted by the compiler, but the emitted service id no longer matches the VFS rename ABI.",
+      "public_signal": "One wrapper compiles and then calls the wrong service.",
+      "participant_files": ["ternary_compiler_ir.h", "ternary_compiler_codegen.h", "apps/os_sdk.trit", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "tests/test_syscall_pointer_fuzz.cpp", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["ternary_compiler_ir.h", "ternary_compiler_codegen.h", "apps/os_sdk.trit"],
+      "distractor_files": ["ternary_host_runtime.h", "tritc.cpp", "kernel.trit"],
+      "focused_suites": ["compiler", "os", "production"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_syscall_pointer_fuzz"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "ternary_compiler_ir.h",
+          "before": "static constexpr int sys_rename = 59;",
+          "after": "static constexpr int sys_rename = 58;",
+          "invariant": "The runtime constant table must preserve the published service id for atomic rename.",
+          "hidden_test_rationale": "Private wrapper tests compare emitted service numbers against kernel dispatch and manifest ids, not just successful compilation."
+        },
+        {
+          "path": "ternary_compiler_codegen.h",
+          "before": "        if (name == \"sys_rename\") return runtime::sys_rename;",
+          "after": "        if (name == \"sys_rename\") return runtime::sys_reboot;",
+          "invariant": "Wrapper-name lowering must preserve semantic identity instead of aliasing unrelated services with the same arity.",
+          "hidden_test_rationale": "Hidden corpus cases invoke rename from app code and validate both syscall number and side effects, catching a drift that public compile-only checks can miss."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-077",
+      "category": "compiler_and_codegen",
+      "title": "wait_event lowers as direct window polling",
+      "initial_signal": "Blocking event waits compile, but the lowered code uses the immediate poll syscall instead of the blocking wait service.",
+      "public_signal": "The wrapper returns quickly but never blocks.",
+      "participant_files": ["ternary_compiler_codegen.h", "apps/os_sdk.trit", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "tests/test_process_handoff.cpp", "kernel.trit", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["ternary_compiler_codegen.h", "apps/os_sdk.trit", "tests/test_os_platform.cpp"],
+      "distractor_files": ["ternary_compiler_ir.h", "apps/window_probe.trit", "run_tos_sdl.cpp"],
+      "focused_suites": ["compiler", "os"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_process_handoff"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "ternary_compiler_codegen.h",
+          "before": "        if (name == \"sys_wait_event\") return runtime::sys_wait_event;",
+          "after": "        if (name == \"sys_wait_event\") return runtime::sys_window_read_event;",
+          "invariant": "Blocking wrappers and direct polling services must remain distinct lowering targets even when they share argument shapes.",
+          "hidden_test_rationale": "Private window tests require a blocked status on empty queues and therefore catch a mistaken direct-read lowering immediately."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_wait_event(window_id, out_addr, timeout_ms);\n}",
+          "after": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_window_read_event(window_id, out_addr);\n}",
+          "invariant": "The public SDK must preserve the blocking wait contract rather than silently substituting a best-effort poll.",
+          "hidden_test_rationale": "Hidden integration cases call the SDK directly from apps and assert blocked-state behavior before any event arrives."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-078",
+      "category": "compiler_and_codegen",
+      "title": "app_spawn reverts to the legacy static spawn path",
+      "initial_signal": "A three-argument app launch compiles, but the lowered service and SDK argument order no longer match the live process ABI.",
+      "public_signal": "New app launches return a result, but the wrong slot or pid is wired through.",
+      "participant_files": ["ternary_compiler_codegen.h", "apps/os_sdk.trit", "kernel.trit", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "tests/test_process_handoff.cpp", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["ternary_compiler_codegen.h", "apps/os_sdk.trit", "kernel.trit"],
+      "distractor_files": ["ternary_compiler_ir.h", "build_tos_image.cpp", "apps/desktop.trit"],
+      "focused_suites": ["compiler", "os", "production"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_process_handoff"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "ternary_compiler_codegen.h",
+          "before": "        if (name == \"sys_app_spawn\") return runtime::sys_app_spawn;",
+          "after": "        if (name == \"sys_app_spawn\") return runtime::sys_spawn_static;",
+          "invariant": "The compiler must target the current process-launch ABI rather than a legacy service with different semantics.",
+          "hidden_test_rationale": "Hidden launch tests validate child slot, pid, and namespace propagation, which diverge immediately when the legacy service is used."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_spawn_app(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {\n    return sys_app_spawn(path_addr, child_slot, child_pid);\n}",
+          "after": "fn os_spawn_app(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {\n    return sys_app_spawn(path_addr, child_pid, child_slot);\n}",
+          "invariant": "The SDK must preserve the published child-slot then child-pid ordering for app_spawn.",
+          "hidden_test_rationale": "Private handoff tests launch more than one child and confirm both pid bookkeeping and MMU window mappings, exposing a swapped tuple."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-079",
+      "category": "compiler_and_codegen",
+      "title": "Assembler grouped literals use the wrong alphabet on the zero branch",
+      "initial_signal": "Grouped symbolic numeric literals still parse for one family, but a base-27 token can be decoded with the base-81 alphabet in a narrow path.",
+      "public_signal": "One grouped literal form miscompares in assembler parity checks.",
+      "participant_files": ["tcl_asm.trit", "tests/test_tcl_asm.cpp", "tests/test_phase7_compiler.cpp", "ternary_symbolic_encoding.h", "apps/os_sdk.trit", "tools/trit_tool.py", "TEST_MANIFEST.json", "CMakeLists.txt", "tcl_lexer.trit"],
+      "editable_files": ["tcl_asm.trit", "tests/test_tcl_asm.cpp", "ternary_symbolic_encoding.h"],
+      "distractor_files": ["tcl_parser.trit", "tcl_frontend.trit", "tcl_lexer.trit"],
+      "focused_suites": ["compiler", "symbolic_encodings"],
+      "focused_targets": ["test_tcl_asm", "test_phase7_compiler", "test_symbolic_encodings"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "tcl_asm.trit",
+          "before": "        match base81 {\n            pos => { digit = tcl_asm_base81_digit(c); }\n            zero => { digit = tcl_asm_base27_digit(c); }\n            neg => { digit = tcl_asm_base27_digit(c); }\n        }",
+          "after": "        match base81 {\n            pos => { digit = tcl_asm_base81_digit(c); }\n            zero => { digit = tcl_asm_base81_digit(c); }\n            neg => { digit = tcl_asm_base27_digit(c); }\n        }",
+          "invariant": "Base-27 and base-81 grouped literals must retain distinct digit alphabets across every branch of the parser.",
+          "hidden_test_rationale": "Hidden assembler parity cases mix both grouped literal families in the same source and compare against the host symbolic implementation."
+        },
+        {
+          "path": "tests/test_tcl_asm.cpp",
+          "before": "            MOV r3, 0z27:bp",
+          "after": "            MOV r3, 0z81:bp",
+          "invariant": "Public parity tests must continue to exercise the base-27 literal family instead of accidentally collapsing coverage onto base-81.",
+          "hidden_test_rationale": "Private symbolic-assembler tests intentionally keep both families live; weakening the public fixture leaves the parser bug visible there."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-080",
+      "category": "compiler_and_codegen",
+      "title": "yield aliases to sleep_ms instead of sleep",
+      "initial_signal": "A zero-argument cooperative yield compiles, but it lowers to the timed sleep ABI instead of the documented alias.",
+      "public_signal": "Yielding code suddenly behaves like a timed wait.",
+      "participant_files": ["ternary_compiler_ir.h", "ternary_compiler_codegen.h", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "apps/os_sdk.trit", "kernel.trit", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["ternary_compiler_ir.h", "ternary_compiler_codegen.h", "tests/test_compiler_abi_contract.cpp", "apps/os_sdk.trit"],
+      "distractor_files": ["ternary_vm_state.h", "ternary_host_runtime.h", "apps/sleep.trit"],
+      "focused_suites": ["compiler", "os"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_phase7_compiler"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "ternary_compiler_ir.h",
+          "before": "static constexpr int sys_yield = sys_sleep;",
+          "after": "static constexpr int sys_yield = sys_sleep_ms;",
+          "invariant": "The published alias table must keep zero-argument yield mapped to the legacy cooperative sleep service.",
+          "hidden_test_rationale": "Hidden wrapper suites compile both aliases and compare emitted service ids against the manifest alias contract."
+        },
+        {
+          "path": "ternary_compiler_codegen.h",
+          "before": "        if (name == \"sys_yield\") return runtime::sys_yield;",
+          "after": "        if (name == \"sys_yield\") return runtime::sys_sleep_ms;",
+          "invariant": "Name-to-service lowering must preserve the zero-arg wrapper ABI instead of selecting a same-family service with different arity and blocking semantics.",
+          "hidden_test_rationale": "Private compiler cases call yield inside tight loops and catch the semantic shift when it starts routing through the timed blocking path."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_sleep() -> t40 {\n    return sys_sleep();\n}",
+          "after": "fn os_sleep() -> t40 {\n    return sys_yield();\n}",
+          "invariant": "The guest SDK's zero-argument sleep wrapper must keep lowering directly to the canonical cooperative sleep service.",
+          "hidden_test_rationale": "Hidden guest-wrapper checks compile SDK callers through the Trit surface and compare the emitted service ids against the alias contract, so a wrapper that picks up a drifted alias is exposed."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-081",
+      "category": "memory_and_pointer_safety",
+      "title": "getproc accepts short user spans and swaps its argument order",
+      "initial_signal": "Process metadata can partially publish into user memory when a borderline pointer is accepted and the SDK forwards pid and output in the wrong order.",
+      "public_signal": "One getproc caller corrupts a nearby sentinel instead of failing cleanly.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_syscall_pointer_fuzz.cpp", "tests/test_os_platform.cpp", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_syscall_pointer_fuzz.cpp"],
+      "distractor_files": ["ternary_os.h", "ternary_vm_state.h", "tools/trit_tool.py"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_syscall_pointer_fuzz", "test_os_platform", "test_phase_d_kernel"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    if user_validate_span(caller_pid, out_addr, PROCINFO_WORDS, 1) <= 0 {\n        return ERR_BAD_PTR;\n    }",
+          "after": "    if user_validate_span(caller_pid, out_addr, PROCINFO_WORDS, 1) < 0 {\n        return ERR_BAD_PTR;\n    }",
+          "invariant": "User-visible process info must validate the full destination span before publishing any word.",
+          "hidden_test_rationale": "Hidden pointer-fuzz cases probe exact-boundary spans where a zero result must still be treated as invalid, then verify that sentinels remain intact."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_getproc(pid: t40, out_addr: t40) -> t40 {\n    return sys_getproc(pid, out_addr);\n}",
+          "after": "fn os_getproc(pid: t40, out_addr: t40) -> t40 {\n    return sys_getproc(out_addr, pid);\n}",
+          "invariant": "The SDK wrapper must preserve the pid then output-buffer ordering used by the syscall ABI.",
+          "hidden_test_rationale": "Private app-level process inspectors call the SDK rather than the raw syscall and catch the bad ordering together with the pointer-boundary mistake."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-082",
+      "category": "memory_and_pointer_safety",
+      "title": "Process snapshots overrun their declared record window",
+      "initial_signal": "The process snapshot syscall can accept a count that no longer matches its documented five-word user record shape, and the wrapper forwards the two arguments backwards.",
+      "public_signal": "ps works for small counts but a larger request scribbles past the user buffer.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_syscall_pointer_fuzz.cpp", "tests/test_os_platform.cpp", "tests/test_phase_d_kernel.cpp", "tests/test_native_apps.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "SYSCALL_MANIFEST.json"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_os_platform.cpp"],
+      "distractor_files": ["apps/ps.trit", "ternary_os.h", "build_tos_image.cpp"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_syscall_pointer_fuzz", "test_os_platform", "test_native_apps"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    if max_entries - 1200 > 0 {\n        return ERR_BAD_PTR;\n    }",
+          "after": "    if max_entries - 6000 > 0 {\n        return ERR_BAD_PTR;\n    }",
+          "invariant": "The count limit must be derived from the documented five-word record width and the fixed user window size.",
+          "hidden_test_rationale": "Hidden pointer tests request near-limit snapshots sized exactly to the documented window and detect the widened acceptance range by sentinel damage."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_ps(out_addr: t40, max_entries: t40) -> t40 {\n    return sys_ps(out_addr, max_entries);\n}",
+          "after": "fn os_ps(out_addr: t40, max_entries: t40) -> t40 {\n    return sys_ps(max_entries, out_addr);\n}",
+          "invariant": "The public ps wrapper must preserve pointer then count ordering for snapshot writes.",
+          "hidden_test_rationale": "Private guest smoke apps call os_ps through the SDK and expose both the oversized count path and the argument inversion."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-083",
+      "category": "memory_and_pointer_safety",
+      "title": "Rename copies both user paths into the same kernel scratch buffer",
+      "initial_signal": "Atomic rename can succeed for short names but alias the old and new path buffers together under certain pointer-fuzz cases.",
+      "public_signal": "rename sometimes behaves like a no-op with valid pointers.",
+      "participant_files": ["kernel.trit", "tests/test_syscall_pointer_fuzz.cpp", "tests/test_os_platform.cpp", "apps/os_sdk.trit", "SYSCALL_MANIFEST.json", "ternary_os.h", "TEST_MANIFEST.json", "CMakeLists.txt", "DEBUGGING.md"],
+      "editable_files": ["kernel.trit", "tests/test_syscall_pointer_fuzz.cpp", "apps/os_sdk.trit"],
+      "distractor_files": ["build_tos_image.cpp", "apps/file_manager.trit", "tools/trit_tool.py"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_syscall_pointer_fuzz", "test_os_platform", "test_vfs_rename"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "        var new_path_words: t40 = user_copy_cstring_to_kernel(\n            pid, arg1, SYSCALL_RENAME_NEW_COPY_BASE, VFS_MAX_PATH_WORDS);",
+          "after": "        var new_path_words: t40 = user_copy_cstring_to_kernel(\n            pid, arg1, SYSCALL_RENAME_OLD_COPY_BASE, VFS_MAX_PATH_WORDS);",
+          "invariant": "The old and new rename paths must occupy distinct kernel scratch regions before the atomic directory update runs.",
+          "hidden_test_rationale": "Private rename fuzz cases keep both pointers valid while varying lengths and overlapping prefixes, which exposes aliased scratch storage."
+        },
+        {
+          "path": "tests/test_syscall_pointer_fuzz.cpp",
+          "before": "    if case_id == 17 { return kernel_syscall_dispatch(1, 59, pointer, rename_addr, 0, 0); }",
+          "after": "    if case_id == 17 { return kernel_syscall_dispatch(1, 59, path_addr, rename_addr, 0, 0); }",
+          "invariant": "Public pointer fuzz must continue probing an invalid first pathname pointer for the rename service.",
+          "hidden_test_rationale": "The hidden fuzz harness keeps the stricter invalid-pointer case and catches the scratch-buffer alias bug even if the public probe is softened."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-084",
+      "category": "memory_and_pointer_safety",
+      "title": "wait_event accepts a zero-span buffer and the SDK writes one word late",
+      "initial_signal": "Window event waits can appear to succeed while shifting their event payload one word past the caller buffer.",
+      "public_signal": "A blocked event call corrupts the word after the destination buffer.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_syscall_pointer_fuzz.cpp", "tests/test_process_handoff.cpp", "tests/test_phase_d_kernel.cpp", "tests/test_os_platform.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "SYSCALL_MANIFEST.json"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_process_handoff.cpp"],
+      "distractor_files": ["apps/window_probe.trit", "ternary_vm_state.h", "run_tos_sdl.cpp"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_syscall_pointer_fuzz", "test_process_handoff", "test_phase_d_kernel"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    if user_validate_span(pid, out_addr, WINDOW_EVENT_WORDS, 1) <= 0 {\n        return ERR_BAD_PTR;\n    }\n    var row: t40 = window_addr(slot);",
+          "after": "    if user_validate_span(pid, out_addr, WINDOW_EVENT_WORDS - 1, 1) <= 0 {\n        return ERR_BAD_PTR;\n    }\n    var row: t40 = window_addr(slot);",
+          "invariant": "wait_event must reject a destination span that is exactly out of bounds rather than publishing a partial event record.",
+          "hidden_test_rationale": "Hidden pointer fuzz uses precise end-of-page buffers and sentinel checks to catch a zero-span acceptance hole."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_wait_event(window_id, out_addr, timeout_ms);\n}",
+          "after": "fn os_wait_event(window_id: t40, out_addr: t40, timeout_ms: t40) -> t40 {\n    return sys_wait_event(window_id, out_addr + 1, timeout_ms);\n}",
+          "invariant": "The SDK must write event records into the exact caller-provided base address.",
+          "hidden_test_rationale": "Private GUI tests validate the full four-word event record at the supplied address and catch the one-word shift immediately."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-085",
+      "category": "concurrency_and_state",
+      "title": "sleep_ms stops fast-returning on zero timeout",
+      "initial_signal": "A zero-millisecond sleep can block instead of yielding a completed result, and the public wrapper routes the call through the untimed sleep alias.",
+      "public_signal": "sleep_ms(0) no longer returns immediately.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_os_platform.cpp", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt", "ternary_os.h"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_os_platform.cpp"],
+      "distractor_files": ["apps/sleep.trit", "run_tos_sdl.cpp", "build_tos_image.cpp"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_os_platform", "test_phase_d_kernel", "next_scheduler_acceptance"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "        if arg0 <= 0 {\n            return kernel_set_return(1, 1, 0);\n        }",
+          "after": "        if arg0 < 0 {\n            return kernel_set_return(1, 1, 0);\n        }",
+          "invariant": "A non-positive sleep_ms timeout must complete immediately without queueing state.",
+          "hidden_test_rationale": "Hidden scheduler tests interleave zero-time sleeps with futex wakes and catch a process that was incorrectly blocked."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_sleep_ms(ms: t40) -> t40 {\n    return sys_sleep_ms(ms);\n}",
+          "after": "fn os_sleep_ms(ms: t40) -> t40 {\n    return sys_sleep();\n}",
+          "invariant": "The timed sleep wrapper must not collapse onto the legacy untimed sleep alias.",
+          "hidden_test_rationale": "Private guest tests compare zero, positive, and negative timeout behavior through the SDK and catch the alias substitution."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-086",
+      "category": "concurrency_and_state",
+      "title": "Window close requests wake the wrong state path",
+      "initial_signal": "A close request appears to succeed but behaves like a present call in user code, leaving blocked window waiters stranded.",
+      "public_signal": "Closing a window bumps presentation state instead of delivering a close event.",
+      "participant_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "tests/test_os_platform.cpp", "SYSCALL_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt", "apps/window_probe.trit"],
+      "editable_files": ["kernel.trit", "apps/os_sdk.trit", "tests/test_phase_d_kernel.cpp"],
+      "distractor_files": ["apps/desktop.trit", "run_tos_sdl.cpp", "ternary_os.h"],
+      "focused_suites": ["os"],
+      "focused_targets": ["test_phase_d_kernel", "test_process_handoff", "test_os_platform"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "        var close_requested: t40 = window_request_close(pid, arg0);",
+          "after": "        var close_requested: t40 = window_present(pid, arg0);",
+          "invariant": "The close-request syscall must enqueue close-state transitions, not route through the framebuffer-present path.",
+          "hidden_test_rationale": "Private GUI cases wait for cooperative close delivery and verify that presentation counters and close queues remain independent."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_window_request_close(window_id: t40) -> t40 {\n    return sys_window_request_close(window_id);\n}",
+          "after": "fn os_window_request_close(window_id: t40) -> t40 {\n    return sys_window_present(window_id);\n}",
+          "invariant": "The public window-close wrapper must preserve the dedicated close-request ABI.",
+          "hidden_test_rationale": "Hidden app flows exercise only the SDK wrapper and catch the state-path substitution even when raw kernel tests still pass."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-087",
+      "category": "concurrency_and_state",
+      "title": "Killed children stop releasing their windows before parent wait",
+      "initial_signal": "A killed child remains visible in the window table until the parent reaps it, even though other teardown state looks correct.",
+      "public_signal": "A child dies, but one window sticks around until later.",
+      "participant_files": ["kernel.trit", "tests/test_os_platform.cpp", "tests/test_phase_d_kernel.cpp", "tests/test_process_handoff.cpp", "apps/os_sdk.trit", "ternary_os.h", "TEST_MANIFEST.json", "CMakeLists.txt", "APP_MANIFEST.json"],
+      "editable_files": ["kernel.trit", "tests/test_os_platform.cpp", "apps/os_sdk.trit"],
+      "distractor_files": ["apps/task_manager.trit", "apps/desktop.trit", "build_tos_image.cpp"],
+      "focused_suites": ["os", "production"],
+      "focused_targets": ["test_os_platform", "test_process_handoff", "test_phase_d_kernel"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    process_release_windows(pid);",
+          "after": "    process_release_windows(process_slot);",
+          "invariant": "Process teardown must release windows by live pid ownership, not by an internal slot identifier with a different namespace.",
+          "hidden_test_rationale": "Hidden kill-and-wait cases create multiple processes whose slot numbers differ from pids, exposing a stale window-owner release path."
+        },
+        {
+          "path": "tests/test_os_platform.cpp",
+          "before": "               kernel.windowCount() == 0,\n           \"killed child releases files, memory, and windows while waiting for parent\");",
+          "after": "               kernel.windowCount() >= 0,\n           \"killed child releases files, memory, and windows while waiting for parent\");",
+          "invariant": "Public teardown coverage must continue asserting full window cleanup before parent reap, not merely a non-negative count.",
+          "hidden_test_rationale": "The private process suite preserves the strict zero-window expectation and catches the ownership bug immediately."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-088",
+      "category": "concurrency_and_state",
+      "title": "Window launch accounting stops advancing across repeated app starts",
+      "initial_signal": "Repeated launches of the same trusted app preserve functional behavior but the launch-count state no longer increments correctly.",
+      "public_signal": "The app still runs, but one launch metric is frozen.",
+      "participant_files": ["kernel.trit", "tests/test_process_handoff.cpp", "tests/test_native_apps.cpp", "tests/test_os_platform.cpp", "apps/os_sdk.trit", "APP_MANIFEST.json", "TEST_MANIFEST.json", "CMakeLists.txt", "build_tos_image.cpp"],
+      "editable_files": ["kernel.trit", "tests/test_process_handoff.cpp", "apps/os_sdk.trit"],
+      "distractor_files": ["apps/desktop.trit", "apps/calculator.trit", "run_tos_sdl.cpp"],
+      "focused_suites": ["apps", "os"],
+      "focused_targets": ["test_process_handoff", "test_native_apps", "test_os_platform"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "    kstore(row + APP_LAUNCH_COUNT, kload(row + APP_LAUNCH_COUNT) + 1);",
+          "after": "    kstore(row + APP_LAUNCH_COUNT, kload(row + APP_LAUNCH_COUNT));",
+          "invariant": "Trusted app launch accounting must advance once per successful launch so later state inspection reflects real scheduling history.",
+          "hidden_test_rationale": "Hidden repeated-launch cases verify monotonically increasing app metadata across desktop relaunches rather than just first-run success."
+        },
+        {
+          "path": "tests/test_process_handoff.cpp",
+          "before": "    expect(result.halted(), \"window probe app halts after drawing\");",
+          "after": "    expect(result.status != sandbox::vm::VMStatus::Trap, \"window probe app halts after drawing\");",
+          "invariant": "Public launch/handoff tests must continue requiring a clean halt, not merely avoid one specific failure status.",
+          "hidden_test_rationale": "The private suite still checks exact completion and associated launch metadata, so a frozen counter remains visible there."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-089",
+      "category": "syscall_and_abi",
+      "title": "reboot drifts to service 59 in the compiler-facing ABI",
+      "initial_signal": "Compiler-facing reboot constants disagree with the manifest and runtime expectations, colliding with rename at the tail of the table.",
+      "public_signal": "reboot and rename appear to share a service id.",
+      "participant_files": ["ternary_compiler_ir.h", "SYSCALL_MANIFEST.json", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "kernel.trit", "apps/os_sdk.trit", "ternary_vm_state.h", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["ternary_compiler_ir.h", "SYSCALL_MANIFEST.json", "tests/test_compiler_abi_contract.cpp", "apps/os_sdk.trit"],
+      "distractor_files": ["ternary_compiler_codegen.h", "tritc.cpp", "tools/trit_tool.py"],
+      "focused_suites": ["compiler", "os", "production"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_syscall_pointer_fuzz"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "ternary_compiler_ir.h",
+          "before": "static constexpr int sys_reboot = 58;",
+          "after": "static constexpr int sys_reboot = 59;",
+          "invariant": "The compiler runtime ids must remain one-to-one with the published syscall table.",
+          "hidden_test_rationale": "Private wrapper and dispatch tests compare the tail services against both VM constants and live kernel behavior, exposing the collision."
+        },
+        {
+          "path": "SYSCALL_MANIFEST.json",
+          "before": "    {\n      \"id\": 58,\n      \"name\": \"sys_reboot\",\n      \"group\": \"power\",",
+          "after": "    {\n      \"id\": 59,\n      \"name\": \"sys_reboot\",\n      \"group\": \"power\",",
+          "invariant": "The manifest must describe the same reboot id that compiler, VM, kernel, and SDK all export.",
+          "hidden_test_rationale": "Hidden ABI consistency checks treat the manifest as a first-class source of truth and fail when it drifts with code in lockstep."
+        },
+        {
+          "path": "apps/os_sdk.trit",
+          "before": "fn os_reboot() -> t40 {\n    return sys_reboot();\n}",
+          "after": "fn os_reboot() -> t40 {\n    return sys_rename();\n}",
+          "invariant": "The guest reboot wrapper must continue invoking the reboot service exported by the manifest and compiler tables.",
+          "hidden_test_rationale": "Hidden guest ABI probes compile and inspect os_reboot callers without actually powering off the VM, so a wrapper collision with rename still gets caught."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-090",
+      "category": "syscall_and_abi",
+      "title": "wait_event stops returning the blocked status contract",
+      "initial_signal": "An empty event wait now reports immediate success instead of the ABI's blocked status, and the manifest advertises the wrong blocked code.",
+      "public_signal": "Empty waits stop looking blocked.",
+      "participant_files": ["kernel.trit", "SYSCALL_MANIFEST.json", "tests/test_os_platform.cpp", "tests/test_process_handoff.cpp", "apps/os_sdk.trit", "ternary_compiler_codegen.h", "TEST_MANIFEST.json", "CMakeLists.txt", "ternary_compiler_ir.h"],
+      "editable_files": ["kernel.trit", "SYSCALL_MANIFEST.json", "tests/test_os_platform.cpp"],
+      "distractor_files": ["run_tos_sdl.cpp", "ternary_vm_state.h", "apps/window_probe.trit"],
+      "focused_suites": ["os", "compiler"],
+      "focused_targets": ["test_os_platform", "test_process_handoff", "test_compiler_abi_contract"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "            var wait_event_blocked: t40 = process_block_on(wait_event_slot, wait_channel_window(arg0), WAIT_KIND_WINDOW, arg2, arg0, arg1, 0, PROC_BLOCKED);\n            if wait_event_blocked < 0 {\n                return kernel_set_return(-1, 0, wait_event_blocked);\n            }\n            return kernel_set_return(SYS_BLOCKED, 0, 0);",
+          "after": "        return kernel_set_return(1, 0, 0);",
+          "invariant": "A genuinely blocked wait_event must report the blocked status so callers can distinguish waiting from a completed read.",
+          "hidden_test_rationale": "Private event-loop tests poll blocked status explicitly before enqueueing a later event and therefore catch a false-success return."
+        },
+        {
+          "path": "SYSCALL_MANIFEST.json",
+          "before": "    \"blocked_status\": 2",
+          "after": "    \"blocked_status\": 1",
+          "invariant": "The calling-convention contract must continue documenting the same blocked code used by the live kernel.",
+          "hidden_test_rationale": "Hidden ABI validators compare live traces against the manifest and reject a matching but wrong success code."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-091",
+      "category": "syscall_and_abi",
+      "title": "getproc writes its length into detail instead of payload",
+      "initial_signal": "The kernel still fills the user buffer, but the syscall return registers and manifest payload contract no longer agree on where the record length lives.",
+      "public_signal": "getproc returns the right data with the wrong register contract.",
+      "participant_files": ["kernel.trit", "SYSCALL_MANIFEST.json", "apps/os_sdk.trit", "tests/test_os_platform.cpp", "tests/test_compiler_abi_contract.cpp", "tests/test_syscall_pointer_fuzz.cpp", "ternary_compiler_ir.h", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["kernel.trit", "SYSCALL_MANIFEST.json", "apps/os_sdk.trit"],
+      "distractor_files": ["ternary_vm_state.h", "tritc.cpp", "ternary_os.h"],
+      "focused_suites": ["os", "compiler", "production"],
+      "focused_targets": ["test_os_platform", "test_compiler_abi_contract", "test_syscall_pointer_fuzz"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "kernel.trit",
+          "before": "        return kernel_set_return(1, procinfo, 0);",
+          "after": "        return kernel_set_return(1, 0, procinfo);",
+          "invariant": "Successful getproc must report its written word count in payload, leaving detail for error information only.",
+          "hidden_test_rationale": "Private syscall-trace checks validate register placement in addition to user-buffer contents, so the misplaced length is visible."
+        },
+        {
+          "path": "SYSCALL_MANIFEST.json",
+          "before": "    \"return_payload\": \"r14\",\n    \"return_detail\": \"r15\",",
+          "after": "    \"return_payload\": \"r15\",\n    \"return_detail\": \"r14\",",
+          "invariant": "The manifest's calling convention must preserve the stable payload/detail register split.",
+          "hidden_test_rationale": "Hidden ABI checks compare manifest fields against captured syscall traces and reject any swapped register documentation."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-092",
+      "category": "syscall_and_abi",
+      "title": "yield alias drifts in both the manifest and runtime constants",
+      "initial_signal": "The alias table and compiler constants agree with each other, but they both drift away from the documented zero-argument sleep alias contract.",
+      "public_signal": "yield behaves like a different syscall family than the docs promise.",
+      "participant_files": ["SYSCALL_MANIFEST.json", "ternary_compiler_ir.h", "ternary_compiler_codegen.h", "tests/test_compiler_abi_contract.cpp", "tests/test_os_platform.cpp", "kernel.trit", "apps/os_sdk.trit", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["SYSCALL_MANIFEST.json", "ternary_compiler_ir.h", "ternary_compiler_codegen.h", "apps/os_sdk.trit"],
+      "distractor_files": ["ternary_vm_state.h", "apps/sleep.trit", "tools/trit_tool.py"],
+      "focused_suites": ["compiler", "os"],
+      "focused_targets": ["test_compiler_abi_contract", "test_os_platform", "test_phase7_compiler"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": true,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "SYSCALL_MANIFEST.json",
+          "before": "    \"sys_yield\": \"sys_sleep\",",
+          "after": "    \"sys_yield\": \"sys_sleep_ms\",",
+          "invariant": "The alias manifest must describe the same zero-argument yield behavior exported by the compiler and kernel.",
+          "hidden_test_rationale": "Hidden wrapper generation checks consume the alias table directly and detect a drift even if ordinary sleep calls still pass."
+        },
+        {
+          "path": "ternary_compiler_ir.h",
+          "before": "static constexpr int sys_yield = sys_sleep;",
+          "after": "static constexpr int sys_yield = sys_sleep_ms;",
+          "invariant": "The compiler-facing alias constant must stay aligned with the published cooperative-yield contract.",
+          "hidden_test_rationale": "Private ABI cases compile both alias names and compare their emitted service ids against the manifest and kernel dispatch."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-093",
+      "category": "multi_module_repository_repair",
+      "title": "Desktop stops being the default root shell everywhere at once",
+      "initial_signal": "The packaged image, manifest, and app launch defaults all shift toward terminal-first boot even though the release image still expects the desktop session contract.",
+      "public_signal": "A fresh image boots into the wrong user shell.",
+      "participant_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/desktop.trit", "apps/terminal.trit", "tests/test_native_apps.cpp", "tests/test_consumer_shell_productization.cpp", "tests/test_process_handoff.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "ROADMAP_STATUS.json"],
+      "editable_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/desktop.trit"],
+      "distractor_files": ["apps/login.trit", "apps/shell.trit", "run_tos_sdl.cpp"],
+      "focused_suites": ["apps", "os", "production"],
+      "focused_targets": ["test_native_apps", "test_consumer_shell_productization", "test_process_handoff"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "    \"shell\": \"/bin/desktop\"",
+          "after": "    \"shell\": \"/bin/terminal\"",
+          "invariant": "The default user shell must stay aligned with the packaged desktop-first release contract.",
+          "hidden_test_rationale": "Hidden release-image tests validate first-login behavior, session wiring, and GUI startup, not just the presence of both binaries."
+        },
+        {
+          "path": "build_tos_image.cpp",
+          "before": "        {\"desktop\", \"desktop\", \"Desktop\", \"/bin/desktop\", 0, kGuiStackWords, true},",
+          "after": "        {\"desktop\", \"desktop\", \"Desktop\", \"/bin/terminal\", 0, kGuiStackWords, true},",
+          "invariant": "The image builder's bundled-app table must point the desktop artifact at its own guest path.",
+          "hidden_test_rationale": "Private packaging tests inspect both the rootfs registry and runtime launch behavior, catching a manifest-plus-image drift that simple source presence checks miss."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-094",
+      "category": "multi_module_repository_repair",
+      "title": "Task manager GUI and CLI aliases collapse onto the same path",
+      "initial_signal": "The GUI tasks app and the CLI aliases no longer keep separate guest paths, causing the wrong binary to launch from one surface.",
+      "public_signal": "One task-manager alias opens the wrong program.",
+      "participant_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/task_manager.trit", "tests/test_native_apps.cpp", "tests/test_consumer_shell_productization.cpp", "tests/test_process_handoff.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "apps/shell.trit"],
+      "editable_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/task_manager.trit"],
+      "distractor_files": ["apps/desktop.trit", "apps/terminal.trit", "apps/help.trit"],
+      "focused_suites": ["apps", "os"],
+      "focused_targets": ["test_native_apps", "test_consumer_shell_productization", "test_process_handoff"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "      \"guest_path\": \"/bin/task_manager\",",
+          "after": "      \"guest_path\": \"/bin/tasks\",",
+          "invariant": "The GUI task manager and its CLI aliases must remain distinguishable in the packaged app manifest.",
+          "hidden_test_rationale": "Hidden app-bundle tests launch both GUI and CLI forms and verify separate registry metadata and window behavior."
+        },
+        {
+          "path": "build_tos_image.cpp",
+          "before": "        {\"task_manager\", \"top\", \"top\", \"/bin/top\", 0, kServiceStackWords, false},",
+          "after": "        {\"task_manager\", \"top\", \"top\", \"/bin/task_manager\", 0, kServiceStackWords, false},",
+          "invariant": "Bundled CLI aliases must preserve their own guest-path entries instead of pointing at the windowed GUI binary.",
+          "hidden_test_rationale": "Private shell-productization checks exercise alias execution from non-GUI sessions and catch a collapsed path map."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-095",
+      "category": "multi_module_repository_repair",
+      "title": "Paint is packaged from the text editor source",
+      "initial_signal": "The paint app keeps its id and path, but the manifest and image builder silently swap in the wrong source module.",
+      "public_signal": "Paint launches, but behaves like a different app.",
+      "participant_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/paint.trit", "apps/text_editor.trit", "tests/test_native_apps.cpp", "tests/test_process_handoff.cpp", "tests/test_consumer_shell_productization.cpp", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/paint.trit"],
+      "distractor_files": ["apps/file_manager.trit", "apps/settings.trit", "APP_MANIFEST.json"],
+      "focused_suites": ["apps", "os"],
+      "focused_targets": ["test_native_apps", "test_process_handoff", "next_apps_golden_snapshots"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "      \"source\": \"apps/paint.trit\",",
+          "after": "      \"source\": \"apps/text_editor.trit\",",
+          "invariant": "An app's manifest source must continue pointing at the implementation that matches its id, UI contract, and golden assets.",
+          "hidden_test_rationale": "Hidden GUI tests verify paint-specific drawing behavior and framebuffer deltas, not only guest-path launchability."
+        },
+        {
+          "path": "build_tos_image.cpp",
+          "before": "        {\"paint\", \"paint\", \"Paint\", \"/bin/paint\", 0, kGuiStackWords, true},",
+          "after": "        {\"text_editor\", \"paint\", \"Paint\", \"/bin/paint\", 0, kGuiStackWords, true},",
+          "invariant": "The image builder's bundled source name must match the shipped app implementation for the declared app id.",
+          "hidden_test_rationale": "Private image-bundle checks compare manifest metadata against runtime behavior and catch an app identity swap even if the binary still launches."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-096",
+      "category": "multi_module_repository_repair",
+      "title": "doctor command path drifts to a non-existent alias",
+      "initial_signal": "The image and app manifest agree on a shortened guest path for doctor, but the rest of the guest and host tooling still expects /bin/doctor.",
+      "public_signal": "The doctor command disappears from a fresh image.",
+      "participant_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/doctor.trit", "tests/test_native_apps.cpp", "tests/test_consumer_shell_productization.cpp", "tests/test_agent_tooling.py", "TEST_MANIFEST.json", "CMakeLists.txt", "tools/trit_tool.py"],
+      "editable_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/doctor.trit"],
+      "distractor_files": ["apps/test.trit", "apps/sysinfo.trit", "run_tos_sdl.cpp"],
+      "focused_suites": ["apps", "agent_tooling"],
+      "focused_targets": ["test_native_apps", "test_consumer_shell_productization", "test_agent_tooling"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "      \"guest_path\": \"/bin/doctor\",",
+          "after": "      \"guest_path\": \"/bin/doc\",",
+          "invariant": "The app manifest must keep the stable guest path used by host tools, docs, and bundled guest workflows.",
+          "hidden_test_rationale": "Hidden productization tests boot a fresh image and invoke the documented guest commands by path, exposing a path-only drift."
+        },
+        {
+          "path": "build_tos_image.cpp",
+          "before": "        {\"doctor\", \"doctor\", \"doctor\", \"/bin/doctor\", 0, kCliStackWords, false},",
+          "after": "        {\"doctor\", \"doctor\", \"doctor\", \"/bin/doc\", 0, kCliStackWords, false},",
+          "invariant": "The built image must ship the doctor binary at the same stable path described by manifest and docs.",
+          "hidden_test_rationale": "Private image-inspection and guest-command tests verify the actual installed binary path, not only metadata consistency."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-097",
+      "category": "multi_module_repository_repair",
+      "title": "Desktop launch role is removed from the packaged session story",
+      "initial_signal": "The manifest and service text both stop describing a desktop target even though the release image and tests still assume a desktop-first session bootstrap.",
+      "public_signal": "Session startup text and launch role disagree with the UI boot path.",
+      "participant_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/desktop.trit", "apps/login.trit", "tests/test_process_handoff.cpp", "tests/test_consumer_shell_productization.cpp", "tests/test_native_apps.cpp", "TEST_MANIFEST.json", "CMakeLists.txt"],
+      "editable_files": ["APP_MANIFEST.json", "build_tos_image.cpp", "apps/desktop.trit"],
+      "distractor_files": ["apps/shell.trit", "apps/terminal.trit", "ROADMAP_STATUS.json"],
+      "focused_suites": ["apps", "os", "production"],
+      "focused_targets": ["test_process_handoff", "test_consumer_shell_productization", "test_native_apps"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": false,
+        "abi_or_integration_bug": false,
+        "performance_constraint": true
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "      \"launch_role\": \"init_desktop\"",
+          "after": "      \"launch_role\": \"login_shell\"",
+          "invariant": "The desktop app must retain the explicit launch role that the packaged session bootstrap consumes.",
+          "hidden_test_rationale": "Hidden boot-flow tests validate initial session targeting and reject a desktop app that lost its launch role despite still existing in the bundle."
+        },
+        {
+          "path": "build_tos_image.cpp",
+          "before": "        \"sessiond starts login and desktop sessions\\n\"\n        \"window_server owns windows and input routing\\n\"",
+          "after": "        \"sessiond starts login sessions only\\n\"\n        \"window_server owns windows and input routing\\n\"",
+          "invariant": "The packaged service manifest must continue describing the actual desktop session lifecycle shipped in the release image.",
+          "hidden_test_rationale": "Private release-image checks compare service metadata, launch roles, and observed session startup together, so a documentation-plus-packaging drift is caught."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-098",
+      "category": "build_test_and_tooling",
+      "title": "Agent tooling stops invoking knowledge status and the guest doctor weakens its process probe",
+      "initial_signal": "The host tooling suite still runs, but it no longer checks the intended knowledge-status path, and the bundled doctor app quietly stops sampling process state.",
+      "public_signal": "Tooling passes while one knowledge check vanishes.",
+      "participant_files": ["TEST_MANIFEST.json", "apps/doctor.trit", "tools/trit_tool.py", "tests/test_agent_tooling.py", "tests/test_source_manifest_generation.py", "APP_MANIFEST.json", "CMakeLists.txt", "ROADMAP_STATUS.json", "docs/AGENTS.md"],
+      "editable_files": ["TEST_MANIFEST.json", "apps/doctor.trit", "tools/trit_tool.py"],
+      "distractor_files": ["apps/test.trit", "docs/trit-stack.canvas", "tools/generate_source_manifests.py"],
+      "focused_suites": ["agent_tooling"],
+      "focused_targets": ["test_agent_tooling", "test_source_manifest_generation", "test_host_runtime"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": true,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "TEST_MANIFEST.json",
+          "before": "        \"python tools/trit_tool.py knowledge status --json\",",
+          "after": "        \"python tools/trit_tool.py knowledge graph --json\",",
+          "invariant": "The agent_tooling suite must keep a direct knowledge-status validation command rather than silently replacing it with a different graph action.",
+          "hidden_test_rationale": "Private tooling checks assert the exact command surface promised in AGENTS.md and catch a suite that stops exercising status validation."
+        },
+        {
+          "path": "apps/doctor.trit",
+          "before": "    var process_count: t40 = os_ps(DOC_DIR, 8);",
+          "after": "    var process_count: t40 = os_ps(DOC_DIR, 0);",
+          "invariant": "The guest doctor command must continue probing non-empty process-state output when kernel process enumeration is available.",
+          "hidden_test_rationale": "Hidden guest-tooling runs inspect doctor output content, not just its exit code, and therefore catch a neutered zero-entry probe."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-099",
+      "category": "build_test_and_tooling",
+      "title": "Registry validation forgets the windowed field and the guest test command stops checking /bin",
+      "initial_signal": "Manifest validation and the bundled test app both weaken in the same release, letting a GUI-registry shape drift slip through.",
+      "public_signal": "Registry validation still runs, but a field quietly disappears from coverage.",
+      "participant_files": ["APP_MANIFEST.json", "tools/trit_tool.py", "apps/test.trit", "tests/test_agent_tooling.py", "tests/test_source_manifest_generation.py", "tests/test_native_apps.cpp", "TEST_MANIFEST.json", "CMakeLists.txt", "docs/04_Binary_Contract/symbolic_encodings.md"],
+      "editable_files": ["APP_MANIFEST.json", "tools/trit_tool.py", "apps/test.trit"],
+      "distractor_files": ["apps/doctor.trit", "build_tos_image.cpp", "apps/desktop.trit"],
+      "focused_suites": ["agent_tooling", "apps"],
+      "focused_targets": ["test_agent_tooling", "test_native_apps", "test_consumer_shell_productization"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": true,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "APP_MANIFEST.json",
+          "before": "    \"fields\": [\n      \"id\",\n      \"title\",\n      \"guest_path\",\n      \"enabled\",\n      \"windowed\"\n    ]",
+          "after": "    \"fields\": [\n      \"id\",\n      \"title\",\n      \"guest_path\",\n      \"enabled\",\n      \"stack_words\"\n    ]",
+          "invariant": "The GUI registry contract must keep its stable five-field shape so host tooling and guest surfaces agree on app metadata.",
+          "hidden_test_rationale": "Private app-manifest checks validate exact registry field semantics and reject a manifest that swaps a structural field for a build-time property."
+        },
+        {
+          "path": "tools/trit_tool.py",
+          "before": "    if registry_format.get(\"fields\") != [\"id\", \"title\", \"guest_path\", \"enabled\", \"windowed\"]:",
+          "after": "    if registry_format.get(\"fields\") != [\"id\", \"title\", \"guest_path\", \"enabled\", \"stack_words\"]:",
+          "invariant": "Host validation must enforce the same registry field list that the manifest and packaged image publish.",
+          "hidden_test_rationale": "Hidden validation tests compare manifest shape against live packaged app metadata, so a lockstep validator drift still fails."
+        }
+      ]
+    },
+    {
+      "task_id": "TC-V31-FINAL-100",
+      "category": "build_test_and_tooling",
+      "title": "ctest-only tooling targets stop mapping through the graph and the guest test app weakens its failure accounting",
+      "initial_signal": "Graph augmentation no longer walks ctest-only entries from TEST_MANIFEST, and the bundled guest test command becomes tolerant of one failed probe.",
+      "public_signal": "Tooling graph coverage drops while the guest test command still prints PASS too easily.",
+      "participant_files": ["tools/trit_tool.py", "TEST_MANIFEST.json", "apps/test.trit", "tests/test_agent_tooling.py", "tests/test_source_manifest_generation.py", "APP_MANIFEST.json", "CMakeLists.txt", "docs/trit-stack.canvas", "ROADMAP_STATUS.json"],
+      "editable_files": ["tools/trit_tool.py", "TEST_MANIFEST.json", "apps/test.trit"],
+      "distractor_files": ["apps/doctor.trit", "tools/generate_source_manifests.py", "docs/AGENTS.md"],
+      "focused_suites": ["agent_tooling"],
+      "focused_targets": ["test_agent_tooling", "test_source_manifest_generation", "test_host_runtime"],
+      "design_features": {
+        "repository_exploration_required": true,
+        "multi_module_change": true,
+        "misleading_or_incomplete_tests": false,
+        "conflicting_invariants": false,
+        "initial_build_failure": true,
+        "abi_or_integration_bug": false,
+        "performance_constraint": false
+      },
+      "mutations": [
+        {
+          "path": "tools/trit_tool.py",
+          "before": "        for target in suite.get(\"ctest_tests\", []) if isinstance(suite.get(\"ctest_tests\", []), list) else []:",
+          "after": "        for target in suite.get(\"targets\", []) if isinstance(suite.get(\"targets\", []), list) else []:",
+          "invariant": "Knowledge-graph augmentation must preserve explicit coverage edges for ctest-only manifest entries instead of silently ignoring them.",
+          "hidden_test_rationale": "Private graph tests inspect ctest-derived provenance edges and catch a walker that only follows ordinary target lists."
+        },
+        {
+          "path": "apps/test.trit",
+          "before": "    ok = test_processes(); test_report(6, ok); if ok <= 0 { failures = failures + 1; }",
+          "after": "    ok = test_processes(); test_report(6, ok); if ok < 0 { failures = failures + 1; }",
+          "invariant": "The guest test command must treat a zero result as a failing probe so image smoke checks remain fail-closed.",
+          "hidden_test_rationale": "Hidden guest smoke tests inject a zero-result process probe and verify that the packaged test command still returns failure."
+        }
+      ]
+    }
+  ]
+}

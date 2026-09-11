@@ -77,6 +77,14 @@ class TreatCodePlanVerifierTests(unittest.TestCase):
         self.assertIn("absent_verification_commands", codes)
         self.assertIn("absent_evidence_references", codes)
 
+    def test_invalid_per_command_timeout_is_rejected(self) -> None:
+        manifest = self.load_manifest()
+        p01 = next(item for item in manifest["plans"] if item["id"] == "P01")
+        p01["verification_commands"][0]["timeout_seconds"] = 0
+        report = self.validate_manifest(manifest)
+        self.assertFalse(report["ok"])
+        self.assertIn("invalid_verification_command_timeout", {item["code"] for item in report["errors"]})
+
     def verify_temp_manifest(self, manifest: dict) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -101,6 +109,19 @@ class TreatCodePlanVerifierTests(unittest.TestCase):
         report = self.verify_temp_manifest(manifest)
         self.assertFalse(report["complete"])
         self.assertIn("verification_command_failed", {item["code"] for item in report["issues"]})
+
+    def test_per_command_timeout_overrides_the_global_default(self) -> None:
+        manifest = self.load_manifest()
+        p01 = next(item for item in manifest["plans"] if item["id"] == "P01")
+        p01["verification_commands"] = [
+            {"id": "bounded", "command": "python -c \"print('ok')\"", "timeout_seconds": 17},
+            {"id": "self-verify", "command": "python tools/trit_tool.py website plan verify P01"},
+        ]
+        execution = {"returncode": 0, "stdout": "ok\n", "stderr": "", "duration_seconds": 0.1}
+        with patch.object(trit_tool, "run_command", return_value=execution) as runner:
+            report = self.verify_temp_manifest(manifest)
+        self.assertEqual(runner.call_args.kwargs["timeout"], 17)
+        self.assertEqual(report["verification_commands"][0]["timeout_seconds"], 17)
 
     def test_missing_human_approval_blocks_completion(self) -> None:
         manifest = self.load_manifest()

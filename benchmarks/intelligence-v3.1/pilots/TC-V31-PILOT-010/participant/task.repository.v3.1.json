@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-010",
+  "title": "Checked constant folding",
+  "phase": "pilot",
+  "initial_signal": "Compile-time folding changes the observable failure mode of checked arithmetic near the t40 boundary.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "914069b6ddbda6120162a0fab4dae4957cb3d8b080bf249dccb1241d69c44722"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "09cf285c5210ec0c62b1d4d66aef647cdf0804babaae508e9d1a0dee6c32c3c9"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "79f0971b87c873e67bebc647220977242259a8d882f907f8a4637353d2d64c3b"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "d0467c44c8f334aea82f49f52154c0197c8eab3301d090ac2af3fd693da08cd1"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "895e9641e4fbdf1694ea773abdc2a684b83588ddf03bb85c0d13b2067a276082"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "a38a428bc7adc4bb4586bbcadb6b612d90053744e8d953e452ba81207d3f380d"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "0d782cfc04d8cc40734a74a8e99bd3af4bff1f3504f305a7ca2916d69a099ec8"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "8209bc2f5bd4cfe5d5d0bcf6f75b1786274f6a183d3bc2e6a977092547fe9f2a"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

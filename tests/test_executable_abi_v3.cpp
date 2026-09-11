@@ -153,6 +153,35 @@ void testVectorContextInstructions() {
     using namespace sandbox::isa;
     using namespace sandbox::vm;
 
+    for (int reg = 0; reg < REG_COUNT; ++reg) {
+        for (const Opcode opcode : {Opcode::VCTXSTORE, Opcode::VCTXLOAD}) {
+            const int offset = opcode == Opcode::VCTXSTORE ? -121 : 121;
+            const TritWord27 encoded = encodeVectorContext(
+                opcode, static_cast<uint8_t>(reg), offset);
+            const VectorContextInstruction decoded =
+                decodeVectorContext(encoded);
+            expect(decoded.valid && decoded.opcode == opcode &&
+                       decoded.context_register == reg &&
+                       decoded.offset == offset,
+                   "VCTX codec preserves every base register and signed offset");
+        }
+    }
+
+    const TritWord27 canonical =
+        encodeVectorContext(Opcode::VCTXSTORE, R5, -121);
+    for (int trit = 0; trit < ISA_WORD_TRITS; ++trit) {
+        TritWord27 malformed = canonical;
+        const std::uint64_t shift = static_cast<std::uint64_t>(2 * trit);
+        malformed.bits = (malformed.bits & ~(0x3ULL << shift)) |
+                         (0x3ULL << shift);
+        expect(!decodeVectorContext(malformed).valid,
+               "VCTX decoder rejects invalid trits in every word position");
+    }
+    TritWord27 noncanonical = canonical;
+    noncanonical.setTrit(FIELD_VCTX_RSVD_LSB, T_POS);
+    expect(!decodeVectorContext(noncanonical).valid,
+           "VCTX decoder requires neutral reserved trits");
+
     VMState vm(64, 4096);
     vm.reset();
     vm.executable_version = architecture::v3::EXECUTABLE_VERSION;
@@ -161,7 +190,7 @@ void testVectorContextInstructions() {
     vm.privilege = PrivilegeMode::Kernel;
     vm.vector_length = architecture::v3::VECTOR_LANE_COUNT;
     constexpr int context_addr = 513; // 57 * the 9-word stack alignment.
-    vm.regfile.write(1, sandbox::vm::ops::fromLong(context_addr));
+    vm.regfile.write(R5, sandbox::vm::ops::fromLong(context_addr));
     vm.vregfile.reg[0].write(2, sandbox::vm::ops::fromLong(11, TernaryMode::T20));
     vm.vregfile.reg[1].write(7, sandbox::vm::ops::fromLong(-6, TernaryMode::T20));
     vm.vector_faults.setLane(7, TrapCode::TRAP_DIV_ZERO);
@@ -170,11 +199,11 @@ void testVectorContextInstructions() {
     const auto header = makeExecutableHeaderV3(0, 3, 0, 27);
     expect(initializeTaskContextV3(vm.dmem, context_addr, header, 0, 0),
            "direct v3 VCTX context setup succeeds");
-    expect(vm.imem.write(0, encodeVectorContext(Opcode::VCTXSTORE, R1)) ==
+    expect(vm.imem.write(0, encodeVectorContext(Opcode::VCTXSTORE, R5)) ==
                MemFaultCode::OK &&
-               vm.imem.write(1, encodeVectorContext(Opcode::VCTXLOAD, R1)) ==
+               vm.imem.write(1, encodeVectorContext(Opcode::VCTXLOAD, R5)) ==
                MemFaultCode::OK &&
-               vm.imem.write(2, InstructionWord::encodeB(
+               vm.imem.write(2, InstructionWord::encodeSemanticB(
                    Opcode::HALT, R0_ZERO, 0)) == MemFaultCode::OK,
            "VCTXSTORE/VCTXLOAD instructions encode into executable memory");
 
@@ -200,14 +229,31 @@ void testVectorContextInstructions() {
     user_vm.supported_features = architecture::v3::SUPPORTED_FEATURES;
     user_vm.privilege = PrivilegeMode::User;
     user_vm.vector_length = architecture::v3::VECTOR_LANE_COUNT;
-    user_vm.regfile.write(1, sandbox::vm::ops::fromLong(context_addr));
-    expect(user_vm.imem.write(0, encodeVectorContext(Opcode::VCTXSTORE, R1)) ==
+    user_vm.regfile.write(R6, sandbox::vm::ops::fromLong(context_addr));
+    expect(user_vm.imem.write(0, encodeVectorContext(Opcode::VCTXSTORE, R6)) ==
                MemFaultCode::OK,
            "user-mode rejection fixture encodes VCTXSTORE");
     const RunResult rejected = run(user_vm, 2);
     expect(rejected.trapped() &&
                decodeTrap(user_vm.trap_reg) == TrapCode::TRAP_ILLEGAL_OP,
-           "VCTXSTORE fails closed outside kernel privilege");
+            "VCTXSTORE fails closed outside kernel privilege");
+
+    VMState malformed_vm(16, 4096);
+    malformed_vm.reset();
+    malformed_vm.executable_version = architecture::v3::EXECUTABLE_VERSION;
+    malformed_vm.required_features = architecture::v3::REQUIRED_FEATURES;
+    malformed_vm.supported_features = architecture::v3::SUPPORTED_FEATURES;
+    malformed_vm.privilege = PrivilegeMode::Kernel;
+    malformed_vm.regfile.write(R5, sandbox::vm::ops::fromLong(context_addr));
+    TritWord27 malformed_instruction =
+        encodeVectorContext(Opcode::VCTXSTORE, R5);
+    malformed_instruction.bits |= 0x3ULL;
+    expect(malformed_vm.imem.write(0, malformed_instruction) == MemFaultCode::OK,
+           "malformed VCTX fixture reaches instruction memory");
+    const RunResult malformed_result = run(malformed_vm, 1);
+    expect(malformed_result.trapped() && malformed_vm.pc == 0 &&
+               decodeTrap(malformed_vm.trap_reg) == TrapCode::TRAP_ILLEGAL_OP,
+           "malformed VCTX traps before privileged execution or PC retirement");
 }
 
 void testCompilerVectorOptIn() {

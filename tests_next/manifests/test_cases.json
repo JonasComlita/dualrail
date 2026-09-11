@@ -246,7 +246,7 @@
       "kind": "focused",
       "source": "expanded",
       "old_refs": ["tests/test_isa_asm.cpp"],
-      "proves": ["Reserved opcode 80 decodes as reserved and raw 0b11 trit storage marks an instruction malformed"],
+      "proves": ["Unassigned direct opcode 15 and reserved direct opcode 38 decode as reserved, and raw 0b11 trit storage marks an instruction malformed"],
       "gate": "ci_fast",
       "timeout_ms": 1000,
       "deterministic": true,

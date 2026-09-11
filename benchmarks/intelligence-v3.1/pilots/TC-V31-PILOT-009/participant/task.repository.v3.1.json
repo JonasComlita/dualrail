@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-009",
+  "title": "Minimal SSA phi placement",
+  "phase": "pilot",
+  "initial_signal": "A loop with two backedges receives redundant phi nodes while one reachable predecessor remains unrepresented.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "17816cac5f8690f2ba5492461446ab048aa979cea793a12e118bdc49801ddb41"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "8cd66a49adfdbf25c2df6ab0f7668664de7d6d76654aad0a365aa30d62108025"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "2b82a856e7fd0db3fabee9d802fd9be5cbf51f9aebc2ff0832e4ece04d1df471"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "d3d549c20638cdcbb26e7729e4cad42721299809e0ccc948e6c48b914ca42904"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "2155358c73e29078243dd8fdc708920db164f872e0cb6c39a4e1cef889bc5c73"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "3e6828f11e10a0566e339393eadf5ff423ff209556ef42ef8ee08c9d066fac44"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "435349be54143ba0ccdb96743b98650a1fb671127ea3be1ff682198a73d4f973"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

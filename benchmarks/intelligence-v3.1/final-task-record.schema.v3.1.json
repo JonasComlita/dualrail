@@ -4,11 +4,12 @@
   "title": "TreatCode Intelligence v3.1 final task provenance and calibration record",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "version", "task_id", "category", "design_features", "participant_bundle_hash", "grader_bundle_hash", "authorship", "reviews", "qualification", "calibration", "status", "official"],
+  "required": ["schema", "version", "task_id", "track", "category", "design_features", "participant_bundle_hash", "grader_bundle_hash", "authorship", "reviews", "qualification", "calibration", "status", "official"],
   "properties": {
     "schema": { "const": "treatcode.intelligence.final-task-record.v3.1" },
     "version": { "const": "3.1" },
     "task_id": { "type": "string", "pattern": "^TC-V31-FINAL-[0-9]{3}$" },
+    "track": { "enum": ["fresh_coding", "repository_repair", "terminal_agent", "expert_reasoning", "frontier_math", "abstract_generalization", "multimodal_reasoning", "web_research"] },
     "category": { "type": "string", "minLength": 1 },
     "design_features": {
       "type": "object",

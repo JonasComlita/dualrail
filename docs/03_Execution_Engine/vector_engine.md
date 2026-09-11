@@ -71,10 +71,13 @@ The condition vector must contain `L1` lanes. The three source arms must exactly
 
 | Opcode | Address pattern |
 |--------|-----------------|
-| `VLOAD` | `vd[lane] = DMEM[base + imm13 + lane]` |
-| `VSTORE` | `DMEM[base + imm13 + lane] = vs[lane]` |
+| `VLOAD` | `vd[lane] = DMEM[base + imm9 + lane]` |
+| `VSTORE` | `DMEM[base + imm9 + lane] = vs[lane]` |
 
-The vector-memory I-type overlay stores the vector register in the `rd` field, the scalar base register in `rs1`, the width in the vector-memory `func` field, and a signed 13-trit immediate.
+The public ISA-v2 vector-memory extension stores the vector register in the
+`rd` field, the scalar base register in `rs1`, the width in the vector-memory
+`func` field, an extension selector in `[12:9]`, and a signed 9-trit immediate
+in `[8:0]`.
 
 Loaded values are converted to the suffix type before entering the vector register. Stored lanes are converted to the suffix type before writing DMEM.
 

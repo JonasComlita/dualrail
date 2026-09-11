@@ -23,6 +23,43 @@ void expectWord(TestContext& ctx,
     ctx.equal(got.bits, want.bits, message);
 }
 
+TritWord27 wireR(Opcode opcode, uint8_t rd, uint8_t rs1, uint8_t rs2,
+                 uint8_t func = FUNC_DEFAULT) {
+    return VersionedInstructionCodec::encodeR(
+        opcode, rd, rs1, rs2, func, IsaEncodingVersion::V2);
+}
+
+TritWord27 wireR4(Opcode opcode, uint8_t rd, uint8_t rs1, uint8_t rs2,
+                  uint8_t rs3, uint8_t func = FUNC_DEFAULT) {
+    return VersionedInstructionCodec::encodeR4(
+        opcode, rd, rs1, rs2, rs3, func, IsaEncodingVersion::V2);
+}
+
+TritWord27 wireR5(Opcode opcode, uint8_t rd, uint8_t rcond,
+                  uint8_t rneg, uint8_t rzero, uint8_t rpos,
+                  uint8_t func = FUNC_DEFAULT) {
+    return VersionedInstructionCodec::encodeR5(
+        opcode, rd, rcond, rneg, rzero, rpos, func,
+        IsaEncodingVersion::V2);
+}
+
+TritWord27 wireI(Opcode opcode, uint8_t rd, uint8_t rs1, int immediate) {
+    return VersionedInstructionCodec::encodeI(
+        opcode, rd, rs1, immediate, IsaEncodingVersion::V2);
+}
+
+TritWord27 wireB(Opcode opcode, uint8_t branch_register, int offset) {
+    return VersionedInstructionCodec::encodeB(
+        opcode, branch_register, offset, IsaEncodingVersion::V2);
+}
+
+TritWord27 wireVectorMemory(Opcode opcode, uint8_t vector_register,
+                            uint8_t base, int immediate, uint8_t func) {
+    return VersionedInstructionCodec::encodeVectorMemory(
+        opcode, vector_register, base, immediate, func,
+        IsaEncodingVersion::V2);
+}
+
 void forwardBackwardBranches(TestContext& ctx) {
     const AssemblyResult assembled = assemble(R"(
         .text
@@ -43,16 +80,16 @@ void forwardBackwardBranches(TestContext& ctx) {
     ctx.equal(assembled.labels.at("done"), 3, "done label PC");
     ctx.equal(static_cast<int>(assembled.program.size()), 4, "branch fixture word count");
     expectWord(ctx, assembled.program[0],
-               InstructionWord::encodeB(Opcode::BRP, R1, 3),
+               wireB(Opcode::BRP, R1, 3),
                "forward BRP exact word");
     expectWord(ctx, assembled.program[1],
-               InstructionWord::encodeB(Opcode::BRN, R2, -1),
+               wireB(Opcode::BRN, R2, -1),
                "backward BRN exact word");
     expectWord(ctx, assembled.program[2],
-               InstructionWord::encodeB(Opcode::JMP, R0_ZERO, -1),
+               wireB(Opcode::JMP, R0_ZERO, -1),
                "backward JMP exact word");
     expectWord(ctx, assembled.program[3],
-               InstructionWord::encodeB(Opcode::HALT, R0_ZERO, 0),
+               wireB(Opcode::HALT, R0_ZERO, 0),
                "HALT exact word");
 }
 
@@ -74,9 +111,11 @@ void orgWordLayout(TestContext& ctx) {
 
     ctx.equal(assembled.labels.at("entry"), 2, "text .org label PC");
     ctx.equal(static_cast<int>(assembled.program.size()), 3, "text .org pads to entry");
-    ctx.check(InstructionWord::decode(assembled.program[0]).opcode == Opcode::NOP,
+    ctx.check(VersionedInstructionCodec::decode(
+                  assembled.program[0], IsaEncodingVersion::V2).opcode == Opcode::NOP,
               "text .org pads with NOP");
-    ctx.check(InstructionWord::decode(assembled.program[2]).opcode == Opcode::HALT,
+    ctx.check(VersionedInstructionCodec::decode(
+                  assembled.program[2], IsaEncodingVersion::V2).opcode == Opcode::HALT,
               "entry contains HALT");
     ctx.equal(assembled.data_labels.at("value"), 0, "first data label");
     ctx.equal(assembled.data_labels.at("label_ref"), 5, "data .org label");
@@ -97,16 +136,16 @@ void csrExactEncoding(TestContext& ctx) {
 
     ctx.equal(static_cast<int>(program.size()), 5, "CSR fixture word count");
     expectWord(ctx, program[0],
-               InstructionWord::encodeI(Opcode::CSRR, R1, R0_ZERO, CSR_CAUSE),
+               wireI(Opcode::CSRR, R1, R0_ZERO, CSR_CAUSE),
                "CSRR exact emitted word");
     expectWord(ctx, program[1],
-               InstructionWord::encodeI(Opcode::CSRW, R1, R0_ZERO, CSR_TVEC),
+               wireI(Opcode::CSRW, R1, R0_ZERO, CSR_TVEC),
                "CSRW exact emitted word");
     expectWord(ctx, program[2],
-               InstructionWord::encodeR(Opcode::CSRRW, R2, R3, CSR_SCRATCH),
+               wireR(Opcode::CSRRW, R2, R3, CSR_SCRATCH),
                "CSRRW exact emitted word");
     expectWord(ctx, program[3],
-               InstructionWord::encodeR(Opcode::ERET, R0_ZERO, R0_ZERO, R0_ZERO),
+               wireR(Opcode::ERET, R0_ZERO, R0_ZERO, R0_ZERO),
                "ERET exact emitted word");
 }
 
@@ -139,6 +178,7 @@ void malformedDiagnostics(TestContext& ctx) {
 
 void vectorExactEncoding(TestContext& ctx) {
     const auto program = assembleOrThrow(R"(
+        .require vector
         vbcast.t20 v0, r1
         vadd.t20   v1, v0, v0
         vsel.t20   v4, v3, v0, v1, v2
@@ -149,24 +189,25 @@ void vectorExactEncoding(TestContext& ctx) {
 
     ctx.equal(static_cast<int>(program.size()), 6, "vector fixture word count");
     expectWord(ctx, program[0],
-               InstructionWord::encodeR(Opcode::VBCAST, 0, R1, R0_ZERO, FUNC_T20),
+               wireR(Opcode::VBCAST, 0, R1, R0_ZERO, FUNC_T20),
                "VBCAST exact emitted word");
     expectWord(ctx, program[1],
-               InstructionWord::encodeR(Opcode::VADD, 1, 0, 0, FUNC_T20),
+               wireR(Opcode::VADD, 1, 0, 0, FUNC_T20),
                "VADD exact emitted word");
     expectWord(ctx, program[2],
-               InstructionWord::encodeR5(Opcode::VSEL, 4, 3, 0, 1, 2, FUNC_T20),
+               wireR5(Opcode::VSEL, 4, 3, 0, 1, 2, FUNC_T20),
                "VSEL exact emitted word");
     expectWord(ctx, program[3],
-               InstructionWord::encodeVectorMemory(Opcode::VLOAD, 5, R2, 3, FUNC_T20),
+               wireVectorMemory(Opcode::VLOAD, 5, R2, 3, FUNC_T20),
                "VLOAD exact emitted word");
     expectWord(ctx, program[4],
-               InstructionWord::encodeVectorMemory(Opcode::VSTORE, 5, R2, -2, FUNC_T20),
+               wireVectorMemory(Opcode::VSTORE, 5, R2, -2, FUNC_T20),
                "VSTORE exact emitted word");
 }
 
 void atomicExactEncoding(TestContext& ctx) {
     const auto program = assembleOrThrow(R"(
+        .require atomics wide_t50
         tldr.+1 r1, r2
         tstr.-1 r3, r4, r5, r6
         fence.+1
@@ -176,20 +217,20 @@ void atomicExactEncoding(TestContext& ctx) {
 
     ctx.equal(static_cast<int>(program.size()), 5, "atomic fixture word count");
     expectWord(ctx, program[0],
-               InstructionWord::encodeR(Opcode::TLDR, R1, R2, R0_ZERO,
-                                        FUNC_ORDER_SEQ_CST),
+               wireR(Opcode::TLDR, R1, R2, R0_ZERO,
+                     FUNC_ORDER_SEQ_CST),
                "TLDR.+1 exact emitted word");
     expectWord(ctx, program[1],
-               InstructionWord::encodeR4(Opcode::TSTR, R3, R4, R5, R6,
-                                         FUNC_ORDER_RELAXED),
+               wireR4(Opcode::TSTR, R3, R4, R5, R6,
+                      FUNC_ORDER_RELAXED),
                "TSTR.-1 exact emitted word");
     expectWord(ctx, program[2],
-               InstructionWord::encodeR(Opcode::FENCE, R0_ZERO, R0_ZERO, R0_ZERO,
-                                        FUNC_ORDER_SEQ_CST),
+               wireR(Opcode::FENCE, R0_ZERO, R0_ZERO, R0_ZERO,
+                     FUNC_ORDER_SEQ_CST),
                "FENCE.+1 exact emitted word");
     expectWord(ctx, program[3],
-               InstructionWord::encodeR(Opcode::FENCE, R0_ZERO, R0_ZERO, R0_ZERO,
-                                        FUNC_ORDER_RELAXED),
+               wireR(Opcode::FENCE, R0_ZERO, R0_ZERO, R0_ZERO,
+                     FUNC_ORDER_RELAXED),
                "FENCE operand order exact emitted word");
 }
 
@@ -216,6 +257,7 @@ void suffixAndRegisterDiagnostics(TestContext& ctx) {
 
 void phase4VectorPlumbingExactEncoding(TestContext& ctx) {
     const auto program = assembleOrThrow(R"(
+        .require vector
         vpack.t20.t10   v4, v5
         vunpack.t10.t20 v5, v4
         vpermute.t20    v6, v5, v0
@@ -228,25 +270,25 @@ void phase4VectorPlumbingExactEncoding(TestContext& ctx) {
 
     ctx.equal(static_cast<int>(program.size()), 8, "phase4 vector fixture word count");
     expectWord(ctx, program[0],
-               InstructionWord::encodeR(Opcode::VPACK, 4, 5, FUNC_T20, FUNC_T10),
+               wireR(Opcode::VPACK, 4, 5, FUNC_T20, FUNC_T10),
                "VPACK exact emitted word");
     expectWord(ctx, program[1],
-               InstructionWord::encodeR(Opcode::VUNPACK, 5, 4, FUNC_T10, FUNC_T20),
+               wireR(Opcode::VUNPACK, 5, 4, FUNC_T10, FUNC_T20),
                "VUNPACK exact emitted word");
     expectWord(ctx, program[2],
-               InstructionWord::encodeR(Opcode::VPERMUTE, 6, 5, 0, FUNC_T20),
+               wireR(Opcode::VPERMUTE, 6, 5, 0, FUNC_T20),
                "VPERMUTE exact emitted word");
     expectWord(ctx, program[3],
-               InstructionWord::encodeR5(Opcode::VBLEND, 7, 2, 3, 3, 4, FUNC_T20),
+               wireR5(Opcode::VBLEND, 7, 2, 3, 3, 4, FUNC_T20),
                "VBLEND exact emitted word");
     expectWord(ctx, program[4],
-               InstructionWord::encodeR(Opcode::VSWAP, 0, 1, R0_ZERO, FUNC_DEFAULT),
+               wireR(Opcode::VSWAP, 0, 1, R0_ZERO, FUNC_DEFAULT),
                "VSWAP exact emitted word");
     expectWord(ctx, program[5],
-               InstructionWord::encodeR(Opcode::VGATHER, 2, R1, 0, FUNC_T20),
+               wireR(Opcode::VGATHER, 2, R1, 0, FUNC_T20),
                "VGATHER exact emitted word");
     expectWord(ctx, program[6],
-               InstructionWord::encodeR(Opcode::VSCATTER, 2, R1, 0, FUNC_T20),
+               wireR(Opcode::VSCATTER, 2, R1, 0, FUNC_T20),
                "VSCATTER exact emitted word");
     ctx.contains(disassemble(program[0]), "VPACK.t20.t10 v4, v5",
                  "disassembler prints VPACK suffix pair");
@@ -256,6 +298,7 @@ void phase4VectorPlumbingExactEncoding(TestContext& ctx) {
 
 void vectorReductionExactEncoding(TestContext& ctx) {
     const auto program = assembleOrThrow(R"(
+        .require vector
         vsum.t20  r13, v0
         vhmin.t20 r14, v1
         vhmax.t20 r15, v2
@@ -264,13 +307,13 @@ void vectorReductionExactEncoding(TestContext& ctx) {
 
     ctx.equal(static_cast<int>(program.size()), 4, "vector reduction fixture word count");
     expectWord(ctx, program[0],
-               InstructionWord::encodeR(Opcode::VSUM, 13, 0, R0_ZERO, FUNC_T20),
+               wireR(Opcode::VSUM, 13, 0, R0_ZERO, FUNC_T20),
                "VSUM exact emitted word");
     expectWord(ctx, program[1],
-               InstructionWord::encodeR(Opcode::VHMIN, 14, 1, R0_ZERO, FUNC_T20),
+               wireR(Opcode::VHMIN, 14, 1, R0_ZERO, FUNC_T20),
                "VHMIN exact emitted word");
     expectWord(ctx, program[2],
-               InstructionWord::encodeR(Opcode::VHMAX, 15, 2, R0_ZERO, FUNC_T20),
+               wireR(Opcode::VHMAX, 15, 2, R0_ZERO, FUNC_T20),
                "VHMAX exact emitted word");
     ctx.contains(disassemble(program[0]), "VSUM.t20 r13, v0",
                  "disassembler prints VSUM shape");

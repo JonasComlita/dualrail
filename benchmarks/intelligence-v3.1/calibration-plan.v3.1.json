@@ -7,7 +7,7 @@
   "cohorts": {
     "weak": {
       "assignments": [
-        { "model_family": "gpt-5.4", "reasoning_effort": "low" },
+        { "model_family": "gpt-5.4-mini", "reasoning_effort": "low" },
         { "model_family": "gpt-5.5", "reasoning_effort": "low" },
         { "model_family": "gpt-5.6-terra", "reasoning_effort": "low" }
       ],
@@ -15,7 +15,7 @@
     },
     "medium": {
       "assignments": [
-        { "model_family": "gpt-5.4", "reasoning_effort": "high" },
+        { "model_family": "gpt-5.4-mini", "reasoning_effort": "high" },
         { "model_family": "gpt-5.5", "reasoning_effort": "high" },
         { "model_family": "gpt-5.6-terra", "reasoning_effort": "high" }
       ],
@@ -23,7 +23,7 @@
     },
     "frontier": {
       "assignments": [
-        { "model_family": "gpt-5.4", "reasoning_effort": "xhigh" },
+        { "model_family": "gpt-5.4-mini", "reasoning_effort": "xhigh" },
         { "model_family": "gpt-5.5", "reasoning_effort": "xhigh" },
         { "model_family": "gpt-5.6-terra", "reasoning_effort": "max" }
       ],
@@ -31,6 +31,7 @@
     }
   },
   "authorship_contamination_policy": "For each task, exclude its author model family. The remaining two distinct model families supply all three cohorts, preserving two models per cohort without subject-family or author-family exposure.",
+  "deterministic_two_family_selection": "After excluding the author family, use both families when two remain. When three remain, select adjacent families in declared order with offset (final task number - 1) modulo 3. The same two families are used for weak, medium, and frontier configurations.",
   "expected_observations_per_task": 18,
   "expected_total_observations_for_100_tasks": 1800,
   "runs_per_configuration": 3,

@@ -2,11 +2,12 @@
 // ternary_isa.h  —  Ternary Instruction Set Architecture
 // =============================================================================
 //
-// THIS FILE IS THE ROSETTA STONE.
+// THIS FILE INTEGRATES THE ISA CONTRACT.
 //
-// Every downstream component is derived from or validated against the constants,
-// layouts, and contracts defined here. Do not change field offsets, opcode
-// assignments, or register conventions without updating all consumers:
+// ARCHITECTURE_MANIFEST.json is authoritative for the public ISA-v2 wire map.
+// Generated architecture headers and the versioned codec carry that contract
+// into C++. Do not change field offsets, opcode assignments, or register
+// conventions without updating the manifest, generator, and all consumers:
 //
 //   Stage 1  C++ Virtual Machine     ternary_vm.h / ternary_vm.cpp
 //   Stage 2  CUDA kernels            ternary_gpu.cu
@@ -48,7 +49,7 @@
 //     min = -( 3^k - 1 ) / 2
 //     max = +( 3^k - 1 ) / 2
 //
-//   For imm16:   ±21,523,360      (sufficient for any 50-trit data address)
+//   For imm16:   ±21,523,360      (covers the default 1,000,000-word DMEM)
 //   For offset19: ±581,130,733    (sufficient for any realistic program image)
 //
 //   All immediate decode calls go through decodeSigned(), which is the single
@@ -277,7 +278,7 @@ inline void encodeSigned(TritWord27& w, int lsb, int width, int val) {
 // └─────┴────────┴───────┴──────────────────────────────────────────────┘
 //
 // IMMEDIATE RANGES:
-//   imm16:    ±21,523,360   — covers full 50-trit data memory space
+//   imm16:    ±21,523,360   — covers the default 1,000,000-word DMEM span
 //   offset19: ±581,130,733  — covers any realistic program image
 
 // Format discriminant
@@ -315,8 +316,8 @@ static constexpr int FIELD_R5_FUNC_LSB  =  0;  static constexpr int FIELD_R5_FUN
 // I-type fields (Rd and Rs1 share positions with R-type)
 static constexpr int FIELD_IMM16_LSB =  0;  static constexpr int FIELD_IMM16_W = 16;
 
-// Vector-memory I-type overlay for VLOAD/VSTORE:
-// [fmt:1 | opcode:4 | vRd/vSrc:3 | rBase:3 | func:3 | imm13:13]
+// Private semantic staging overlay for VLOAD/VSTORE. Public ISA-v2 words use
+// [fmt:1 | EXT:4 | vRd/vSrc:3 | rBase:3 | func:3 | selector:4 | imm9:9].
 static constexpr int FIELD_VMEM_FUNC_LSB = 13; static constexpr int FIELD_VMEM_FUNC_W = 3;
 static constexpr int FIELD_VMEM_IMM_LSB  =  0; static constexpr int FIELD_VMEM_IMM_W  = 13;
 
@@ -338,9 +339,10 @@ enum class InstructionFormat : int8_t {
 // =============================================================================
 // SECTION 5 — Opcode Definitions
 // =============================================================================
-// Opcodes occupy a 4-trit field (positions [25:22]).
-// The field is read as an unsigned base-3 integer (0–80).
-// Values 0-79 are currently assigned; value 80 is reserved.
+// Wire opcodes occupy a 4-trit field (positions [25:22]) read as an unsigned
+// base-3 integer (0–80). The enum below names semantic operations; its numeric
+// values are not necessarily public wire opcodes. VersionedInstructionCodec
+// applies the authoritative ISA-v2 direct/extension map.
 //
 // TCMP CONTRACT (critical for ternary branching):
 //   TCMP Rd, Rs1, Rs2 computes sign(Rs1 - Rs2) and writes the result to Rd.
@@ -471,9 +473,9 @@ enum class Opcode : uint8_t {
     VCTXSTORE = 82,
     VCTXLOAD  = 83,
 
-    // --- Reserved ---
-    // Value 80 is reserved for future extension.
-    // The VM must issue TRAP_ILLEGAL_OP on any reserved opcode.
+    // --- Reserved semantic sentinel ---
+    // Public wire reservations are defined by ARCHITECTURE_MANIFEST.json and
+    // enforced by VersionedInstructionCodec.
     RESERVED = 255  // Sentinel — never encoded into an instruction word.
 };
 
@@ -484,8 +486,26 @@ enum class IsaEncodingVersion : uint8_t {
 static constexpr uint8_t OPCODE_MAX_ASSIGNED = 79;  // TSTR
 static constexpr uint8_t OPCODE_RESERVED_START = 80;
 
-static constexpr int VCTXSTORE_ESCAPE_SELECTOR = 81;
-static constexpr int VCTXLOAD_ESCAPE_SELECTOR  = 82;
+static constexpr int VCTXSTORE_ESCAPE_SELECTOR =
+    architecture::v3::VCTXSTORE_SELECTOR;
+static constexpr int VCTXLOAD_ESCAPE_SELECTOR =
+    architecture::v3::VCTXLOAD_SELECTOR;
+static constexpr int FIELD_VCTX_REG_LSB =
+    architecture::v3::VCTX_REGISTER_LSB;
+static constexpr int FIELD_VCTX_REG_W =
+    architecture::v3::VCTX_REGISTER_WIDTH;
+static constexpr int FIELD_VCTX_SELECTOR_LSB =
+    architecture::v3::VCTX_SELECTOR_LSB;
+static constexpr int FIELD_VCTX_SELECTOR_W =
+    architecture::v3::VCTX_SELECTOR_WIDTH;
+static constexpr int FIELD_VCTX_RSVD_LSB =
+    architecture::v3::VCTX_RESERVED_LSB;
+static constexpr int FIELD_VCTX_RSVD_W =
+    architecture::v3::VCTX_RESERVED_WIDTH;
+static constexpr int FIELD_VCTX_OFFSET_LSB =
+    architecture::v3::VCTX_OFFSET_LSB;
+static constexpr int FIELD_VCTX_OFFSET_W =
+    architecture::v3::VCTX_OFFSET_WIDTH;
 
 static constexpr uint8_t FUNC_T1  =  8;
 static constexpr uint8_t FUNC_T5  =  9;
@@ -796,9 +816,11 @@ static constexpr int CSR_MAX_ID         = CSR_ASID;
 // =============================================================================
 // SECTION 8 — Decoded Instruction Word
 // =============================================================================
-// InstructionWord is the C++ representation of a fully-decoded TritWord27.
-// It is a transient object — it is never stored in memory or a register.
-// The canonical on-wire/on-memory representation is always TritWord27.
+// InstructionWord is the C++ representation of a decoded semantic operation.
+// It is transient and is never stored in memory or a register. Its static
+// encodeSemantic*/decodeSemantic helpers implement the assembler's private
+// staging representation, not the public ISA wire contract. Public ISA v2
+// words must pass through VersionedInstructionCodec.
 
 struct InstructionWord {
     InstructionFormat fmt    = InstructionFormat::INVALID;
@@ -836,12 +858,11 @@ struct InstructionWord {
     bool malformed = false;
 
     // -------------------------------------------------------------------------
-    // decode — the canonical decode path.
-    // Call this in the VM's fetch-decode-execute loop.
-    // If decode() returns an InstructionWord with malformed == true,
-    // the VM must write TRAP_ILLEGAL_OP to r27 and halt.
+    // decodeSemantic — decode the private semantic staging representation.
+    // Production fetch/decode and external tools must instead call
+    // VersionedInstructionCodec::decode() for the selected ISA version.
     // -------------------------------------------------------------------------
-    [[nodiscard]] static InstructionWord decode(const TritWord27& w) {
+    [[nodiscard]] static InstructionWord decodeSemantic(const TritWord27& w) {
         InstructionWord iw;
 
         // Check for any malformed trit (0b11 pattern) in the entire word.
@@ -951,11 +972,12 @@ struct InstructionWord {
     }
 
     // -------------------------------------------------------------------------
-    // encode helpers — build TritWord27 from structured fields.
-    // These are the assembler-facing entry points.
+    // Semantic encode helpers build the assembler's private staging word.
+    // They are not public ISA encoders; VersionedInstructionCodec owns the
+    // canonical wire representation.
     // -------------------------------------------------------------------------
 
-    [[nodiscard]] static TritWord27 encodeR(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticR(Opcode op,
                                             uint8_t rd, uint8_t rs1, uint8_t rs2,
                                             uint8_t func = FUNC_DEFAULT) {
         TritWord27 w;
@@ -969,7 +991,7 @@ struct InstructionWord {
         return w;
     }
 
-    [[nodiscard]] static TritWord27 encodeR4(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticR4(Opcode op,
                                              uint8_t rd,
                                              uint8_t rs1,
                                              uint8_t rs2,
@@ -986,7 +1008,7 @@ struct InstructionWord {
         return w;
     }
 
-    [[nodiscard]] static TritWord27 encodeR5(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticR5(Opcode op,
                                              uint8_t rd,
                                              uint8_t rcond,
                                              uint8_t rneg,
@@ -1007,7 +1029,7 @@ struct InstructionWord {
         return w;
     }
 
-    [[nodiscard]] static TritWord27 encodeI(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticI(Opcode op,
                                             uint8_t rd, uint8_t rs1,
                                             int imm) {
         TritWord27 w;
@@ -1021,13 +1043,13 @@ struct InstructionWord {
 
     // STORE-type encoding: semantically identical to encodeI but names the
     // rd-position field as rs_store (source data) and rs1 as rs_base (address).
-    [[nodiscard]] static TritWord27 encodeS(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticS(Opcode op,
                                             uint8_t rs_store, uint8_t rs_base,
                                             int imm) {
-        return encodeI(op, rs_store, rs_base, imm);
+        return encodeSemanticI(op, rs_store, rs_base, imm);
     }
 
-    [[nodiscard]] static TritWord27 encodeVectorMemory(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticVectorMemory(Opcode op,
                                                        uint8_t vreg,
                                                        uint8_t base,
                                                        int imm,
@@ -1042,7 +1064,7 @@ struct InstructionWord {
         return w;
     }
 
-    [[nodiscard]] static TritWord27 encodeB(Opcode op,
+    [[nodiscard]] static TritWord27 encodeSemanticB(Opcode op,
                                             uint8_t rs_branch,
                                             int offset) {
         TritWord27 w;
@@ -1077,10 +1099,10 @@ private:
 //
 // The generated v2 selector table is intentionally immutable for v2
 // compatibility.  VCTXSTORE/VCTXLOAD therefore use an owned, unambiguous
-// escape form: I-format, raw opcode ESCAPE_OPCODE, a 12-trit signed offset at
-// bits [0,11], and a 10-trit selector at [12,21].  The context address is the
-// scalar rs1 register plus the signed offset.  rd is encoded as r0 and must be
-// ignored by an execution backend.  v2 decoders continue to see the escape as
+// escape form: I-format, raw opcode ESCAPE_OPCODE, a context base register at
+// [21:19], a 5-trit selector at [18:14], two neutral reserved trits at [13:12],
+// and a 12-trit signed offset at [11:0]. The context address is the scalar base
+// register plus the signed offset. V2 decoders continue to see the escape as
 // reserved; v3-capable loaders dispatch through these helpers only after the
 // VECTOR_CONTEXT feature and kernel privilege checks succeed.
 
@@ -1112,32 +1134,37 @@ struct VectorContextInstruction {
     TritWord27 word;
     word.setTrit(FIELD_FMT_LSB, T_ZER);
     encodeUnsignedField(
-        word, FIELD_OP_LSB, FIELD_OP_W, architecture::v2::ESCAPE_OPCODE);
+        word, FIELD_OP_LSB, FIELD_OP_W, architecture::v3::VCTX_WIRE_OPCODE);
     word.setField(
-        FIELD_RD_LSB, FIELD_RD_W,
-        static_cast<int>(R0_ZERO) - REG_FIELD_OFFSET);
-    word.setField(
-        FIELD_RS1_LSB, FIELD_RS1_W,
+        FIELD_VCTX_REG_LSB, FIELD_VCTX_REG_W,
         static_cast<int>(context_register) - REG_FIELD_OFFSET);
-    encodeSigned(word, 0, 12, offset);
     encodeUnsignedField(
-        word, 12, 10,
+        word, FIELD_VCTX_SELECTOR_LSB, FIELD_VCTX_SELECTOR_W,
         opcode == Opcode::VCTXSTORE
             ? VCTXSTORE_ESCAPE_SELECTOR
             : VCTXLOAD_ESCAPE_SELECTOR);
+    word.setField(FIELD_VCTX_RSVD_LSB, FIELD_VCTX_RSVD_W, 0);
+    encodeSigned(word, FIELD_VCTX_OFFSET_LSB, FIELD_VCTX_OFFSET_W, offset);
     return word;
 }
 
 [[nodiscard]] inline VectorContextInstruction decodeVectorContext(
     const TritWord27& word) {
     VectorContextInstruction decoded;
-    if (word.isMalformed(FIELD_FMT_LSB) ||
-        decodeUnsignedField(word, FIELD_OP_LSB, FIELD_OP_W) !=
-            architecture::v2::ESCAPE_OPCODE ||
+
+    for (int trit = 0; trit < ISA_WORD_TRITS; ++trit) {
+        if (word.isMalformed(trit)) return decoded;
+    }
+    if (decodeUnsignedField(word, FIELD_OP_LSB, FIELD_OP_W) !=
+            architecture::v3::VCTX_WIRE_OPCODE ||
         word.getTrit(FIELD_FMT_LSB) != T_ZER) {
         return decoded;
     }
-    const int selector = decodeUnsignedField(word, 12, 10);
+    if (word.getField(FIELD_VCTX_RSVD_LSB, FIELD_VCTX_RSVD_W) != 0) {
+        return decoded;
+    }
+    const int selector = decodeUnsignedField(
+        word, FIELD_VCTX_SELECTOR_LSB, FIELD_VCTX_SELECTOR_W);
     if (selector == VCTXSTORE_ESCAPE_SELECTOR) {
         decoded.opcode = Opcode::VCTXSTORE;
     } else if (selector == VCTXLOAD_ESCAPE_SELECTOR) {
@@ -1146,12 +1173,13 @@ struct VectorContextInstruction {
         return decoded;
     }
     const int context_register =
-        word.getField(FIELD_RS1_LSB, FIELD_RS1_W) +
+        word.getField(FIELD_VCTX_REG_LSB, FIELD_VCTX_REG_W) +
         REG_FIELD_OFFSET;
     if (context_register < 0 || context_register >= REG_COUNT) return {};
     decoded.valid = true;
     decoded.context_register = static_cast<uint8_t>(context_register);
-    decoded.offset = decodeSigned(word, 0, 12);
+    decoded.offset = decodeSigned(
+        word, FIELD_VCTX_OFFSET_LSB, FIELD_VCTX_OFFSET_W);
     return decoded;
 }
 
@@ -1163,17 +1191,17 @@ struct VectorContextInstruction {
 // =============================================================================
 // SECTION 9 — Round-Trip Verification
 // =============================================================================
-// Call verifyRoundTrip() in a unit test or static initializer to confirm that
-// encode → decode is an identity for all three formats. This is the Phase 1
-// completion criterion.
+// Verify that the private semantic staging representation round-trips. This is
+// not a public ISA-v2 wire-contract check; those tests use
+// VersionedInstructionCodec.
 
-inline bool verifyRoundTrip() {
+inline bool verifySemanticRoundTrip() {
     bool ok = true;
 
     // R-type: ADD r3, r1, r2
     {
-        TritWord27 w = InstructionWord::encodeR(Opcode::ADD, R3, R1, R2);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticR(Opcode::ADD, R3, R1, R2);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt    == InstructionFormat::R_TYPE);
         ok &= (iw.opcode == Opcode::ADD);
@@ -1184,8 +1212,8 @@ inline bool verifyRoundTrip() {
 
     // I-type: MOV r5, 12157  (a plausible constant)
     {
-        TritWord27 w = InstructionWord::encodeI(Opcode::MOV, R5, R0_ZERO, 12157);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticI(Opcode::MOV, R5, R0_ZERO, 12157);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt    == InstructionFormat::I_TYPE);
         ok &= (iw.opcode == Opcode::MOV);
@@ -1195,8 +1223,8 @@ inline bool verifyRoundTrip() {
 
     // I-type: LOAD r4, r26 + (-8)  (load from stack)
     {
-        TritWord27 w = InstructionWord::encodeI(Opcode::LOAD, R4, R26_SP, -8);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticI(Opcode::LOAD, R4, R26_SP, -8);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt    == InstructionFormat::I_TYPE);
         ok &= (iw.opcode == Opcode::LOAD);
@@ -1207,8 +1235,8 @@ inline bool verifyRoundTrip() {
 
     // B-type: BRN r3, -5  (branch back 5 words if r3 is negative)
     {
-        TritWord27 w = InstructionWord::encodeB(Opcode::BRN, R3, -5);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticB(Opcode::BRN, R3, -5);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt       == InstructionFormat::B_TYPE);
         ok &= (iw.opcode    == Opcode::BRN);
@@ -1218,16 +1246,16 @@ inline bool verifyRoundTrip() {
 
     // B-type: HALT  (encoded as a B-type NOP with offset 0)
     {
-        TritWord27 w = InstructionWord::encodeB(Opcode::HALT, R0_ZERO, 0);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticB(Opcode::HALT, R0_ZERO, 0);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.opcode == Opcode::HALT);
     }
 
     // R5-type: TSEL r6, r3, r1, r2, r4
     {
-        TritWord27 w = InstructionWord::encodeR5(Opcode::TSEL, R6, R3, R1, R2, R4);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticR5(Opcode::TSEL, R6, R3, R1, R2, R4);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt == InstructionFormat::R_TYPE);
         ok &= (iw.opcode == Opcode::TSEL);
@@ -1241,8 +1269,8 @@ inline bool verifyRoundTrip() {
 
     // R5-type: VSEL.t20 v6, v3, v1, v2, v4
     {
-        TritWord27 w = InstructionWord::encodeR5(Opcode::VSEL, 6, 3, 1, 2, 4, FUNC_T20);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticR5(Opcode::VSEL, 6, 3, 1, 2, 4, FUNC_T20);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.fmt == InstructionFormat::R_TYPE);
         ok &= (iw.opcode == Opcode::VSEL);
@@ -1265,15 +1293,15 @@ inline bool verifyRoundTrip() {
             uint8_t d = val % 3; val /= 3;
             w.setTrit(FIELD_OP_LSB + i, static_cast<int8_t>(d) - 1);
         }
-        InstructionWord iw = InstructionWord::decode(w);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= (iw.opcode == Opcode::RESERVED);
     }
 
     // Phase 4 reserved family: assigned opcodes decode and have names now,
     // even when the VM implementation intentionally traps later families.
     for (uint8_t op = 27; op <= OPCODE_MAX_ASSIGNED; ++op) {
-        TritWord27 w = InstructionWord::encodeR(static_cast<Opcode>(op), R3, R1, R2);
-        InstructionWord iw = InstructionWord::decode(w);
+        TritWord27 w = InstructionWord::encodeSemanticR(static_cast<Opcode>(op), R3, R1, R2);
+        InstructionWord iw = InstructionWord::decodeSemantic(w);
         ok &= !iw.malformed;
         ok &= (iw.opcode == static_cast<Opcode>(op));
     }

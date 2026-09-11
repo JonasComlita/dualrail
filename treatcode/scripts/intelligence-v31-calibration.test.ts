@@ -9,6 +9,12 @@ function fixture() {
     task_id: `TC-V31-FINAL-${String(index + 1).padStart(3, "0")}`,
     participant_bundle_hash: hash((index % 9 + 1).toString()),
     author_model_family: "gpt-5.4",
+    calibration_model_families: ["gpt-5.5", "gpt-5.6-terra"] as [string, string],
+    calibration_configurations: {
+      weak: ["gpt-5.5-low", "gpt-5.6-terra-low"] as [string, string],
+      medium: ["gpt-5.5-high", "gpt-5.6-terra-high"] as [string, string],
+      frontier: ["gpt-5.5-xhigh", "gpt-5.6-terra-max"] as [string, string],
+    },
     qualification: { reference_passed: true, starter_failed: true, mutants_caught: 2, mutants_total: 2 },
   }));
   let attempt = 0;
@@ -16,7 +22,8 @@ function fixture() {
   for (const task of tasks) for (const [cohortIndex, cohort] of (["weak", "medium", "frontier"] as const).entries()) for (const model of ["gpt-5.5", "gpt-5.6-terra"]) for (const run of [1, 2, 3] as const) {
     attempt += 1;
     const passed = cohortIndex === 2 || (cohortIndex === 1 && (run > 1 || model === "gpt-5.6-terra"));
-    observations.push({ schema: "treatcode.intelligence.calibration-observation.v3.1", version: "3.1", task_id: task.task_id, participant_bundle_hash: task.participant_bundle_hash, attempt_id: `attempt-${attempt}`, cohort, model_family: model, configuration: `${model}-${cohort}`, run_number: run, fresh_context: true, subject_family_excluded: true, network_isolation_verified: true, resource_limits_verified: true, append_only_evidence_verified: true, passed, completion_status: "completed", released_at: "2026-08-29T00:00:00Z", submitted_at: "2026-08-29T00:01:00Z", evidence_hash: attempt.toString(16).padStart(64, "0"), official: false });
+    const familyIndex = task.calibration_model_families.indexOf(model);
+    observations.push({ schema: "treatcode.intelligence.calibration-observation.v3.1", version: "3.1", task_id: task.task_id, participant_bundle_hash: task.participant_bundle_hash, attempt_id: `attempt-${attempt}`, cohort, model_family: model, configuration: task.calibration_configurations[cohort][familyIndex], run_number: run, fresh_context: true, subject_family_excluded: true, model_execution_verified: true, execution_attestation_sha256: (attempt + 2000).toString(16).padStart(64, "0"), network_isolation_verified: true, resource_limits_verified: true, append_only_evidence_verified: true, passed, completion_status: "completed", released_at: "2026-08-29T00:00:00Z", submitted_at: "2026-08-29T00:01:00Z", evidence_hash: attempt.toString(16).padStart(64, "0"), official: false });
   }
   return { tasks, observations };
 }
@@ -48,5 +55,40 @@ describe("Intelligence v3.1 calibration", () => {
     assert.equal(report.status, "insufficient_data");
     assert.ok(report.data_issues.some((issue) => issue.includes("different participant bundle")));
     assert.ok(report.data_issues.some((issue) => issue.includes("evidence hash")));
+  });
+
+  test("rejects subject-family aliases and noncanonical model labels", () => {
+    const value = fixture();
+    value.observations[0] = { ...value.observations[0], model_family: "gpt-5.6-sol-extra-high" };
+    value.observations[1] = { ...value.observations[1], model_family: "OpenAI/gpt-5.5" };
+    const report = calibrateIntelligenceV31Candidates(value);
+    assert.equal(report.status, "insufficient_data");
+    assert.ok(report.data_issues.some((issue) => issue.includes("subject family exclusion")));
+    assert.ok(report.data_issues.some((issue) => issue.includes("not canonical")));
+  });
+
+  test("rejects a self-labeled model run without provider-signed identity", () => {
+    const value = fixture();
+    value.observations[0] = { ...value.observations[0], model_execution_verified: false as true, execution_attestation_sha256: "unverified" };
+    const report = calibrateIntelligenceV31Candidates(value);
+    assert.equal(report.status, "insufficient_data");
+    assert.ok(report.data_issues.some((issue) => issue.includes("model execution identity")));
+  });
+
+  test("rejects reuse of one provider execution attestation across observations", () => {
+    const value = fixture();
+    value.observations[1] = { ...value.observations[1], execution_attestation_sha256: value.observations[0].execution_attestation_sha256 };
+    const report = calibrateIntelligenceV31Candidates(value);
+    assert.equal(report.status, "insufficient_data");
+    assert.ok(report.data_issues.some((issue) => issue.includes("unverified or reused")));
+  });
+
+  test("rejects calibration-slot relabeling and reversed timestamps", () => {
+    const value = fixture();
+    value.observations[0] = { ...value.observations[0], configuration: "gpt-5.5-xhigh", submitted_at: "2026-08-28T23:59:00Z" };
+    const report = calibrateIntelligenceV31Candidates(value);
+    assert.equal(report.status, "insufficient_data");
+    assert.ok(report.data_issues.some((issue) => issue.includes("not assigned to this cohort")));
+    assert.ok(report.data_issues.some((issue) => issue.includes("reversed")));
   });
 });

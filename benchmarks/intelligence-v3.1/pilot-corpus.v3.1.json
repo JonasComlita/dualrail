@@ -1,11 +1,11 @@
 {
   "schema": "treatcode.intelligence.pilot-corpus.v3.1",
   "version": "3.1",
-  "status": "pilot_analysis_complete_packages_disposed",
+  "status": "executable_packages_ready_for_disposable_subject_pilots",
   "official": false,
   "disposable": true,
   "task_count": 30,
-  "warning": "All pilot packages were disposed after complete analysis. The tasks are exposed development evidence and permanently ineligible for any holdout.",
+  "warning": "Pilot packages may be regenerated for explicitly labeled development runs. They remain exposed, disposable evidence and are permanently ineligible for any Luna/Sol holdout.",
   "category_counts": {
     "algorithm_and_data_structure": 4,
     "balanced_ternary_and_numeric": 3,
@@ -57,7 +57,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -65,7 +65,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "ca0a1d9e2495ae97ce3eb3249b50d879f8326bb07e1c17c8aed4e3f010732f74",
-      "disposed_grader_bundle_hash": "6e6060e93d0c7d0ef6a51b4d61430b281914f30116a35b00d55e76e32b4a7b35"
+      "disposed_grader_bundle_hash": "6e6060e93d0c7d0ef6a51b4d61430b281914f30116a35b00d55e76e32b4a7b35",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-001/participant"
     },
     {
       "task_id": "TC-V31-PILOT-002",
@@ -96,7 +97,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -104,7 +105,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "c9ec53315d327266f6c5707184cbb169ce6d42f6b43c45fa26a34c170b6467ce",
-      "disposed_grader_bundle_hash": "c0ae3725125106fabef6513f7a89e202664f5ee11cb549aca0a21ecdfc100422"
+      "disposed_grader_bundle_hash": "c0ae3725125106fabef6513f7a89e202664f5ee11cb549aca0a21ecdfc100422",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-002/participant"
     },
     {
       "task_id": "TC-V31-PILOT-003",
@@ -136,7 +138,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -144,7 +146,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "ca173462b7e95bdf5fdea517b63060eb59ce4c24d99c10b05b91fc49fac2533c",
-      "disposed_grader_bundle_hash": "df733cca075c48a367f9971cc8fcf542bfb947823e73d46cc1034fe81fcfdb7f"
+      "disposed_grader_bundle_hash": "df733cca075c48a367f9971cc8fcf542bfb947823e73d46cc1034fe81fcfdb7f",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-003/participant"
     },
     {
       "task_id": "TC-V31-PILOT-004",
@@ -175,7 +178,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -183,7 +186,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "0e087f2ac0b6bccd8d5aa7c730711d6f80034a9501ce72b60f4d2097ed74dc93",
-      "disposed_grader_bundle_hash": "420ee468c1927bbe8eff524b9aa4bb5a7c6b1954938ba3a7402b577144aee72e"
+      "disposed_grader_bundle_hash": "420ee468c1927bbe8eff524b9aa4bb5a7c6b1954938ba3a7402b577144aee72e",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-004/participant"
     },
     {
       "task_id": "TC-V31-PILOT-005",
@@ -215,7 +219,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -223,7 +227,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "829de7e7bb5167401c6cbcd2669387d5bd17e469a84fe8341f57b19c0547cd96",
-      "disposed_grader_bundle_hash": "842d1a7e1e4f8bceaa89337b4f143e29f7399428d8d6893557646e7a09fc1415"
+      "disposed_grader_bundle_hash": "842d1a7e1e4f8bceaa89337b4f143e29f7399428d8d6893557646e7a09fc1415",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-005/participant"
     },
     {
       "task_id": "TC-V31-PILOT-006",
@@ -254,7 +259,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -262,7 +267,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "57fb1bf362bcc41e3c18a96b9ddafbafe0729d3c796a2571445df4c09c906b02",
-      "disposed_grader_bundle_hash": "0963b0f826127d1226e618f78b6577b321176ca1ac205513fe9854c4b15fa8fa"
+      "disposed_grader_bundle_hash": "0963b0f826127d1226e618f78b6577b321176ca1ac205513fe9854c4b15fa8fa",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-006/participant"
     },
     {
       "task_id": "TC-V31-PILOT-007",
@@ -294,7 +300,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -302,7 +308,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "e956a0994eae0f7ac757d74d32e25ad22e2ab78c627cef9b733245680a855f1c",
-      "disposed_grader_bundle_hash": "eaf66adc31b2be7a29358a8cd949ba4ebad32e0247e986b2fb9c0fd8e3caca1a"
+      "disposed_grader_bundle_hash": "eaf66adc31b2be7a29358a8cd949ba4ebad32e0247e986b2fb9c0fd8e3caca1a",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-007/participant"
     },
     {
       "task_id": "TC-V31-PILOT-008",
@@ -335,7 +342,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -343,7 +350,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "03b29f838bb7958f8d177d2524137cf31e675c4e070da277f486518925469a03",
-      "disposed_grader_bundle_hash": "1bca570a9dc440b43a53a81ea4d6941b177df0c578c3730b983c7acf6843d3e4"
+      "disposed_grader_bundle_hash": "1bca570a9dc440b43a53a81ea4d6941b177df0c578c3730b983c7acf6843d3e4",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-008/participant"
     },
     {
       "task_id": "TC-V31-PILOT-009",
@@ -375,7 +383,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -383,7 +391,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "a35fde148fa26c7e52c6996653e7c39ba326b67246f9b5849435b62c8bcd602c",
-      "disposed_grader_bundle_hash": "9fcbfd60cfa43b0cc1ced4aad5ed386fec42b3c9a55d722624c6cccfc3870cbe"
+      "disposed_grader_bundle_hash": "9fcbfd60cfa43b0cc1ced4aad5ed386fec42b3c9a55d722624c6cccfc3870cbe",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-009/participant"
     },
     {
       "task_id": "TC-V31-PILOT-010",
@@ -415,7 +424,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -423,7 +432,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "330a0003299e2d69bb565cfb6b4602f31bee739db737f699b864cd31bab83d26",
-      "disposed_grader_bundle_hash": "b6d8991c0aef7c2f1eb8a69faeb20891f19bc3b0e48371a7f985624185e08607"
+      "disposed_grader_bundle_hash": "b6d8991c0aef7c2f1eb8a69faeb20891f19bc3b0e48371a7f985624185e08607",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-010/participant"
     },
     {
       "task_id": "TC-V31-PILOT-011",
@@ -456,7 +466,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -464,7 +474,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "7a2d691378c5010f57d7804d27a51d6ae3495561ae790f03b546dd60fe41717a",
-      "disposed_grader_bundle_hash": "933f91f1f3020a5f6107450eb84398c53ab552a8424cd6a3e258ab854bc802cd"
+      "disposed_grader_bundle_hash": "933f91f1f3020a5f6107450eb84398c53ab552a8424cd6a3e258ab854bc802cd",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-011/participant"
     },
     {
       "task_id": "TC-V31-PILOT-012",
@@ -498,7 +509,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -506,7 +517,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "9bdd641fa2186238573af0aba3b35531a27066ef61ef717a9b09c805dd31901b",
-      "disposed_grader_bundle_hash": "6c79c8b3a9ed157fc133049e1c9225d8cef9a5ec5a4b0c7ceffae7a5670c5f66"
+      "disposed_grader_bundle_hash": "6c79c8b3a9ed157fc133049e1c9225d8cef9a5ec5a4b0c7ceffae7a5670c5f66",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-012/participant"
     },
     {
       "task_id": "TC-V31-PILOT-013",
@@ -538,7 +550,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -546,7 +558,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "93826feeb8e10360832d5acbe4721c770acf836aa1d8af9fbc4f622f3161f700",
-      "disposed_grader_bundle_hash": "03517ea8a2409d53cc1c3eafa13e91cdf4ea7c59547c92d1f99b94890b61bccf"
+      "disposed_grader_bundle_hash": "03517ea8a2409d53cc1c3eafa13e91cdf4ea7c59547c92d1f99b94890b61bccf",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-013/participant"
     },
     {
       "task_id": "TC-V31-PILOT-014",
@@ -577,7 +590,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -585,7 +598,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "a6cb87876e4ff32d02573f9d9c536d2e51f4258e4619a1cb0a515373d9f881ec",
-      "disposed_grader_bundle_hash": "8ae96d7e1a60003fc358d989a2bdf19a13ffc8deeed3ab9ced92c3946eb95cdd"
+      "disposed_grader_bundle_hash": "8ae96d7e1a60003fc358d989a2bdf19a13ffc8deeed3ab9ced92c3946eb95cdd",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-014/participant"
     },
     {
       "task_id": "TC-V31-PILOT-015",
@@ -617,7 +631,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -625,7 +639,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "5d49dba8deb06fab6a8c57fde80e0c9432b15f6d344a829a944c86676ad4abdc",
-      "disposed_grader_bundle_hash": "66d068099e183bd14311a1f734a5b0a1afcada302f759475080d67479975fb34"
+      "disposed_grader_bundle_hash": "66d068099e183bd14311a1f734a5b0a1afcada302f759475080d67479975fb34",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-015/participant"
     },
     {
       "task_id": "TC-V31-PILOT-016",
@@ -657,7 +672,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -665,7 +680,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "2cf1d262295757447b1fe3a8077ae63c5cb182f6de8fe83cc7523db8281daef4",
-      "disposed_grader_bundle_hash": "b8b40f6c6abf3af02ec2180ee0df4b3963e28c65b12d965274ac2bd7a403f94b"
+      "disposed_grader_bundle_hash": "b8b40f6c6abf3af02ec2180ee0df4b3963e28c65b12d965274ac2bd7a403f94b",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-016/participant"
     },
     {
       "task_id": "TC-V31-PILOT-017",
@@ -697,7 +713,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -705,7 +721,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "43e12f11e31d655e952f1b713140a2e2582e569f7f64c81a42da7bde5b626d09",
-      "disposed_grader_bundle_hash": "18787a83ed14585d489af84c425953a4c9d3de05414c2c0f1e291dce5078bd95"
+      "disposed_grader_bundle_hash": "18787a83ed14585d489af84c425953a4c9d3de05414c2c0f1e291dce5078bd95",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-017/participant"
     },
     {
       "task_id": "TC-V31-PILOT-018",
@@ -738,7 +755,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -746,7 +763,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "0950fe5bfd706895e35109a01687bda4297bb8ed2c90c903e81b1cd027efb23f",
-      "disposed_grader_bundle_hash": "9257f8e68e38957e901cb6975086a5bf4dc6762baebed5f4143d81214f6dd3d0"
+      "disposed_grader_bundle_hash": "9257f8e68e38957e901cb6975086a5bf4dc6762baebed5f4143d81214f6dd3d0",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-018/participant"
     },
     {
       "task_id": "TC-V31-PILOT-019",
@@ -779,7 +797,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -787,7 +805,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "c855729779ffb3b6664f04d3958f86f29b9b4cc1296ae8961d82489db38d366a",
-      "disposed_grader_bundle_hash": "4d0b0e6235431657c5ad2d39b69d9b95b75207cae531fd022480198594cf8216"
+      "disposed_grader_bundle_hash": "4d0b0e6235431657c5ad2d39b69d9b95b75207cae531fd022480198594cf8216",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-019/participant"
     },
     {
       "task_id": "TC-V31-PILOT-020",
@@ -820,7 +839,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -828,7 +847,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "990403cb74bc5f692c3589ed65a6c259721dfdfbf614d182dc8d4ff7ca383fe4",
-      "disposed_grader_bundle_hash": "df2b3a2860ef0a0845ba2d3a5162b8f42505dda1ed5ad1650d20e35d56594c7d"
+      "disposed_grader_bundle_hash": "df2b3a2860ef0a0845ba2d3a5162b8f42505dda1ed5ad1650d20e35d56594c7d",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-020/participant"
     },
     {
       "task_id": "TC-V31-PILOT-021",
@@ -860,7 +880,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -868,7 +888,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "dd7d15a7b2a0aee509928ff47b25ee0143a3fd1ae4ea25fa68ae9bcfcb6d84d2",
-      "disposed_grader_bundle_hash": "70da3ed2e9193d91efe2fc94973e09ad3d6b23bedc540444efecbd75c0deda2e"
+      "disposed_grader_bundle_hash": "70da3ed2e9193d91efe2fc94973e09ad3d6b23bedc540444efecbd75c0deda2e",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-021/participant"
     },
     {
       "task_id": "TC-V31-PILOT-022",
@@ -902,7 +923,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -910,7 +931,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "ec949e48c442f4801cb54dcee156e2e59f92be49620f3b4e11cdada34a32865e",
-      "disposed_grader_bundle_hash": "ef64e32d58bf4382bed8f75339f8f57aa1c35752d7c9bad9f9440bbffd28d594"
+      "disposed_grader_bundle_hash": "ef64e32d58bf4382bed8f75339f8f57aa1c35752d7c9bad9f9440bbffd28d594",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-022/participant"
     },
     {
       "task_id": "TC-V31-PILOT-023",
@@ -944,7 +966,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -952,7 +974,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "6fcc2186fbeb3115986260bc419e78a7fc47e3be2937b1e8c57203ade63cebbe",
-      "disposed_grader_bundle_hash": "3bad238e85be0786d97cf9fbe248ea431d8273c191465751781376716ff0f81d"
+      "disposed_grader_bundle_hash": "3bad238e85be0786d97cf9fbe248ea431d8273c191465751781376716ff0f81d",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-023/participant"
     },
     {
       "task_id": "TC-V31-PILOT-024",
@@ -986,7 +1009,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -994,7 +1017,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "ce2259db5ac3e7bb7d8ceb114bbfb193b7726f3fca3df254eee94ed0978ff950",
-      "disposed_grader_bundle_hash": "98b508aac8f54725074d15315b9c177b07d127aa2b15511bb29eec336ea42061"
+      "disposed_grader_bundle_hash": "98b508aac8f54725074d15315b9c177b07d127aa2b15511bb29eec336ea42061",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-024/participant"
     },
     {
       "task_id": "TC-V31-PILOT-025",
@@ -1027,7 +1051,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1035,7 +1059,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "7660f27148a079b904bc419aabb45b4b3b77797b4e27469de0ccbb0131f684a3",
-      "disposed_grader_bundle_hash": "22b5f8a7c4737d4d8a034bad4c5c9f9d46748f07773f68dc42b522a0c7e4e092"
+      "disposed_grader_bundle_hash": "22b5f8a7c4737d4d8a034bad4c5c9f9d46748f07773f68dc42b522a0c7e4e092",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-025/participant"
     },
     {
       "task_id": "TC-V31-PILOT-026",
@@ -1068,7 +1093,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1076,7 +1101,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "23c729f59bc8e5eb38e8872926630029e1f1c3ad8d873f75d459a126c5b29bf8",
-      "disposed_grader_bundle_hash": "79ab5eb93fc6bad861c48598da938ca99295e963a2a48eef9164afe6347ec767"
+      "disposed_grader_bundle_hash": "79ab5eb93fc6bad861c48598da938ca99295e963a2a48eef9164afe6347ec767",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-026/participant"
     },
     {
       "task_id": "TC-V31-PILOT-027",
@@ -1109,7 +1135,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1117,7 +1143,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "b09b4c7a71a5345367020b3648cdc71a6ebf4988d81ef53c1a0ee08ecb8af21c",
-      "disposed_grader_bundle_hash": "6a03305b260e78c491054949553e291637c5584404c725bdd472082f94ffe0df"
+      "disposed_grader_bundle_hash": "6a03305b260e78c491054949553e291637c5584404c725bdd472082f94ffe0df",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-027/participant"
     },
     {
       "task_id": "TC-V31-PILOT-028",
@@ -1151,7 +1178,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1159,7 +1186,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "9135455eda3177188733176bd2601a983a831a5b52337fcbe9e057ad0e70ee24",
-      "disposed_grader_bundle_hash": "7f4286475f6781de0241fac42ed72f065830b7283f2cf7032f59a12d6809a67c"
+      "disposed_grader_bundle_hash": "7f4286475f6781de0241fac42ed72f065830b7283f2cf7032f59a12d6809a67c",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-028/participant"
     },
     {
       "task_id": "TC-V31-PILOT-029",
@@ -1191,7 +1219,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1199,7 +1227,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "707549d94d23d3f22ddb9325851f8579366f48d940fe02de7744be0151927e54",
-      "disposed_grader_bundle_hash": "8709814ab983864a66bd79d99c6d9d76c69af84f887ad5043577329acd040e89"
+      "disposed_grader_bundle_hash": "8709814ab983864a66bd79d99c6d9d76c69af84f887ad5043577329acd040e89",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-029/participant"
     },
     {
       "task_id": "TC-V31-PILOT-030",
@@ -1231,7 +1260,7 @@
         "defect_identifying_comments_forbidden": true,
         "raw_commands_forbidden": true
       },
-      "package_status": "disposed",
+      "package_status": "executable",
       "model_attempt_status": {
         "gpt-5.6-luna:max": "not_started",
         "gpt-5.6-sol:high": "not_started"
@@ -1239,7 +1268,8 @@
       "disposition": "discarded_after_ceiling_analysis",
       "private_grader_status": "installed_outside_repository",
       "disposed_participant_bundle_hash": "2fe5e3d7d8f33454d32135163866af0b4d5722fe92560e5f9e890ab1f362a858",
-      "disposed_grader_bundle_hash": "f470941839ededd7972e09b143e11dcefc3969cf33f18c1ae611f51e24b3bab1"
+      "disposed_grader_bundle_hash": "f470941839ededd7972e09b143e11dcefc3969cf33f18c1ae611f51e24b3bab1",
+      "participant_package": "benchmarks/intelligence-v3.1/pilots/TC-V31-PILOT-030/participant"
     }
   ],
   "executable_package_count": 30,

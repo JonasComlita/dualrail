@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/trusted-infrastructure-keys.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 infrastructure trust registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "status", "official", "keys"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.trusted-infrastructure-keys.v3.1" },
+    "version": { "const": "3.1" },
+    "status": { "enum": ["unconfigured", "configured"] },
+    "official": { "type": "boolean" },
+    "blocker": { "type": "string" },
+    "keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key_id", "provider_id", "algorithm", "capabilities", "public_key_pem", "not_before", "not_after"],
+        "properties": {
+          "key_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "provider_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "algorithm": { "const": "Ed25519" },
+          "capabilities": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["infrastructure", "model_execution"] } },
+          "public_key_pem": { "type": "string", "minLength": 80 },
+          "not_before": { "type": "string", "format": "date-time" },
+          "not_after": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

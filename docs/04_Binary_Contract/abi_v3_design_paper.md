@@ -260,6 +260,12 @@ validate privilege, feature support, alignment, span, version, geometry, and
 all encoded values. Restore uses a read/validate phase followed by one mutation
 phase, so a malformed context cannot partially overwrite live state.
 
+Their private ISA-v2 escape layout is
+`[fmt:1 | EXT:4 | rBase:3 | selector:5 | reserved-neutral:2 | offset12:12]`.
+Selectors 81 and 82 identify store and load. The register, selector, reserved,
+and offset fields do not overlap, and decoding rejects an invalid `0b11` pair
+anywhere in the complete 27-trit instruction before privileged dispatch.
+
 The kernel and native task layer own one vector context per process. It is
 initialized on first entry, preserved across timer and syscall switches,
 copied or reset across fork and exec, and released on exit or task-slot reuse.

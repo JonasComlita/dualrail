@@ -1,0 +1,111 @@
+{
+  "schema": "treatcode.intelligence.tracks.v3.1",
+  "version": "3.1",
+  "status": "development",
+  "official": false,
+  "inspirations": [
+    "LiveCodeBench",
+    "SWE-bench and DeepSWE",
+    "Terminal-Bench",
+    "GPQA",
+    "FrontierMath",
+    "ARC-AGI-2",
+    "MMMU-Pro",
+    "BrowseComp"
+  ],
+  "tracks": [
+    {
+      "id": "fresh_coding",
+      "label": "Fresh coding",
+      "inspiration": ["LiveCodeBench"],
+      "execution_mode": "scalar",
+      "primary_signal": "correctness",
+      "task_shape": "Release-after-cutoff algorithmic and Trit coding instances with hidden tests and no reused public prompts.",
+      "freshness": "release_after_cutoff",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "tool_execution", "discussion_quality"]
+    },
+    {
+      "id": "repository_repair",
+      "label": "Repository repair",
+      "inspiration": ["SWE-bench", "DeepSWE"],
+      "execution_mode": "repository",
+      "primary_signal": "correctness",
+      "task_shape": "Multi-module Trit repository defects requiring exploration, a real patch, behavioral tests, adversarial mutants, and integration checks.",
+      "freshness": "unseen_repository_bundle",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "tool_execution", "discussion_quality"]
+    },
+    {
+      "id": "terminal_agent",
+      "label": "Terminal agent",
+      "inspiration": ["Terminal-Bench"],
+      "execution_mode": "terminal",
+      "primary_signal": "agent_execution",
+      "task_shape": "Allowlisted terminal workflows that test planning, command selection, recovery, artifact production, and resource-aware execution.",
+      "freshness": "unseen_repository_bundle",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "tool_execution", "discussion_quality"]
+    },
+    {
+      "id": "expert_reasoning",
+      "label": "Expert reasoning",
+      "inspiration": ["GPQA"],
+      "execution_mode": "scalar",
+      "primary_signal": "generalization",
+      "task_shape": "Domain-expert questions with novel distractors, calibrated explanations, and answer evidence scored separately from prose quality.",
+      "freshness": "sealed_generated_instance",
+      "required_dimensions": ["correctness", "robustness", "discussion_quality"]
+    },
+    {
+      "id": "frontier_math",
+      "label": "Frontier mathematics",
+      "inspiration": ["FrontierMath"],
+      "execution_mode": "scalar",
+      "primary_signal": "generalization",
+      "task_shape": "Novel symbolic and computational mathematics with exact or verifier-backed answers, escalating tiers, and no partial-credit headline.",
+      "freshness": "sealed_generated_instance",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "discussion_quality"]
+    },
+    {
+      "id": "abstract_generalization",
+      "label": "Abstract generalization",
+      "inspiration": ["ARC-AGI-2"],
+      "execution_mode": "scalar",
+      "primary_signal": "generalization",
+      "task_shape": "Small procedurally generated rule-induction grids and symbolic transformations with held-out rule families and exact outputs.",
+      "freshness": "sealed_generated_instance",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "discussion_quality"]
+    },
+    {
+      "id": "multimodal_reasoning",
+      "label": "Multimodal reasoning",
+      "inspiration": ["MMMU-Pro"],
+      "execution_mode": "scalar",
+      "primary_signal": "generalization",
+      "task_shape": "Charts, diagrams, and code-adjacent visual evidence paired with text questions and adversarially varied layouts.",
+      "freshness": "sealed_generated_instance",
+      "required_dimensions": ["correctness", "robustness", "discussion_quality"]
+    },
+    {
+      "id": "web_research",
+      "label": "Evidence-grounded research",
+      "inspiration": ["BrowseComp"],
+      "execution_mode": "terminal",
+      "primary_signal": "agent_execution",
+      "task_shape": "Multi-hop, source-grounded research with citation validation; network policy and retrieval trace are scored independently from answer correctness.",
+      "freshness": "release_after_cutoff",
+      "required_dimensions": ["correctness", "robustness", "latency", "resource_use", "tool_execution", "discussion_quality"]
+    }
+  ],
+  "score_dimensions": {
+    "headline": "correctness",
+    "no_iq_composite": true,
+    "discussion_in_executable_score": false,
+    "dimensions": [
+      { "id": "correctness", "label": "Correctness", "unit": "percent", "included_in_headline": true, "included_in_executable_composite": false, "missing_data_policy": "fail_closed" },
+      { "id": "robustness", "label": "Robustness", "unit": "percent", "included_in_headline": false, "included_in_executable_composite": false, "missing_data_policy": "not_scored" },
+      { "id": "latency", "label": "Latency efficiency", "unit": "percent", "included_in_headline": false, "included_in_executable_composite": false, "missing_data_policy": "not_scored" },
+      { "id": "resource_use", "label": "Resource efficiency", "unit": "percent", "included_in_headline": false, "included_in_executable_composite": false, "missing_data_policy": "not_scored" },
+      { "id": "tool_execution", "label": "Tool execution", "unit": "percent", "included_in_headline": false, "included_in_executable_composite": false, "missing_data_policy": "not_scored" },
+      { "id": "discussion_quality", "label": "Discussion quality", "unit": "percent", "included_in_headline": false, "included_in_executable_composite": false, "missing_data_policy": "not_scored" }
+    ]
+  }
+}

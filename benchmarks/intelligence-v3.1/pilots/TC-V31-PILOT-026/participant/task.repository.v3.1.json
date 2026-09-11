@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-026",
+  "title": "Incremental dependency rebuild",
+  "phase": "pilot",
+  "initial_signal": "A header-only Trit ABI change skips the native wrapper target unless a clean build is performed.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "767e9c4f2b046f6621fb191a5fc685c85f686aaa6356cd7bbd7cd7c1b1fe4d42"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "editable": true,
+      "sha256": "512cf6c2a0610ec9e87e2def7c8c864bd0ee6815f12c6e95344b0e0e36d2239c"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "a2db0cbaf1e4b218c92e67b1acf45561540ed8dc7929f3837f94fafd68b6968f"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "503bb8cb6ac2564a7534a89f742e6bb09d9957c181941f65a433e4e53629a494"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "210048531d0836daf69d21420461b91abbe0bd3c1fb544da58e2da35c1ffb2ce"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "a38a428bc7adc4bb4586bbcadb6b612d90053744e8d953e452ba81207d3f380d"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "5413b459c45189355e0bfdee503466dce6a8c4c7f9967224e1eca7776883940c"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "24a97738dfe56621fe961055420ce6fb7e3ea390919c81fa3472772b7d6fa5de"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

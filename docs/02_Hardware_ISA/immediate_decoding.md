@@ -25,13 +25,24 @@ $$V' = V$$
 
 ## 🛠️ Decoder Logic
 
-### 1. `imm16` (I-Type)
+### 1. `imm16` (direct I-Type)
 *   **Source**: Instruction trits `[15:0]`.
-*   **Logic**: The 16 trits are shifted into the lower 16 slots of the destination register. All remaining trits (16 to 49) are forced to **Neutral (0)**.
+*   **Logic**: The 16 balanced trits are decoded as a signed host integer and
+    converted to the native T40 scalar value. Conceptually, widening pads trits
+    16 through 39 with **Neutral (0)**.
 
-### 2. `offset19` (B-Type)
+ISA-v2 I-type extensions instead reserve `[15:12]` for their selector and use
+a signed `imm12`. VLOAD/VSTORE reserve `[12:9]` for the selector and use a
+signed `imm9`.
+
+### 2. `offset19` (direct B-Type)
 *   **Source**: Instruction trits `[18:0]`.
-*   **Logic**: The 19 trits are extracted and expanded to the full 50-trit width of the `PC` using zero-padding. The result is then added to the current `PC` for relative jumping.
+*   **Logic**: The 19 trits are decoded as a signed host integer and added to
+    the word-indexed instruction-memory PC. The VM stores its PC as an integer;
+    it is not a T50 scalar register.
+
+ISA-v2 B-type extensions reserve `[18:15]` for their selector and use a signed
+`offset15`.
 
 ---
 
@@ -51,4 +62,6 @@ In the Dual-Rail FPGA implementation, "Zero-Padding" is a wiring-level constant.
 | **offset19** | 19 | -581,130,733 | +581,130,733 |
 
 > [!TIP]
-> Because `imm16` covers over 21 million addresses, the Trit-Stack can address its entire data memory space using a single `LOAD` or `STORE` instruction with a zero base register (`r0`).
+> `imm16` covers the default 1,000,000-word DMEM from a zero base register. It
+> does not cover the full mathematical T40 address range or every potentially
+> configured memory size; larger addresses use a nonzero base register.

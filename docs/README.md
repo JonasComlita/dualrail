@@ -30,12 +30,12 @@ acceleration, use
 | Layer | What | Files |
 |-------|------|-------|
 | **0 — Logic** | Trit encoding, gate primitives, backend helpers | `ternary_backend.h` |
-| **1 — ISA** | 80 opcodes, 3 instruction formats, 27 GPRs, CSRs | `ternary_isa.h` |
+| **1 — ISA** | Versioned direct/extension opcodes, 3 instruction formats, 27 GPRs, CSRs | `ARCHITECTURE_MANIFEST.json`, `ternary_isa.h` |
 | **2 — Math types** | T1/T5 integers, T10/T20/T40/T50 floats, UInt128 | `ternary_scalar.h`, `ternary_math.h`, `ternary_uint128.h` |
 | **3 — Native ops** | Bridge-free ternary arithmetic (add/mul/div/sqrt/exp/ln) | `ternary_native_ops.h` |
 | **4 — Lane/SIMD** | 2-bit-per-trit packed lane types + AVX2 batch ops | `ternary_lanes.h`, `ternary_simd.h` |
 | **5 — VM State** | Register file, memory, CSR state, vector registers | `ternary_vm_state.h` |
-| **6 — VM Dispatcher** | Fetch-decode-execute loop, all 80 opcodes | `ternary_vm.h` |
+| **6 — VM Dispatcher** | Fetch-decode-execute loop over semantic operations | `ternary_vm.h` |
 | **7 — Assembler** | Two-pass assembler, symbol table, instruction encoding | `ternary_asm.h` |
 | **8 — Compiler IR** | SSA IR, type system, optimizer, register allocator | `ternary_compiler_*.h`, `ternary_ir.h` |
 | **9 — TCL language** | Ternary C-Like language (source files: `.trit`) | `TCL_Spec_1.0.md`, `tritc.cpp`, `tcl_*.trit` |
@@ -50,7 +50,7 @@ acceleration, use
 ## Section Index
 
 ### Quick Reference (for agent loops)
-- **[00_Quick_Ref/opcode_table.md](00_Quick_Ref/opcode_table.md)** — All 80 opcodes
+- **[00_Quick_Ref/opcode_table.md](00_Quick_Ref/opcode_table.md)** — Semantic operations and ISA-v2 wire map
 - **[00_Quick_Ref/register_map.md](00_Quick_Ref/register_map.md)** — r0–r27, ABI roles
 - **[00_Quick_Ref/trit_encoding.md](00_Quick_Ref/trit_encoding.md)** — Encoding schemas
 - **[00_Quick_Ref/glossary.md](00_Quick_Ref/glossary.md)** — Terminology

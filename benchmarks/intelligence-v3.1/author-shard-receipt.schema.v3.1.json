@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treatcode.local/schemas/intelligence/author-shard-receipt.v3.1.json",
+  "title": "TreatCode Intelligence v3.1 immutable author shard checkpoint receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "official", "shard_id", "checkpointed_at", "source_file", "contributor_id", "model", "task_ids", "shard_plan_sha256", "contribution_sha256", "canonical_tasks_sha256", "task_sha256"],
+  "properties": {
+    "schema": { "const": "treatcode.intelligence.author-shard-receipt.v3.1" },
+    "version": { "const": "3.1" },
+    "official": { "const": false },
+    "shard_id": { "type": "string", "pattern": "^V31-SHARD-[0-9]{3}$" },
+    "checkpointed_at": { "type": "string", "format": "date-time" },
+    "source_file": { "type": "string", "pattern": "^V31-SHARD-[0-9]{3}\\.json$" },
+    "contributor_id": { "type": "string", "minLength": 3 },
+    "model": { "type": "string", "minLength": 2 },
+    "task_ids": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "pattern": "^TC-V31-FINAL-[0-9]{3}$" } },
+    "shard_plan_sha256": { "$ref": "#/$defs/hash" },
+    "contribution_sha256": { "$ref": "#/$defs/hash" },
+    "canonical_tasks_sha256": { "$ref": "#/$defs/hash" },
+    "task_sha256": { "type": "object", "minProperties": 5, "maxProperties": 5, "additionalProperties": { "$ref": "#/$defs/hash" } }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

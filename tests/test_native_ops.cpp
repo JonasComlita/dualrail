@@ -425,13 +425,13 @@ void testVmMulPath() {
 
     sandbox::vm::VMState vm(8, 32);
     std::vector<sandbox::isa::TritWord27> program = {
-        sandbox::isa::InstructionWord::encodeI(sandbox::isa::Opcode::MOV,
+        sandbox::isa::InstructionWord::encodeSemanticI(sandbox::isa::Opcode::MOV,
             sandbox::isa::R1, sandbox::isa::R0_ZERO, 7),
-        sandbox::isa::InstructionWord::encodeI(sandbox::isa::Opcode::MOV,
+        sandbox::isa::InstructionWord::encodeSemanticI(sandbox::isa::Opcode::MOV,
             sandbox::isa::R2, sandbox::isa::R0_ZERO, -6),
-        sandbox::isa::InstructionWord::encodeR(sandbox::isa::Opcode::MUL,
+        sandbox::isa::InstructionWord::encodeSemanticR(sandbox::isa::Opcode::MUL,
             sandbox::isa::R3, sandbox::isa::R1, sandbox::isa::R2),
-        sandbox::isa::InstructionWord::encodeB(sandbox::isa::Opcode::HALT,
+        sandbox::isa::InstructionWord::encodeSemanticB(sandbox::isa::Opcode::HALT,
             sandbox::isa::R0_ZERO, 0),
     };
 

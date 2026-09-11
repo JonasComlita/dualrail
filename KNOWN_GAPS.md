@@ -4,16 +4,18 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- TreatCode intelligence v3 has a versioned 100-task protocol, 100 unique
-  cross-category authoring briefs, one executable isolated draft, signed
-  author/reviewer provenance verification, a fresh-context full-suite harness,
-  independent-task scoring, paired statistics, an empirical cohort/item-analysis
-  engine, and a zero-weight discussion calibration rubric. The corpus remains
-  intentionally non-official: 99 executable repositories, at least ten trusted
-  independent authors, two reviewers per task, a real provider model adapter,
-  privileged graders, 1,800 weak/medium/frontier pilot observations, human
-  discussion calibration, and a frozen holdout are still missing. V2 remains an
-  end-to-end regression suite and must not be presented as a model-ranking score.
+- TreatCode Intelligence v3.1 has the repository executor, privileged grading
+  contracts, disposable pilot evidence, calibration/freeze/subject aggregators,
+  and twenty atomic five-task authoring shards. Each completed shard is bound to
+  the assignment plan, contribution bytes, canonical task array, and five task
+  hashes in an immutable private checkpoint, so an interrupted author loses at
+  most the active five-task shard. The corpus remains intentionally non-official:
+  all twenty genuine non-subject author checkpoints, two independent reviews per
+  task, executable package qualification, 1,800 weak/medium/frontier calibration
+  observations, verified infrastructure attestation, a frozen holdout, and 200
+  one-shot Luna/Sol attempts with provider-signed execution identity are still
+  missing. Earlier scalar suites remain
+  diagnostics and must not be presented as model-ranking scores.
 
 - Define the exact-width binary interoperability contract required for physical
   devices: endian-qualified values, packed structures, byte buffers, volatile

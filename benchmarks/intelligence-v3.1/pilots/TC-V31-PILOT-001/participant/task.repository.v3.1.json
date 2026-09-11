@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-001",
+  "title": "Deterministic cycle witness",
+  "phase": "pilot",
+  "initial_signal": "A dependency planner returns a partial order instead of the canonical cycle witness after an incremental edge update.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.ts",
+      "editable": true,
+      "sha256": "7b103b851dc13ac3571968d56631b0aa90495689868972c855c317edfa17164a"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "6dd13373f5cb8c3c8fa5221f36fd13b0fd4bde3c4a1e8190ff07d4066c5db146"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "0ca743e8357aa8ab6f0f45d18cb015819f1335a3a1300c94b9bc644d4b2e7227"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "ce09aa1b81b4c98e50877337afee29ed6beeb0ed39225f071a4f1d61df7277a1"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "03440814ae2f506a14c3c5ab5f306486e35f5d8ba2104de7aa1611597f0b4ed1"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "b31b20976873a9634d3bbbba2dabe990e8f0d360babc36539232330962474252"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "24a97738dfe56621fe961055420ce6fb7e3ea390919c81fa3472772b7d6fa5de"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

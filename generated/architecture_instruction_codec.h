@@ -1,12 +1,13 @@
-// Versioned instruction codec for the generated architecture contract.
-// Included by ternary_isa.h after InstructionWord is defined.
+// Sole public instruction-word codec for the generated ISA-v2 wire contract.
+// InstructionWord's encodeSemantic*/decodeSemantic helpers are private staging
+// primitives used underneath this versioned boundary.
 
 struct VersionedInstructionCodec {
     [[nodiscard]] static InstructionWord decode(
         const TritWord27& word,
         IsaEncodingVersion version) {
 
-        InstructionWord decoded = InstructionWord::decode(word);
+        InstructionWord decoded = InstructionWord::decodeSemantic(word);
         if (decoded.malformed) return decoded;
 
         const int raw_opcode =
@@ -156,7 +157,7 @@ struct VersionedInstructionCodec {
         IsaEncodingVersion version) {
 
         TritWord27 word =
-            InstructionWord::encodeR(opcode, rd, rs1, rs2, func);
+            InstructionWord::encodeSemanticR(opcode, rd, rs1, rs2, func);
         encodeV2Opcode(word, opcode, 0, 10);
         return word;
     }
@@ -171,7 +172,7 @@ struct VersionedInstructionCodec {
         IsaEncodingVersion version) {
 
         TritWord27 word =
-            InstructionWord::encodeR4(
+            InstructionWord::encodeSemanticR4(
                 opcode, rd, rs1, rs2, rs3, func);
         encodeV2Opcode(word, opcode, 0, 4);
         return word;
@@ -187,7 +188,7 @@ struct VersionedInstructionCodec {
         uint8_t func,
         IsaEncodingVersion version) {
 
-        TritWord27 word = InstructionWord::encodeR5(
+        TritWord27 word = InstructionWord::encodeSemanticR5(
             opcode, rd, rcond, rneg, rzero, rpos, func);
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
@@ -210,7 +211,7 @@ struct VersionedInstructionCodec {
         IsaEncodingVersion version) {
 
         TritWord27 word =
-            InstructionWord::encodeI(opcode, rd, rs1, immediate);
+            InstructionWord::encodeSemanticI(opcode, rd, rs1, immediate);
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
             setRawOpcode(word, direct);
@@ -232,7 +233,7 @@ struct VersionedInstructionCodec {
         uint8_t func,
         IsaEncodingVersion version) {
 
-        TritWord27 word = InstructionWord::encodeVectorMemory(
+        TritWord27 word = InstructionWord::encodeSemanticVectorMemory(
             opcode, vector_register, base, immediate, func);
         const int selector = v2ExtensionSelector(opcode);
         if (selector < 0) throwUnsupported(opcode);
@@ -250,7 +251,7 @@ struct VersionedInstructionCodec {
         IsaEncodingVersion version) {
 
         TritWord27 word =
-            InstructionWord::encodeB(opcode, branch_register, offset);
+            InstructionWord::encodeSemanticB(opcode, branch_register, offset);
         const int direct = v2DirectOpcode(opcode);
         if (direct >= 0) {
             setRawOpcode(word, direct);

@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-019",
+  "title": "Generated syscall wrapper drift",
+  "phase": "pilot",
+  "initial_signal": "Kernel dispatch and the generated application wrapper disagree on one argument register after an ABI extension.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "ec77ff016ec00940bd7a137c8437d772d095318b3337c2891d6c1ad423eeeccc"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "2289e06178dcf9ace80896edb527f046fedfed199dd7f82f4464a30aa88cb502"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "68126642694b5faaa353f327ffcee44d7a16d85e5edb875815d0490c0119eb2f"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "a742f929add7e79c36581d2931927a47ecf18d2cd931f345830adf2a69389839"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "97dd5f201fad824baffdc0595ea9cfc191a7f035be30189218dc554a2a5493eb"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "6d0f2b3cf5708cb7be2be99ddeeeaf6a0a9be0e11999679b085c1e97920949c1"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "56fa1061e88f44db1d48e8a0c3c634232e5b68e35632bdd48941a5cd11949b6e"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "435349be54143ba0ccdb96743b98650a1fb671127ea3be1ff682198a73d4f973"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

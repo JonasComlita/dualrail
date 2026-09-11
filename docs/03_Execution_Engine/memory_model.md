@@ -25,7 +25,7 @@ All architectural memory addresses are word addresses.
 
 - `step()` normally advances `pc` by 1 instruction word.
 - `LOAD` and `STORE` compute `addr = toLong(rs1) + imm16`.
-- `VLOAD` and `VSTORE` compute `base + imm13 + lane`.
+- `VLOAD` and `VSTORE` compute `base + imm9 + lane` in the public ISA-v2 encoding.
 - `VGATHER` and `VSCATTER` compute `base + index[lane]`.
 - MMU pages contain `MMU_PAGE_WORDS = 27` words.
 
@@ -51,7 +51,9 @@ Out-of-range memory access returns `MemFaultCode::OUT_OF_RANGE` from the memory 
 4. Stores the tagged value from `iw.rs_store`.
 5. Invalidates a matching atomic reservation.
 
-Encoding quirk: `STORE` reuses the `rd` field position as the source register. `InstructionWord::decode()` exposes that semantic register as `rs_store`.
+Encoding quirk: `STORE` reuses the `rd` field position as the source register.
+`VersionedInstructionCodec::decode()` exposes that semantic register as
+`rs_store`.
 
 ---
 
@@ -91,8 +93,8 @@ Vector memory instructions share the same translation machinery.
 
 Contiguous operations:
 
-- `VLOAD`: reads `base + imm13 + lane`.
-- `VSTORE`: writes `base + imm13 + lane`.
+- `VLOAD`: reads `base + imm9 + lane`.
+- `VSTORE`: writes `base + imm9 + lane`.
 
 Indexed operations:
 

@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-027",
+  "title": "Generated manifest consistency",
+  "phase": "pilot",
+  "initial_signal": "The generator and validator canonicalize equivalent task data differently and produce unstable evidence hashes.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.ts",
+      "editable": true,
+      "sha256": "3d4ec6668e315e4ba8ba576fa4dca814fcadc450465fd6b4022e6ce6e976b95c"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "f83679dcc820b524efa29b6964abc0268dff57e3d1e335b5936ab4c73f368241"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "14207538b64a77aac43628fef965f5068d63f1694359245eb4bfa4e5dcde0f1e"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "6ed65959fbc4548fee0a5c648a469e044f9df67395693525897f07902b6279c9"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "fb5136b705891ef9115dfed5eb3cf3a169fc77501ab0de4ad5cbd075372853b4"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "6d0f2b3cf5708cb7be2be99ddeeeaf6a0a9be0e11999679b085c1e97920949c1"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "e9cd4ca87395e15aeb11e44f15879e37c0946bb1295f65e6a3ad689ef587e484"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "a07d9cb2af0134fe2a48cd16ea882fdbcf95d2b3a5961101d94090cd2db841b7"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

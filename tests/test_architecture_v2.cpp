@@ -114,8 +114,17 @@ void testVectorMemoryExtension() {
 }
 
 void testReservedEncodingsTrapAtDecodeBoundary() {
+    auto reserved_gap =
+        InstructionWord::encodeSemanticR(Opcode::ADD, R1, R2, R3);
+    encodeUnsignedField(
+        reserved_gap, FIELD_OP_LSB, FIELD_OP_W, 15);
+    require(VersionedInstructionCodec::decode(
+                reserved_gap, IsaEncodingVersion::V2).opcode ==
+                Opcode::RESERVED,
+            "unassigned direct opcode 15 must decode as illegal");
+
     auto reserved_direct =
-        InstructionWord::encodeR(Opcode::ADD, R1, R2, R3);
+        InstructionWord::encodeSemanticR(Opcode::ADD, R1, R2, R3);
     encodeUnsignedField(
         reserved_direct, FIELD_OP_LSB, FIELD_OP_W, 38);
     require(VersionedInstructionCodec::decode(
@@ -124,7 +133,7 @@ void testReservedEncodingsTrapAtDecodeBoundary() {
             "reserved direct opcode must decode as illegal");
 
     auto reserved_selector =
-        InstructionWord::encodeR(Opcode::ADD, R1, R2, R3);
+        InstructionWord::encodeSemanticR(Opcode::ADD, R1, R2, R3);
     encodeUnsignedField(
         reserved_selector, FIELD_OP_LSB, FIELD_OP_W, 80);
     encodeUnsignedField(reserved_selector, 0, 10, 61);

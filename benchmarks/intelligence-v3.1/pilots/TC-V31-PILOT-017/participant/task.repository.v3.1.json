@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-017",
+  "title": "Scheduler wakeup ordering",
+  "phase": "pilot",
+  "initial_signal": "A wakeup racing with timeout expiry duplicates one runnable entry and violates deterministic priority order.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "4a82f38c71258fd17293829aa32a9d56e8d84b0e7cfb6bc560909ce0bea6ba83"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "16d6b64ede9d00fcccfae3c4dd569ef00666c4b8876adcae61fe915941af86a3"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "4d7eae2d7a8b4d8c4193bebbdcdb99e3c0f54155e25048c34672515b70018ebe"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "268e0d8fc2c7944da6c058366dd7ade82d1c1f9dd60f99f5737d9d94ce7164d1"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "5b69fdfb0dbb4c506144761727e002a2380ee39e1c9d2edaa1e572b7820eeab3"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "40833c0c0c0641cfef62e2fcc6dc3d6c2b79777eb2d808d9c2e2a0837e580a74"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "a07d9cb2af0134fe2a48cd16ea882fdbcf95d2b3a5961101d94090cd2db841b7"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

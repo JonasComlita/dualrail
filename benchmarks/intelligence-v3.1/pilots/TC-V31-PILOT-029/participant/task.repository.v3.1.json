@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-029",
+  "title": "Bounded symbol lookup",
+  "phase": "pilot",
+  "initial_signal": "A correct scope resolver becomes quadratic on shadow-heavy modules and exceeds the fixed repository budget.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "af30662f066fb1dcf8aa05684394b83e786be599f09dae933443db24d4c98dad"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "f161f3c2b7a7a95057ad80cb7d2c9fe999bace90ef94ca0cb1eb405689791857"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "b23972649fe49d992456618b25afc000eacc49ff58a91218cf23108cd77dc288"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "e254d349ba5cb52df5193b8ec115fa65eb2a9b71803416a8b84296c9e8c3b947"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "37a3d8c692620a6db243d79fcedfc2ca67ce2df5b0bb67efdf203e3c7f01e889"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "9e6ab9bd40c7e2041d5e7e0267140b0d39b338974135c637dfc32b91ba8acabe"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "435349be54143ba0ccdb96743b98650a1fb671127ea3be1ff682198a73d4f973"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

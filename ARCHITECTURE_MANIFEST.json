@@ -122,6 +122,9 @@
   },
   "isa": {
     "escape_opcode": 80,
+    "reserved_direct_values": [
+      15
+    ],
     "reserved_direct_first": 38,
     "reserved_direct_last": 79,
     "direct_opcodes": {
@@ -262,6 +265,23 @@
         "offset_width": 15,
         "selector_lsb": 15,
         "selector_width": 4
+      }
+    },
+    "v3_private_extensions": {
+      "vector_context": {
+        "wire_opcode": 80,
+        "register_lsb": 19,
+        "register_width": 3,
+        "selector_lsb": 14,
+        "selector_width": 5,
+        "reserved_lsb": 12,
+        "reserved_width": 2,
+        "offset_lsb": 0,
+        "offset_width": 12,
+        "selectors": {
+          "VCTXSTORE": 81,
+          "VCTXLOAD": 82
+        }
       }
     }
   },

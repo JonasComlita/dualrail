@@ -971,7 +971,8 @@ routeAliases(["/api/intelligence/v1/benchmark", "/api/intelligence/benchmark", "
   });
 });
 
-// V3 is intentionally additive. V1/v2 remain the end-to-end regression API;
+// V3 is intentionally additive. Diagnostic compatibility routes remain
+// available for the end-to-end regression API;
 // this catalog exposes the independent-task protocol and honest authoring
 // readiness without presenting candidate briefs as executable model scores.
 app.get("/api/intelligence/v3/catalog", (_req: Request, res: Response) => {
@@ -1001,6 +1002,12 @@ app.get("/api/intelligence/v3.1/protocol", (_req: Request, res: Response) => {
   res.setHeader("Cache-Control", "public, max-age=30");
   const protocol = intelligenceV31CatalogService.protocol;
   res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { protocol }, protocol });
+});
+
+app.get("/api/intelligence/v3.1/tracks", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "public, max-age=30");
+  const catalog = intelligenceV31CatalogService.catalog();
+  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { tracks: catalog.tracks, score_dimensions: catalog.score_dimensions }, tracks: catalog.tracks, score_dimensions: catalog.score_dimensions });
 });
 
 app.get("/api/intelligence/v3.1/comparisons/latest", (_req: Request, res: Response) => {

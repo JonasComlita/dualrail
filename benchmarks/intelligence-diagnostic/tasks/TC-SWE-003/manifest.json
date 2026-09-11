@@ -1,0 +1,32 @@
+{
+  "schema": "treatcode.intelligence.benchmark-manifest.diagnostic.v3.1",
+  "version": 3.1,
+  "task": {
+    "id": "TC-SWE-003",
+    "title": "Repair the Aligned Pointer-Span Validator",
+    "kind": "mini-repository-repair",
+    "description": "Repair a two-file memory-safety helper for a fixed 27-word region [0,27). Alignment must be exactly 1, 3, or 9; invalid alignment returns -2 before other checks. Address must be nonnegative, length positive, and the half-open span [address,address+length) must fit, otherwise -1. A valid but misaligned address returns -3. Success returns the inclusive final address.",
+    "difficulty": "hard",
+    "capabilities": ["multi-file reasoning", "half-open ranges", "alignment arithmetic", "boundary safety", "error precedence"],
+    "source_root": "src",
+    "allowlisted_files": ["src/alignment.trit", "src/pointer_guard.trit"],
+    "max_file_bytes": 65536,
+    "trial_count": 4,
+    "score": { "formula": "passed / 4 * 100", "unit": "percent", "minimum_trial_count": 4 },
+    "runner": { "kind": "trit-scalar-return", "entrypoint": "checked_span", "arity": 3 }
+  },
+  "public_tests": { "schema": "treatcode.intelligence.public-tests.diagnostic.v3.1", "metadata_path": "tests/public.metadata.json", "cases": [
+    { "id": "public-first-word", "name": "one-word aligned span", "a": 0, "b": 1, "c": 1, "expected": 0 },
+    { "id": "public-aligned-three", "name": "three-aligned span", "a": 3, "b": 6, "c": 3, "expected": 8 },
+    { "id": "public-aligned-nine", "name": "nine-aligned tail span", "a": 9, "b": 18, "c": 9, "expected": 26 },
+    { "id": "public-misaligned", "name": "misaligned valid span", "a": 1, "b": 1, "c": 3, "expected": -3 },
+    { "id": "public-overrun", "name": "end-exclusive overrun", "a": 26, "b": 2, "c": 1, "expected": -1 },
+    { "id": "public-bad-alignment", "name": "unsupported alignment", "a": 0, "b": 1, "c": 2, "expected": -2 }
+  ] },
+  "hidden_tests": { "schema": "treatcode.intelligence.hidden-tests.diagnostic.v3.1", "server_only": true, "path": "tests/hidden.server.json", "case_count": 26, "suites": [
+    { "id": "valid-spans", "case_count": 10 },
+    { "id": "range-failures", "case_count": 8 },
+    { "id": "misalignment", "case_count": 8 }
+  ] },
+  "protocol": { "schema": "treatcode.intelligence.protocol.diagnostic.v3.1", "trial_count": 4, "hidden_submissions_per_trial": 1, "public_tests_repeatable": true, "hidden_results": "sealed_until_all_trials_complete", "fresh_fixture_per_trial": true }
+}

@@ -71,7 +71,7 @@ try {
   checks.push("intelligence task, both leaderboards, and public discussions are reachable from the participant journey");
 
   fs.mkdirSync(evidenceRoot, { recursive: true });
-  fs.writeFileSync(path.join(evidenceRoot, "participant-journey.json"), `${JSON.stringify({ schema: "trit.treatcode_p14_participant_journey.v1", ok: true, routes: ["/", "/stack", "/learn", "/practice", "/arena", "/intelligence"], checks }, null, 2)}\n`);
+  fs.writeFileSync(path.join(evidenceRoot, "participant-journey.json"), `${JSON.stringify({ schema: "trit.treatcode_p14_participant_journey.diagnostic.v3.1", ok: true, routes: ["/", "/stack", "/learn", "/practice", "/arena", "/intelligence"], checks }, null, 2)}\n`);
 } catch (error) {
   errors.push(String(error?.stack || error?.message || error));
   fs.mkdirSync(evidenceRoot, { recursive: true });

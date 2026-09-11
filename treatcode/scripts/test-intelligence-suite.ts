@@ -11,7 +11,7 @@ const checks: string[] = [];
 const tempRoots: string[] = [];
 
 const report = {
-  schema: "treatcode.p14_intelligence_suite_e2e.v1",
+  schema: "treatcode.p14_intelligence_suite_e2e.diagnostic.v3.1",
   ok: false,
   evaluation: { kind: "harness_fixture", model_generated: false, harness: "known-correct-suite-fixtures" },
   trial_protocol: "five tasks × four fresh trials × one sealed hidden submission per trial",
@@ -27,10 +27,10 @@ try {
   const catalog = suite.suiteCatalog();
   assert.equal(catalog.tasks.length, 5);
   assert.deepEqual(catalog.tasks.map((entry) => entry.task.id), ["TC-SWE-001", "TC-SWE-002", "TC-SWE-003", "TC-SWE-004", "TC-SWE-005"]);
-  assert(catalog.tasks.every((entry) => entry.version === 2 && entry.task.difficulty === "hard"));
+  assert(catalog.tasks.every((entry) => entry.version === 3.1 && entry.task.difficulty === "hard"));
   assert.equal(catalog.tasks.reduce((total, entry) => total + entry.task.repository_shape.hidden_cases, 0), 140);
   assert.equal(catalog.tasks.reduce((total, entry) => total + entry.task.repository_shape.editable_files, 0), 12);
-  checks.push("five hard v2 contracts expose 12 editable files and 140 hidden-case counts without server-only values");
+  checks.push("five hard diagnostic contracts expose 12 editable files and 140 hidden-case counts without server-only values");
 
   for (const task of catalog.tasks) {
     const taskId = task.task.id;

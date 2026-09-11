@@ -148,8 +148,8 @@
   "metadata": {
     "trit": {
       "schema": "trit.knowledge_freshness.v1",
-      "source_file_count": 286,
-      "source_fingerprint": "9f016ab4fb20cffe6d4a21e714c9bc5bac4aa6e1e306f49491d03a22009be3c7"
+      "source_file_count": 431,
+      "source_fingerprint": "0017ea9b6082528b9589a1cb57cedf717e5118e632f40050cbfbd2490a3d996d"
     }
   },
   "nodes": [

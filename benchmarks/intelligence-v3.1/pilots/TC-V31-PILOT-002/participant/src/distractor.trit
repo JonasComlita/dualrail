@@ -1,0 +1,4 @@
+fn legacy_policy_2(state: t40, event: t40) -> t40 {
+    if event < 0 { return state + event; }
+    return state - event;
+}

@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-014",
+  "title": "Arena checkpoint rollback",
+  "phase": "pilot",
+  "initial_signal": "A failed nested allocation rewinds capacity without restoring generation metadata and exposes a stale handle.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "bridge/contract.txt",
+      "editable": true,
+      "sha256": "4f0e149422fb3a776db62972297c74f553e627fd0972c215f5ef5a42b1d4a725"
+    },
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "c760cddd7e86b2161a7eed17f6b971f76d85c578325bee5a27240cda803286a5"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "8053649c83c55345f54bcde24927d0c8dbc5d12b7bf839068fbbe35fa6d2c11f"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "bd26b82a5ab3504ade0092df10b4818d79d34a169811dcc42d4356ef0d518101"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "2d81a167e474ec7949641695e8e0655348bd0b5d1f1acce7681367f67e9eda55"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "a38a428bc7adc4bb4586bbcadb6b612d90053744e8d953e452ba81207d3f380d"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "844c29451f09338e5ddbd9300311d1586910abf3d8b8d45dfde70f6788727ee8"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "435349be54143ba0ccdb96743b98650a1fb671127ea3be1ff682198a73d4f973"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}

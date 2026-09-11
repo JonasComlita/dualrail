@@ -157,7 +157,7 @@ try {
   assert(catalog.response.ok, `benchmark catalog returned HTTP ${catalog.response.status}`);
   assert(catalog.body?.data?.task?.id === "TC-SWE-001", "TC-SWE-001 is missing from the benchmark catalog");
   assert(catalog.body?.data?.task?.allowlisted_files?.length === 4, "catalog does not expose the four allowlisted files");
-  assert(catalog.body?.data?.task?.difficulty === "hard" && catalog.body?.data?.task?.repository_shape?.hidden_cases === 28, "catalog does not expose v2 difficulty/repository-shape metadata");
+  assert(catalog.body?.data?.task?.difficulty === "hard" && catalog.body?.data?.task?.repository_shape?.hidden_cases === 28, "catalog does not expose diagnostic difficulty/repository-shape metadata");
   assert(catalog.body?.data?.tasks?.length === 5, "benchmark catalog does not expose the five-task suite");
   assert(catalog.body.data.tasks.map((task) => task.task.category).join(",") === "algorithmic-trit-repair,parser-serialization,memory-pointer-safety,concurrency-state,syscall-abi-integration", "suite task categories are incomplete or reordered");
   assert(catalog.body.data.tasks.every((task) => task.task.runner_ready === true), "published suite tasks are not marked runner-ready");
@@ -187,15 +187,25 @@ try {
   assert(v31Catalog.body.data.catalog.official === false, "unfinished v3.1 development evidence was presented as official");
   assert(v31Catalog.body.data.catalog.phases?.pilot?.task_count === 30 && v31Catalog.body.data.catalog.phases.pilot.qualified_then_disposed === 30, "v3.1 pilot disposal status is inaccurate");
   assert(v31Catalog.body.data.catalog.final_contract?.task_count === 100 && v31Catalog.body.data.catalog.phases?.frozen?.task_count === 0, "v3.1 final holdout readiness is inaccurate");
+  assert(Array.isArray(v31Catalog.body.data.catalog.tracks) && v31Catalog.body.data.catalog.tracks.some((track) => track.id === "fresh_coding") && v31Catalog.body.data.catalog.tracks.some((track) => track.id === "terminal_agent") && v31Catalog.body.data.catalog.tracks.some((track) => track.id === "frontier_math") && v31Catalog.body.data.catalog.dimension_observation_schema === "score-observation.schema.v3.1.json", "v3.1 track portfolio or independent observation contract is missing from the catalog");
+  assert(v31Catalog.body.data.catalog.score_dimensions?.no_iq_composite === true && v31Catalog.body.data.catalog.score_dimensions?.discussion_in_executable_score === false, "v3.1 catalog does not keep score dimensions separate");
   assert(v31Catalog.body.data.catalog.blockers?.some((item) => item.includes("independent authorship")) && v31Catalog.body.data.catalog.blockers.some((item) => item.includes("held-out 100-task")), "v3.1 publication blockers are incomplete");
   assert(!v31CatalogText.includes("grader_bundle_hash") && !v31CatalogText.includes("stdout") && !v31CatalogText.includes("stderr"), "private v3.1 grader or command evidence leaked through the public catalog");
   const v31Protocol = await request("/api/intelligence/v3.1/protocol");
-  assert(v31Protocol.response.ok && v31Protocol.body?.data?.protocol?.execution_modes?.join(",") === "scalar,repository", "v3.1 protocol does not preserve scalar and repository modes");
+  assert(v31Protocol.response.ok && v31Protocol.body?.data?.protocol?.execution_modes?.join(",") === "scalar,repository,terminal", "v3.1 protocol does not preserve scalar, repository, and terminal modes");
+  assert(v31Protocol.body.data.protocol.tracks_manifest === "tracks.v3.1.json" && v31Protocol.body.data.protocol.dimension_observation_schema === "score-observation.schema.v3.1.json" && v31Protocol.body.data.protocol.score_dimensions?.separate?.join(",") === "correctness,robustness,latency,resource_use,tool_execution,discussion_quality", "v3.1 protocol track manifest or score-dimension policy is unavailable");
   assert(v31Protocol.body.data.protocol.replication_target?.score_band?.minimum === 60 && v31Protocol.body.data.protocol.replication_target?.score_band?.maximum === 75, "v3.1 subject score band changed");
   assert(v31Protocol.body.data.protocol.replication_target?.sol_lead_tasks?.minimum === 1 && v31Protocol.body.data.protocol.replication_target?.sol_lead_tasks?.maximum === 4 && v31Protocol.body.data.protocol.replication_target?.exact_69_67_required === false, "v3.1 directional comparison target was weakened or fitted to exactly 69/67");
   const v31Comparison = await request("/api/intelligence/v3.1/comparisons/latest");
-  assert(v31Comparison.response.ok && v31Comparison.body?.data?.comparison?.phase === "pilot" && v31Comparison.body.data.comparison.official === false, "disposable pilot evidence was mislabeled as an official v3.1 holdout");
-  assert(v31Comparison.body.data.comparison.comparison?.task_count === 30 && v31Comparison.body.data.comparison.comparison?.result === "ceiling_family_discarded", "the complete disposable pilot comparison is not visible in the v3.1 adapter");
+  assert(v31Comparison.response.ok && v31Comparison.body?.data?.comparison?.official === false, "disposable v3.1 evidence was mislabeled as an official holdout");
+  const latestV31Phase = v31Comparison.body.data.comparison.phase;
+  if (latestV31Phase === "development") {
+    assert(v31Comparison.body.data.comparison.comparison?.task_count >= 1 && v31Comparison.body.data.comparison.comparison?.scores?.luna_max === 100 && v31Comparison.body.data.comparison.comparison?.scores?.sol_high === 100, "the live development comparison is not visible in the v3.1 adapter");
+  } else {
+    assert(latestV31Phase === "pilot" && v31Comparison.body.data.comparison.comparison?.task_count === 30 && v31Comparison.body.data.comparison.comparison?.result === "ceiling_family_discarded", "the complete disposable pilot comparison is not visible in the v3.1 adapter");
+  }
+  const v31Tracks = await request("/api/intelligence/v3.1/tracks");
+  assert(v31Tracks.response.ok && v31Tracks.body?.data?.tracks?.length >= 6 && v31Tracks.body.data.score_dimensions?.headline === "correctness", "v3.1 tracks endpoint is unavailable or collapsed into a single score");
   checks.push("v3.1 API separates diagnostic, pilot, calibration, frozen, and official phases while withholding grader evidence");
 
   const suiteRoute = await request("/api/intelligence/v1/suite");
@@ -273,7 +283,7 @@ try {
   checks.push("saved solution, discussion, challenge submission, and both leaderboards are visible to the participant journey");
 
   const evidence = {
-    schema: "trit.treatcode_p14_intelligence_e2e.v1",
+    schema: "trit.treatcode_p14_intelligence_e2e.diagnostic.v3.1",
     ok: true,
     evaluation: { kind: "harness_fixture", model_generated: false, harness: "known-correct-fixture-replay" },
     external_reference: { provider: "openai", model: "gpt-5.6-luna", reasoning_effort: "max", score: 67, confidence_interval: 4, source: "https://deepswe.datacurve.ai/" },
@@ -283,14 +293,14 @@ try {
     aggregate: aggregate.body.aggregate,
     attestation: attestation.body.attestation,
     checks,
-    artifact_hashes: [path.join(repoRoot, "benchmarks", "intelligence", "manifest.v1.json"), path.join(appRoot, "src", "intelligenceService.ts")].map((file) => ({ file: path.relative(repoRoot, file).replaceAll(path.sep, "/"), sha256: fileHash(file) })),
+    artifact_hashes: [path.join(repoRoot, "benchmarks", "intelligence-diagnostic", "manifest.json"), path.join(appRoot, "src", "intelligenceService.ts")].map((file) => ({ file: path.relative(repoRoot, file).replaceAll(path.sep, "/"), sha256: fileHash(file) })),
   };
   fs.mkdirSync(evidenceRoot, { recursive: true });
   fs.writeFileSync(path.join(evidenceRoot, "intelligence-e2e.json"), `${JSON.stringify(evidence, null, 2)}\n`);
 } catch (error) {
   errors.push(String(error?.stack || error?.message || error));
   fs.mkdirSync(evidenceRoot, { recursive: true });
-  fs.writeFileSync(path.join(evidenceRoot, "intelligence-e2e.json"), `${JSON.stringify({ schema: "trit.treatcode_p14_intelligence_e2e.v1", ok: false, checks, errors, server_output: serverOutput }, null, 2)}\n`);
+  fs.writeFileSync(path.join(evidenceRoot, "intelligence-e2e.json"), `${JSON.stringify({ schema: "trit.treatcode_p14_intelligence_e2e.diagnostic.v3.1", ok: false, checks, errors, server_output: serverOutput }, null, 2)}\n`);
 } finally {
   await stopServer();
   fs.rmSync(stateRoot, { recursive: true, force: true });

@@ -253,7 +253,7 @@ void sparseHighAddressAccess(TestContext& ctx) {
     ctx.check(dmem.allocatedPages() <= 1, "sparse DMEM allocates only touched page");
 
     TernaryInstructionMemory imem(kLargeWords);
-    TritWord27 marker = InstructionWord::encodeB(Opcode::HALT, R0_ZERO, 0);
+    TritWord27 marker = InstructionWord::encodeSemanticB(Opcode::HALT, R0_ZERO, 0);
     marker.bits ^= 0x155ULL;
     ctx.check(imem.isSparse(), "large IMEM uses sparse backing");
     ctx.check(imem.write(high_addr, marker) == MemFaultCode::OK,

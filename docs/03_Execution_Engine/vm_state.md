@@ -171,7 +171,7 @@ vm::RunResult result = vm::run(state, max_steps);
 
 `step()` performs exactly:
 1. Fetch `TritWord27` at `state.pc`
-2. Decode via `InstructionWord::decode()`
+2. Decode the public ISA-v2 word via `VersionedInstructionCodec::decode()`
 3. Check for malformed word → trap if so
 4. Execute opcode
 5. Advance PC (unless HALT/TRAP)

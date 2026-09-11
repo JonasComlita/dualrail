@@ -1,6 +1,9 @@
 # ISA Instruction Word Encoding
 
-Source of truth: `ternary_isa.h` — `TritWord27`, field constants, `InstructionWord::decode()`.
+Sources of truth: `ARCHITECTURE_MANIFEST.json` for the ISA-v2 wire contract and
+`ternary_isa.h` for `TritWord27` and field access. Public words are encoded and
+decoded through `VersionedInstructionCodec`; `InstructionWord`'s
+`encodeSemantic*`/`decodeSemantic` helpers are private assembler staging logic.
 
 ---
 
@@ -41,18 +44,29 @@ Trit `i` occupies bits `[2i+1 : 2i]`. Trit 0 = LST (least significant). Trit 26 
   1      4        3        3        3        3         10
 ```
 
-Extended **R4-type** (TWCMP, TCLAMP):
+ISA-v2 extension **R-type** operations replace the reserved low ten trits with
+an unsigned extension selector:
+
+```
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:0]
+ fmt   EXT=80     Rd       Rs1      Rs2      func     selector
+```
+
+Extended **R4-type** (TWCMP, TCLAMP, TSTR):
 ```
 [26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:7]  [6:0]
  fmt  opcode     Rd       Rs1      Rs2      Rs3      func   rsv(7)
 ```
+For an ISA-v2 extension, selector trits occupy `[3:0]`; `[6:4]` remain
+reserved.
 
 Extended **R5-type** (TSEL, VSEL):
 ```
 [26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:10]  [9:7]   [6:0]
  fmt  opcode     Rd      rCond    rNeg     rZero    rPos    rsv(7)
 ```
-For VSEL, the width suffix is encoded in the reserved field [2:0].
+For ISA-v2 extension VSEL/VBLEND, `[6:4]` contains the width and `[3:0]`
+contains the extension selector.
 
 ---
 
@@ -64,11 +78,14 @@ For VSEL, the width suffix is encoded in the reserved field [2:0].
   1      4        3        3        16
 ```
 
-**Vector memory overlay** (VLOAD/VSTORE):
+**ISA-v2 vector-memory extension** (VLOAD/VSTORE):
 ```
-[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:0]
- fmt  opcode  vRd/vSrc  rBase    func     imm13
+[26]  [25:22]  [21:19]  [18:16]  [15:13]  [12:9]   [8:0]
+ fmt   EXT=80  vRd/vSrc  rBase     func    selector   imm9
 ```
+
+Other I-type extensions use a selector in `[15:12]` and a signed `imm12` in
+`[11:0]`.
 
 **Immediate range:** ±21,523,360 (±(3^16−1)/2)
 
@@ -83,6 +100,9 @@ For VSEL, the width suffix is encoded in the reserved field [2:0].
 ```
 
 **offset19 range:** ±581,130,733 (±(3^19−1)/2)
+
+ISA-v2 B-type extensions use a selector in `[18:15]` and a signed `offset15`
+in `[14:0]`.
 
 `STORE` note: The `Rd` field position is reused for the source register. STORE writes to `mem[Rs1 + imm16]` using the data in the register named in the `Rd` field position.
 
@@ -117,7 +137,32 @@ rawOp = (trit[22] + 1) * 1
       + (trit[25] + 1) * 27
 ```
 
-Valid range: 0–79 (opcode 80+ → `TRAP_ILLEGAL_OP`).
+ISA-v2 direct opcodes are 0–14 and 16–37. Direct value 15 and values 38–79
+are reserved.
+Opcode 80 is `EXT`, which selects an operation through a format-specific
+extension field. Any unassigned direct value or extension selector decodes as
+`Opcode::RESERVED` and traps at the VM boundary.
+
+The C++ `Opcode` enum is a semantic operation identifier. Values such as
+`Opcode::CALLR == 60` and `Opcode::TLADD == 27` are not automatically their
+wire opcodes: CALLR maps to direct opcode 27, while TLADD maps to `EXT=80` plus
+selector 27.
+
+---
+
+## Private V3 Vector-Context Escape
+
+V3 retains ISA-v2 encoding and reserves a private, feature-gated escape for
+privileged vector context transfer:
+
+```
+[26]  [25:22]  [21:19]  [18:14]  [13:12]  [11:0]
+ fmt   EXT=80   rBase    selector  neutral   offset12
+```
+
+Selectors 81 and 82 identify VCTXSTORE and VCTXLOAD. The decoder validates all
+27 trits, requires the two reserved trits to be neutral, and exposes the
+instruction only to a v3 kernel with the VECTOR_CONTEXT feature.
 
 ---
 

@@ -1,0 +1,9 @@
+fn transition_state(state: t40, event: t40, aux: t40) -> t40 {
+    var candidate: t40 = state;
+    if event < 0 { candidate = state - aux - 5; }
+    else {
+        if event == 0 { candidate = state - 5; }
+        else { candidate = state + aux; }
+    }
+    return normalize_value(candidate);
+}

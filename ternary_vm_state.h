@@ -4899,17 +4899,17 @@ inline void emit(std::vector<TritWord27>& prog, TritWord27 w) {
 inline void emitR(std::vector<TritWord27>& prog, Opcode op,
                   uint8_t rd, uint8_t rs1, uint8_t rs2, uint8_t func = FUNC_DEFAULT) {
     // FUNC_DEFAULT maps to native arithmetic.
-    prog.push_back(InstructionWord::encodeR(op, rd, rs1, rs2, func));
+    prog.push_back(InstructionWord::encodeSemanticR(op, rd, rs1, rs2, func));
 }
 
 inline void emitI(std::vector<TritWord27>& prog, Opcode op,
                   uint8_t rd, uint8_t rs1, int imm) {
-    prog.push_back(InstructionWord::encodeI(op, rd, rs1, imm));
+    prog.push_back(InstructionWord::encodeSemanticI(op, rd, rs1, imm));
 }
 
 inline void emitB(std::vector<TritWord27>& prog, Opcode op,
                   uint8_t rs, int offset) {
-    prog.push_back(InstructionWord::encodeB(op, rs, offset));
+    prog.push_back(InstructionWord::encodeSemanticB(op, rs, offset));
 }
 
 // Load a program into a VMState and perform a cold reset.
@@ -4958,7 +4958,7 @@ inline bool verifyVMState() {
     // --- Instruction memory: write / fetch round-trip ---
     {
         TernaryInstructionMemory imem(8);
-        TritWord27 add_instr = InstructionWord::encodeR(Opcode::ADD, R3, R1, R2);
+        TritWord27 add_instr = InstructionWord::encodeSemanticR(Opcode::ADD, R3, R1, R2);
         ok &= (imem.write(0, add_instr) == MemFaultCode::OK);
         ok &= (imem.write(8, add_instr) == MemFaultCode::OUT_OF_RANGE);
         auto [fetched, fc] = imem.fetch(0);
@@ -4972,14 +4972,14 @@ inline bool verifyVMState() {
     {
         TernaryInstructionMemory imem(4);
         std::vector<TritWord27> prog = {
-            InstructionWord::encodeI(Opcode::MOV,  R1, R0_ZERO, 7),
-            InstructionWord::encodeI(Opcode::MOV,  R2, R0_ZERO, 3),
-            InstructionWord::encodeR(Opcode::ADD,  R3, R1, R2),
-            InstructionWord::encodeB(Opcode::HALT, R0_ZERO, 0),
+            InstructionWord::encodeSemanticI(Opcode::MOV,  R1, R0_ZERO, 7),
+            InstructionWord::encodeSemanticI(Opcode::MOV,  R2, R0_ZERO, 3),
+            InstructionWord::encodeSemanticR(Opcode::ADD,  R3, R1, R2),
+            InstructionWord::encodeSemanticB(Opcode::HALT, R0_ZERO, 0),
         };
         ok &= imem.loadProgram(prog, 0);
-        auto [w0, _0] = imem.fetch(0); auto iw0 = InstructionWord::decode(w0);
-        auto [w2, _2] = imem.fetch(2); auto iw2 = InstructionWord::decode(w2);
+        auto [w0, _0] = imem.fetch(0); auto iw0 = InstructionWord::decodeSemantic(w0);
+        auto [w2, _2] = imem.fetch(2); auto iw2 = InstructionWord::decodeSemantic(w2);
         ok &= (iw0.opcode == Opcode::MOV  && iw0.imm == 7);
         ok &= (iw2.opcode == Opcode::ADD  && iw2.rd  == R3);
         // Program that's too big must be rejected cleanly:
@@ -5045,7 +5045,7 @@ inline bool verifyVMState() {
     {
         VMState vm(8, 32);
         std::vector<TritWord27> prog = {
-            InstructionWord::encodeB(Opcode::HALT, R0_ZERO, 0),
+            InstructionWord::encodeSemanticB(Opcode::HALT, R0_ZERO, 0),
         };
         ok &= loadAndReset(vm, prog);
         ok &= vm.isRunning();

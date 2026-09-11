@@ -1,0 +1,38 @@
+{
+  "schema": "treatcode.intelligence.hidden-tests.diagnostic.v3.1",
+  "version": 3.1,
+  "visibility": "server-only",
+  "cases": [
+    { "id": "round-0", "suite": "round-trip", "a": 0, "b": -3, "c": 0, "expected": 0 },
+    { "id": "round-1", "suite": "round-trip", "a": 1, "b": -2, "c": 0, "expected": 1 },
+    { "id": "round-2", "suite": "round-trip", "a": 2, "b": -1, "c": 0, "expected": 2 },
+    { "id": "round-3", "suite": "round-trip", "a": 3, "b": -2, "c": 0, "expected": 3 },
+    { "id": "round-8", "suite": "round-trip", "a": 8, "b": 1, "c": 0, "expected": 8 },
+    { "id": "round-9", "suite": "round-trip", "a": 9, "b": -2, "c": 0, "expected": 9 },
+    { "id": "round-17", "suite": "round-trip", "a": 17, "b": 2, "c": 0, "expected": 17 },
+    { "id": "round-26", "suite": "round-trip", "a": 26, "b": 3, "c": 0, "expected": 26 },
+
+    { "id": "value-min", "suite": "balanced-values", "a": 0, "b": -3, "c": 1, "expected": -13 },
+    { "id": "value-low", "suite": "balanced-values", "a": 4, "b": -1, "c": 1, "expected": -9 },
+    { "id": "value-negative", "suite": "balanced-values", "a": 12, "b": -1, "c": 1, "expected": -1 },
+    { "id": "value-positive", "suite": "balanced-values", "a": 14, "b": 1, "c": 1, "expected": 1 },
+    { "id": "value-high", "suite": "balanced-values", "a": 22, "b": 1, "c": 1, "expected": 9 },
+    { "id": "value-max", "suite": "balanced-values", "a": 26, "b": 3, "c": 1, "expected": 13 },
+
+    { "id": "rotate-0", "suite": "rotations", "a": 0, "b": -3, "c": 2, "expected": 0 },
+    { "id": "rotate-1", "suite": "rotations", "a": 1, "b": -2, "c": 2, "expected": 9 },
+    { "id": "rotate-2", "suite": "rotations", "a": 2, "b": -1, "c": 2, "expected": 18 },
+    { "id": "rotate-3", "suite": "rotations", "a": 3, "b": -2, "c": 2, "expected": 1 },
+    { "id": "rotate-8", "suite": "rotations", "a": 8, "b": 1, "c": 2, "expected": 20 },
+    { "id": "rotate-9", "suite": "rotations", "a": 9, "b": -2, "c": 2, "expected": 3 },
+    { "id": "rotate-17", "suite": "rotations", "a": 17, "b": 2, "c": 2, "expected": 23 },
+    { "id": "rotate-18", "suite": "rotations", "a": 18, "b": -1, "c": 2, "expected": 6 },
+
+    { "id": "invalid-token-low", "suite": "validation-precedence", "a": -1, "b": 99, "c": 99, "expected": -102 },
+    { "id": "invalid-token-high", "suite": "validation-precedence", "a": 27, "b": 0, "c": 0, "expected": -102 },
+    { "id": "invalid-checksum", "suite": "validation-precedence", "a": 26, "b": 2, "c": 0, "expected": -100 },
+    { "id": "invalid-checksum-before-mode", "suite": "validation-precedence", "a": 13, "b": 1, "c": 9, "expected": -100 },
+    { "id": "invalid-mode-negative", "suite": "validation-precedence", "a": 13, "b": 0, "c": -1, "expected": -101 },
+    { "id": "invalid-mode-high", "suite": "validation-precedence", "a": 26, "b": 3, "c": 9, "expected": -101 }
+  ]
+}

@@ -100,6 +100,7 @@ for (const { contribution, task } of authoredTasks.sort((a, b) => a.task.task_id
     schema: "treatcode.intelligence.repository-task.v3.1",
     version: "3.1",
     task_id: task.task_id,
+    track: task.track,
     title: task.title,
     phase: "calibration",
     initial_signal: task.initial_signal,

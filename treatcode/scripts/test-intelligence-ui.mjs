@@ -33,7 +33,7 @@ try {
   assert(app.includes('data-testid="model-suite-score-empty"') && app.includes("provenance-bound model rollout"), "the UI does not explain why a local task score is not a model-suite score");
   assert(app.includes("harness fixture") && app.includes("unclassified") && app.includes("entry.evaluation_kind"), "official rows do not reveal whether a result is a harness proof or a model rollout");
   assert(app.includes("runner_ready") && app.includes("Runner pending"), "runner readiness is not surfaced before a suite task can submit");
-  assert(app.includes("repository_shape") && app.includes("Capabilities under test") && app.includes("Hidden coverage"), "v2 difficulty, repository shape, or capability coverage is not surfaced");
+  assert(app.includes("repository_shape") && app.includes("Capabilities under test") && app.includes("Hidden coverage"), "diagnostic difficulty, repository shape, or capability coverage is not surfaced");
   assert(app.includes("allowlisted files") && app.includes("parseSerializedSolution") && app.includes("// FILE:"), "task file contract or multi-file solution restoration is missing");
   assert(!app.includes("INTELLIGENCE_SOLUTION_GUIDES") && !app.includes('data-testid="intelligence-learning-guide"') && !app.includes('data-testid="discussion-panel"'), "practice solution guides or discussions are incorrectly mounted on the intelligence task view");
   assert(app.includes('href="/practice"'), "intelligence view does not link participants to the practice problem solutions");
@@ -42,10 +42,14 @@ try {
   assert(css.includes(".intelligence-suite-grid") && css.includes(".intelligence-suite-card"), "suite catalog styles are missing");
   assert(app.includes("IntelligenceV31Panel") && app.includes("<IntelligenceV31Panel"), "the v3.1 benchmark panel is not mounted in the Intelligence tab");
   assert(v31Panel.includes("/api/intelligence/v3.1/catalog") && v31Panel.includes("/api/intelligence/v3.1/comparisons/latest"), "the v3.1 panel does not load catalog and paired-comparison data");
-  for (const phase of ["diagnostic", "pilot", "calibration", "frozen", "official"]) assert(v31Panel.includes(phase), `the v3.1 panel does not distinguish the ${phase} phase`);
-  assert(v31Panel.includes("Task pass matrix") && v31Panel.includes("95% paired CI") && v31Panel.includes("Exact sign test") && v31Panel.includes("Publication blockers"), "the v3.1 panel omits paired statistics, task matrix, or explicit blockers");
-  assert(v31Panel.includes("scoreBand.minimum ?? 60") && v31Panel.includes("scoreBand.maximum ?? 75") && v31Panel.includes("lead.minimum ?? 1") && v31Panel.includes("lead.maximum ?? 4") && v31Panel.includes("not official"), "the v3.1 directional target or development label is missing");
+  for (const phase of ["diagnostic", "pilot", "development", "calibration", "frozen", "official"]) assert(v31Panel.includes(phase), `the v3.1 panel does not distinguish the ${phase} phase`);
+  assert(v31Panel.includes("Task pass matrix") && v31Panel.includes("95% paired CI") && v31Panel.includes("Exact sign test") && v31Panel.includes("Open benchmark work"), "the v3.1 panel omits paired statistics, task matrix, or open work");
+  assert(v31Panel.includes('data-testid="intelligence-v31-tracks"') && v31Panel.includes("track.inspiration") && v31Panel.includes("track.task_shape") && v31Panel.includes("track.execution_mode"), "the v3.1 panel does not expose the complementary coding, terminal, reasoning, math, and generalization tracks");
+  assert(v31Panel.includes('data-testid="intelligence-v31-goals"') && v31Panel.includes("not the only evaluation goal") && v31Panel.includes("evaluationGoals.primary"), "the v3.1 panel treats model separation as the only benchmark goal");
+  assert(v31Panel.includes('data-testid="intelligence-v31-dimensions"') && v31Panel.includes('data-testid="intelligence-v31-track-scores"') && v31Panel.includes("by_track") && v31Panel.includes("latency") && v31Panel.includes("resource_use") && v31Panel.includes("tool_execution") && v31Panel.includes("discussion_quality") && v31Panel.includes("never collapsed into an IQ-like number"), "the v3.1 panel does not keep correctness, robustness, latency, resource, tool, discussion, and track scores separate");
+  assert(v31Panel.includes("scoreBand.minimum ?? 60") && v31Panel.includes("scoreBand.maximum ?? 75") && v31Panel.includes("lead.minimum ?? 1") && v31Panel.includes("lead.maximum ?? 4") && v31Panel.includes("not official") && v31Panel.includes("official · frozen holdout"), "the v3.1 directional target or lifecycle labels are missing");
   assert(css.includes(".intelligence-v31") && css.includes(".intelligence-v31-matrix"), "v3.1 phase and task-matrix styles are missing");
+  assert(css.includes(".intelligence-v31-track-grid") && css.includes(".intelligence-v31-dimensions"), "v3.1 track and independent-dimension styles are missing");
   assert(/<html[^>]+lang="[a-z-]+"/.test(shell) && /name="viewport"/.test(shell), "intelligence shell lacks language or responsive viewport metadata");
   assert(shell.includes("aria-label=\"Intelligence benchmark suite\""), "static intelligence shell lacks a named suite landmark");
   assert(vite.includes('intelligence: "intelligence/index.html"'), "Vite does not build the intelligence entry point");
@@ -57,12 +61,12 @@ try {
   checks.push("identity, run receipt, and serialized multi-file solution state rehydrate on reload");
   checks.push("practice solution guides and discussions stay attached to the practice problem view");
   checks.push("suite cards, live status, tabs, editor labels, and static shell metadata are accessible");
-  checks.push("v3.1 phase status, paired statistics, task-pass matrix, target, and publication blockers are visible without claiming an official run");
+  checks.push("v3.1 phase status, paired statistics, task-pass matrix, target, and open work switch from development to verified official evidence");
 } catch (error) {
   errors.push(String(error?.message || error));
 }
 
-const report = { schema: "trit.treatcode_p14_intelligence_ui.v1", ok: errors.length === 0, checks, errors };
+const report = { schema: "trit.treatcode_p14_intelligence_ui.diagnostic.v3.1", ok: errors.length === 0, checks, errors };
 fs.mkdirSync(evidenceRoot, { recursive: true });
 fs.writeFileSync(path.join(evidenceRoot, "intelligence-ui.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(`P14 intelligence UI: ${report.ok ? "passed" : "failed"}`);

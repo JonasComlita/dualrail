@@ -32,6 +32,9 @@ inline constexpr int LINK_REGISTER = 25;
 inline constexpr int STACK_POINTER = 26;
 inline constexpr int EXECUTABLE_HEADER_WORDS = 15;
 inline constexpr int ESCAPE_OPCODE = 80;
+inline constexpr std::array<int, 1> DIRECT_RESERVED_VALUES = {
+    15
+};
 inline constexpr int DIRECT_RESERVED_FIRST = 38;
 inline constexpr int DIRECT_RESERVED_LAST = 79;
 inline constexpr int PTE_PPN_LSB = 9;
@@ -176,3 +179,17 @@ inline constexpr std::array<std::string_view, 15> EXECUTABLE_HEADER_FIELDS = {
 };
 
 }  // namespace sandbox::architecture::v2
+
+namespace sandbox::architecture::v3 {
+inline constexpr int VCTX_WIRE_OPCODE = 80;
+inline constexpr int VCTX_REGISTER_LSB = 19;
+inline constexpr int VCTX_REGISTER_WIDTH = 3;
+inline constexpr int VCTX_SELECTOR_LSB = 14;
+inline constexpr int VCTX_SELECTOR_WIDTH = 5;
+inline constexpr int VCTX_RESERVED_LSB = 12;
+inline constexpr int VCTX_RESERVED_WIDTH = 2;
+inline constexpr int VCTX_OFFSET_LSB = 0;
+inline constexpr int VCTX_OFFSET_WIDTH = 12;
+inline constexpr int VCTXSTORE_SELECTOR = 81;
+inline constexpr int VCTXLOAD_SELECTOR = 82;
+}  // namespace sandbox::architecture::v3

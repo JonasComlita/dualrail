@@ -21,6 +21,7 @@ import {
   type RunLimits,
   type SafeCommand,
 } from "./runner/secure-runner";
+import { INTELLIGENCE_V31_FINAL_TRACK_MIX, INTELLIGENCE_V31_TRACK_IDS, type IntelligenceV31TrackId } from "./intelligenceV31Tracks";
 
 export const INTELLIGENCE_V31_REPOSITORY_TASK_SCHEMA = "treatcode.intelligence.repository-task.v3.1" as const;
 export const INTELLIGENCE_V31_REPOSITORY_GRADER_SCHEMA = "treatcode.intelligence.repository-grader.v3.1" as const;
@@ -46,6 +47,7 @@ export interface IntelligenceV31RepositoryTaskManifest {
   schema: typeof INTELLIGENCE_V31_REPOSITORY_TASK_SCHEMA;
   version: "3.1";
   task_id: string;
+  track?: IntelligenceV31TrackId;
   title: string;
   phase: IntelligenceV31Phase;
   initial_signal: string;
@@ -98,6 +100,7 @@ export interface IntelligenceV31CommandRegistry {
 
 export interface IntelligenceV31RepositoryGradeOptions {
   task_id: string;
+  track?: IntelligenceV31TrackId;
   attempt_id: string;
   repository_root: string;
   subject_workspace_root: string;
@@ -107,8 +110,22 @@ export interface IntelligenceV31RepositoryGradeOptions {
   grader_root: string;
   evidence_root: string;
   released_bundle_hash: string;
+  /** Optional participant/provider telemetry. It is surfaced separately from grader timing and is not trusted as official evidence without attestation. */
+  metrics?: {
+    tool_calls?: number;
+    successful_tool_calls?: number;
+    tool_errors?: number;
+    cpu_ms?: number;
+    memory_mb?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    repository_reads?: number;
+    test_runs?: number;
+    patch_attempts?: number;
+  };
   command_registry: IntelligenceV31CommandRegistry;
   require_verified_infrastructure?: boolean;
+  official_run?: boolean;
   network_isolation?: {
     enforcement: "development_proxy_only" | "verified_os_or_container";
     provider: string;
@@ -137,9 +154,10 @@ export interface IntelligenceV31RepositoryPatch {
 export interface IntelligenceV31RepositorySealedReport {
   schema: typeof INTELLIGENCE_V31_REPOSITORY_REPORT_SCHEMA;
   task_id: string;
+  track?: IntelligenceV31TrackId;
   attempt_id: string;
   sealed: true;
-  official: false;
+  official: boolean;
   submission_kind: "snapshot" | "replacement_patch";
   passed: boolean;
   public_commands_passed: number;
@@ -156,6 +174,12 @@ export interface IntelligenceV31RepositorySealedReport {
   trit_files_changed: number;
   wall_clock_ms: number;
   command_runtime_ms: number;
+  tool_calls?: number;
+  successful_tool_calls?: number;
+  tool_errors?: number;
+  cpu_ms?: number;
+  memory_mb?: number;
+  telemetry_source?: "participant_completion" | "provider_attested";
   network_isolation_verified: boolean;
   resource_limits_verified: boolean;
   append_only_evidence_verified: boolean;
@@ -167,6 +191,7 @@ export interface IntelligenceV31RepositorySealedReport {
 
 export interface IntelligenceV31FrozenTask {
   task_id: string;
+  track: IntelligenceV31TrackId;
   participant_bundle_hash: string;
   grader_bundle_hash: string;
 }
@@ -292,10 +317,11 @@ async function copyTree(source: string, destination: string): Promise<void> {
 }
 
 function assertPublicManifest(manifest: IntelligenceV31RepositoryTaskManifest): void {
-  assertExactKeys(manifest as unknown as Record<string, unknown>, ["schema", "version", "task_id", "title", "phase", "initial_signal", "known_failing_command_id", "public_command_ids", "required_trit_change", "files", "limits"], "repository task manifest");
+  assertExactKeys(manifest as unknown as Record<string, unknown>, ["schema", "version", "task_id", "track", "title", "phase", "initial_signal", "known_failing_command_id", "public_command_ids", "required_trit_change", "files", "limits"], "repository task manifest");
   if (manifest.schema !== INTELLIGENCE_V31_REPOSITORY_TASK_SCHEMA || manifest.version !== "3.1" || !/^TC-V31-[A-Z0-9-]+$/.test(manifest.task_id)) throw new Error("invalid v3.1 repository task manifest");
   if (!["diagnostic", "pilot", "calibration", "frozen", "official"].includes(manifest.phase)) throw new Error("repository task phase is invalid");
   if (!manifest.title || !manifest.initial_signal || manifest.required_trit_change !== true) throw new Error("repository task contract is incomplete");
+  if (manifest.track !== undefined && !INTELLIGENCE_V31_TRACK_IDS.includes(manifest.track)) throw new Error("repository task track is invalid");
   if (!SAFE_ID.test(manifest.known_failing_command_id) || !Array.isArray(manifest.public_command_ids) || manifest.public_command_ids.length === 0 || new Set(manifest.public_command_ids).size !== manifest.public_command_ids.length || manifest.public_command_ids.some((id) => !SAFE_ID.test(id))) throw new Error("repository task command ids are invalid");
   if (!Array.isArray(manifest.files) || manifest.files.length < 4 || new Set(manifest.files.map((file) => file.path)).size !== manifest.files.length) throw new Error("repository task must expose at least four distinct files");
   let editableTrit = 0;
@@ -388,6 +414,7 @@ async function runCommand(input: {
 
 export async function gradeIntelligenceV31RepositoryAttempt(options: IntelligenceV31RepositoryGradeOptions): Promise<IntelligenceV31RepositorySealedReport> {
   if (!/^TC-V31-[A-Z0-9-]+$/.test(options.task_id) || !SAFE_ID.test(options.attempt_id)) throw new Error("invalid task or attempt id");
+  if (options.official_run && !options.require_verified_infrastructure) throw new Error("official repository grading must explicitly require verified infrastructure");
   assertHash(options.released_bundle_hash, "released bundle hash");
   if (Boolean(options.submission_root) === Boolean(options.submission_patch_path)) throw new Error("provide exactly one snapshot or replacement-patch submission");
   const [repositoryRoot, subjectWorkspaceRoot, baselineRoot, graderRoot] = await Promise.all([
@@ -503,6 +530,7 @@ export async function gradeIntelligenceV31RepositoryAttempt(options: Intelligenc
   const privateRecord = {
     schema: "treatcode.intelligence.repository-grade-evidence.v3.1",
     task_id: options.task_id,
+    ...(options.track ? { track: options.track } : {}),
     attempt_id: options.attempt_id,
     network_disabled: networkIsolation.enforcement === "verified_os_or_container",
     network_isolation: networkIsolation,
@@ -510,6 +538,7 @@ export async function gradeIntelligenceV31RepositoryAttempt(options: Intelligenc
     evidence_store: evidenceStore,
     shell_disabled: true,
     retry_permitted: false,
+    official: Boolean(options.official_run),
     baseline_bundle_hash: baselineBundleHash,
     submission_kind: submissionRoot ? "snapshot" : "replacement_patch",
     submission_bundle_hash: submissionBundleHash,
@@ -518,6 +547,7 @@ export async function gradeIntelligenceV31RepositoryAttempt(options: Intelligenc
     outcomes,
     wall_clock_ms: wallClockMs,
     command_runtime_ms: outcomes.reduce((total, item) => total + item.result.durationMs, 0),
+    metrics: options.metrics || null,
   };
   const evidenceHash = canonicalHash(privateRecord);
   const evidencePath = path.join(evidenceRoot, `${options.task_id}-${options.attempt_id}.private.json`);
@@ -525,9 +555,10 @@ export async function gradeIntelligenceV31RepositoryAttempt(options: Intelligenc
   return {
     schema: INTELLIGENCE_V31_REPOSITORY_REPORT_SCHEMA,
     task_id: options.task_id,
+    ...(options.track ? { track: options.track } : {}),
     attempt_id: options.attempt_id,
     sealed: true,
-    official: false,
+    official: Boolean(options.official_run) && networkIsolation.enforcement === "verified_os_or_container" && resourceIsolation.enforcement === "verified_os_or_container" && evidenceStore.enforcement === "verified_append_only",
     submission_kind: submissionRoot ? "snapshot" : "replacement_patch",
     passed: outcomes.every((item) => item.passed),
     public_commands_passed: publicOutcomes.filter((item) => item.passed).length,
@@ -544,6 +575,12 @@ export async function gradeIntelligenceV31RepositoryAttempt(options: Intelligenc
     trit_files_changed: tritChanged.length,
     wall_clock_ms: wallClockMs,
     command_runtime_ms: outcomes.reduce((total, item) => total + item.result.durationMs, 0),
+    ...(options.metrics?.tool_calls !== undefined ? { tool_calls: options.metrics.tool_calls } : {}),
+    ...(options.metrics?.successful_tool_calls !== undefined ? { successful_tool_calls: options.metrics.successful_tool_calls } : {}),
+    ...(options.metrics?.tool_errors !== undefined ? { tool_errors: options.metrics.tool_errors } : {}),
+    ...(options.metrics?.cpu_ms !== undefined ? { cpu_ms: options.metrics.cpu_ms } : {}),
+    ...(options.metrics?.memory_mb !== undefined ? { memory_mb: options.metrics.memory_mb } : {}),
+    ...(options.metrics ? { telemetry_source: "participant_completion" as const } : {}),
     network_isolation_verified: networkIsolation.enforcement === "verified_os_or_container",
     resource_limits_verified: resourceIsolation.enforcement === "verified_os_or_container",
     append_only_evidence_verified: evidenceStore.enforcement === "verified_append_only",
@@ -564,9 +601,12 @@ export function createIntelligenceV31FrozenSuite(input: {
   if (input.tasks.length !== 100 || new Set(input.tasks.map((task) => task.task_id)).size !== 100) throw new Error("frozen v3.1 suite must contain exactly 100 distinct tasks");
   for (const task of input.tasks) {
     if (!/^TC-V31-[A-Z0-9-]+$/.test(task.task_id)) throw new Error("frozen suite contains an invalid task id");
+    if (!INTELLIGENCE_V31_TRACK_IDS.includes(task.track)) throw new Error(`${task.task_id} contains an invalid track id`);
     assertHash(task.participant_bundle_hash, `${task.task_id} participant hash`);
     assertHash(task.grader_bundle_hash, `${task.task_id} grader hash`);
   }
+  const trackCounts = Object.fromEntries(INTELLIGENCE_V31_TRACK_IDS.map((track) => [track, input.tasks.filter((task) => task.track === track).length]));
+  if (JSON.stringify(trackCounts) !== JSON.stringify(INTELLIGENCE_V31_FINAL_TRACK_MIX)) throw new Error("frozen v3.1 suite track mix does not match the preregistered portfolio");
   const base = {
     schema: INTELLIGENCE_V31_FROZEN_SUITE_SCHEMA,
     version: "3.1" as const,
@@ -584,6 +624,9 @@ export function verifyIntelligenceV31FrozenSuite(manifest: IntelligenceV31Frozen
   if (manifest.schema !== INTELLIGENCE_V31_FROZEN_SUITE_SCHEMA || manifest.version !== "3.1") issues.push("invalid frozen-suite schema");
   if (manifest.tasks.length !== 100 || manifest.task_order.length !== 100) issues.push("frozen suite must contain exactly 100 tasks");
   if (new Set(manifest.task_order).size !== manifest.task_order.length || manifest.task_order.some((taskId, index) => taskId !== manifest.tasks[index]?.task_id)) issues.push("task order does not match frozen task records");
+  if (manifest.tasks.some((task) => !INTELLIGENCE_V31_TRACK_IDS.includes(task.track))) issues.push("frozen suite contains an unknown or missing track id");
+  const trackCounts = Object.fromEntries(INTELLIGENCE_V31_TRACK_IDS.map((track) => [track, manifest.tasks.filter((task) => task.track === track).length]));
+  if (JSON.stringify(trackCounts) !== JSON.stringify(INTELLIGENCE_V31_FINAL_TRACK_MIX)) issues.push("frozen suite track mix does not match the preregistered portfolio");
   const { suite_sha256: ignored, ...base } = manifest;
   if (!ignored || canonicalHash(base) !== ignored) issues.push("frozen suite hash mismatch");
   return issues;

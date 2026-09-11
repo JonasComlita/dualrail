@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createIntelligenceV31FrozenSuite, verifyIntelligenceV31FrozenSuite } from "../src/intelligenceV31Repository";
+import { createIntelligenceV31FrozenSuite, verifyIntelligenceV31FrozenSuite, type IntelligenceV31FrozenTask } from "../src/intelligenceV31Repository";
+import { verifyIntelligenceV31InfrastructureAttestation } from "../src/intelligenceV31Infrastructure";
 
 const repositoryRoot = path.resolve(import.meta.dir, "..", "..");
 const corpusRoot = path.join(repositoryRoot, "benchmarks", "intelligence-v3.1");
@@ -10,12 +11,13 @@ const appRoot = path.join(repositoryRoot, "treatcode");
 const privateRoot = process.env.TREATCODE_V31_FINAL_PRIVATE_ROOT || path.join(process.env.LOCALAPPDATA || os.tmpdir(), "TreatCode", "intelligence-v31-private");
 const authorRoot = path.join(privateRoot, "final-authoring", "contributions");
 const graderRoot = path.join(privateRoot, "final-graders");
-const reviewRoot = path.join(corpusRoot, "authoring", "reviews");
+const reviewRoot = path.join(privateRoot, "final-authoring", "reviews");
 const qualificationRoot = path.join(repositoryRoot, "build", "treatcode-plan-evidence", "P14", "intelligence-v31-final-qualification");
 const reviewReportPath = path.join(repositoryRoot, "build", "treatcode-plan-evidence", "P14", "intelligence-v31-review-validation.json");
 const calibrationReportPath = path.join(repositoryRoot, "build", "treatcode-plan-evidence", "P14", "intelligence-v31-final-calibration.json");
 const contractPath = path.join(corpusRoot, "final-corpus-contract.v3.1.json");
 const protocolPath = path.join(corpusRoot, "protocol.v3.1.json");
+const trustedKeysPath = path.join(corpusRoot, "trusted-infrastructure-keys.v3.1.json");
 const suitePath = path.join(corpusRoot, "frozen-suite.v3.1.json");
 const taskRecordRoot = path.join(corpusRoot, "frozen-task-records");
 const sha256 = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -40,15 +42,17 @@ function bundleHash(root: string): string {
   return sha256(collectFiles(root).map((file) => `${file.path}\0${file.bytes}\0${file.sha256}\n`).join(""));
 }
 
-for (const required of [authorRoot, graderRoot, reviewRoot, qualificationRoot, reviewReportPath, calibrationReportPath, contractPath, protocolPath]) if (!existsSync(required)) throw new Error(`freeze prerequisite is unavailable: ${required}`);
+for (const required of [authorRoot, graderRoot, reviewRoot, qualificationRoot, reviewReportPath, calibrationReportPath, contractPath, protocolPath, trustedKeysPath]) if (!existsSync(required)) throw new Error(`freeze prerequisite is unavailable: ${required}`);
 if (existsSync(suitePath) || existsSync(taskRecordRoot)) throw new Error("v3.1 suite freeze is one-shot and already has output");
 const contract = JSON.parse(readFileSync(contractPath, "utf8"));
-const missingInfrastructure = Object.entries(contract.infrastructure_readiness).filter(([, ready]) => ready !== true).map(([name]) => name);
-if (missingInfrastructure.length) throw new Error(`official freeze blocked by unverified infrastructure: ${missingInfrastructure.join(", ")}`);
+const attestationPath = process.env.TREATCODE_V31_INFRA_ATTESTATION;
+if (!attestationPath || !path.isAbsolute(attestationPath) || !existsSync(attestationPath)) throw new Error("official freeze requires an external signed infrastructure attestation");
+const infrastructure = verifyIntelligenceV31InfrastructureAttestation(JSON.parse(readFileSync(attestationPath, "utf8")), JSON.parse(readFileSync(trustedKeysPath, "utf8")));
 const reviewReport = JSON.parse(readFileSync(reviewReportPath, "utf8"));
 if (reviewReport.status !== "all_candidates_twice_approved" || reviewReport.twice_approved !== 100) throw new Error("all 100 current candidates require two independent approvals before freeze");
 const calibrationReport = JSON.parse(readFileSync(calibrationReportPath, "utf8"));
 if (calibrationReport.status !== "ready_to_freeze" || calibrationReport.accepted_tasks !== 100 || calibrationReport.infrastructure_blocked) throw new Error("complete verified non-subject calibration is required before freeze");
+if (contract.execution_identity_readiness?.provider_signed_calibration_observations !== 1800) throw new Error("all 1,800 calibration observations require provider-signed model execution identity before freeze");
 
 const authorContributions = readdirSync(authorRoot).filter((file) => file.endsWith(".json")).sort().map((file) => {
   const text = readFileSync(path.join(authorRoot, file), "utf8");
@@ -62,7 +66,7 @@ const qualificationFiles = readdirSync(qualificationRoot).filter((file) => file.
 const taskInputs = authorContributions.flatMap((contribution) => contribution.data.tasks.map((task: any) => ({ task, contribution }))).sort((a, b) => a.task.task_id.localeCompare(b.task.task_id));
 if (taskInputs.length !== 100 || new Set(taskInputs.map((item) => item.task.task_id)).size !== 100) throw new Error("freeze requires exactly 100 distinct authored task records");
 
-const frozenTasks: Array<{ task_id: string; participant_bundle_hash: string; grader_bundle_hash: string }> = [];
+const frozenTasks: IntelligenceV31FrozenTask[] = [];
 const taskRecords: Array<{ task_id: string; text: string }> = [];
 for (const { task, contribution } of taskInputs) {
   const taskGraderRoot = path.join(graderRoot, task.task_id);
@@ -83,6 +87,7 @@ for (const { task, contribution } of taskInputs) {
     schema: "treatcode.intelligence.final-task-record.v3.1",
     version: "3.1",
     task_id: task.task_id,
+    track: task.track,
     category: task.category,
     design_features: task.design_features,
     participant_bundle_hash: participantHash,
@@ -94,7 +99,7 @@ for (const { task, contribution } of taskInputs) {
     status: "frozen",
     official: false,
   };
-  frozenTasks.push({ task_id: task.task_id, participant_bundle_hash: participantHash, grader_bundle_hash: graderHash });
+  frozenTasks.push({ task_id: task.task_id, track: task.track, participant_bundle_hash: participantHash, grader_bundle_hash: graderHash });
   taskRecords.push({ task_id: task.task_id, text: `${JSON.stringify(record, null, 2)}\n` });
 }
 
@@ -106,5 +111,7 @@ for (const record of taskRecords) writeFileSync(path.join(taskRecordRoot, `${rec
 writeFileSync(suitePath, `${JSON.stringify(frozen, null, 2)}\n`, { flag: "wx", mode: 0o444 });
 contract.status = "frozen_awaiting_one_shot_subject_comparison";
 contract.readiness.frozen = 100;
+contract.infrastructure_readiness = { verified_os_or_container_network_isolation: true, append_only_evidence_store: true, per_process_resource_accounting: true };
+contract.infrastructure_attestation = { provider_id: infrastructure.provider_id, key_id: infrastructure.key_id, verified_at: infrastructure.verified_at, expires_at: infrastructure.expires_at, attestation_sha256: sha256(readFileSync(attestationPath)) };
 writeFileSync(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
 console.log(JSON.stringify({ status: "frozen", official: false, task_count: 100, suite_sha256: frozen.suite_sha256, task_records: path.relative(repositoryRoot, taskRecordRoot).replaceAll(path.sep, "/") }, null, 2));

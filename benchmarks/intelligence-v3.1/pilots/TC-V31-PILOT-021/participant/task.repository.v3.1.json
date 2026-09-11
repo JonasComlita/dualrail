@@ -1,0 +1,63 @@
+{
+  "schema": "treatcode.intelligence.repository-task.v3.1",
+  "version": "3.1",
+  "task_id": "TC-V31-PILOT-021",
+  "title": "Capability handle narrowing",
+  "phase": "pilot",
+  "initial_signal": "A valid high-generation handle is truncated by the SDK wrapper and collides with a revoked entry.",
+  "known_failing_command_id": "pilot.public",
+  "public_command_ids": [
+    "pilot.public"
+  ],
+  "required_trit_change": true,
+  "files": [
+    {
+      "path": "build/task-config.json",
+      "editable": false,
+      "sha256": "c784a4ab95769a671e594402c945e9307f770bffa5b2c9f7b0df4319c59c8a8b"
+    },
+    {
+      "path": "native/contract.cpp",
+      "editable": true,
+      "sha256": "e92f779fafc1fad658444eea4630c4481960e20490761ac73fe46cbac1cd2e72"
+    },
+    {
+      "path": "public/cases.json",
+      "editable": false,
+      "sha256": "0bf2986083464d011b253badb63643e13edfd0c3a8c56a9caab887d8ae48d915"
+    },
+    {
+      "path": "README.md",
+      "editable": false,
+      "sha256": "28075853d8f12014221bce17cb2b41fc40f3b7db4f33d8b8da17cc801346da61"
+    },
+    {
+      "path": "src/distractor.trit",
+      "editable": false,
+      "sha256": "438f8088d694bd10f1f77816af1b4667845f7685c779b6d6ca91a1a2fd17d58c"
+    },
+    {
+      "path": "src/finalize.trit",
+      "editable": true,
+      "sha256": "9e9bdb339b638fb5236eb1bf0a4777e41ee83b3fcc516a6c6e97806129260cc9"
+    },
+    {
+      "path": "src/normalize.trit",
+      "editable": true,
+      "sha256": "4344f69ac9f4b674418bcbc79cc31fd68ebb786f80199a074a6bbcdb0e39a8f7"
+    },
+    {
+      "path": "src/transition.trit",
+      "editable": true,
+      "sha256": "24a97738dfe56621fe961055420ce6fb7e3ea390919c81fa3472772b7d6fa5de"
+    }
+  ],
+  "limits": {
+    "wall_clock_ms": 1200000,
+    "cpu_ms": 1200000,
+    "memory_mb": 512,
+    "process_count": 8,
+    "output_bytes": 262144,
+    "maximum_changed_files": 4
+  }
+}
