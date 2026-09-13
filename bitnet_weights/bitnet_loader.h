@@ -324,7 +324,7 @@ public:
             unpacked.resize(static_cast<std::size_t>(layer.count));
             int out = 0;
             for (uint64_t raw : *packed) {
-                auto trits = TernaryScalar<40>{raw}.unpack();
+                auto trits = TernaryScalar<40>{raw}.unpackPositional();
                 for (int i = 0; i < 40 && out < layer.count; ++i)
                     unpacked[static_cast<std::size_t>(out++)] = trits[static_cast<std::size_t>(i)];
             }

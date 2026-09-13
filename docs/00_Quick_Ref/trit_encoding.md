@@ -8,7 +8,10 @@ There are **three distinct encoding schemes** in this codebase. Confusing them i
 
 **Used by:** All arithmetic, `ternary_scalar.h`, `ternary_math.h`, `ternary_native_ops.h`
 
-Each N-trit value is stored as a single integer in `[0, 3^N)`.
+Each ordinary N-trit positional payload is stored as a single integer in
+`[0, 3^N)`. Numeric `TernaryScalar` formats reserve raw zero as their canonical
+floating-zero representation, so the physical all-negative pattern is not an
+ordinary numeric payload.
 The balanced trit `t` at position `i` contributes `(t + 1) × 3^i` to the integer.
 
 | Stored digit | Balanced trit value |
@@ -38,6 +41,15 @@ or the physical size of every host/wire encoding. The 27-trit instruction and
 **Special sentinels** live at the top of the storage range (unreachable by `pack()`):
 - `OVERFLOW_DATA` = `std::numeric_limits<Storage>::max()`
 - `UNDERFLOW_DATA` = `std::numeric_limits<Storage>::max() - 1`
+
+Raw values from `3^N` through `UNDERFLOW_DATA - 1` are invalid encodings.
+`isInvalid()` identifies this interval, while `isSpecial()` identifies the two
+defined sentinels. `pack()` rejects input outside `{-1, 0, +1}` and rejects the
+all-negative pattern that would collide with canonical zero.
+
+`unpack()` is the numeric operation: canonical zero expands to neutral trits.
+Storage-oriented consumers that intentionally use the carrier as a raw trit
+container must call `unpackPositional()` to see physical positional digits.
 
 ---
 
@@ -121,4 +133,4 @@ LongTriple t = native_ops::fromInt(42LL);
 - ❌ Do NOT do binary integer arithmetic on `TritLane<N>` backing integers — they have no positional meaning.
 - ❌ Do NOT confuse positional digit `0` (balanced −1) with trit value `0` (balanced 0).
 - ❌ Do NOT store `int8_t` trit values {−1, 0, +1} where a positional digit {0, 1, 2} is expected, or vice versa.
-- ❌ Do NOT use `getTritRaw()` for arithmetic — it returns positional digits (0/1/2), not balanced values (−1/0/+1).
+- ❌ Do NOT use `getTritRaw()` for arithmetic — it returns semantic positional digits (0/1/2), not balanced values (−1/0/+1), and returns 3 for an invalid request or value.

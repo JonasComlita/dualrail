@@ -1,6 +1,7 @@
 # Register Map
 
-Source of truth: `ternary_isa.h` — register constants and `InstructionWord` struct.
+Sources of truth: `ARCHITECTURE_MANIFEST.json` for CSR IDs/access and
+`ternary_isa.h` for register constants and instruction fields.
 
 ---
 
@@ -51,7 +52,9 @@ Stores `TernaryValue` at T40 precision. Used for `VDOT` / `VMAC` dot-product acc
 
 ## CSR File (Control & Status Registers)
 
-Accessed via `CSRR` / `CSRW` / `CSRRW`. IDs 0–46.
+Accessed via `CSRR` / `CSRW` / `CSRRW`. IDs 0–52. The generated
+[architecture contract](../04_Binary_Contract/architecture_v2.md) is the
+authoritative per-CSR read/write privilege table.
 
 | CSR ID | Name | Purpose |
 |--------|------|---------|
@@ -95,8 +98,14 @@ Accessed via `CSRR` / `CSRW` / `CSRRW`. IDs 0–46.
 | 42 | `block_addr` | Block device address |
 | 43 | `block_cmd` | Block device command |
 | 44 | `block_status` | Block device status |
-| 45 | `block_count` | Block device transfer count |
-| 46 | `block_words` | Block device word count |
+| 45 | `block_count` | Read-only block-device capacity in blocks |
+| 46 | `block_words` | Read-only words per storage block |
+| 47 | `power_control` | Kernel-only host power/reboot request |
+| 48 | `isa_version` | Read-only ISA version discovery |
+| 49 | `isa_features` | Read-only supported-feature word |
+| 50 | `mmu_base_page_words` | Read-only base-page geometry |
+| 51 | `mmu_superpage_words` | Read-only superpage geometry |
+| 52 | `asid` | Read-only current address-space identifier |
 
 ---
 

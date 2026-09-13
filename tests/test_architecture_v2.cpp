@@ -523,6 +523,100 @@ void testGeneratedArchitectureConstants() {
             "function argument ABI drift");
     require(contract::STACK_ALIGNMENT_WORDS == 9,
             "stack alignment drift");
+    require(contract::CSR_DESCRIPTORS.size() == 53 &&
+                contract::CSR_MAX_ID == 52,
+            "complete CSR contract drift");
+}
+
+void testCsrAccessPolicy() {
+    using sandbox::isa::PrivilegeMode;
+    require(canReadCSR(CSR_STATUS, PrivilegeMode::User) &&
+                canReadCSR(CSR_TVEC, PrivilegeMode::User) &&
+                canReadCSR(CSR_SCRATCH, PrivilegeMode::User),
+            "user-readable compatibility CSRs must remain readable");
+    require(!canReadCSR(CSR_EPC, PrivilegeMode::User) &&
+                !canReadCSR(CSR_USER_DMEM_PTBR, PrivilegeMode::User),
+            "trap frames and page-table roots must be kernel-readable only");
+    require(canWriteCSR(CSR_CONSOLE_OUT, PrivilegeMode::User) &&
+                canWriteCSR(CSR_GPU_CMD, PrivilegeMode::User),
+            "user console and graphics controls must remain writable");
+    require(!canWriteCSR(CSR_BLOCK_CMD, PrivilegeMode::User) &&
+                !canWriteCSR(CSR_POWER_CONTROL, PrivilegeMode::User) &&
+                !canWriteCSR(CSR_MOUSE_X, PrivilegeMode::User),
+            "user mode must not control block, power, or host input state");
+
+    sandbox::vm::VMState vm(4, 64);
+    vm.reset();
+    vm.trap_routing_enabled = true;
+    vm.tvec = 1;
+    vm.privilege = PrivilegeMode::User;
+    vm.regfile.write(R1, sandbox::vm::ops::fromLong(1));
+    require(vm.imem.write(
+                0, VersionedInstructionCodec::encodeI(
+                       Opcode::CSRW, R1, R0_ZERO, CSR_POWER_CONTROL,
+                       IsaEncodingVersion::V2)) == sandbox::vm::MemFaultCode::OK,
+            "power-control denial fixture must encode");
+    require(sandbox::vm::step(vm) == sandbox::vm::VMStatus::RUNNING &&
+                vm.pc == 1 && vm.cause == OS_CAUSE_PROTECTION_FAULT &&
+                vm.power_control == 0,
+            "user power-control write must route without a side effect");
+}
+
+void testNestedTrapAndLegacyTrapRecord() {
+    using namespace sandbox::vm;
+    VMState nested(4, 64);
+    nested.reset();
+    nested.trap_routing_enabled = true;
+    nested.tvec = 1;
+    nested.privilege = PrivilegeMode::User;
+    nested.regfile.write(R1, ops::fromLong(1));
+    nested.regfile.write(R2, ops::fromLong(1));
+    nested.regfile.write(R3, ops::fromLong(0));
+    require(nested.imem.write(
+                0, VersionedInstructionCodec::encodeI(
+                       Opcode::CSRW, R1, R0_ZERO, CSR_BLOCK_CMD,
+                       IsaEncodingVersion::V2)) == MemFaultCode::OK &&
+                nested.imem.write(
+                    1, VersionedInstructionCodec::encodeR(
+                           Opcode::DIV, R4, R2, R3, FUNC_T40,
+                           IsaEncodingVersion::V2)) == MemFaultCode::OK,
+            "nested-trap fixture must encode");
+    require(step(nested) == VMStatus::RUNNING && nested.trap_active &&
+                nested.epc == 0 &&
+                nested.cause == OS_CAUSE_PROTECTION_FAULT &&
+                nested.previous_privilege == PrivilegeMode::User,
+            "first routed trap must capture the user frame");
+    require(step(nested) == VMStatus::TRAPPED && nested.pc == 1 &&
+                nested.epc == 0 &&
+                nested.cause == OS_CAUSE_PROTECTION_FAULT &&
+                nested.previous_privilege == PrivilegeMode::User &&
+                decodeTrap(nested.trap_reg) == TrapCode::TRAP_DIV_ZERO,
+            "nested handler fault must stop without overwriting the first frame");
+
+    VMState event(4, 64);
+    event.reset();
+    event.trap_routing_enabled = true;
+    event.tvec = 2;
+    event.privilege = PrivilegeMode::User;
+    event.interrupt_enable = true;
+    event.trapWithCause(
+        TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_SYSCALL, 0);
+    require(event.trap_active && !trapValid(event.trap_reg),
+            "routed syscall must not masquerade as an illegal instruction");
+    event.epc = 1;
+    require(event.returnFromTrap() && !event.trap_active &&
+                !trapValid(event.trap_reg) &&
+                event.privilege == PrivilegeMode::User && event.pc == 1,
+            "ERET must clear the routed trap record and active frame");
+    event.trapWithCause(
+        TrapCode::TRAP_DIV_ZERO, OS_CAUSE_DIV_ZERO, 1);
+    require(event.trap_active && trapValid(event.trap_reg) &&
+                decodeTrap(event.trap_reg) == TrapCode::TRAP_DIV_ZERO,
+            "routed synchronous fault must expose its legacy fault class");
+    event.epc = 3;
+    require(event.returnFromTrap() && !trapValid(event.trap_reg) &&
+                event.pc == 3,
+            "ERET must clear a handled synchronous fault record");
 }
 
 }  // namespace
@@ -542,6 +636,8 @@ int main() {
         testNumericPteTlbsAndShootdown();
         testExecutableHeaderV2();
         testGeneratedArchitectureConstants();
+        testCsrAccessPolicy();
+        testNestedTrapAndLegacyTrapRecord();
         std::cout << "ISA v2 architecture contract tests passed\n";
         return 0;
     } catch (const std::exception& error) {

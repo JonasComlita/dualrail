@@ -2692,6 +2692,7 @@ struct VMCoreState {
     bool interrupt_enable = false;
     bool previous_interrupt_enable = false;
     bool trap_routing_enabled = false;
+    bool trap_active = false;
     int epc = 0;
     int cause = 0;
     int tvec = 0;
@@ -2797,6 +2798,7 @@ struct VMState {
     bool                     interrupt_enable = false;
     bool                     previous_interrupt_enable = false;
     bool                     trap_routing_enabled = false;
+    bool                     trap_active = false;
     int                      epc = 0;
     int                      cause = 0;
     int                      tvec = 0;
@@ -3026,6 +3028,7 @@ struct VMState {
         core.interrupt_enable = interrupt_enable;
         core.previous_interrupt_enable = previous_interrupt_enable;
         core.trap_routing_enabled = trap_routing_enabled;
+        core.trap_active = trap_active;
         core.epc = epc;
         core.cause = cause;
         core.tvec = tvec;
@@ -3082,6 +3085,7 @@ struct VMState {
         interrupt_enable = core.interrupt_enable;
         previous_interrupt_enable = core.previous_interrupt_enable;
         trap_routing_enabled = core.trap_routing_enabled;
+        trap_active = core.trap_active;
         epc = core.epc;
         cause = core.cause;
         tvec = core.tvec;
@@ -3414,6 +3418,7 @@ struct VMState {
         interrupt_enable = false;
         previous_interrupt_enable = false;
         trap_routing_enabled = false;
+        trap_active = false;
         epc = 0;
         cause = 0;
         tvec = 0;
@@ -4368,7 +4373,17 @@ struct VMState {
 
     void trapWithCause(TrapCode legacy_code, int routed_cause, int epc_value) {
         clearAtomicReservation();
-        trap_reg = encodeTrap(legacy_code);
+        if (trap_routing_enabled && trap_active) {
+            // Preserve the first trap's sole EPC/privilege save frame. A
+            // synchronous fault in its handler is a terminal nested trap.
+            trap_reg = encodeTrap(legacy_code);
+            status = VMStatus::TRAPPED;
+            return;
+        }
+        const bool routed_event =
+            routed_cause == OS_CAUSE_SYSCALL ||
+            routed_cause == OS_CAUSE_TIMER_IRQ;
+        trap_reg = routed_event ? encodeNoTrap() : encodeTrap(legacy_code);
         if (!trap_routing_enabled) {
             status = VMStatus::TRAPPED;
             return;
@@ -4379,6 +4394,7 @@ struct VMState {
         previous_interrupt_enable = interrupt_enable;
         privilege = PrivilegeMode::Kernel;
         interrupt_enable = false;
+        trap_active = true;
         status = VMStatus::RUNNING;
         pc = tvec;
     }
@@ -4412,10 +4428,12 @@ struct VMState {
     }
 
     [[nodiscard]] bool returnFromTrap() {
-        if (privilege != PrivilegeMode::Kernel) return false;
+        if (privilege != PrivilegeMode::Kernel || !trap_active) return false;
         privilege = previous_privilege;
         interrupt_enable = previous_interrupt_enable;
         pc = epc;
+        trap_active = false;
+        trap_reg = encodeNoTrap();
         return true;
     }
 

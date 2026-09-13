@@ -141,11 +141,137 @@ inline constexpr int FEATURE_MMU = 6;
 inline constexpr int FEATURE_WAIT = 7;
 inline constexpr int FEATURE_WIDE_T50 = 8;
 
+inline constexpr int CSR_EPC = 0;
+inline constexpr int CSR_CAUSE = 1;
+inline constexpr int CSR_STATUS = 2;
+inline constexpr int CSR_TVEC = 3;
+inline constexpr int CSR_SCRATCH = 4;
+inline constexpr int CSR_CYCLE = 5;
+inline constexpr int CSR_TIMER_RELOAD = 6;
+inline constexpr int CSR_TIMER_COUNTER = 7;
+inline constexpr int CSR_TIMER_ENABLE = 8;
+inline constexpr int CSR_TIMER_PENDING = 9;
+inline constexpr int CSR_USER_IMEM_BASE = 10;
+inline constexpr int CSR_USER_IMEM_LIMIT = 11;
+inline constexpr int CSR_USER_DMEM_BASE = 12;
+inline constexpr int CSR_USER_DMEM_LIMIT = 13;
+inline constexpr int CSR_SYSCALL_ID = 14;
+inline constexpr int CSR_MMU_ENABLE = 15;
+inline constexpr int CSR_USER_IMEM_PTBR = 16;
+inline constexpr int CSR_USER_IMEM_PAGES = 17;
+inline constexpr int CSR_USER_DMEM_PTBR = 18;
+inline constexpr int CSR_USER_DMEM_PAGES = 19;
+inline constexpr int CSR_PAGE_FAULT_ADDR = 20;
+inline constexpr int CSR_PAGE_FAULT_ACCESS = 21;
+inline constexpr int CSR_CONSOLE_OUT = 22;
+inline constexpr int CSR_CONSOLE_CTRL = 23;
+inline constexpr int CSR_CONSOLE_IN = 24;
+inline constexpr int CSR_CONSOLE_IN_CTRL = 25;
+inline constexpr int CSR_MOUSE_X = 26;
+inline constexpr int CSR_MOUSE_Y = 27;
+inline constexpr int CSR_MOUSE_BTN = 28;
+inline constexpr int CSR_GPU_X1 = 29;
+inline constexpr int CSR_GPU_Y1 = 30;
+inline constexpr int CSR_GPU_X2 = 31;
+inline constexpr int CSR_GPU_Y2 = 32;
+inline constexpr int CSR_GPU_COLOR = 33;
+inline constexpr int CSR_GPU_CMD = 34;
+inline constexpr int CSR_GPU_PAGE = 35;
+inline constexpr int CSR_GPU_DRAW_BASE = 36;
+inline constexpr int CSR_GPU_MODE = 37;
+inline constexpr int CSR_SPRITE_X = 38;
+inline constexpr int CSR_SPRITE_Y = 39;
+inline constexpr int CSR_SPRITE_ATTR = 40;
+inline constexpr int CSR_BLOCK_INDEX = 41;
+inline constexpr int CSR_BLOCK_ADDR = 42;
+inline constexpr int CSR_BLOCK_CMD = 43;
+inline constexpr int CSR_BLOCK_STATUS = 44;
+inline constexpr int CSR_BLOCK_COUNT = 45;
+inline constexpr int CSR_BLOCK_WORDS = 46;
+inline constexpr int CSR_POWER_CONTROL = 47;
 inline constexpr int CSR_ISA_VERSION = 48;
 inline constexpr int CSR_ISA_FEATURES = 49;
 inline constexpr int CSR_MMU_BASE_PAGE_WORDS = 50;
 inline constexpr int CSR_MMU_SUPERPAGE_WORDS = 51;
 inline constexpr int CSR_ASID = 52;
+inline constexpr int CSR_MAX_ID = 52;
+
+enum class CsrAccessLevel : std::uint8_t {
+    NONE = 0,
+    KERNEL = 1,
+    SUPERVISOR = 2,
+    USER = 3,
+};
+
+struct CsrDescriptor {
+    int id;
+    std::string_view name;
+    CsrAccessLevel read_access;
+    CsrAccessLevel write_access;
+    std::string_view kind;
+};
+
+inline constexpr std::array<CsrDescriptor, 53> CSR_DESCRIPTORS = {{
+    {CSR_EPC, "epc", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_CAUSE, "cause", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_STATUS, "status", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_TVEC, "tvec", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_SCRATCH, "scratch", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_CYCLE, "cycle", CsrAccessLevel::USER, CsrAccessLevel::NONE, "counter"},
+    {CSR_TIMER_RELOAD, "timer_reload", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "timer"},
+    {CSR_TIMER_COUNTER, "timer_counter", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "timer"},
+    {CSR_TIMER_ENABLE, "timer_enable", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "timer"},
+    {CSR_TIMER_PENDING, "timer_pending", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "timer"},
+    {CSR_USER_IMEM_BASE, "user_imem_base", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "memory"},
+    {CSR_USER_IMEM_LIMIT, "user_imem_limit", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "memory"},
+    {CSR_USER_DMEM_BASE, "user_dmem_base", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "memory"},
+    {CSR_USER_DMEM_LIMIT, "user_dmem_limit", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "memory"},
+    {CSR_SYSCALL_ID, "syscall_id", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_MMU_ENABLE, "mmu_enable", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "mmu"},
+    {CSR_USER_IMEM_PTBR, "user_imem_ptbr", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "mmu"},
+    {CSR_USER_IMEM_PAGES, "user_imem_pages", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "mmu"},
+    {CSR_USER_DMEM_PTBR, "user_dmem_ptbr", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "mmu"},
+    {CSR_USER_DMEM_PAGES, "user_dmem_pages", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "mmu"},
+    {CSR_PAGE_FAULT_ADDR, "page_fault_addr", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_PAGE_FAULT_ACCESS, "page_fault_access", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
+    {CSR_CONSOLE_OUT, "console_out", CsrAccessLevel::USER, CsrAccessLevel::USER, "console"},
+    {CSR_CONSOLE_CTRL, "console_ctrl", CsrAccessLevel::USER, CsrAccessLevel::USER, "console"},
+    {CSR_CONSOLE_IN, "console_in", CsrAccessLevel::USER, CsrAccessLevel::NONE, "console"},
+    {CSR_CONSOLE_IN_CTRL, "console_in_ctrl", CsrAccessLevel::USER, CsrAccessLevel::USER, "console"},
+    {CSR_MOUSE_X, "mouse_x", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "input"},
+    {CSR_MOUSE_Y, "mouse_y", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "input"},
+    {CSR_MOUSE_BTN, "mouse_btn", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "input"},
+    {CSR_GPU_X1, "gpu_x1", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_Y1, "gpu_y1", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_X2, "gpu_x2", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_Y2, "gpu_y2", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_COLOR, "gpu_color", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_CMD, "gpu_cmd", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_PAGE, "gpu_page", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_GPU_DRAW_BASE, "gpu_draw_base", CsrAccessLevel::USER, CsrAccessLevel::NONE, "graphics"},
+    {CSR_GPU_MODE, "gpu_mode", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_SPRITE_X, "sprite_x", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_SPRITE_Y, "sprite_y", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_SPRITE_ATTR, "sprite_attr", CsrAccessLevel::USER, CsrAccessLevel::USER, "graphics"},
+    {CSR_BLOCK_INDEX, "block_index", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "block"},
+    {CSR_BLOCK_ADDR, "block_addr", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "block"},
+    {CSR_BLOCK_CMD, "block_cmd", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "block"},
+    {CSR_BLOCK_STATUS, "block_status", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "block"},
+    {CSR_BLOCK_COUNT, "block_count", CsrAccessLevel::KERNEL, CsrAccessLevel::NONE, "block"},
+    {CSR_BLOCK_WORDS, "block_words", CsrAccessLevel::KERNEL, CsrAccessLevel::NONE, "block"},
+    {CSR_POWER_CONTROL, "power_control", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "power"},
+    {CSR_ISA_VERSION, "isa_version", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+    {CSR_ISA_FEATURES, "isa_features", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+    {CSR_MMU_BASE_PAGE_WORDS, "mmu_base_page_words", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+    {CSR_MMU_SUPERPAGE_WORDS, "mmu_superpage_words", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+    {CSR_ASID, "asid", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+}};
+
+[[nodiscard]] inline constexpr const CsrDescriptor* csrDescriptor(int id) {
+    return id >= 0 && id <= CSR_MAX_ID
+        ? &CSR_DESCRIPTORS[static_cast<std::size_t>(id)]
+        : nullptr;
+}
 
 inline constexpr int PTE_PRESENT = 0;
 inline constexpr int PTE_USER = 1;

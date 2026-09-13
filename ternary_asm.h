@@ -283,59 +283,9 @@ struct AssemblyResult {
 // Parse a CSR name or numeric CSR id. Returns [0..CSR_MAX_ID] or -1 on error.
 [[nodiscard]] inline int parseCSR(const std::string& tok) {
     std::string s = toLower(tok);
-    if (s == "epc") return CSR_EPC;
-    if (s == "cause") return CSR_CAUSE;
-    if (s == "status") return CSR_STATUS;
-    if (s == "tvec") return CSR_TVEC;
-    if (s == "scratch") return CSR_SCRATCH;
-    if (s == "cycle") return CSR_CYCLE;
-    if (s == "timer_reload") return CSR_TIMER_RELOAD;
-    if (s == "timer_counter") return CSR_TIMER_COUNTER;
-    if (s == "timer_enable") return CSR_TIMER_ENABLE;
-    if (s == "timer_pending") return CSR_TIMER_PENDING;
-    if (s == "user_imem_base") return CSR_USER_IMEM_BASE;
-    if (s == "user_imem_limit") return CSR_USER_IMEM_LIMIT;
-    if (s == "user_dmem_base") return CSR_USER_DMEM_BASE;
-    if (s == "user_dmem_limit") return CSR_USER_DMEM_LIMIT;
-    if (s == "syscall_id") return CSR_SYSCALL_ID;
-    if (s == "mmu_enable") return CSR_MMU_ENABLE;
-    if (s == "user_imem_ptbr") return CSR_USER_IMEM_PTBR;
-    if (s == "user_imem_pages") return CSR_USER_IMEM_PAGES;
-    if (s == "user_dmem_ptbr") return CSR_USER_DMEM_PTBR;
-    if (s == "user_dmem_pages") return CSR_USER_DMEM_PAGES;
-    if (s == "page_fault_addr") return CSR_PAGE_FAULT_ADDR;
-    if (s == "page_fault_access") return CSR_PAGE_FAULT_ACCESS;
-    if (s == "console_out") return CSR_CONSOLE_OUT;
-    if (s == "console_ctrl") return CSR_CONSOLE_CTRL;
-    if (s == "console_in") return CSR_CONSOLE_IN;
-    if (s == "console_in_ctrl") return CSR_CONSOLE_IN_CTRL;
-    if (s == "mouse_x") return CSR_MOUSE_X;
-    if (s == "mouse_y") return CSR_MOUSE_Y;
-    if (s == "mouse_btn") return CSR_MOUSE_BTN;
-    if (s == "gpu_x1") return CSR_GPU_X1;
-    if (s == "gpu_y1") return CSR_GPU_Y1;
-    if (s == "gpu_x2") return CSR_GPU_X2;
-    if (s == "gpu_y2") return CSR_GPU_Y2;
-    if (s == "gpu_color") return CSR_GPU_COLOR;
-    if (s == "gpu_cmd") return CSR_GPU_CMD;
-    if (s == "gpu_page") return CSR_GPU_PAGE;
-    if (s == "gpu_draw_base") return CSR_GPU_DRAW_BASE;
-    if (s == "gpu_mode") return CSR_GPU_MODE;
-    if (s == "sprite_x") return CSR_SPRITE_X;
-    if (s == "sprite_y") return CSR_SPRITE_Y;
-    if (s == "sprite_attr") return CSR_SPRITE_ATTR;
-    if (s == "block_index") return CSR_BLOCK_INDEX;
-    if (s == "block_addr") return CSR_BLOCK_ADDR;
-    if (s == "block_cmd") return CSR_BLOCK_CMD;
-    if (s == "block_status") return CSR_BLOCK_STATUS;
-    if (s == "block_count") return CSR_BLOCK_COUNT;
-    if (s == "block_words") return CSR_BLOCK_WORDS;
-    if (s == "power_control") return CSR_POWER_CONTROL;
-    if (s == "isa_version") return CSR_ISA_VERSION;
-    if (s == "isa_features") return CSR_ISA_FEATURES;
-    if (s == "mmu_base_page_words") return CSR_MMU_BASE_PAGE_WORDS;
-    if (s == "mmu_superpage_words") return CSR_MMU_SUPERPAGE_WORDS;
-    if (s == "asid") return CSR_ASID;
+    for (const auto& descriptor : architecture::v2::CSR_DESCRIPTORS) {
+        if (s == descriptor.name) return descriptor.id;
+    }
 
     if (s.empty()) return -1;
     for (char c : s) {

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <string>
 
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -59,20 +60,21 @@ struct UInt128 {
     }
 
     [[nodiscard]] constexpr bool bit(int index) const {
+        if (index < 0 || index >= 128) return false;
         return index < 64
             ? ((lo >> index) & 1ULL) != 0
             : ((hi >> (index - 64)) & 1ULL) != 0;
     }
 
     constexpr void setBit(int index) {
+        if (index < 0 || index >= 128) return;
         if (index < 64) lo |= (1ULL << index);
         else hi |= (1ULL << (index - 64));
     }
 
     [[nodiscard]] UInt128 divModSmall(uint32_t divisor, uint32_t& rem_out) const {
         if (divisor == 0) {
-            rem_out = 0;
-            return UInt128{};
+            throw std::domain_error("UInt128 division by zero");
         }
         if (divisor == 1) {
             rem_out = 0;
@@ -313,11 +315,12 @@ inline void multiplyToLimbs32(UInt128 a, UInt128 b, uint32_t out[8]) {
 }
 
 [[nodiscard]] inline UInt128 operator/(UInt128 dividend, UInt128 divisor) {
+    if (divisor.isZero()) {
+        throw std::domain_error("UInt128 division by zero");
+    }
 #if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
-    if (divisor.isZero()) return UInt128{};
     return UInt128::fromNative(dividend.toNative() / divisor.toNative());
 #else
-    if (divisor.isZero()) return UInt128{};
     UInt128 quotient{};
     UInt128 remainder{};
     for (int i = 127; i >= 0; --i) {
@@ -333,11 +336,12 @@ inline void multiplyToLimbs32(UInt128 a, UInt128 b, uint32_t out[8]) {
 }
 
 [[nodiscard]] inline UInt128 operator%(UInt128 dividend, UInt128 divisor) {
+    if (divisor.isZero()) {
+        throw std::domain_error("UInt128 modulo by zero");
+    }
 #if defined(SANDBOX_TERNARY_HAS_NATIVE_UINT128)
-    if (divisor.isZero()) return UInt128{};
     return UInt128::fromNative(dividend.toNative() % divisor.toNative());
 #else
-    if (divisor.isZero()) return UInt128{};
     UInt128 remainder{};
     for (int i = 127; i >= 0; --i) {
         remainder <<= 1;
@@ -360,10 +364,12 @@ struct UInt256 {
     uint64_t limb[4] = {0, 0, 0, 0};
 
     [[nodiscard]] bool bit(int index) const {
+        if (index < 0 || index >= 256) return false;
         return ((limb[index / 64] >> (index % 64)) & 1ULL) != 0;
     }
 
     void addShifted(UInt128 value, int shift) {
+        if (shift < 0 || shift >= 256) return;
         const int word = shift / 64;
         const int bits = shift % 64;
         uint64_t parts[4] = {0, 0, 0, 0};
@@ -551,12 +557,14 @@ struct Int128 {
 }
 
 [[nodiscard]] inline Int128 operator/(Int128 a, UInt128 b) {
-    if (a.isZero() || b.isZero()) return Int128{};
+    if (b.isZero()) throw std::domain_error("Int128 division by zero");
+    if (a.isZero()) return Int128{};
     return Int128::fromMagnitude(a.sign, a.magnitude / b);
 }
 
 [[nodiscard]] inline Int128 operator/(Int128 a, Int128 b) {
-    if (a.isZero() || b.isZero()) return Int128{};
+    if (b.isZero()) throw std::domain_error("Int128 division by zero");
+    if (a.isZero()) return Int128{};
     return Int128::fromMagnitude(a.sign * b.sign, a.magnitude / b.magnitude);
 }
 

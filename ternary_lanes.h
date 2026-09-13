@@ -319,7 +319,9 @@ template<int Trits, typename Storage>
 template<int Trits, typename LaneStorage>
 [[nodiscard]] inline TritLane<Trits, LaneStorage> laneFromPositional(
     TernaryScalar<Trits> scalar) {
-    if (scalar.isSpecial()) return TritLane<Trits, LaneStorage>::invalid();
+    if (scalar.isSpecial() || scalar.isInvalid()) {
+        return TritLane<Trits, LaneStorage>::invalid();
+    }
     if (scalar.isZero()) {
         TritLane<Trits, LaneStorage> lane;
         lane.fill(0);

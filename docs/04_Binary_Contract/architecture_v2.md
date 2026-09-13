@@ -76,6 +76,66 @@ not binary compatibility or the physical size of every host/wire encoding. Instr
 Unassigned direct opcode 15 and direct opcodes 38–79 are reserved.
 Opcode 80 is the v2 extension escape; no v1 operation encoding is accepted by production assemblers or VMs.
 
+## Control and status registers
+
+Access levels name the least-privileged mode allowed. Kernel mode may access every non-`none` entry.
+
+| ID | Name | Read | Write | Kind |
+|---:|---|---|---|---|
+| 0 | `epc` | kernel | kernel | trap |
+| 1 | `cause` | kernel | kernel | trap |
+| 2 | `status` | user | kernel | trap |
+| 3 | `tvec` | user | kernel | trap |
+| 4 | `scratch` | user | kernel | trap |
+| 5 | `cycle` | user | none | counter |
+| 6 | `timer_reload` | kernel | kernel | timer |
+| 7 | `timer_counter` | kernel | kernel | timer |
+| 8 | `timer_enable` | kernel | kernel | timer |
+| 9 | `timer_pending` | kernel | kernel | timer |
+| 10 | `user_imem_base` | kernel | kernel | memory |
+| 11 | `user_imem_limit` | kernel | kernel | memory |
+| 12 | `user_dmem_base` | kernel | kernel | memory |
+| 13 | `user_dmem_limit` | kernel | kernel | memory |
+| 14 | `syscall_id` | kernel | kernel | trap |
+| 15 | `mmu_enable` | kernel | kernel | mmu |
+| 16 | `user_imem_ptbr` | kernel | kernel | mmu |
+| 17 | `user_imem_pages` | kernel | kernel | mmu |
+| 18 | `user_dmem_ptbr` | kernel | kernel | mmu |
+| 19 | `user_dmem_pages` | kernel | kernel | mmu |
+| 20 | `page_fault_addr` | kernel | kernel | trap |
+| 21 | `page_fault_access` | kernel | kernel | trap |
+| 22 | `console_out` | user | user | console |
+| 23 | `console_ctrl` | user | user | console |
+| 24 | `console_in` | user | none | console |
+| 25 | `console_in_ctrl` | user | user | console |
+| 26 | `mouse_x` | user | kernel | input |
+| 27 | `mouse_y` | user | kernel | input |
+| 28 | `mouse_btn` | user | kernel | input |
+| 29 | `gpu_x1` | user | user | graphics |
+| 30 | `gpu_y1` | user | user | graphics |
+| 31 | `gpu_x2` | user | user | graphics |
+| 32 | `gpu_y2` | user | user | graphics |
+| 33 | `gpu_color` | user | user | graphics |
+| 34 | `gpu_cmd` | user | user | graphics |
+| 35 | `gpu_page` | user | user | graphics |
+| 36 | `gpu_draw_base` | user | none | graphics |
+| 37 | `gpu_mode` | user | user | graphics |
+| 38 | `sprite_x` | user | user | graphics |
+| 39 | `sprite_y` | user | user | graphics |
+| 40 | `sprite_attr` | user | user | graphics |
+| 41 | `block_index` | kernel | kernel | block |
+| 42 | `block_addr` | kernel | kernel | block |
+| 43 | `block_cmd` | kernel | kernel | block |
+| 44 | `block_status` | kernel | kernel | block |
+| 45 | `block_count` | kernel | none | block |
+| 46 | `block_words` | kernel | none | block |
+| 47 | `power_control` | kernel | kernel | power |
+| 48 | `isa_version` | user | none | discovery |
+| 49 | `isa_features` | user | none | discovery |
+| 50 | `mmu_base_page_words` | user | none | discovery |
+| 51 | `mmu_superpage_words` | user | none | discovery |
+| 52 | `asid` | user | none | discovery |
+
 ## PTE v2
 
 Zero is non-present. Flag trits must be zero or positive; negative flags are invalid.

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -215,8 +216,90 @@ void testLaneRawValidation() {
     expect(!TritLane50::fromRawForKernel(raw).isValid(), "TritLane50 rejects invalid trit pair");
 }
 
+void testScalarEncodingContract() {
+    std::cout << "[2] scalar positional and semantic encoding contract\n";
+    using namespace sandbox;
+
+    std::array<int8_t, 10> trits{};
+    trits[0] = -1;
+    const T10 negative = T10::pack(trits);
+    expect(negative.getTritRaw(0) == 0, "balanced -1 has positional digit 0");
+    expect(negative.getTrit(0) == Trit::Negative, "balanced -1 maps to Trit::Negative");
+
+    trits[0] = 0;
+    const T10 positionalNeutral = T10::pack(trits);
+    expect(!positionalNeutral.isZero(), "positional pack preserves the all-neutral payload");
+    expect(positionalNeutral.getTrit(0) == Trit::Neutral,
+           "all-neutral positional scalar positional trits remain neutral");
+
+    const T10 zero{};
+    expect(zero.getTritRaw(0) == 1, "zero sentinel expands to neutral positional digit");
+    expect(zero.getTrit(0) == Trit::Neutral, "zero sentinel maps to Trit::Neutral");
+    const auto zeroTrits = zero.unpack();
+    expect(std::all_of(zeroTrits.begin(), zeroTrits.end(), [](int8_t t) { return t == 0; }),
+           "zero sentinel unpacks to semantic neutral trits");
+    const auto zeroPhysical = zero.unpackPositional();
+    expect(std::all_of(zeroPhysical.begin(), zeroPhysical.end(), [](int8_t t) { return t == -1; }),
+           "raw positional unpack preserves the physical raw-zero digits");
+
+    trits[0] = 1;
+    const T10 positive = T10::pack(trits);
+    expect(positive.getTritRaw(0) == 2, "balanced +1 has positional digit 2");
+    expect(positive.getTrit(0) == Trit::Positive, "balanced +1 maps to Trit::Positive");
+
+    expect(positive.getTritRaw(-1) == 3 && positive.getTritRaw(10) == 3,
+           "out-of-range trit indices return invalid raw digit");
+    expect(positive.getTrit(-1) == Trit::Invalid && positive.getTrit(10) == Trit::Invalid,
+           "out-of-range trit indices return Trit::Invalid");
+    expect(T10{T10::OVERFLOW_DATA}.getTrit(0) == Trit::Invalid,
+           "overflow does not downgrade to a neutral trit");
+    expect(T10{T10::UNDERFLOW_DATA}.getTrit(0) == Trit::Invalid,
+           "underflow does not downgrade to a neutral trit");
+
+    bool lowPowThrew = false;
+    bool highPowThrew = false;
+    try { (void)T10::POW3(-1); } catch (const std::out_of_range&) { lowPowThrew = true; }
+    try { (void)T10::POW3(10); } catch (const std::out_of_range&) { highPowThrew = true; }
+    expect(lowPowThrew && highPowThrew, "POW3 rejects out-of-range indices");
+
+    std::array<int8_t, 10> invalidTrits{};
+    invalidTrits[3] = 2;
+    expect(T10::pack(invalidTrits).isOverflow(), "pack rejects trits above +1");
+    invalidTrits[3] = -2;
+    expect(T10::pack(invalidTrits).isOverflow(), "pack rejects trits below -1");
+
+    std::array<int8_t, 10> allNegative{};
+    allNegative.fill(-1);
+    expect(T10::pack(allNegative).isOverflow(),
+           "pack rejects the positional pattern reserved by canonical zero");
+
+    std::array<int8_t, 50> wideInvalidTrits{};
+    wideInvalidTrits[49] = 2;
+    expect(LongTriple::pack(wideInvalidTrits).isOverflow(),
+           "wide pack rejects trits outside the balanced domain");
+    wideInvalidTrits.fill(-1);
+    expect(LongTriple::pack(wideInvalidTrits).isOverflow(),
+           "wide pack rejects the raw-zero positional collision");
+    const auto wideZeroPhysical = LongTriple{}.unpackPositional();
+    expect(std::all_of(wideZeroPhysical.begin(), wideZeroPhysical.end(),
+                       [](int8_t t) { return t == -1; }),
+           "wide raw positional unpack preserves the physical raw-zero digits");
+
+    const T10 invalidRaw{T10::validStateCount()};
+    expect(invalidRaw.isInvalid(), "3^N begins the invalid raw interval");
+    expect(invalidRaw.getTrit(0) == Trit::Invalid,
+           "invalid raw payload does not expose an ordinary trit");
+    expect(!toLane(invalidRaw).isValid(), "invalid raw T10 does not become a valid lane");
+    expect(!toLane(T20{T20::validStateCount()}).isValid(),
+           "invalid raw T20 does not become a valid lane");
+    expect(!toLane(Triple{Triple::validStateCount()}).isValid(),
+           "invalid raw T40 does not become a valid lane");
+    expect(!toLane(LongTriple{LongTriple::validStateCount()}).isValid(),
+           "invalid raw T50 does not become a valid lane");
+}
+
 void testConversionBoundary() {
-    std::cout << "[2] explicit numeric/lane conversion boundary\n";
+    std::cout << "[3] explicit numeric/lane conversion boundary\n";
     using namespace sandbox;
 
     for (int n = -1; n <= 1; ++n) {
@@ -322,7 +405,7 @@ void testConversionBoundary() {
 }
 
 void testLaneTritwiseOps() {
-    std::cout << "[3] lane tritwise full-adder ops\n";
+    std::cout << "[4] lane tritwise full-adder ops\n";
     using namespace sandbox;
 
     for (int a = -1; a <= 1; ++a) {
@@ -399,7 +482,7 @@ void testLaneTritwiseOps() {
 }
 
 void testSimdBatchOps() {
-    std::cout << "[4] SIMD batch lane ops\n";
+    std::cout << "[5] SIMD batch lane ops\n";
     using namespace sandbox;
 
     expect(sandbox::simd::backendAvailable(sandbox::simd::BatchBackend::Scalar),
@@ -663,7 +746,7 @@ void runRaw128KernelCase(const char* label, Maker maker) {
 }
 
 void testBackendKernelWrappers() {
-    std::cout << "[5] backend raw lane kernel wrappers\n";
+    std::cout << "[6] backend raw lane kernel wrappers\n";
     using namespace sandbox;
 
     expect(backend::validLane64(laneFromInt20(1).rawForKernel(), TritLane20::trits),
@@ -730,6 +813,7 @@ int main() {
 
     testBackendPrimitiveContract();
     testLaneRawValidation();
+    testScalarEncodingContract();
     testConversionBoundary();
     testLaneTritwiseOps();
     testSimdBatchOps();

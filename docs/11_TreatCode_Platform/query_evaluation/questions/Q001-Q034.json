@@ -251,9 +251,9 @@
       "tc:contract:contract-vm-state-memory"
     ],
     "expected_source_paths": ["ternary_isa.h", "docs/03_Execution_Engine/vm_state.md", "docs/00_Quick_Ref/register_map.md", "ARCHITECTURE_MANIFEST.json"],
-    "required_terms": ["CSR", "47 CSR slots", "CSR_STATUS", "CSR_EPC", "CSR_TVEC", "CSR_SYSCALL_ID", "CSR_ISA_VERSION", "CSR_ASID", "CSR_MAX_ID"],
+    "required_terms": ["CSR", "53 CSR descriptors", "read access", "write access", "CSR_STATUS", "CSR_EPC", "CSR_TVEC", "CSR_SYSCALL_ID", "CSR_ISA_VERSION", "CSR_ASID", "CSR_MAX_ID"],
     "forbidden_generic_claims": ["CSRs are ordinary memory addresses", "the VM has only one status register"],
-    "rationale": "ternary_isa.h defines the 0-47 device/base map plus v2 IDs 48-52; vm_state.md names STATUS/EPC/TVEC/SYSCALL_ID as execution-critical reads."
+    "rationale": "ARCHITECTURE_MANIFEST.json defines the complete 0-52 CSR map and per-CSR access classes; generated descriptors drive constants, names, assembler lookup, and VM privilege checks."
   },
   {
     "id": "Q016",
@@ -269,9 +269,9 @@
       "tc:contract:contract-vm-execution"
     ],
     "expected_source_paths": ["docs/03_Execution_Engine/vm_state.md", "ternary_vm.h", "ternary_isa.h"],
-    "required_terms": ["r27", "TRAPPED", "PC", "CSR_EPC", "CSR_STATUS", "CSR_TVEC", "Kernel mode", "does not advance"],
+    "required_terms": ["r27", "TRAPPED", "PC", "CSR_EPC", "CSR_STATUS", "CSR_TVEC", "Kernel mode", "trap_active", "nested trap", "ERET", "does not advance"],
     "forbidden_generic_claims": ["faults always resume at the next instruction", "traps are host exceptions with no VM state change"],
-    "rationale": "The VM writes a fault record to r27, leaves the faulting PC, and only routed traps save EPC/status and jump to TVEC in kernel privilege."
+    "rationale": "The VM writes r27 only for real faults, leaves synchronous faults at their PC, routes through one active EPC/status frame, terminates nested handler faults without overwriting that frame, and clears handled fault state on ERET."
   },
   {
     "id": "Q017",

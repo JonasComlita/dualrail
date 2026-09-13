@@ -8,6 +8,13 @@ Source of truth: `ternary_native_ops.h`, `ternary_scalar.h`, `ternary_math.h`, a
 
 The native arithmetic layer exposes two integer formats and four floating formats.
 
+`UInt128` and its signed-magnitude `Int128` helper use checked public indices:
+out-of-range bit positions are rejected without shifting or indexing storage.
+Their division and modulo operations throw `std::domain_error` for a zero
+divisor; zero is never returned as an ambiguous error value. VM and ternary
+floating-point entry points continue to translate their own invalid divisions
+into architectural traps or special values before reaching that host contract.
+
 | Type | Role | Storage | Balanced range / layout |
 |------|------|---------|-------------------------|
 | `T1` | 1-trit integer | `uint8_t` | -1..+1, invalid sentinel `0xFF` |
@@ -17,7 +24,7 @@ The native arithmetic layer exposes two integer formats and four floating format
 | `Triple` / `T40` | native VM word float | `uint64_t` | 33 mantissa trits, 7 exponent trits, 6 guard trits |
 | `LongTriple` / `T50` | extended float | `UInt128` | 41 mantissa trits, 9 exponent trits, 14 guard trits |
 
-`T10`, `T20`, `T40`, and `T50` are aliases for `TernaryScalar<N>`. The scalar storage is positional base-3: trit `i` is represented by `(data / 3^i) % 3 - 1`. Floating zero is represented by raw storage value `0`; normalized non-zero values are packed from mantissa and exponent trits.
+`T10`, `T20`, `T40`, and `T50` are aliases for `TernaryScalar<N>`. The scalar storage is positional base-3: trit `i` is represented by `(data / 3^i) % 3 - 1`. Floating zero is represented by reserved raw storage value `0`; numeric `unpack()` and trit access expand it as neutral trits, while `unpackPositional()` remains available to raw storage consumers. Normalized non-zero values are packed from mantissa and exponent trits. Raw values in `[3^N, UNDERFLOW_DATA)` are invalid encodings rather than ordinary payloads.
 
 The top storage values are reserved sentinels for floating formats:
 
@@ -152,6 +159,7 @@ If a native result is invalid, the VM writes no result and raises `TRAP_ILLEGAL_
 
 Relevant focused tests:
 
+- `tests/test_uint128.cpp`: independent `__int128` comparisons where the compiler provides that oracle, including the portable Windows/MinGW implementation, boundary indices, and explicit divide-by-zero failures.
 - `tests/test_formats.cpp`: format constants, exhaustive `T1`/`T5` integer round-trips and overflow, exact small float arithmetic, fractional alignment, square root tolerances.
 - `tests/test_vm_widths.cpp`: width-suffixed VM arithmetic, scalar trap behavior, accumulator operations, trit count/scan, modulo and shift behavior.
 - `TEST_MANIFEST.json` suite `core`: includes `test_native_ops`, `test_multiwidth_vm`, `test_ternary_lanes`, and numeric workload coverage.

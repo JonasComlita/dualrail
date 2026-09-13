@@ -25,7 +25,7 @@ struct VMState {
     // Data memory (word-addressed, each word = TernaryValue/T40)
     DataMemory dmem;
 
-    // Control & Status Registers (0–46)
+    // Control & Status Registers (0–52, manifest-generated access policy)
     CSRFile csrs;
 
     // Privilege mode
@@ -85,12 +85,12 @@ In Kernel mode, addresses pass directly without translation.
 
 ## CSR File
 
-> Current Trit v2 note: the legacy/base CSR map occupies indices 0 through 46,
-> and the v2 extension continues through `CSR_ASID` at index 52. The VM sizes
-> the file as `CSR_MAX_ID + 1`; use `ARCHITECTURE_MANIFEST.json` for the current
-> complete map. The 47-slot sentence below describes only the legacy/base map.
-
-47 CSR slots (indices 0–46). Each stores a `TernaryValue`. See [register_map.md](../00_Quick_Ref/register_map.md) for the full table.
+The complete CSR map occupies indices 0 through 52. IDs, names, minimum read and
+write privilege, and device class are generated from `ARCHITECTURE_MANIFEST.json`.
+CSRs are not uniform storage slots: some expose stored state, some are computed,
+and some writes execute console, graphics, block-device, or power operations.
+See [architecture_v2.md](../04_Binary_Contract/architecture_v2.md) for the
+authoritative access table.
 
 Key CSRs the VM reads internally:
 - `CSR_STATUS` — current privilege mode
@@ -154,7 +154,13 @@ When any fault occurs:
 1. VM writes fault code to `r27` (`fault_valid = +1`, `fault_class = ...`).
 2. VM **does not advance PC** (PC points at the faulting instruction).
 3. VM status becomes `Trapped`.
-4. **If OS trap handler is configured** (`CSR_TVEC != 0`): VM instead saves PC → `CSR_EPC`, saves privilege → `CSR_STATUS`, and jumps to `CSR_TVEC` in Kernel mode.
+4. **If trap routing is enabled:** VM instead saves PC → `CSR_EPC`, saves
+   privilege and interrupt state, marks one trap frame active, and jumps to
+   `CSR_TVEC` in Kernel mode.
+5. A fault inside that active handler stops as a terminal nested trap without
+   overwriting the original saved frame.
+6. `ERET` restores the frame, clears its active marker, and clears a handled
+   synchronous r27 fault record.
 
 ---
 

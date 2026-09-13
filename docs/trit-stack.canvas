@@ -149,7 +149,7 @@
     "trit": {
       "schema": "trit.knowledge_freshness.v1",
       "source_file_count": 431,
-      "source_fingerprint": "0017ea9b6082528b9589a1cb57cedf717e5118e632f40050cbfbd2490a3d996d"
+      "source_fingerprint": "cb5975a4c322b3df7cba2cc1eb85c123e5cb517d483ffbe72a2c820cfe46a617"
     }
   },
   "nodes": [

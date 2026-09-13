@@ -3,8 +3,10 @@
 // =============================================================================
 //
 // TernaryScalar<N> is the canonical in-memory representation for ternary
-// numeric values of N trits. Storage is positional base-3: each value is a
-// single integer in [0, 3^N) where trit i has value (data / 3^i) % 3 - 1.
+// numeric values of N trits. Ordinary storage is positional base-3: each value
+// is a single integer in [0, 3^N) where trit i has value
+// (data / 3^i) % 3 - 1. Raw zero is reserved as canonical numeric zero; use
+// unpackPositional() only when deliberately interpreting the physical payload.
 //
 // This is the ONLY representation that arithmetic operates on directly.
 // Lane types (TritLane<N>) are SIMD transport views computed on demand.
@@ -25,6 +27,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 
 namespace sandbox {
@@ -100,6 +103,21 @@ struct TernaryScalar {
     [[nodiscard]] bool isUnderflow() const { return data == UNDERFLOW_DATA; }
     [[nodiscard]] bool isSpecial() const { return isOverflow() || isUnderflow(); }
 
+    [[nodiscard]] static Storage validStateCount() {
+        const Storage highestPower = pow3Table()[static_cast<std::size_t>(Trits - 1)];
+        if constexpr (std::is_same_v<Storage, UInt128>) {
+            return highestPower * static_cast<uint32_t>(3);
+        } else {
+            return static_cast<Storage>(highestPower * 3);
+        }
+    }
+
+    // A raw value in [3^N, UNDERFLOW_DATA) is neither a positional payload nor
+    // one of the two defined floating-point sentinels.
+    [[nodiscard]] bool isInvalid() const {
+        return !isSpecial() && data >= validStateCount();
+    }
+
     // --- Power-of-3 table ---------------------------------------------------
 
     static const std::array<Storage, Trits>& pow3Table() {
@@ -125,9 +143,13 @@ struct TernaryScalar {
 
     // --- Trit access --------------------------------------------------------
 
-    // Returns raw base-3 positional digit (0 = balanced 0, 1 = balanced +1, 2 = balanced -1).
+    // Returns the semantic positional digit:
+    //   0 = balanced -1, 1 = balanced 0, 2 = balanced +1.
+    // The canonical zero sentinel expands to neutral digits. Invalid indices,
+    // invalid raw payloads, and special values return 3.
     [[nodiscard]] uint8_t getTritRaw(int index) const {
-        if (isSpecial()) return 0;
+        if (index < 0 || index >= Trits || isSpecial() || isInvalid()) return 3;
+        if (isZero()) return 1;
         const auto& pow = pow3Table();
         if constexpr (std::is_same_v<Storage, UInt128>) {
             return static_cast<uint8_t>((data / pow[static_cast<std::size_t>(index)]) % static_cast<uint32_t>(3));
@@ -139,15 +161,21 @@ struct TernaryScalar {
     // HAL trit at position [index]: returns Trit enum for hardware abstraction.
     [[nodiscard]] Trit getTrit(int index) const {
         uint8_t raw = getTritRaw(index);
-        if (raw == 0) return Trit::Neutral;
-        if (raw == 1) return Trit::Positive;
-        return Trit::Negative;
+        if (raw == 0) return Trit::Negative;
+        if (raw == 1) return Trit::Neutral;
+        if (raw == 2) return Trit::Positive;
+        return Trit::Invalid;
     }
 
     // --- Pack / Unpack ------------------------------------------------------
 
     // Pack: balanced trit array {-1, 0, +1} → positional base-3 integer.
     [[nodiscard]] static TernaryScalar pack(const std::array<int8_t, Trits>& trits) {
+        for (int i = 0; i < Trits; ++i) {
+            const int8_t trit = trits[static_cast<std::size_t>(i)];
+            if (trit < -1 || trit > 1) return TernaryScalar{OVERFLOW_DATA};
+        }
+
         const auto& pow = pow3Table();
         if constexpr (std::is_same_v<Storage, UInt128>) {
             UInt128 result{};
@@ -155,6 +183,9 @@ struct TernaryScalar {
                 uint8_t u_trit = static_cast<uint8_t>(trits[static_cast<std::size_t>(i)] + 1);
                 result = result + pow[static_cast<std::size_t>(i)] * static_cast<uint32_t>(u_trit);
             }
+            // Raw zero is reserved for canonical floating zero, so the
+            // all-negative positional pattern is not a representable payload.
+            if (result.isZero()) return TernaryScalar{OVERFLOW_DATA};
             return TernaryScalar{result};
         } else {
             Storage result = 0;
@@ -162,14 +193,17 @@ struct TernaryScalar {
                 uint8_t u_trit = static_cast<uint8_t>(trits[static_cast<std::size_t>(i)] + 1);
                 result += static_cast<Storage>(u_trit) * pow[static_cast<std::size_t>(i)];
             }
+            if (result == 0) return TernaryScalar{OVERFLOW_DATA};
             return TernaryScalar{result};
         }
     }
 
-    // Unpack: positional base-3 integer → balanced trit array {-1, 0, +1}.
-    [[nodiscard]] std::array<int8_t, Trits> unpack() const {
+    // Decode the physical positional payload without applying the numeric-zero
+    // sentinel. This is for storage formats (for example packed model weights)
+    // that deliberately use TernaryScalar's carrier as a raw trit container.
+    [[nodiscard]] std::array<int8_t, Trits> unpackPositional() const {
         std::array<int8_t, Trits> out{};
-        if (isSpecial()) return out;
+        if (isSpecial() || isInvalid()) return out;
         if constexpr (std::is_same_v<Storage, UInt128>) {
             UInt128 temp = data;
             for (int i = 0; i < Trits; ++i) {
@@ -185,6 +219,14 @@ struct TernaryScalar {
             }
         }
         return out;
+    }
+
+    // Unpack a numeric scalar. Raw zero is a reserved canonical-zero sentinel,
+    // so it expands to all neutral trits rather than the physical all-negative
+    // digit pattern returned by unpackPositional().
+    [[nodiscard]] std::array<int8_t, Trits> unpack() const {
+        if (isZero()) return {};
+        return unpackPositional();
     }
 
     // --- Equality -----------------------------------------------------------
@@ -228,6 +270,9 @@ struct TernaryScalar {
     // POW3 table as a C-style array accessor for backward compatibility.
     // Usage: TernaryScalar<40>::POW3(i) instead of Triple::POW3_40[i]
     [[nodiscard]] static Storage POW3(int index) {
+        if (index < 0 || index >= Trits) {
+            throw std::out_of_range("TernaryScalar::POW3 index out of range");
+        }
         return pow3Table()[static_cast<std::size_t>(index)];
     }
 

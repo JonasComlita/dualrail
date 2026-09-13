@@ -1246,6 +1246,18 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         }
 
         case Opcode::CSRR: {
+            if (!isValidCSR(iw.imm)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            if (!canReadCSR(iw.imm, vm.privilege)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 OS_CAUSE_PROTECTION_FAULT,
+                                 vm.pc);
+                return vm.status;
+            }
             TernaryValue value;
             if (!vm.readCSR(iw.imm, value)) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
@@ -1258,9 +1270,19 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         }
 
         case Opcode::CSRW: {
-            if (vm.privilege != PrivilegeMode::Kernel && iw.imm < 22) {
+            const auto* descriptor = architecture::v2::csrDescriptor(iw.imm);
+            if (descriptor == nullptr) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
-                                 OS_CAUSE_PROTECTION_FAULT,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            if (!canWriteCSR(iw.imm, vm.privilege)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 descriptor->write_access ==
+                                         architecture::v2::CsrAccessLevel::NONE
+                                     ? OS_CAUSE_ILLEGAL_INSTRUCTION
+                                     : OS_CAUSE_PROTECTION_FAULT,
                                  vm.pc);
                 return vm.status;
             }
@@ -1274,9 +1296,20 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         }
 
         case Opcode::CSRRW: {
-            if (vm.privilege != PrivilegeMode::Kernel && iw.rs2 < 22) {
+            const auto* descriptor = architecture::v2::csrDescriptor(iw.rs2);
+            if (descriptor == nullptr) {
                 vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
-                                 OS_CAUSE_PROTECTION_FAULT,
+                                 OS_CAUSE_ILLEGAL_INSTRUCTION,
+                                 vm.pc);
+                return vm.status;
+            }
+            if (!canReadCSR(iw.rs2, vm.privilege) ||
+                !canWriteCSR(iw.rs2, vm.privilege)) {
+                vm.trapWithCause(TrapCode::TRAP_ILLEGAL_OP,
+                                 descriptor->write_access ==
+                                         architecture::v2::CsrAccessLevel::NONE
+                                     ? OS_CAUSE_ILLEGAL_INSTRUCTION
+                                     : OS_CAUSE_PROTECTION_FAULT,
                                  vm.pc);
                 return vm.status;
             }

@@ -33,7 +33,7 @@ static const double LOG3 = std::log(3.0);
 //
 // ENCODING CONTRACT — READ BEFORE ADDING NEW OPS:
 //   A) BASE-3 POSITIONAL (used by TernaryScalar pack/unpack and all ops):
-//      digit 0 = balanced 0, digit 1 = balanced +1, digit 2 = balanced -1
+//      digit 0 = balanced -1, digit 1 = balanced 0, digit 2 = balanced +1
 //   B) DUAL-RAIL (Trit enum, for HAL):
 //      Neutral=0x0, Positive=0x1, Negative=0x2, Invalid=0x3
 //   These encodings are NOT interchangeable.

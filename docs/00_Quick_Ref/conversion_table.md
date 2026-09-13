@@ -48,8 +48,10 @@ The **T5 Tryte** is the standard 8-bit aligned unit. It follows strict balanced 
 For higher-precision types based on `TernaryScalar<N>`, the system uses a **Zero Sentinel** pattern for performance.
 
 *   **Logic**: `isZero()` returns true if `data == 0`.
-*   **Physical State**: A `TernaryScalar` with `data == 0` has a trit pattern of **all -1s**.
-*   **Behavior**: The `decode()` and arithmetic functions special-case this state to represent numeric `0.0`.
+*   **Physical State**: A `TernaryScalar` with `data == 0` has positional digits that would physically decode as **all -1s**.
+*   **Numeric Behavior**: `unpack()`, `getTritRaw()`, and arithmetic expand this reserved state as neutral trits representing numeric `0.0`.
+*   **Raw Storage Behavior**: `unpackPositional()` is the explicit escape hatch for storage formats, such as packed ternary model weights, that need the physical all-negative decoding.
+*   **Construction Rule**: `pack()` remains a positional encoder and rejects the all-negative collision as overflow. Numeric constructors and arithmetic create canonical zero directly as raw zero.
 
 | Type | Biased Zero (All trits=0) | Zero Sentinel (data=0) |
 | :--- | :--- | :--- |
@@ -59,7 +61,8 @@ For higher-precision types based on `TernaryScalar<N>`, the system uses a **Zero
 ---
 
 ## ⚡ Quick Conversion Logic
-To calculate the stored value of a decimal number **N** for any **X-trit** width:
+To calculate the positional payload of a balanced integer **N** for an
+**X-trit** width before applying a numeric format's reserved-state rules:
 
 1.  **Find the Bias**: $B = \frac{3^X - 1}{2}$
 2.  **Add the Bias**: $Stored = N + B$
@@ -68,3 +71,6 @@ To calculate the stored value of a decimal number **N** for any **X-trit** width
 *Example for T5 (Tryte):*
 *   To store **5**: $5 + 121 = 126$ (`0x7E`).
 *   To store **-10**: $-10 + 121 = 111$ (`0x6F`).
+
+This bias formula describes strict positional integer storage. T10–T50 numeric
+formats additionally canonicalize floating zero to raw `0`.

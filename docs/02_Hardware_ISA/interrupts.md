@@ -1,6 +1,8 @@
 # Traps, Interrupts, CSRs, and Privilege
 
-Source of truth: `ternary_isa.h` — `TrapCode`, `OS_CAUSE_*`, `PrivilegeMode`, CSR constants.
+Sources of truth: `ARCHITECTURE_MANIFEST.json` for CSR IDs and access classes,
+`ternary_isa.h` for trap/privilege constants, and `ternary_vm_state.h` for trap
+entry, return, and CSR side effects.
 
 ---
 
@@ -16,9 +18,18 @@ enum class PrivilegeMode : int8_t {
 
 The VM starts in **Kernel mode**. User processes run in User mode. Mode is stored in the `status` CSR.
 
-**Transition into kernel:** any trap automatically saves `PC` → `CSR epc`, saves current mode → `status`, and jumps to `CSR tvec`.
+**Transition into kernel:** when trap routing has been enabled by a valid write
+to `tvec`, a trap saves `PC` → `epc`, saves current mode and interrupt state,
+and jumps to `tvec`. Address zero is a valid vector; routing is represented by
+a separate architectural flag rather than inferred from `tvec != 0`.
 
-**Return from kernel:** `ERET` restores mode from saved status and jumps to `CSR epc`.
+**Return from kernel:** `ERET` requires an active routed trap, restores the saved
+mode and interrupt state, jumps to `epc`, and clears the handled `r27` record.
+An `ERET` with no active trap is illegal.
+
+There is one hardware trap save frame. A synchronous fault inside an active
+handler is a terminal nested trap: it does not overwrite the original `epc`,
+`cause`, or previous privilege state.
 
 ---
 
@@ -37,7 +48,10 @@ r27.trit[1] = fault_class:
  +1  → TRAP_ILLEGAL_OP   (unknown opcode or 0b11 trit in word)
 ```
 
-On clean execution r27 = `TRAP_NONE` (fault_valid = 0).
+On clean execution r27 = `TRAP_NONE` (fault_valid = 0). Routed syscalls and
+timer interrupts are events rather than legacy faults, so they leave r27 at
+`TRAP_NONE` and identify themselves through `cause`. A routed synchronous fault
+sets r27 while its handler runs; successful `ERET` clears it.
 
 ---
 
@@ -97,7 +111,14 @@ See `SYSCALL_MANIFEST.json` for the full service ID table.
 | `CSRW imm, Rs1` | `CSR[imm] ← Rs1` |
 | `CSRRW Rd, Rs1, imm` | Atomic: `Rd ← CSR[imm]; CSR[imm] ← Rs1` |
 
-Valid CSR indices: 0–46 (`CSR_MAX_ID = CSR_BLOCK_WORDS = 46`).
+Valid CSR indices are 0–52. Each CSR has generated read and write access levels;
+there is no numeric privilege cutoff. The complete table is generated in
+[`architecture_v2.md`](../04_Binary_Contract/architecture_v2.md).
+
+User mode retains its console, input, graphics, and architecture-discovery
+interfaces. Block I/O, power control, timer/MMU state, page-table roots, and
+trap-frame mutation require Kernel mode. Writes to architecturally read-only
+CSRs are illegal in every mode.
 
 ---
 
@@ -134,10 +155,11 @@ The framebuffer dimensions are set in the `.tboot` header (`framebuffer_width`, 
 ## Block Device Protocol
 
 ```
-1. Set block_index (device index)
-2. Set block_addr (block address)
-3. Set block_count / block_words
-4. Set block_cmd (read=T_NEG, write=T_POS, sync=T_ZER)
+1. Optionally read block_count and block_words to discover device geometry
+2. Set block_index (device block index)
+3. Set block_addr (DMEM or IMEM transfer address)
+4. Set `block_cmd`: 1=read block to DMEM, 2=write DMEM to block, 3=read block
+   to IMEM, 4=flush backing storage; a negative value clears status
 5. Poll block_status
 ```
 

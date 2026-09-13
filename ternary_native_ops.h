@@ -85,7 +85,9 @@ constexpr int pow3Int(int n) {
     UInt128 numerator,
     UInt128 denominator) {
 
-    if (denominator == UInt128{0}) return UInt128{0};
+    if (denominator == UInt128{0}) {
+        throw std::domain_error("rounded division by zero");
+    }
     UInt128 quotient = numerator / denominator;
     const UInt128 remainder = numerator % denominator;
     if (remainder * 2 >= denominator) quotient += UInt128{1};
@@ -647,10 +649,10 @@ template<class Fmt>
 
 [[nodiscard]] inline bool isInvalid(T1 value) { return detail::intInvalid<detail::FmtT1>(value); }
 [[nodiscard]] inline bool isInvalid(T5 value) { return detail::intInvalid<detail::FmtT5>(value); }
-[[nodiscard]] inline bool isInvalid(T10 value) { return value.data >= 59049u && !value.isSpecial(); }
-[[nodiscard]] inline bool isInvalid(T20 value) { return value.data >= 3486784401u && !value.isSpecial(); }
-[[nodiscard]] inline bool isInvalid(Triple value) { return value.data >= detail::pow3(40) && !value.isSpecial(); }
-[[nodiscard]] inline bool isInvalid(LongTriple value) { return value.data >= detail::pow3UInt128(50) && !value.isSpecial(); }
+[[nodiscard]] inline bool isInvalid(T10 value) { return value.isInvalid(); }
+[[nodiscard]] inline bool isInvalid(T20 value) { return value.isInvalid(); }
+[[nodiscard]] inline bool isInvalid(Triple value) { return value.isInvalid(); }
+[[nodiscard]] inline bool isInvalid(LongTriple value) { return value.isInvalid(); }
 
 [[nodiscard]] inline int8_t sign(T1 t) { return detail::intSign<detail::FmtT1>(t); }
 [[nodiscard]] inline int8_t sign(T5 t) { return detail::intSign<detail::FmtT5>(t); }

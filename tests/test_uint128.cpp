@@ -1,6 +1,6 @@
 #include "test_multiwidth_vm_common.h"
 
-#if defined(__SIZEOF_INT128__) && !defined(_WIN32)
+#if defined(__SIZEOF_INT128__)
 void testUInt128Core() {
     std::cout << "[1] UInt128 portable storage arithmetic\n";
     using sandbox::UInt128;
@@ -97,9 +97,76 @@ void testUInt128Core() {
                product.limb[2] == max64 - 1 && product.limb[3] == max64,
                "UInt256 max128 squared limbs");
     }
+
+    {
+        UInt128 bits{};
+        bits.setBit(0);
+        bits.setBit(127);
+        expect(bits.bit(0) && bits.bit(127),
+               "UInt128 boundary bit access");
+        const UInt128 before = bits;
+        bits.setBit(-1);
+        bits.setBit(128);
+        expect(bits == before && !bits.bit(-1) && !bits.bit(128),
+               "UInt128 rejects out-of-range bit indices without mutation");
+
+        UInt256 wide{};
+        wide.limb[3] = 1ULL << 63;
+        expect(wide.bit(255) && !wide.bit(-1) && !wide.bit(256),
+               "UInt256 bounds-checks bit indices");
+        const UInt256 wide_before = wide;
+        wide.addShifted(UInt128{1}, -1);
+        wide.addShifted(UInt128{1}, 256);
+        expect(wide.limb[0] == wide_before.limb[0] &&
+                   wide.limb[1] == wide_before.limb[1] &&
+                   wide.limb[2] == wide_before.limb[2] &&
+                   wide.limb[3] == wide_before.limb[3],
+               "UInt256 rejects out-of-range shifted additions");
+    }
+
+    {
+        auto expectDomainError = [](auto&& operation, const std::string& label) {
+            bool threw = false;
+            try {
+                operation();
+            } catch (const std::domain_error&) {
+                threw = true;
+            }
+            expect(threw, label);
+        };
+        expectDomainError(
+            [] { (void)(UInt128{1} / UInt128{}); },
+            "UInt128 division by zero is explicit");
+        expectDomainError(
+            [] { (void)(UInt128{1} % UInt128{}); },
+            "UInt128 modulo by zero is explicit");
+        expectDomainError(
+            [] { (void)(UInt128{1} / uint32_t{0}); },
+            "UInt128 small division by zero is explicit");
+        expectDomainError(
+            [] { (void)(UInt128{1} % uint32_t{0}); },
+            "UInt128 small modulo by zero is explicit");
+        expectDomainError(
+            [] {
+                (void)sandbox::native_ops::detail::roundedDivide(
+                    UInt128{1}, UInt128{});
+            },
+            "rounded UInt128 division by zero is explicit");
+        expectDomainError(
+            [] {
+                (void)(sandbox::Int128::fromLongLong(1) / UInt128{});
+            },
+            "Int128/UInt128 division by zero is explicit");
+        expectDomainError(
+            [] {
+                (void)(sandbox::Int128::fromLongLong(1) /
+                       sandbox::Int128{});
+            },
+            "Int128/Int128 division by zero is explicit");
+    }
 }
 #else
 void testUInt128Core() {
-    std::cout << "[1] UInt128 portable storage arithmetic skipped: no host __int128 oracle\n";
+    std::cout << "[1] UInt128 portable storage arithmetic skipped: compiler has no __int128 oracle\n";
 }
 #endif

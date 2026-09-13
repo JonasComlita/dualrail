@@ -45,7 +45,9 @@ Symbolic constants for the three trit values: `T_NEG = -1`, `T_ZER = 0`, `T_POS 
 50-trit floating-point. 41-trit mantissa, 9-trit exponent. The widest standard type. Stored in `UInt128`. Alias for `TernaryScalar<50>`.
 
 **TernaryScalar\<N\>**
-Generic template for all ternary scalar types. Uses positional base-3 storage.
+Generic positional base-3 carrier for T10–T50 numeric scalar types. Raw zero is
+the canonical numeric-zero sentinel; `unpack()` exposes semantic trits, while
+`unpackPositional()` is the explicit raw-storage decoder.
 
 **TritLane\<N\>**
 SIMD transport type. N trits packed as 2 bits each. Used for GPU/vector operations. NOT the same encoding as `TernaryScalar`.

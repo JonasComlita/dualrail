@@ -58,7 +58,9 @@
 // DECISION 3 — EXCEPTION / TRAP MODEL
 //   A dedicated trap register r27 lives outside the 27-register general file.
 //   It is written by the VM on any fault and is read-only from the ISA.
-//   The VM halts after writing r27 unless the TRAP_HALT flag is cleared.
+//   Without configured trap routing, the VM halts after writing r27. With
+//   routing, synchronous faults remain visible until ERET; syscalls and timer
+//   interrupts use CSR_CAUSE and do not masquerade as legacy r27 faults.
 //
 //   r27 is encoded as a two-field ternary fault record:
 //     trit[0] = fault_valid. 0 means no fault, +1 means fault_class is valid.
@@ -69,6 +71,8 @@
 //
 //   On clean execution r27 holds TRAP_NONE (fault_valid = 0,
 //   all other trits zero — distinct from all fault codes).
+//   Routed ERET restores that no-fault state. A fault inside an active handler
+//   is terminal and preserves the original EPC/privilege save frame.
 //
 // =============================================================================
 
@@ -693,122 +697,96 @@ enum class PrivilegeMode : int8_t {
     User       = T_POS,
 };
 
-static constexpr int CSR_EPC             = 0;
-static constexpr int CSR_CAUSE           = 1;
-static constexpr int CSR_STATUS          = 2;
-static constexpr int CSR_TVEC            = 3;
-static constexpr int CSR_SCRATCH         = 4;
-static constexpr int CSR_CYCLE           = 5;
-static constexpr int CSR_TIMER_RELOAD    = 6;
-static constexpr int CSR_TIMER_COUNTER   = 7;
-static constexpr int CSR_TIMER_ENABLE    = 8;
-static constexpr int CSR_TIMER_PENDING   = 9;
-static constexpr int CSR_USER_IMEM_BASE  = 10;
-static constexpr int CSR_USER_IMEM_LIMIT = 11;
-static constexpr int CSR_USER_DMEM_BASE  = 12;
-static constexpr int CSR_USER_DMEM_LIMIT = 13;
-static constexpr int CSR_SYSCALL_ID      = 14;
-static constexpr int CSR_MMU_ENABLE      = 15;
-static constexpr int CSR_USER_IMEM_PTBR  = 16;
-static constexpr int CSR_USER_IMEM_PAGES = 17;
-static constexpr int CSR_USER_DMEM_PTBR  = 18;
-static constexpr int CSR_USER_DMEM_PAGES = 19;
-static constexpr int CSR_PAGE_FAULT_ADDR = 20;
-static constexpr int CSR_PAGE_FAULT_ACCESS = 21;
-static constexpr int CSR_CONSOLE_OUT     = 22;
-static constexpr int CSR_CONSOLE_CTRL    = 23;
-static constexpr int CSR_CONSOLE_IN      = 24;
-static constexpr int CSR_CONSOLE_IN_CTRL = 25;
-static constexpr int CSR_MOUSE_X         = 26;
-static constexpr int CSR_MOUSE_Y         = 27;
-static constexpr int CSR_MOUSE_BTN       = 28;
-static constexpr int CSR_GPU_X1         = 29;
-static constexpr int CSR_GPU_Y1         = 30;
-static constexpr int CSR_GPU_X2         = 31;
-static constexpr int CSR_GPU_Y2         = 32;
-static constexpr int CSR_GPU_COLOR      = 33;
-static constexpr int CSR_GPU_CMD        = 34;
-static constexpr int CSR_GPU_PAGE       = 35;
-static constexpr int CSR_GPU_DRAW_BASE  = 36;
-static constexpr int CSR_GPU_MODE       = 37;
-static constexpr int CSR_SPRITE_X       = 38;
-static constexpr int CSR_SPRITE_Y       = 39;
-static constexpr int CSR_SPRITE_ATTR    = 40;
-static constexpr int CSR_BLOCK_INDEX    = 41;
-static constexpr int CSR_BLOCK_ADDR     = 42;
-static constexpr int CSR_BLOCK_CMD      = 43;
-static constexpr int CSR_BLOCK_STATUS   = 44;
-static constexpr int CSR_BLOCK_COUNT    = 45;
-static constexpr int CSR_BLOCK_WORDS    = 46;
-static constexpr int CSR_POWER_CONTROL  = 47;
-static constexpr int CSR_ISA_VERSION    = architecture::v2::CSR_ISA_VERSION;
-static constexpr int CSR_ISA_FEATURES   = architecture::v2::CSR_ISA_FEATURES;
-static constexpr int CSR_MMU_BASE_PAGE_WORDS = architecture::v2::CSR_MMU_BASE_PAGE_WORDS;
-static constexpr int CSR_MMU_SUPERPAGE_WORDS = architecture::v2::CSR_MMU_SUPERPAGE_WORDS;
-static constexpr int CSR_ASID           = architecture::v2::CSR_ASID;
-static constexpr int CSR_MAX_ID         = CSR_ASID;
+#define TRIT_CSR_ALIAS(name) \
+    inline constexpr int CSR_##name = architecture::v2::CSR_##name
+TRIT_CSR_ALIAS(EPC);
+TRIT_CSR_ALIAS(CAUSE);
+TRIT_CSR_ALIAS(STATUS);
+TRIT_CSR_ALIAS(TVEC);
+TRIT_CSR_ALIAS(SCRATCH);
+TRIT_CSR_ALIAS(CYCLE);
+TRIT_CSR_ALIAS(TIMER_RELOAD);
+TRIT_CSR_ALIAS(TIMER_COUNTER);
+TRIT_CSR_ALIAS(TIMER_ENABLE);
+TRIT_CSR_ALIAS(TIMER_PENDING);
+TRIT_CSR_ALIAS(USER_IMEM_BASE);
+TRIT_CSR_ALIAS(USER_IMEM_LIMIT);
+TRIT_CSR_ALIAS(USER_DMEM_BASE);
+TRIT_CSR_ALIAS(USER_DMEM_LIMIT);
+TRIT_CSR_ALIAS(SYSCALL_ID);
+TRIT_CSR_ALIAS(MMU_ENABLE);
+TRIT_CSR_ALIAS(USER_IMEM_PTBR);
+TRIT_CSR_ALIAS(USER_IMEM_PAGES);
+TRIT_CSR_ALIAS(USER_DMEM_PTBR);
+TRIT_CSR_ALIAS(USER_DMEM_PAGES);
+TRIT_CSR_ALIAS(PAGE_FAULT_ADDR);
+TRIT_CSR_ALIAS(PAGE_FAULT_ACCESS);
+TRIT_CSR_ALIAS(CONSOLE_OUT);
+TRIT_CSR_ALIAS(CONSOLE_CTRL);
+TRIT_CSR_ALIAS(CONSOLE_IN);
+TRIT_CSR_ALIAS(CONSOLE_IN_CTRL);
+TRIT_CSR_ALIAS(MOUSE_X);
+TRIT_CSR_ALIAS(MOUSE_Y);
+TRIT_CSR_ALIAS(MOUSE_BTN);
+TRIT_CSR_ALIAS(GPU_X1);
+TRIT_CSR_ALIAS(GPU_Y1);
+TRIT_CSR_ALIAS(GPU_X2);
+TRIT_CSR_ALIAS(GPU_Y2);
+TRIT_CSR_ALIAS(GPU_COLOR);
+TRIT_CSR_ALIAS(GPU_CMD);
+TRIT_CSR_ALIAS(GPU_PAGE);
+TRIT_CSR_ALIAS(GPU_DRAW_BASE);
+TRIT_CSR_ALIAS(GPU_MODE);
+TRIT_CSR_ALIAS(SPRITE_X);
+TRIT_CSR_ALIAS(SPRITE_Y);
+TRIT_CSR_ALIAS(SPRITE_ATTR);
+TRIT_CSR_ALIAS(BLOCK_INDEX);
+TRIT_CSR_ALIAS(BLOCK_ADDR);
+TRIT_CSR_ALIAS(BLOCK_CMD);
+TRIT_CSR_ALIAS(BLOCK_STATUS);
+TRIT_CSR_ALIAS(BLOCK_COUNT);
+TRIT_CSR_ALIAS(BLOCK_WORDS);
+TRIT_CSR_ALIAS(POWER_CONTROL);
+TRIT_CSR_ALIAS(ISA_VERSION);
+TRIT_CSR_ALIAS(ISA_FEATURES);
+TRIT_CSR_ALIAS(MMU_BASE_PAGE_WORDS);
+TRIT_CSR_ALIAS(MMU_SUPERPAGE_WORDS);
+TRIT_CSR_ALIAS(ASID);
+#undef TRIT_CSR_ALIAS
+inline constexpr int CSR_MAX_ID = architecture::v2::CSR_MAX_ID;
 
 [[nodiscard]] inline bool isValidCSR(int id) {
-    return id >= 0 && id <= CSR_MAX_ID;
+    return architecture::v2::csrDescriptor(id) != nullptr;
 }
 
 [[nodiscard]] inline const char* csrToString(int id) {
-    switch (id) {
-        case CSR_EPC: return "epc";
-        case CSR_CAUSE: return "cause";
-        case CSR_STATUS: return "status";
-        case CSR_TVEC: return "tvec";
-        case CSR_SCRATCH: return "scratch";
-        case CSR_CYCLE: return "cycle";
-        case CSR_TIMER_RELOAD: return "timer_reload";
-        case CSR_TIMER_COUNTER: return "timer_counter";
-        case CSR_TIMER_ENABLE: return "timer_enable";
-        case CSR_TIMER_PENDING: return "timer_pending";
-        case CSR_USER_IMEM_BASE: return "user_imem_base";
-        case CSR_USER_IMEM_LIMIT: return "user_imem_limit";
-        case CSR_USER_DMEM_BASE: return "user_dmem_base";
-        case CSR_USER_DMEM_LIMIT: return "user_dmem_limit";
-        case CSR_SYSCALL_ID: return "syscall_id";
-        case CSR_MMU_ENABLE: return "mmu_enable";
-        case CSR_USER_IMEM_PTBR: return "user_imem_ptbr";
-        case CSR_USER_IMEM_PAGES: return "user_imem_pages";
-        case CSR_USER_DMEM_PTBR: return "user_dmem_ptbr";
-        case CSR_USER_DMEM_PAGES: return "user_dmem_pages";
-        case CSR_PAGE_FAULT_ADDR: return "page_fault_addr";
-        case CSR_PAGE_FAULT_ACCESS: return "page_fault_access";
-        case CSR_CONSOLE_OUT: return "console_out";
-        case CSR_CONSOLE_CTRL: return "console_ctrl";
-        case CSR_CONSOLE_IN: return "console_in";
-        case CSR_CONSOLE_IN_CTRL: return "console_in_ctrl";
-        case CSR_MOUSE_X: return "mouse_x";
-        case CSR_MOUSE_Y: return "mouse_y";
-        case CSR_MOUSE_BTN: return "mouse_btn";
-        case CSR_GPU_X1: return "gpu_x1";
-        case CSR_GPU_Y1: return "gpu_y1";
-        case CSR_GPU_X2: return "gpu_x2";
-        case CSR_GPU_Y2: return "gpu_y2";
-        case CSR_GPU_COLOR: return "gpu_color";
-        case CSR_GPU_CMD: return "gpu_cmd";
-        case CSR_GPU_PAGE: return "gpu_page";
-        case CSR_GPU_DRAW_BASE: return "gpu_draw_base";
-        case CSR_GPU_MODE: return "gpu_mode";
-        case CSR_SPRITE_X: return "sprite_x";
-        case CSR_SPRITE_Y: return "sprite_y";
-        case CSR_SPRITE_ATTR: return "sprite_attr";
-        case CSR_BLOCK_INDEX: return "block_index";
-        case CSR_BLOCK_ADDR: return "block_addr";
-        case CSR_BLOCK_CMD: return "block_cmd";
-        case CSR_BLOCK_STATUS: return "block_status";
-        case CSR_BLOCK_COUNT: return "block_count";
-        case CSR_BLOCK_WORDS: return "block_words";
-        case CSR_POWER_CONTROL: return "power_control";
-        case CSR_ISA_VERSION: return "isa_version";
-        case CSR_ISA_FEATURES: return "isa_features";
-        case CSR_MMU_BASE_PAGE_WORDS: return "mmu_base_page_words";
-        case CSR_MMU_SUPERPAGE_WORDS: return "mmu_superpage_words";
-        case CSR_ASID: return "asid";
-        default: return "unknown";
+    const auto* descriptor = architecture::v2::csrDescriptor(id);
+    return descriptor != nullptr ? descriptor->name.data() : "unknown";
+}
+
+[[nodiscard]] inline bool csrAccessAllows(
+    architecture::v2::CsrAccessLevel access,
+    PrivilegeMode privilege) {
+    using architecture::v2::CsrAccessLevel;
+    if (access == CsrAccessLevel::NONE) return false;
+    if (privilege == PrivilegeMode::Kernel) return true;
+    if (privilege == PrivilegeMode::Supervisor) {
+        return access == CsrAccessLevel::SUPERVISOR ||
+               access == CsrAccessLevel::USER;
     }
+    return access == CsrAccessLevel::USER;
+}
+
+[[nodiscard]] inline bool canReadCSR(int id, PrivilegeMode privilege) {
+    const auto* descriptor = architecture::v2::csrDescriptor(id);
+    return descriptor != nullptr &&
+           csrAccessAllows(descriptor->read_access, privilege);
+}
+
+[[nodiscard]] inline bool canWriteCSR(int id, PrivilegeMode privilege) {
+    const auto* descriptor = architecture::v2::csrDescriptor(id);
+    return descriptor != nullptr &&
+           csrAccessAllows(descriptor->write_access, privilege);
 }
 
 #include "generated/architecture_isa_v2.h"

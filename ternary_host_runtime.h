@@ -527,7 +527,10 @@ inline bool writeCheckpointState(const std::filesystem::path& path,
     writer.pod(static_cast<std::uint8_t>(state.previous_privilege));
     writer.pod(static_cast<std::uint8_t>(state.interrupt_enable));
     writer.pod(static_cast<std::uint8_t>(state.previous_interrupt_enable));
-    writer.pod(static_cast<std::uint8_t>(state.trap_routing_enabled));
+    const std::uint8_t trap_state =
+        (state.trap_routing_enabled ? 0x1u : 0u) |
+        (state.trap_active ? 0x2u : 0u);
+    writer.pod(trap_state);
     writer.pod(state.epc); writer.pod(state.cause); writer.pod(state.tvec); writer.pod(state.scratch);
     writer.pod(state.cycle_count); writer.pod(state.branch_instructions_count);
     writer.pod(state.decode_instructions_count); writer.pod(state.timer_reload);
@@ -719,7 +722,9 @@ inline bool readCheckpointState(const std::filesystem::path& path,
     machine->previous_privilege = static_cast<isa::PrivilegeMode>(previous_privilege);
     machine->interrupt_enable = interrupt != 0;
     machine->previous_interrupt_enable = previous_interrupt != 0;
-    machine->trap_routing_enabled = trap_routing != 0;
+    if (trap_routing > 3) return false;
+    machine->trap_routing_enabled = (trap_routing & 0x1u) != 0;
+    machine->trap_active = (trap_routing & 0x2u) != 0;
     machine->timer_enable = timer_enable != 0;
     machine->timer_pending = timer_pending != 0;
     machine->console_char_mode = char_mode != 0;
