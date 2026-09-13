@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { WorkspaceRecord, WorkspaceSnapshot } from "./workspaceApi";
 import "./treatcode-theme.css";
+import { SiteHeader } from "./SiteHeader";
 
 const API_ROOT = "/api/workspaces/v1";
 
@@ -153,14 +154,7 @@ export default function WorkspaceApp() {
 
   return (
     <div className="workspace-app">
-      <header className="workspace-header">
-        <a className="workspace-wordmark" href="/">TREATCODE</a>
-        <nav aria-label="Workspace navigation">
-          <a href="/stack">Stack Explorer</a>
-          <a href="/learn">Learn</a>
-          <a className="active" href="/workspaces">Workspaces</a>
-        </nav>
-      </header>
+      <SiteHeader active="workspaces" />
       <main className="workspace-main">
         <section className="workspace-hero">
           <div>

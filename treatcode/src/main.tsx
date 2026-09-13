@@ -13,6 +13,8 @@ const isPublicReadingRoute =
   normalizedPath.startsWith("/stack/") ||
   normalizedPath === "/learn" ||
   normalizedPath.startsWith("/learn/") ||
+  normalizedPath === "/research" ||
+  normalizedPath.startsWith("/research/") ||
   normalizedPath === "/search" ||
   normalizedPath.startsWith("/resources") ||
   normalizedPath === "/evidence" ||

@@ -19,12 +19,12 @@ function buildIfNeeded() {
 
 try {
   buildIfNeeded();
-  for (const route of ["index.html", "stack/index.html", "learn/index.html"]) {
+  for (const route of ["index.html", "stack/index.html", "learn/index.html", "research/index.html"]) {
     const html = fs.readFileSync(path.join(appRoot, "dist", route), "utf8");
     assert(/<html[^>]+lang="en"/.test(html), `${route} has no declared language`);
     assert(html.includes('id="root"'), `${route} has no root mount`);
-    assert(html.includes("Stack Explorer") || route === "index.html", `${route} has no useful stack navigation`);
-    assert(html.includes("Learn") || route === "stack/index.html", `${route} has no useful learning navigation`);
+    assert(html.includes(route === "research/index.html" ? "Research" : "Stack Explorer") || route === "index.html", `${route} has no useful stack navigation`);
+    assert(html.includes("Learn") || route === "stack/index.html" || route === "research/index.html", `${route} has no useful learning navigation`);
     assert(html.includes("TreatCode"), `${route} has no TreatCode identity`);
   }
   const root = fs.readFileSync(path.join(appRoot, "dist", "index.html"), "utf8");
@@ -32,13 +32,20 @@ try {
   const stack = fs.readFileSync(path.join(appRoot, "dist", "stack", "index.html"), "utf8");
   assert(stack.includes("Trace every dependency") && stack.includes("/api/public/v1/stack-nodes"), "stack route has no useful static content");
   const learn = fs.readFileSync(path.join(appRoot, "dist", "learn", "index.html"), "utf8");
-  assert(learn.includes("Learn from the boundary") && learn.includes("/practice"), "learn route has no useful static content");
+  assert((learn.includes("Learn from the boundary") || learn.includes("Learn the whole Trit stack")) && learn.includes("/practice"), "learn route has no useful static content");
   const practice = fs.readFileSync(path.join(appRoot, "dist", "practice", "index.html"), "utf8");
   assert(practice.includes("<title>Practice · TreatCode</title>") && practice.includes("id=\"root\""), "practice route has no dedicated production entry");
+  const research = fs.readFileSync(path.join(appRoot, "dist", "research", "index.html"), "utf8");
+  assert(research.includes("Research Library") && research.includes("/research"), "research route has no dedicated production entry");
+  const researchCatalog = JSON.parse(fs.readFileSync(path.join(appRoot, "src", "content", "research", "catalog.json"), "utf8"));
+  assert(researchCatalog.localCount === 93 && researchCatalog.externalCount === 28 && researchCatalog.records.length === 121, "research catalog counts are incomplete");
+  const researchAssets = fs.readdirSync(path.join(appRoot, "dist", "research", "papers")).filter((name) => name.endsWith(".pdf"));
+  assert(researchAssets.length === researchCatalog.localCount, "research PDF assets do not match the catalog");
   checks.push("/, /stack, and /learn expose meaningful HTML before JavaScript executes");
   checks.push("public routes declare language, identity, navigation, and viewport metadata");
   checks.push("public pages link to the versioned API and practice boundary");
   checks.push("practice has a dedicated production entry instead of falling back to the homepage shell");
+  checks.push("research has a dedicated route, complete catalog counts, and prepared local PDF assets");
 } catch (error) {
   errors.push(String(error?.message || error));
 }

@@ -78,6 +78,7 @@ if (fs.existsSync(distPath)) {
   app.get("/evidence/:id", (req: Request, res: Response) => sendPublicPage(req, res, "evidence-detail"));
   app.get("/evidence", (req: Request, res: Response) => sendPublicPage(req, res, "evidence"));
   app.get("/search", (req: Request, res: Response) => sendPublicPage(req, res, "search"));
+  app.get("/research", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "research", "index.html")));
   app.get("/operations", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "operations", "index.html")));
   app.get("/intelligence", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "intelligence", "index.html")));
   app.get("/practice", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "practice", "index.html")));

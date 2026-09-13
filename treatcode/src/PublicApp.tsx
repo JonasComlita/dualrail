@@ -18,7 +18,9 @@ import {
   type LearningInteractive,
   type LearningPage,
 } from "./learningContent";
-type Route = { page: "home" | "stack" | "learn" | "search" | "resource" | "evidence"; stackSlug?: string; query: string; mode: SearchMode; focus?: string; resource?: string; recordId?: string; pageNumber: number; learningPathId?: string; learningTopicId?: string };
+import researchCatalog from "./content/research/catalog.json";
+import { SiteHeader, type SiteHeaderSection } from "./SiteHeader";
+type Route = { page: "home" | "stack" | "learn" | "research" | "search" | "resource" | "evidence"; stackSlug?: string; query: string; mode: SearchMode; focus?: string; resource?: string; recordId?: string; pageNumber: number; learningPathId?: string; learningTopicId?: string };
 
 const PUBLIC_RESOURCES = ["projects", "stack_nodes", "components", "capabilities", "contracts", "decisions", "sources", "symbols", "tests", "benchmarks", "runs", "releases", "gaps"] as const;
 type PublicResourceName = typeof PUBLIC_RESOURCES[number];
@@ -37,7 +39,7 @@ function parseRoute(): Route {
   const parts = path.split("/").filter(Boolean);
   const params = new URLSearchParams(window.location.search);
   const rawResource = parts[0] === "resources" ? parts[1] : undefined;
-  const page = parts[0] === "stack" ? "stack" : parts[0] === "learn" ? "learn" : parts[0] === "search" ? "search" : parts[0] === "resources" ? "resource" : parts[0] === "evidence" ? "evidence" : "home";
+  const page = parts[0] === "stack" ? "stack" : parts[0] === "learn" ? "learn" : parts[0] === "research" ? "research" : parts[0] === "search" ? "search" : parts[0] === "resources" ? "resource" : parts[0] === "evidence" ? "evidence" : "home";
   const urlLearningPath = page === "learn" && parts.length >= 2 ? parts[1] : undefined;
   const urlLearningTopic = page === "learn" && parts.length >= 3 ? parts[2] : undefined;
   const pageNumber = Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1);
@@ -128,23 +130,11 @@ function SearchBox({ initialQuery, initialMode, onSearch }: { initialQuery: stri
 }
 
 function Header({ route, onNavigate }: { route: Route; onNavigate: (href: string) => void }) {
-  const nav = (href: string, label: string, active: boolean) => {
-    const isPublicRoute = href === "/" || href === "/stack" || href === "/learn" || href === "/search" || href === "/evidence";
-    return <a href={href} aria-current={active ? "page" : undefined} onClick={isPublicRoute ? (event) => { event.preventDefault(); onNavigate(href); } : undefined}>{label}</a>;
-  };
-  return <header className="tc-topbar">
-    <a className="tc-brand" href="/" onClick={(event) => { event.preventDefault(); onNavigate("/"); }}>TREATCODE</a>
-    <nav className="tc-nav" aria-label="Primary navigation">
-      {nav("/", "Overview", route.page === "home")}
-      {nav("/stack", "Stack Explorer", route.page === "stack")}
-      {nav("/learn", "Learn", route.page === "learn")}
-      {nav("/evidence", "Evidence", route.page === "evidence" || route.page === "resource")}
-      {nav("/practice", "Practice", false)}
-      {nav("/arena", "Implementation Arena", false)}
-      <a href="/intelligence">Intelligence Benchmark</a>
-      <a href="/api/public/v1/openapi.json">API</a>
-    </nav>
-  </header>;
+  const active: SiteHeaderSection = route.page === "resource" || route.page === "evidence"
+    ? "evidence"
+    : route.page === "home" || route.page === "search" ? "overview" : route.page;
+  const isPublicRoute = (href: string) => href === "/" || href === "/stack" || href.startsWith("/stack/") || href === "/learn" || href.startsWith("/learn/") || href === "/research" || href.startsWith("/research/") || href === "/search" || href.startsWith("/resources/") || href === "/evidence" || href.startsWith("/evidence/");
+  return <SiteHeader active={active} onNavigate={onNavigate} intercept={isPublicRoute} />;
 }
 
 function EntityCollection({ title, records, snapshot, onNavigate, empty = "No records are attached to this view yet." }: { title: string; records: PublicRecord[]; snapshot: PublicSnapshot; onNavigate: (href: string) => void; empty?: string }) {
@@ -526,6 +516,175 @@ function SearchPage({ snapshot, route, onNavigate, onSearch }: { snapshot: Publi
   return <><div className="tc-hero-row"><div><span className="tc-eyebrow">Provenance search</span><h1>Find the exact boundary.</h1><p className="tc-lede">Search IDs and paths exactly, resolve symbols, inspect relationships, or discover related concepts. Every match carries its source provenance and a reason for the match.</p></div><div><SearchBox initialQuery={route.query} initialMode={route.mode} onSearch={onSearch} /><SnapshotBadge snapshot={snapshot} /></div></div><div className="tc-section-heading"><h2>{route.query ? `Results for “${route.query}”` : "Search the public graph"}</h2><span className="tc-muted">{results.length} total matches · {route.mode}</span></div><PaginationNav baseHref={baseHref} page={route.pageNumber} total={results.length} pageSize={PUBLIC_PAGE_SIZE} onNavigate={onNavigate} />{pageResults.length ? <div className="tc-card-grid">{pageResults.map((result) => { const record = publicRecord(snapshot, result.entity_id); const href = record ? resourceHref(record) : `/search?q=${encodeURIComponent(result.entity_id)}&mode=exact`; return <article className="tc-card" key={`${result.entity_id}-${result.match_type}`}><span className="tc-eyebrow">{result.entity_type} · score {result.score}</span><h3><a href={href} onClick={(event) => { event.preventDefault(); onNavigate(href); }}>{result.name}</a></h3><p>{result.matched_fields.join(", ")} match · {result.match_type} search</p><p>{result.match_reason}</p>{result.provenance.map((ref, index) => <SourceCitation key={`${ref.path || ref.artifact_hash || "ref"}-${index}`} ref={ref} />)}</article>; })}</div> : <div className="tc-empty">{route.query ? "No authoritative records matched this query. Try a symbol name, exact path, or relationship phrase." : "Enter a query to search the snapshot."}</div>}</>;
 }
 
+type ResearchEntry = (typeof researchCatalog.records)[number];
+type ResearchSort = "recommended" | "newest" | "oldest" | "title" | "author";
+
+const RESEARCH_COLLECTION_ORDER = [
+  "root_preexisting",
+  "01_history_architecture",
+  "02_circuits_devices",
+  "03_optical_emerging",
+  "04_theory_security_applications",
+  "05_ai_industry_patents",
+];
+
+const RESEARCH_COLLECTION_DESCRIPTIONS: Record<string, string> = {
+  root_preexisting: "Core references gathered for the TreatCode research library.",
+  "01_history_architecture": "The historical machines, representations, and architecture of ternary computing.",
+  "02_circuits_devices": "Logic gates, arithmetic, memory, circuits, and physical device implementations.",
+  "03_optical_emerging": "Optical, memristive, and other emerging approaches to ternary hardware.",
+  "04_theory_security_applications": "Formal theory, security, algorithms, and applied ternary systems.",
+  "05_ai_industry_patents": "Recent AI and industry work, patents, and directions for practical systems.",
+};
+
+function researchCollectionLabel(collection: string): string {
+  const labels: Record<string, string> = {
+    root_preexisting: "Core references",
+    "01_history_architecture": "History & architecture",
+    "02_circuits_devices": "Circuits & devices",
+    "03_optical_emerging": "Optical & emerging",
+    "04_theory_security_applications": "Theory, security & applications",
+    "05_ai_industry_patents": "AI, industry & patents",
+  };
+  return labels[collection] || collection.replace(/^\d+_/, "").replace(/_/g, " ");
+}
+
+function researchCollectionRank(collection: string): number {
+  const rank = RESEARCH_COLLECTION_ORDER.indexOf(collection);
+  return rank === -1 ? RESEARCH_COLLECTION_ORDER.length : rank;
+}
+
+function researchCollectionDescription(collection: string): string {
+  return RESEARCH_COLLECTION_DESCRIPTIONS[collection] || "Research papers related to ternary computing.";
+}
+
+function researchYear(entry: ResearchEntry): number {
+  const year = entry.year?.match(/\b\d{4}\b/)?.[0];
+  return year ? Number(year) : 0;
+}
+
+function compareResearchEntries(left: ResearchEntry, right: ResearchEntry, sort: ResearchSort): number {
+  if (sort === "recommended") {
+    const collectionOrder = researchCollectionRank(left.collection) - researchCollectionRank(right.collection);
+    if (collectionOrder !== 0) return collectionOrder;
+    const yearOrder = researchYear(right) - researchYear(left);
+    if (yearOrder !== 0) return yearOrder;
+  }
+  if (sort === "newest" || sort === "oldest") {
+    const yearOrder = sort === "newest" ? researchYear(right) - researchYear(left) : researchYear(left) - researchYear(right);
+    if (yearOrder !== 0) return yearOrder;
+  }
+  if (sort === "author") {
+    const authorOrder = (left.authors || "").localeCompare(right.authors || "");
+    if (authorOrder !== 0) return authorOrder;
+  }
+  return left.title.localeCompare(right.title);
+}
+
+function researchCollectionId(collection: string): string {
+  return `research-group-${collection.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()}`;
+}
+
+function ResearchPage() {
+  const [query, setQuery] = useState("");
+  const [collection, setCollection] = useState("all");
+  const [availability, setAvailability] = useState("all");
+  const [sort, setSort] = useState<ResearchSort>("recommended");
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = "Research Library · TreatCode";
+    return () => { document.title = previousTitle; };
+  }, []);
+  const collections = useMemo(() => [...new Set(researchCatalog.records.map((entry) => entry.collection))].sort((left, right) => researchCollectionRank(left) - researchCollectionRank(right)), []);
+  const collectionStats = useMemo(() => collections.map((item) => {
+    const entries = researchCatalog.records.filter((entry) => entry.collection === item);
+    return { collection: item, total: entries.length, local: entries.filter((entry) => entry.status === "local").length };
+  }), [collections]);
+  const records = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return researchCatalog.records
+      .filter((entry) => collection === "all" || entry.collection === collection)
+      .filter((entry) => availability === "all" || entry.status === availability)
+      .filter((entry) => !normalizedQuery || [entry.title, entry.authors, entry.venue, entry.kind, entry.identifier, entry.notes].join(" ").toLowerCase().includes(normalizedQuery))
+      .sort((left, right) => compareResearchEntries(left, right, sort));
+  }, [availability, collection, query, sort]);
+  const groups = useMemo(() => {
+    const grouped = new Map<string, ResearchEntry[]>();
+    for (const entry of records) {
+      const group = grouped.get(entry.collection) || [];
+      group.push(entry);
+      grouped.set(entry.collection, group);
+    }
+    return [...grouped.entries()].sort(([left], [right]) => researchCollectionRank(left) - researchCollectionRank(right));
+  }, [records]);
+  const sortDescription: Record<ResearchSort, string> = {
+    recommended: "recommended subject order",
+    newest: "newest first within each subject",
+    oldest: "oldest first within each subject",
+    title: "title A–Z within each subject",
+    author: "author A–Z within each subject",
+  };
+
+  return <article className="tc-research-page">
+    <div className="tc-research-hero">
+      <div>
+        <span className="tc-eyebrow">Ternary research library</span>
+        <h1>Read the work behind the stack.</h1>
+        <p className="tc-lede">A practical reading room for ternary computing: history, logic, devices, architectures, theory, security, and applications. Download the papers held locally, or follow the retained source links for papers that were not available to the collector.</p>
+      </div>
+      <aside className="tc-research-summary" aria-label="Research catalog summary">
+        <div><strong>{researchCatalog.localCount}</strong><span>local PDFs</span></div>
+        <div><strong>{researchCatalog.externalCount}</strong><span>linked-only</span></div>
+        <div><strong>{researchCatalog.records.length}</strong><span>catalog entries</span></div>
+      </aside>
+    </div>
+    <section className="tc-research-collections" aria-labelledby="research-collections-heading">
+      <div className="tc-research-section-heading">
+        <div><span className="tc-eyebrow">Organized reading paths</span><h2 id="research-collections-heading">Browse by subject</h2><p>Start with the area closest to your question. The recommended order moves from foundations through hardware and emerging systems to applications.</p></div>
+        <span className="tc-research-section-count">{collections.length} collections</span>
+      </div>
+      <div className="tc-research-collection-grid">
+        <button type="button" className={`tc-research-collection-button ${collection === "all" ? "is-active" : ""}`} aria-pressed={collection === "all"} onClick={() => setCollection("all")}>
+          <span className="tc-eyebrow">Complete library</span><strong>All subjects</strong><span>{researchCatalog.records.length} papers · grouped for browsing</span>
+        </button>
+        {collectionStats.map((item) => <button type="button" key={item.collection} className={`tc-research-collection-button ${collection === item.collection ? "is-active" : ""}`} aria-pressed={collection === item.collection} onClick={() => setCollection(item.collection)}>
+          <span className="tc-eyebrow">Subject collection</span><strong>{researchCollectionLabel(item.collection)}</strong><span>{item.total} papers · {item.local} local PDFs</span>
+        </button>)}
+      </div>
+    </section>
+    <section className="tc-research-toolbar" aria-label="Filter research">
+      <label>Search the catalog<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="title, author, venue, DOI…" /></label>
+      <label>Availability<select value={availability} onChange={(event) => setAvailability(event.target.value)}><option value="all">All entries</option><option value="local">Local PDF</option><option value="external">Linked-only</option></select></label>
+      <label>Sort results<select value={sort} onChange={(event) => setSort(event.target.value as ResearchSort)}><option value="recommended">Recommended path</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="author">Author A–Z</option></select></label>
+    </section>
+    <p className="tc-research-result-count" aria-live="polite">Showing {records.length} of {researchCatalog.records.length} catalog entries · {sortDescription[sort]}</p>
+    {groups.map(([groupCollection, groupRecords]) => <section className="tc-research-group" key={groupCollection} aria-labelledby={researchCollectionId(groupCollection)}>
+      <header className="tc-research-group-heading"><div><span className="tc-eyebrow">Subject collection</span><h2 id={researchCollectionId(groupCollection)}>{researchCollectionLabel(groupCollection)}</h2><p>{researchCollectionDescription(groupCollection)}</p></div><span className="tc-research-section-count">{groupRecords.length} {groupRecords.length === 1 ? "paper" : "papers"}</span></header>
+      <div className="tc-research-list">{groupRecords.map((entry) => <ResearchCard key={entry.id} entry={entry} />)}</div>
+    </section>)}
+    {records.length === 0 ? <div className="tc-empty">No research entries match those filters.</div> : null}
+  </article>;
+}
+
+function ResearchCard({ entry }: { entry: ResearchEntry }) {
+  const primaryUrl = entry.status === "local" && entry.fileUrl ? entry.fileUrl : entry.sourceUrl || entry.landingUrl;
+  return <article className="tc-research-card">
+    <div className="tc-research-card-heading">
+      <div><span className="tc-eyebrow">{researchCollectionLabel(entry.collection)}</span><span className={`tc-research-status ${entry.status}`}>{entry.status === "local" ? "Local PDF" : "Link-only"}</span></div>
+      <span className="tc-research-kind">{entry.kind || "research"}</span>
+    </div>
+    <h2>{entry.title}</h2>
+    <p className="tc-research-meta">{[entry.authors, entry.year, entry.venue].filter(Boolean).join(" · ") || "Metadata not recorded"}</p>
+    {entry.identifier ? <p className="tc-research-identifier">{entry.identifier}</p> : null}
+    {entry.notes ? <p className="tc-research-note">{entry.notes}</p> : null}
+    <div className="tc-research-actions">
+      {primaryUrl ? <a className="tc-button" href={primaryUrl} target={entry.status === "local" ? undefined : "_blank"} rel={entry.status === "local" ? undefined : "noreferrer"} download={entry.status === "local" ? true : undefined}>{entry.status === "local" ? "Download PDF" : "Open source"}</a> : null}
+      {entry.status === "local" && entry.sourceUrl ? <a className="tc-research-secondary-link" href={entry.sourceUrl} target="_blank" rel="noreferrer">Source PDF</a> : null}
+      {entry.landingUrl && entry.landingUrl !== entry.sourceUrl ? <a className="tc-research-secondary-link" href={entry.landingUrl} target="_blank" rel="noreferrer">Landing page</a> : null}
+    </div>
+  </article>;
+}
+
 export default function PublicApp() {
   const [snapshot, setSnapshot] = useState<PublicSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -555,6 +714,7 @@ export default function PublicApp() {
     {snapshot && route.page === "home" ? <HomePage snapshot={snapshot} onNavigate={navigate} onSearch={search} route={route} /> : null}
     {snapshot && route.page === "stack" ? <StackPage snapshot={snapshot} route={route} onNavigate={navigate} onSearch={search} /> : null}
     {snapshot && route.page === "learn" ? <MarkdownLearnPage snapshot={snapshot} onNavigate={navigate} route={route} onSearch={search} /> : null}
+    {route.page === "research" ? <ResearchPage /> : null}
     {snapshot && route.page === "search" ? <SearchPage snapshot={snapshot} route={route} onNavigate={navigate} onSearch={search} /> : null}
     {snapshot && route.page === "resource" && route.recordId ? (publicRecord(snapshot, route.recordId) ? <RecordDetailPage record={publicRecord(snapshot, route.recordId)!} snapshot={snapshot} onNavigate={navigate} /> : <div className="tc-error">The requested public record was not found.</div>) : null}
     {snapshot && route.page === "resource" && !route.recordId ? <ResourceCollectionPage snapshot={snapshot} route={route} onNavigate={navigate} /> : null}

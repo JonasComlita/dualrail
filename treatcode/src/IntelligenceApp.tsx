@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import "./intelligence.css";
 import "./treatcode-theme.css";
 import { IntelligenceV31Panel } from "./IntelligenceV31Panel";
+import { SiteHeader } from "./SiteHeader";
 
 type ApiRecord = Record<string, unknown>;
 
@@ -725,18 +726,9 @@ export default function IntelligenceApp() {
 
   return (
     <div className="intelligence-app" data-testid="intelligence-app">
-      <header className="intelligence-header">
-        <a className="intelligence-brand" href="/">TREATCODE</a>
-        <nav aria-label="Intelligence navigation">
-          <a href="/stack">Stack Explorer</a>
-          <a href="/learn">Learn</a>
-          <a href="/practice">Practice</a>
-          <a href="/arena">Implementation Arena</a>
-        </nav>
-        <div className="intelligence-account-summary">
+      <SiteHeader active="intelligence" trailing={<div className="intelligence-account-summary">
           {identity ? <><span data-testid="intelligence-identity">{identity}</span><button type="button" onClick={logout}>Sign out</button></> : <a href="#account">Sign in / sign up</a>}
-        </div>
-      </header>
+        </div>} />
 
       <main className="intelligence-main">
         <section className="intelligence-hero">

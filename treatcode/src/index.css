@@ -35,6 +35,135 @@ body {
   margin: 0;
 }
 
+/* Shared TreatCode shell. Every route uses this same global header; route-specific
+   controls live below it so the primary destinations stay predictable. */
+.tc-universal-header {
+  width: min(1180px, calc(100% - 48px));
+  min-height: 52px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+}
+
+.tc-universal-brand,
+.tc-universal-header .tc-universal-brand {
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-decoration: none;
+  user-select: none;
+}
+
+.tc-universal-nav {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tc-universal-nav::-webkit-scrollbar { display: none; }
+
+.tc-universal-header .tc-universal-link {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tc-universal-header .tc-universal-link:hover,
+.tc-universal-header .tc-universal-link:focus-visible,
+.tc-universal-header .tc-universal-link[aria-current="page"] {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+}
+
+.tc-universal-trailing {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tc-universal-trailing > a,
+.tc-universal-utility {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tc-universal-trailing > a:hover,
+.tc-universal-utility:hover { color: var(--color-accent-blue); }
+
+.tc-practice-subnav {
+  width: min(1180px, calc(100% - 48px));
+  min-height: 38px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+}
+
+.tc-practice-subnav button {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tc-practice-subnav button:hover,
+.tc-practice-subnav button.active {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.tc-practice-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tc-practice-account-label,
+.tc-practice-auth-error { color: var(--color-text-secondary); font-size: 11px; }
+.tc-practice-auth-error { color: #b33; }
+.tc-practice-account label { display: flex; align-items: center; }
+.tc-practice-account input { width: 112px; padding: 4px 6px; font-size: 11px; }
+.tc-practice-account button,
+.tc-practice-account a {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+}
+.tc-practice-account button { cursor: pointer; }
+.tc-practice-account a:last-child { border-color: var(--color-border-secondary); color: var(--color-text-primary); }
+
+/* PublicApp already supplies the centered reading column; let the shared
+   header fill that column instead of adding a second inset. */
+.tc-app-root .tc-universal-header { width: 100%; }
+.tc-app-root .tc-practice-subnav { width: 100%; }
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -171,6 +300,14 @@ button:active {
 .workspace-live-message { margin-top: 16px; color: #676b62; font-size: 12px; }
 
 @media (max-width: 760px) {
+  .tc-universal-header,
+  .tc-practice-subnav { width: min(100% - 28px, 1180px); }
+  .tc-universal-header { flex-wrap: wrap; gap: 9px; padding: 10px 0; }
+  .tc-universal-nav { order: 3; flex-basis: 100%; flex-wrap: wrap; overflow: visible; }
+  .tc-universal-trailing { margin-left: auto; }
+  .tc-practice-subnav { overflow-x: auto; }
+  .tc-practice-account-label { display: none; }
+
   .workspace-header { align-items: flex-start; flex-direction: column; padding: 18px 18px; }
   .workspace-main { padding: 25px 18px 50px; }
   .workspace-hero, .workspace-grid, .workspace-editor-grid { grid-template-columns: 1fr; }

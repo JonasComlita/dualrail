@@ -22,6 +22,7 @@ treatcode/public/api/v1/
 treatcode/src/generated/
 treatcode/src/content/learn/learning-catalog.json
 treatcode/src/content/learn/P05_CURRICULUM_MATRIX.json
+treatcode/public/research/papers/
 
 scratch/
 graphify-out/

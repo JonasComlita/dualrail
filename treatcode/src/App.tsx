@@ -9,6 +9,7 @@ import {
 } from "./learningContent";
 import challengeData from "./generated/challenges.client.json";
 import { PRACTICE_SOLUTION_GUIDES } from "./solutionGuides";
+import { SiteHeader } from "./SiteHeader";
 
 type ChallengeFacetKey =
   | "domain"
@@ -242,31 +243,45 @@ function mono(text: string) {
 function Nav({ view, setView, auth }: { view: string; setView: (v: string) => void; auth?: AuthUiState }) {
   const [accessKey, setAccessKey] = useState("");
   return (
-    <div
-      style={{
-        borderBottom: "0.5px solid var(--color-border-tertiary)",
-        display: "flex",
-        alignItems: "center",
-        gap: 24,
-        height: 52,
-      }}
-    >
-      <a
-        href="/"
-        data-testid="practice-home-link"
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 15,
-          fontWeight: 500,
-          color: "var(--color-text-primary)",
-          letterSpacing: "0.06em",
-          userSelect: "none",
-          textDecoration: "none",
-        }}
-      >
-        TREATCODE
-      </a>
-      <div style={{ display: "flex", gap: 2 }}>
+    <>
+      <SiteHeader active="practice" brandTestId="practice-home-link" trailing={
+        <div className="tc-practice-account">
+        {auth?.identityLabel ? (
+          <>
+            <span className="tc-practice-account-label">
+              {auth.identityLabel} · {auth.actions.length} grants
+            </span>
+            <button type="button" onClick={auth.onLogout}>
+              log out
+            </button>
+          </>
+        ) : auth ? (
+          <>
+            <label>
+              <span className="sr-only">TreatCode access key</span>
+              <input
+                aria-label="TreatCode access key"
+                type="password"
+                value={accessKey}
+                onChange={(event) => setAccessKey(event.target.value)}
+                placeholder="access key"
+              />
+            </label>
+            <button type="button" onClick={() => { auth.onLogin(accessKey); setAccessKey(""); }}>
+              log in
+            </button>
+            <a href="/intelligence#account" data-testid="practice-signup-link">sign up</a>
+            {auth.error ? <span role="status" className="tc-practice-auth-error">{auth.error}</span> : null}
+          </>
+        ) : (
+          <>
+            <a href="/intelligence#account" data-testid="practice-login-link">log in</a>
+            <a href="/intelligence#account" data-testid="practice-signup-link">sign up</a>
+          </>
+        )}
+        </div>
+      } />
+      <nav className="tc-practice-subnav" aria-label="Practice sections">
         {[
           ["problems", "Problems"],
           ["leaderboard", "Leaderboard"],
@@ -276,76 +291,13 @@ function Nav({ view, setView, auth }: { view: string; setView: (v: string) => vo
           <button
             key={v}
             onClick={() => setView(v)}
-            style={{
-              fontSize: 13,
-              padding: "5px 12px",
-              borderRadius: 5,
-              border: "none",
-              background:
-                view === v
-                  ? "var(--color-background-tertiary)"
-                  : "transparent",
-              cursor: "pointer",
-              color:
-                view === v
-                  ? "var(--color-text-primary)"
-                  : "var(--color-text-secondary)",
-              fontWeight: view === v ? 500 : 400,
-            }}
+            className={view === v ? "active" : undefined}
           >
             {label}
           </button>
         ))}
-      </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <a href="/intelligence" data-testid="intelligence-nav" style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none" }}>Intelligence</a>
-        <a href="/arena" data-testid="arena-nav" style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none" }}>P10 Arena</a>
-      </div>
-      <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-        {auth?.identityLabel ? (
-          <>
-            <span style={{ fontSize: 11, color: "var(--color-text-secondary)", alignSelf: "center" }}>
-              {auth.identityLabel} · {auth.actions.length} grants
-            </span>
-            <button
-              type="button"
-              onClick={auth.onLogout}
-              style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}
-            >
-              log out
-            </button>
-          </>
-        ) : auth ? (
-          <>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
-              <span className="sr-only">TreatCode access key</span>
-              <input
-                aria-label="TreatCode access key"
-                type="password"
-                value={accessKey}
-                onChange={(event) => setAccessKey(event.target.value)}
-                placeholder="access key"
-                style={{ width: 112, fontSize: 11, padding: "4px 6px" }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => { auth.onLogin(accessKey); setAccessKey(""); }}
-              style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", cursor: "pointer", color: "var(--color-text-secondary)" }}
-            >
-              log in
-            </button>
-            <a href="/intelligence#account" data-testid="practice-signup-link" style={{ fontSize: 12, padding: "5px 10px", color: "var(--color-text-secondary)", alignSelf: "center" }}>sign up</a>
-            {auth.error ? <span role="status" style={{ fontSize: 10, color: "var(--color-accent-red, #b33)" }}>{auth.error}</span> : null}
-          </>
-        ) : (
-          <>
-            <a href="/intelligence#account" data-testid="practice-login-link" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-tertiary)", background: "transparent", color: "var(--color-text-secondary)", textDecoration: "none" }}>log in</a>
-            <a href="/intelligence#account" data-testid="practice-signup-link" style={{ fontSize: 12, padding: "5px 14px", borderRadius: 5, border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontWeight: 500, textDecoration: "none" }}>sign up</a>
-          </>
-        )}
-      </div>
-    </div>
+      </nav>
+    </>
   );
 }
 
