@@ -1,8 +1,0 @@
-// Apply event1 and then event2. Invalid initial state returns -28 before event
-// validation. Any invalid event returns -27 and prevents further transitions.
-// Starter defect reverses the requested order and ignores invalid state.
-
-fn apply_two_events(state: t40, event1: t40, event2: t40) -> t40 {
-    var after_second: t40 = apply_event(state, event2);
-    return apply_event(after_second, event1);
-}

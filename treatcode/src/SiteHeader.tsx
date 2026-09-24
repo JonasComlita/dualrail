@@ -52,7 +52,7 @@ export function SiteHeader({ active, brandTestId, onNavigate, intercept, trailin
             key={item.href}
             className="tc-universal-link"
             href={item.href}
-            data-testid={item.section === "intelligence" ? "intelligence-nav" : item.section === "arena" ? "arena-nav" : undefined}
+            data-testid={item.section === "arena" ? "arena-nav" : undefined}
             aria-current={active === item.section ? "page" : undefined}
             onClick={(event) => navigate(event, item.href)}
           >

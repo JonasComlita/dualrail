@@ -1,1 +1,0 @@
-set(TRIT_TASK_ABI 25)

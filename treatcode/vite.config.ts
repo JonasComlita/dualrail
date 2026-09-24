@@ -26,8 +26,17 @@ const apiPort = process.env.TREATCODE_API_PORT || "3000";
 const vitePort = Number.parseInt(process.env.TREATCODE_VITE_PORT || "5173", 10);
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    name: "keep-benchmark-evidence-private",
+    enforce: "pre",
+    load(id) {
+      const normalized = id.replace(/\\/g, "/").split("?")[0];
+      if (/\/(private|build)\//.test(normalized)) this.error("Private source and execution evidence cannot enter a client bundle.");
+      return null;
+    },
+  }],
   server: {
+    fs: { deny: ["**/.env*", "**/.git/**", "**/private/**", "**/build/**"] },
     port: vitePort,
     proxy: {
       "/api": {
@@ -49,6 +58,7 @@ export default defineConfig({
         practice: "practice/index.html",
         operations: "operations/index.html",
         arena: "arena/index.html",
+        account: "account/index.html",
         intelligence: "intelligence/index.html",
         ...learningInputs,
       },

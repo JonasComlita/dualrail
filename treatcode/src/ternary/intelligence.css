@@ -1,0 +1,69 @@
+.ti-shell { min-height:100vh; color:var(--tc-practice-ink); background:var(--color-background-primary,#fff); font-family:var(--font-sans,system-ui,sans-serif); font-size:14px; line-height:1.65; }
+.ti-shell *, .ti-shell *::before, .ti-shell *::after { box-sizing:border-box; }
+.ti-shell a { color:var(--tc-practice-blue); }
+.ti-tabs,.ti-main { width:min(1012px,calc(100% - 48px)); margin:0 auto; }
+.ti-tabs { display:flex; gap:24px; overflow-x:auto; border-bottom:1px solid var(--tc-practice-line); }
+.ti-tabs a { padding:13px 0 11px; white-space:nowrap; text-decoration:none; color:var(--tc-practice-muted); border-bottom:2px solid transparent; font-size:13px; }
+.ti-tabs a[aria-current=page] { color:var(--tc-practice-blue); border-bottom-color:currentColor; }
+.ti-main { padding:30px 0 72px; }
+.ti-main h1 { font-size:clamp(30px,5vw,44px); line-height:1.12; letter-spacing:-.045em; margin:12px 0 20px; }
+.ti-main h2 { font-size:22px; line-height:1.25; letter-spacing:-.025em; margin:28px 0 16px; }
+.ti-main h3 { font-size:16px; line-height:1.4; margin:8px 0; }
+.ti-main p { margin:10px 0 16px; }
+.ti-pilot,.ti-eyebrow,.ti-index { font-family:var(--font-mono,monospace); font-size:11px; letter-spacing:.04em; color:var(--tc-practice-blue); }
+.ti-pilot { display:inline-block; border:1px solid var(--tc-practice-line); border-radius:4px; padding:3px 8px; }
+.ti-hero { padding:20px 0 28px; max-width:760px; }
+.ti-main .ti-lead { font-size:20px; line-height:1.5; max-width:740px; color:var(--tc-practice-muted); }
+.ti-muted { color:var(--tc-practice-muted); font-size:12px; }
+.ti-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:16px 0 24px; }
+.ti-two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.ti-card,.ti-panel { border:1px solid var(--tc-practice-line); border-radius:8px; padding:22px; }
+.ti-card p:last-child { margin-bottom:0; }
+.ti-panel { margin:24px 0; }
+.ti-panel h2:first-child { margin-top:0; }
+.ti-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-block:1px solid var(--tc-practice-line); margin:4px 0 38px; padding:22px 0; gap:18px; }
+.ti-stats strong { display:block; font-size:27px; font-weight:550; letter-spacing:-.025em; line-height:1.4; }
+.ti-stats span { font-size:12px; color:var(--tc-practice-muted); }
+.ti-actions,.ti-section-heading { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:16px 0; }
+.ti-section-heading { justify-content:space-between; margin:0 0 16px; }
+.ti-section-heading h2,.ti-section-heading h3 { margin:0; }
+.ti-shell button,.ti-shell .ti-primary { border:1px solid var(--tc-practice-line-strong); border-radius:5px; padding:8px 13px; background:var(--color-background-primary,#fff); color:var(--tc-practice-ink); font:inherit; cursor:pointer; min-height:40px; text-decoration:none; }
+.ti-shell .ti-primary { background:var(--tc-practice-blue); border-color:var(--tc-practice-blue); color:white; }
+.ti-shell button:disabled { opacity:.5; cursor:default; }
+.ti-shell button:hover:not(:disabled) { filter:brightness(.94); }
+.ti-shell .ti-quiet { border-color:transparent; color:var(--tc-practice-muted); }
+.ti-shell label { display:block; font-size:13px; font-weight:500; margin:12px 0 6px; }
+.ti-shell input,.ti-shell select,.ti-shell textarea { display:block; width:100%; min-width:0; border:1px solid var(--tc-practice-line-strong); border-radius:5px; padding:10px; background:var(--color-background-primary,#fff); color:var(--tc-practice-ink); font:inherit; margin:6px 0; }
+.ti-shell .ti-source { resize:vertical; font:12px/1.7 var(--font-mono,monospace); tab-size:2; }
+.ti-shell input[type=number] { max-width:340px; }
+.ti-shell fieldset { border:1px solid var(--tc-practice-line); border-radius:5px; margin:16px 0; }
+.ti-shell .ti-checkbox { display:flex; align-items:center; gap:10px; font-weight:400; }
+.ti-checkbox input { width:18px; height:18px; flex-shrink:0; }
+.ti-notice,.ti-empty { padding:20px; background:var(--tc-practice-soft); border:1px solid var(--tc-practice-line); border-radius:7px; margin:18px 0; }
+.ti-empty { padding:40px 24px; }
+.ti-empty h2 { margin-top:0; }
+.ti-error { border-color:#b45309; }
+.ti-good { color:var(--tc-practice-green); }
+.ti-failures { padding-left:20px; }
+.ti-shell details { padding:12px 0; border-top:1px solid var(--tc-practice-line); }
+.ti-shell details.ti-panel { padding:22px; }
+.ti-shell summary { cursor:pointer; font-weight:500; overflow-wrap:anywhere; }
+.ti-json,.ti-recorded pre { background:var(--tc-practice-soft); padding:14px; border-radius:4px; font:12px/1.7 var(--font-mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; max-height:520px; overflow:auto; }
+.ti-recorded { margin:20px 0; }
+.ti-table-wrap { overflow-x:auto; margin:20px 0; }
+.ti-shell table { border-collapse:collapse; text-align:left; width:100%; font-size:12px; }
+.ti-shell caption { text-align:left; color:var(--tc-practice-muted); margin-bottom:10px; }
+.ti-shell th,.ti-shell td { vertical-align:top; padding:12px; border-bottom:1px solid var(--tc-practice-line); min-width:110px; }
+.ti-shell th { font-weight:550; }
+.ti-shell thead { background:var(--tc-practice-soft); }
+.ti-interval { display:block; width:130px; height:20px; color:var(--tc-practice-blue); }
+.ti-learning { margin:0; padding:16px; border:1px solid var(--tc-practice-line); border-radius:5px; }
+.ti-learning figcaption { overflow-wrap:anywhere; font-weight:550; }
+.ti-learning svg { display:block; width:100%; max-width:480px; color:var(--tc-practice-blue); }
+.ti-learning text { font:11px sans-serif; fill:var(--tc-practice-muted); }
+.ti-shell progress { width:100%; height:10px; accent-color:var(--tc-practice-blue); }
+.ti-events { max-height:600px; overflow:auto; }
+.ti-skip { position:fixed; top:-80px; left:16px; padding:10px 16px; background:white; z-index:1000; }
+.ti-skip:focus { top:10px; }
+.ti-shell :focus-visible { outline:2px solid var(--tc-practice-blue); outline-offset:3px; }
+@media(max-width:720px) { .ti-grid { grid-template-columns:1fr; } .ti-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .ti-tabs,.ti-main { width:calc(100% - 32px); } .ti-tabs { gap:20px; } .ti-panel,.ti-card { padding:18px; } .ti-main .ti-lead { font-size:18px; } .ti-actions { gap:10px; } }

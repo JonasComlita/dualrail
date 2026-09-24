@@ -4,18 +4,13 @@ These are intentionally visible so agents can pick useful work without asking fo
 
 ## Highest Priority
 
-- TreatCode Intelligence v3.1 has the repository executor, privileged grading
-  contracts, disposable pilot evidence, calibration/freeze/subject aggregators,
-  and twenty atomic five-task authoring shards. Each completed shard is bound to
-  the assignment plan, contribution bytes, canonical task array, and five task
-  hashes in an immutable private checkpoint, so an interrupted author loses at
-  most the active five-task shard. The corpus remains intentionally non-official:
-  all twenty genuine non-subject author checkpoints, two independent reviews per
-  task, executable package qualification, 1,800 weak/medium/frontier calibration
-  observations, verified infrastructure attestation, a frozen holdout, and 200
-  one-shot Luna/Sol attempts with provider-signed execution identity are still
-  missing. Earlier scalar suites remain
-  diagnostics and must not be presented as model-ranking scores.
+- The new TreatCode Ternary Intelligence pilot has 36 executable task families,
+  a Windows worker, provider adapters, private operator APIs, and public pages.
+  Genuine four-model harness calibration (Astra, Sol, Terra, Luna), acceptance of
+  the calibrated revision, and published evaluations remain outstanding.
+  Difficulty labels are provisional.
+  Correctness is independent of spending; the dollar ceiling is optional.
+  See `treatcode/TERNARY_INTELLIGENCE.md` for current evidence and remaining gates.
 
 - Define the exact-width binary interoperability contract required for physical
   devices: endian-qualified values, packed structures, byte buffers, volatile

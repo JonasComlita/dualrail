@@ -48,20 +48,19 @@ import {
   CommunityStore,
   CommunityStoreError,
 } from "./src/communityStore";
-import {
-  INTELLIGENCE_TASK_ID,
-  INTELLIGENCE_MANIFEST_SCHEMA,
-  IntelligenceServiceError,
-  intelligenceService,
-} from "./src/intelligenceService";
-import { intelligenceV3CatalogService } from "./src/intelligenceV3Catalog";
-import { intelligenceV31CatalogService } from "./src/intelligenceV31Catalog";
+import { IntelligenceLab } from "./private/ternary/service";
+import { intelligenceRouter } from "./private/ternary/routes";
+
 
 export const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: "8mb" }));
+
+app.use("/api/intelligence", (_req: Request, res: Response) => {
+  res.status(404).json({ error: { code: "not_found", reason: "This route is unavailable." } });
+});
 
 // In production, Vite builds static files to 'dist'. Serve them.
 const distPath = path.join(__dirname, "dist");
@@ -80,7 +79,8 @@ if (fs.existsSync(distPath)) {
   app.get("/search", (req: Request, res: Response) => sendPublicPage(req, res, "search"));
   app.get("/research", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "research", "index.html")));
   app.get("/operations", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "operations", "index.html")));
-  app.get("/intelligence", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "intelligence", "index.html")));
+  app.get("/account", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "account", "index.html")));
+  app.get(["/intelligence", "/intelligence/*"], (_req: Request, res: Response) => res.sendFile(path.join(distPath, "intelligence", "index.html")));
   app.get("/practice", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "practice", "index.html")));
   app.get("/arena", (_req: Request, res: Response) => res.sendFile(path.join(distPath, "arena", "index.html")));
   app.use(express.static(distPath));
@@ -287,7 +287,7 @@ function publicHtmlPageChrome(title: string, body: string): string {
   } catch {
     // The API and direct static shell remain usable during an unbuilt checkout.
   }
-  return `<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>${escapePublicHtml(title)} · TREATCODE</title>${stylesheet}</head><body><div id=\"root\"><div class=\"tc-shell\"><header class=\"tc-topbar\"><a class=\"tc-brand\" href=\"/\">TREATCODE</a><nav class=\"tc-nav\" aria-label=\"Primary navigation\"><a href=\"/\">Overview</a><a href=\"/stack\">Stack Explorer</a><a href=\"/learn\">Learn</a><a href=\"/evidence\">Evidence</a><a href=\"/practice\">Practice</a><a href=\"/arena\">Implementation Arena</a><a href=\"/intelligence\">Intelligence Benchmark</a><a href=\"/api/public/v1/openapi.json\">API</a></nav></header><main class=\"tc-main\">${body}</main><footer class=\"tc-footer\">Snapshot ${escapePublicHtml(publicSnapshot.snapshot.id)} · commit ${escapePublicHtml(publicSnapshot.snapshot.commit)} · Read-only public route · <a href=\"/api/public/v1/snapshot.json\">Static snapshot</a></footer></div></div>${script}</body></html>`;
+  return `<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>${escapePublicHtml(title)} · TREATCODE</title>${stylesheet}</head><body><div id=\"root\"><div class=\"tc-shell\"><header class=\"tc-topbar\"><a class=\"tc-brand\" href=\"/\">TREATCODE</a><nav class=\"tc-nav\" aria-label=\"Primary navigation\"><a href=\"/\">Overview</a><a href=\"/stack\">Stack Explorer</a><a href=\"/learn\">Learn</a><a href=\"/evidence\">Evidence</a><a href=\"/practice\">Practice</a><a href=\"/arena\">Implementation Arena</a><a href=\"/intelligence\">Intelligence</a><a href=\"/api/public/v1/openapi.json\">API</a></nav></header><main class=\"tc-main\">${body}</main><footer class=\"tc-footer\">Snapshot ${escapePublicHtml(publicSnapshot.snapshot.id)} · commit ${escapePublicHtml(publicSnapshot.snapshot.commit)} · Read-only public route · <a href=\"/api/public/v1/snapshot.json\">Static snapshot</a></footer></div></div>${script}</body></html>`;
 }
 
 function publicHtmlPagination(baseHref: string, page: number, total: number): string {
@@ -593,6 +593,10 @@ export const communityStore = new CommunityStore({
   state_path: process.env.TREATCODE_COMMUNITY_STATE_PATH || path.resolve(__dirname, "..", "build", "treatcode-community", "state.json"),
 });
 
+export const ternaryLab = new IntelligenceLab(path.resolve(__dirname, ".."), process.env.TI_DATA_ROOT || path.resolve(__dirname, "..", "build", "ternary-intelligence"));
+app.use("/api/ternary-intelligence/v1", intelligenceRouter(ternaryLab, authStore));
+process.once("exit", () => ternaryLab.close());
+
 function authToken(req: Request): string | null {
   return bearerToken(req.header("authorization"));
 }
@@ -752,10 +756,6 @@ app.post("/api/auth/v1/login", loginHandler);
 app.post("/api/auth/v1/register", registerParticipantHandler);
 app.post("/api/auth/v1/participants/login", loginHandler);
 app.post("/api/auth/v1/participants/register", registerParticipantHandler);
-app.post("/api/intelligence/v1/accounts/login", loginHandler);
-app.post("/api/intelligence/v1/accounts/register", registerParticipantHandler);
-app.post("/api/intelligence/accounts/login", loginHandler);
-app.post("/api/intelligence/accounts/register", registerParticipantHandler);
 
 app.get("/api/auth/v1/session", (req: Request, res: Response) => {
   const decision = requireAction(req, res, "read", { require_nonce: false });
@@ -829,24 +829,16 @@ app.get("/api/auth/v1/audit", (req: Request, res: Response) => {
   authDataResponse(res, { events: result.events });
 });
 
-// P14 intelligence and participant community routes.  These adapters keep
-// authentication, durable artifacts, and the sealed verifier separate while
-// accepting the stable `/v1` contract plus the short aliases used by the UI.
-function intelligenceErrorResponse(res: Response, error: unknown): void {
-  if (error instanceof IntelligenceServiceError || error instanceof CommunityStoreError) {
-    res.status(error.status).json({
-      schema_version: error instanceof IntelligenceServiceError ? "treatcode.intelligence.api.v1" : COMMUNITY_API_SCHEMA_VERSION,
-      error: { code: error.code, reason: error.message, ...(error instanceof IntelligenceServiceError && error.details ? { details: error.details } : {}) },
-    });
+// Participant community routes use shared authentication and durable storage.
+function communityErrorResponse(res: Response, error: unknown): void {
+  if (error instanceof CommunityStoreError) {
+    res.status(error.status).json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, error: { code: error.code, reason: error.message } });
     return;
   }
-  res.status(500).json({ schema_version: "treatcode.intelligence.api.v1", error: { code: "internal_error", reason: "The intelligence request could not be completed." } });
+  res.status(500).json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, error: { code: "internal_error", reason: "The community request could not be completed." } });
 }
 
-function intelligenceAction(req: Request, res: Response, action: PermissionAction, requireNonce = true) {
-  // The public benchmark id is not an auth task-scope identifier (auth task
-  // scopes use `tc:task:*`). Participant credentials are project-wide, so the
-  // adapter deliberately authorizes these routes with a null task scope.
+function communityAction(req: Request, res: Response, action: PermissionAction, requireNonce = true) {
   return requireAction(req, res, action, { project_id: DEFAULT_PROJECT_ID, task_id: null, require_nonce: requireNonce });
 }
 
@@ -888,235 +880,23 @@ function publicPostedSolutionView(value: ReturnType<CommunityStore["listPublicSo
   };
 }
 
-function publicTrialView(trial: Record<string, unknown> | null | undefined, hidden?: Record<string, unknown> | null) {
-  const aggregate = hidden && typeof hidden.remaining_trials === "number" && hidden.remaining_trials === 0 && hidden.aggregate && typeof hidden.aggregate === "object" ? hidden.aggregate as Record<string, unknown> : null;
-  const score = aggregate && typeof aggregate.score === "number" ? aggregate.score : null;
-  return {
-    ...(trial || {}),
-    trial_id: trial?.id,
-    label: trial?.id,
-    // A trial is binary, while the aggregate is a run-level score.  Never
-    // copy the run percentage onto every trial row (75% must not look like
-    // four separate 75% trials).
-    score: null,
-    aggregate_score: score,
-    aggregate_score_scope: "task_trial_reliability",
-    sealed: true,
-  };
-}
-
-function intelligenceLeaderboardView(view: "official" | "self-reported", taskId?: string) {
-  const rows = taskId
-    ? intelligenceService.taskService(taskId).leaderboard(view)
-    : view === "official" ? intelligenceService.getOfficialLeaderboard() : intelligenceService.getSelfReportedLeaderboard();
-  return rows.map((row) => {
-    const participantId = "participant_id" in row ? row.participant_id : undefined;
-    const identity = participantId ? authStore.identity(participantId) : null;
-    return { ...row, ...(identity?.handle ? { handle: identity.handle } : {}) };
-  });
-}
-
-const intelligenceRunByParticipant = new Map<string, string>();
-
-function intelligenceRunKey(participantId: string, taskId: string): string {
-  return `${participantId}\u0000${taskId}`;
-}
-
-function serviceRunForActor(run: Awaited<ReturnType<typeof intelligenceService.getRun>>, actorId: string, privileged = false): void {
-  if (!privileged && run.participant_id !== actorId) {
-    throw new IntelligenceServiceError("run_not_found", "Intelligence run not found", 404);
-  }
-}
-
-function routeAliases(paths: string[], register: (path: string) => void): void {
-  for (const route of paths) register(route);
-}
-
-// Public benchmark catalog and leaderboard views.
-routeAliases(["/api/intelligence/v1/benchmark", "/api/intelligence/benchmark", "/api/intelligence"], (route) => {
+{
+  const route = "/api/community/v1/discussions";
   app.get(route, (req: Request, res: Response) => {
     try {
-      const requestedTaskId = typeof req.query.task_id === "string" ? req.query.task_id : typeof req.query.taskId === "string" ? req.query.taskId : INTELLIGENCE_TASK_ID;
-      const catalog = intelligenceService.catalog(requestedTaskId);
-      const suite = intelligenceService.suiteCatalog();
-      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
-      res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({
-        schema_version: "treatcode.intelligence.api.v1",
-        data: {
-          suite,
-          tasks: suite.tasks,
-          task: catalog.task,
-          task_id: catalog.task.id,
-          public_tests: catalog.public_tests,
-          hidden_tests: catalog.hidden_tests,
-          public_leaderboard: [],
-           official_leaderboard: intelligenceLeaderboardView("official"),
-           self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
-           model_suite_leaderboard: modelSuiteLeaderboard,
-        },
-        suite,
-        tasks: suite.tasks,
-        task: catalog.task,
-        public_tests: catalog.public_tests,
-        hidden_tests: catalog.hidden_tests,
-         official_leaderboard: intelligenceLeaderboardView("official"),
-         self_reported_leaderboard: intelligenceLeaderboardView("self-reported"),
-         model_suite_leaderboard: modelSuiteLeaderboard,
-        protocol_schema: catalog.protocol_schema,
-        manifest_schema: INTELLIGENCE_MANIFEST_SCHEMA,
-      });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-// V3 is intentionally additive. Diagnostic compatibility routes remain
-// available for the end-to-end regression API;
-// this catalog exposes the independent-task protocol and honest authoring
-// readiness without presenting candidate briefs as executable model scores.
-app.get("/api/intelligence/v3/catalog", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const catalog = intelligenceV3CatalogService.catalog();
-  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { catalog }, catalog });
-});
-
-app.get("/api/intelligence/v3/protocol", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { protocol: intelligenceV3CatalogService.protocol }, protocol: intelligenceV3CatalogService.protocol });
-});
-
-app.get("/api/intelligence/v3/discussion-rubric", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const rubric = intelligenceV3CatalogService.discussionRubric;
-  res.json({ schema_version: "treatcode.intelligence.api.v3", data: { rubric }, rubric });
-});
-
-app.get("/api/intelligence/v3.1/catalog", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const catalog = intelligenceV31CatalogService.catalog();
-  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { catalog }, catalog });
-});
-
-app.get("/api/intelligence/v3.1/protocol", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const protocol = intelligenceV31CatalogService.protocol;
-  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { protocol }, protocol });
-});
-
-app.get("/api/intelligence/v3.1/tracks", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const catalog = intelligenceV31CatalogService.catalog();
-  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { tracks: catalog.tracks, score_dimensions: catalog.score_dimensions }, tracks: catalog.tracks, score_dimensions: catalog.score_dimensions });
-});
-
-app.get("/api/intelligence/v3.1/comparisons/latest", (_req: Request, res: Response) => {
-  res.setHeader("Cache-Control", "public, max-age=30");
-  const comparison = intelligenceV31CatalogService.latestComparison();
-  res.json({ schema_version: "treatcode.intelligence.api.v3.1", data: { comparison }, comparison });
-});
-
-// A stable suite endpoint lets clients discover task-specific fixtures before
-// creating a run.  It intentionally returns the same public projections as
-// the benchmark catalog; sealed hidden inputs never cross this boundary.
-routeAliases(["/api/intelligence/v1/suite", "/api/intelligence/suite"], (route) => {
-  app.get(route, (_req: Request, res: Response) => {
-    try {
-      const suite = intelligenceService.suiteCatalog();
-      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
-      res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard }, suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-// Keep the catalog/task names discoverable for clients that use the shorter
-// resource-oriented route vocabulary. These projections are public and carry
-// only starter files/public metadata; hidden verifier cases never cross this
-// adapter.
-routeAliases(["/api/intelligence/v1/catalog", "/api/intelligence/catalog"], (route) => {
-  app.get(route, (_req: Request, res: Response) => {
-    try {
-      const suite = intelligenceService.suiteCatalog();
-      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
-      res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard }, suite, tasks: suite.tasks, model_suite_leaderboard: modelSuiteLeaderboard });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-routeAliases(["/api/intelligence/v1/tasks", "/api/intelligence/tasks"], (route) => {
-  app.get(route, (req: Request, res: Response) => {
-    try {
-      const taskId = typeof req.query.task_id === "string" ? req.query.task_id : typeof req.query.taskId === "string" ? req.query.taskId : undefined;
-      const suite = intelligenceService.suiteCatalog();
-      const tasks = taskId ? [intelligenceService.catalog(taskId)] : suite.tasks;
-      res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { tasks, ...(taskId ? { task: tasks[0], task_id: taskId } : {}) }, tasks, ...(taskId ? { task: tasks[0], task_id: taskId } : {}) });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-routeAliases(["/api/intelligence/v1/tasks/:taskId", "/api/intelligence/tasks/:taskId"], (route) => {
-  app.get(route, (req: Request, res: Response) => {
-    try {
-      const catalog = intelligenceService.catalog(req.params.taskId);
-      res.setHeader("Cache-Control", "public, max-age=30");
-      res.json({ schema_version: "treatcode.intelligence.api.v1", data: { task: catalog.task, task_id: catalog.task.id, public_tests: catalog.public_tests, hidden_tests: catalog.hidden_tests }, task: catalog.task, task_id: catalog.task.id, public_tests: catalog.public_tests, hidden_tests: catalog.hidden_tests });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-routeAliases(["/api/intelligence/v1/leaderboard", "/api/intelligence/leaderboard"], (route) => {
-  app.get(route, (req: Request, res: Response) => {
-    try {
-      const taskId = typeof req.query.task_id === "string" ? req.query.task_id : typeof req.query.taskId === "string" ? req.query.taskId : undefined;
-      const official = intelligenceLeaderboardView("official", taskId);
-      const selfReported = intelligenceLeaderboardView("self-reported", taskId);
-      const modelSuiteLeaderboard = intelligenceService.getModelSuiteLeaderboard();
-      res.json({
-        schema_version: "treatcode.intelligence.api.v1",
-        data: { official_leaderboard: official, self_reported_leaderboard: selfReported, model_suite_leaderboard: modelSuiteLeaderboard, ...(taskId ? { task_id: taskId } : {}) },
-        ...(taskId ? { task_id: taskId } : {}),
-        official_leaderboard: official,
-        self_reported_leaderboard: selfReported,
-        model_suite_leaderboard: modelSuiteLeaderboard,
-      });
-    } catch (error) {
-      intelligenceErrorResponse(res, error);
-    }
-  });
-});
-
-// Community discussion and explicitly posted practice-solution reads are
-// public. Private benchmark solution reads remain account-scoped; all writes
-// use the authenticated decision as the owner and never trust a body-supplied
-// username/handle.
-routeAliases(["/api/intelligence/v1/discussions", "/api/intelligence/discussions", "/api/community/v1/discussions"], (route) => {
-  app.get(route, (req: Request, res: Response) => {
-    try {
-      const taskId = String(req.query.task_id || req.query.challenge_id || req.query.problem_id || INTELLIGENCE_TASK_ID);
+      const taskId = String(req.query.task_id || req.query.challenge_id || req.query.problem_id || "");
       res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { discussions: communityStore.listDiscussions({ task_id: taskId, limit: Number(req.query.limit) || undefined }) }, discussions: communityStore.listDiscussions({ task_id: taskId, limit: Number(req.query.limit) || undefined }) });
     } catch (error) {
-      intelligenceErrorResponse(res, error);
+      communityErrorResponse(res, error);
     }
   });
   app.post(route, (req: Request, res: Response) => {
-    const decision = intelligenceAction(req, res, "artifact");
+    const decision = communityAction(req, res, "artifact");
     if (!decision) return;
     try {
       const body = (req.body || {}) as Record<string, unknown>;
       const post = communityStore.addDiscussion(decision, {
-        task_id: String(body.task_id || body.challenge_id || body.problem_id || INTELLIGENCE_TASK_ID),
+        task_id: String(body.task_id || body.challenge_id || body.problem_id || ""),
         solution_id: typeof body.solution_id === "string" ? body.solution_id : undefined,
         parent_id: typeof body.parent_id === "string" ? body.parent_id : undefined,
         title: typeof body.title === "string" ? body.title : undefined,
@@ -1125,28 +905,29 @@ routeAliases(["/api/intelligence/v1/discussions", "/api/intelligence/discussions
       });
       res.status(201).json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { discussion: post }, discussion: post });
     } catch (error) {
-      intelligenceErrorResponse(res, error);
+      communityErrorResponse(res, error);
     }
   });
-});
+}
 
-routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions"], (route) => {
+{
+  const route = "/api/community/v1/solutions/mine";
   app.get(route, (req: Request, res: Response) => {
-    const taskId = String(req.query.task_id || req.query.challenge_id || req.query.problem_id || INTELLIGENCE_TASK_ID);
-    const decision = intelligenceAction(req, res, "read", false);
+    const taskId = String(req.query.task_id || req.query.challenge_id || req.query.problem_id || "");
+    const decision = communityAction(req, res, "read", false);
     if (!decision) return;
     try {
       const revisions = communityStore.listSolutionRevisions({ task_id: taskId, owner_identity_id: decision.actor.id });
       const solution = revisions[0] || null;
       res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { solution: publicSolutionView(solution), revisions }, solution: publicSolutionView(solution), revisions });
     } catch (error) {
-      intelligenceErrorResponse(res, error);
+      communityErrorResponse(res, error);
     }
   });
-});
+}
 
 // Practice solutions are public only after the author explicitly posts them.
-// This route never returns private benchmark drafts or internal owner ids.
+// Private drafts and internal owner ids are not included.
 app.get("/api/community/v1/solutions", (req: Request, res: Response) => {
   try {
     const requestedTask = req.query.task_id || req.query.challenge_id || req.query.problem_id;
@@ -1159,33 +940,31 @@ app.get("/api/community/v1/solutions", (req: Request, res: Response) => {
     res.setHeader("Cache-Control", viewerIdentityId ? "private, max-age=10" : "public, max-age=10");
     res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: { solutions }, solutions });
   } catch (error) {
-    intelligenceErrorResponse(res, error);
+    communityErrorResponse(res, error);
   }
 });
 
 app.post("/api/community/v1/solutions/:solutionId/vote", (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "artifact");
+  const decision = communityAction(req, res, "artifact");
   if (!decision) return;
   try {
     const vote = communityStore.toggleSolutionVote(decision, req.params.solutionId);
     res.json({ schema_version: COMMUNITY_API_SCHEMA_VERSION, data: vote, ...vote });
   } catch (error) {
-    intelligenceErrorResponse(res, error);
+    communityErrorResponse(res, error);
   }
 });
 
-routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "/api/community/v1/solutions"], (route) => {
+{
+  const route = "/api/community/v1/solutions";
   app.post(route, (req: Request, res: Response) => {
-    const decision = intelligenceAction(req, res, "artifact");
+    const decision = communityAction(req, res, "artifact");
     if (!decision) return;
     try {
       const body = (req.body || {}) as Record<string, unknown>;
       const visibility = body.visibility === "public" ? "public" : "private";
-      if (visibility === "public" && route !== "/api/community/v1/solutions") {
-        throw new CommunityStoreError("public_post_route_required", "Public practice solutions must be posted through the community solution route.", 400);
-      }
       const input = {
-        task_id: String(body.task_id || body.challenge_id || body.problem_id || INTELLIGENCE_TASK_ID),
+        task_id: String(body.task_id || body.challenge_id || body.problem_id || ""),
         solution_id: typeof body.solution_id === "string" ? body.solution_id : undefined,
         title: typeof body.title === "string" ? body.title : undefined,
         code: typeof body.code === "string" ? body.code : typeof body.content === "string" ? body.content : "",
@@ -1210,199 +989,10 @@ routeAliases(["/api/intelligence/v1/solutions", "/api/intelligence/solutions", "
         ...(published ? { discussion: published.discussion } : {}),
       });
     } catch (error) {
-      intelligenceErrorResponse(res, error);
+      communityErrorResponse(res, error);
     }
   });
-});
-
-// Run lifecycle: start a four-trial session, edit allowlisted files, run the
-// repeatable public gate, and consume exactly one hidden submission per trial.
-app.post("/api/intelligence/v1/runs", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  try {
-    const body = (req.body || {}) as Record<string, unknown>;
-    const requestedTaskId = typeof body.task_id === "string" ? body.task_id : typeof body.taskId === "string" ? body.taskId : undefined;
-    const requestedCommit = typeof body.source_commit === "string" ? body.source_commit : typeof body.sourceCommit === "string" ? body.sourceCommit : publicSnapshot.snapshot.commit || undefined;
-    const run = await intelligenceService.startRun({
-      task_id: requestedTaskId,
-      participant_id: decision.actor.id,
-      source_commit: requestedCommit,
-      evaluation_kind: body.evaluation_kind === "model_rollout" || body.evaluation_kind === "harness_fixture" ? body.evaluation_kind : undefined,
-      provider: typeof body.provider === "string" ? body.provider : undefined,
-      model: typeof body.model === "string" ? body.model : undefined,
-      reasoning_effort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
-      harness: typeof body.harness === "string" ? body.harness : undefined,
-      prompt_hash: typeof body.prompt_hash === "string" ? body.prompt_hash : undefined,
-      rollout_ids: Array.isArray(body.rollout_ids) ? body.rollout_ids.filter((item): item is string => typeof item === "string") : undefined,
-      artifact_hashes: Array.isArray(body.artifact_hashes) ? body.artifact_hashes.filter((item): item is string => typeof item === "string") : undefined,
-    });
-    intelligenceRunByParticipant.set(intelligenceRunKey(decision.actor.id, run.task_id), run.run_id);
-    res.status(201).json({ schema_version: "treatcode.intelligence.api.v1", data: { run }, run });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.get("/api/intelligence/v1/runs/:runId", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "read", false);
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { run }, run });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.post("/api/intelligence/v1/runs/:runId/trials/:trialId/files", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    const body = (req.body || {}) as Record<string, unknown>;
-    const result = await intelligenceService.writeFile(req.params.runId, req.params.trialId, String(body.path || ""), typeof body.content === "string" ? body.content : "");
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: result, file: result });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.get("/api/intelligence/v1/runs/:runId/trials/:trialId/files", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "read", false);
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    const files = await intelligenceService.trialFiles(req.params.runId, req.params.trialId);
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { files }, files });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.post("/api/intelligence/v1/runs/:runId/trials/:trialId/public-tests", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    const report = await intelligenceService.runPublicTests(req.params.runId, req.params.trialId);
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { report }, report });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.post("/api/intelligence/v1/runs/:runId/trials/:trialId/submit", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    const result = await intelligenceService.submitTrial(req.params.runId, req.params.trialId);
-    const refreshed = await intelligenceService.getRun(req.params.runId);
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { ...result, run: refreshed }, ...result, run: refreshed, trial: publicTrialView(refreshed.trials.find((trial) => trial.id === req.params.trialId) as unknown as Record<string, unknown>, result.hidden as unknown as Record<string, unknown>) });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-// The UI's compact one-button adapter starts (or reuses) a participant run,
-// writes an optional file map, and returns the public report plus sealed receipt.
-app.post("/api/intelligence/v1/trials", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  try {
-    const body = (req.body || {}) as Record<string, unknown>;
-    const taskId = typeof body.task_id === "string" ? body.task_id : typeof body.taskId === "string" ? body.taskId : INTELLIGENCE_TASK_ID;
-    const taskCatalog = intelligenceService.catalog(taskId);
-    let runId = typeof body.run_id === "string" ? body.run_id : intelligenceRunByParticipant.get(intelligenceRunKey(decision.actor.id, taskId));
-    let run = runId ? await intelligenceService.getRun(runId) : null;
-    if (!run || run.task_id !== taskId || run.participant_id !== decision.actor.id || run.status !== "open") {
-      run = await intelligenceService.startRun({ task_id: taskId, participant_id: decision.actor.id, source_commit: publicSnapshot.snapshot.commit || undefined });
-      runId = run.run_id;
-      intelligenceRunByParticipant.set(intelligenceRunKey(decision.actor.id, taskId), runId);
-    }
-    if (!runId) throw new IntelligenceServiceError("run_not_found", "Intelligence run could not be created", 500);
-    const activeRunId = runId;
-    const trialIndex = typeof body.trial_id === "string" ? Math.max(0, Number.parseInt(body.trial_id.match(/(?:trial[-_])?(\d+)$/i)?.[1] || "1", 10) - 1) : 0;
-    const trial = run.trials[trialIndex] || run.trials[0];
-    const files = body.files && typeof body.files === "object" ? body.files as Record<string, unknown> : {};
-    for (const descriptor of taskCatalog.task.allowlisted_files) {
-      const file = descriptor.path;
-      if (typeof files[file] === "string") await intelligenceService.writeFile(activeRunId, trial.id, file, files[file] as string);
-    }
-    if (Object.keys(files).length === 0 && typeof body.code === "string" && body.code.trim()) {
-      // A compact client may send one complete implementation.  Preserve the
-      // historical TC-SWE-001 median path; single-file suite tasks use their
-      // only allowlisted source file.
-      const codePath = taskId === INTELLIGENCE_TASK_ID
-        ? "src/median.trit"
-        : taskCatalog.task.allowlisted_files.length === 1
-          ? taskCatalog.task.allowlisted_files[0].path
-          : undefined;
-      if (codePath) await intelligenceService.writeFile(activeRunId, trial.id, codePath, body.code);
-    }
-    const result = await intelligenceService.submitTrial(activeRunId, trial.id);
-    const refreshed = await intelligenceService.getRun(activeRunId);
-    const refreshedTrial = refreshed.trials.find((item) => item.id === trial.id) || trial;
-    res.status(201).json({ schema_version: "treatcode.intelligence.api.v1", data: { ...result, run: refreshed, trial: publicTrialView(refreshedTrial as unknown as Record<string, unknown>, result.hidden as unknown as Record<string, unknown>) }, ...result, run: refreshed, trial: publicTrialView(refreshedTrial as unknown as Record<string, unknown>, result.hidden as unknown as Record<string, unknown>) });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.get("/api/intelligence/v1/runs/:runId/aggregate", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "read", false);
-  if (!decision) return;
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    serviceRunForActor(run, decision.actor.id);
-    const aggregate = await intelligenceService.getAggregate(req.params.runId);
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { aggregate }, aggregate });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
-
-app.post("/api/intelligence/v1/runs/:runId/attest", async (req: Request, res: Response) => {
-  const decision = intelligenceAction(req, res, "benchmark");
-  if (!decision) return;
-  if (decision.actor.kind !== "service" && !decision.actor.roles.includes("automation")) {
-    res.status(403).json({ schema_version: "treatcode.intelligence.api.v1", error: { code: "attestation_rejected", reason: "Only a privileged service identity may attest a model run." } });
-    return;
-  }
-  try {
-    const run = await intelligenceService.getRun(req.params.runId);
-    const body = (req.body || {}) as Record<string, unknown>;
-    const evaluationKind = body.evaluation_kind === "model_rollout" || body.evaluation_kind === "harness_fixture" ? body.evaluation_kind : undefined;
-    if (!evaluationKind) {
-      res.status(400).json({ schema_version: "treatcode.intelligence.api.v1", error: { code: "invalid_request", reason: "evaluation_kind is required; model scores must declare model_rollout or harness_fixture provenance." } });
-      return;
-    }
-    const record = await intelligenceService.attest({
-      run_id: run.run_id,
-      principal: decision.actor.id,
-      evaluation_kind: evaluationKind,
-      model: typeof body.model === "string" ? body.model : evaluationKind === "harness_fixture" ? "bounded-suite-proof" : "",
-      provider: typeof body.provider === "string" ? body.provider : undefined,
-      reasoning_effort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
-      harness: typeof body.harness === "string" ? body.harness : undefined,
-      prompt_hash: typeof body.prompt_hash === "string" ? body.prompt_hash : undefined,
-      rollout_ids: Array.isArray(body.rollout_ids) ? body.rollout_ids.filter((item): item is string => typeof item === "string") : undefined,
-      artifact_hashes: Array.isArray(body.artifact_hashes) ? body.artifact_hashes.filter((item): item is string => typeof item === "string") : undefined,
-      model_configuration: typeof body.model_configuration === "string" ? body.model_configuration : "max",
-      tested_commit: typeof body.tested_commit === "string" ? body.tested_commit : run.source_commit,
-      evidence_hashes: Array.isArray(body.evidence_hashes) ? body.evidence_hashes.filter((item): item is string => typeof item === "string") : [],
-    });
-    res.json({ schema_version: "treatcode.intelligence.api.v1", data: { attestation: record }, attestation: record });
-  } catch (error) {
-    intelligenceErrorResponse(res, error);
-  }
-});
+}
 
 // P08 workspace routes are versioned and isolated from the public snapshot
 // routes above. The service provisions from `git archive`, so creating or
@@ -2503,7 +2093,7 @@ app.post("/api/submit", async (req: Request, res: Response) => {
       metadata: { opt_level: typeof optLevel === "string" ? optLevel : "-O2" },
     });
   } catch (error) {
-    intelligenceErrorResponse(res, error);
+    communityErrorResponse(res, error);
     return;
   }
 

@@ -296,8 +296,14 @@ function buildSnapshot() {
     "tools/trit-test.ps1",
   ]);
   const p03FilesByPath = new Map();
+  const removedIndexedPaths = new Set();
   for (const file of asArray(repositoryIndex?.files)) {
     const normalized = normalizePath(file.path);
+    // An older index can retain commit blobs for files deleted in this checkout.
+    if (normalized && !fs.existsSync(path.join(REPO_ROOT, normalized))) {
+      removedIndexedPaths.add(normalized);
+      continue;
+    }
     if (!normalized || !isPublicPath(normalized) || file.source_authority === false || file.role === "generated") continue;
     p03FilesByPath.set(normalized, file);
     sourcePaths.add(normalized);
@@ -733,6 +739,7 @@ function buildSnapshot() {
   };
   if (repositoryIndex) {
     for (const relationship of asArray(repositoryIndex.relationships)) {
+      if ([relationship.source?.path, relationship.target_path].some((value) => removedIndexedPaths.has(normalizePath(value)))) continue;
       const from = mapRepositoryEndpoint(relationship.from);
       const to = mapRepositoryEndpoint(relationship.to);
       if (from && to) {

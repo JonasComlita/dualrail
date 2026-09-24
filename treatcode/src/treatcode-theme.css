@@ -13,7 +13,6 @@
 
 .tc-app-root,
 .p10-arena,
-.intelligence-app,
 .operations-shell,
 .workspace-app {
   min-height: 100vh;
@@ -24,12 +23,10 @@
 
 .tc-app-root,
 .p10-arena,
-.intelligence-app,
 .operations-shell,
 .workspace-app,
 .tc-app-root *,
 .p10-arena *,
-.intelligence-app *,
 .operations-shell *,
 .workspace-app * {
   box-sizing: border-box;
@@ -37,7 +34,6 @@
 
 .tc-app-root a,
 .p10-arena a,
-.intelligence-app a,
 .operations-shell a,
 .workspace-app a {
   color: var(--tc-practice-blue);
@@ -45,7 +41,6 @@
 
 .tc-app-root .tc-shell,
 .p10-arena-main,
-.intelligence-main,
 .workspace-main,
 .operations-layout {
   width: min(1012px, calc(100% - 48px));
@@ -56,7 +51,6 @@
 
 .tc-app-root .tc-topbar,
 .p10-arena-header,
-.intelligence-header,
 .workspace-header,
 .operations-header {
   width: min(1012px, calc(100% - 48px));
@@ -80,7 +74,6 @@
 
 .tc-app-root .tc-brand,
 .p10-brand,
-.intelligence-brand,
 .ops-wordmark,
 .workspace-wordmark {
   color: var(--tc-practice-ink);
@@ -93,7 +86,6 @@
 
 .tc-app-root .tc-brand,
 .p10-arena .p10-brand,
-.intelligence-app .intelligence-brand,
 .operations-shell .ops-wordmark,
 .workspace-app .workspace-wordmark {
   color: var(--tc-practice-ink);
@@ -101,7 +93,6 @@
 
 .tc-app-root .tc-brand-mark,
 .p10-brand span,
-.intelligence-brand span,
 .ops-wordmark span,
 .workspace-wordmark span {
   color: var(--tc-practice-blue);
@@ -109,7 +100,6 @@
 
 .tc-app-root .tc-nav,
 .p10-arena-header nav,
-.intelligence-header nav,
 .workspace-header nav {
   display: flex;
   flex-wrap: wrap;
@@ -120,7 +110,6 @@
 
 .tc-app-root .tc-nav a,
 .p10-arena-header nav a,
-.intelligence-header nav a,
 .workspace-header nav a,
 .operations-header-actions a {
   color: var(--tc-practice-muted);
@@ -131,7 +120,6 @@
 .tc-app-root .tc-nav a:hover,
 .tc-app-root .tc-nav a[aria-current="page"],
 .p10-arena-header a:hover,
-.intelligence-header nav a:hover,
 .workspace-header nav a:hover,
 .operations-header-actions a:hover {
   color: var(--tc-practice-blue);
@@ -139,14 +127,12 @@
 
 .tc-app-root .tc-main,
 .p10-arena-main,
-.intelligence-main,
 .workspace-main {
   padding: 28px 0 54px;
 }
 
 .tc-app-root h1,
 .p10-hero h1,
-.intelligence-hero h1,
 .workspace-hero h1 {
   color: var(--tc-practice-ink);
   font-size: clamp(26px, 4vw, 34px);
@@ -156,7 +142,6 @@
 
 .tc-app-root .tc-eyebrow,
 .p10-eyebrow,
-.intelligence-eyebrow,
 .workspace-eyebrow,
 .ops-kicker {
   color: var(--tc-practice-blue);
@@ -170,8 +155,6 @@
 .tc-app-root .tc-lede,
 .p10-hero p,
 .p10-muted,
-.intelligence-hero p,
-.intelligence-muted,
 .workspace-hero p,
 .workspace-note,
 .ops-muted {
@@ -182,7 +165,6 @@
 
 .tc-app-root .tc-hero-row,
 .p10-hero,
-.intelligence-hero,
 .workspace-hero {
   gap: 22px;
   margin-bottom: 22px;
@@ -190,7 +172,6 @@
 
 .tc-app-root .tc-hero-panel,
 .p10-protocol-card,
-.intelligence-contract,
 .workspace-auth-card {
   border: 1px solid var(--tc-practice-line);
   border-radius: 8px;
@@ -200,7 +181,6 @@
 
 .tc-app-root .tc-hero-panel,
 .p10-protocol-card,
-.intelligence-contract,
 .workspace-auth-card {
   padding: 14px;
 }
@@ -236,7 +216,6 @@
 .tc-app-root .tc-search button,
 .tc-app-root .tc-primary,
 .p10-primary,
-.intelligence-primary,
 .workspace-primary,
 .ops-button.primary {
   border: 1px solid var(--tc-practice-blue);
@@ -248,7 +227,6 @@
 }
 
 .tc-app-root .tc-secondary,
-.intelligence-secondary,
 .workspace-quiet,
 .workspace-actions button,
 .workspace-side-tools button,
@@ -267,7 +245,6 @@
 
 .tc-app-root .tc-section-heading h2,
 .p10-section-heading h2,
-.intelligence-section-heading h2,
 .ops-section-heading h2,
 .workspace-panel h2,
 .workspace-detail h2 {
@@ -298,7 +275,6 @@
 .p10-panel,
 .p10-gate,
 .p10-gate-note,
-.intelligence-panel,
 .workspace-panel,
 .workspace-editor,
 .workspace-side-tools > div,
@@ -317,7 +293,6 @@
 .tc-app-root .tc-panel,
 .tc-app-root .tc-learning-check,
 .p10-panel,
-.intelligence-panel,
 .workspace-panel,
 .ops-panel {
   padding: 14px;
@@ -352,7 +327,6 @@
 .tc-app-root .tc-tag,
 .p10-layout-summary span,
 .p10-representation-note,
-.intelligence-task-facts span,
 .workspace-facts span {
   background: var(--tc-practice-fill);
   color: var(--tc-practice-muted);
@@ -360,7 +334,6 @@
 
 .tc-app-root .tc-error,
 .p10-error,
-.intelligence-error,
 .ops-banner.error {
   border: 1px solid #fecaca;
   border-radius: 5px;
@@ -385,13 +358,11 @@
 }
 
 .p10-hero h1,
-.intelligence-hero h1,
 .workspace-hero h1 {
   margin: 8px 0 10px;
 }
 
 .p10-eyebrow,
-.intelligence-eyebrow,
 .workspace-eyebrow {
   color: var(--tc-practice-blue);
 }
@@ -399,9 +370,6 @@
 .p10-protocol-card strong,
 .p10-layout-summary b,
 .p10-representation-note b,
-.intelligence-contract strong,
-.intelligence-panel h2,
-.intelligence-panel h3,
 .workspace-panel h2,
 .workspace-detail h2 {
   color: var(--tc-practice-ink);
@@ -450,87 +418,6 @@
 }
 
 .p10-footer {
-  width: min(1012px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 18px 0 32px;
-  border-top-color: var(--tc-practice-line);
-  color: var(--tc-practice-muted);
-}
-
-.intelligence-app {
-  --intelligence-ink: var(--tc-practice-ink);
-  --intelligence-muted: var(--tc-practice-muted);
-  --intelligence-border: var(--tc-practice-line);
-  --intelligence-paper: var(--color-background-primary, #fff);
-  background: var(--color-background-primary, #fff);
-}
-
-.intelligence-header {
-  gap: 18px;
-}
-
-.intelligence-main {
-  padding-top: 28px;
-}
-
-.intelligence-hero {
-  grid-template-columns: minmax(0, 1fr) 240px;
-}
-
-.intelligence-hero h1 {
-  color: var(--tc-practice-ink);
-}
-
-.intelligence-contract,
-.intelligence-panel,
-.intelligence-suite-card,
-.intelligence-trial,
-.intelligence-table-wrap,
-.intelligence-panel textarea,
-.intelligence-field-label input {
-  border-color: var(--tc-practice-line);
-}
-
-.intelligence-suite-card,
-.intelligence-file-list li,
-.intelligence-reference-row,
-.intelligence-task-facts span {
-  background: var(--tc-practice-soft);
-}
-
-.intelligence-suite-card:hover,
-.intelligence-suite-card:focus-visible,
-.intelligence-suite-card.selected,
-.intelligence-trial:hover,
-.intelligence-trial:focus-visible,
-.intelligence-trial.selected {
-  border-color: var(--tc-practice-blue);
-  background: var(--tc-practice-soft);
-  box-shadow: none;
-}
-
-.intelligence-primary,
-.intelligence-auth-tabs button.active,
-.intelligence-header nav a:hover,
-.intelligence-header nav a:focus-visible,
-.intelligence-footer a,
-.intelligence-calibration-grid a {
-  color: var(--tc-practice-blue);
-}
-
-.intelligence-primary {
-  background: var(--tc-practice-blue);
-  border-color: var(--tc-practice-blue);
-  color: #fff;
-}
-
-.intelligence-status {
-  border-color: var(--tc-practice-line);
-  background: var(--tc-practice-soft);
-  color: var(--tc-practice-muted);
-}
-
-.intelligence-footer {
   width: min(1012px, calc(100% - 48px));
   margin: 0 auto;
   padding: 18px 0 32px;
@@ -701,23 +588,19 @@
 @media (max-width: 760px) {
   .tc-app-root .tc-shell,
   .p10-arena-main,
-  .intelligence-main,
   .workspace-main,
   .operations-layout,
   .tc-app-root .tc-topbar,
   .p10-arena-header,
-  .intelligence-header,
   .workspace-header,
   .operations-header,
   .p10-footer,
-  .intelligence-footer,
   .operations-footer {
     width: min(100% - 48px, 1012px);
   }
 
   .tc-app-root .tc-topbar,
   .p10-arena-header,
-  .intelligence-header,
   .workspace-header,
   .operations-header {
     height: auto;
@@ -731,7 +614,6 @@
   }
 
   .p10-hero,
-  .intelligence-hero,
   .workspace-hero,
   .operations-layout {
     grid-template-columns: 1fr;

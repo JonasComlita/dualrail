@@ -270,13 +270,13 @@ function Nav({ view, setView, auth }: { view: string; setView: (v: string) => vo
             <button type="button" onClick={() => { auth.onLogin(accessKey); setAccessKey(""); }}>
               log in
             </button>
-            <a href="/intelligence#account" data-testid="practice-signup-link">sign up</a>
+            <a href="/account?mode=register" data-testid="practice-signup-link">sign up</a>
             {auth.error ? <span role="status" className="tc-practice-auth-error">{auth.error}</span> : null}
           </>
         ) : (
           <>
-            <a href="/intelligence#account" data-testid="practice-login-link">log in</a>
-            <a href="/intelligence#account" data-testid="practice-signup-link">sign up</a>
+            <a href="/account" data-testid="practice-login-link">log in</a>
+            <a href="/account?mode=register" data-testid="practice-signup-link">sign up</a>
           </>
         )}
         </div>
@@ -343,7 +343,7 @@ export default function App() {
 
   // Dynamic leaderboard loaded from Express API
   const [dynamicLeaderboard, setDynamicLeaderboard] = useState<LeaderboardData[]>([]);
-  const [authToken, setAuthToken] = useState(() => window.localStorage.getItem("treatcode.auth.token") || window.localStorage.getItem("treatcode.intelligence.token") || "");
+  const [authToken, setAuthToken] = useState(() => window.localStorage.getItem("treatcode.auth.token") || "");
   const [authIdentity, setAuthIdentity] = useState<string | null>(null);
   const [authActions, setAuthActions] = useState<string[]>(["read"]);
   const [authError, setAuthError] = useState("");
@@ -369,7 +369,6 @@ export default function App() {
       const payload = await response.json();
       if (!response.ok) {
         window.localStorage.removeItem("treatcode.auth.token");
-        window.localStorage.removeItem("treatcode.intelligence.token");
         setAuthToken("");
         setAuthIdentity(null);
         setAuthActions(["read"]);
@@ -414,7 +413,6 @@ export default function App() {
 
   const logout = () => {
     window.localStorage.removeItem("treatcode.auth.token");
-    window.localStorage.removeItem("treatcode.intelligence.token");
     setAuthToken("");
     setAuthIdentity(null);
     setAuthActions(["read"]);
@@ -437,11 +435,11 @@ export default function App() {
     onLogout: logout,
   };
 
-  const hasParticipantSession = Boolean(authToken || window.localStorage.getItem("treatcode.intelligence.token"));
+  const hasParticipantSession = Boolean(authToken);
 
-  const intelligenceRequest = async (paths: string[], init: RequestInit = {}) => {
+  const communityRequest = async (paths: string[], init: RequestInit = {}) => {
     let lastError = new Error("Participant community API unavailable");
-    const participantToken = authToken || window.localStorage.getItem("treatcode.intelligence.token") || "";
+    const participantToken = authToken || "";
     for (const path of paths) {
       try {
         const headers = new Headers(init.headers);
@@ -453,7 +451,7 @@ export default function App() {
         let payload: any = {};
         try { payload = text ? JSON.parse(text) : {}; } catch { payload = { error: text }; }
         if (response.ok) return payload;
-        const reason = payload?.error?.reason || payload?.error || payload?.message || `Intelligence API returned ${response.status}`;
+        const reason = payload?.error?.reason || payload?.error || payload?.message || `Community API returned ${response.status}`;
         lastError = new Error(String(reason));
         (lastError as Error & { status?: number }).status = response.status;
         if (response.status !== 404 && response.status !== 405) throw lastError;
@@ -471,8 +469,8 @@ export default function App() {
     setDiscussionError("");
     try {
       const [solutionPayload, publicSolutionsPayload] = await Promise.all([
-        intelligenceRequest([`/api/intelligence/v1/solutions?task_id=${encodeURIComponent(problemId)}&challenge_id=${encodeURIComponent(problemId)}`, `/api/intelligence/solutions?task_id=${encodeURIComponent(problemId)}`]).catch(() => null),
-        intelligenceRequest([`/api/community/v1/solutions?challenge_id=${encodeURIComponent(problemId)}&limit=25`]).catch(() => null),
+        communityRequest([`/api/community/v1/solutions/mine?challenge_id=${encodeURIComponent(problemId)}`]).catch(() => null),
+        communityRequest([`/api/community/v1/solutions?challenge_id=${encodeURIComponent(problemId)}&limit=25`]).catch(() => null),
       ]);
       const solution = solutionPayload?.data?.solution || solutionPayload?.solution || solutionPayload?.data;
       if (solution && typeof solution === "object") {
@@ -545,7 +543,7 @@ export default function App() {
       if (!postExplanation.trim()) {
         throw new Error("Add a plain-English explanation before posting this solution.");
       }
-      const payload = await intelligenceRequest(["/api/community/v1/solutions"], {
+      const payload = await communityRequest(["/api/community/v1/solutions"], {
         method: "POST",
         body: JSON.stringify({
           task_id: activeProblem.id,
@@ -581,7 +579,7 @@ export default function App() {
     setVoteBusySolutionId(solutionId);
     setDiscussionError("");
     try {
-      const payload = await intelligenceRequest([`/api/community/v1/solutions/${encodeURIComponent(solutionId)}/vote`], {
+      const payload = await communityRequest([`/api/community/v1/solutions/${encodeURIComponent(solutionId)}/vote`], {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -3332,7 +3330,7 @@ function LearningInteractiveModule({
     setRunning(true);
     setFeedback("Submitting to the bounded repository-backed compiler…");
     try {
-      const token = window.localStorage.getItem("treatcode.auth.token") || window.localStorage.getItem("treatcode.intelligence.token") || "";
+      const token = window.localStorage.getItem("treatcode.auth.token") || "";
       const response = await fetch("/api/learn/exercises/run", {
         method: "POST",
         headers: {

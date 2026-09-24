@@ -1,8 +1,0 @@
-fn normalize_value(x: t40) -> t40 {
-    var y: t40 = x;
-    if y < -6 { y = -5; }
-    if y > 6 { y = 6; }
-    if y < 0 { return y - 1; }
-    if y > 0 { return y + 1; }
-    return 1;
-}

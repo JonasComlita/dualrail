@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AuthStore, DEFAULT_PROJECT_ID } from "../src/auth";
 import { CommunityStore } from "../src/communityStore";
 
-const root = mkdtempSync(join(tmpdir(), "treatcode-p14-account-community-"));
+const root = mkdtempSync(join(tmpdir(), "treatcode-account-community-"));
 const identityPath = join(root, "identities.json");
 const communityPath = join(root, "community.json");
 let now = Date.parse("2026-08-20T00:00:00.000Z");
@@ -53,7 +53,7 @@ try {
   });
   assert.equal(submission.owner_handle, "ternary_dev");
   assert.notEqual(submission.owner_handle, "spoofed");
-  assert.equal(community.listPublicSolutions({ challenge_id: "T001" }).length, 0, "private benchmark drafts must not appear in the public solution feed");
+  assert.equal(community.listPublicSolutions({ challenge_id: "T001" }).length, 0, "private practice drafts must not appear in the public solution feed");
 
   const postedSolutionId = "tc:solution:posted";
   const postedSubmission = community.recordChallengeSubmission(actor, {
@@ -111,7 +111,7 @@ try {
   const state = readFileSync(communityPath, "utf8");
   assert(state.includes('"schema_version":"treatcode.community.state.v1"'));
   assert(!state.includes("must-not-persist"));
-  console.log("P14 account/community: passed");
+  console.log("Account/community: passed");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

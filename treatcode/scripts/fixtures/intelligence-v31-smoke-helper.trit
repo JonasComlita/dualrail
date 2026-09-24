@@ -1,3 +1,0 @@
-fn identity_fixture(x: t40) -> t40 {
-    return x;
-}

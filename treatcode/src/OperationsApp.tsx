@@ -185,7 +185,7 @@ export default function OperationsApp(): JSX.Element {
 
   const metrics = overview.metrics;
   return <div className="operations-shell">
-    <SiteHeader active="operations" trailing={<div className="operations-header-actions"><span className={`connectivity-pill connectivity-${overview.connectivity.mode}`}><i />{overview.connectivity.mode === "online" ? "Live" : "Degraded"}</span><a className="ops-button ghost" href="/practice">Practice</a><a className="ops-button ghost" href="/intelligence">Intelligence</a></div>} />
+    <SiteHeader active="operations" trailing={<div className="operations-header-actions"><span className={`connectivity-pill connectivity-${overview.connectivity.mode}`}><i />{overview.connectivity.mode === "online" ? "Live" : "Degraded"}</span><a className="ops-button ghost" href="/practice">Practice</a></div>} />
     <div className="operations-context"><p className="ops-kicker">Operations control plane</p><h1>Operations console</h1></div>
     <div className="operations-layout">
       <nav className="operations-tabs" aria-label="Operations sections">{PANELS.map((candidate) => <button key={candidate.id} className={panel === candidate.id ? "active" : ""} onClick={() => navigate(candidate.id)}>{candidate.label}{candidate.id === "approvals" && overview.approvals.filter((approval) => approval.status === "pending").length > 0 && <span className="tab-count">{overview.approvals.filter((approval) => approval.status === "pending").length}</span>}</button>)}</nav>

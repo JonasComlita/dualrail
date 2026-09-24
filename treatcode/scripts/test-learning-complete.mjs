@@ -46,6 +46,7 @@ async function runBoundedLearningExercise(codeExercise) {
     env: {
       ...process.env,
       PORT: String(port),
+      TI_DATA_ROOT: path.join(evidenceRoot, "ternary-lab"),
       TREATCODE_RUNNER_ARTIFACT_ROOT: artifactRoot,
       TREATCODE_AUTH_AUDIT_PATH: path.join(evidenceRoot, "learning-runner-auth-audit.jsonl"),
       TREATCODE_AUTH_STATE_PATH: path.join(evidenceRoot, "learning-runner-auth-state.json"),
@@ -106,7 +107,7 @@ async function runBoundedLearningExercise(codeExercise) {
       summary: payload.summary,
     };
   } finally {
-    if (!child.killed) child.kill();
+    if (child.exitCode === null) { const closed = new Promise(resolve => child.once("close", resolve)); child.kill(); await closed; }
     await wait(350);
   }
 }

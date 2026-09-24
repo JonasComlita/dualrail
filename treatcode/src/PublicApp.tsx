@@ -360,7 +360,7 @@ function PublicLearningCheck({ module }: { module: LearningInteractive }) {
     setRunning(true);
     setFeedback("Submitting to the bounded repository-backed compiler…");
     try {
-      const token = window.localStorage.getItem("treatcode.auth.token") || window.localStorage.getItem("treatcode.intelligence.token") || "";
+      const token = window.localStorage.getItem("treatcode.auth.token") || "";
       const response = await fetch("/api/learn/exercises/run", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), "X-TreatCode-Project": "tc:project:trit" }, body: JSON.stringify({ exercise_id: module.exercise_id, code }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(payload.error || `runner returned ${response.status}`));

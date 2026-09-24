@@ -1,0 +1,16 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+if (process.platform !== "win32") throw new Error("The pilot worker requires Windows.");
+const cache = fs.readFileSync(path.join(root, "build/CMakeCache.txt"), "utf8");
+const compiler = cache.match(/^CMAKE_CXX_COMPILER:(?:FILEPATH|STRING)=(.+)$/m)?.[1].trim();
+if (!compiler || !path.isAbsolute(compiler) || !fs.existsSync(compiler)) throw new Error("Configure the repository CMake C++ compiler first.");
+const target = path.join(root, "build/treatcode-ternary-worker.exe");
+const source = path.join(root, "tools/ternary_intelligence_job.cpp");
+const result = spawnSync(compiler, ["-std=c++17", "-O2", "-static", "-municode", source, "-o", target], { cwd: root, stdio: "inherit", windowsHide: true, shell: false });
+if (result.status !== 0) throw new Error("Windows worker build failed.");
+const probe = spawnSync(target, ["--probe"], { encoding: "utf8", windowsHide: true });
+if (probe.status !== 0 || !JSON.parse(probe.stdout).jobObjects) throw new Error("Windows worker probe failed.");
+console.log("Built Windows Job Object worker: " + target);

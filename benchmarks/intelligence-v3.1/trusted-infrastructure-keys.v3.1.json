@@ -1,8 +1,0 @@
-{
-  "schema": "treatcode.intelligence.trusted-infrastructure-keys.v3.1",
-  "version": "3.1",
-  "status": "unconfigured",
-  "official": false,
-  "keys": [],
-  "blocker": "No trusted sandbox/evidence provider signing key is configured on this development host."
-}

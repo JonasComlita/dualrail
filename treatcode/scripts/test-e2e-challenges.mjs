@@ -44,7 +44,7 @@ async function waitForServer() {
 try {
   serverProcess = spawn("bun", ["run", "server.ts"], {
     cwd: appRoot,
-    env: { ...process.env, PORT: String(port), TREATCODE_AUTH_AUDIT_PATH: path.join(repoRoot, "build", "treatcode-plan-evidence", "P06", "challenge-e2e-audit.jsonl"), TREATCODE_COMMUNITY_STATE_PATH: communityStatePath },
+    env: { ...process.env, PORT: String(port), TI_DATA_ROOT: path.join(communityStateRoot, "ternary-lab"), TREATCODE_AUTH_AUDIT_PATH: path.join(repoRoot, "build", "treatcode-plan-evidence", "P06", "challenge-e2e-audit.jsonl"), TREATCODE_COMMUNITY_STATE_PATH: communityStatePath },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let serverOutput = "";
@@ -105,12 +105,16 @@ fn sign_test(x: t40) -> t40 {
   assert(posted.response.status === 201, `public solution post returned HTTP ${posted.response.status}`);
   const postedSolutionId = posted.body?.data?.solution?.id || posted.body?.solution?.id;
   assert(typeof postedSolutionId === "string" && postedSolutionId.length > 0, "public solution post did not return a solution id");
-  const privateDraft = await request("/api/intelligence/v1/solutions", {
+  const privateDraft = await request("/api/community/v1/solutions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Action-Nonce": `p06-private-${Date.now()}` },
-    body: JSON.stringify({ task_id: "T001", title: "A private draft", code: "private benchmark draft", language: "trit" }),
+    body: JSON.stringify({ task_id: "T001", title: "A private draft", code: "private practice draft", language: "trit" }),
   });
   assert(privateDraft.response.status === 201, `private solution draft returned HTTP ${privateDraft.response.status}`);
+  const savedDraft = await request("/api/community/v1/solutions/mine?challenge_id=T001", { headers: { Authorization: `Bearer ${token}` } });
+  assert(savedDraft.response.ok && savedDraft.body.data?.solution?.code === "private practice draft", "authenticated private draft read did not return the saved practice solution");
+  const anonymousDraft = await request("/api/community/v1/solutions/mine?challenge_id=T001");
+  assert(anonymousDraft.response.status === 401, "private practice drafts must require authentication");
   const publicFeedAfterSubmit = await request("/api/community/v1/solutions?challenge_id=T001");
   const publicSolutionsAfterSubmit = publicFeedAfterSubmit.body?.data?.solutions || publicFeedAfterSubmit.body?.solutions || [];
   assert(publicFeedAfterSubmit.response.ok && publicSolutionsAfterSubmit.length === 1, "public solution feed must exclude private drafts and stay problem-scoped");
@@ -168,8 +172,11 @@ fn sign_test(x: t40) -> t40 {
     errors.push(`server output:\n${serverProcess.stdout ? "" : ""}`);
   }
 } finally {
-  if (serverProcess && !serverProcess.killed) serverProcess.kill();
-  fs.rmSync(communityStateRoot, { recursive: true, force: true });
+  if (serverProcess && serverProcess.exitCode === null) {
+    const closed = new Promise(resolve => serverProcess.once("close", resolve));
+    serverProcess.kill(); await closed;
+  }
+  fs.rmSync(communityStateRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 const report = {
