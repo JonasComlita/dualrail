@@ -49,13 +49,13 @@ Notable semantic-to-wire mappings are:
 | 16 | `LOAD`   | I      | `Rd ← mem[Rs1 + imm16]` |
 | 17 | `STORE`  | I      | `mem[Rs1 + imm16] ← Rd` (Rd is source) |
 | 18 | `JMP`    | B      | `PC ← PC + offset19` (unconditional) |
-| 19 | `BRN`    | B      | Branch if `Rs.trit[0] == −1` |
+| 19 | `BRN`    | B      | Branch if numeric `Rs < 0` |
 | 20 | `CALL`   | B      | `r25 ← PC+1; PC ← PC + offset19` |
 | 21 | `RET`    | R      | `PC ← toLong(r25)` |
 | 22 | `CVT`    | R      | Convert `Rs1` to width selected by `func` |
-| 23 | `TSEL`   | R5     | `Rd ← rNeg/rZero/rPos` based on `rCond.trit[0]` |
-| 24 | `BRZ`    | B      | Branch if `Rs.trit[0] == 0` |
-| 25 | `BRP`    | B      | Branch if `Rs.trit[0] == +1` |
+| 23 | `TSEL`   | R5     | `Rd ← rNeg/rZero/rPos` from explicit T1 view of `rCond` |
+| 24 | `BRZ`    | B      | Branch if numeric `Rs == 0` |
+| 25 | `BRP`    | B      | Branch if numeric `Rs > 0` |
 | 26 | `SWAP`   | R      | Swap `Rd` and `Rs1` |
 | 27 | `TLADD` | R      | Per-trit lane add (carryless) |
 | 28 | `TLSUB` | R      | Per-trit lane subtract (carryless) |

@@ -49,10 +49,28 @@ struct VMState {
 
 ## Register File
 
-`RegisterFile` holds 27 `TernaryValue` slots (r0–r26).
-- `read(i)` returns zero for r0 regardless of contents.
-- `write(i, val)` silently ignores writes to r0.
-- All registers initialize to zero (T40 mode).
+`TernaryRegisterFile` holds 27 physical T40 words (r0–r26).
+
+- `read(i)` and `readPhysical(i)` expose the physical T40 word. They do not
+  recover the width or lane family used by the last producer.
+- `readView(i, mode)` interprets the physical word using the width selected by
+  the current instruction. Narrow views are numeric conversions from T40.
+- `view_mode` is diagnostic, snapshot, and conservative optimization metadata
+  only. Changing it cannot change architectural results.
+- `write(i, val)` converts scalar values to physical T40 storage. Writes to r0
+  succeed but are discarded.
+- T50 and L50 values occupy the consecutive pair `rN:rN+1`. Their codec
+  preserves finite payloads, canonical zero, overflow, underflow, and invalid
+  state without confusing a raw-zero half-word with numeric zero.
+- A wide write whose head is r26 cannot fit. It fails atomically, so the VM
+  traps the producing instruction and leaves r26 unchanged.
+- A later scalar write changes only its addressed physical register; no hidden
+  producer tag is allowed to erase an adjacent word.
+- All registers initialize to physical T40 zero.
+
+Control-flow widths are explicit: BRN, BRZ, and BRP test the sign of the
+physical numeric value, while TSEL converts its condition through a T1 view and
+traps if that conversion is invalid.
 
 ---
 

@@ -23,6 +23,14 @@ The VM **must** maintain a physically separate Instruction Memory (IMEM) and Dat
 *   **Count**: 27 General Purpose Registers (`r0` to `r26`).
 *   **r0 Constant**: `r0` is hardwired to Zero. Any attempt to write to `r0` must be silently discarded.
 *   **r27 Trap**: The trap register must be outside the general file and inaccessible to standard arithmetic opcodes.
+*   **Physical Width**: Every scalar register is one physical T40 word. An
+    instruction's width suffix selects a view; it is not a persistent register
+    tag. Diagnostic producer metadata must not affect execution.
+*   **Wide Pairs**: T50 and L50 use consecutive register pairs. A wide result
+    targeting r26 is illegal and must trap without changing r26.
+*   **Control Conditions**: `BRN`, `BRZ`, and `BRP` test numeric sign. `TSEL`
+    alone requires its condition to be representable through an explicit T1
+    view.
 
 ### 3. Arithmetic Determinism
 Mathematical results must match the **Trit-Zone Rounding (TZR)** specification. 

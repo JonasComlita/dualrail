@@ -366,6 +366,9 @@ void testTaylorMaclaurin() {
 void testNativeWrappers() {
     std::cout << "[5] native ops wrappers\n";
 
+    expectNear(sandbox::native_ops::pi(), std::acos(-1.0L),
+               "native Machin-series pi", 1e-12L, 1e-14L);
+
     const std::vector<long double> xs = {-1.0L, -0.5L, 0.0L, 0.5L, 1.0L};
     for (long double x : xs) {
         LongTriple tx = fromLongDouble(x);

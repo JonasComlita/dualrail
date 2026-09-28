@@ -350,10 +350,11 @@ enum class InstructionFormat : int8_t {
 //
 // TCMP CONTRACT (critical for ternary branching):
 //   TCMP Rd, Rs1, Rs2 computes sign(Rs1 - Rs2) and writes the result to Rd.
-//   The result is always one of { T_NEG, T_ZER, T_POS } stored in trit[0] of Rd
-//   (all other trits of Rd are set to zero after TCMP).
+//   The result is always one of { T_NEG, T_ZER, T_POS } stored in Rd as a T1
+//   value. The physical register word remains T40.
 //   This single result is the input to BRN — there is no FLAGS register.
-//   BRN Rs, offset branches to PC + offset when Rs.trit[0] == T_NEG.
+//   BRN Rs, offset branches to PC + offset when the numeric value in Rs is
+//   negative. BRZ and BRP test numeric zero and positive respectively.
 //   A three-way branch is:
 //       TCMP  r3, r1, r2            ; r3 = sign(r1 - r2)
 //       BRN   r3, negative_label    ; taken if r3 == -1
@@ -392,13 +393,13 @@ enum class Opcode : uint8_t {
 
     // --- Control Flow ---
     JMP   = 18,   // B-type: PC ← PC + offset19      (unconditional relative jump)
-    BRN   = 19,   // B-type: if Rs.trit[0] == T_NEG: PC ← PC + offset19
+    BRN   = 19,   // B-type: if numeric Rs < 0: PC ← PC + offset19
     CALL  = 20,   // B-type: r25 ← PC+1; PC ← PC + offset19
     RET   = 21,   // R-type (no operands): PC ← r25
     CVT   = 22,   // R-type: Rd = convert Rs1 to width selected by func
     TSEL  = 23,   // R5-type: Rd = rNeg/rZero/rPos selected by T1 condition
-    BRZ   = 24,   // B-type: if Rs.trit[0] == T_ZER: PC changes by offset19
-    BRP   = 25,   // B-type: if Rs.trit[0] == T_POS: PC changes by offset19
+    BRZ   = 24,   // B-type: if numeric Rs == 0: PC changes by offset19
+    BRP   = 25,   // B-type: if numeric Rs > 0: PC changes by offset19
     SWAP  = 26,   // R-type: swap Rd and Rs1
 
     // --- Scalar Lane Logic ---

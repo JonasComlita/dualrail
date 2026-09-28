@@ -26,12 +26,12 @@
 //   DIV                      — ops::divide with pre-check for zero → TRAP
 //   SQRT                     — width-selected native ternary sqrt
 //   TCMP                     — sign(Rs1 − Rs2) via native ternary comparison;
-//                              result is a tagged T1 value
+//                              result uses a T1 view of a physical T40 word
 //   TMIN / TMAX              — compare natively, return the input value
 //   TINV                     — alias for NEG (trit flip is its own inverse)
 //   LOAD / STORE             — word-addressed DMEM access; fault → TRAP
 //   JMP                      — unconditional PC-relative branch
-//   BRN                      — conditional: branch if Rs.trit[0] == T_NEG
+//   BRN                      — conditional: branch if numeric Rs is negative
 //   CALL                     — save PC+1 to r25 (LR), then JMP
 //   RET                      — PC ← toLong(r25)
 //   MOV / MOVH               — load immediate into Rd
@@ -180,9 +180,9 @@ template<typename F>
 }
 
 [[nodiscard]] inline int8_t signValue(TernaryValue value, TernaryMode mode) {
-    if (!isNumericMode(mode) || !isNumericMode(value.mode)) return 0;
+    if (!isNumericMode(mode) || !isNumericMode(value.mode)) return native_ops::RELATION_INVALID;
     TernaryValue a = convertValue(value, mode);
-    if (a.isInvalid()) return 0;
+    if (a.isInvalid()) return native_ops::RELATION_INVALID;
     switch (mode) {
         case TernaryMode::T1:  return native_ops::sign(a.asT1());
         case TernaryMode::T5:  return native_ops::sign(a.asT5());
@@ -192,14 +192,16 @@ template<typename F>
         case TernaryMode::T50: return native_ops::sign(a.asLongTripleRaw());
         default: break;
     }
-    return 0;
+    return native_ops::RELATION_INVALID;
 }
 
 [[nodiscard]] inline int8_t compareValue(TernaryValue lhs, TernaryValue rhs, TernaryMode mode) {
-    if (!isNumericMode(mode) || !isNumericMode(lhs.mode) || !isNumericMode(rhs.mode)) return 0;
+    if (!isNumericMode(mode) || !isNumericMode(lhs.mode) || !isNumericMode(rhs.mode)) {
+        return native_ops::RELATION_INVALID;
+    }
     TernaryValue a = convertValue(lhs, mode);
     TernaryValue b = convertValue(rhs, mode);
-    if (a.isInvalid() || b.isInvalid()) return 0;
+    if (a.isInvalid() || b.isInvalid()) return native_ops::RELATION_INVALID;
     switch (mode) {
         case TernaryMode::T1:  return native_ops::compare(a.asT1(), b.asT1());
         case TernaryMode::T5:  return native_ops::compare(a.asT5(), b.asT5());
@@ -209,7 +211,7 @@ template<typename F>
         case TernaryMode::T50: return native_ops::compare(a.asLongTripleRaw(), b.asLongTripleRaw());
         default: break;
     }
-    return 0;
+    return native_ops::RELATION_INVALID;
 }
 
 enum class LaneOp : uint8_t {
@@ -295,7 +297,7 @@ enum class LaneOp : uint8_t {
     return native_ops::sign(t);
 }
 
-// Compare two LongTriple values. Returns T_NEG / T_ZER / T_POS.
+// Compare two LongTriple values. Exceptional inputs return RELATION_INVALID.
 // Implements TCMP: sign(a - b).
 [[nodiscard]] inline int8_t compare(LongTriple a, LongTriple b) {
     return native_ops::compare(a, b);
@@ -314,10 +316,14 @@ enum class LaneOp : uint8_t {
 
 // TMIN / TMAX: compare and return the winning input value.
 [[nodiscard]] inline LongTriple tmin(LongTriple a, LongTriple b) {
-    return (compare(a, b) == T_NEG) ? a : b;
+    const int8_t relation = compare(a, b);
+    if (!native_ops::relationIsValid(relation)) return LongTriple::Overflow;
+    return relation == T_NEG ? a : b;
 }
 [[nodiscard]] inline LongTriple tmax(LongTriple a, LongTriple b) {
-    return (compare(a, b) == T_POS) ? a : b;
+    const int8_t relation = compare(a, b);
+    if (!native_ops::relationIsValid(relation)) return LongTriple::Overflow;
+    return relation == T_POS ? a : b;
 }
 
 // Reconstruct the integer PC value from a LongTriple (used by RET).
@@ -364,6 +370,9 @@ inline void prepareVectorOp(VMState& vm) {
 }
 
 [[nodiscard]] inline TernaryValue makePredicateLane(int8_t cmp) {
+    if (!native_ops::relationIsValid(cmp)) {
+        return TernaryValue::fromL1(TritLane1::invalid());
+    }
     TritLane1 lane;
     lane.setTrit(0, cmp);
     return TernaryValue::fromL1(lane);
@@ -594,7 +603,12 @@ inline void writeVectorCompare(
             writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
             continue;
         }
-        vm.vregfile.reg[vd].write(lane, makePredicateLane(compareValue(a, b, mode)));
+        const int8_t relation = compareValue(a, b, mode);
+        if (!native_ops::relationIsValid(relation)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, makePredicateLane(relation));
     }
 }
 
@@ -688,7 +702,12 @@ inline void writeVectorActivateT1(VMState& vm, uint8_t vd, uint8_t vs) {
             writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
             continue;
         }
-        vm.vregfile.reg[vd].write(lane, makePredicateLane(signValue(source, source.mode)));
+        const int8_t relation = signValue(source, source.mode);
+        if (!native_ops::relationIsValid(relation)) {
+            writeVectorFaultZero(vm, vd, lane, TrapCode::TRAP_ILLEGAL_OP, TernaryMode::L1);
+            continue;
+        }
+        vm.vregfile.reg[vd].write(lane, makePredicateLane(relation));
     }
 }
 
@@ -1180,7 +1199,10 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             vm.trap(TrapCode::TRAP_ILLEGAL_OP);
             return false;
         }
-        vm.regfile.write(rd, value);
+        if (!vm.regfile.write(rd, value)) {
+            vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+            return false;
+        }
         return true;
     };
 
@@ -1381,14 +1403,20 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             // Zero out trits [32..49] to avoid stale data from prior rd value.
             for (int i = 32; i < 50; ++i) trits[i] = 0;
 
-            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
+            if (!writeChecked(
+                    iw.rd,
+                    TernaryValue::fromLongTriple(LongTriple::pack(trits)))) {
+                return vm.status;
+            }
             break;
         }
 
         case Opcode::COPY: {
             // R-type: Rd ← Rs1
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
-            vm.regfile.write(iw.rd, vm.regfile.readView(iw.rs1, mode));
+            if (!writeChecked(iw.rd, vm.regfile.readView(iw.rs1, mode))) {
+                return vm.status;
+            }
             break;
         }
 
@@ -1437,7 +1465,8 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::SQRT: {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
             TernaryValue t = vm.regfile.readView(iw.rs1, mode);
-            if (exec::signValue(t, mode) == T_NEG) {
+            const int8_t relation = exec::signValue(t, mode);
+            if (!native_ops::relationIsValid(relation) || relation == T_NEG) {
                 // sqrt of negative: trap as illegal operation.
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
@@ -1469,6 +1498,10 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             //   result == T_POS (+1):  Rs1 > Rs2
             int8_t cmp = exec::compareValue(vm.regfile.readView(iw.rs1, mode),
                                             vm.regfile.readView(iw.rs2, mode), mode);
+            if (!native_ops::relationIsValid(cmp)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
             vm.regfile.write(iw.rd, makeTritResult(cmp));
             break;
         }
@@ -1477,7 +1510,12 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
             TernaryValue a = vm.regfile.readView(iw.rs1, mode);
             TernaryValue b = vm.regfile.readView(iw.rs2, mode);
-            if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_POS ? b : a)) return vm.status;
+            const int8_t relation = exec::compareValue(a, b, mode);
+            if (!native_ops::relationIsValid(relation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (!writeChecked(iw.rd, relation == T_POS ? b : a)) return vm.status;
             break;
         }
 
@@ -1485,7 +1523,12 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             auto [ok, mode] = decodeWidth(); if (!ok) return vm.status;
             TernaryValue a = vm.regfile.readView(iw.rs1, mode);
             TernaryValue b = vm.regfile.readView(iw.rs2, mode);
-            if (!writeChecked(iw.rd, exec::compareValue(a, b, mode) == T_NEG ? b : a)) return vm.status;
+            const int8_t relation = exec::compareValue(a, b, mode);
+            if (!native_ops::relationIsValid(relation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (!writeChecked(iw.rd, relation == T_NEG ? b : a)) return vm.status;
             break;
         }
 
@@ -1520,7 +1563,12 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         }
 
         case Opcode::TSEL: {
-            const int8_t cond = readTrit0(vm.regfile.read(iw.rcond));
+            const int8_t cond = readTrit0(
+                vm.regfile.readView(iw.rcond, TernaryMode::T1));
+            if (!native_ops::relationIsValid(cond)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
             const uint8_t src = cond < 0 ? iw.rneg : (cond > 0 ? iw.rpos : iw.rzero);
             vm.regfile.write(iw.rd, vm.regfile.read(src));
             break;
@@ -1539,12 +1587,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return vm.status;
                 }
-                if ((isNumericMode(sourceMode) && !isNumericMode(source.mode)) ||
-                    (isLaneMode(sourceMode) && !isLaneMode(source.mode))) {
-                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
-                    return vm.status;
-                }
-                source = convertValue(source, sourceMode);
+                source = vm.regfile.readView(iw.rs1, sourceMode);
                 if (source.isInvalid()) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return vm.status;
@@ -1976,7 +2019,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
                 return vm.status;
             }
-            vm.regfile.write(iw.rd, val);
+            if (!writeChecked(iw.rd, val)) return vm.status;
             break;
         }
 
@@ -2041,7 +2084,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
                 return vm.status;
             }
-            vm.regfile.write(iw.rd, val);
+            if (!writeChecked(iw.rd, val)) return vm.status;
             vm.setAtomicReservation(physical_addr);
             break;
         }
@@ -2108,11 +2151,15 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
 
         case Opcode::BRN: {
             vm.branch_instructions_count++;
-            // B-type: if Rs.trit[0] == T_NEG → PC ← PC + offset19
+            // B-type: if numeric Rs < 0, PC ← PC + offset19.
             // Otherwise fall through to PC + 1.
             // This is the primary ternary comparison branch.
             // Use after TCMP: BRN r3, label executes when r3 == -1 (Rs1 < Rs2).
             int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (!native_ops::relationIsValid(trit0)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
             if (trit0 == T_NEG) {
                 pc_next = vm.pc + iw.offset;
             }
@@ -2123,6 +2170,10 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::BRZ: {
             vm.branch_instructions_count++;
             int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (!native_ops::relationIsValid(trit0)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
             if (trit0 == T_ZER) {
                 pc_next = vm.pc + iw.offset;
             }
@@ -2133,6 +2184,10 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
         case Opcode::BRP: {
             vm.branch_instructions_count++;
             int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (!native_ops::relationIsValid(trit0)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
             if (trit0 == T_POS) {
                 pc_next = vm.pc + iw.offset;
             }
@@ -2172,14 +2227,22 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            if (exec::compareValue(s2, s3, mode) == T_POS) {
+            const int8_t boundsRelation = exec::compareValue(s2, s3, mode);
+            if (!native_ops::relationIsValid(boundsRelation) || boundsRelation == T_POS) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
             int8_t res = 0;
-            if (exec::compareValue(s1, s2, mode) == T_NEG) {
+            const int8_t lowRelation = exec::compareValue(s1, s2, mode);
+            const int8_t highRelation = exec::compareValue(s1, s3, mode);
+            if (!native_ops::relationIsValid(lowRelation) ||
+                !native_ops::relationIsValid(highRelation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            if (lowRelation == T_NEG) {
                 res = T_NEG;
-            } else if (exec::compareValue(s1, s3, mode) == T_POS) {
+            } else if (highRelation == T_POS) {
                 res = T_POS;
             } else {
                 res = T_ZER;
@@ -2198,15 +2261,26 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
-            if (exec::compareValue(s2, s3, mode) == T_POS) {
+            const int8_t boundsRelation = exec::compareValue(s2, s3, mode);
+            if (!native_ops::relationIsValid(boundsRelation) || boundsRelation == T_POS) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
             }
             // min(s1, s3)
-            TernaryValue min_val = (exec::compareValue(s1, s3, mode) == T_POS) ? s3 : s1;
+            const int8_t upperRelation = exec::compareValue(s1, s3, mode);
+            if (!native_ops::relationIsValid(upperRelation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue min_val = upperRelation == T_POS ? s3 : s1;
             // max(s2, min_val)
-            TernaryValue clamped = (exec::compareValue(s2, min_val, mode) == T_POS) ? s2 : min_val;
-            writeChecked(iw.rd, clamped);
+            const int8_t lowerRelation = exec::compareValue(s2, min_val, mode);
+            if (!native_ops::relationIsValid(lowerRelation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return vm.status;
+            }
+            TernaryValue clamped = lowerRelation == T_POS ? s2 : min_val;
+            if (!writeChecked(iw.rd, clamped)) return vm.status;
             break;
         }
 
@@ -2485,6 +2559,10 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                     return vm.status;
                 }
                 int8_t cmp = exec::compareValue(best, val, mode);
+                if (!native_ops::relationIsValid(cmp)) {
+                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                    return vm.status;
+                }
                 if (is_min) {
                     if (cmp == T_POS) best = val;
                 } else {
@@ -3138,7 +3216,10 @@ inline void classifyCachedInstruction(VMDecodedInstruction& decoded) {
         vm.trap(TrapCode::TRAP_ILLEGAL_OP);
         return false;
     }
-    vm.regfile.write(rd, value);
+    if (!vm.regfile.write(rd, value)) {
+        vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+        return false;
+    }
     return true;
 }
 
@@ -3168,12 +3249,16 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
                 immVal = (immVal - trit) / 3;
             }
             for (int i = 32; i < 50; ++i) trits[i] = 0;
-            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
+            if (!cachedWriteChecked(
+                    vm,
+                    iw.rd,
+                    TernaryValue::fromLongTriple(LongTriple::pack(trits)))) return;
             break;
         }
 
         case VMDecodedOp::Copy:
-            vm.regfile.write(iw.rd, vm.regfile.readView(iw.rs1, decoded.mode));
+            if (!cachedWriteChecked(
+                    vm, iw.rd, vm.regfile.readView(iw.rs1, decoded.mode))) return;
             break;
 
         case VMDecodedOp::Swap: {
@@ -3215,7 +3300,8 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
 
         case VMDecodedOp::Sqrt: {
             TernaryValue t = vm.regfile.readView(iw.rs1, decoded.mode);
-            if (exec::signValue(t, decoded.mode) == T_NEG) {
+            const int8_t relation = exec::signValue(t, decoded.mode);
+            if (!native_ops::relationIsValid(relation) || relation == T_NEG) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return;
             }
@@ -3237,6 +3323,10 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
             int8_t cmp = exec::compareValue(
                 vm.regfile.readView(iw.rs1, decoded.mode),
                 vm.regfile.readView(iw.rs2, decoded.mode), decoded.mode);
+            if (!native_ops::relationIsValid(cmp)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
             vm.regfile.write(iw.rd, makeTritResult(cmp));
             break;
         }
@@ -3244,16 +3334,24 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
         case VMDecodedOp::TMin: {
             TernaryValue a = vm.regfile.readView(iw.rs1, decoded.mode);
             TernaryValue b = vm.regfile.readView(iw.rs2, decoded.mode);
-            if (!cachedWriteChecked(
-                    vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_POS ? b : a)) return;
+            const int8_t relation = exec::compareValue(a, b, decoded.mode);
+            if (!native_ops::relationIsValid(relation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            if (!cachedWriteChecked(vm, iw.rd, relation == T_POS ? b : a)) return;
             break;
         }
 
         case VMDecodedOp::TMax: {
             TernaryValue a = vm.regfile.readView(iw.rs1, decoded.mode);
             TernaryValue b = vm.regfile.readView(iw.rs2, decoded.mode);
-            if (!cachedWriteChecked(
-                    vm, iw.rd, exec::compareValue(a, b, decoded.mode) == T_NEG ? b : a)) return;
+            const int8_t relation = exec::compareValue(a, b, decoded.mode);
+            if (!native_ops::relationIsValid(relation)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
+            if (!cachedWriteChecked(vm, iw.rd, relation == T_NEG ? b : a)) return;
             break;
         }
 
@@ -3284,7 +3382,12 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
             break;
 
         case VMDecodedOp::TSel: {
-            const int8_t cond = readTrit0(vm.regfile.read(iw.rcond));
+            const int8_t cond = readTrit0(
+                vm.regfile.readView(iw.rcond, TernaryMode::T1));
+            if (!native_ops::relationIsValid(cond)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return;
+            }
             const uint8_t src = cond < 0 ? iw.rneg : (cond > 0 ? iw.rpos : iw.rzero);
             vm.regfile.write(iw.rd, vm.regfile.read(src));
             break;
@@ -3298,12 +3401,7 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return;
                 }
-                if ((isNumericMode(sourceMode) && !isNumericMode(source.mode)) ||
-                    (isLaneMode(sourceMode) && !isLaneMode(source.mode))) {
-                    vm.trap(TrapCode::TRAP_ILLEGAL_OP);
-                    return;
-                }
-                source = convertValue(source, sourceMode);
+                source = vm.regfile.readView(iw.rs1, sourceMode);
                 if (source.isInvalid()) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return;
@@ -3340,7 +3438,7 @@ inline void executeCachedInstruction(VMState& vm, const VMDecodedInstruction& de
                 vm.trapWithCause(TrapCode::TRAP_MEM_FAULT, OS_CAUSE_LOAD_FAULT, vm.pc);
                 return;
             }
-            vm.regfile.write(iw.rd, val);
+            if (!cachedWriteChecked(vm, iw.rd, val)) return;
             break;
         }
 
@@ -3704,7 +3802,11 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
         ++vm.trace_jit_stats.interpreter_bailouts;
         return false;
     }
-    vm.regfile.write(rd, value);
+    if (!vm.regfile.write(rd, value)) {
+        vm.pc = emitted.pc;
+        ++vm.trace_jit_stats.interpreter_bailouts;
+        return false;
+    }
     return true;
 }
 
@@ -3768,13 +3870,22 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
                 immVal = (immVal - trit) / 3;
             }
             for (int i = 32; i < 50; ++i) trits[i] = 0;
-            vm.regfile.write(iw.rd, TernaryValue::fromLongTriple(LongTriple::pack(trits)));
+            if (!traceJitWriteChecked(
+                    vm,
+                    emitted,
+                    iw.rd,
+                    TernaryValue::fromLongTriple(LongTriple::pack(trits)))) {
+                return false;
+            }
             break;
         }
 
         case VMTraceJitOp::Copy:
-            vm.regfile.write(
-                iw.rd, vm.regfile.readView(iw.rs1, emitted.mode));
+            if (!traceJitWriteChecked(
+                    vm,
+                    emitted,
+                    iw.rd,
+                    vm.regfile.readView(iw.rs1, emitted.mode))) return false;
             break;
 
         case VMTraceJitOp::TCmp: {
@@ -3782,6 +3893,10 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
                 vm.regfile.readView(iw.rs1, emitted.mode),
                 vm.regfile.readView(iw.rs2, emitted.mode),
                 emitted.mode);
+            if (!native_ops::relationIsValid(cmp)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return false;
+            }
             if (!traceJitWriteChecked(
                     vm, emitted, iw.rd, makeTritResult(cmp))) return false;
             break;
@@ -3833,7 +3948,7 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
                 ++vm.trace_jit_stats.interpreter_bailouts;
                 return false;
             }
-            vm.regfile.write(iw.rd, value);
+            if (!traceJitWriteChecked(vm, emitted, iw.rd, value)) return false;
             break;
         }
 
@@ -3904,6 +4019,10 @@ inline void annotateDecodedMicroOp(VMMicroOp& op) {
         case VMTraceJitOp::Brp: {
             ++vm.branch_instructions_count;
             const int8_t trit0 = readTrit0(vm.regfile.read(iw.rs_branch));
+            if (!native_ops::relationIsValid(trit0)) {
+                vm.trap(TrapCode::TRAP_ILLEGAL_OP);
+                return false;
+            }
             const bool taken =
                 (emitted.op == VMTraceJitOp::Brn && trit0 == T_NEG) ||
                 (emitted.op == VMTraceJitOp::Brz && trit0 == T_ZER) ||
@@ -4177,10 +4296,16 @@ inline int nativeX64DirectArithmetic(
 
     TernaryValue result = TernaryValue::invalid(TernaryMode::T40);
     switch (instruction->op) {
-        case VMMicroOpcode::TCmp:
-            result = makeTritResult(native_ops::compare(
-                lhs.asTriple(), rhs.asTriple()));
+        case VMMicroOpcode::TCmp: {
+            const int8_t relation = native_ops::compare(
+                lhs.asTriple(), rhs.asTriple());
+            if (!native_ops::relationIsValid(relation)) {
+                return nativeX64SideExit(
+                    context, instruction, VMNativeX64ExitReason::GuardFailure);
+            }
+            result = makeTritResult(relation);
             break;
+        }
         case VMMicroOpcode::Add:
             result = TernaryValue::fromTriple(native_ops::add(
                 lhs.asTriple(), rhs.asTriple()));
@@ -4224,7 +4349,10 @@ inline int nativeX64CopyHelper(
     // semantics remain identical to the portable interpreter.
     const TernaryValue value = vm.regfile.readView(
         instruction->word.rs1, instruction->mode);
-    vm.regfile.write(instruction->word.rd, value);
+    if (!vm.regfile.write(instruction->word.rd, value)) {
+        return nativeX64SideExit(
+            context, instruction, VMNativeX64ExitReason::GuardFailure);
+    }
     return nativeX64CommitInstruction(context, instruction);
 }
 
@@ -4298,6 +4426,10 @@ inline int nativeX64DirectControl(
             ++vm.branch_instructions_count;
             const int8_t trit0 = readTrit0(
                 vm.regfile.read(instruction->word.rs_branch));
+            if (!native_ops::relationIsValid(trit0)) {
+                return nativeX64SideExit(
+                    context, instruction, VMNativeX64ExitReason::GuardFailure);
+            }
             const bool taken =
                 (instruction->op == VMMicroOpcode::Brn && trit0 == T_NEG) ||
                 (instruction->op == VMMicroOpcode::Brz && trit0 == T_ZER) ||
@@ -4481,10 +4613,9 @@ struct VMNativeX64CodeBlock {
             return instruction.mode == TernaryMode::T40 &&
                    instruction.source != nullptr;
         case VMMicroOpcode::Call:
-            // CALL has a static target and only writes the canonical T40
-            // return PC to LR before leaving the trace.  The destination
-            // pair guard in the emitter preserves RegFile::writeLR's wide
-            // pair invalidation semantics; live T50/L50 pairs side-exit.
+            // CALL has a static target and writes the canonical T40 return PC
+            // to LR before leaving the trace. The producer-view guard is a
+            // conservative optimization side exit, not register semantics.
             return instruction.branch_target != -1 &&
                    instruction.destination != nullptr &&
                    instruction.destination_mode != nullptr &&
@@ -4724,8 +4855,8 @@ struct VMNativeX64Emitter {
     void commitDynamicControl() {
         // RET/CALLR/JMPR leave their validated target in RAX.  The target is
         // already a signed, non-negative int-sized value, so commit it
-        // directly and leave the trace.  No architectural state is touched
-        // before all operand, range, privilege, and LR-pair guards pass.
+        // directly and leave the trace. No architectural state is touched
+        // before all operand, range, privilege, and metadata guards pass.
         movRegMemDisp(
             11, 12,
             static_cast<std::uint32_t>(
@@ -4873,9 +5004,9 @@ struct VMNativeX64Emitter {
             cmpRegReg(0, 10);
             guard_jumps.push_back(jccRel32(0x84)); // je
         };
-        // `RegFile::write(T40)` clears a wide pair before committing.  Keep
-        // that mutation on the portable path whenever either half is live;
-        // ordinary single-width tags can be overwritten in place.
+        // Producer-view metadata is not architectural. Keep the older
+        // conservative side exit for a recorded wide producer, but both paths
+        // update only the addressed physical register.
         guardWide(destination_mode);
         guardWide(previous_mode);
     }
@@ -5533,10 +5664,9 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
         if (instruction.op == VMMicroOpcode::Call ||
             instruction.op == VMMicroOpcode::CallR) {
             // CALL's B-type encoding and CALLR's indirect target encoding do
-            // not carry an architectural `rd`, but both link-register writes
-            // still have ordinary RegFile::write pair invalidation semantics.
-            // Point the native lowering at LR explicitly so the same
-            // destination-pair guard can protect both forms.
+            // not carry an architectural `rd`. Point the native lowering at
+            // LR explicitly so it can write the physical register and update
+            // its diagnostic producer metadata.
             instruction.destination = &vm.regfile.reg[R25_LR];
             instruction.destination_mode =
                 &vm.regfile.view_mode[R25_LR];
@@ -6127,8 +6257,8 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                     break;
                 }
                 // CALL has no dynamic target or MMU interaction.  Emit the
-                // link-register write and branch directly, but side-exit
-                // before mutation if LR participates in a live T50/L50 pair.
+                // link-register write and branch directly. A recorded wide
+                // producer takes the conservative helper path.
                 emitter.budgetGuard();
                 std::vector<std::size_t> guard_jumps;
                 emitter.emitGuardDestinationPair(
@@ -6169,9 +6299,8 @@ compileNativeX64Trace(VMState& vm, const VMTraceJitTrace& trace) {
                 std::vector<std::size_t> guard_jumps;
                 if (instruction.op == VMMicroOpcode::CallR) {
                     // Guard the LR destination before loading the dynamic
-                    // source: CALLR may alias its target with LR, and the
-                    // write must preserve RegFile's wide-pair invalidation
-                    // contract without touching the target first.
+                    // source. This is conservative optimization provenance;
+                    // either path changes only LR after reading the target.
                     emitter.emitGuardDestinationPair(
                         instruction.destination_mode,
                         instruction.destination_previous_mode,

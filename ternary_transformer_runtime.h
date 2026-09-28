@@ -413,14 +413,23 @@ inline vm::TernaryValue expT40(vm::TernaryValue input, RuntimeStats* stats = nul
     if (x.isInvalid()) return vm::TernaryValue::invalid(TernaryMode::T40);
     if (x.isZero()) return intValue(1);
 
-    if (vm::exec::signValue(x, TernaryMode::T40) < 0) {
+    const int8_t inputSign = vm::exec::signValue(x, TernaryMode::T40);
+    if (!native_ops::relationIsValid(inputSign)) {
+        return vm::TernaryValue::invalid(TernaryMode::T40);
+    }
+    if (inputSign < 0) {
         vm::TernaryValue positive = expT40(negT40(x, stats), stats);
         return divT40(intValue(1), positive, stats);
     }
 
     const vm::TernaryValue three = intValue(3);
     int reductions = 0;
-    while (vm::exec::compareValue(x, three, TernaryMode::T40) > 0 && reductions < 16) {
+    while (reductions < 16) {
+        const int8_t relation = vm::exec::compareValue(x, three, TernaryMode::T40);
+        if (!native_ops::relationIsValid(relation)) {
+            return vm::TernaryValue::invalid(TernaryMode::T40);
+        }
+        if (relation != isa::T_POS) break;
         x = divT40(x, three, stats);
         ++reductions;
     }
@@ -469,7 +478,9 @@ inline bool softmaxRow(
         vm::TernaryValue value;
         if (!loadElement(state, logits, row, col, value, stats)) return false;
         value = asT40(value);
-        if (vm::exec::compareValue(value, maxValue, TernaryMode::T40) > 0) maxValue = value;
+        const int8_t relation = vm::exec::compareValue(value, maxValue, TernaryMode::T40);
+        if (!native_ops::relationIsValid(relation)) return false;
+        if (relation == isa::T_POS) maxValue = value;
     }
 
     std::vector<vm::TernaryValue> exps(static_cast<std::size_t>(logits.cols));
@@ -600,7 +611,9 @@ inline bool signActivationRows(
         for (int col = 0; col < input.cols; ++col) {
             vm::TernaryValue value;
             if (!loadElement(state, input, row, col, value, stats)) return false;
-            vm::TernaryValue pred = vm::exec::makePredicateLane(vm::exec::signValue(value, value.mode));
+            const int8_t relation = vm::exec::signValue(value, value.mode);
+            if (!native_ops::relationIsValid(relation)) return false;
+            vm::TernaryValue pred = vm::exec::makePredicateLane(relation);
             if (!storeElement(state, out, row, col, pred, stats)) return false;
         }
     }

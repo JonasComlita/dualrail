@@ -74,3 +74,23 @@ To calculate the positional payload of a balanced integer **N** for an
 
 This bias formula describes strict positional integer storage. T10–T50 numeric
 formats additionally canonicalize floating zero to raw `0`.
+
+---
+
+## Host Floating-Point Bridges
+
+Binary `double` and `long double` conversions are approximate interoperability
+operations. Checked decoding reports one of `Value`, `Zero`, `Overflow`,
+`Underflow`, or `Invalid`; compatibility pair-returning decoders yield host NaN
+for non-numeric states. NaN and infinity presented to `fromDouble()` map to the
+ternary overflow sentinel before any logarithm or integer conversion.
+
+For integral extraction, prefer `native_ops::tryToLongLong(value, out)` when
+failure must remain distinguishable. It rejects exceptional, invalid, and
+out-of-range inputs. The compatibility `toLongLong()` interface saturates on
+failure and must not be used as a validity test.
+
+Architectural arithmetic and the ternary accumulator helpers remain in ternary
+storage and use `native_ops`; their accumulation steps do not round-trip each
+term through host floating point. Explicit compatibility and interoperability
+paths may still convert at their named boundaries.

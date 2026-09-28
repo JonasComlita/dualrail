@@ -89,6 +89,28 @@ Zero magnitude remains the canonical raw zero value.
 
 ---
 
+## Host Conversion Boundary
+
+`ternary_math.h` keeps binary floating-point conversion outside the
+authoritative arithmetic path. `long_ops::decodeChecked()` and
+`ops::decodeTripleChecked()` return a `HostDecodedValue` whose status explicitly
+distinguishes an ordinary value, zero, overflow, underflow, and invalid raw
+storage. Compatibility `decode()` wrappers return host NaN for non-numeric
+states instead of silently turning them into zero.
+
+`ops::fromDouble()` checks NaN and infinity before logarithms or
+floating-to-integer conversion and maps them to the overflow sentinel. Host
+conversion remains approximate: it is intended for interoperability and
+diagnostics, not architectural arithmetic.
+
+Native integer extraction has a checked form as well:
+`native_ops::tryToLongLong(value, out)` returns `false` for exceptional,
+invalid, or out-of-range inputs. The compatibility `toLongLong()` overloads
+return the positive saturation value on failure rather than silently turning
+invalid storage into numeric zero.
+
+---
+
 ## Float Operations
 
 ### Add / Subtract
@@ -96,6 +118,17 @@ Zero magnitude remains the canonical raw zero value.
 `floatAdd()` unpacks both operands, extracts integer mantissas and balanced exponents, normalizes both parts, aligns the operand with the smaller exponent by rounded division by powers of 3, then adds mantissas and repacks. `floatSubtract()` negates the second operand and calls `floatAdd()`.
 
 Special input returns overflow. Zero is a fast path that returns the other operand.
+
+### Compare And Sign
+
+Finite comparison is structural: mantissa signs, normalized exponents, and
+magnitudes are compared without subtracting the operands. This avoids both
+overflow and underflow in the comparison itself. Exceptional or invalid input
+returns `native_ops::RELATION_INVALID` (`2`), which is deliberately outside the
+balanced relation set `{-1, 0, +1}`. VM comparison instructions translate that
+result into `TRAP_ILLEGAL_OP`; vector compare and activation record a lane-local
+fault. Scalar branch and select instructions apply the same validation, so an
+exceptional numeric condition cannot be mistaken for zero.
 
 ### Multiply
 
@@ -136,10 +169,16 @@ The native transcendental functions operate on `LongTriple`:
 | `exp()` | Handles negative input by reciprocal, scales large positive input down by powers of 3, evaluates 22 Taylor terms, then cubes back for each scale step |
 | `ln()` | Rejects zero/negative input as overflow, normalizes into `[2/3, 3/2]`, evaluates an atanh-style series for 28 terms, and adds `k * ln(3)` |
 | `ln3()` | Cached result from the same atanh-style series |
-| `pi()` | Cached Machin-style arctangent computation |
-| `sin()` / `cos()` | Reduce by `2*pi`, then evaluate 14 Taylor terms |
+| `pi()` | Cached Machin-style arctangent computation; each odd-power term is divided by its own denominator |
+| `sin()` / `cos()` | Checked reduction by `2*pi`, then 14 Taylor terms and a final clamp to `[-1,+1]` |
 
 `ternary_math.h` exposes `Triple exp()` and `Triple ln()` by promoting to `LongTriple` and converting back to `T40`.
+
+All transcendental entry points reject exceptional and invalid storage before
+entering normalization loops. Trigonometric reduction uses checked integral
+cycle extraction. Inputs too large to reduce reliably with the available T50
+precision return overflow explicitly instead of evaluating a Taylor series on
+an unreduced argument.
 
 ---
 
@@ -155,11 +194,26 @@ If a native result is invalid, the VM writes no result and raises `TRAP_ILLEGAL_
 
 ---
 
+## Accumulation
+
+`TernaryAccumulator` and `LongTripleAccumulator` keep their partial values in
+`Triple` and `LongTriple` respectively and call `native_ops::add()` for every
+term. They do not decode each term into `double` or `long double`. Invalid raw
+inputs become explicit overflow and special values participate in the normal
+native propagation rules rather than being silently discarded. The BitNet
+logit loop uses this exact `LongTripleAccumulator`, so that accumulation path
+no longer decodes every product through host floating point. Other explicitly
+named compatibility and interoperability paths may still perform host
+conversions.
+
+---
+
 ## Test Coverage
 
 Relevant focused tests:
 
 - `tests/test_uint128.cpp`: independent `__int128` comparisons where the compiler provides that oracle, including the portable Windows/MinGW implementation, boundary indices, and explicit divide-by-zero failures.
 - `tests/test_formats.cpp`: format constants, exhaustive `T1`/`T5` integer round-trips and overflow, exact small float arithmetic, fractional alignment, square root tolerances.
+- `tests/test_native_ops.cpp`: exhaustive balanced full-adder states, checked host decode statuses, exceptional comparison/trapping, bounded transcendental failure, invalid native propagation, large-angle reduction, exact ternary accumulation, and arithmetic reference corpora.
 - `tests/test_vm_widths.cpp`: width-suffixed VM arithmetic, scalar trap behavior, accumulator operations, trit count/scan, modulo and shift behavior.
 - `TEST_MANIFEST.json` suite `core`: includes `test_native_ops`, `test_multiwidth_vm`, `test_ternary_lanes`, and numeric workload coverage.

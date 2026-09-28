@@ -58,6 +58,92 @@ void testVmWidths() {
     }
 
     {
+        TernaryRegisterFile registers;
+        std::array<int8_t, 50> splitPayload{};
+        for (int trit = 0; trit < 40; ++trit) {
+            splitPayload[static_cast<std::size_t>(trit)] = T_NEG;
+        }
+        splitPayload[40] = T_POS;
+        const LongTriple finite = LongTriple::pack(splitPayload);
+        expect(!finite.isSpecial() && !finite.isInvalid(),
+               "T50 pair regression payload is finite");
+        expect(registers.write(R3, TernaryValue::fromLongTriple(finite)) &&
+                   registers.readView(R3, TernaryMode::T50).asLongTripleRaw() == finite,
+               "T50 register pair preserves a raw-zero low physical word");
+
+        expect(registers.write(R6, TernaryValue::zero(TernaryMode::T50)) &&
+                   registers.readView(R6, TernaryMode::T50).isZero(),
+               "T50 register pair preserves canonical zero");
+        expect(registers.write(
+                   R8, TernaryValue::fromLongTriple(LongTriple::Overflow)) &&
+                   registers.readView(R8, TernaryMode::T50)
+                       .asLongTripleRaw().isOverflow(),
+               "T50 register pair preserves overflow");
+        expect(registers.write(
+                   R10, TernaryValue::fromLongTriple(LongTriple::Underflow)) &&
+                   registers.readView(R10, TernaryMode::T50)
+                       .asLongTripleRaw().isUnderflow(),
+               "T50 register pair preserves underflow");
+        expect(registers.write(R12, TernaryValue::invalid(TernaryMode::T50)) &&
+                   registers.readView(R12, TernaryMode::T50).isInvalid(),
+               "T50 register pair preserves invalid state");
+
+        const TernaryValue pairHead = registers.readPhysical(R3);
+        expect(registers.write(R4, sandbox::vm::ops::fromLong(9)) &&
+                   registers.readPhysical(R3) == pairHead &&
+                   sandbox::vm::ops::toLong(registers.read(R4)) == 9,
+               "scalar writes update one physical register without hidden pair mutation");
+
+        constexpr uint8_t metadataRegister = 15;
+        expect(registers.write(
+                   metadataRegister, TernaryValue::fromT5(native_ops::fromIntT5(7))),
+               "narrow register write succeeds");
+        const TernaryValue physical = registers.read(metadataRegister);
+        registers.view_mode[metadataRegister] = TernaryMode::L40;
+        expect(physical.mode == TernaryMode::T40 &&
+                   registers.read(metadataRegister) == physical,
+               "architectural reads are independent of producer-view metadata");
+
+        const TernaryValue oldSp = registers.readPhysical(R26_SP);
+        expect(!registers.write(
+                   R26_SP, TernaryValue::fromLongTriple(native_ops::fromInt(1))) &&
+                   registers.readPhysical(R26_SP) == oldSp,
+               "T50 write at r26 fails atomically instead of truncating the pair");
+    }
+
+    {
+        VMState vm(16, 64);
+        auto program = assembleOrThrow(R"(
+            mov.t50 r24, 1
+            add.t50 r26, r24, r24
+            halt
+        )");
+        expect(loadAndReset(vm, program), "r26 wide-destination program loads");
+        const TernaryValue oldSp = vm.regfile.readPhysical(R26_SP);
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.trapped() && result.trap_code == TrapCode::TRAP_ILLEGAL_OP,
+               "wide producer traps when r26 cannot hold a register pair");
+        expect(vm.regfile.readPhysical(R26_SP) == oldSp,
+               "failed wide producer leaves the stack pointer unchanged");
+    }
+
+    {
+        VMState vm(16, 64);
+        auto program = assembleOrThrow(R"(
+            mov r1, 2
+            mov r2, -1
+            mov r3, 0
+            mov r4, 1
+            tsel r5, r1, r2, r3, r4
+            halt
+        )");
+        expect(loadAndReset(vm, program), "TSEL invalid-condition program loads");
+        auto result = sandbox::vm::run(vm, 16);
+        expect(result.trapped() && result.trap_code == TrapCode::TRAP_ILLEGAL_OP,
+               "TSEL requires a value representable by its explicit T1 condition view");
+    }
+
+    {
         VMState vm(16, 64);
         auto program = assembleOrThrow(R"(
             mov.t5 r1, 120
@@ -68,8 +154,10 @@ void testVmWidths() {
         expect(loadAndReset(vm, program), "T5 program loads");
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "T5 add program halts");
-        expect(vm.regfile.read(R3).mode == TernaryMode::T5, "T5 result tag");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 121, "T5 result value");
+        expect(vm.regfile.read(R3).mode == TernaryMode::T40,
+               "scalar registers expose physical T40 words");
+        expect(sandbox::vm::ops::toLong(vm.regfile.readView(R3, TernaryMode::T5)) == 121,
+               "T5 result is available through an explicit view");
     }
 
     {
@@ -100,8 +188,10 @@ void testVmWidths() {
         expect(result.halted(), "T20 load/store program halts");
         expect(vm.regfile.readPhysical(R2).mode == TernaryMode::T40,
                "LOAD produces a canonical physical T40 register word");
-        expect(vm.regfile.read(R3).mode == TernaryMode::T20, "ADD writes T20 tag");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 84, "T20 arithmetic value");
+        expect(vm.regfile.read(R3).mode == TernaryMode::T40,
+               "ADD stores a physical T40 register word");
+        expect(sandbox::vm::ops::toLong(vm.regfile.readView(R3, TernaryMode::T20)) == 84,
+               "T20 arithmetic value is available through an explicit view");
     }
 
     {
@@ -1084,7 +1174,7 @@ void testVmWidths() {
                "native width-qualified COPY preserves execution accounting");
         expect(native.regfile.read(R2) == interpreter.regfile.read(R2) &&
                    native.regfile.view_mode[R2] == TernaryMode::T5,
-               "native width-qualified COPY preserves converted value/tag");
+               "native width-qualified COPY preserves converted physical value and metadata");
         if (nativeX64HostAvailable()) {
             bool saw_copy_helper = false;
             for (const auto& cached : native.native_x64_code_cache) {
@@ -2341,15 +2431,15 @@ void testVmWidths() {
         expect(loadAndReset(vm, program), "TSEL program loads");
         auto result = sandbox::vm::run(vm, 64);
         expect(result.halted(), "TSEL program halts");
-        expect(vm.regfile.read(R5).mode == TernaryMode::T5 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R5)) == -5,
-               "TSEL preserves negative arm tag/value");
-        expect(vm.regfile.read(R6).mode == TernaryMode::T20 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R6)) == 20,
-               "TSEL preserves zero arm tag/value");
+        expect(vm.regfile.read(R5).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R5, TernaryMode::T5)) == -5,
+               "TSEL copies the negative arm's physical value");
+        expect(vm.regfile.read(R6).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R6, TernaryMode::T20)) == 20,
+               "TSEL copies the zero arm's physical value");
         expect(vm.regfile.read(R7).mode == TernaryMode::T40 &&
                sandbox::vm::ops::toLong(vm.regfile.read(R7)) == 50,
-               "TSEL preserves positive arm tag/value");
+               "TSEL copies the positive arm's physical value");
     }
 
     {
@@ -2384,11 +2474,11 @@ pos_path:
         expect(loadAndReset(vm, program), "SWAP program loads");
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "SWAP program halts");
-        expect(vm.regfile.read(R1).mode == TernaryMode::T20 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 22,
+        expect(vm.regfile.read(R1).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R1, TernaryMode::T20)) == 22,
                "SWAP moves second value into first register");
-        expect(vm.regfile.read(R2).mode == TernaryMode::T5 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 11,
+        expect(vm.regfile.read(R2).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R2, TernaryMode::T5)) == 11,
                "SWAP moves first value into second register");
     }
 
@@ -2402,8 +2492,8 @@ pos_path:
         expect(loadAndReset(vm, program), "cvt.src.dst program loads");
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "cvt.src.dst program halts");
-        expect(vm.regfile.read(R2).mode == TernaryMode::T20 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R2)) == 42,
+        expect(vm.regfile.read(R2).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R2, TernaryMode::T20)) == 42,
                "CVT source/destination suffix converts value");
     }
 
@@ -2418,9 +2508,10 @@ pos_path:
         expect(loadAndReset(vm, program), "numeric/lane CVT program loads");
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "numeric/lane CVT program halts");
-        expect(vm.regfile.read(R2).mode == TernaryMode::L20, "CVT writes L20 tag");
-        expect(vm.regfile.read(R3).mode == TernaryMode::T20 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 42,
+        expect(vm.regfile.readView(R2, TernaryMode::L20).mode == TernaryMode::L20,
+               "CVT result is readable through the requested L20 view");
+        expect(vm.regfile.read(R3).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R3, TernaryMode::T20)) == 42,
                "CVT lane to matching numeric recovers value");
     }
 
@@ -2439,8 +2530,8 @@ pos_path:
         expect(loadAndReset(vm, program), "scalar lane program loads");
         auto result = sandbox::vm::run(vm, 64);
         expect(result.halted(), "scalar lane program halts");
-        expect(vm.regfile.read(R3).mode == TernaryMode::L1 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R3)) == -1,
+        expect(vm.regfile.readView(R3, TernaryMode::L1).mode == TernaryMode::L1 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R3, TernaryMode::L1)) == -1,
                "TLADD is carryless modulo per trit");
         expect(sandbox::vm::ops::toLong(vm.regfile.read(R4)) == -1,
                "TLSUB is carryless modulo per trit");
@@ -2546,8 +2637,8 @@ pos_path:
                "TCOUNT counts non-zero trits");
         expect(sandbox::vm::ops::toLong(vm.regfile.read(R9)) == 2,
                "TSCAN returns first non-zero trit position");
-        expect(vm.regfile.read(R11).mode == TernaryMode::T1 &&
-               readTrit0(vm.regfile.read(R11)) == T_NEG,
+        const TernaryValue scan = vm.regfile.readView(R11, TernaryMode::T1);
+        expect(scan.mode == TernaryMode::T1 && readTrit0(scan) == T_NEG,
                "TSCAN all-zero returns T1 -1 sentinel");
     }
 
@@ -2817,10 +2908,11 @@ pos_path:
     {
         VMState vm(16, 64);
         auto program = assembleOrThrow("mov.l20 r1, 7\nvbcast.t20 v0, r1\nhalt\n");
-        expect(loadAndReset(vm, program), "VBCAST structural fault program loads");
+        expect(loadAndReset(vm, program), "VBCAST physical scalar program loads");
         auto result = sandbox::vm::run(vm, 16);
-        expect(result.trapped(), "VBCAST rejects lane-family scalar source structurally");
-        expect(result.trap_code == TrapCode::TRAP_ILLEGAL_OP, "VBCAST structural trap code");
+        expect(result.halted(), "VBCAST consumes the instruction-selected numeric view");
+        expect(vectorLong(vm, 0, 0) == 7 && vectorLong(vm, 0, 1) == 7,
+               "VBCAST is independent of nonarchitectural producer metadata");
     }
 
     {
@@ -2839,8 +2931,8 @@ pos_path:
         expect(loadAndReset(vm, program), "accumulator program loads");
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "accumulator program halts");
-        expect(vm.regfile.read(R3).mode == TernaryMode::T20 &&
-               sandbox::vm::ops::toLong(vm.regfile.read(R3)) == 25,
+        expect(vm.regfile.read(R3).mode == TernaryMode::T40 &&
+               sandbox::vm::ops::toLong(vm.regfile.readView(R3, TernaryMode::T20)) == 25,
                "accumulator keeps T50 internal precision and stores selected width");
     }
 
@@ -2871,8 +2963,9 @@ pos_path:
         auto result = sandbox::vm::run(vm, 32);
         expect(result.halted(), "T1 AI program halts");
         expect(sandbox::vm::ops::toLong(vm.regfile.read(R1)) == 1,
-               "VDOT.t1 writes T50 dot product to scalar register");
-        expect(sandbox::vm::ops::toLong(vm.regfile.read(R4)) == 1,
+               "VDOT.t1 writes its architectural T40 scalar result");
+        expect(sandbox::vm::ops::toLong(
+                   vm.regfile.readView(R4, TernaryMode::T50)) == 1,
                "VMAC.t1 accumulates T1 dot product into accumulator");
         expect(vectorPredicateTrit(vm, 2, 0) == -1 &&
                vectorPredicateTrit(vm, 2, 1) == 0 &&

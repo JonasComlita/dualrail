@@ -233,6 +233,13 @@ add_executable(test_phase7_compiler tests/test_phase7_compiler.cpp)
 target_compile_features(test_phase7_compiler PUBLIC cxx_std_17)
 target_compile_definitions(test_phase7_compiler PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+add_executable(test_dataflow_stream tests/test_dataflow_stream.cpp)
+target_compile_features(test_dataflow_stream PUBLIC cxx_std_17)
+target_compile_definitions(test_dataflow_stream PRIVATE
+    TERNARY_IGNORE_LONG_DOUBLE_ASSERT
+    TRIT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
 add_executable(test_compiler_abi_contract tests/test_compiler_abi_contract.cpp)
 target_compile_features(test_compiler_abi_contract PUBLIC cxx_std_17)
 target_compile_definitions(test_compiler_abi_contract PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)

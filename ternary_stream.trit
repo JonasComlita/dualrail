@@ -2,7 +2,24 @@
 // ternary_stream.trit  -  Refined Ternary Stream Processing Library
 // =============================================================================
 
-// Helper to update anomaly detector history
+const DF_STREAM_KIND_SOURCE: t40 = 0;
+const DF_STREAM_KIND_ANOMALY: t40 = 1;
+const DF_STREAM_KIND_WINDOW: t40 = 2;
+const DF_STREAM_KIND_FILTER: t40 = 3;
+const DF_STREAM_KIND_SINK: t40 = 4;
+
+fn df_stream_abs_diff(a: t40, b: t40) -> t40 {
+    var diff: t40 = a - b;
+    match diff {
+        neg => { return 0 - diff; }
+        _ => { return diff; }
+    }
+}
+
+// History context:
+//   [0..2] accepted baseline, [3] baseline count, [4] threshold,
+//   [5..7] candidate baseline, [8] candidate count,
+//   [9] consistent candidates required (0 defaults to 3, maximum 3).
 fn df_stream_hist_add(hist: t40, v: t40) -> void {
     var count: t40 = 0;
     unsafe { count = load(hist + 3); }
@@ -14,7 +31,6 @@ fn df_stream_hist_add(hist: t40, v: t40) -> void {
             }
         }
         _ => {
-            // Shift elements left: hist[0] = hist[1], hist[1] = hist[2], hist[2] = v
             var v1: t40 = 0;
             var v2: t40 = 0;
             unsafe {
@@ -28,41 +44,131 @@ fn df_stream_hist_add(hist: t40, v: t40) -> void {
     }
 }
 
-// 1. Sensor Source Node Callback
+fn df_stream_candidate_clear(hist: t40) -> void {
+    unsafe { store(hist + 8, 0); }
+}
+
+// Adds an anomalous sample to a candidate baseline. Isolated outliers never
+// enter accepted history. Returns 1 after a consistent streak replaces it.
+fn df_stream_candidate_add(hist: t40, v: t40) -> t40 {
+    var count: t40 = 0;
+    var threshold: t40 = 0;
+    var required: t40 = 0;
+    unsafe {
+        count = load(hist + 8);
+        threshold = load(hist + 4);
+        required = load(hist + 9);
+    }
+    match required {
+        pos => {
+            match required - 3 {
+                pos => { required = 3; }
+                _ => {}
+            }
+        }
+        _ => { required = 3; }
+    }
+
+    match count {
+        pos => {
+            var sum: t40 = 0;
+            var i: t40 = 0;
+            while count - i > 0 {
+                var sample: t40 = 0;
+                unsafe { sample = load(hist + 5 + i); }
+                sum = sum + sample;
+                i = i + 1;
+            }
+            var candidate_avg: t40 = sum / count;
+            var candidate_diff: t40 = df_stream_abs_diff(v, candidate_avg);
+            match candidate_diff - threshold {
+                pos => {
+                    unsafe {
+                        store(hist + 5, v);
+                        store(hist + 8, 1);
+                    }
+                    count = 1;
+                }
+                _ => {
+                    match 3 - count {
+                        pos => {
+                            unsafe { store(hist + 5 + count, v); }
+                            count = count + 1;
+                            unsafe { store(hist + 8, count); }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        _ => {
+            unsafe {
+                store(hist + 5, v);
+                store(hist + 8, 1);
+            }
+            count = 1;
+        }
+    }
+
+    match required - count {
+        pos => { return 0; }
+        _ => {
+            unsafe { store(hist + 3, 0); }
+            var i: t40 = 0;
+            while count - i > 0 {
+                var sample: t40 = 0;
+                unsafe { sample = load(hist + 5 + i); }
+                df_stream_hist_add(hist, sample);
+                i = i + 1;
+            }
+            df_stream_candidate_clear(hist);
+            return 1;
+        }
+    }
+}
+
+// 1. Sensor Source Node Callback. Context: [0]=mode, [1]=step, [2]=ended.
 fn df_stream_source_execute(node: t40) -> void {
     var outputs: t40 = 0;
-    var chan: t40 = 0;
     var custom: t40 = 0;
     var step: t40 = 0;
     var mode: t40 = 0;
+    var ended: t40 = 0;
     unsafe {
         outputs = load(node + 3);
         custom = load(node + 7);
         step = load(custom + 1);
         mode = load(custom);
+        ended = load(custom + 2);
     }
-    chan = vec_get(outputs, 0);
+    match ended {
+        pos => { return; }
+        _ => {}
+    }
 
+    var chan: t40 = vec_get(outputs, 0);
+    var tag: t40 = DF_EVENT_NONE;
+    var value: t40 = 0;
     match mode {
         zero => {
-            // Normal Stream Run: emit steady readings
             match step {
-                zero => { df_channel_write(chan, 10); }
+                zero => { tag = DF_EVENT_DATA; value = 10; }
                 pos => {
                     match step - 1 {
-                        zero => { df_channel_write(chan, 15); }
+                        zero => { tag = DF_EVENT_DATA; value = 15; }
                         pos => {
                             match step - 2 {
-                                zero => { df_channel_write(chan, 20); }
+                                zero => { tag = DF_EVENT_DATA; value = 20; }
                                 pos => {
                                     match step - 3 {
-                                        zero => { df_channel_write(chan, 25); }
+                                        zero => { tag = DF_EVENT_DATA; value = 25; }
                                         pos => {
                                             match step - 4 {
-                                                zero => { df_channel_write(chan, 30); }
+                                                zero => { tag = DF_EVENT_DATA; value = 30; }
                                                 pos => {
                                                     match step - 5 {
-                                                        zero => { df_channel_write(chan, 35); }
+                                                        zero => { tag = DF_EVENT_DATA; value = 35; }
+                                                        pos => { tag = DF_EVENT_EOS; }
                                                         _ => {}
                                                     }
                                                 }
@@ -82,21 +188,21 @@ fn df_stream_source_execute(node: t40) -> void {
             }
         }
         _ => {
-            // Faulty/Uncertain Stream Run
             match step {
-                zero => { df_channel_write(chan, 12); }
+                zero => { tag = DF_EVENT_DATA; value = 12; }
                 pos => {
                     match step - 1 {
-                        zero => { df_channel_write(chan, 0 - 2); } // uncertainty marker (-2)
+                        zero => { tag = DF_EVENT_UNCERTAIN; }
                         pos => {
                             match step - 2 {
-                                zero => { df_channel_write(chan, 15); }
+                                zero => { tag = DF_EVENT_DATA; value = 15; }
                                 pos => {
                                     match step - 3 {
-                                        zero => { df_channel_write(chan, 0 - 1); } // cancellation/anomaly signal
+                                        zero => { tag = DF_EVENT_ANOMALY; }
                                         pos => {
                                             match step - 4 {
-                                                zero => { df_channel_write(chan, 22); }
+                                                zero => { tag = DF_EVENT_DATA; value = 22; }
+                                                pos => { tag = DF_EVENT_EOS; }
                                                 _ => {}
                                             }
                                         }
@@ -113,52 +219,64 @@ fn df_stream_source_execute(node: t40) -> void {
             }
         }
     }
-    unsafe { store(custom + 1, step + 1); } // Increment step
+
+    match tag {
+        zero => {}
+        _ => {
+            var written: t40 = df_channel_write_event(chan, tag, value);
+            match written {
+                pos => {
+                    match (tag - DF_EVENT_EOS) {
+                        zero => { unsafe { store(custom + 2, 1); } }
+                        _ => { unsafe { store(custom + 1, step + 1); } }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
-// 2. Anomaly Detector Node Callback (Design 5: Parameterized threshold)
+// 2. Anomaly Detector Node Callback
 fn df_stream_anomaly_execute(node: t40) -> void {
     var inputs: t40 = 0;
     var outputs: t40 = 0;
-    var in_chan: t40 = 0;
-    var out_chan: t40 = 0;
     var hist: t40 = 0;
-    
     unsafe {
         inputs = load(node + 2);
         outputs = load(node + 3);
-        hist = load(node + 7); // [0..2]=history, [3]=count, [4]=threshold
+        hist = load(node + 7);
     }
-    in_chan = vec_get(inputs, 0);
-    out_chan = vec_get(outputs, 0);
+    var in_chan: t40 = vec_get(inputs, 0);
+    var out_chan: t40 = vec_get(outputs, 0);
+    var event_value: t40 = malloc_raw(1);
+    match event_value {
+        pos => {}
+        _ => { return; }
+    }
 
     var active: t40 = 1;
     while active > 0 {
-        var val: t40 = df_channel_read(in_chan);
-        match val {
+        var tag: t40 = df_channel_read(in_chan, event_value);
+        match tag {
             zero => { active = 0; }
-            neg => {
-                // Propagate cancellation or uncertainty out-of-band and stop draining
-                df_channel_write(out_chan, val);
-                active = 0;
-            }
             pos => {
-                // Calculate history average
-                var sum: t40 = 0;
+                var val: t40 = 0;
+                unsafe { val = load(event_value); }
                 var count: t40 = 0;
                 var threshold: t40 = 0;
                 unsafe {
                     count = load(hist + 3);
                     threshold = load(hist + 4);
                 }
-                
                 match count {
                     zero => {
-                        // No history: accept and add to history
                         df_channel_write(out_chan, val);
                         df_stream_hist_add(hist, val);
+                        df_stream_candidate_clear(hist);
                     }
                     _ => {
+                        var sum: t40 = 0;
                         var i: t40 = 0;
                         while count - i > 0 {
                             var hval: t40 = 0;
@@ -167,56 +285,43 @@ fn df_stream_anomaly_execute(node: t40) -> void {
                             i = i + 1;
                         }
                         var avg: t40 = sum / count;
-                        
-                        // Check if reading deviates by > threshold
-                        var diff: t40 = val - avg;
-                        var is_anomaly: t40 = 0;
+                        var diff: t40 = df_stream_abs_diff(val, avg);
+                        // Equality is normal; only strict excess is anomalous.
                         match diff - threshold {
-                            pos => { is_anomaly = 1; }
-                            zero => { is_anomaly = 1; }
-                            neg => {
-                                match (0 - diff) - threshold {
-                                    pos => { is_anomaly = 1; }
-                                    zero => { is_anomaly = 1; }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        
-                        match is_anomaly {
-                            zero => {
-                                // Normal: write to channel and add to history
-                                df_channel_write(out_chan, val);
-                                df_stream_hist_add(hist, val);
+                            pos => {
+                                df_channel_write_signal(out_chan, DF_EVENT_ANOMALY);
+                                df_stream_candidate_add(hist, val);
                             }
                             _ => {
-                                // Anomaly: write cancellation signal (-1)
-                                df_channel_write(out_chan, 0 - 1);
+                                df_channel_write(out_chan, val);
+                                df_stream_hist_add(hist, val);
+                                df_stream_candidate_clear(hist);
                             }
                         }
                     }
                 }
             }
+            neg => {
+                df_channel_write_signal(out_chan, tag);
+                active = 0;
+            }
         }
     }
+    free_raw(event_value);
 }
 
 // 3. Tumbling Window Aggregator Node Callback
 fn df_stream_window_execute(node: t40) -> void {
     var inputs: t40 = 0;
     var outputs: t40 = 0;
-    var in_chan: t40 = 0;
-    var out_chan: t40 = 0;
     var ctx: t40 = 0;
-    
     unsafe {
         inputs = load(node + 2);
         outputs = load(node + 3);
-        ctx = load(node + 7); // Context: [0]=sum, [1]=count, [2]=limit, [3]=uncertainty_count
+        ctx = load(node + 7);
     }
-    in_chan = vec_get(inputs, 0);
-    out_chan = vec_get(outputs, 0);
-
+    var in_chan: t40 = vec_get(inputs, 0);
+    var out_chan: t40 = vec_get(outputs, 0);
     var sum: t40 = 0;
     var count: t40 = 0;
     var limit: t40 = 0;
@@ -227,53 +332,27 @@ fn df_stream_window_execute(node: t40) -> void {
         limit = load(ctx + 2);
         uncertainty = load(ctx + 3);
     }
+    var event_value: t40 = malloc_raw(1);
+    match event_value {
+        pos => {}
+        _ => { return; }
+    }
 
     var active: t40 = 1;
     while active > 0 {
-        var val: t40 = df_channel_read(in_chan);
-        match val {
+        var tag: t40 = df_channel_read(in_chan, event_value);
+        match tag {
             zero => { active = 0; }
-            neg => {
-                match val - (0 - 1) {
-                    zero => {
-                        // Cancellation/fault signal: propagate and abort tick immediately
-                        df_channel_write(out_chan, val);
-                        active = 0;
-                    }
-                    _ => {
-                        // Uncertainty signal (-2)
-                        uncertainty = uncertainty + 1;
-                        count = count + 1;
-                        
-                        match count - limit {
-                            zero => {
-                                match limit - uncertainty {
-                                    zero => { df_channel_write(out_chan, 0 - 2); }
-                                    _ => {
-                                        var avg: t40 = sum / (limit - uncertainty);
-                                        df_channel_write(out_chan, avg);
-                                    }
-                                }
-                                sum = 0;
-                                count = 0;
-                                uncertainty = 0;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
             pos => {
+                var val: t40 = 0;
+                unsafe { val = load(event_value); }
                 sum = sum + val;
                 count = count + 1;
                 match count - limit {
                     zero => {
                         match limit - uncertainty {
-                            zero => { df_channel_write(out_chan, 0 - 2); }
-                            _ => {
-                                var avg: t40 = sum / (limit - uncertainty);
-                                df_channel_write(out_chan, avg);
-                            }
+                            zero => { df_channel_write_signal(out_chan, DF_EVENT_UNCERTAIN); }
+                            _ => { df_channel_write(out_chan, sum / (limit - uncertainty)); }
                         }
                         sum = 0;
                         count = 0;
@@ -282,95 +361,161 @@ fn df_stream_window_execute(node: t40) -> void {
                     _ => {}
                 }
             }
+            neg => {
+                match (tag - DF_EVENT_UNCERTAIN) {
+                    zero => {
+                        uncertainty = uncertainty + 1;
+                        count = count + 1;
+                        match count - limit {
+                            zero => {
+                                match limit - uncertainty {
+                                    zero => { df_channel_write_signal(out_chan, DF_EVENT_UNCERTAIN); }
+                                    _ => { df_channel_write(out_chan, sum / (limit - uncertainty)); }
+                                }
+                                sum = 0;
+                                count = 0;
+                                uncertainty = 0;
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {
+                        df_channel_write_signal(out_chan, tag);
+                        active = 0;
+                    }
+                }
+            }
         }
     }
-    
     unsafe {
         store(ctx, sum);
         store(ctx + 1, count);
         store(ctx + 3, uncertainty);
     }
+    free_raw(event_value);
 }
 
 // 4. Threshold/Filter Node Callback
 fn df_stream_filter_execute(node: t40) -> void {
     var inputs: t40 = 0;
     var outputs: t40 = 0;
-    var in_chan: t40 = 0;
-    var out_chan: t40 = 0;
     var threshold: t40 = 0;
-    
     unsafe {
         inputs = load(node + 2);
         outputs = load(node + 3);
         threshold = load(node + 7);
     }
-    in_chan = vec_get(inputs, 0);
-    out_chan = vec_get(outputs, 0);
-
+    var in_chan: t40 = vec_get(inputs, 0);
+    var out_chan: t40 = vec_get(outputs, 0);
+    var event_value: t40 = malloc_raw(1);
+    match event_value {
+        pos => {}
+        _ => { return; }
+    }
     var active: t40 = 1;
     while active > 0 {
-        var val: t40 = df_channel_read(in_chan);
-        match val {
+        var tag: t40 = df_channel_read(in_chan, event_value);
+        match tag {
             zero => { active = 0; }
-            neg => {
-                df_channel_write(out_chan, val);
-                active = 0; // stop draining on out-of-band signals (Bug 5 fix)
-            }
             pos => {
+                var val: t40 = 0;
+                unsafe { val = load(event_value); }
                 match val - threshold {
-                    pos => { df_channel_write(out_chan, val); }
-                    zero => { df_channel_write(out_chan, val); }
-                    neg => {} // filtered out
+                    neg => {}
+                    _ => { df_channel_write(out_chan, val); }
                 }
+            }
+            neg => {
+                df_channel_write_signal(out_chan, tag);
+                active = 0;
             }
         }
     }
+    free_raw(event_value);
 }
 
 // 5. Alert Sink Node Callback
 fn df_stream_sink_execute(node: t40) -> void {
     var inputs: t40 = 0;
-    var in_chan: t40 = 0;
-    
-    unsafe {
-        inputs = load(node + 2);
+    unsafe { inputs = load(node + 2); }
+    var in_chan: t40 = vec_get(inputs, 0);
+    var event_value: t40 = malloc_raw(1);
+    match event_value {
+        pos => {}
+        _ => { return; }
     }
-    in_chan = vec_get(inputs, 0);
-
     var active: t40 = 1;
     while active > 0 {
-        var val: t40 = df_channel_read(in_chan);
-        match val {
+        var tag: t40 = df_channel_read(in_chan, event_value);
+        match tag {
             zero => { active = 0; }
-            neg => {
-                match val - (0 - 1) {
-                    zero => {
-                        // Anomaly alert (DMEM[31] = "ANOMALY")
-                        var err_str: t40 = 0;
-                        unsafe { err_str = load(31); }
-                        print_real_string(err_str);
-                        sys_write_char(33); sys_write_char(33); // "!!"
-                        sys_newline();
-                    }
-                    _ => {
-                        // Uncertain alert (DMEM[32] = "UNCERTAIN")
-                        var uncertain_str: t40 = 0;
-                        unsafe { uncertain_str = load(32); }
-                        print_real_string(uncertain_str);
-                        sys_write_char(63); sys_write_char(63); // "??" (character code 63, Bug 7 fix)
-                        sys_newline();
-                    }
-                }
-                active = 0; // stop draining on out-of-band signals (Bug 6 fix)
-            }
             pos => {
-                // Normal data print (DMEM[34] = "METRIC ")
+                var val: t40 = 0;
+                unsafe { val = load(event_value); }
                 var cons_str: t40 = 0;
                 unsafe { cons_str = load(34); }
-                print_real_string(cons_str);
+                print_string(cons_str);
                 print_int(val);
                 sys_newline();
+            }
+            neg => {
+                match (tag - DF_EVENT_EOS) {
+                    zero => {}
+                    _ => {
+                        match (tag - DF_EVENT_ANOMALY) {
+                            zero => {
+                                var err_str: t40 = 0;
+                                unsafe { err_str = load(31); }
+                                print_string(err_str);
+                                sys_write_char(33); sys_write_char(33);
+                                sys_newline();
+                            }
+                            _ => {
+                                var uncertain_str: t40 = 0;
+                                unsafe { uncertain_str = load(32); }
+                                print_string(uncertain_str);
+                                sys_write_char(63); sys_write_char(63);
+                                sys_newline();
+                            }
+                        }
+                    }
+                }
+                active = 0;
+            }
+        }
+    }
+    free_raw(event_value);
+}
+
+// Returns 1 for a known kind and -1 for an invalid kind.
+fn df_node_execute(node: t40) -> t40 {
+    var kind: t40 = 0;
+    unsafe { kind = load(node + 1); }
+    match kind {
+        zero => { df_stream_source_execute(node); return 1; }
+        neg => { return 0 - 1; }
+        pos => {
+            match (kind - DF_STREAM_KIND_ANOMALY) {
+                zero => { df_stream_anomaly_execute(node); return 1; }
+                pos => {
+                    match (kind - DF_STREAM_KIND_WINDOW) {
+                        zero => { df_stream_window_execute(node); return 1; }
+                        pos => {
+                            match (kind - DF_STREAM_KIND_FILTER) {
+                                zero => { df_stream_filter_execute(node); return 1; }
+                                pos => {
+                                    match (kind - DF_STREAM_KIND_SINK) {
+                                        zero => { df_stream_sink_execute(node); return 1; }
+                                        _ => { return 0 - 1; }
+                                    }
+                                }
+                                _ => { return 0 - 1; }
+                            }
+                        }
+                        _ => { return 0 - 1; }
+                    }
+                }
+                _ => { return 0 - 1; }
             }
         }
     }

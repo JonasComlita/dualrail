@@ -20,6 +20,13 @@
 
 namespace sandbox {
 namespace native_ops {
+
+inline constexpr int8_t RELATION_INVALID = 2;
+
+[[nodiscard]] inline bool relationIsValid(int8_t relation) {
+    return relation >= -1 && relation <= 1;
+}
+
 namespace detail {
 
 constexpr int pow3Int(int n) {
@@ -198,6 +205,7 @@ template<class Fmt>
 
 template<class Fmt>
 [[nodiscard]] inline int8_t intSign(typename Fmt::value_type value) {
+    if (intInvalid<Fmt>(value)) return RELATION_INVALID;
     const long long signedValue = intToSigned<Fmt>(value);
     return static_cast<int8_t>((signedValue > 0) - (signedValue < 0));
 }
@@ -435,6 +443,7 @@ template<class SrcFmt, class DstFmt>
     typename SrcFmt::value_type value) {
 
     if (value.isZero()) return typename DstFmt::value_type{0};
+    if (value.isInvalid()) return overflowValue<DstFmt>();
     if (value.isOverflow()) return overflowValue<DstFmt>();
     if (value.isUnderflow()) return underflowValue<DstFmt>();
 
@@ -459,7 +468,7 @@ template<class Fmt>
 template<class Fmt>
 [[nodiscard]] inline int8_t floatSign(typename Fmt::value_type t) {
     if (t.isZero()) return 0;
-    if (t.isSpecial()) return 1;
+    if (t.isSpecial() || t.isInvalid()) return RELATION_INVALID;
     const Int128 mantissa = mantissaToInt<Fmt>(t.unpack());
     return static_cast<int8_t>(signOf(mantissa));
 }
@@ -467,6 +476,7 @@ template<class Fmt>
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatAdd(
     typename Fmt::value_type a, typename Fmt::value_type b) {
+    if (a.isInvalid() || b.isInvalid()) return overflowValue<Fmt>();
     if (a.isZero()) return b;
     if (b.isZero()) return a;
     if (a.isSpecial() || b.isSpecial()) return overflowValue<Fmt>();
@@ -492,6 +502,7 @@ template<class Fmt>
 
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatNegate(typename Fmt::value_type a) {
+    if (a.isInvalid()) return overflowValue<Fmt>();
     if (a.isZero() || a.isSpecial()) return a;
     auto trits = a.unpack();
     for (int i = 0; i < Fmt::mantissa_trits; ++i) trits[i] = -trits[i];
@@ -507,12 +518,45 @@ template<class Fmt>
 template<class Fmt>
 [[nodiscard]] inline int8_t floatCompare(
     typename Fmt::value_type a, typename Fmt::value_type b) {
-    return floatSign<Fmt>(floatSubtract<Fmt>(a, b));
+    if (a.isInvalid() || b.isInvalid() || a.isSpecial() || b.isSpecial()) {
+        return RELATION_INVALID;
+    }
+
+    auto aTrits = a.unpack();
+    auto bTrits = b.unpack();
+    Int128 ma = mantissaToInt<Fmt>(aTrits);
+    Int128 mb = mantissaToInt<Fmt>(bTrits);
+    const int signA = signOf(ma);
+    const int signB = signOf(mb);
+    if (signA != signB) return static_cast<int8_t>((signA > signB) - (signA < signB));
+    if (signA == 0) return 0;
+
+    int exponentA = decodeExponent<Fmt>(aTrits);
+    int exponentB = decodeExponent<Fmt>(bTrits);
+    normalizeParts<Fmt>(ma, exponentA);
+    normalizeParts<Fmt>(mb, exponentB);
+    UInt128 magnitudeA = absUnsigned(ma);
+    UInt128 magnitudeB = absUnsigned(mb);
+
+    int magnitudeRelation = 0;
+    if (exponentA == exponentB) {
+        magnitudeRelation = (magnitudeA > magnitudeB) - (magnitudeA < magnitudeB);
+    } else if (exponentA > exponentB) {
+        magnitudeRelation = exponentA - exponentB > 1
+            ? 1
+            : ((magnitudeA * 3 > magnitudeB) - (magnitudeA * 3 < magnitudeB));
+    } else {
+        magnitudeRelation = exponentB - exponentA > 1
+            ? -1
+            : ((magnitudeA > magnitudeB * 3) - (magnitudeA < magnitudeB * 3));
+    }
+    return static_cast<int8_t>(signA > 0 ? magnitudeRelation : -magnitudeRelation);
 }
 
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatMultiply(
     typename Fmt::value_type a, typename Fmt::value_type b) {
+    if (a.isInvalid() || b.isInvalid()) return overflowValue<Fmt>();
     if (a.isZero() || b.isZero()) return typename Fmt::value_type{0};
     if (a.isSpecial() || b.isSpecial()) return overflowValue<Fmt>();
 
@@ -535,6 +579,7 @@ template<class Fmt>
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatDivide(
     typename Fmt::value_type a, typename Fmt::value_type b) {
+    if (a.isInvalid() || b.isInvalid()) return overflowValue<Fmt>();
     if (b.isZero()) return overflowValue<Fmt>();
     if (a.isZero()) return typename Fmt::value_type{0};
     if (a.isSpecial() || b.isSpecial()) return overflowValue<Fmt>();
@@ -555,6 +600,7 @@ template<class Fmt>
 
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatSqrt(typename Fmt::value_type t) {
+    if (t.isInvalid()) return overflowValue<Fmt>();
     if (t.isZero()) return typename Fmt::value_type{0};
     if (t.isSpecial()) return overflowValue<Fmt>();
 
@@ -587,12 +633,19 @@ template<class Fmt>
 
 template<class Fmt>
 [[nodiscard]] inline typename Fmt::value_type floatAbs(typename Fmt::value_type t) {
-    return floatSign<Fmt>(t) < 0 ? floatNegate<Fmt>(t) : t;
+    if (t.isInvalid()) return overflowValue<Fmt>();
+    const int8_t relation = floatSign<Fmt>(t);
+    if (!relationIsValid(relation)) return t;
+    return relation < 0 ? floatNegate<Fmt>(t) : t;
 }
 
 template<class Fmt>
-[[nodiscard]] inline long long floatToLongLong(typename Fmt::value_type t) {
-    if (t.isZero() || t.isSpecial()) return 0LL;
+[[nodiscard]] inline bool floatToLongLongChecked(
+    typename Fmt::value_type t,
+    long long& out) {
+    out = 0;
+    if (t.isZero()) return true;
+    if (t.isSpecial() || t.isInvalid()) return false;
 
     const auto trits = t.unpack();
     Int128 mantissa = mantissaToInt<Fmt>(trits);
@@ -603,18 +656,33 @@ template<class Fmt>
     if (exponent >= radix) {
         const int shift = exponent - radix;
         if (shift >= Fmt::mantissa_trits) {
-            return signOf(mantissa) >= 0
-                ? std::numeric_limits<long long>::max()
-                : std::numeric_limits<long long>::min();
+            return false;
         }
         value = mantissa * pow3(shift);
     } else {
         const int shift = radix - exponent;
-        if (shift >= Fmt::mantissa_trits + 8) return 0LL;
+        if (shift >= Fmt::mantissa_trits + 8) {
+            out = 0;
+            return true;
+        }
         value = mantissa / pow3(shift);
     }
 
-    return toLongLongSaturated(value);
+    const long long converted = toLongLongSaturated(value);
+    if (converted == std::numeric_limits<long long>::max() ||
+        converted == std::numeric_limits<long long>::min()) {
+        const Int128 roundTrip = Int128::fromLongLong(converted);
+        if (roundTrip != value) return false;
+    }
+    out = converted;
+    return true;
+}
+
+template<class Fmt>
+[[nodiscard]] inline long long floatToLongLong(typename Fmt::value_type t) {
+    long long out = 0;
+    if (floatToLongLongChecked<Fmt>(t, out)) return out;
+    return std::numeric_limits<long long>::max();
 }
 
 } // namespace detail
@@ -711,11 +779,13 @@ template<class Fmt>
 [[nodiscard]] inline LongTriple abs(LongTriple a) { return detail::floatAbs<detail::FmtT50>(a); }
 
 [[nodiscard]] inline int8_t compare(T1 a, T1 b) {
+    if (isInvalid(a) || isInvalid(b)) return RELATION_INVALID;
     const long long av = detail::intToSigned<detail::FmtT1>(a);
     const long long bv = detail::intToSigned<detail::FmtT1>(b);
     return static_cast<int8_t>((av > bv) - (av < bv));
 }
 [[nodiscard]] inline int8_t compare(T5 a, T5 b) {
+    if (isInvalid(a) || isInvalid(b)) return RELATION_INVALID;
     const long long av = detail::intToSigned<detail::FmtT5>(a);
     const long long bv = detail::intToSigned<detail::FmtT5>(b);
     return static_cast<int8_t>((av > bv) - (av < bv));
@@ -726,9 +796,11 @@ template<class Fmt>
 [[nodiscard]] inline int8_t compare(LongTriple a, LongTriple b) { return detail::floatCompare<detail::FmtT50>(a, b); }
 
 [[nodiscard]] inline long long toLongLong(T1 t) {
+    if (isInvalid(t)) return std::numeric_limits<long long>::max();
     return static_cast<long long>(detail::intToSigned<detail::FmtT1>(t));
 }
 [[nodiscard]] inline long long toLongLong(T5 t) {
+    if (isInvalid(t)) return std::numeric_limits<long long>::max();
     return static_cast<long long>(detail::intToSigned<detail::FmtT5>(t));
 }
 [[nodiscard]] inline long long toLongLong(T10 t) { return detail::floatToLongLong<detail::FmtT10>(t); }
@@ -736,10 +808,35 @@ template<class Fmt>
 [[nodiscard]] inline long long toLongLong(Triple t) { return detail::floatToLongLong<detail::FmtT40>(t); }
 [[nodiscard]] inline long long toLongLong(LongTriple t) { return detail::floatToLongLong<detail::FmtT50>(t); }
 
+[[nodiscard]] inline bool tryToLongLong(T1 t, long long& out) {
+    if (isInvalid(t)) { out = 0; return false; }
+    out = detail::intToSigned<detail::FmtT1>(t);
+    return true;
+}
+[[nodiscard]] inline bool tryToLongLong(T5 t, long long& out) {
+    if (isInvalid(t)) { out = 0; return false; }
+    out = detail::intToSigned<detail::FmtT5>(t);
+    return true;
+}
+[[nodiscard]] inline bool tryToLongLong(T10 t, long long& out) {
+    return detail::floatToLongLongChecked<detail::FmtT10>(t, out);
+}
+[[nodiscard]] inline bool tryToLongLong(T20 t, long long& out) {
+    return detail::floatToLongLongChecked<detail::FmtT20>(t, out);
+}
+[[nodiscard]] inline bool tryToLongLong(Triple t, long long& out) {
+    return detail::floatToLongLongChecked<detail::FmtT40>(t, out);
+}
+[[nodiscard]] inline bool tryToLongLong(LongTriple t, long long& out) {
+    return detail::floatToLongLongChecked<detail::FmtT50>(t, out);
+}
+
 [[nodiscard]] inline LongTriple toLongTriple(T1 value) {
+    if (isInvalid(value)) return LongTriple::Overflow;
     return fromInt(toLongLong(value));
 }
 [[nodiscard]] inline LongTriple toLongTriple(T5 value) {
+    if (isInvalid(value)) return LongTriple::Overflow;
     return fromInt(toLongLong(value));
 }
 [[nodiscard]] inline LongTriple toLongTriple(T10 value) {
@@ -770,13 +867,20 @@ template<class Fmt>
 }
 
 [[nodiscard]] inline LongTriple exp(LongTriple x) {
+    if (x.isSpecial() || x.isInvalid()) return LongTriple::Overflow;
     if (x.isZero()) return fromInt(1);
-    if (sign(x) < 0) return divide(fromInt(1), exp(negate(x)));
+    const int8_t inputSign = sign(x);
+    if (!relationIsValid(inputSign)) return LongTriple::Overflow;
+    if (inputSign < 0) return divide(fromInt(1), exp(negate(x)));
 
     const LongTriple three = fromInt(3);
     int powerOfThree = 0;
-    while (compare(x, three) == 1) {
+    while (true) {
+        const int8_t relation = compare(x, three);
+        if (!relationIsValid(relation)) return LongTriple::Overflow;
+        if (relation != 1) break;
         x = divide(x, three);
+        if (x.isSpecial() || x.isInvalid()) return LongTriple::Overflow;
         ++powerOfThree;
     }
 
@@ -788,6 +892,7 @@ template<class Fmt>
     }
     for (int i = 0; i < powerOfThree; ++i) {
         sum = multiply(multiply(sum, sum), sum);
+        if (sum.isSpecial() || sum.isInvalid()) return LongTriple::Overflow;
     }
     return sum;
 }
@@ -816,7 +921,9 @@ template<class Fmt>
 }
 
 [[nodiscard]] inline LongTriple ln(LongTriple x) {
-    if (x.isZero() || sign(x) < 0) return LongTriple{LongTriple::OVERFLOW_DATA};
+    if (x.isZero() || x.isSpecial() || x.isInvalid()) return LongTriple::Overflow;
+    const int8_t inputSign = sign(x);
+    if (!relationIsValid(inputSign) || inputSign < 0) return LongTriple::Overflow;
 
     const LongTriple one = fromInt(1);
     const LongTriple two = fromInt(2);
@@ -825,12 +932,20 @@ template<class Fmt>
     const LongTriple high = divide(three, two);
 
     int powerOfThree = 0;
-    while (compare(x, high) == 1) {
+    while (true) {
+        const int8_t relation = compare(x, high);
+        if (!relationIsValid(relation)) return LongTriple::Overflow;
+        if (relation != 1) break;
         x = divide(x, three);
+        if (x.isSpecial() || x.isInvalid()) return LongTriple::Overflow;
         ++powerOfThree;
     }
-    while (compare(x, low) == -1) {
+    while (true) {
+        const int8_t relation = compare(x, low);
+        if (!relationIsValid(relation)) return LongTriple::Overflow;
+        if (relation != -1) break;
         x = multiply(x, three);
+        if (x.isSpecial() || x.isInvalid()) return LongTriple::Overflow;
         --powerOfThree;
     }
 
@@ -850,12 +965,14 @@ template<class Fmt>
 }
 
 [[nodiscard]] inline LongTriple arctan_series(LongTriple x, int terms) {
+    if (x.isSpecial() || x.isInvalid() || terms < 0) return LongTriple::Overflow;
     LongTriple x2  = multiply(x, x);
-    LongTriple term = x;
+    LongTriple power = x;
     LongTriple sum  = x;
     for (int k = 1; k <= terms; ++k) {
-        term = negate(divide(multiply(term, x2), fromInt(2 * k + 1)));
-        sum  = add(sum, term);
+        power = multiply(power, x2);
+        const LongTriple term = divide(power, fromInt(2 * k + 1));
+        sum = (k % 2) == 0 ? add(sum, term) : subtract(sum, term);
     }
     return sum;
 }
@@ -875,14 +992,57 @@ template<class Fmt>
     return cachedPi();
 }
 
-[[nodiscard]] inline LongTriple sin(LongTriple x) {
+[[nodiscard]] inline bool reduceAngle(LongTriple input, LongTriple& reduced) {
+    if (input.isSpecial() || input.isInvalid()) return false;
+
     const LongTriple piValue = cachedPi();
+    const LongTriple negativePi = negate(piValue);
+    const int8_t upperRelation = compare(input, piValue);
+    const int8_t lowerRelation = compare(input, negativePi);
+    if (!relationIsValid(upperRelation) || !relationIsValid(lowerRelation)) return false;
+    if (upperRelation <= 0 && lowerRelation >= 0) {
+        reduced = input;
+        return true;
+    }
+
     const LongTriple twoPi = multiply(fromInt(2), piValue);
-    LongTriple cycles = divide(x, twoPi);
-    long long n = toLongLong(cycles);
-    x = subtract(x, multiply(fromInt(n), twoPi));
-    if (compare(x, piValue) == 1)  x = subtract(x, twoPi);
-    if (compare(x, negate(piValue)) == -1) x = add(x, twoPi);
+    const LongTriple cycles = divide(input, twoPi);
+    long long wholeCycles = 0;
+    if (!tryToLongLong(cycles, wholeCycles)) return false;
+
+    reduced = subtract(input, multiply(fromInt(wholeCycles), twoPi));
+    if (reduced.isSpecial() || reduced.isInvalid()) return false;
+
+    for (int correction = 0; correction < 4; ++correction) {
+        const int8_t above = compare(reduced, piValue);
+        const int8_t below = compare(reduced, negativePi);
+        if (!relationIsValid(above) || !relationIsValid(below)) return false;
+        if (above > 0) {
+            reduced = subtract(reduced, twoPi);
+        } else if (below < 0) {
+            reduced = add(reduced, twoPi);
+        } else {
+            return true;
+        }
+        if (reduced.isSpecial() || reduced.isInvalid()) return false;
+    }
+    return false;
+}
+
+[[nodiscard]] inline LongTriple clampUnitInterval(LongTriple value) {
+    if (value.isSpecial() || value.isInvalid()) return LongTriple::Overflow;
+    const LongTriple one = fromInt(1);
+    const LongTriple negativeOne = fromInt(-1);
+    const int8_t above = compare(value, one);
+    const int8_t below = compare(value, negativeOne);
+    if (!relationIsValid(above) || !relationIsValid(below)) return LongTriple::Overflow;
+    if (above > 0) return one;
+    if (below < 0) return negativeOne;
+    return value;
+}
+
+[[nodiscard]] inline LongTriple sin(LongTriple x) {
+    if (!reduceAngle(x, x)) return LongTriple::Overflow;
 
     const LongTriple x2 = multiply(x, x);
     LongTriple term = x;
@@ -892,17 +1052,11 @@ template<class Fmt>
         term = negate(divide(multiply(term, x2), fromInt(denominator)));
         sum = add(sum, term);
     }
-    return sum;
+    return clampUnitInterval(sum);
 }
 
 [[nodiscard]] inline LongTriple cos(LongTriple x) {
-    const LongTriple piValue = cachedPi();
-    const LongTriple twoPi = multiply(fromInt(2), piValue);
-    LongTriple cycles = divide(x, twoPi);
-    long long n = toLongLong(cycles);
-    x = subtract(x, multiply(fromInt(n), twoPi));
-    if (compare(x, piValue) == 1)  x = subtract(x, twoPi);
-    if (compare(x, negate(piValue)) == -1) x = add(x, twoPi);
+    if (!reduceAngle(x, x)) return LongTriple::Overflow;
 
     const LongTriple x2 = multiply(x, x);
     LongTriple term = fromInt(1);
@@ -912,7 +1066,7 @@ template<class Fmt>
         term = negate(divide(multiply(term, x2), fromInt(denominator)));
         sum = add(sum, term);
     }
-    return sum;
+    return clampUnitInterval(sum);
 }
 
 } // namespace native_ops

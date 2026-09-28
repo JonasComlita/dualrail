@@ -1620,7 +1620,12 @@ public:
                 auto [val, fc] = vm.dmem.load(logit_addr + v);
                 if (fc == vm::MemFaultCode::OK) {
                     vm::TernaryValue tv = vm::convertValue(val, TernaryMode::T40);
-                    if (vm::exec::compareValue(tv, best, TernaryMode::T40) > 0) {
+                    const int8_t relation = vm::exec::compareValue(tv, best, TernaryMode::T40);
+                    if (!native_ops::relationIsValid(relation)) {
+                        result.error = "Invalid lm_head comparison";
+                        return result;
+                    }
+                    if (relation == isa::T_POS) {
                         best = tv; best_token = v;
                     }
                 }

@@ -568,16 +568,16 @@ struct TernaryValue {
 }
 
 [[nodiscard]] inline int8_t readTrit0(TernaryValue val) {
-    if (val.isInvalid()) return 0;
+    if (val.isInvalid()) return native_ops::RELATION_INVALID;
     if (isLaneMode(val.mode)) return readStoredTrit(val, 0);
-    if (val.mode == TernaryMode::T1) {
-        return static_cast<int8_t>(native_ops::toLongLong(val.asT1()));
-    }
-    return static_cast<int8_t>(native_ops::sign(val.toLongTriple()));
+    const LongTriple numeric = val.toLongTriple();
+    if (numeric.isSpecial() || numeric.isInvalid()) return native_ops::RELATION_INVALID;
+    return static_cast<int8_t>(native_ops::sign(numeric));
 }
 
 [[nodiscard]] inline int8_t readTrit0(LongTriple val) {
-    if (val.isZero() || val.isSpecial()) return 0;
+    if (val.isSpecial() || val.isInvalid()) return native_ops::RELATION_INVALID;
+    if (val.isZero()) return 0;
     auto trits = val.unpack();
     return trits[0];
 }
@@ -599,7 +599,9 @@ struct TernaryValue {
 }
 
 [[nodiscard]] inline TernaryValue makeTritResult(int8_t trit_val) {
-    assert(trit_val >= -1 && trit_val <= 1);
+    if (!native_ops::relationIsValid(trit_val)) {
+        return TernaryValue::invalid(TernaryMode::T1);
+    }
     return TernaryValue::fromT1(native_ops::fromIntT1(trit_val));
 }
 
@@ -607,12 +609,37 @@ struct TernaryValue {
 // SECTION 4 — General-Purpose Register File
 // =============================================================================
 
+template<std::size_t Trits>
+[[nodiscard]] inline auto encodePhysicalPositional(
+    const std::array<int8_t, Trits>& trits) {
+    using Storage = std::conditional_t<(Trits <= 10), std::uint16_t,
+        std::conditional_t<(Trits <= 20), std::uint32_t,
+        std::conditional_t<(Trits <= 40), std::uint64_t, UInt128>>>;
+    Storage raw{};
+    Storage place{1};
+    for (std::size_t trit = 0; trit < Trits; ++trit) {
+        const auto digit = static_cast<std::uint32_t>(trits[trit] + 1);
+        if constexpr (std::is_same_v<Storage, UInt128>) {
+            raw = raw + place * digit;
+            if (trit + 1 < Trits) place = place * 3u;
+        } else {
+            raw = static_cast<Storage>(
+                raw + static_cast<Storage>(digit) * place);
+            if (trit + 1 < Trits) {
+                place = static_cast<Storage>(place * 3u);
+            }
+        }
+    }
+    return raw;
+}
+
 struct TernaryRegisterFile {
     // Registers r0..r26. r0 is hardwired zero — reads always return
     // a tagged zero; writes are silently discarded. All others are
     // general-purpose, initialized to T40 zero on reset.
-    // Every stored word remains T40. view_mode is non-architectural simulator
-    // metadata used to reconstruct the view selected by an instruction.
+    // Every stored word remains T40. view_mode records the last producer view
+    // for diagnostics, snapshot compatibility, and conservative optimization
+    // guards only; architectural results do not depend on it.
     std::array<TernaryValue, REG_COUNT> reg;
     std::array<TernaryMode, REG_COUNT> view_mode;
 
@@ -641,8 +668,30 @@ struct TernaryRegisterFile {
         if (view == TernaryMode::T50 || view == TernaryMode::L50) {
             if (idx + 1 >= REG_COUNT)
                 return TernaryValue::invalid(view);
-            const auto low = reg[idx].asTriple().unpack();
-            const auto high = reg[idx + 1].asTriple().unpack();
+            const Triple lowWord = reg[idx].asTriple();
+            const Triple highWord = reg[idx + 1].asTriple();
+            if (view == TernaryMode::T50) {
+                if (lowWord.isOverflow() && highWord.isOverflow()) {
+                    return TernaryValue::fromLongTriple(LongTriple::Overflow);
+                }
+                if (lowWord.isUnderflow() && highWord.isUnderflow()) {
+                    return TernaryValue::fromLongTriple(LongTriple::Underflow);
+                }
+                if (lowWord.isZero() && highWord.isZero()) {
+                    return TernaryValue::zero(TernaryMode::T50);
+                }
+            }
+            if (lowWord.isSpecial() || highWord.isSpecial() ||
+                lowWord.isInvalid() || highWord.isInvalid()) {
+                return TernaryValue::invalid(view);
+            }
+            const auto low = lowWord.unpackPositional();
+            const auto high = highWord.unpackPositional();
+            for (int trit = 10; trit < 40; ++trit) {
+                if (high[static_cast<std::size_t>(trit)] != 0) {
+                    return TernaryValue::invalid(view);
+                }
+            }
             std::array<int8_t, 50> wide{};
             for (int trit = 0; trit < 40; ++trit)
                 wide[static_cast<std::size_t>(trit)] =
@@ -650,11 +699,16 @@ struct TernaryRegisterFile {
             for (int trit = 0; trit < 10; ++trit)
                 wide[static_cast<std::size_t>(40 + trit)] =
                     high[static_cast<std::size_t>(trit)];
-            TernaryValue numeric = TernaryValue::fromLongTriple(
-                LongTriple::pack(wide));
-            return view == TernaryMode::L50
-                ? numericToLane(numeric, view)
-                : numeric;
+            if (view == TernaryMode::L50) {
+                TritLane50 lane;
+                for (int trit = 0; trit < 50; ++trit) {
+                    lane.setTrit(trit, wide[static_cast<std::size_t>(trit)]);
+                }
+                return TernaryValue::fromL50(lane);
+            }
+            const UInt128 raw = encodePhysicalPositional(wide);
+            if (raw.isZero()) return TernaryValue::invalid(view);
+            return TernaryValue::fromLongTriple(LongTriple{raw});
         }
 
         if (view == TernaryMode::T40) return reg[idx];
@@ -662,36 +716,47 @@ struct TernaryRegisterFile {
     }
 
     [[nodiscard]] TernaryValue read(uint8_t idx) const {
-        if (idx == R0_ZERO || idx >= REG_COUNT)
-            return TernaryValue::zero(TernaryMode::T40);
-        return readView(idx, view_mode[idx]);
+        return readPhysical(idx);
     }
 
     // Write register [idx]. Writes to r0 are discarded. Writes to
     // r27 or above are discarded (r27 is the separate trap register).
-    void write(uint8_t idx, TernaryValue val) {
-        if (idx == R0_ZERO) return;   // hardwired zero
-        if (idx >= REG_COUNT) return;
+    bool write(uint8_t idx, TernaryValue val) {
+        if (idx == R0_ZERO) return true;   // hardwired zero
+        if (idx >= REG_COUNT) return false;
 
-        invalidatePairTouching(idx);
         const TernaryMode requested = val.mode;
         if (requested == TernaryMode::T50 ||
             requested == TernaryMode::L50) {
             if (idx + 1 >= REG_COUNT) {
-                reg[idx] = TernaryValue::invalid(TernaryMode::T40);
-                view_mode[idx] = TernaryMode::T40;
-                return;
+                return false;
             }
-            invalidatePairTouching(static_cast<uint8_t>(idx + 1));
-            TernaryValue numeric = isLaneMode(requested)
-                ? laneToNumeric(val)
-                : val;
-            if (numeric.isInvalid()) {
+            if (val.isInvalid()) {
                 reg[idx] = TernaryValue::invalid(TernaryMode::T40);
                 reg[idx + 1] =
                     TernaryValue::invalid(TernaryMode::T40);
+            } else if (requested == TernaryMode::T50 &&
+                       val.asLongTripleRaw().isOverflow()) {
+                reg[idx] = TernaryValue::fromTriple(Triple::Overflow);
+                reg[idx + 1] = TernaryValue::fromTriple(Triple::Overflow);
+            } else if (requested == TernaryMode::T50 &&
+                       val.asLongTripleRaw().isUnderflow()) {
+                reg[idx] = TernaryValue::fromTriple(Triple::Underflow);
+                reg[idx + 1] = TernaryValue::fromTriple(Triple::Underflow);
+            } else if (requested == TernaryMode::T50 &&
+                       val.asLongTripleRaw().isZero()) {
+                reg[idx] = TernaryValue::zero(TernaryMode::T40);
+                reg[idx + 1] = TernaryValue::zero(TernaryMode::T40);
             } else {
-                const auto wide = numeric.asLongTripleRaw().unpack();
+                std::array<int8_t, 50> wide{};
+                if (requested == TernaryMode::L50) {
+                    const TritLane50 lane = val.asL50();
+                    for (int trit = 0; trit < 50; ++trit) {
+                        wide[static_cast<std::size_t>(trit)] = lane.tritAt(trit);
+                    }
+                } else {
+                    wide = val.asLongTripleRaw().unpack();
+                }
                 std::array<int8_t, 40> low{};
                 std::array<int8_t, 40> high{};
                 for (int trit = 0; trit < 40; ++trit)
@@ -701,35 +766,38 @@ struct TernaryRegisterFile {
                     high[static_cast<std::size_t>(trit)] =
                         wide[static_cast<std::size_t>(40 + trit)];
                 reg[idx] =
-                    TernaryValue::fromTriple(Triple::pack(low));
+                    TernaryValue::fromTriple(
+                        Triple{encodePhysicalPositional(low)});
                 reg[idx + 1] =
-                    TernaryValue::fromTriple(Triple::pack(high));
+                    TernaryValue::fromTriple(
+                        Triple{encodePhysicalPositional(high)});
             }
             view_mode[idx] = requested;
             view_mode[idx + 1] = TernaryMode::T40;
-            return;
+            return true;
         }
 
-        TernaryValue numeric = isLaneMode(requested)
-            ? laneToNumeric(val)
-            : val;
+        TernaryValue numeric = val.isInvalid()
+            ? TernaryValue::invalid(matchingNumericMode(requested))
+            : (isLaneMode(requested) ? laneToNumeric(val) : val);
         reg[idx] = numeric.isInvalid()
             ? TernaryValue::invalid(TernaryMode::T40)
             : convertValue(numeric, TernaryMode::T40);
         view_mode[idx] = requested;
+        return true;
     }
 
-    void write(uint8_t idx, LongTriple val) {
-        write(idx, TernaryValue::fromLongTriple(val));
+    bool write(uint8_t idx, LongTriple val) {
+        return write(idx, TernaryValue::fromLongTriple(val));
     }
 
     // Convenience: read the stack pointer and link register.
     [[nodiscard]] TernaryValue readSP() const { return read(R26_SP); }
     [[nodiscard]] TernaryValue readLR() const { return read(R25_LR); }
-    void writeSP(TernaryValue val)            { write(R26_SP, val); }
-    void writeLR(TernaryValue val)            { write(R25_LR, val); }
-    void writeSP(LongTriple val)              { write(R26_SP, val); }
-    void writeLR(LongTriple val)              { write(R25_LR, val); }
+    bool writeSP(TernaryValue val)            { return write(R26_SP, val); }
+    bool writeLR(TernaryValue val)            { return write(R25_LR, val); }
+    bool writeSP(LongTriple val)              { return write(R26_SP, val); }
+    bool writeLR(LongTriple val)              { return write(R25_LR, val); }
 
     // Debug: dump all non-zero registers to a string.
     [[nodiscard]] std::string dump() const {
@@ -742,24 +810,6 @@ struct TernaryRegisterFile {
         return oss.str();
     }
 
-private:
-    void invalidatePairTouching(uint8_t idx) {
-        if (idx < REG_COUNT &&
-            (view_mode[idx] == TernaryMode::T50 ||
-             view_mode[idx] == TernaryMode::L50)) {
-            view_mode[idx] = TernaryMode::T40;
-            if (idx + 1 < REG_COUNT) {
-                reg[idx + 1] =
-                    TernaryValue::zero(TernaryMode::T40);
-                view_mode[idx + 1] = TernaryMode::T40;
-            }
-        }
-        if (idx > 0 &&
-            (view_mode[idx - 1] == TernaryMode::T50 ||
-             view_mode[idx - 1] == TernaryMode::L50)) {
-            view_mode[idx - 1] = TernaryMode::T40;
-        }
-    }
 };
 
 // =============================================================================

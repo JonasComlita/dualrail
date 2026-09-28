@@ -83,12 +83,35 @@ using T20 = TernaryScalar<20>;
 using Triple = TernaryScalar<40>;
 using LongTriple = TernaryScalar<50>;
 
+enum class HostDecodeStatus : uint8_t {
+    Value,
+    Zero,
+    Overflow,
+    Underflow,
+    Invalid
+};
+
+struct HostDecodedValue {
+    long double mantissa = 0.0L;
+    int exponent = 0;
+    HostDecodeStatus status = HostDecodeStatus::Invalid;
+
+    [[nodiscard]] bool hasNumericValue() const {
+        return status == HostDecodeStatus::Value || status == HostDecodeStatus::Zero;
+    }
+};
+
 // ---------------------------------------------------------------------------
 // LONGTRIPLE OPS
+// Approximate host conversion only. Architectural arithmetic uses native_ops.
 // ---------------------------------------------------------------------------
 namespace long_ops {
-    inline std::pair<long double, int> decode(LongTriple t) {
-        if (t.isZero() || t.isSpecial()) return {0.0L, 0};
+    inline HostDecodedValue decodeChecked(LongTriple t) {
+        if (t.isZero()) return {0.0L, 0, HostDecodeStatus::Zero};
+        if (t.isOverflow()) return {0.0L, 0, HostDecodeStatus::Overflow};
+        if (t.isUnderflow()) return {0.0L, 0, HostDecodeStatus::Underflow};
+        if (t.isInvalid()) return {0.0L, 0, HostDecodeStatus::Invalid};
+
         int exponent = 0;
         std::array<int8_t, 50> trits = t.unpack();
         UInt128 p3 = 1;
@@ -102,29 +125,43 @@ namespace long_ops {
             m_sum += trits[i] * p_val;
             p_val *= 3.0L;
         }
-        return {m_sum / 12157665459056928801.0L, exponent};
+        return {
+            m_sum / 12157665459056928801.0L,
+            exponent,
+            HostDecodeStatus::Value
+        };
+    }
+
+    inline std::pair<long double, int> decode(LongTriple t) {
+        const HostDecodedValue decoded = decodeChecked(t);
+        if (!decoded.hasNumericValue()) {
+            return {std::numeric_limits<long double>::quiet_NaN(), 0};
+        }
+        return {decoded.mantissa, decoded.exponent};
     }
 
     inline double toDouble(LongTriple t) {
         if (t.isZero()) return 0.0;
         if (t.isOverflow()) return std::numeric_limits<double>::infinity();
         if (t.isUnderflow()) return 0.0;
-        auto [m, e] = decode(t);
-        return static_cast<double>(m * std::pow(3.0L, (long double)e));
+        if (t.isInvalid()) return std::numeric_limits<double>::quiet_NaN();
+        const HostDecodedValue decoded = decodeChecked(t);
+        return static_cast<double>(
+            decoded.mantissa * std::pow(3.0L, static_cast<long double>(decoded.exponent)));
     }
 
     inline LongTriple encode(long double mantissa, int exponent) {
         if (mantissa == 0.0L) return LongTriple{UInt128{}};
         if (!std::isfinite(mantissa)) return LongTriple{LongTriple::OVERFLOW_DATA};
         long double m = mantissa;
-        int e = exponent;
+        int64_t e = exponent;
         while (std::abs(m) > 1.5L) { m /= 3.0L; e++; }
         while (std::abs(m) < 0.5L) { m *= 3.0L; e--; }
         if (e > LongTriple::EXP_MAX) return LongTriple{LongTriple::OVERFLOW_DATA};
         if (e < LongTriple::EXP_MIN) return LongTriple{LongTriple::UNDERFLOW_DATA};
         std::array<int8_t, 50> trits;
         trits.fill(0);
-        int temp_exp = e;
+        int temp_exp = static_cast<int>(e);
         for (int i = 0; i < 9; ++i) {
             int r = (temp_exp + 1) % 3;
             if (r < 0) r += 3;
@@ -159,8 +196,8 @@ namespace sandbox {
     // -----------------------------------------------------------------------
     inline std::pair<int8_t, int8_t> addTrit(int8_t a, int8_t b, int8_t carryIn) {
         int sum = a + b + carryIn;
-        if (sum >  1) return {-1,  1};
-        if (sum < -1) return { 1, -1};
+        if (sum >  1) return {static_cast<int8_t>(sum - 3),  1};
+        if (sum < -1) return {static_cast<int8_t>(sum + 3), -1};
         return {static_cast<int8_t>(sum), 0};
     }
 
@@ -175,10 +212,14 @@ namespace sandbox {
 
     // -----------------------------------------------------------------------
     // DECODE Triple -> {long double mantissa, int exponent}
+    // Approximate host conversion only; use decodeTripleChecked at boundaries
+    // that must distinguish exceptional and invalid states.
     // -----------------------------------------------------------------------
-    inline std::pair<long double, int> decodeTriple(Triple t) {
-        if (t.isZero())    return {0.0L, 0};
-        if (t.isSpecial()) return {0.0L, 0};
+    inline HostDecodedValue decodeTripleChecked(Triple t) {
+        if (t.isZero()) return {0.0L, 0, HostDecodeStatus::Zero};
+        if (t.isOverflow()) return {0.0L, 0, HostDecodeStatus::Overflow};
+        if (t.isUnderflow()) return {0.0L, 0, HostDecodeStatus::Underflow};
+        if (t.isInvalid()) return {0.0L, 0, HostDecodeStatus::Invalid};
 
         int exponent = 0;
         for (int i = 0; i < 7; ++i) {
@@ -195,7 +236,15 @@ namespace sandbox {
             currentPower *= inv3;
         }
 
-        return {mantissa, exponent};
+        return {mantissa, exponent, HostDecodeStatus::Value};
+    }
+
+    inline std::pair<long double, int> decodeTriple(Triple t) {
+        const HostDecodedValue decoded = decodeTripleChecked(t);
+        if (!decoded.hasNumericValue()) {
+            return {std::numeric_limits<long double>::quiet_NaN(), 0};
+        }
+        return {decoded.mantissa, decoded.exponent};
     }
 
     // -----------------------------------------------------------------------
@@ -205,15 +254,16 @@ namespace sandbox {
         if (mantissa == 0.0L) return Triple{0};
         if (!std::isfinite(mantissa)) return Triple::Overflow;
 
-        while (std::fabs(mantissa) >= 1.5L) { mantissa /= 3.0L; ++exponent; }
-        while (std::fabs(mantissa) <  0.5L) { mantissa *= 3.0L; --exponent; }
+        int64_t normalizedExponent = exponent;
+        while (std::fabs(mantissa) >= 1.5L) { mantissa /= 3.0L; ++normalizedExponent; }
+        while (std::fabs(mantissa) <  0.5L) { mantissa *= 3.0L; --normalizedExponent; }
 
-        if (exponent > Triple::EXP_MAX) return Triple::Overflow;
-        if (exponent < Triple::EXP_MIN) return Triple::Underflow;
+        if (normalizedExponent > Triple::EXP_MAX) return Triple::Overflow;
+        if (normalizedExponent < Triple::EXP_MIN) return Triple::Underflow;
 
         std::array<int8_t, 40> trits{};
 
-        int expTemp = exponent;
+        int expTemp = static_cast<int>(normalizedExponent);
         for (int i = 0; i < 7; ++i) {
             int8_t rem    = getBalancedRem(expTemp);
             trits[33 + i] = rem;
@@ -236,6 +286,7 @@ namespace sandbox {
 
     inline Triple fromDouble(double d) {
         if (d == 0.0) return Triple{0};
+        if (!std::isfinite(d)) return Triple::Overflow;
         int exponent     = static_cast<int>(std::floor(std::log(std::abs(d)) / LOG3));
         long double mant = static_cast<long double>(d) /
                            std::pow(3.0L, static_cast<long double>(exponent));
@@ -246,19 +297,21 @@ namespace sandbox {
         if (t.isZero())      return 0.0;
         if (t.isOverflow())  return std::numeric_limits<double>::infinity();
         if (t.isUnderflow()) return 0.0;
-        auto [mantissa, exponent] = decodeTriple(t);
+        if (t.isInvalid())   return std::numeric_limits<double>::quiet_NaN();
+        const HostDecodedValue decoded = decodeTripleChecked(t);
         return static_cast<double>(
-            mantissa * std::pow(3.0L, static_cast<long double>(exponent)));
+            decoded.mantissa * std::pow(3.0L, static_cast<long double>(decoded.exponent)));
     }
 
     inline std::string toString(Triple t) {
         if (t.isZero())      return "0.0";
         if (t.isOverflow())  return "[Overflow: exponent > 3^1093]";
         if (t.isUnderflow()) return "[Underflow: exponent < 3^-1093]";
-        auto [mantissa, exponent] = decodeTriple(t);
+        if (t.isInvalid())   return "[Invalid ternary encoding]";
+        const HostDecodedValue decoded = decodeTripleChecked(t);
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(15)
-            << static_cast<double>(mantissa) << " * 3^" << exponent;
+            << static_cast<double>(decoded.mantissa) << " * 3^" << decoded.exponent;
         return oss.str();
     }
 
@@ -295,42 +348,43 @@ namespace sandbox {
     }
 
     struct TernaryAccumulator {
-        long double partial  = 0.0L;
+        Triple partial{};
         int         steps    = 0;
         static constexpr int FLUSH_INTERVAL = 1000;
 
-        void add(long double val) { partial += val; ++steps; }
+        void add(Triple val) {
+            if (val.isInvalid()) val = Triple::Overflow;
+            partial = native_ops::add(partial, val);
+            ++steps;
+        }
+
+        void add(long double val) { add(encodeTriple(val, 0)); }
 
         Triple flush() {
-            Triple t = fromDouble(static_cast<double>(partial));
-            partial  = 0.0L;
+            Triple t = partial;
+            partial  = Triple{};
             steps    = 0;
             return t;
         }
 
-        Triple result() const {
-            return fromDouble(static_cast<double>(partial));
-        }
+        [[nodiscard]] Triple result() const { return partial; }
     };
 
     struct LongTripleAccumulator {
-        long double partial = 0.0L;
+        LongTriple partial{};
         int         steps   = 0;
 
-        void add(long double val) { partial += val; ++steps; }
+        void add(long double val) { add(long_ops::encode(val, 0)); }
 
         void add(LongTriple val) {
-            if (val.isSpecial() || val.isZero()) return;
-            auto [m, e] = long_ops::decode(val);
-            partial += m * std::pow(3.0L, e);
+            if (val.isInvalid()) val = LongTriple::Overflow;
+            partial = native_ops::add(partial, val);
             ++steps;
         }
 
-        LongTriple result() const {
-            return long_ops::encode(partial, 0);
-        }
+        [[nodiscard]] LongTriple result() const { return partial; }
 
-        void reset() { partial = 0.0L; steps = 0; }
+        void reset() { partial = LongTriple{}; steps = 0; }
     };
 
     inline Triple computeOrbitalAmplitudeTernary(double r, int n) {
