@@ -19,7 +19,7 @@
     },
     {
       "path": "ternary_vm_state.h",
-      "sha256": "d8304f9636595393962d087b99a075eb45b53e5acdca65c40eb5bfa4030e192b"
+      "sha256": "b2b6296e9ea0831a179b2705f6cdd458653772cd7de33209fcca3c95d83ba008"
     },
     {
       "path": "build_tos_image.cpp",
@@ -27,11 +27,11 @@
     },
     {
       "path": "ternary_host_runtime.h",
-      "sha256": "f0d32fdcf654f20f164e164cbc053525621e64681ada337040db9031d18248e6"
+      "sha256": "b897db5afb557b82d8eb8e75e8a9fb34f7c5f03e9c24b34c1ba902106ab227d0"
     },
     {
       "path": "ARCHITECTURE_MANIFEST.json",
-      "sha256": "1a99bbb71c63e9ea6ba65f03c1f9decf78d25916482bb50374dfd2b67b9dc890"
+      "sha256": "3cb2ca0f3053d604f35c2ca3db07e9c17b991a8649a212daed40e0d242eaf28d"
     }
   ],
   "syscalls": {

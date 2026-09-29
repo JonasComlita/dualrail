@@ -52,6 +52,31 @@ std::string readTextFile(const std::string& path) {
                        std::istreambuf_iterator<char>());
 }
 
+std::vector<std::uint8_t> readBinaryFile(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in),
+                                     std::istreambuf_iterator<char>());
+}
+
+std::uint64_t readLittleEndianU64(const std::vector<std::uint8_t>& bytes,
+                                  std::size_t offset) {
+    std::uint64_t value = 0;
+    for (std::size_t index = 0; index < 8; ++index) {
+        value |= static_cast<std::uint64_t>(bytes[offset + index]) << (index * 8);
+    }
+    return value;
+}
+
+std::uint64_t fnv1aBytes(const std::vector<std::uint8_t>& bytes,
+                         std::size_t offset) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (std::size_t index = offset; index < bytes.size(); ++index) {
+        hash ^= bytes[index];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
 std::uint32_t readBigEndianU32(const std::string& bytes, std::size_t offset) {
     return (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset])) << 24) |
            (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[offset + 1])) << 16) |
@@ -162,6 +187,22 @@ void testBootImageValidation() {
     std::string error;
     expect(sandbox::host::writeBootImageFile(path, image, &error),
            "boot image writer accepts valid image");
+    const std::vector<std::uint8_t> emitted = readBinaryFile(path);
+    static constexpr std::uint8_t kMagicBytes[] =
+        {0x54, 0x53, 0x4F, 0x42, 0x4F, 0x4F, 0x54, 0x31};
+    expect(emitted.size() >= 28 &&
+               std::equal(std::begin(kMagicBytes), std::end(kMagicBytes), emitted.begin()),
+           "boot image emits the literal little-endian tboot magic bytes");
+    if (emitted.size() >= 28) {
+        const std::uint64_t payload_size = readLittleEndianU64(emitted, 16);
+        expect(readLittleEndianU64(emitted, 0) == sandbox::host::TOS_BOOT_MAGIC &&
+                   payload_size == emitted.size() - 24 &&
+                   readLittleEndianU64(emitted, 8) == fnv1aBytes(emitted, 24),
+               "boot image emits a little-endian 24-byte header");
+        expect(emitted[24] == 0x03 && emitted[25] == 0x00 &&
+                   emitted[26] == 0x00 && emitted[27] == 0x00,
+               "boot image emits little-endian v3 payload version bytes");
+    }
     sandbox::host::TosBootImage readback;
     expect(sandbox::host::readBootImageFile(path, readback, &error),
            "boot image reader accepts valid image");

@@ -3,6 +3,7 @@
 #define TERNARY_HOST_RUNTIME_H
 
 #include "ternary_asm.h"
+#include "ternary_binary_io.h"
 #include "ternary_vm.h"
 
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -202,13 +204,58 @@ inline bool readPod(const std::vector<std::uint8_t>& in, std::size_t& offset, T&
     return true;
 }
 
+template <typename T>
+struct UnsupportedTbootScalar : std::false_type {};
+
+// The v3 tboot payload has only these explicit scalar encodings. Keep this
+// separate from legacy helpers used by other host formats.
+template <typename T>
+inline void appendTbootScalar(std::vector<std::uint8_t>& out, T value) {
+    binary::Writer writer(out);
+    if constexpr (std::is_same<T, std::uint32_t>::value) {
+        writer.append_u32(binary::Endian::little, value);
+    } else if constexpr (std::is_same<T, std::int32_t>::value) {
+        writer.append_i32(binary::Endian::little, value);
+    } else if constexpr (std::is_same<T, std::uint64_t>::value) {
+        writer.append_u64(binary::Endian::little, value);
+    } else {
+        static_assert(UnsupportedTbootScalar<T>::value,
+                      "tboot payload scalars must have an explicit codec");
+    }
+}
+
+template <typename T>
+inline bool readTbootScalar(const std::vector<std::uint8_t>& in,
+                            std::size_t& offset,
+                            T& out) {
+    T decoded{};
+    bool success = false;
+    if constexpr (std::is_same<T, std::uint32_t>::value) {
+        success = binary::decode_u32(binary::ConstByteView(in), offset,
+                                     binary::Endian::little, decoded);
+    } else if constexpr (std::is_same<T, std::int32_t>::value) {
+        success = binary::decode_i32(binary::ConstByteView(in), offset,
+                                     binary::Endian::little, decoded);
+    } else if constexpr (std::is_same<T, std::uint64_t>::value) {
+        success = binary::decode_u64(binary::ConstByteView(in), offset,
+                                     binary::Endian::little, decoded);
+    } else {
+        static_assert(UnsupportedTbootScalar<T>::value,
+                      "tboot payload scalars must have an explicit codec");
+    }
+    if (!success) return false;
+    offset += sizeof(T);
+    out = decoded;
+    return true;
+}
+
 inline bool checkedSize(std::size_t size) {
     return size <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max());
 }
 
 inline bool appendString(std::vector<std::uint8_t>& out, const std::string& value) {
     if (!checkedSize(value.size())) return false;
-    appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(value.size()));
+    appendTbootScalar<std::uint32_t>(out, static_cast<std::uint32_t>(value.size()));
     out.insert(out.end(), value.begin(), value.end());
     return true;
 }
@@ -216,12 +263,16 @@ inline bool appendString(std::vector<std::uint8_t>& out, const std::string& valu
 inline bool readString(const std::vector<std::uint8_t>& in,
                        std::size_t& offset,
                        std::string& out) {
+    std::size_t decoded_offset = offset;
     std::uint32_t size = 0;
-    if (!readPod(in, offset, size)) return false;
-    if (offset + size > in.size()) return false;
-    out.assign(reinterpret_cast<const char*>(in.data() + offset),
-               reinterpret_cast<const char*>(in.data() + offset + size));
-    offset += size;
+    if (!readTbootScalar(in, decoded_offset, size) ||
+        size > in.size() - decoded_offset) {
+        return false;
+    }
+    std::string decoded(in.begin() + static_cast<std::ptrdiff_t>(decoded_offset),
+                        in.begin() + static_cast<std::ptrdiff_t>(decoded_offset + size));
+    offset = decoded_offset + size;
+    out = std::move(decoded);
     return true;
 }
 
@@ -948,15 +999,15 @@ inline std::uint64_t fnv1a(const std::vector<std::uint8_t>& data) {
 inline bool appendManifestEntry(std::vector<std::uint8_t>& out,
                                 const TosAppManifestEntry& entry) {
     if (!appendString(out, entry.name) || !appendString(out, entry.path)) return false;
-    appendPod<std::int32_t>(out, entry.text_ppn);
-    appendPod<std::int32_t>(out, entry.entry_pc);
-    appendPod<std::int32_t>(out, entry.text_pages);
-    appendPod<std::int32_t>(out, entry.data_pages);
-    appendPod<std::int32_t>(out, entry.stack_words);
-    appendPod<std::int32_t>(out, entry.isa_version);
-    appendPod<std::uint64_t>(out, entry.required_features);
-    appendPod<std::int32_t>(out, entry.function_abi_version);
-    appendPod<std::int32_t>(out, entry.syscall_abi_version);
+    appendTbootScalar<std::int32_t>(out, entry.text_ppn);
+    appendTbootScalar<std::int32_t>(out, entry.entry_pc);
+    appendTbootScalar<std::int32_t>(out, entry.text_pages);
+    appendTbootScalar<std::int32_t>(out, entry.data_pages);
+    appendTbootScalar<std::int32_t>(out, entry.stack_words);
+    appendTbootScalar<std::int32_t>(out, entry.isa_version);
+    appendTbootScalar<std::uint64_t>(out, entry.required_features);
+    appendTbootScalar<std::int32_t>(out, entry.function_abi_version);
+    appendTbootScalar<std::int32_t>(out, entry.syscall_abi_version);
     return true;
 }
 
@@ -965,17 +1016,17 @@ inline bool readManifestEntry(const std::vector<std::uint8_t>& in,
                               TosAppManifestEntry& entry) {
     if (!readString(in, offset, entry.name) ||
         !readString(in, offset, entry.path) ||
-        !readPod(in, offset, entry.text_ppn) ||
-        !readPod(in, offset, entry.entry_pc) ||
-        !readPod(in, offset, entry.text_pages) ||
-        !readPod(in, offset, entry.data_pages) ||
-        !readPod(in, offset, entry.stack_words)) {
+        !readTbootScalar(in, offset, entry.text_ppn) ||
+        !readTbootScalar(in, offset, entry.entry_pc) ||
+        !readTbootScalar(in, offset, entry.text_pages) ||
+        !readTbootScalar(in, offset, entry.data_pages) ||
+        !readTbootScalar(in, offset, entry.stack_words)) {
         return false;
     }
-    return readPod(in, offset, entry.isa_version) &&
-           readPod(in, offset, entry.required_features) &&
-           readPod(in, offset, entry.function_abi_version) &&
-           readPod(in, offset, entry.syscall_abi_version);
+    return readTbootScalar(in, offset, entry.isa_version) &&
+           readTbootScalar(in, offset, entry.required_features) &&
+           readTbootScalar(in, offset, entry.function_abi_version) &&
+           readTbootScalar(in, offset, entry.syscall_abi_version);
 }
 
 inline bool appendImageSection(std::vector<std::uint8_t>& out,
@@ -985,11 +1036,11 @@ inline bool appendImageSection(std::vector<std::uint8_t>& out,
         !appendString(out, section.kind)) {
         return false;
     }
-    appendPod<std::int32_t>(out, section.load_address);
-    appendPod<std::int32_t>(out, section.entry_pc);
-    appendPod<std::int32_t>(out, section.word_count);
-    appendPod<std::int32_t>(out, section.page_count);
-    appendPod<std::int32_t>(out, section.flags);
+    appendTbootScalar<std::int32_t>(out, section.load_address);
+    appendTbootScalar<std::int32_t>(out, section.entry_pc);
+    appendTbootScalar<std::int32_t>(out, section.word_count);
+    appendTbootScalar<std::int32_t>(out, section.page_count);
+    appendTbootScalar<std::int32_t>(out, section.flags);
     return true;
 }
 
@@ -999,29 +1050,29 @@ inline bool readImageSection(const std::vector<std::uint8_t>& in,
     return readString(in, offset, section.name) &&
            readString(in, offset, section.path) &&
            readString(in, offset, section.kind) &&
-           readPod(in, offset, section.load_address) &&
-           readPod(in, offset, section.entry_pc) &&
-           readPod(in, offset, section.word_count) &&
-           readPod(in, offset, section.page_count) &&
-           readPod(in, offset, section.flags);
+           readTbootScalar(in, offset, section.load_address) &&
+           readTbootScalar(in, offset, section.entry_pc) &&
+           readTbootScalar(in, offset, section.word_count) &&
+           readTbootScalar(in, offset, section.page_count) &&
+           readTbootScalar(in, offset, section.flags);
 }
 
 inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
     std::vector<std::uint8_t> out;
-    appendPod<std::uint32_t>(out, TOS_BOOT_FORMAT_VERSION);
-    appendPod<std::int32_t>(out, image.manifest.boot_entry);
-    appendPod<std::int32_t>(out, image.manifest.framebuffer_width);
-    appendPod<std::int32_t>(out, image.manifest.framebuffer_height);
+    appendTbootScalar<std::uint32_t>(out, TOS_BOOT_FORMAT_VERSION);
+    appendTbootScalar<std::int32_t>(out, image.manifest.boot_entry);
+    appendTbootScalar<std::int32_t>(out, image.manifest.framebuffer_width);
+    appendTbootScalar<std::int32_t>(out, image.manifest.framebuffer_height);
     if (!appendString(out, image.manifest.profile_name) ||
         !appendString(out, image.manifest.image_version)) {
         return {};
     }
-    appendPod<std::int32_t>(out, image.manifest.isa_version);
-    appendPod<std::uint64_t>(out, image.manifest.required_features);
-    appendPod<std::int32_t>(out, image.manifest.scalar_word_trits);
-    appendPod<std::int32_t>(out, image.manifest.base_page_words);
-    appendPod<std::int32_t>(out, image.manifest.function_abi_version);
-    appendPod<std::int32_t>(out, image.manifest.syscall_abi_version);
+    appendTbootScalar<std::int32_t>(out, image.manifest.isa_version);
+    appendTbootScalar<std::uint64_t>(out, image.manifest.required_features);
+    appendTbootScalar<std::int32_t>(out, image.manifest.scalar_word_trits);
+    appendTbootScalar<std::int32_t>(out, image.manifest.base_page_words);
+    appendTbootScalar<std::int32_t>(out, image.manifest.function_abi_version);
+    appendTbootScalar<std::int32_t>(out, image.manifest.syscall_abi_version);
 
     if (!checkedSize(image.manifest.apps.size()) ||
         !checkedSize(image.manifest.sections.size()) ||
@@ -1030,23 +1081,25 @@ inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
         return {};
     }
 
-    appendPod<std::uint32_t>(out,
-                             static_cast<std::uint32_t>(image.manifest.sections.size()));
+    appendTbootScalar<std::uint32_t>(
+        out, static_cast<std::uint32_t>(image.manifest.sections.size()));
     for (const TosImageSection& section : image.manifest.sections) {
         if (!appendImageSection(out, section)) return {};
     }
 
-    appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.manifest.apps.size()));
+    appendTbootScalar<std::uint32_t>(
+        out, static_cast<std::uint32_t>(image.manifest.apps.size()));
     for (const TosAppManifestEntry& entry : image.manifest.apps) {
         if (!appendManifestEntry(out, entry)) return {};
     }
 
-    appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.program.size()));
+    appendTbootScalar<std::uint32_t>(out, static_cast<std::uint32_t>(image.program.size()));
     for (const isa::TritWord27& word : image.program) {
-        appendPod<std::uint64_t>(out, word.bits);
+        appendTbootScalar<std::uint64_t>(out, word.bits);
     }
 
-    appendPod<std::uint32_t>(out, static_cast<std::uint32_t>(image.data_words.size()));
+    appendTbootScalar<std::uint32_t>(out,
+                                     static_cast<std::uint32_t>(image.data_words.size()));
     for (std::size_t index = 0; index < image.data_words.size(); ++index) {
         const std::uint64_t raw =
             index < image.data_words_raw.size()
@@ -1054,7 +1107,7 @@ inline std::vector<std::uint8_t> serializePayload(const TosBootImage& image) {
                 : vm::convertValue(
                       vm::ops::fromLong(image.data_words[index]),
                       TernaryMode::T40).asTriple().data;
-        appendPod<std::uint64_t>(out, raw);
+        appendTbootScalar<std::uint64_t>(out, raw);
     }
     return out;
 }
@@ -1064,7 +1117,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
                                std::string* error) {
     std::size_t offset = 0;
     std::uint32_t version = 0;
-    if (!readPod(payload, offset, version)) {
+    if (!readTbootScalar(payload, offset, version)) {
         setError(error, "boot image payload is truncated");
         return false;
     }
@@ -1079,28 +1132,28 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
 
     TosBootImage decoded;
     decoded.manifest.format_version = version;
-    if (!readPod(payload, offset, decoded.manifest.boot_entry) ||
-        !readPod(payload, offset, decoded.manifest.framebuffer_width) ||
-        !readPod(payload, offset, decoded.manifest.framebuffer_height) ||
+    if (!readTbootScalar(payload, offset, decoded.manifest.boot_entry) ||
+        !readTbootScalar(payload, offset, decoded.manifest.framebuffer_width) ||
+        !readTbootScalar(payload, offset, decoded.manifest.framebuffer_height) ||
         !readString(payload, offset, decoded.manifest.profile_name) ||
         !readString(payload, offset, decoded.manifest.image_version)) {
         setError(error, "boot image manifest is truncated");
         return false;
     }
-    if (!readPod(payload, offset, decoded.manifest.isa_version) ||
-        !readPod(payload, offset, decoded.manifest.required_features) ||
-        !readPod(payload, offset, decoded.manifest.scalar_word_trits) ||
-        !readPod(payload, offset, decoded.manifest.base_page_words) ||
-        !readPod(payload, offset,
+    if (!readTbootScalar(payload, offset, decoded.manifest.isa_version) ||
+        !readTbootScalar(payload, offset, decoded.manifest.required_features) ||
+        !readTbootScalar(payload, offset, decoded.manifest.scalar_word_trits) ||
+        !readTbootScalar(payload, offset, decoded.manifest.base_page_words) ||
+        !readTbootScalar(payload, offset,
                  decoded.manifest.function_abi_version) ||
-        !readPod(payload, offset,
+        !readTbootScalar(payload, offset,
                  decoded.manifest.syscall_abi_version)) {
         setError(error, "boot image architecture metadata is truncated");
         return false;
     }
 
     std::uint32_t section_count = 0;
-    if (!readPod(payload, offset, section_count)) {
+    if (!readTbootScalar(payload, offset, section_count)) {
         setError(error, "boot image section table is missing");
         return false;
     }
@@ -1115,7 +1168,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
     }
 
     std::uint32_t app_count = 0;
-    if (!readPod(payload, offset, app_count)) {
+    if (!readTbootScalar(payload, offset, app_count)) {
         setError(error, "boot image app registry is missing");
         return false;
     }
@@ -1130,14 +1183,14 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
     }
 
     std::uint32_t program_words = 0;
-    if (!readPod(payload, offset, program_words)) {
+    if (!readTbootScalar(payload, offset, program_words)) {
         setError(error, "boot image text segment is missing");
         return false;
     }
     decoded.program.assign(program_words, isa::TritWord27{});
     for (std::uint32_t i = 0; i < program_words; ++i) {
         std::uint64_t bits = 0;
-        if (!readPod(payload, offset, bits)) {
+        if (!readTbootScalar(payload, offset, bits)) {
             setError(error, "boot image text segment is truncated");
             return false;
         }
@@ -1145,7 +1198,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
     }
 
     std::uint32_t data_words = 0;
-    if (!readPod(payload, offset, data_words)) {
+    if (!readTbootScalar(payload, offset, data_words)) {
         setError(error, "boot image data segment is missing");
         return false;
     }
@@ -1153,7 +1206,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
     decoded.data_words_raw.assign(data_words, 0);
     for (std::uint32_t i = 0; i < data_words; ++i) {
         std::uint64_t raw = 0;
-        if (!readPod(payload, offset, raw) ||
+        if (!readTbootScalar(payload, offset, raw) ||
             raw > 12157665459056928801ULL) {
             setError(error, "boot image raw T40 data is invalid or truncated");
             return false;
@@ -1612,15 +1665,20 @@ inline bool writeBootImageFile(const std::string& path,
     }
     const std::uint64_t checksum = detail::fnv1a(payload);
     const std::uint64_t payload_size = static_cast<std::uint64_t>(payload.size());
+    binary::ByteBuffer header;
+    header.reserve(24);
+    binary::Writer header_writer(header);
+    header_writer.append_u64(binary::Endian::little, TOS_BOOT_MAGIC);
+    header_writer.append_u64(binary::Endian::little, checksum);
+    header_writer.append_u64(binary::Endian::little, payload_size);
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
         detail::setError(error, "failed to open boot image for writing: " + path);
         return false;
     }
-    out.write(reinterpret_cast<const char*>(&TOS_BOOT_MAGIC), sizeof(TOS_BOOT_MAGIC));
-    out.write(reinterpret_cast<const char*>(&checksum), sizeof(checksum));
-    out.write(reinterpret_cast<const char*>(&payload_size), sizeof(payload_size));
+    out.write(reinterpret_cast<const char*>(header.data()),
+              static_cast<std::streamsize>(header.size()));
     out.write(reinterpret_cast<const char*>(payload.data()),
               static_cast<std::streamsize>(payload.size()));
     out.flush();
@@ -1640,13 +1698,20 @@ inline bool readBootImageFile(const std::string& path,
         return false;
     }
 
+    binary::ByteBuffer header(24);
+    in.read(reinterpret_cast<char*>(header.data()),
+            static_cast<std::streamsize>(header.size()));
+    if (!in.good()) {
+        detail::setError(error, "boot image header is truncated");
+        return false;
+    }
+    binary::Reader header_reader{binary::ConstByteView(header)};
     std::uint64_t magic = 0;
     std::uint64_t checksum = 0;
     std::uint64_t payload_size = 0;
-    in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-    in.read(reinterpret_cast<char*>(&checksum), sizeof(checksum));
-    in.read(reinterpret_cast<char*>(&payload_size), sizeof(payload_size));
-    if (!in.good()) {
+    if (!header_reader.read_u64(binary::Endian::little, magic) ||
+        !header_reader.read_u64(binary::Endian::little, checksum) ||
+        !header_reader.read_u64(binary::Endian::little, payload_size)) {
         detail::setError(error, "boot image header is truncated");
         return false;
     }
@@ -1654,7 +1719,9 @@ inline bool readBootImageFile(const std::string& path,
         detail::setError(error, "boot image magic is invalid");
         return false;
     }
-    if (payload_size > (1ULL << 34)) {
+    if (payload_size > (1ULL << 34) ||
+        payload_size > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
+        payload_size > static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max())) {
         detail::setError(error, "boot image payload is unreasonably large");
         return false;
     }

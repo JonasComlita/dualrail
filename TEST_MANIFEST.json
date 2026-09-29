@@ -17,6 +17,7 @@
       "name": "core",
       "description": "Core ternary math, ISA, VM, IR, lanes, and numeric workload regression tests.",
       "targets": [
+        "test_binary_interop",
         "test_multiwidth_vm",
         "test_architecture_v2",
         "test_ternary_ir",

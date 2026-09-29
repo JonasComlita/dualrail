@@ -67,6 +67,10 @@ target_compile_features(test_architecture_v2 PUBLIC cxx_std_17)
 target_compile_definitions(test_architecture_v2 PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 add_test(NAME test_architecture_v2 COMMAND test_architecture_v2)
 
+add_executable(test_binary_interop tests/test_binary_interop.cpp)
+target_compile_features(test_binary_interop PRIVATE cxx_std_17)
+add_test(NAME test_binary_interop COMMAND test_binary_interop)
+
 add_executable(test_first_silicon_bringup tests/test_first_silicon_bringup.cpp)
 target_compile_features(test_first_silicon_bringup PUBLIC cxx_std_17)
 target_compile_definitions(test_first_silicon_bringup PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)

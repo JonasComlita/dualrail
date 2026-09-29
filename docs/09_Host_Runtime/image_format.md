@@ -14,6 +14,14 @@ builder that emits the current artifacts.
 `.tboot` files are little-endian binary files with a fixed 24-byte file header
 followed by a checksummed payload.
 
+The host runtime emits and consumes each v3 header and payload scalar through
+the explicit `sandbox::binary` codecs.  The on-disk bytes therefore do not
+depend on host object layout or host byte order: `uint32`/`uint64` fields use
+the stated little-endian unsigned representation, and every `int32` field uses
+its little-endian 32-bit two's-complement bit pattern.  This applies only to
+the `.tboot` v3 path; it does not alter the separate `.tdisk`, checkpoint, or
+other host file formats.
+
 | Offset | Field | Type | Notes |
 | --- | --- | --- | --- |
 | 0 | `magic` | `uint64` | `0x31544f4f424f5354` (`TOS_BOOT_MAGIC`) |
