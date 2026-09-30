@@ -1,0 +1,14 @@
+{
+  "schema":"trit.runtime_checkpoint.v2",
+  "compatibility_schema":"trit.runtime_checkpoint.v1",
+  "available":true,
+  "sequence":0,
+  "input_event_count":55,
+  "cycle":15842460,
+  "pc":23028,
+  "state_file":"vm_state.bin",
+  "disk_file":"disk.tdisk",
+  "journal_file":"input_journal.bin",
+  "boot_image":"boot.tboot",
+  "trace_file":"syscall_trace.jsonl"
+}

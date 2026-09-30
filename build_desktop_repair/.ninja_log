@@ -1,0 +1,25 @@
+# ninja log v7
+2	30	8125089869898610	C:/Users/jonas/Documents/trit/build_desktop_repair/CMakeFiles/cmake.verify_globs	2b3215ab318aa6f1
+29	37825	8125083572531863	CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj	7c9bdd696db93329
+37826	37987	8125083950502905	build_tos_image.exe	e416c02be76277b9
+37987	100798	8125084579946907	release/TernaryOS/ternary-os.tboot	52668e97855d57eb
+37987	100798	8125084579946907	release/TernaryOS/ternary-os.tdisk	52668e97855d57eb
+37987	100798	8125084579946907	C:/Users/jonas/Documents/trit/build_desktop_repair/release/TernaryOS/ternary-os.tboot	52668e97855d57eb
+37987	100798	8125084579946907	C:/Users/jonas/Documents/trit/build_desktop_repair/release/TernaryOS/ternary-os.tdisk	52668e97855d57eb
+100799	125606	8125084580226965	CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj	7a3bfad20e8a1397
+125606	125745	8125084828310319	trit_current_conformance.exe	a72568e6b26fedb1
+44	318	8125089871860711	build.ninja	fd71bd708b5eae24
+44	318	8125089871800703	C:/Users/jonas/Documents/trit/build_desktop_repair/cmake_install.cmake	fd71bd708b5eae24
+44	318	8125089871810700	C:/Users/jonas/Documents/trit/build_desktop_repair/CTestTestfile.cmake	fd71bd708b5eae24
+30	233	8125089871860711	build.ninja	fd71bd708b5eae24
+30	233	8125089871860711	C:/Users/jonas/Documents/trit/build_desktop_repair/cmake_install.cmake	fd71bd708b5eae24
+30	233	8125089871860711	C:/Users/jonas/Documents/trit/build_desktop_repair/CTestTestfile.cmake	fd71bd708b5eae24
+14	35	8125089872350833	C:/Users/jonas/Documents/trit/build_desktop_repair/CMakeFiles/cmake.verify_globs	2b3215ab318aa6f1
+39	37773	8125089872605928	CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj	7c9bdd696db93329
+37775	37973	8125090249965358	build_tos_image.exe	e416c02be76277b9
+37973	105703	8125090928829375	release/TernaryOS/ternary-os.tboot	52668e97855d57eb
+37973	105703	8125090928829375	release/TernaryOS/ternary-os.tdisk	52668e97855d57eb
+37973	105703	8125090928829375	C:/Users/jonas/Documents/trit/build_desktop_repair/release/TernaryOS/ternary-os.tboot	52668e97855d57eb
+37973	105703	8125090928829375	C:/Users/jonas/Documents/trit/build_desktop_repair/release/TernaryOS/ternary-os.tdisk	52668e97855d57eb
+105703	132694	8125090929251144	CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj	7a3bfad20e8a1397
+132694	132858	8125091199158086	trit_current_conformance.exe	a72568e6b26fedb1

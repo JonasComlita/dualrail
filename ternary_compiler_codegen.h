@@ -2234,45 +2234,35 @@ private:
         int parameter_register_word = 0;
         int parameter_stack_word = 0;
         int vector_parameter_index = 0;
-        std::map<ValueId, int> vector_stack_parameter_offsets;
-        for (const Instr& parameter : function.blocks.front().instructions) {
-            if (parameter.opcode != InstrOpcode::Param) continue;
-            if (parameter.type.kind == TypeKind::Vector) {
-                int destination = -1;
-                if (!vectorRegisterFor(parameter.def, destination)) return false;
-                if (vector_parameter_index < 4) {
-                    ++vector_parameter_index;
-                    continue;
-                }
+        std::map<std::string, int> declared_stack_parameter_offsets;
+        // Optimization may erase unused Param instructions. The wire layout
+        // still includes those arguments, so derive offsets from the signature.
+        for (const auto& parameter : function.params) {
+            const TypeRef& type = parameter.second;
+            const int width = widthOf(type);
+            if (type.kind == TypeKind::Vector) {
+                if (vector_parameter_index++ < 4) continue;
                 parameter_stack_word = align9(parameter_stack_word);
-                // Stack vector parameters are loaded at their corresponding
-                // local Store instruction, after the v0-v3 ABI parallel move.
-                // This permits more than eight vector parameters without
-                // requiring every incoming stack value to occupy a live
-                // vector register simultaneously.
-                vector_stack_parameter_offsets[parameter.def] =
-                    frame_words + parameter_stack_word;
-                parameter_stack_word += widthOf(parameter.type);
-                ++vector_parameter_index;
-                continue;
-            }
-            const int width = widthOf(parameter.type);
-            if (parameter_register_word + width <= kRegisterArgCount) {
+            } else if (parameter_register_word + width <= kRegisterArgCount) {
                 parameter_register_word += width;
                 continue;
             }
-            int destination = -1;
-            if (!registerFor(parameter.def, destination)) return false;
-            const int scratch = width == 2 ? 23 : 24;
-            out << "    " << scalarMemoryMnemonic("load", parameter.type)
-                << " r" << scratch << ", sp, "
-                << (frame_words + parameter_stack_word) << "\n";
-            if (destination != scratch) {
-                out << "    copy" << (width == 2 ? ".t50" : "")
-                    << " " << regName(destination) << ", r" << scratch
-                    << "\n";
-            }
+            declared_stack_parameter_offsets[parameter.first] =
+                frame_words + parameter_stack_word;
             parameter_stack_word += width;
+        }
+        std::map<ValueId, int> vector_stack_parameter_offsets;
+        std::map<ValueId, int> scalar_stack_parameter_offsets;
+        for (const Instr& parameter : function.blocks.front().instructions) {
+            if (parameter.opcode != InstrOpcode::Param) continue;
+            const auto incoming = declared_stack_parameter_offsets.find(parameter.symbol);
+            if (incoming == declared_stack_parameter_offsets.end()) continue;
+            if (parameter.type.kind == TypeKind::Vector) {
+                vector_stack_parameter_offsets[parameter.def] = incoming->second;
+            } else {
+                // Materialize at the definition after preserving r13-r18.
+                scalar_stack_parameter_offsets[parameter.def] = incoming->second;
+            }
         }
         auto rangesOverlap = [](
             int lhs, int lhs_width,
@@ -2486,9 +2476,16 @@ private:
                     // Virtual frame index: materialized only at a use.
                     break;
                 case InstrOpcode::Param: {
-                    // Parameters are assigned as one parallel ABI copy set
-                    // before the entry block so overlapping r13-r18 sources
-                    // cannot be clobbered by an earlier destination.
+                    // Register parameters use the parallel ABI copy before
+                    // the entry block. Stack parameters begin their live range
+                    // here, after all incoming register values are preserved.
+                    const auto stack_parameter =
+                        scalar_stack_parameter_offsets.find(instr.def);
+                    if (stack_parameter != scalar_stack_parameter_offsets.end()) {
+                        out << "    " << scalarMemoryMnemonic("load", instr.type)
+                            << " " << regName(destination) << ", sp, "
+                            << stack_parameter->second << "\n";
+                    }
                     break;
                 }
                 case InstrOpcode::Const:

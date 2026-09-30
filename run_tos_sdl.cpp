@@ -56,12 +56,6 @@ struct FrameRenderState {
     bool valid = false;
 };
 
-struct PendingMouseSample {
-    int window_x = 0;
-    int window_y = 0;
-    long long buttons = 0;
-};
-
 constexpr int kTextCellWidth = 8;
 constexpr int kTextCellHeight = 12;
 constexpr int kGlyphWidth = 5;
@@ -822,7 +816,7 @@ int main(int argc, char** argv) {
     bool running = true;
     bool debug_overlay = false;
     long long mouse_buttons = 0;
-    std::vector<PendingMouseSample> pending_mouse_samples;
+
     int rendered_frames = 0;
     bool smoke_failed = false;
     bool force_present = true;
@@ -866,12 +860,27 @@ int main(int argc, char** argv) {
         next_present = Clock::now();
     };
 
+    auto deliverMouse = [&](int x, int y, long long buttons) {
+        int width = 0, height = 0;
+        SDL_GetWindowSize(window, &width, &height);
+        const SDL_Rect dest = letterboxRect(width, height, source_w, source_h);
+        long long gx = 0, gy = 0;
+        mapMouseToGuest(dest, guest_frame_w, guest_frame_h, x, y, gx, gy);
+        runtime.updateMouseState(gx, gy, buttons, "sdl.mouse");
+    };
+
     auto handleEvent = [&](const SDL_Event& event) {
         switch (event.type) {
             case SDL_QUIT:
                 running = false;
                 break;
             case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    mouse_buttons = 0;
+                    int x = 0, y = 0;
+                    SDL_GetMouseState(&x, &y);
+                    deliverMouse(x, y, mouse_buttons);
+                }
                 if (event.window.event == SDL_WINDOWEVENT_EXPOSED ||
                     event.window.event == SDL_WINDOWEVENT_RESIZED ||
                     event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -922,24 +931,18 @@ int main(int argc, char** argv) {
             case SDL_MOUSEBUTTONDOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     mouse_buttons |= 1;
-                    pending_mouse_samples.push_back(
-                        PendingMouseSample{event.button.x, event.button.y, mouse_buttons});
+                    deliverMouse(event.button.x, event.button.y, mouse_buttons);
                 }
                 break;
             case SDL_MOUSEBUTTONUP:
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     mouse_buttons &= ~1LL;
-                    pending_mouse_samples.push_back(
-                        PendingMouseSample{event.button.x, event.button.y, mouse_buttons});
+                    deliverMouse(event.button.x, event.button.y, mouse_buttons);
                 }
                 break;
             case SDL_MOUSEMOTION:
-                pending_mouse_samples.push_back(
-                    PendingMouseSample{event.motion.x,
-                                       event.motion.y,
-                                       (event.motion.state & SDL_BUTTON_LMASK) != 0
-                                           ? 1LL
-                                           : mouse_buttons});
+                mouse_buttons = (event.motion.state & SDL_BUTTON_LMASK) != 0 ? 1 : 0;
+                deliverMouse(event.motion.x, event.motion.y, mouse_buttons);
                 break;
             default:
                 break;
@@ -947,7 +950,6 @@ int main(int argc, char** argv) {
     };
 
     while (running) {
-        pending_mouse_samples.clear();
         SDL_Event event;
         const auto before_wait = Clock::now();
         int wait_ms = 0;
@@ -974,23 +976,7 @@ int main(int argc, char** argv) {
         int mouse_x = 0;
         int mouse_y = 0;
         SDL_GetMouseState(&mouse_x, &mouse_y);
-        pending_mouse_samples.push_back(
-            PendingMouseSample{mouse_x, mouse_y, mouse_buttons});
-        for (const PendingMouseSample& sample : pending_mouse_samples) {
-            long long sample_guest_x = 0;
-            long long sample_guest_y = 0;
-            mapMouseToGuest(dest,
-                            guest_frame_w,
-                            guest_frame_h,
-                            sample.window_x,
-                            sample.window_y,
-                            sample_guest_x,
-                            sample_guest_y);
-            runtime.updateMouseState(sample_guest_x,
-                                     sample_guest_y,
-                                     sample.buttons,
-                                     "sdl.mouse");
-        }
+        deliverMouse(mouse_x, mouse_y, mouse_buttons);
 
         const auto now = Clock::now();
         if (now < next_present) {

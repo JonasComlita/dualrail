@@ -918,8 +918,9 @@ fn main() -> t40 {
         child_owns_input = desktop_child_accepts_input(active_child_pid, DESKTOP_PROCINFO_ADDR);
         if child_owns_input > 0 {
             // A live child owns the global input path through its window/event
-            // loop. Poll only its process state here; do not read desktop input.
-            os_sleep_ms(1);
+            // loop. Wait for its exit notification rather than polling with a
+            // timer that cannot advance while the kernel is architecturally idle.
+            os_waitpid(active_child_pid);
         } else {
             if active_child_pid > 0 {
                 os_gpu_mode(0);

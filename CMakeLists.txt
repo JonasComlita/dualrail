@@ -24,6 +24,23 @@ add_executable(build_tos_image build_tos_image.cpp)
 target_compile_features(build_tos_image PRIVATE cxx_std_17)
 target_compile_definitions(build_tos_image PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
 
+
+set(TOS_RELEASE_VERSION "dev" CACHE STRING "Version embedded in current images")
+set(TOS_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/release")
+set(TOS_RELEASE_DIR "${TOS_RELEASE_ROOT}/TernaryOS")
+file(GLOB TOS_APP_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/apps/*.trit")
+add_custom_command(
+    OUTPUT "${TOS_RELEASE_DIR}/ternary-os.tboot" "${TOS_RELEASE_DIR}/ternary-os.tdisk"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${TOS_RELEASE_DIR}"
+    COMMAND $<TARGET_FILE:build_tos_image> "${TOS_RELEASE_DIR}/ternary-os.tboot"
+            "${TOS_RELEASE_DIR}/ternary-os.tdisk" "${TOS_RELEASE_VERSION}"
+    DEPENDS build_tos_image ${TOS_APP_SOURCES} kernel.trit architecture_contract.trit
+            native_kernel_trap_stub.tasm
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL)
+add_custom_target(current_images DEPENDS "${TOS_RELEASE_DIR}/ternary-os.tboot"
+                                        "${TOS_RELEASE_DIR}/ternary-os.tdisk")
+
 # Current-platform conformance is kept as a small end-to-end executable. The
 # source is checked in with the current test surface; guarding the target also
 # keeps a source-only configure useful while a checkout is being repaired.
@@ -32,7 +49,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/current_only_conformance.cpp")
         tests/current_only_conformance.cpp)
     target_compile_features(trit_current_conformance PRIVATE cxx_std_17)
     target_compile_definitions(trit_current_conformance
-        PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT)
+        PRIVATE TERNARY_IGNORE_LONG_DOUBLE_ASSERT
+        TRIT_TEST_BUILD_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+    add_dependencies(trit_current_conformance current_images)
     if(BUILD_TESTING)
         add_test(NAME trit_current_conformance
                  COMMAND trit_current_conformance
@@ -75,30 +94,11 @@ if(TRIT_ENABLE_SDL_RELEASE)
             target_link_libraries(run_tos_sdl PRIVATE ${SDL2_LIBRARIES})
         endif()
 
-        set(TOS_RELEASE_VERSION "dev" CACHE STRING
-            "Version label embedded in staged Ternary OS images")
-        set(TOS_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/release")
-        set(TOS_RELEASE_DIR "${TOS_RELEASE_ROOT}/TernaryOS")
-
         add_custom_target(stage_tos_release
-            COMMAND ${CMAKE_COMMAND} -E rm -rf "${TOS_RELEASE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${TOS_RELEASE_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                    "${TOS_RELEASE_DIR}/diagnostics"
-            COMMAND $<TARGET_FILE:build_tos_image>
-                    "${TOS_RELEASE_DIR}/ternary-os.tboot"
-                    "${TOS_RELEASE_DIR}/ternary-os.tdisk"
-                    "${TOS_RELEASE_VERSION}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "$<TARGET_FILE:run_tos_sdl>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:run_tos_sdl>"
                     "${TOS_RELEASE_DIR}/TernaryOS.exe"
-            DEPENDS build_tos_image run_tos_sdl
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            DEPENDS current_images run_tos_sdl
             USES_TERMINAL)
-
-        # The desktop workflow conformance check consumes the same staged
-        # current-only image as the SDL runner.
-        add_dependencies(current_validate stage_tos_release)
 
         add_custom_target(smoke_tos_release
             COMMAND "$<TARGET_FILE:run_tos_sdl>"
@@ -132,7 +132,7 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_CTEST_COMMAND}
                 --test-dir ${CMAKE_CURRENT_BINARY_DIR}
                 --output-on-failure
-        DEPENDS current_validate
+        DEPENDS trit_current_conformance
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         USES_TERMINAL)
 else()
@@ -141,16 +141,12 @@ else()
         USES_TERMINAL)
 endif()
 
-add_custom_target(ci_production
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR}
-            --target tritc build_tos_image
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR}
-            --target current_validate
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR}
-            --target ctest
-    DEPENDS tritc build_tos_image current_validate
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    USES_TERMINAL)
+if(BUILD_TESTING)
+    add_custom_target(ci_production DEPENDS tritc build_tos_image ctest)
+else()
+    add_custom_target(ci_production DEPENDS tritc build_tos_image current_validate)
+endif()
 
 message(STATUS
     "Current platform: ISA v2 / executable ABI v3 / tBoot v3 / tDisk v2")
+

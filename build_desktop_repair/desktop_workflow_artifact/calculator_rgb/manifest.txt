@@ -1,0 +1,125 @@
+format_version=3
+image_version=dev
+profile=minimum
+boot_entry=0
+sections=60
+kernel kernel /kernel words=56637 load=0
+app init /bin/init words=145 load=186624
+app desktop /bin/desktop words=8466 load=198288
+app shell /bin/shell words=3334 load=221616
+app sh /bin/sh words=3334 load=233280
+app terminal /bin/terminal words=1057 load=244944
+app files /bin/file_manager words=5265 load=256608
+app settings /bin/settings words=7572 load=268272
+app tasks /bin/task_manager words=5045 load=291600
+app top /bin/top words=5045 load=303264
+app tasks_cmd /bin/tasks words=5045 load=314928
+app calculator /bin/calculator words=7200 load=326592
+app paint /bin/paint words=2865 load=349920
+app text_editor /bin/text_editor words=1461 load=361584
+app edit /bin/edit words=1461 load=373248
+app about /bin/about words=973 load=384912
+app help /bin/help words=947 load=396576
+app ls /bin/ls words=298 load=408240
+app cat /bin/cat words=78 load=419904
+app echo /bin/echo words=78 load=431568
+app pwd /bin/pwd words=78 load=443232
+app cp /bin/cp words=78 load=454896
+app mv /bin/mv words=78 load=466560
+app rm /bin/rm words=78 load=478224
+app mkdir /bin/mkdir words=78 load=489888
+app rmdir /bin/rmdir words=78 load=501552
+app touch /bin/touch words=78 load=513216
+app stat /bin/stat words=78 load=524880
+app find /bin/find words=78 load=536544
+app grep /bin/grep words=78 load=548208
+app clear /bin/clear words=119 load=559872
+app date /bin/date words=91 load=571536
+app sleep /bin/sleep words=93 load=583200
+app ps /bin/ps words=580 load=594864
+app doctor /bin/doctor words=1513 load=606528
+app test /bin/test words=1389 load=618192
+app sysinfo /bin/sysinfo words=1102 load=629856
+app log /bin/log words=638 load=641520
+app kill /bin/kill words=102 load=653184
+app mount /bin/mount words=74 load=664848
+app fsck /bin/fsck words=1126 load=676512
+app sync /bin/sync words=510 load=688176
+app reboot /bin/reboot words=110 load=699840
+app shutdown /bin/shutdown words=86 load=711504
+app crash /bin/crash words=15 load=723168
+app login /bin/login words=98 load=734832
+app passwd /bin/passwd words=122 load=746496
+app sessiond /bin/sessiond words=94 load=758160
+app window_server /bin/window_server words=94 load=769824
+app compositor /bin/compositor words=94 load=781488
+app inputd /bin/inputd words=94 load=793152
+app mountd /bin/mountd words=94 load=804816
+app logd /bin/logd words=94 load=816480
+app crashd /bin/crashd words=94 load=828144
+app updated /bin/updated words=94 load=839808
+app packaged /bin/packaged words=94 load=851472
+app devd /bin/devd words=94 load=863136
+app timed /bin/timed words=94 load=874800
+app authd /bin/authd words=94 load=886464
+app powerd /bin/powerd words=94 load=898128
+apps=59
+init /bin/init ppn=256
+desktop /bin/desktop ppn=272
+shell /bin/shell ppn=304
+sh /bin/sh ppn=320
+terminal /bin/terminal ppn=336
+files /bin/file_manager ppn=352
+settings /bin/settings ppn=368
+tasks /bin/task_manager ppn=400
+top /bin/top ppn=416
+tasks_cmd /bin/tasks ppn=432
+calculator /bin/calculator ppn=448
+paint /bin/paint ppn=480
+text_editor /bin/text_editor ppn=496
+edit /bin/edit ppn=512
+about /bin/about ppn=528
+help /bin/help ppn=544
+ls /bin/ls ppn=560
+cat /bin/cat ppn=576
+echo /bin/echo ppn=592
+pwd /bin/pwd ppn=608
+cp /bin/cp ppn=624
+mv /bin/mv ppn=640
+rm /bin/rm ppn=656
+mkdir /bin/mkdir ppn=672
+rmdir /bin/rmdir ppn=688
+touch /bin/touch ppn=704
+stat /bin/stat ppn=720
+find /bin/find ppn=736
+grep /bin/grep ppn=752
+clear /bin/clear ppn=768
+date /bin/date ppn=784
+sleep /bin/sleep ppn=800
+ps /bin/ps ppn=816
+doctor /bin/doctor ppn=832
+test /bin/test ppn=848
+sysinfo /bin/sysinfo ppn=864
+log /bin/log ppn=880
+kill /bin/kill ppn=896
+mount /bin/mount ppn=912
+fsck /bin/fsck ppn=928
+sync /bin/sync ppn=944
+reboot /bin/reboot ppn=960
+shutdown /bin/shutdown ppn=976
+crash /bin/crash ppn=992
+login /bin/login ppn=1008
+passwd /bin/passwd ppn=1024
+sessiond /bin/sessiond ppn=1040
+window_server /bin/window_server ppn=1056
+compositor /bin/compositor ppn=1072
+inputd /bin/inputd ppn=1088
+mountd /bin/mountd ppn=1104
+logd /bin/logd ppn=1120
+crashd /bin/crashd ppn=1136
+updated /bin/updated ppn=1152
+packaged /bin/packaged ppn=1168
+devd /bin/devd ppn=1184
+timed /bin/timed ppn=1200
+authd /bin/authd ppn=1216
+powerd /bin/powerd ppn=1232

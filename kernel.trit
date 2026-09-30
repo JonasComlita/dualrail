@@ -78,6 +78,8 @@ const WINDOW_INPUT_LAST_MOUSE_X_ADDR: t40 = 3050;
 const WINDOW_INPUT_LAST_MOUSE_Y_ADDR: t40 = 3051;
 const WINDOW_INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3052;
 const WINDOW_MOUSE_CAPTURE_ID_ADDR: t40 = 3053;
+const INPUT_MOUSE_ACK_ADDR: t40 = 3054;
+const WINDOW_MOUSE_ACK_ADDR: t40 = 3055;
 const METRIC_TLB_HITS_ADDR: t40 = 3036;
 const METRIC_TLB_MISSES_ADDR: t40 = 3037;
 const METRIC_SPAN_CACHE_HITS_ADDR: t40 = 3038;
@@ -1620,21 +1622,23 @@ fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
     }
     if kind - EVENT_KIND_MOUSE == 0 {
         if modifiers > 0 {
+          if kload(WINDOW_INPUT_LAST_MOUSE_BTN_ADDR) <= 0 {
             if window_close_hit(slot, x_or_key, y) > 0 {
                 var close_id: t40 = kload(window_addr(slot) + WIN_ID);
                 var owner_pid: t40 = kload(window_addr(slot) + WIN_OWNER_PID);
+                var close_queued: t40 = window_queue_event(slot, EVENT_KIND_CLOSE, close_id, 0, 0);
+                if close_queued < 0 {
+                    return close_queued;
+                }
                 var owner_slot: t40 = process_find_pid(owner_pid);
                 if owner_slot >= 0 {
                     process_add_signal(owner_slot, SIGNAL_CLOSE_REQUEST);
                     process_wake_for_signal(owner_slot);
                 }
-                var close_queued: t40 = window_queue_event(slot, EVENT_KIND_CLOSE, close_id, 0, 0);
-                if close_queued < 0 {
-                    return close_queued;
-                }
                 kstore(WINDOW_FOCUS_ID_ADDR, close_id);
                 return close_id;
             }
+          }
         }
     }
     var queued: t40 = window_queue_event(slot, kind, x_or_key, y, modifiers);
@@ -1654,6 +1658,7 @@ fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
 }
 
 fn window_poll_input_driver() -> t40 {
+    if window_top_visible_slot() < 0 { return 0; }
     var routed: t40 = 0;
     var mx: t40 = 0;
     var my: t40 = 0;
@@ -1675,19 +1680,22 @@ fn window_poll_input_driver() -> t40 {
     }
     if mx - last_x != 0 {
         var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
+        if mouse_target < 0 { return mouse_target; }
         if mouse_target > 0 {
             routed = routed + 1;
         }
     } else {
         if my - last_y != 0 {
             var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
-            if mouse_target > 0 {
+            if mouse_target < 0 { return mouse_target; }
+        if mouse_target > 0 {
                 routed = routed + 1;
             }
         } else {
             if btn - last_btn != 0 {
                 var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
-                if mouse_target > 0 {
+                if mouse_target < 0 { return mouse_target; }
+        if mouse_target > 0 {
                     routed = routed + 1;
                 }
             }
@@ -1701,6 +1709,7 @@ fn window_poll_input_driver() -> t40 {
     kstore(WINDOW_INPUT_LAST_MOUSE_X_ADDR, mx);
     kstore(WINDOW_INPUT_LAST_MOUSE_Y_ADDR, my);
     kstore(WINDOW_INPUT_LAST_MOUSE_BTN_ADDR, btn);
+    kstore(WINDOW_MOUSE_ACK_ADDR, kload(WINDOW_MOUSE_ACK_ADDR) + 1);
     var key_available: t40 = 0;
     unsafe { key_available = csr_read(console_in_ctrl); }
     if key_available > 0 {
@@ -1711,8 +1720,9 @@ fn window_poll_input_driver() -> t40 {
         if key_slot >= 0 {
             var key: t40 = 0;
             unsafe { key = csr_read(console_in); }
-            unsafe { csr_write(console_in_ctrl, 1); }
             var key_target: t40 = window_route_input(EVENT_KIND_KEY, key, 0, 0);
+            if key_target < 0 { return key_target; }
+            unsafe { csr_write(console_in_ctrl, 1); }
             if key_target > 0 {
                 routed = routed + 1;
             }
@@ -3711,8 +3721,9 @@ fn wait_read_input_event(pid: t40, out_addr: t40) -> t40 {
     if available > 0 {
         var key: t40 = 0;
         unsafe { key = csr_read(console_in); }
-        unsafe { csr_write(console_in_ctrl, 1); }
-        return wait_store_event(pid, out_addr, EVENT_KIND_KEY, key, 0, 0);
+        var delivered: t40 = wait_store_event(pid, out_addr, EVENT_KIND_KEY, key, 0, 0);
+        if delivered > 0 { unsafe { csr_write(console_in_ctrl, 1); } }
+        return delivered;
     }
 
     var mx: t40 = 0;
@@ -3722,22 +3733,34 @@ fn wait_read_input_event(pid: t40, out_addr: t40) -> t40 {
     unsafe { my = csr_read(mouse_y); }
     unsafe { btn = csr_read(mouse_btn); }
     if mx - kload(INPUT_LAST_MOUSE_X_ADDR) != 0 {
-        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
-        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
-        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
-        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        var delivered: t40 = wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        if delivered > 0 {
+            kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+            kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+            kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+            kstore(INPUT_MOUSE_ACK_ADDR, kload(INPUT_MOUSE_ACK_ADDR) + 1);
+        }
+        return delivered;
     }
     if my - kload(INPUT_LAST_MOUSE_Y_ADDR) != 0 {
-        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
-        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
-        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
-        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        var delivered: t40 = wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        if delivered > 0 {
+            kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+            kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+            kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+            kstore(INPUT_MOUSE_ACK_ADDR, kload(INPUT_MOUSE_ACK_ADDR) + 1);
+        }
+        return delivered;
     }
     if btn - kload(INPUT_LAST_MOUSE_BTN_ADDR) != 0 {
-        kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
-        kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
-        kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
-        return wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        var delivered: t40 = wait_store_event(pid, out_addr, EVENT_KIND_MOUSE, mx, my, btn);
+        if delivered > 0 {
+            kstore(INPUT_LAST_MOUSE_X_ADDR, mx);
+            kstore(INPUT_LAST_MOUSE_Y_ADDR, my);
+            kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+            kstore(INPUT_MOUSE_ACK_ADDR, kload(INPUT_MOUSE_ACK_ADDR) + 1);
+        }
+        return delivered;
     }
     return 0;
 }

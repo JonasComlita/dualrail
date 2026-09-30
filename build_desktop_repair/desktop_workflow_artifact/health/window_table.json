@@ -1,0 +1,8 @@
+{
+  "focus_id": 1,
+  "input_last": {"global_x": 16, "global_y": 37, "global_buttons": 0, "window_x": 16, "window_y": 37, "window_buttons": 0},
+  "framebuffer": {"valid": 1, "width": 80, "height": 60, "stride": 240, "format": 1, "front_index": 1, "words": 14400, "front_samples": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "back_samples": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+  "windows": [
+
+  ]
+}

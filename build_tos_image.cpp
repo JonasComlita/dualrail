@@ -363,7 +363,7 @@ int main(int argc, char** argv) {
     constexpr int bundled_app_abi =
         sandbox::architecture::v3::FUNCTION_ABI_VERSION;
 
-    constexpr int kGuiStackWords = 1024;
+    constexpr int kGuiStackWords = 4096;
     constexpr int kServiceStackWords = 256;
     constexpr int kCliStackWords = 128;
 

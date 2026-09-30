@@ -1,0 +1,8 @@
+{
+  "focus_id": 0,
+  "input_last": {"global_x": 11, "global_y": 4, "global_buttons": 1, "window_x": 75, "window_y": 50, "window_buttons": 0},
+  "framebuffer": {"valid": 1, "width": 80, "height": 60, "stride": 240, "format": 1, "front_index": 0, "words": 14400, "front_samples": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "back_samples": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+  "windows": [
+    {"slot": 0, "id": 0, "owner_pid": 101, "x": 20, "y": 2, "width": 40, "height": 38, "z": 0, "visible": 1, "version": 48, "event_read": 3, "event_write": 3, "event_count": 0, "buffer_samples": [96, 106, 70, 96, 106, 70, 96, 106, 70, 96, 106, 70], "events": []}
+  ]
+}

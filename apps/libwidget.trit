@@ -1001,6 +1001,52 @@ fn widget_draw_digit(buf: t40, width: t40, height: t40, x: t40, y: t40, digit: t
 }
 
 fn widget_draw_char(buf: t40, width: t40, height: t40, x: t40, y: t40, label: t40, r: t40, g: t40, b: t40) -> t40 {
+    if label >= 97 { if label <= 122 { label = label - 32; } }
+    if label == 32 { return 0; }
+    var bits: t40 = 0;
+    if label == 65 { bits = 11245; }
+    if label == 66 { bits = 27566; }
+    if label == 68 { bits = 27502; }
+    if label == 69 { bits = 31143; }
+    if label == 70 { bits = 31140; }
+    if label == 71 { bits = 31087; }
+    if label == 72 { bits = 23533; }
+    if label == 73 { bits = 29847; }
+    if label == 74 { bits = 4719; }
+    if label == 75 { bits = 23469; }
+    if label == 76 { bits = 18727; }
+    if label == 77 { bits = 24557; }
+    if label == 78 { bits = 24573; }
+    if label == 79 { bits = 31599; }
+    if label == 80 { bits = 27556; }
+    if label == 81 { bits = 31609; }
+    if label == 82 { bits = 27565; }
+    if label == 83 { bits = 31183; }
+    if label == 84 { bits = 29842; }
+    if label == 85 { bits = 23407; }
+    if label == 86 { bits = 23402; }
+    if label == 87 { bits = 23549; }
+    if label == 88 { bits = 23213; }
+    if label == 89 { bits = 23186; }
+    if label == 90 { bits = 29351; }
+    if bits > 0 {
+        var row: t40 = 0;
+        var mask: t40 = 16384;
+        var col: t40 = 0;
+        while row < 5 {
+            col = 0;
+            while col < 3 {
+                if bits >= mask {
+                    os_window_plot_rgb(buf, width, height, x + col, y + row, r, g, b);
+                    bits = bits - mask;
+                }
+                mask = mask / 2;
+                col = col + 1;
+            }
+            row = row + 1;
+        }
+        return 1;
+    }
     if label - 48 >= 0 {
         if 57 - label >= 0 {
             return widget_draw_digit(buf, width, height, x, y, label - 48, r, g, b);
@@ -1089,8 +1135,13 @@ fn widget_draw_button_state(buf: t40, width: t40, height: t40, x: t40, y: t40, w
     os_window_draw_rect_rgb(buf, width, height, x, y, w, h, br, bg, bb);
     if w - 3 >= 0 {
         if h - 5 >= 0 {
-            var tx: t40 = x + (w - 3) / 2;
-            var ty: t40 = y + (h - 5) / 2;
+            // Pixel coordinates must be integral; t40 division keeps fractions.
+            var tx: t40 = x;
+            var ty: t40 = y;
+            var spare: t40 = w - 3;
+            while spare >= 2 { tx = tx + 1; spare = spare - 2; }
+            spare = h - 5;
+            while spare >= 2 { ty = ty + 1; spare = spare - 2; }
             widget_draw_char(buf, width, height, tx, ty, label, tr, tg, tb);
         }
     }

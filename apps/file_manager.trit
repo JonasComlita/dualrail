@@ -121,7 +121,7 @@ fn fm_draw_ui() -> t40 {
                     i = i + 1;
                 }
                 pos = pos + 3 + nlen;
-                row = row + 2;
+                row = row + 6;
             }
         } else {
             pos = written;
@@ -133,7 +133,7 @@ fn fm_draw_ui() -> t40 {
 const FM_WINDOW_X: t40 = 8;
 const FM_WINDOW_Y: t40 = 5;
 const FM_WINDOW_WIDTH: t40 = 64;
-const FM_WINDOW_HEIGHT: t40 = 30;
+const FM_WINDOW_HEIGHT: t40 = 37;
 
 fn fm_path_length(addr: t40) -> t40 {
     var len: t40 = 0;
@@ -202,18 +202,39 @@ fn fm_open_selected(path_addr: t40, selected: t40, out_addr: t40, written: t40) 
     return 0;
 }
 
+// Row and page indices are integral even though t40 division is fractional.
+fn fm_page_first(selected: t40) -> t40 {
+    var first: t40 = 0;
+    while selected - first >= 3 { first = first + 3; }
+    return first;
+}
+
+fn fm_entry_count(out_addr: t40, written: t40) -> t40 {
+    var pos: t40 = 0;
+    var count: t40 = 0;
+    while pos < written {
+        unsafe { pos = pos + 3 + load(out_addr + pos + 2); }
+        count = count + 1;
+    }
+    return count;
+}
+
 fn fm_draw_window_ui(win: t40, path_addr: t40, out_addr: t40, written: t40, selected: t40) -> t40 {
     var buf: t40 = os_window_get_buffer(win);
     if buf <= 0 { return 0; }
+    var path_label_len: t40 = fm_path_length(path_addr);
+    if path_label_len > 14 { path_label_len = 14; }
     widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
                       0, 0, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT, 1);
     widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
-                      2, 2, 60, 3, 1);
+                      2, 1, 60, 5, 1);
+    widget_draw_label(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT, 3, 1, path_addr, path_label_len, 180, 210, 230);
     widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
                       2, 6, 60, 19, 0);
 
     var pos: t40 = 0;
     var row: t40 = 7;
+    var first: t40 = fm_page_first(selected);
     var index: t40 = 0;
     var kind: t40 = 0;
     var nlen: t40 = 0;
@@ -223,10 +244,11 @@ fn fm_draw_window_ui(win: t40, path_addr: t40, out_addr: t40, written: t40, sele
                 kind = load(out_addr + pos + 1);
                 nlen = load(out_addr + pos + 2);
             }
+            if index >= first {
             var active: t40 = 0;
             if index - selected == 0 { active = 1; }
             widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
-                              4, row, 56, 2, active);
+                              4, row, 56, 6, active);
             if index - 10 < 0 {
                 widget_draw_digit(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
                                   6, row, index, 120, 220, 180);
@@ -238,11 +260,14 @@ fn fm_draw_window_ui(win: t40, path_addr: t40, out_addr: t40, written: t40, sele
                 widget_draw_char(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
                                  12, row, 45, 180, 180, 180);
             }
+            var label_len: t40 = nlen;
+            if label_len > 11 { label_len = 11; }
             widget_draw_label(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
                               17, row, out_addr + pos + 3,
-                              nlen, 180, 210, 230);
+                              label_len, 180, 210, 230);
             pos = pos + 3 + nlen;
-            row = row + 2;
+            row = row + 6;
+            } else { pos = pos + 3 + nlen; }
             index = index + 1;
         } else {
             pos = written;
@@ -252,11 +277,11 @@ fn fm_draw_window_ui(win: t40, path_addr: t40, out_addr: t40, written: t40, sele
     // The bottom controls are intentionally window-local: u=parent, m=mkdir,
     // x=close, and Enter opens the selected directory.
     widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
-                             4, 26, 12, 3, 117, 0, 0, 0, 1);
+                             4, 30, 12, 5, 117, 0, 0, 0, 1);
     widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
-                             18, 26, 12, 3, 109, 0, 0, 0, 1);
+                             18, 30, 12, 5, 109, 0, 0, 0, 1);
     widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
-                             48, 26, 12, 3, 88, 0, 0, 0, 1);
+                             48, 30, 12, 5, 88, 0, 0, 0, 1);
     os_window_present(win);
     return 1;
 }
@@ -286,6 +311,8 @@ fn main() -> t40 {
     var mx: t40 = 0;
     var my: t40 = 0;
     var btn: t40 = 0;
+    var last_btn: t40 = 0;
+    var count: t40 = 0;
     var event_addr: t40 = 10600;
     var event_status: t40 = 0;
     var kind: t40 = 0;
@@ -303,23 +330,24 @@ fn main() -> t40 {
                 mx = os_event_x_or_key(event_addr) - FM_WINDOW_X;
                 my = os_event_y(event_addr) - FM_WINDOW_Y;
                 btn = os_event_modifiers(event_addr);
-                if btn > 0 {
-                    if my - 26 >= 0 {
-                        if mx - 48 >= 0 { done = 1; }
-                        if mx - 16 < 0 { fm_parent_path(path_addr); selected = 0; }
-                        if mx - 18 >= 0 {
-                            if mx - 32 < 0 {
+                if btn == 1 {
+                    if last_btn == 0 {
+                        if my >= 30 { if my < 35 {
+                            if mx >= 48 { if mx < 60 { done = 1; } }
+                            if mx >= 4 { if mx < 16 { fm_parent_path(path_addr); selected = 0; } }
+                            if mx >= 18 { if mx < 30 {
                                 fm_seed_tmp_path(10800);
                                 os_mkdir(10800);
-                            }
-                        }
-                    } else {
-                        if my - 7 >= 0 {
-                        selected = (my - 7) / 2;
-                        if selected - 9 > 0 { selected = 9; }
-                        }
+                            } }
+                        } }
+                        if mx >= 4 { if mx < 60 { if my >= 7 { if my < 25 {
+                            selected = fm_page_first(selected);
+                            if my >= 13 { selected = selected + 1; }
+                            if my >= 19 { selected = selected + 1; }
+                        } } } }
                     }
                 }
+                last_btn = btn;
             }
             if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
             if kind - OS_EVENT_KIND_KEY == 0 {
@@ -328,6 +356,8 @@ fn main() -> t40 {
                 if k - 88 == 0 { done = 1; }
                 if k - 117 == 0 { fm_parent_path(path_addr); selected = 0; }
                 if k - 85 == 0 { fm_parent_path(path_addr); selected = 0; }
+                if k - 110 == 0 { selected = selected + 1; }
+                if k - 112 == 0 { if selected > 0 { selected = selected - 1; } }
                 if k - 13 == 0 {
                     fm_open_selected(path_addr, selected, out_addr, written);
                     selected = 0;
@@ -343,6 +373,9 @@ fn main() -> t40 {
             }
             if done == 0 {
                 written = os_readdir(path_addr, out_addr, 220);
+                count = fm_entry_count(out_addr, written);
+                if selected >= count { selected = count - 1; }
+                if selected < 0 { selected = 0; }
                 fm_draw_window_ui(win, path_addr, out_addr, written, selected);
             }
         }

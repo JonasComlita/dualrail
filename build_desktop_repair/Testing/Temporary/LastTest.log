@@ -1,0 +1,21 @@
+Start testing: Sep 30 15:06 Pacific Daylight Time
+----------------------------------------------------------
+1/1 Testing: trit_current_conformance
+1/1 Test: trit_current_conformance
+Command: "C:/Users/jonas/Documents/trit/build_desktop_repair/trit_current_conformance.exe"
+Directory: C:/Users/jonas/Documents/trit
+"trit_current_conformance" start time: Sep 30 15:06 Pacific Daylight Time
+Output:
+----------------------------------------------------------
+desktop workflow conformance: launcher -> calculator burst/drag/backspace/result -> Files open/parent -> desktop
+desktop workflow artifact: C:/Users/jonas/Documents/trit/build_desktop_repair\desktop_workflow_artifact
+current platform conformance: ISA v2, executable ABI v3
+<end of output>
+Test time = 260.86 sec
+----------------------------------------------------------
+Test Passed.
+"trit_current_conformance" end time: Sep 30 15:10 Pacific Daylight Time
+"trit_current_conformance" time elapsed: 00:04:20
+----------------------------------------------------------
+
+End testing: Sep 30 15:10 Pacific Daylight Time

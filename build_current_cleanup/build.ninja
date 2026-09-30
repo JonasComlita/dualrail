@@ -12,14 +12,19 @@
 
 # =============================================================================
 # Project: TernaryCurrentPlatform
-# Configurations: 
+# Configurations: Release
 # =============================================================================
 
 #############################################
 # Minimal version of Ninja required by this file
 
-ninja_required_version = 1.5
+ninja_required_version = 1.8
 
+
+#############################################
+# Set configuration variable for custom commands.
+
+CONFIGURATION = Release
 # =============================================================================
 # Include auxiliary files.
 
@@ -212,10 +217,11 @@ build ContinuousSubmit: phony CMakeFiles/ContinuousSubmit
 
 build cmake_object_order_depends_target_tritc: phony || .
 
-build CMakeFiles/tritc.dir/tritc.cpp.obj: CXX_COMPILER__tritc_unscanned_ C$:/Users/jonas/Documents/trit/tritc.cpp || cmake_object_order_depends_target_tritc
+build CMakeFiles/tritc.dir/tritc.cpp.obj: CXX_COMPILER__tritc_unscanned_Release C$:/Users/jonas/Documents/trit/tritc.cpp || cmake_object_order_depends_target_tritc
+  CONFIG = Release
   DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\tritc.dir\tritc.cpp.obj.d
-  FLAGS = -std=c++17
+  FLAGS = -O3 -DNDEBUG -std=c++17
   INCLUDES = -IC:/Users/jonas/Documents/trit -IC:/Users/jonas/Documents/trit/bitnet_weights
   OBJECT_DIR = CMakeFiles\tritc.dir
   OBJECT_FILE_DIR = CMakeFiles\tritc.dir
@@ -229,7 +235,9 @@ build CMakeFiles/tritc.dir/tritc.cpp.obj: CXX_COMPILER__tritc_unscanned_ C$:/Use
 #############################################
 # Link the executable tritc.exe
 
-build tritc.exe: CXX_EXECUTABLE_LINKER__tritc_ CMakeFiles/tritc.dir/tritc.cpp.obj
+build tritc.exe: CXX_EXECUTABLE_LINKER__tritc_Release CMakeFiles/tritc.dir/tritc.cpp.obj
+  CONFIG = Release
+  FLAGS = -O3 -DNDEBUG
   LINK_LIBRARIES = -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\tritc.dir
   POST_BUILD = cd .
@@ -248,10 +256,11 @@ build tritc.exe: CXX_EXECUTABLE_LINKER__tritc_ CMakeFiles/tritc.dir/tritc.cpp.ob
 
 build cmake_object_order_depends_target_build_tos_image: phony || .
 
-build CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj: CXX_COMPILER__build_tos_image_unscanned_ C$:/Users/jonas/Documents/trit/build_tos_image.cpp || cmake_object_order_depends_target_build_tos_image
+build CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj: CXX_COMPILER__build_tos_image_unscanned_Release C$:/Users/jonas/Documents/trit/build_tos_image.cpp || cmake_object_order_depends_target_build_tos_image
+  CONFIG = Release
   DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\build_tos_image.dir\build_tos_image.cpp.obj.d
-  FLAGS = -std=c++17
+  FLAGS = -O3 -DNDEBUG -std=c++17
   INCLUDES = -IC:/Users/jonas/Documents/trit -IC:/Users/jonas/Documents/trit/bitnet_weights
   OBJECT_DIR = CMakeFiles\build_tos_image.dir
   OBJECT_FILE_DIR = CMakeFiles\build_tos_image.dir
@@ -265,7 +274,9 @@ build CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj: CXX_COMPILER__buil
 #############################################
 # Link the executable build_tos_image.exe
 
-build build_tos_image.exe: CXX_EXECUTABLE_LINKER__build_tos_image_ CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj
+build build_tos_image.exe: CXX_EXECUTABLE_LINKER__build_tos_image_Release CMakeFiles/build_tos_image.dir/build_tos_image.cpp.obj
+  CONFIG = Release
+  FLAGS = -O3 -DNDEBUG
   LINK_LIBRARIES = -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\build_tos_image.dir
   POST_BUILD = cd .
@@ -275,6 +286,12 @@ build build_tos_image.exe: CXX_EXECUTABLE_LINKER__build_tos_image_ CMakeFiles/bu
   TARGET_PDB = build_tos_image.exe.dbg
   TARGET_SUPPORT_DIR = CMakeFiles\build_tos_image.dir
 
+
+#############################################
+# Utility command for current_images
+
+build current_images: phony CMakeFiles/current_images release/TernaryOS/ternary-os.tboot release/TernaryOS/ternary-os.tdisk build_tos_image.exe
+
 # =============================================================================
 # Object build statements for EXECUTABLE target trit_current_conformance
 
@@ -282,12 +299,13 @@ build build_tos_image.exe: CXX_EXECUTABLE_LINKER__build_tos_image_ CMakeFiles/bu
 #############################################
 # Order-only phony target for trit_current_conformance
 
-build cmake_object_order_depends_target_trit_current_conformance: phony || .
+build cmake_object_order_depends_target_trit_current_conformance: phony || current_images
 
-build CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj: CXX_COMPILER__trit_current_conformance_unscanned_ C$:/Users/jonas/Documents/trit/tests/current_only_conformance.cpp || cmake_object_order_depends_target_trit_current_conformance
-  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
+build CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj: CXX_COMPILER__trit_current_conformance_unscanned_Release C$:/Users/jonas/Documents/trit/tests/current_only_conformance.cpp || cmake_object_order_depends_target_trit_current_conformance
+  CONFIG = Release
+  DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT -DTRIT_TEST_BUILD_DIR=\"C:/Users/jonas/Documents/trit/build_current_cleanup\"
   DEP_FILE = CMakeFiles\trit_current_conformance.dir\tests\current_only_conformance.cpp.obj.d
-  FLAGS = -std=c++17
+  FLAGS = -O3 -DNDEBUG -std=c++17
   INCLUDES = -IC:/Users/jonas/Documents/trit -IC:/Users/jonas/Documents/trit/bitnet_weights
   OBJECT_DIR = CMakeFiles\trit_current_conformance.dir
   OBJECT_FILE_DIR = CMakeFiles\trit_current_conformance.dir\tests
@@ -301,7 +319,9 @@ build CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp
 #############################################
 # Link the executable trit_current_conformance.exe
 
-build trit_current_conformance.exe: CXX_EXECUTABLE_LINKER__trit_current_conformance_ CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj
+build trit_current_conformance.exe: CXX_EXECUTABLE_LINKER__trit_current_conformance_Release CMakeFiles/trit_current_conformance.dir/tests/current_only_conformance.cpp.obj || current_images
+  CONFIG = Release
+  FLAGS = -O3 -DNDEBUG
   LINK_LIBRARIES = -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\trit_current_conformance.dir
   POST_BUILD = cd .
@@ -315,7 +335,7 @@ build trit_current_conformance.exe: CXX_EXECUTABLE_LINKER__trit_current_conforma
 #############################################
 # Utility command for current_validate
 
-build current_validate: phony CMakeFiles/current_validate stage_tos_release trit_current_conformance.exe
+build current_validate: phony CMakeFiles/current_validate trit_current_conformance.exe
 
 # =============================================================================
 # Object build statements for EXECUTABLE target run_tos_sdl
@@ -326,10 +346,11 @@ build current_validate: phony CMakeFiles/current_validate stage_tos_release trit
 
 build cmake_object_order_depends_target_run_tos_sdl: phony || .
 
-build CMakeFiles/run_tos_sdl.dir/run_tos_sdl.cpp.obj: CXX_COMPILER__run_tos_sdl_unscanned_ C$:/Users/jonas/Documents/trit/run_tos_sdl.cpp || cmake_object_order_depends_target_run_tos_sdl
+build CMakeFiles/run_tos_sdl.dir/run_tos_sdl.cpp.obj: CXX_COMPILER__run_tos_sdl_unscanned_Release C$:/Users/jonas/Documents/trit/run_tos_sdl.cpp || cmake_object_order_depends_target_run_tos_sdl
+  CONFIG = Release
   DEFINES = -DNOMINMAX -DTERNARY_IGNORE_LONG_DOUBLE_ASSERT
   DEP_FILE = CMakeFiles\run_tos_sdl.dir\run_tos_sdl.cpp.obj.d
-  FLAGS = -std=c++17
+  FLAGS = -O3 -DNDEBUG -std=c++17
   INCLUDES = -IC:/Users/jonas/Documents/trit -IC:/Users/jonas/Documents/trit/bitnet_weights -isystem C:/msys64/ucrt64/include/SDL2
   OBJECT_DIR = CMakeFiles\run_tos_sdl.dir
   OBJECT_FILE_DIR = CMakeFiles\run_tos_sdl.dir
@@ -343,7 +364,9 @@ build CMakeFiles/run_tos_sdl.dir/run_tos_sdl.cpp.obj: CXX_COMPILER__run_tos_sdl_
 #############################################
 # Link the executable run_tos_sdl.exe
 
-build run_tos_sdl.exe: CXX_EXECUTABLE_LINKER__run_tos_sdl_ CMakeFiles/run_tos_sdl.dir/run_tos_sdl.cpp.obj | C$:/msys64/ucrt64/lib/libSDL2main.a C$:/msys64/ucrt64/lib/libSDL2.dll.a
+build run_tos_sdl.exe: CXX_EXECUTABLE_LINKER__run_tos_sdl_Release CMakeFiles/run_tos_sdl.dir/run_tos_sdl.cpp.obj | C$:/msys64/ucrt64/lib/libSDL2main.a C$:/msys64/ucrt64/lib/libSDL2.dll.a
+  CONFIG = Release
+  FLAGS = -O3 -DNDEBUG
   LINK_LIBRARIES = C:/msys64/ucrt64/lib/libSDL2main.a  C:/msys64/ucrt64/lib/libSDL2.dll.a  -lshell32  -Wl,--undefined=WinMain  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\run_tos_sdl.dir
   POST_BUILD = cd .
@@ -357,7 +380,7 @@ build run_tos_sdl.exe: CXX_EXECUTABLE_LINKER__run_tos_sdl_ CMakeFiles/run_tos_sd
 #############################################
 # Utility command for stage_tos_release
 
-build stage_tos_release: phony CMakeFiles/stage_tos_release build_tos_image.exe run_tos_sdl.exe
+build stage_tos_release: phony CMakeFiles/stage_tos_release current_images run_tos_sdl.exe
 
 
 #############################################
@@ -375,13 +398,13 @@ build package_tos_release: phony CMakeFiles/package_tos_release stage_tos_releas
 #############################################
 # Utility command for ctest
 
-build ctest: phony CMakeFiles/ctest current_validate
+build ctest: phony CMakeFiles/ctest trit_current_conformance.exe
 
 
 #############################################
 # Utility command for ci_production
 
-build ci_production: phony CMakeFiles/ci_production build_tos_image.exe current_validate tritc.exe
+build ci_production: phony CMakeFiles/ci_production build_tos_image.exe ctest tritc.exe
 
 
 #############################################
@@ -644,9 +667,25 @@ build CMakeFiles/ContinuousSubmit | ${cmake_ninja_workdir}CMakeFiles/ContinuousS
 
 
 #############################################
+# Phony custom command for CMakeFiles\current_images
+
+build CMakeFiles/current_images | ${cmake_ninja_workdir}CMakeFiles/current_images: phony release/TernaryOS/ternary-os.tboot release/TernaryOS/ternary-os.tdisk || build_tos_image.exe
+
+
+#############################################
+# Custom command for release\TernaryOS\ternary-os.tboot
+
+build release/TernaryOS/ternary-os.tboot release/TernaryOS/ternary-os.tdisk | ${cmake_ninja_workdir}release/TernaryOS/ternary-os.tboot ${cmake_ninja_workdir}release/TernaryOS/ternary-os.tdisk: CUSTOM_COMMAND build_tos_image.exe C$:/Users/jonas/Documents/trit/apps/about.trit C$:/Users/jonas/Documents/trit/apps/bin_core.trit C$:/Users/jonas/Documents/trit/apps/calculator.trit C$:/Users/jonas/Documents/trit/apps/clear.trit C$:/Users/jonas/Documents/trit/apps/crash.trit C$:/Users/jonas/Documents/trit/apps/date.trit C$:/Users/jonas/Documents/trit/apps/desktop.trit C$:/Users/jonas/Documents/trit/apps/doctor.trit C$:/Users/jonas/Documents/trit/apps/file_manager.trit C$:/Users/jonas/Documents/trit/apps/fsck.trit C$:/Users/jonas/Documents/trit/apps/help.trit C$:/Users/jonas/Documents/trit/apps/init.trit C$:/Users/jonas/Documents/trit/apps/kill.trit C$:/Users/jonas/Documents/trit/apps/libwidget.trit C$:/Users/jonas/Documents/trit/apps/log.trit C$:/Users/jonas/Documents/trit/apps/login.trit C$:/Users/jonas/Documents/trit/apps/ls.trit C$:/Users/jonas/Documents/trit/apps/mount.trit C$:/Users/jonas/Documents/trit/apps/os_sdk.trit C$:/Users/jonas/Documents/trit/apps/paint.trit C$:/Users/jonas/Documents/trit/apps/passwd.trit C$:/Users/jonas/Documents/trit/apps/ps.trit C$:/Users/jonas/Documents/trit/apps/reboot.trit C$:/Users/jonas/Documents/trit/apps/service_stub.trit C$:/Users/jonas/Documents/trit/apps/settings.trit C$:/Users/jonas/Documents/trit/apps/shell.trit C$:/Users/jonas/Documents/trit/apps/shutdown.trit C$:/Users/jonas/Documents/trit/apps/sleep.trit C$:/Users/jonas/Documents/trit/apps/sync.trit C$:/Users/jonas/Documents/trit/apps/sysinfo.trit C$:/Users/jonas/Documents/trit/apps/task_manager.trit C$:/Users/jonas/Documents/trit/apps/tcc.trit C$:/Users/jonas/Documents/trit/apps/terminal.trit C$:/Users/jonas/Documents/trit/apps/test.trit C$:/Users/jonas/Documents/trit/apps/text_editor.trit C$:/Users/jonas/Documents/trit/apps/window_probe.trit C$:/Users/jonas/Documents/trit/kernel.trit C$:/Users/jonas/Documents/trit/architecture_contract.trit C$:/Users/jonas/Documents/trit/native_kernel_trap_stub.tasm || build_tos_image.exe
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\cmake.exe -E make_directory C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS && C:\Users\jonas\Documents\trit\build_current_cleanup\build_tos_image.exe C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tboot C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tdisk dev"
+  DESC = Generating release/TernaryOS/ternary-os.tboot, release/TernaryOS/ternary-os.tdisk
+  pool = console
+  restat = 1
+
+
+#############################################
 # Custom command for CMakeFiles\current_validate
 
-build CMakeFiles/current_validate | ${cmake_ninja_workdir}CMakeFiles/current_validate: CUSTOM_COMMAND trit_current_conformance.exe || build_tos_image.exe run_tos_sdl.exe stage_tos_release trit_current_conformance.exe
+build CMakeFiles/current_validate | ${cmake_ninja_workdir}CMakeFiles/current_validate: CUSTOM_COMMAND trit_current_conformance.exe || build_tos_image.exe current_images trit_current_conformance.exe
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\Users\jonas\Documents\trit\build_current_cleanup\trit_current_conformance.exe"
   pool = console
 
@@ -654,15 +693,15 @@ build CMakeFiles/current_validate | ${cmake_ninja_workdir}CMakeFiles/current_val
 #############################################
 # Custom command for CMakeFiles\stage_tos_release
 
-build CMakeFiles/stage_tos_release | ${cmake_ninja_workdir}CMakeFiles/stage_tos_release: CUSTOM_COMMAND build_tos_image.exe run_tos_sdl.exe || build_tos_image.exe run_tos_sdl.exe
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\cmake.exe -E rm -rf C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS && C:\msys64\ucrt64\bin\cmake.exe -E make_directory C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS && C:\msys64\ucrt64\bin\cmake.exe -E make_directory C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/diagnostics && C:\Users\jonas\Documents\trit\build_current_cleanup\build_tos_image.exe C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tboot C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tdisk dev && C:\msys64\ucrt64\bin\cmake.exe -E copy_if_different C:/Users/jonas/Documents/trit/build_current_cleanup/run_tos_sdl.exe C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/TernaryOS.exe"
+build CMakeFiles/stage_tos_release | ${cmake_ninja_workdir}CMakeFiles/stage_tos_release: CUSTOM_COMMAND run_tos_sdl.exe || build_tos_image.exe current_images run_tos_sdl.exe
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit\build_current_cleanup && C:\msys64\ucrt64\bin\cmake.exe -E copy_if_different C:/Users/jonas/Documents/trit/build_current_cleanup/run_tos_sdl.exe C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/TernaryOS.exe"
   pool = console
 
 
 #############################################
 # Custom command for CMakeFiles\smoke_tos_release
 
-build CMakeFiles/smoke_tos_release | ${cmake_ninja_workdir}CMakeFiles/smoke_tos_release: CUSTOM_COMMAND || build_tos_image.exe run_tos_sdl.exe stage_tos_release
+build CMakeFiles/smoke_tos_release | ${cmake_ninja_workdir}CMakeFiles/smoke_tos_release: CUSTOM_COMMAND || build_tos_image.exe current_images run_tos_sdl.exe stage_tos_release
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit\build_current_cleanup\release\TernaryOS && C:\Users\jonas\Documents\trit\build_current_cleanup\run_tos_sdl.exe --smoke-test --frames 10 C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tboot C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS/ternary-os.tdisk"
   pool = console
 
@@ -670,7 +709,7 @@ build CMakeFiles/smoke_tos_release | ${cmake_ninja_workdir}CMakeFiles/smoke_tos_
 #############################################
 # Custom command for CMakeFiles\package_tos_release
 
-build CMakeFiles/package_tos_release | ${cmake_ninja_workdir}CMakeFiles/package_tos_release: CUSTOM_COMMAND || build_tos_image.exe run_tos_sdl.exe stage_tos_release
+build CMakeFiles/package_tos_release | ${cmake_ninja_workdir}CMakeFiles/package_tos_release: CUSTOM_COMMAND || build_tos_image.exe current_images run_tos_sdl.exe stage_tos_release
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit\build_current_cleanup\release && C:\msys64\ucrt64\bin\cmake.exe -E rm -f C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS-windows.zip && C:\msys64\ucrt64\bin\cmake.exe -E tar cf C:/Users/jonas/Documents/trit/build_current_cleanup/release/TernaryOS-windows.zip --format=zip TernaryOS"
   pool = console
 
@@ -678,17 +717,15 @@ build CMakeFiles/package_tos_release | ${cmake_ninja_workdir}CMakeFiles/package_
 #############################################
 # Custom command for CMakeFiles\ctest
 
-build CMakeFiles/ctest | ${cmake_ninja_workdir}CMakeFiles/ctest: CUSTOM_COMMAND || build_tos_image.exe current_validate run_tos_sdl.exe stage_tos_release trit_current_conformance.exe
+build CMakeFiles/ctest | ${cmake_ninja_workdir}CMakeFiles/ctest: CUSTOM_COMMAND trit_current_conformance.exe || build_tos_image.exe current_images trit_current_conformance.exe
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\ctest.exe --test-dir C:/Users/jonas/Documents/trit/build_current_cleanup --output-on-failure"
   pool = console
 
 
 #############################################
-# Custom command for CMakeFiles\ci_production
+# Phony custom command for CMakeFiles\ci_production
 
-build CMakeFiles/ci_production | ${cmake_ninja_workdir}CMakeFiles/ci_production: CUSTOM_COMMAND tritc.exe build_tos_image.exe || build_tos_image.exe current_validate run_tos_sdl.exe stage_tos_release trit_current_conformance.exe tritc.exe
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target tritc build_tos_image && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target current_validate && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target ctest"
-  pool = console
+build CMakeFiles/ci_production | ${cmake_ninja_workdir}CMakeFiles/ci_production: phony tritc.exe build_tos_image.exe || build_tos_image.exe ctest current_images trit_current_conformance.exe tritc.exe
 
 # =============================================================================
 # Target aliases.
@@ -716,16 +753,30 @@ build all: phony tritc.exe build_tos_image.exe trit_current_conformance.exe run_
 
 
 #############################################
+# Phony target to force glob verification run.
+
+build C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/VerifyGlobs.cmake_force: phony
+
+
+#############################################
+# Re-run CMake to check if globbed directories changed.
+
+build C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/cmake.verify_globs: VERIFY_GLOBS | C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/VerifyGlobs.cmake_force
+  pool = console
+  restat = 1
+
+
+#############################################
 # Re-run CMake if any of its inputs changed.
 
-build build.ninja C$:/Users/jonas/Documents/trit/build_current_cleanup/cmake_install.cmake C$:/Users/jonas/Documents/trit/build_current_cleanup/CTestTestfile.cmake: RERUN_CMAKE | C$:/Users/jonas/Documents/trit/CMakeLists.txt C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Config.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2ConfigVersion.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/sdlfind.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeRCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTest.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestTargets.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestUseLaunchers.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/DartConfiguration.tcl.in C$:/msys64/ucrt64/share/cmake/Modules/FeatureSummary.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX-ABI.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-windres.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/WindowsPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CTestScript.cmake.in CMakeCache.txt CMakeFiles/4.2.1/CMakeCXXCompiler.cmake CMakeFiles/4.2.1/CMakeRCCompiler.cmake CMakeFiles/4.2.1/CMakeSystem.cmake
+build build.ninja C$:/Users/jonas/Documents/trit/build_current_cleanup/cmake_install.cmake C$:/Users/jonas/Documents/trit/build_current_cleanup/CTestTestfile.cmake: RERUN_CMAKE C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/cmake.verify_globs | C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/VerifyGlobs.cmake C$:/Users/jonas/Documents/trit/CMakeLists.txt C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Config.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2ConfigVersion.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/sdlfind.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeRCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTest.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestTargets.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestUseLaunchers.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/DartConfiguration.tcl.in C$:/msys64/ucrt64/share/cmake/Modules/FeatureSummary.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX-ABI.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-windres.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/WindowsPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CTestScript.cmake.in CMakeCache.txt CMakeFiles/4.2.1/CMakeCXXCompiler.cmake CMakeFiles/4.2.1/CMakeRCCompiler.cmake CMakeFiles/4.2.1/CMakeSystem.cmake
   pool = console
 
 
 #############################################
 # A missing CMake input file is not an error.
 
-build C$:/Users/jonas/Documents/trit/CMakeLists.txt C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Config.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2ConfigVersion.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/sdlfind.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeRCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTest.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestTargets.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestUseLaunchers.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/DartConfiguration.tcl.in C$:/msys64/ucrt64/share/cmake/Modules/FeatureSummary.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX-ABI.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-windres.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/WindowsPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CTestScript.cmake.in CMakeCache.txt CMakeFiles/4.2.1/CMakeCXXCompiler.cmake CMakeFiles/4.2.1/CMakeRCCompiler.cmake CMakeFiles/4.2.1/CMakeSystem.cmake: phony
+build C$:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/VerifyGlobs.cmake C$:/Users/jonas/Documents/trit/CMakeLists.txt C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Config.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2ConfigVersion.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2Targets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2mainTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2staticTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets-release.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/SDL2testTargets.cmake C$:/msys64/ucrt64/lib/cmake/SDL2/sdlfind.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeRCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTest.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestTargets.cmake C$:/msys64/ucrt64/share/cmake/Modules/CTestUseLaunchers.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/DartConfiguration.tcl.in C$:/msys64/ucrt64/share/cmake/Modules/FeatureSummary.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX-ABI.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows-windres.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Windows.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/WindowsPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CTestScript.cmake.in CMakeCache.txt CMakeFiles/4.2.1/CMakeCXXCompiler.cmake CMakeFiles/4.2.1/CMakeRCCompiler.cmake CMakeFiles/4.2.1/CMakeSystem.cmake: phony
 
 
 #############################################

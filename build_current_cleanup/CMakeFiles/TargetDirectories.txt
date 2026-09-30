@@ -28,6 +28,7 @@ C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/ContinuousMemChec
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/ContinuousSubmit.dir
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/tritc.dir
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/build_tos_image.dir
+C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/current_images.dir
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/trit_current_conformance.dir
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/current_validate.dir
 C:/Users/jonas/Documents/trit/build_current_cleanup/CMakeFiles/run_tos_sdl.dir

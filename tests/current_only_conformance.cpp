@@ -1,6 +1,10 @@
 #include "ternary_host_runtime.h"
 #include "ternary_os.h"
 
+// The conformance executable must evaluate checks in Release builds too.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cstdint>
 #include <filesystem>
@@ -37,12 +41,12 @@ bool runDesktopWorkflow() {
     using sandbox::host::TosRuntimeConfig;
 
     const std::filesystem::path root =
-        std::filesystem::current_path() / "build_current_cleanup" / "release" /
+        std::filesystem::path(TRIT_TEST_BUILD_DIR) / "release" /
         "TernaryOS";
     const std::filesystem::path boot_path = root / "ternary-os.tboot";
     const std::filesystem::path disk_path = root / "ternary-os.tdisk";
     const std::filesystem::path artifact =
-        std::filesystem::current_path() / "build_current_cleanup" /
+        std::filesystem::path(TRIT_TEST_BUILD_DIR) /
         "desktop_workflow_artifact";
     if (!require(std::filesystem::exists(boot_path) &&
                      std::filesystem::exists(disk_path),
@@ -72,8 +76,13 @@ bool runDesktopWorkflow() {
 
     auto advance = [&](int steps, const std::string& phase) {
         const sandbox::vm::RunResult result = runtime.runForSteps(steps);
-        return require(result.status != sandbox::vm::VMStatus::TRAPPED,
-                       phase + " trapped: " + result.description);
+        if (!require(result.status != sandbox::vm::VMStatus::TRAPPED,
+                     phase + " trapped: " + result.description)) return false;
+        if (!runtime.exportDiagnostics((artifact / "health").string(), &error)) return false;
+        std::ifstream processes(artifact / "health" / "process_table.json");
+        const std::string table((std::istreambuf_iterator<char>(processes)), {});
+        return require(table.find("\"state_name\": \"crashed\"") == std::string::npos,
+                       phase + ": guest process crashed (see health/process_table.json)");
     };
 
     // Boot through the login screen, then use the guest keyboard path to
@@ -115,7 +124,7 @@ bool runDesktopWorkflow() {
     if (!has_visible_rgb) {
         std::string rgb_diagnostic_error;
         (void)runtime.exportDiagnostics(
-            (std::filesystem::current_path() / "build_current_cleanup" /
+            (std::filesystem::path(TRIT_TEST_BUILD_DIR) /
              "desktop_workflow_rgb_failure").string(),
             &rgb_diagnostic_error);
     }
@@ -123,21 +132,61 @@ bool runDesktopWorkflow() {
                  "calculator RGB compositor frame is only the background")) {
         return false;
     }
+    // Verify distinct controls at their drawn coordinates, rather than merely
+    // accepting any RGB pixel. ABI argument corruption used to fill the whole
+    // surface with the last control's color and still pass the RGB assertion.
+    auto pixel = [&](int x, int y) { return frame.rgba[y * frame.width + x]; };
+    if (!require(pixel(23, 22) != pixel(21, 22) &&
+                 pixel(31, 12) != pixel(30, 12) &&
+                 pixel(34, 28) != pixel(34, 26),
+                 "calculator controls are not visible at their input targets")) return false;
     const std::uint64_t initial_frame_revision = frame.revision;
 
     // Click the calculator's local '1' button after translating it through
     // the window origin, then use Tab and text input to exercise keyboard
     // focus forwarding in the same child workflow.
-    runtime.updateMouseState(23, 22, 1, "e2e.calculator.one.down");
-    runtime.updateMouseState(23, 22, 0, "e2e.calculator.one.up");
+    // Transition pressure cannot be coalesced like redundant pointer motion.
+    for (int i = 0; i < 12; ++i) {
+        runtime.updateMouseState(21, 20, 1, "e2e.calculator.blank.down");
+        runtime.updateMouseState(21, 20, 0, "e2e.calculator.blank.up");
+    }
+    runtime.updateMouseState(25, 24, 1, "e2e.calculator.one.down");
+    // More samples than the guest's eight-event queue, delivered while it
+    // redraws. A captured drag across the close control must not close it.
+    for (int i = 0; i < 20; ++i)
+        runtime.updateMouseState(25 + i % 2, 24, 1, "e2e.calculator.held.move");
+    runtime.updateMouseState(58, 2, 1, "e2e.calculator.captured.close.crossing");
+    runtime.updateMouseState(75, 50, 0, "e2e.calculator.one.up");
     runtime.pushKeyboardInput(9, "e2e.calculator.tab");
-    runtime.pushTextInput("2", "e2e.calculator.text");
+    runtime.pushTextInput("29", "e2e.calculator.text");
+    runtime.pushKeyboardInput(8, "e2e.calculator.backspace");
+    runtime.pushTextInput("+30", "e2e.calculator.add");
     runtime.pushKeyboardInput(13, "e2e.calculator.enter");
-    if (!advance(10'000'000, "calculator interaction")) return false;
+    const auto burst_checkpoint = artifact / "input_burst_checkpoint";
+    if (!require(runtime.captureCheckpoint(&error) &&
+                 runtime.exportCheckpointBundle(burst_checkpoint.string(), &error) &&
+                 runtime.restoreCheckpointBundle(burst_checkpoint.string(), &error),
+                 "mixed input checkpoint round trip failed: " + error)) return false;
+    if (!advance(30'000'000, "calculator interaction")) return false;
     frame = runtime.readFramebufferMemory(initial_frame_revision);
     if (!require(frame.mode == TosFramebufferMode::GraphicsRGB && frame.changed,
                  "calculator interaction did not change the RGB frame")) {
         return false;
+    }
+
+    // Read the expected 4 and 2 from the actual presented 3x5 display. Checking
+    // the exit status alone missed corrupted has_error/result draw arguments.
+    const std::vector<std::string> expected_digits = {"000101111001000", "111001111100111"};
+    for (int digit = 0; digit < 2; ++digit) {
+        std::string shape;
+        for (int y = 5; y < 10; ++y) {
+            for (int x = 31 + digit * 4; x < 34 + digit * 4; ++x) {
+                const auto color = frame.rgba[y * frame.width + x];
+                shape += ((color >> 24) >= 200 && ((color >> 16) & 255) >= 180 &&
+                          ((color >> 8) & 255) <= 100) ? '1' : '0';
+            }
+        }
+        if (!require(shape == expected_digits[digit], "calculator did not display result 42")) return false;
     }
 
     std::string artifact_error;
@@ -166,6 +215,51 @@ bool runDesktopWorkflow() {
                  "desktop did not resume after calculator close")) {
         return false;
     }
+    if (!require(runtime.readFramebuffer().mode == TosFramebufferMode::Text80x25,
+                 "desktop remains hidden behind the compositor")) return false;
+    std::ifstream completed_processes(artifact / "health" / "process_table.json");
+    std::string process_line;
+    bool correct_result = false;
+    while (std::getline(completed_processes, process_line)) {
+        if (process_line.find("\"pid\": 101,") != std::string::npos &&
+            process_line.find("\"exit_status\": 42,") != std::string::npos) correct_result = true;
+    }
+    if (!require(correct_result, "calculator did not compute mouse 1 then 2+30 = 42")) return false;
+
+    // Launch Files through a different visible row, select an entry inside
+    // its drawn row, enter the directory, and return with the parent control.
+    runtime.updateMouseState(11, 7, 1, "e2e.launch.files.down");
+    runtime.updateMouseState(11, 7, 0, "e2e.launch.files.up");
+    if (!advance(10'000'000, "files launch")) return false;
+    const auto root_frame = runtime.readFramebufferMemory();
+    if (!require(root_frame.mode == TosFramebufferMode::GraphicsRGB,
+                 "Files did not render its window")) return false;
+    runtime.updateMouseState(28, 15, 1, "e2e.files.row.down");
+    runtime.updateMouseState(28, 15, 0, "e2e.files.row.up");
+    runtime.pushKeyboardInput(13, "e2e.files.open");
+    if (!advance(15'000'000, "files open directory")) return false;
+    const auto directory_frame = runtime.readFramebufferMemory();
+    auto header = [](const auto& fb) {
+        std::vector<std::uint32_t> pixels;
+        if (fb.mode != TosFramebufferMode::GraphicsRGB || fb.width != 80 || fb.height != 60)
+            return pixels;
+        for (int y = 6; y < 11; ++y)
+            for (int x = 11; x < 67; ++x) pixels.push_back(fb.rgba[y * fb.width + x]);
+        return pixels;
+    };
+    if (!require(!header(directory_frame).empty() && header(directory_frame) != header(root_frame),
+                 "Files did not show the opened directory path")) return false;
+    if (!require(runtime.exportDiagnostics((artifact / "files_directory").string(), &error),
+                 "Files directory diagnostics failed: " + error)) return false;
+    runtime.updateMouseState(16, 37, 1, "e2e.files.parent.down");
+    runtime.updateMouseState(16, 37, 0, "e2e.files.parent.up");
+    if (!advance(10'000'000, "files parent directory")) return false;
+    if (!require(header(runtime.readFramebufferMemory()) == header(root_frame),
+                 "Files parent control did not return to root")) return false;
+    runtime.pushKeyboardInput(120, "e2e.files.close");
+    if (!advance(10'000'000, "files close")) return false;
+    if (!require(runtime.readFramebuffer().mode == TosFramebufferMode::Text80x25,
+                 "desktop did not resume after Files close")) return false;
 
     if (!require(runtime.exportDiagnostics(artifact.string(), &error),
                  "desktop workflow diagnostics failed: " + error)) {
@@ -198,7 +292,7 @@ bool runDesktopWorkflow() {
         return false;
     }
 
-    std::cout << "desktop workflow conformance: launcher -> calculator -> RGB frame -> close\n";
+    std::cout << "desktop workflow conformance: launcher -> calculator burst/drag/backspace/result -> Files open/parent -> desktop\n";
     std::cout << "desktop workflow artifact: " << artifact.string() << "\n";
     return true;
 }

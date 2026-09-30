@@ -176,12 +176,25 @@ struct TosInputJournalEvent {
     std::string channel;
 };
 
+struct TosPendingInput {
+    long long x = 0;
+    long long y = 0;
+    long long buttons = 0;
+    bool applied = false;
+    bool no_op = false;
+    bool keyboard = false;
+    long long word = 0;
+    long long global_ack = 0;
+    long long window_ack = 0;
+};
+
 struct TosRuntimeCheckpoint {
     static constexpr const char* kSchema = "trit.runtime_checkpoint.v1";
 
     std::uint64_t sequence = 0;
     std::size_t input_event_count = 0;
     vm::VMCheckpoint vm;
+    std::deque<TosPendingInput> pending_inputs;
 };
 
 namespace detail {
@@ -356,6 +369,53 @@ struct CheckpointReader {
 inline constexpr std::uint64_t kCheckpointStateMagic =
     0x3156535043545254ULL; // "TRTCPV S1" (little-endian marker)
 inline constexpr std::uint32_t kCheckpointStateVersion = 1;
+
+// Host delivery state accompanies the architectural snapshot. In particular,
+// the front event may already be in the device registers but not acknowledged.
+inline bool writePendingInputs(const std::filesystem::path& path,
+                               const std::deque<TosPendingInput>& inputs,
+                               std::string* error) {
+    CheckpointWriter writer(path);
+    writer.pod(kCheckpointStateMagic);
+    writer.pod(static_cast<std::uint64_t>(inputs.size()));
+    for (const auto& input : inputs) {
+        writer.pod(input.x); writer.pod(input.y); writer.pod(input.buttons);
+        writer.pod(static_cast<std::uint8_t>(input.applied));
+        writer.pod(static_cast<std::uint8_t>(input.no_op));
+        writer.pod(static_cast<std::uint8_t>(input.keyboard));
+        writer.pod(input.word); writer.pod(input.global_ack); writer.pod(input.window_ack);
+    }
+    writer.finish();
+    if (!writer.ok) setError(error, "failed to write pending checkpoint input");
+    return writer.ok;
+}
+
+inline bool readPendingInputs(const std::filesystem::path& path,
+                              std::deque<TosPendingInput>& inputs,
+                              std::string* error) {
+    inputs.clear();
+    // Older host checkpoints had no pending queue payload.
+    if (!std::filesystem::exists(path)) return true;
+    CheckpointReader reader(path);
+    std::uint64_t magic = 0, count = 0;
+    if (!reader.pod(magic) || magic != kCheckpointStateMagic ||
+        !reader.pod(count) || count > 1'000'000) {
+        setError(error, "invalid pending checkpoint input header"); return false;
+    }
+    for (std::uint64_t i = 0; i < count; ++i) {
+        TosPendingInput input;
+        std::uint8_t applied = 0, no_op = 0, keyboard = 0;
+        if (!reader.pod(input.x) || !reader.pod(input.y) || !reader.pod(input.buttons) ||
+            !reader.pod(applied) || !reader.pod(no_op) || !reader.pod(keyboard) ||
+            applied > 1 || no_op > 1 || keyboard > 1 || (i > 0 && applied) ||
+            !reader.pod(input.word) || !reader.pod(input.global_ack) || !reader.pod(input.window_ack)) {
+            setError(error, "invalid pending checkpoint input event"); return false;
+        }
+        input.applied = applied != 0; input.no_op = no_op != 0; input.keyboard = keyboard != 0;
+        inputs.push_back(input);
+    }
+    return true;
+}
 
 inline void writeCheckpointValue(CheckpointWriter& writer,
                                  const vm::TernaryValue& value) {
@@ -1500,6 +1560,8 @@ constexpr int kTier1CountAddr = 3011;
 constexpr int kSysStatusAddr = 3021;
 constexpr int kSysPayloadAddr = 3022;
 constexpr int kSysDetailAddr = 3023;
+constexpr int kInputMouseAckAddr = 3054;
+constexpr int kWindowMouseAckAddr = 3055;
 constexpr int kInputLastMouseBtnAddr = 3031;
 constexpr int kInputLastMouseXAddr = 3034;
 constexpr int kInputLastMouseYAddr = 3035;
@@ -2010,6 +2072,7 @@ inline int clampFramebufferChannel(long long value) {
 
 inline TosFramebufferReadPlan framebufferReadPlan(const vm::VMState& machine) {
     TosFramebufferReadPlan plan;
+    if (machine.gpu_mode == 0) return plan;
 
     const long long valid = detail::dmemWord(
         machine, detail::kFramebufferStateBase + detail::kFramebufferValid);
@@ -2049,9 +2112,6 @@ inline TosFramebufferReadPlan framebufferReadPlan(const vm::VMState& machine) {
         }
     }
 
-    if (machine.gpu_mode == 0) {
-        return plan;
-    }
     plan.mode = TosFramebufferMode::Graphics80x60;
     plan.width = 80;
     plan.height = 60;
@@ -2176,7 +2236,7 @@ public:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
-        pending_mouse_inputs_.clear();
+        pending_inputs_.clear();
         next_input_sequence_ = 0;
         return true;
     }
@@ -2201,7 +2261,7 @@ public:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
-        pending_mouse_inputs_.clear();
+        pending_inputs_.clear();
         next_input_sequence_ = 0;
         return true;
     }
@@ -2268,12 +2328,12 @@ public:
         vm::RunResult result;
         int completed_steps = 0;
         while (machine_->isRunning() && completed_steps < steps) {
-            retireAcknowledgedMouseInputLocked();
-            if (!pending_mouse_inputs_.empty()) {
-                applyPendingMouseInputLocked();
+            retireAcknowledgedInputLocked();
+            if (!pending_inputs_.empty()) {
+                applyPendingInputLocked();
             }
             const int remaining = steps - completed_steps;
-            if (pending_mouse_inputs_.empty()) {
+            if (pending_inputs_.empty()) {
                 const vm::RunResult run_result = vm::run(
                     *machine_, remaining,
                     config_.record_syscall_trace ? &hooks : nullptr);
@@ -2289,7 +2349,7 @@ public:
             result.status = status;
             result.steps = completed_steps;
             result.final_pc = machine_->pc;
-            retireAcknowledgedMouseInputLocked();
+            retireAcknowledgedInputLocked();
             if (status != vm::VMStatus::RUNNING) break;
         }
         if (completed_steps == 0) {
@@ -2316,16 +2376,16 @@ public:
     [[nodiscard]] vm::VMStatus stepOnce() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return vm::VMStatus::HALTED;
-        retireAcknowledgedMouseInputLocked();
-        if (!pending_mouse_inputs_.empty()) {
-            applyPendingMouseInputLocked();
+        retireAcknowledgedInputLocked();
+        if (!pending_inputs_.empty()) {
+            applyPendingInputLocked();
         }
         vm::VMExecutionRecord record;
         vm::VMStatus status = vm::step(
             *machine_,
             config_.record_syscall_trace ? &record : nullptr);
         if (config_.record_syscall_trace) recordSyscall(record);
-        retireAcknowledgedMouseInputLocked();
+        retireAcknowledgedInputLocked();
         if (machine_->power_control == 1) {
             std::string error;
             if (!resetMachineLocked(true, &error)) {
@@ -2340,7 +2400,10 @@ public:
     void pushKeyboardInput(long long word, const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
-        machine_->enqueueConsoleInput(word);
+        PendingInput input;
+        input.keyboard = true;
+        input.word = word;
+        pending_inputs_.push_back(input);
         machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
@@ -2358,7 +2421,12 @@ public:
     void pushTextInput(const std::string& text, const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
-        machine_->enqueueConsoleAscii(text);
+        for (unsigned char ch : text) {
+            PendingInput input;
+            input.keyboard = true;
+            input.word = ch;
+            pending_inputs_.push_back(input);
+        }
         machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
@@ -2381,16 +2449,17 @@ public:
         if (!machine_) return;
 
         const bool same_as_pending =
-            !pending_mouse_inputs_.empty() &&
-            pending_mouse_inputs_.back().x == x &&
-            pending_mouse_inputs_.back().y == y &&
-            pending_mouse_inputs_.back().buttons == buttons;
+            !pending_inputs_.empty() &&
+            !pending_inputs_.back().keyboard &&
+            pending_inputs_.back().x == x &&
+            pending_inputs_.back().y == y &&
+            pending_inputs_.back().buttons == buttons;
         const bool same_as_machine =
-            pending_mouse_inputs_.empty() && machine_->mouse_x == x &&
+            pending_inputs_.empty() && machine_->mouse_x == x &&
             machine_->mouse_y == y && machine_->mouse_btn == buttons;
         if (same_as_pending || same_as_machine) return;
 
-        pending_mouse_inputs_.push_back(PendingMouseInput{x, y, buttons});
+        enqueueMouseInputLocked(PendingInput{x, y, buttons});
         machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
@@ -2481,6 +2550,7 @@ public:
         checkpoint->sequence = next_checkpoint_sequence_++;
         checkpoint->input_event_count = input_journal_.size();
         checkpoint->vm = vm::captureCheckpoint(*machine_);
+        checkpoint->pending_inputs = pending_inputs_;
         checkpoint_ = std::move(checkpoint);
         return true;
     }
@@ -2512,6 +2582,7 @@ public:
             detail::setError(error, "checkpoint state failed architectural validation");
             return false;
         }
+        pending_inputs_ = checkpoint_->pending_inputs;
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
         return true;
@@ -2538,12 +2609,13 @@ public:
                     isa::TrapCode::TRAP_ILLEGAL_OP,
                     "checkpoint state failed architectural validation"};
         }
+        pending_inputs_ = checkpoint_->pending_inputs;
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
 
         std::size_t next_event = checkpoint_->input_event_count;
         int steps = 0;
-        while (machine_->isRunning() && machine_->power_control == 0 &&
+        while (machine_->power_control == 0 &&
                (max_steps < 0 || steps < max_steps)) {
             while (next_event < input_journal_.size() &&
                    input_journal_[next_event].cycle <=
@@ -2552,12 +2624,16 @@ public:
                 applyInputEventLocked(input_journal_[next_event]);
                 ++next_event;
             }
+            retireAcknowledgedInputLocked();
+            applyPendingInputLocked();
+            if (!machine_->isRunning()) break;
             vm::VMExecutionRecord record;
             const vm::VMStatus status = vm::step(
                 *machine_, config_.record_syscall_trace ? &record : nullptr);
             if (config_.record_syscall_trace) recordSyscall(record);
             ++steps;
-            if (status != vm::VMStatus::RUNNING) break;
+            retireAcknowledgedInputLocked();
+            if (status == vm::VMStatus::HALTED || status == vm::VMStatus::TRAPPED) break;
         }
         vm::RunResult result;
         result.status = machine_->status;
@@ -2592,7 +2668,9 @@ public:
             !checkpoint_->vm.state.block_device.writeSnapshotFile(
                 (base / "disk.tdisk").string()) ||
             !detail::writeCheckpointJournal(base / "input_journal.bin",
-                                             input_journal_, error)) {
+                                             input_journal_, error) ||
+            !detail::writePendingInputs(base / "pending_input.bin",
+                                         checkpoint_->pending_inputs, error)) {
             if (error && error->empty()) {
                 detail::setError(error, "failed to write checkpoint bundle payload");
             }
@@ -2717,6 +2795,8 @@ public:
             detail::setError(error, "checkpoint metadata is invalid");
             return false;
         }
+        std::deque<TosPendingInput> pending_inputs;
+        if (!detail::readPendingInputs(base / "pending_input.bin", pending_inputs, error)) return false;
         std::unique_ptr<vm::VMState> machine;
         if (!detail::readCheckpointState(base / "vm_state.bin", machine, error) || !machine) return false;
         if (machine->pc != pc || machine->cycle_count < 0 ||
@@ -2737,7 +2817,7 @@ public:
         boot_generation_ = boot_generation;
         guest_reboot_count_ = reboot_count;
         input_journal_ = std::move(journal);
-        pending_mouse_inputs_.clear();
+        pending_inputs_ = std::move(pending_inputs);
         next_input_sequence_ = input_journal_.size();
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
@@ -2745,6 +2825,7 @@ public:
         checkpoint->sequence = sequence;
         checkpoint->input_event_count = static_cast<std::size_t>(input_count);
         checkpoint->vm = vm::captureCheckpoint(*machine_);
+        checkpoint->pending_inputs = pending_inputs_;
         checkpoint_ = std::move(checkpoint);
         next_checkpoint_sequence_ = sequence + 1;
         return true;
@@ -2775,6 +2856,7 @@ public:
             diagnostics_checkpoint->sequence = 0;
             diagnostics_checkpoint->input_event_count = input_journal_.size();
             diagnostics_checkpoint->vm = vm::captureCheckpoint(*machine_);
+            diagnostics_checkpoint->pending_inputs = pending_inputs_;
         }
         const std::filesystem::path checkpoint_base = base / "checkpoint";
         std::filesystem::create_directories(checkpoint_base, ec);
@@ -2792,6 +2874,8 @@ public:
                 (checkpoint_base / "disk.tdisk").string()) ||
             !detail::writeCheckpointJournal(checkpoint_base / "input_journal.bin",
                                              input_journal_, error) ||
+            !detail::writePendingInputs(checkpoint_base / "pending_input.bin",
+                                         diagnostics_checkpoint->pending_inputs, error) ||
             !detail::writeInputJournalJson(checkpoint_base / "input_journal.jsonl",
                                             input_journal_, error) ||
             !writeSyscallTraceJsonLocked(checkpoint_base / "syscall_trace.jsonl",
@@ -3426,12 +3510,7 @@ private:
         vm::VMExecutionRecord record;
     };
 
-    struct PendingMouseInput {
-        long long x = 0;
-        long long y = 0;
-        long long buttons = 0;
-        bool applied = false;
-    };
+    using PendingInput = TosPendingInput;
 
     TosRuntimeConfig config_;
     TosBootImage image_;
@@ -3447,7 +3526,7 @@ private:
     std::shared_ptr<TosRuntimeCheckpoint> checkpoint_;
     std::uint64_t next_checkpoint_sequence_ = 0;
     std::vector<TosInputJournalEvent> input_journal_;
-    std::deque<PendingMouseInput> pending_mouse_inputs_;
+    std::deque<PendingInput> pending_inputs_;
     std::uint64_t next_input_sequence_ = 0;
 
     static const char* privilegeName(isa::PrivilegeMode mode) {
@@ -3469,58 +3548,88 @@ private:
         if (machine_) (void)machine_->compactBlockBackingFile(false);
     }
 
-    void applyInputEventLocked(const TosInputJournalEvent& event) {
-        if (!machine_) return;
-        switch (event.kind) {
-            case TosInputEventKind::KeyboardWord:
-                machine_->enqueueConsoleInput(event.value0);
-                machine_->resumeFromEvent();
-                break;
-            case TosInputEventKind::Text:
-                machine_->enqueueConsoleAscii(event.text);
-                machine_->resumeFromEvent();
-                break;
-            case TosInputEventKind::Mouse:
-                machine_->mouse_x = event.value0;
-                machine_->mouse_y = event.value1;
-                machine_->mouse_btn = event.value2;
-                machine_->resumeFromEvent();
-                break;
+    void enqueueMouseInputLocked(const PendingInput& input) {
+        // Merge only a pending movement after another sample with the same
+        // button state. The first press/release and intervening keys stay in
+        // order, so a drag cannot replace its initial click.
+        if (pending_inputs_.size() >= 2) {
+            auto& tail = pending_inputs_.back();
+            const auto& previous = pending_inputs_[pending_inputs_.size() - 2];
+            if (!tail.applied && !tail.keyboard && !previous.keyboard &&
+                tail.buttons == input.buttons && previous.buttons == input.buttons) {
+                tail.x = input.x; tail.y = input.y;
+                return;
+            }
         }
+        pending_inputs_.push_back(input);
     }
 
-    void applyPendingMouseInputLocked() {
-        if (!machine_ || pending_mouse_inputs_.empty()) return;
-        PendingMouseInput& input = pending_mouse_inputs_.front();
+    void applyInputEventLocked(const TosInputJournalEvent& event) {
+        if (!machine_) return;
+        PendingInput input;
+        if (event.kind == TosInputEventKind::Mouse) {
+            input.x = event.value0; input.y = event.value1; input.buttons = event.value2;
+            enqueueMouseInputLocked(input);
+        } else if (event.kind == TosInputEventKind::KeyboardWord) {
+            input.keyboard = true; input.word = event.value0;
+            pending_inputs_.push_back(input);
+        } else {
+            input.keyboard = true;
+            for (unsigned char ch : event.text) {
+                input.word = ch; pending_inputs_.push_back(input);
+            }
+        }
+        machine_->resumeFromEvent();
+    }
+
+    void applyPendingInputLocked() {
+        if (!machine_ || pending_inputs_.empty()) return;
+        PendingInput& input = pending_inputs_.front();
         if (input.applied) return;
+        input.global_ack = detail::dmemWord(*machine_, detail::kInputMouseAckAddr);
+        input.window_ack = detail::dmemWord(*machine_, detail::kWindowMouseAckAddr);
+        if (input.keyboard) {
+            machine_->enqueueConsoleInput(input.word);
+            machine_->resumeFromEvent();
+            input.applied = true;
+            return;
+        }
+        input.no_op = machine_->mouse_x == input.x && machine_->mouse_y == input.y && machine_->mouse_btn == input.buttons;
         machine_->mouse_x = input.x;
         machine_->mouse_y = input.y;
         machine_->mouse_btn = input.buttons;
         input.applied = true;
+        machine_->resumeFromEvent();
     }
 
-    [[nodiscard]] bool pendingMouseInputAcknowledgedLocked() const {
-        if (!machine_ || pending_mouse_inputs_.empty() ||
-            !pending_mouse_inputs_.front().applied) {
+    [[nodiscard]] bool pendingInputAcknowledgedLocked() const {
+        if (!machine_ || pending_inputs_.empty() ||
+            !pending_inputs_.front().applied) {
             return false;
         }
-        const PendingMouseInput& input = pending_mouse_inputs_.front();
+        const PendingInput& input = pending_inputs_.front();
+        if (input.no_op) return true;
+        if (input.keyboard) return machine_->consoleInputAvailable() == 0;
         const auto matches = [&](int x_addr, int y_addr, int button_addr) {
             return detail::dmemWord(*machine_, x_addr) == input.x &&
                    detail::dmemWord(*machine_, y_addr) == input.y &&
                    detail::dmemWord(*machine_, button_addr) == input.buttons;
         };
-        return matches(detail::kInputLastMouseXAddr,
+        return (detail::dmemWord(*machine_, detail::kInputMouseAckAddr) != input.global_ack &&
+                matches(detail::kInputLastMouseXAddr,
                        detail::kInputLastMouseYAddr,
-                       detail::kInputLastMouseBtnAddr) ||
-               matches(detail::kWindowInputLastMouseXAddr,
+                       detail::kInputLastMouseBtnAddr)) ||
+               (detail::dmemWord(*machine_, detail::kWindowMouseAckAddr) != input.window_ack && matches(detail::kWindowInputLastMouseXAddr,
                        detail::kWindowInputLastMouseYAddr,
-                       detail::kWindowInputLastMouseBtnAddr);
+                       detail::kWindowInputLastMouseBtnAddr));
     }
 
-    void retireAcknowledgedMouseInputLocked() {
-        if (pendingMouseInputAcknowledgedLocked()) {
-            pending_mouse_inputs_.pop_front();
+    void retireAcknowledgedInputLocked() {
+        if (pendingInputAcknowledgedLocked()) {
+            pending_inputs_.pop_front();
+            // The previous event can put the VM into WAITING. Publish its
+            // successor now so the queue can resume without a new host event.
+            if (!pending_inputs_.empty()) applyPendingInputLocked();
         }
     }
 
@@ -3589,7 +3698,7 @@ private:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
-        pending_mouse_inputs_.clear();
+        pending_inputs_.clear();
         next_input_sequence_ = 0;
         ++boot_generation_;
         if (guest_reboot) ++guest_reboot_count_;
@@ -3626,16 +3735,16 @@ private:
                     if (!machine_ || !machine_->isRunning()) {
                         run_steps = target_steps;
                         stopped_or_idle = true;
-                    } else if (pending_mouse_inputs_.empty() &&
+                    } else if (pending_inputs_.empty() &&
                                detail::canIdleWithoutStepping(*machine_)) {
                         stopped_or_idle = true;
                     } else {
                         const long long chunk =
                             std::min<long long>(8192, target_steps - run_steps);
                         for (long long i = 0; i < chunk && worker_running_; ++i) {
-                            retireAcknowledgedMouseInputLocked();
-                            if (!pending_mouse_inputs_.empty()) {
-                                applyPendingMouseInputLocked();
+                            retireAcknowledgedInputLocked();
+                            if (!pending_inputs_.empty()) {
+                                applyPendingInputLocked();
                             }
                             vm::VMExecutionRecord record;
                             const vm::VMStatus status = vm::step(
@@ -3643,7 +3752,7 @@ private:
                                 config_.record_syscall_trace ? &record : nullptr);
                             if (config_.record_syscall_trace) recordSyscall(record);
                             ++chunk_steps;
-                            retireAcknowledgedMouseInputLocked();
+                            retireAcknowledgedInputLocked();
                             if (machine_->power_control == 1) {
                                 std::string error;
                                 if (!resetMachineLocked(true, &error)) {

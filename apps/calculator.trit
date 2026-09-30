@@ -23,7 +23,7 @@ const CALC_CHILD_COUNT: t40 = 18;
 const CALC_WINDOW_X: t40 = 20;
 const CALC_WINDOW_Y: t40 = 2;
 const CALC_WINDOW_WIDTH: t40 = 40;
-const CALC_WINDOW_HEIGHT: t40 = 32;
+const CALC_WINDOW_HEIGHT: t40 = 38;
 
 fn calc_widget_at_index(index: t40) -> t40 {
     return CALC_WIDGET_BASE + index * WIDGET_WORDS;
@@ -42,7 +42,7 @@ fn calc_seed_exit_label(addr: t40) -> t40 {
 
 fn calc_init_button(index: t40, id: t40, x: t40, y: t40, w: t40, label: t40) -> t40 {
     var addr: t40 = calc_widget_at_index(index);
-    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 1, 0, -1);
+    widget_init(addr, WIDGET_KIND_BUTTON, x, y, w, 5, 0, -1);
     widget_store(addr + WIDGET_AUX, id);
     widget_store(addr + WIDGET_VALUE, 0);
     widget_store(CALC_CHILDREN_ADDR + index, addr);
@@ -50,7 +50,7 @@ fn calc_init_button(index: t40, id: t40, x: t40, y: t40, w: t40, label: t40) -> 
 }
 
 fn calc_init_widgets() -> t40 {
-    calc_init_button(0, 17, 31, 6, 7, 60);
+    calc_init_button(0, 17, 31, 4, 7, 60);
     calc_init_button(1, 7, 3, 10, 7, 55);
     calc_init_button(2, 8, 11, 10, 7, 56);
     calc_init_button(3, 9, 19, 10, 7, 57);
@@ -67,7 +67,7 @@ fn calc_init_widgets() -> t40 {
     calc_init_button(14, 16, 11, 25, 7, 48);
     calc_init_button(15, 11, 19, 25, 7, 61);
     calc_init_button(16, 15, 27, 25, 7, 43);
-    calc_init_button(17, 99, 13, 29, 14, 88);
+    calc_init_button(17, 99, 13, 32, 14, 88);
     return CALC_CHILD_COUNT;
 }
 
@@ -106,6 +106,23 @@ fn calc_draw_exit_button(is_hovered: t40) -> t40 {
     return widget_draw_text_button_text(27, 21, 6, label_addr, 4, is_hovered, 0, 0, 1);
 }
 
+// Remove the ones place without relying on truncating t40 division.
+fn calc_drop_digit(val: t40) -> t40 {
+    var temp: t40 = val;
+    var sign: t40 = 1;
+    var divisor: t40 = 10;
+    var weight: t40 = 1;
+    var result: t40 = 0;
+    if temp < 0 { temp = 0 - temp; sign = -1; }
+    while temp / divisor >= 10 { divisor = divisor * 10; weight = weight * 10; }
+    while divisor >= 10 {
+        while temp >= divisor { temp = temp - divisor; result = result + weight; }
+        divisor = divisor / 10;
+        weight = weight / 10;
+    }
+    return result * sign;
+}
+
 fn calc_number_length(val: t40) -> t40 {
     if val == 0 {
         return 1;
@@ -120,7 +137,7 @@ fn calc_number_length(val: t40) -> t40 {
     while temp / divisor >= 10 {
         divisor = divisor * 10;
     }
-    while divisor > 0 {
+    while divisor >= 1 {
         len = len + 1;
         divisor = divisor / 10;
     }
@@ -135,10 +152,10 @@ fn calc_draw_pos_number(x: t40, y: t40, val: t40, color: t40) -> t40 {
     while val / divisor >= 10 {
         divisor = divisor * 10;
     }
-    while divisor > 0 {
-        digit = temp / divisor;
+    while divisor >= 1 {
+        digit = 0;
+        while temp >= divisor { temp = temp - divisor; digit = digit + 1; }
         os_text_cell(cur_x, y, 48 + digit, color);
-        temp = temp - digit * divisor;
         divisor = divisor / 10;
         cur_x = cur_x + 1;
     }
@@ -294,11 +311,15 @@ fn calc_window_draw_number(buf: t40, x: t40, y: t40, val: t40, r: t40, g: t40, b
         widget_draw_char(buf, CALC_WINDOW_WIDTH, CALC_WINDOW_HEIGHT, cur_x, y, 48, r, g, b);
         return 1;
     }
-    while divisor > 0 {
-        digit = temp / divisor;
+    while divisor >= 1 {
+        digit = 0;
+        while temp >= divisor {
+            temp = temp - divisor;
+            digit = digit + 1;
+        }
         widget_draw_char(buf, CALC_WINDOW_WIDTH, CALC_WINDOW_HEIGHT,
                          cur_x, y, 48 + digit, r, g, b);
-        temp = temp - digit * divisor;
+
         divisor = divisor / 10;
         cur_x = cur_x + 4;
     }
@@ -311,7 +332,7 @@ fn calc_window_button(buf: t40, x: t40, y: t40, id: t40, label: t40, hovered: t4
     if id - hovered == 0 { is_hovered = 1; }
     if id - focused == 0 { is_focused = 1; }
     return widget_draw_button_state(buf, CALC_WINDOW_WIDTH, CALC_WINDOW_HEIGHT,
-                                    x, y, 7, 4, label,
+                                    x, y, 7, 5, label,
                                     is_hovered, 0, is_focused, 1);
 }
 
@@ -348,7 +369,7 @@ fn calc_draw_window_ui(win: t40, hovered: t40, focused: t40, val1: t40, val2: t4
         calc_window_draw_number(buf, 11, 3, active_val, print_r, print_g, print_b);
     }
 
-    calc_window_button(buf, 31, 6, 17, 60, hovered, focused);
+    calc_window_button(buf, 31, 4, 17, 60, hovered, focused);
     calc_window_button(buf, 3, 10, 7, 55, hovered, focused);
     calc_window_button(buf, 11, 10, 8, 56, hovered, focused);
     calc_window_button(buf, 19, 10, 9, 57, hovered, focused);
@@ -370,7 +391,7 @@ fn calc_draw_window_ui(win: t40, hovered: t40, focused: t40, val1: t40, val2: t4
     if hovered - 99 == 0 { exit_hover = 1; }
     if focused - 99 == 0 { exit_focus = 1; }
     widget_draw_button_state(buf, CALC_WINDOW_WIDTH, CALC_WINDOW_HEIGHT,
-                             13, 29, 14, 3, 88,
+                             13, 32, 14, 5, 88,
                              exit_hover, 0, exit_focus, 1);
     os_window_present(win);
     return 1;
@@ -407,6 +428,7 @@ fn main() -> t40 {
     var btn: t40 = 0;
     var current_hover: t40 = 0;
     var click: t40 = 0;
+    var is_operator: t40 = 0;
     var release: t40 = 0;
     var k: t40 = 0;
     var path_addr: t40 = 0;
@@ -533,13 +555,13 @@ fn main() -> t40 {
                         has_error = 0;
                         if op > 0 {
                             if val2 >= 0 {
-                                val2 = val2 / 10;
+                                val2 = calc_drop_digit(val2);
                                 if val2 == 0 {
                                     val2 = -1;
                                 }
                             }
                         } else {
-                            val1 = val1 / 10;
+                            val1 = calc_drop_digit(val1);
                         }
                     } else {
                         if click - 11 == 0 {
@@ -564,7 +586,9 @@ fn main() -> t40 {
                             }
                         } else {
                             // Operator clicked
-                            if click - 12 >= 0 {
+                            is_operator = 0;
+                            if click >= 12 { if click <= 15 { is_operator = 1; } }
+                            if is_operator > 0 {
                                 if 15 - click >= 0 {
                                     has_result = 0;
                                     has_error = 0;

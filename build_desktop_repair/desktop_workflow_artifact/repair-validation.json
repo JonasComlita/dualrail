@@ -1,0 +1,72 @@
+{
+  "result": "passed",
+  "build_directory": "C:\\Users\\jonas\\Documents\\trit\\build_desktop_repair",
+  "sdl_enabled": false,
+  "conformance_seconds": 260.86,
+  "commands": [
+    "ctest --test-dir build_desktop_repair --output-on-failure"
+  ],
+  "checks": [
+    "guest login via text and Enter",
+    "visible calculator controls",
+    "12 rapid blank press/release pairs",
+    "captured drag across close with release outside",
+    "mixed mouse/Tab/text/backspace ordering",
+    "file-backed checkpoint with pending input restored",
+    "displayed 42 and calculator exit status 42",
+    "Files root entry open and rendered path change",
+    "Files parent control restores root path",
+    "healthy app close restores text desktop"
+  ],
+  "journal_events": 64,
+  "restored_pending_events": 35,
+  "calculator_exit_status": 42,
+  "crashed_processes": [],
+  "final_framebuffer": [
+    "mode=text",
+    "width=80",
+    "height=25"
+  ],
+  "platform": {
+    "isa": 2,
+    "executable_abi": 3,
+    "function_abi": 3,
+    "syscall_abi": 2,
+    "tboot": 3,
+    "tdisk": 2
+  },
+  "artifacts": {
+    "calculator": "calculator_rgb/framebuffer_snapshot.png",
+    "files_directory": "files_directory/framebuffer_snapshot.png",
+    "desktop": "framebuffer_snapshot.png",
+    "journal": "input_journal.jsonl",
+    "pending_checkpoint": "input_burst_checkpoint",
+    "test_log": "C:\\Users\\jonas\\Documents\\trit\\build_desktop_repair\\Testing\\Temporary\\LastTest.log"
+  },
+  "source_sha256": {
+    "CMakeLists.txt": "385d1c2af2018f2559757cce2f628863200a0c1ec0679ce9c9be4bfa461eef42",
+    "tests/current_only_conformance.cpp": "3624374406b3be8d7f1ae26de2bf12ee8614935e53b7be555af89364acd4236a",
+    "ternary_compiler_codegen.h": "b80d3b72fa32936f9f3aea7ea3c37e8d2c011de0f9ffb108c4d7d6baa1054bac",
+    "ternary_host_runtime.h": "f4d6afd26a800be312a0997eaf2d374d9be3deed5fa802d088678a82750dd016",
+    "run_tos_sdl.cpp": "7c22b2266fb90b622e96a1ca6b8140c8e02a6e80ef1ad6fd53d468bdf3a2c0a6",
+    "kernel.trit": "69a2e374c761595746b4fbac91de04837056934daf8477df197b0e737ca5f18d",
+    "build_tos_image.cpp": "475ad5452daf1831e50ce5035c2ef41da7c14c0e907fd0f0b4dfd2ff8a8c5fab",
+    "apps/calculator.trit": "a8278372c6120405084e76e408dde846206e9ac256c77b9ae5fd3da9dcd50c34",
+    "apps/file_manager.trit": "90e59206ba41bb9995890df4f85caa1050997bd21a01f639ae98937b4590c956",
+    "apps/libwidget.trit": "f51b1788edd3dd79e9b9da8afb4a522075ea86d69fa5fdf86411138551f3fc30",
+    "apps/desktop.trit": "ea80140fa41fa32b6df4cda5606ceb949eb1aec8b52d565493bddc2a5bc32de6",
+    "ternary_dataflow.trit": "413152a1bf668dc6a44663e0ae1168c3b543817452df45beb001da3b6d110a0b",
+    "ternary_stream.trit": "7d877138f8600d71d9e2da38c904b3e7a4a3696bdc47abdba6fa9d38bb26590a"
+  },
+  "library_review": {
+    "integrated_in_os_graph": false,
+    "useful_pattern": "commit producer/acknowledgement state only after successful queue write",
+    "remaining_gap": "downstream stream operators ignore output write failure (trit-516)"
+  },
+  "limitations": [
+    "SDL smoke verifies rendering; scripted app interactions enter through TosRuntime APIs",
+    "general timed waits under architectural idle remain tracked in trit-cr2",
+    "broader native desktop contracts/multiple-window milestone remains open",
+    "interactive input/redraw latency was not benchmarked"
+  ]
+}
