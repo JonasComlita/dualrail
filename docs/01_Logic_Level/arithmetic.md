@@ -1,6 +1,8 @@
 # Ternary Arithmetic
 
-Source of truth: `ternary_native_ops.h`, `ternary_scalar.h`, `ternary_math.h`, and `tests/test_formats.cpp`.
+Source of truth: `ternary_native_ops.h`, `ternary_scalar.h`, and
+`ternary_math.h`. The current platform contract smoke check is
+`tests/current_only_conformance.cpp`.
 
 ---
 
@@ -48,7 +50,8 @@ For integer formats, out-of-range construction or invalid input produces `INVALI
 | `T40` | 40 | 33 | 7 | -1093..+1093 | 6 | 72 | 32 |
 | `T50` | 50 | 41 | 9 | -9841..+9841 | 14 | 96 | 40 |
 
-The product width is `2 * mantissa_trits + guard_trits`. `tests/test_formats.cpp` checks these constants directly.
+The product width is `2 * mantissa_trits + guard_trits`; the production build
+and current contract checker are the supported validation path.
 
 ---
 
@@ -212,8 +215,9 @@ conversions.
 
 Relevant focused tests:
 
-- `tests/test_uint128.cpp`: independent `__int128` comparisons where the compiler provides that oracle, including the portable Windows/MinGW implementation, boundary indices, and explicit divide-by-zero failures.
-- `tests/test_formats.cpp`: format constants, exhaustive `T1`/`T5` integer round-trips and overflow, exact small float arithmetic, fractional alignment, square root tolerances.
-- `tests/test_native_ops.cpp`: exhaustive balanced full-adder states, checked host decode statuses, exceptional comparison/trapping, bounded transcendental failure, invalid native propagation, large-angle reduction, exact ternary accumulation, and arithmetic reference corpora.
-- `tests/test_vm_widths.cpp`: width-suffixed VM arithmetic, scalar trap behavior, accumulator operations, trit count/scan, modulo and shift behavior.
-- `TEST_MANIFEST.json` suite `core`: includes `test_native_ops`, `test_multiwidth_vm`, `test_ternary_lanes`, and numeric workload coverage.
+- `tests/current_only_conformance.cpp`: current ISA/executable/image version
+  tuple and executable-header round-trip.
+- `cmake --build build_current_cleanup --target ci_production`: supported compiler/runtime
+  integration gate.
+- `TEST_MANIFEST.json` current suites: the conformance check plus the CMake
+  production gate.

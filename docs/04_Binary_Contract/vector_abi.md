@@ -2,7 +2,7 @@
 
 | Status | Last Updated | Related Code |
 | :--- | :--- | :--- |
-| Hardware register contract and ABI v3 boundary integrated; v2 compatibility retained | 2026-08-17 | `executable_header_v3.h`, `ternary_vm_state.h`, `ternary_compiler_types.h`, `ternary_compiler_codegen.h`, `kernel.trit` |
+| Current hardware register contract and ABI v3 boundary | 2026-09-29 | `executable_header_v3.h`, `ternary_vm_state.h`, `ternary_compiler_types.h`, `ternary_compiler_codegen.h`, `kernel.trit` |
 
 ---
 
@@ -11,9 +11,8 @@
 The architectural vector register file is available to VM/ISA operations,
 but its existence does not by itself define a source-language function ABI.
 The release compiler and image builder use
-`trit.compiler.function-abi.v3` (version 3) by default. An explicit
-`trit.compiler.function-abi.v2` compatibility path remains available for
-legacy applications and migration fixtures.
+`trit.compiler.function-abi.v3` (version 3). No ABI-v2 compatibility path is
+present in the current compiler, loader, or image builder.
 
 ## Executable and function ABI v3
 
@@ -21,8 +20,8 @@ The v3 executable identity is separate from the existing `.tboot` container
 version. It uses function ABI 3, vector ABI 1, fixed `VLEN = 27`, eight vector
 registers, and a 279-word process vector-context contract. Required feature
 bits identify the v3 executable profile, vector geometry, vector context, and
-vector spill support. `executable_header_v3.h` provides versioned validation
-and round-trip helpers while the v2 decoder remains unchanged.
+vector spill support. `executable_header_v3.h` provides the current validation
+and round-trip helpers; non-current headers are rejected.
 
 Each of the 27 lanes carries one architectural T40 word. Thus, `VLEN = 27`
 means 27 lanes and a spill size of 27 T40 words; it never means a 27-trit lane.
@@ -39,10 +38,10 @@ The vector function rules are:
 - vector spills use 27 words with 9-word alignment.
 
 Vector syscalls, atomics, and foreign interfaces remain fail-closed. The
-versioned loader, image propagation, trap/scheduler integration, and exact
-tagged context ownership are integrated. The release gate keeps v2 readable
-and rejects unknown versions, mixed object ABIs, malformed vector geometry,
-and v3 images without VECTOR_CONTEXT support.
+loader, image propagation, trap/scheduler integration, and exact tagged
+context ownership are integrated. The release gate rejects unknown versions,
+mixed object ABIs, malformed vector geometry, and v3 images without
+VECTOR_CONTEXT support.
 
 ### 1. Vector Register Roles
 The 8 vector registers are assigned specific architectural roles:
@@ -53,8 +52,7 @@ The 8 vector registers are assigned specific architectural roles:
 | **v1 - v3** | `va1 - va3` | Arguments 1 - 3 | Caller-Saved |
 | **v4 - v7** | `vt0 - vt3` | Temporary Vectors | Caller-Saved |
 
-ABI v2 rejects first-class vector function parameters and returns before target
-emission. ABI v3 admits only the explicitly supported vector signatures and
+The current ABI v3 admits only the explicitly supported vector signatures and
 SSA operations; unsupported element types and interfaces still fail closed.
 The compiler must not scalarize the value, silently pass a scalar register, or
 replay the AST with a private convention.
@@ -94,7 +92,6 @@ The `VectorFaultState` is **Volatile**.
 
 ## Compatibility and release checklist
 
-The focused codec/compiler test is `test_executable_abi_v3`; the OS and
-production suites additionally cover loader, image, scheduler, and process
-handoff behavior. ABI v2 applications must continue to boot unchanged, while
-new release images use v3 unless `TRIT_BUNDLED_APP_FUNCTION_ABI=2` is set.
+The current codec/compiler check is `tests/current_only_conformance.cpp`; the
+production CMake gate covers the integrated loader and image path. All current
+applications are rebuilt for ABI v3.

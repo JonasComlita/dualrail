@@ -201,43 +201,39 @@ struct LinkOptions {
     bool standalone_halt_on_exit = true;
     bool dead_strip_functions = false;
     std::vector<std::string> dead_strip_roots = {"main"};
-    // Function and syscall ABI versions are kept separate.  The executable
-    // header currently accepts only architecture v2, but carrying the
-    // function version through linking prevents an object compiled for a
-    // future boundary profile from being silently mixed into a v2 image.
+    // Function and syscall ABI versions are kept separate. The executable
+    // header is always the current ISA-v2 / executable-ABI-v3 profile, while
+    // carrying the function version through linking prevents an object built
+    // for a different boundary profile from being silently mixed into it.
     // Keep this field last so existing aggregate initialization remains
     // source-compatible.
     int function_abi_version = FunctionAbiContract::version;
-    // The executable envelope is independently selected from the function
-    // ABI. These fields are carried through the owned compiler/link contract;
-    // the concrete image builder still has to consume them before a v3 image
-    // can be emitted.
+    // These fields make the current executable envelope and fixed vector
+    // contract explicit at the compiler/link boundary.
     bool enable_vector_abi = false;
     bool enable_vector_spilling = false;
     int vector_length = architecture::v3::VECTOR_LANE_COUNT;
-    int executable_version = architecture::v2::EXECUTABLE_VERSION;
-    int vector_abi_version = 0;
+    int executable_version = architecture::v3::EXECUTABLE_VERSION;
+    int vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
 };
 
 struct LinkResult {
     bool success = false;
     // Compiler function-boundary and image profiles selected for this link.
-    // The image builder owns the final envelope bytes, so these fields also
-    // make an unconsumed v3 request observable instead of silently downgrading
-    // it to v2.
+    // The image builder owns the final envelope bytes, so these fields make
+    // the current v3 request observable instead of silently downgrading it.
     int function_abi_version = FunctionAbiContract::version;
     std::string function_abi_contract = FunctionAbiContract::id();
     std::string assembly;
     std::map<std::string, int> symbol_map;
-    vm::ExecutableImageHeaderV2 executable_header_v2;
     vm::ExecutableImageHeaderV3 executable_header_v3;
     vm::assembler::AssemblyResult assembled;
     std::vector<Diagnostic> diagnostics;
     int instruction_count = 0;
     int text_words = 0;
     int data_words = 0;
-    int executable_version = architecture::v2::EXECUTABLE_VERSION;
-    int vector_abi_version = 0;
+    int executable_version = architecture::v3::EXECUTABLE_VERSION;
+    int vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
 };
 
 namespace runtime {

@@ -133,10 +133,6 @@ The current implementation prints `SERVICE READY` and exits. The service manifes
 
 Relevant tests and targets:
 
-- `cmake --build build --target build_tos_image`
-- `tools/trit-inspect-image.ps1 build/release/TernaryOS/ternary-os.tboot`
-- `tools/trit-test.ps1 apps`
-- `test_native_apps`
-- `test_process_handoff`
-- `test_consumer_shell_productization`
-- `test_host_runtime`
+- `cmake --build build_current_cleanup --target build_tos_image`
+- `python tools/trit_tool.py contract-check`
+- `cmake --build build_current_cleanup --target ci_production`

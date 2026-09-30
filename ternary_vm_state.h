@@ -1562,20 +1562,9 @@ static constexpr int PTE_FLAG_READ = 2;
 static constexpr int PTE_FLAG_WRITE = 3;
 static constexpr int PTE_FLAG_EXECUTE = 4;
 static constexpr int PTE_PPN_SHIFT = 5;
-// Keep the historical v2 trap-stub context width and offsets intact.  The
-// v3 process context is a separate, exact-width arena described below.
-static constexpr int TASK_CONTEXT_V2_WORDS = 32;
 static constexpr int TASK_CONTEXT_V3_WORDS = architecture::v3::VECTOR_CONTEXT_WORDS;
-static constexpr int TASK_CONTEXT_WORDS = 32;
-static constexpr int TASK_CONTEXT_EPC = 0;
-static constexpr int TASK_CONTEXT_STATUS = 1;
-static constexpr int TASK_CONTEXT_IMEM_PTBR = 2;
-static constexpr int TASK_CONTEXT_IMEM_PAGES = 3;
-static constexpr int TASK_CONTEXT_DMEM_PTBR = 4;
-static constexpr int TASK_CONTEXT_DMEM_PAGES = 5;
-static constexpr int TASK_CONTEXT_REG_BASE = 6;
-// v3 is a separately allocated vector context.  It never aliases the v2
-// scalar task record.  The exact 279-word layout is:
+// The v3 process context is a separately allocated, exact-width vector arena.
+// The exact 279-word layout is:
 //   0 version, 1 length, 2 vector ABI, 3 register count, 4 VLEN,
 //   5 tagged accumulator, 6 first-failing-lane,
 //   7..33 tagged lane fault records, 34..249 tagged vector lanes,
@@ -1669,7 +1658,6 @@ static constexpr int SYSCALL_RENAME           = 59;
 
 static constexpr int EXEC_MAGIC = 40404;
 
-#include "executable_header_v2.h"
 #include "executable_header_v3.h"
 
 [[nodiscard]] inline bool taskContextSpanValid(
@@ -1687,39 +1675,6 @@ static constexpr int EXEC_MAGIC = 40404;
     return context_addr >= 0 &&
            context_addr % architecture::v2::STACK_ALIGNMENT_WORDS == 0 &&
            taskContextSpanValid(dmem, context_addr, TASK_CONTEXT_V3_WORDS);
-}
-
-inline bool initializeTaskContext(
-    TernaryMemory& dmem,
-    int context_addr,
-    const ExecutableImageHeaderV2& header,
-    int imem_ptbr,
-    int dmem_ptbr) {
-
-    if (!validateExecutableHeaderV2(header)) return false;
-    if (!taskContextSpanValid(dmem, context_addr, TASK_CONTEXT_V2_WORDS)) {
-        return false;
-    }
-    std::array<TernaryValue, TASK_CONTEXT_V2_WORDS> staged{};
-    staged.fill(TernaryValue::zero());
-    staged[TASK_CONTEXT_EPC] = ops::fromLong(header.entry_pc);
-    staged[TASK_CONTEXT_STATUS] = ops::fromLong(35);
-    staged[TASK_CONTEXT_IMEM_PTBR] = ops::fromLong(imem_ptbr);
-    staged[TASK_CONTEXT_IMEM_PAGES] =
-        ops::fromLong(executableTextPages(header));
-    staged[TASK_CONTEXT_DMEM_PTBR] = ops::fromLong(dmem_ptbr);
-    staged[TASK_CONTEXT_DMEM_PAGES] =
-        ops::fromLong(executableDataPages(header));
-    staged[TASK_CONTEXT_REG_BASE + R26_SP - 1] =
-        ops::fromLong(header.stack_words);
-    for (int index = 0; index < TASK_CONTEXT_V2_WORDS; ++index) {
-        if (dmem.store(context_addr + index,
-                       staged[static_cast<std::size_t>(index)]) !=
-            MemFaultCode::OK) {
-            return false;
-        }
-    }
-    return true;
 }
 
 inline bool initializeTaskContextV3(
@@ -1837,7 +1792,7 @@ struct PageTableEntry {
         TernaryMode::T40);
 }
 
-[[nodiscard]] inline bool decodePageTableEntryV2(
+[[nodiscard]] inline bool decodePageTableEntry(
         TernaryValue value,
         PageTableEntry& out) {
     if (!isNumericMode(value.mode) || value.isInvalid()) return false;
@@ -1863,12 +1818,6 @@ struct PageTableEntry {
     if (!out.present || (out.superpage && out.ppn % 27 != 0))
         return false;
     return true;
-}
-
-[[nodiscard]] inline bool decodePageTableEntry(
-        TernaryValue value,
-        PageTableEntry& out) {
-    return decodePageTableEntryV2(value, out);
 }
 
 // =============================================================================
@@ -2823,14 +2772,18 @@ struct VMState {
     VMStatus                 status = VMStatus::RUNNING;
     TernaryValue             trap_reg;  // r27: written on fault, read-only from ISA
     int                      executable_version =
-        architecture::v2::EXECUTABLE_VERSION;
+        architecture::v3::EXECUTABLE_VERSION;
     int                      function_abi_version =
-        architecture::v2::FUNCTION_ABI_VERSION;
-    int                      vector_abi_version = 0;
-    std::uint64_t            required_features = 0;
+        architecture::v3::FUNCTION_ABI_VERSION;
+    int                      vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
+    std::uint64_t            required_features = architecture::v3::REQUIRED_FEATURES;
+    // The current VM executes the ISA-v2 instruction encoding under the full
+    // executable/function ABI-v3 feature envelope. Keep the default host
+    // capability set aligned with the v3 loader and boot-image validators so
+    // a current image is not rejected merely because it carries vector
+    // context metadata.
     std::uint64_t            supported_features =
-        (std::uint64_t{1} <<
-         (architecture::v2::FEATURE_WIDE_T50 + 1)) - 1;
+        architecture::v3::SUPPORTED_FEATURES;
     int                      asid = 0;
     std::array<TlbEntry, architecture::v2::ITLB_ENTRIES> instruction_tlb{};
     std::array<TlbEntry, architecture::v2::DTLB_ENTRIES> data_tlb{};
@@ -3340,24 +3293,12 @@ struct VMState {
             (required & ~supported_features) != 0) {
             return false;
         }
-        executable_version = architecture::v2::EXECUTABLE_VERSION;
-        function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
-        vector_abi_version = 0;
+        executable_version = architecture::v3::EXECUTABLE_VERSION;
+        function_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
+        vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
         required_features = required;
         invalidateBlockCache();
         invalidateTraceJit();
-        return true;
-    }
-
-    [[nodiscard]] bool configureArchitecture(
-        const ExecutableImageHeaderV2& header) {
-        if (!validateExecutableHeaderV2(header) ||
-            !configureArchitecture(IsaEncodingVersion::V2,
-                                    header.required_features)) {
-            return false;
-        }
-        executable_version = header.executable_version;
-        function_abi_version = header.function_abi_version;
         return true;
     }
 
@@ -4211,7 +4152,7 @@ struct VMState {
         if (dmem.inRange(superpage_pte_addr)) {
             auto [candidate, fault] = dmem.load(superpage_pte_addr);
             if (fault == MemFaultCode::OK &&
-                decodePageTableEntryV2(candidate, pte) &&
+                decodePageTableEntry(candidate, pte) &&
                 pte.present && pte.superpage) {
                 pte_vpn = superpage_base_vpn;
                 pte_addr = superpage_pte_addr;
@@ -4228,7 +4169,7 @@ struct VMState {
             }
             auto [candidate, fault] = dmem.load(pte_addr);
             if (fault != MemFaultCode::OK ||
-                !decodePageTableEntryV2(candidate, pte) ||
+                !decodePageTableEntry(candidate, pte) ||
                 !pte.present) {
                 setPageFault(virtual_addr, access);
                 routed_cause = page_fault_cause;

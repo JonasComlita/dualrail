@@ -1,146 +1,169 @@
 # Agent Operating Guide
 
-This repo is intended to be agent-operable: an agent should be able to inspect state, pick a failing or incomplete area, patch it, and verify the result with minimal human input.
+## Core Engineering Principles
 
-## First Commands
+- Think from first principles. Start with the desired behavior, constraints, and
+  evidence, then derive the simplest implementation that satisfies them.
+- Apply KISS (Keep It Simple). Prefer the smallest clear design with the fewest
+  moving parts, and do not introduce abstractions, dependencies, or machinery
+  until the problem justifies them.
 
-Run these from the repo root:
+## Testing Principles
 
-```powershell
-tools/trit-doctor.ps1
-tools/trit-test.ps1 smoke
-python tools/trit_tool.py knowledge status
-tools/trit-test.ps1 production
-tools/trit-export-diagnostics.ps1
-```
+- NEVER write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify that
+  complex features work. At the end of E2E tests, produce a verifiable and
+  repeatable artifact.
+- If a system must be tested in isolation, FIRST write down all the ways it
+  could fail, THEN write the code and tests needed to expose those failures.
+- When writing E2E tests, do not choose the simplest possible scenario merely
+  to prove that the feature works. Use a medium-to-hard scenario that exercises
+  meaningful behavior and realistic interactions.
 
-Equivalent direct Python entry point:
+When implementing with test-driven development:
+
+- Tautological tests are harmful.
+- Change-detector tests are harmful.
+- Do not create regression tests for bug fixes without a genuine gap in behavior
+  testing.
+
+## How To: Review → Repair → Validate
+
+Use this loop for implementation work:
+
+1. Review: inspect the task context, current artifact, requirements, and likely
+   failure modes. Return structured, evidence-based findings before editing.
+2. Repair: apply the smallest focused change that addresses the findings while
+   preserving unrelated user work.
+3. Validate: run the relevant checks, strongly preferring a medium-to-hard E2E
+   scenario. Produce a verifiable, repeatable artifact from E2E validation and
+   report the commands, results, and any remaining issues.
+4. Iterate: use unresolved findings and validation failures as the input to the
+   next repair pass. Claim completion only when the behavior is validated, or
+   clearly state the exact blocker.
+
+This repo is intentionally agent-operable. The supported surface is one CMake
+graph, one current-platform conformance executable, and one small Python entry
+point. Do not recreate the deleted legacy test suites, wrapper scripts, or image
+migration programs.
+
+## First commands
+
+Run these from the repository root:
 
 ```powershell
 python tools/trit_tool.py doctor
-python tools/trit_tool.py test smoke
-python tools/trit_tool.py knowledge status
+python tools/trit_tool.py contract-check
+python tools/trit_tool.py test
 python tools/trit_tool.py export-diagnostics
 ```
 
-## Source Of Truth
+The equivalent build gate is:
 
-- `TEST_MANIFEST.json`: test suites and authoritative targets.
-- `ROADMAP_STATUS.json`: phase status, evidence, and open items.
-- `SYSCALL_MANIFEST.json`: syscall ABI and compiler wrapper names.
-- `IMAGE_FORMAT_MANIFEST.json`: `.tboot` and `.tdisk` format contract.
+```powershell
+cmake -S . -B build_current_cleanup
+cmake --build build_current_cleanup --target ci_production
+```
+
+## Current platform boundary
+
+The only supported platform contract is:
+
+- ISA encoding v2.
+- Executable and function ABI v3; syscall ABI v2.
+- `.tboot` format v3.
+- `.tdisk` format v2.
+
+Compilers, assemblers, loaders, the VM, the native VFS, and image builders must
+emit and accept those versions only. Retired executable/image codecs are not
+part of the current source graph; old callers must be rebuilt from source and
+old artifacts must be rejected rather than decoded, installed, migrated, or
+silently reinterpreted.
+
+## Source of truth
+
+- `ARCHITECTURE_MANIFEST.json`: ISA, ABI, and generated-contract inputs.
+- `IMAGE_FORMAT_MANIFEST.json`: `.tboot` and `.tdisk` wire formats.
+- `SYSCALL_MANIFEST.json`: syscall IDs and wrapper names.
 - `APP_MANIFEST.json`: bundled OS apps and guest paths.
-- `DEBUGGING.md`: diagnostics and failure triage workflow.
+- `TEST_MANIFEST.json`: the current conformance and production gates.
+- `ROADMAP_STATUS.json`: phase status, evidence, and open items.
 - `KNOWN_GAPS.md`: known missing or partial work.
-- `ACCEPTANCE_CRITERIA.md`: gates for claiming work complete.
-- `docs/`: Obsidian vault for navigable explanations and architecture canvas.
+- `README.md`: progress and current project context.
+- `tcl_native_rewrite.md` and `TCL_Spec_1.0.md`: language/compiler direction.
+- `architecture_contract.h` and `.trit`: checked-in contract snapshot.
+- `docs/`: navigable architecture and explanatory reference material.
 
-## Obsidian And Graphify
+TreatCode website sources and generated site artifacts are outside the core
+platform build graph. Obsidian and Graphify outputs are advisory reference
+material, not authority for implementation or version support.
 
-The `docs/` directory is an Obsidian-friendly vault. Open `docs/` directly in
-Obsidian for linked reference docs and the `trit-stack.canvas` architecture map.
-
-Use the stable tool entry point instead of ad-hoc vault edits:
-
-```powershell
-python tools/trit_tool.py knowledge status
-python tools/trit_tool.py knowledge canvas
-python tools/trit_tool.py knowledge setup --check
-python tools/trit_tool.py knowledge graph
-```
-
-Graphify is optional and advisory. Its raw output goes to ignored
-`graphify-out/`, and archived snapshots go under ignored `docs/_graphify/runs/`.
-Do not treat Graphify reports or Obsidian notes as more authoritative than
-source files, manifests, or test results.
-
-Graphify does not parse `.trit` natively, so `knowledge graph` augments
-Graphify output with a project-local Trit extractor. When the `trit_ast_dump`
-CMake target is built, that extractor uses the compiler parser's `ModuleAst`;
-otherwise it falls back to a lighter text scan. Rebuild the graph after changing
-compiler, kernel, app, or TCL sources if symbol navigation matters.
-
-## Build And Test
-
-Default CMake build directory is `build` unless `TRIT_BUILD_DIR` is set.
-
-### TreatCode generated artifacts
-
-TreatCode's public snapshot, static Learn routes, Vite bundle, and generated
-JSON are build products. They live under `treatcode/public/api/v1/`,
-`treatcode/learn/`, `treatcode/dist/`, and `treatcode/src/generated/` and are
-intentionally ignored by Git. `treatcode/src/content/learn/*.md` is the
-reviewable lesson source; the catalog and curriculum matrix beside it are
-derived JSON.
-
-From `treatcode/`, use `npm run prepare:generated` when only derived data is
-needed. `npm run dev` starts both the API server on port 3000 and Vite on port
-5173 after preparing generated data. `npm run build` and `npm start` also run
-that preparation automatically. Run `npm run generate:learning` only when
-intentionally regenerating the canonical Markdown lesson source.
-
-Useful targets:
+## Build graph
 
 ```powershell
-cmake --build build --target build_tos_image
-cmake --build build --target test_host_runtime
-cmake --build build --target trit_ast_dump
-cmake --build build --target ci_production
-cmake --build build --target stage_tos_release
-cmake --build build --target smoke_tos_release
+cmake -S . -B build_current_cleanup
+cmake --build build_current_cleanup --target tritc build_tos_image
+cmake --build build_current_cleanup --target current_validate
+ctest --test-dir build_current_cleanup --output-on-failure
+cmake --build build_current_cleanup --target ci_production
 ```
 
-Preferred agent flow:
+SDL release targets (`run_tos_sdl`, `stage_tos_release`,
+`smoke_tos_release`, and `package_tos_release`) are optional and exist only
+when SDL2 is available. They must consume the same current-only image formats.
 
-1. Run `tools/trit-doctor.ps1`.
-2. Run `tools/trit-test.ps1 smoke`.
-3. Run `python tools/trit_tool.py knowledge status`.
-4. Read `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, and relevant docs vault pages.
-5. Use `python tools/trit_tool.py knowledge graph --no-archive` when a structural code graph would help.
-6. Pick the highest-priority failing or incomplete item.
-7. Patch narrowly.
-8. Run a focused suite from `TEST_MANIFEST.json`.
-9. Run `tools/trit-test.ps1 production` before claiming broad OS health.
-10. Export diagnostics if failure persists.
-11. Update manifests or docs when the truth changes.
+## What not to delete
 
-## What Not To Delete
+- `apps/`, `kernel.trit`, the compiler/runtime headers, and image builders.
+- The current manifests listed above and the generated architecture snapshot.
+- `README.md`, `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, and the two TCL design
+  documents, which record project direction or unresolved risk.
+- `docs/` reference material unless a source-path move requires a link repair.
 
-- Do not delete `tests/`; it is the authoritative regression seed.
-- Do not delete `apps/`, `kernel.trit`, `ternary_host_runtime.h`, or image builder/runtime files.
-- Do not delete existing build artifacts unless explicitly cleaning a build.
-- Do not revert unrelated dirty files. Treat them as user work.
+The old `tests/`, `tests_next/`, and `tools/` contents were intentionally
+retired. Keep only the replacement conformance source and `tools/trit_tool.py`
+needed by the current graph; do not add legacy wrappers or one-off fixtures.
 
-## Adding Syscalls
+## Adding syscalls or apps
 
-When adding a syscall, update all relevant surfaces:
+When the current platform genuinely gains a syscall, update the kernel dispatch,
+runtime IDs, compiler wrapper mapping, SDK wrapper (when user code calls it),
+`SYSCALL_MANIFEST.json`, and the current conformance path together.
 
-- Kernel dispatch in `kernel.trit`.
-- Runtime IDs in `ternary_compiler_ir.h`.
-- Compiler wrapper mapping in `ternary_compiler_codegen.h`.
-- App SDK wrappers in `apps/os_sdk.trit` when user code should call it.
-- `SYSCALL_MANIFEST.json`.
-- Focused tests, usually `test_os_platform`, `test_phase_d_kernel`, or `test_native_apps`.
+When adding a bundled app, add its source under `apps/`, compile it with the
+current SDK, register it in `build_tos_image.cpp` and `APP_MANIFEST.json`, and
+verify the produced current `.tboot`/`.tdisk` image.
 
-## Adding Apps
-
-When adding a bundled app:
-
-- Add source under `apps/`.
-- Ensure it compiles with `apps/os_sdk.trit` and `apps/libwidget.trit` if needed.
-- Add it to `build_tos_image.cpp`.
-- Add it to `APP_MANIFEST.json`.
-- Add focused app or process-handoff tests.
-- Rebuild and inspect the release image with `tools/trit-inspect-image.ps1`.
-
-## Release Image Validation
-
-Use:
+## Release validation
 
 ```powershell
-cmake --build build --target stage_tos_release
-tools/trit-inspect-image.ps1 build/release/TernaryOS/ternary-os.tboot
-tools/trit-run.ps1 --smoke-test --frames 10 --export-diagnostics build/agent-smoke-diagnostics
+cmake --build build_current_cleanup --target stage_tos_release
+cmake --build build_current_cleanup --target smoke_tos_release
 ```
 
-The `.tboot` and `.tdisk` formats are described in `IMAGE_FORMAT_MANIFEST.json`.
+The release image must remain ISA v2, executable ABI v3, `.tboot` v3, and
+`.tdisk` v2. Older artifacts are rejected and are not converted in place.
+
+<!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
+## Beads Issue Tracker
+
+Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.
+
+### Quick Reference
+
+```bash
+bd ready                # Find available work
+bd show <id>            # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>           # Complete work
+bd prime                # Refresh Beads context
+```
+
+### Rules
+
+- Use `bd` for all task tracking; do not create markdown TODO lists.
+- Run `bd prime` when Beads context is missing or stale. Codex 0.129.0+ can load Beads context automatically through native hooks; use `/hooks` to inspect or toggle them.
+- Keep persistent project memory in Beads via `bd remember`; do not create ad hoc memory files.
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
+<!-- END BEADS CODEX SETUP -->

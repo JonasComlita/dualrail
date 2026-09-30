@@ -30,8 +30,8 @@ other host file formats.
 | 24 | `payload` | bytes | Serialized `TosBootImage` payload |
 
 The current payload format version is 3. Production readers accept only v3;
-v1 and v2 payloads are rejected with guidance to use the standalone offline
-migrator. The writer always emits v3.
+v1 and v2 payloads are rejected and must be rebuilt from source. The writer
+always emits v3.
 
 Version 3 payload fields are serialized in this order:
 
@@ -47,7 +47,7 @@ Version 3 payload fields are serialized in this order:
 | `required_features` | `uint64` | Required v2 feature bits |
 | `scalar_word_trits` | `int32` | Must be 40 |
 | `base_page_words` | `int32` | Must be 729 |
-| `function_abi_version` | `int32` | Executable function ABI, currently 2 or 3 |
+| `function_abi_version` | `int32` | Must be executable function ABI v3 |
 | `syscall_abi_version` | `int32` | Must be 2 |
 | `section_count` | `uint32` | Number of section table entries |
 | `sections` | `TosImageSection[]` | Kernel and app section metadata |
@@ -88,18 +88,12 @@ plain `std::string` byte sequences.
 | `stack_words` | `int32` | Stack hint chosen by the builder/linker |
 | `isa_version` | `int32` | Must be ISA v2 |
 | `required_features` | `uint64` | Required v2 feature bits |
-| `function_abi_version` | `int32` | Executable function ABI, currently 2 or 3 |
+| `function_abi_version` | `int32` | Must be executable function ABI v3 |
 | `syscall_abi_version` | `int32` | Must be 2 |
 
 Version 3 images do not embed mutable root filesystem state. The release
-builder emits executable ABI v3 app descriptors by default; setting
-`TRIT_BUNDLED_APP_FUNCTION_ABI=2` or passing `--function-abi 2` explicitly
-produces a compatibility image.
-Both executable descriptor versions remain readable by the host loader. The
-image payload itself remains version 3 and does not embed mutable root
-filesystem state. That data is
-written as the companion `.tdisk` artifact. Legacy v1/v2 images may contain an
-embedded rootfs word array, but only the offline migrator reads that field.
+builder emits executable ABI v3 app descriptors and rejects compatibility
+flags. Mutable filesystem state is written as the companion `.tdisk` artifact.
 
 ## `.tdisk` Sparse Disk
 
@@ -109,7 +103,7 @@ all-zero block is omitted from the canonical image.
 
 | Offset | Field | Type | Notes |
 | --- | --- | --- | --- |
-| 0 | `magic` | `uint64` | `0x54524954535032` (`TOS_SPARSE_DISK_MAGIC`) |
+| 0 | `magic` | `uint64` | `0x54524954535032` (`TOS_TDISK_MAGIC`) |
 | 8 | `version` | `uint32` | Always `2` |
 | 12 | `block_words` | `uint32` | Always `27` |
 | 16 | `generation` | `uint64` | Monotonic compact-image generation |
@@ -134,8 +128,8 @@ numeric conversion.
 `writeSparseDiskFile()` writes a compact seed image by scanning a full rootfs
 word vector and emitting only blocks that contain at least one nonzero word.
 Runtime writes rewrite the canonical v2 image atomically; compaction and
-diagnostics use the same v2 format. A legacy `TRITSP1` image is rejected by the
-live runtime and must be converted offline.
+diagnostics use the same v2 format. A legacy or corrupt image is rejected by
+the live runtime and must be rebuilt from current source.
 
 ## Release Builder Flow
 
@@ -178,9 +172,9 @@ deserializes the payload, and then runs `validateBootImage()`.
 
 If a disk path is supplied and the file is missing, the runtime can create it
 from an embedded seed only when the image object explicitly carries one. Current
-v3 release images leave `rootfs_words` empty, so a companion v2 `.tdisk` is
-required. Existing legacy or corrupt `.tdisk` files are rejected with offline
-migration guidance; they are never mounted live.
+v3 release images leave `rootfs_words` empty, so a companion tDisk v2 `.tdisk` is
+required. Existing legacy or corrupt `.tdisk` files are rejected and are never
+mounted live.
 
 ## Validation Rules
 
@@ -196,35 +190,27 @@ The C++ runtime rejects a boot image when:
 - Any section has an empty name/kind or negative geometry.
 - The file magic, payload length, or checksum does not match on disk.
 
-`tools/trit_tool.py inspect-image` is an offline inspector and can still report
-preserved v1/v2 fixtures for migration analysis; it is not the production
-loader. The Python `inspect_sparse_disk()` helper performs matching v2 sparse-
-disk validation for compaction and diagnostics export. Use
-`migrate_tos_artifacts` to convert preserved legacy inputs into fresh v2/v3
-artifacts before booting.
+`python tools/trit_tool.py contract-check` verifies the current version tuple.
+`python tools/trit_tool.py export-diagnostics` records the same tuple for a
+repeatable validation artifact. There is no legacy image inspector or
+migration executable in the supported tree.
 
 ## Useful Commands
 
 ```powershell
-tools/trit-build-image.ps1
-tools/trit-inspect-image.ps1 build/release/TernaryOS/ternary-os.tboot
-tools/trit-compact-disk.ps1 build/release/TernaryOS/ternary-os.tdisk
-tools/trit-export-diagnostics.ps1
+cmake --build build_current_cleanup --target build_tos_image
+python tools/trit_tool.py contract-check
+python tools/trit_tool.py export-diagnostics
 ```
 
 Focused validation targets:
 
 ```powershell
-cmake --build build --target test_host_runtime
-cmake --build build --target test_os_platform
-cmake --build build --target test_process_handoff
-cmake --build build --target stage_tos_release
-cmake --build build --target smoke_tos_release
+cmake --build build_current_cleanup --target current_validate
+ctest --test-dir build_current_cleanup --output-on-failure
+cmake --build build_current_cleanup --target stage_tos_release
+cmake --build build_current_cleanup --target smoke_tos_release
 ```
 
-`test_host_runtime` covers v3 `.tboot` round-tripping, checksum rejection, and
-separate mutable `.tdisk` boot persistence. `test_migration_v2` proves that
-legacy boot/disk fixtures are rejected by production loading and remain usable
-through the offline migrator. `test_os_platform` and `test_process_handoff`
-cover the native VFS image and guest executable handoff that make the release
-disk meaningful.
+`trit_current_conformance` covers the current executable header contract;
+`ci_production` is the supported end-to-end build and CTest gate.

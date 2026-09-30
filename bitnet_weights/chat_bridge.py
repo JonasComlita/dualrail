@@ -150,7 +150,7 @@ def run_generation(tokenizer, history: list[int], bos_id: int,
         )
     except FileNotFoundError:
         print(red(f"\n[Error] run_bitnet not found at: {RUN_BITNET_EXE}"))
-        print(red("  Build with:  cmake --build build --config Release"))
+        print(red("  Build with:  cmake --build build_current_cleanup --config Release"))
         return []
 
     generated_ids: list[int] = []
@@ -258,7 +258,7 @@ def main():
     # Verify exe exists before loading tokenizer
     if not os.path.exists(RUN_BITNET_EXE):
         print(red(f"[Error] Executable not found: {RUN_BITNET_EXE}"))
-        print(      "  Build with: cmake --build build --config Release")
+        print(      "  Build with: cmake --build build_current_cleanup --config Release")
         sys.exit(1)
 
     if not os.path.exists(TOKENIZER_PATH):

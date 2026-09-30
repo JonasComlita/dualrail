@@ -186,6 +186,7 @@ See `AGENTS.md` for the full checklist. Summary:
 2. Link against `os_sdk.trit` (always) and `libwidget.trit` (if GUI)
 3. Add to `build_tos_image.cpp` build list
 4. Add entry to `APP_MANIFEST.json` with `guest_path` and `stack_words`
-5. Write a test in `test_native_apps.cpp` or `test_process_handoff.cpp`
-6. Rebuild with `cmake --build build --target build_tos_image`
-7. Inspect with `tools/trit-inspect-image.ps1`
+5. Extend `tests/current_only_conformance.cpp` only when the app changes a
+   current platform contract.
+6. Rebuild with `cmake --build build_current_cleanup --target build_tos_image`
+7. Run `cmake --build build_current_cleanup --target ci_production` for the supported gate.

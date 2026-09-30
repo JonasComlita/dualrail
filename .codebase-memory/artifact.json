@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "57ad3f3670d284c9e34b303731b0b9965407ae9d",
+    "indexed_at": "2026-09-30T02:36:30Z",
+    "project": "trit",
+    "nodes": 7771,
+    "edges": 55717,
+    "original_size": 17301504,
+    "compressed_size": 2278169,
+    "compression_level": 9
+}

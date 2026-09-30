@@ -13,11 +13,11 @@ if (-not (Test-Path $ossCadEnv)) {
 }
 
 & $ossCadEnv | Out-Null
-New-Item -ItemType Directory -Force -Path "build/hdl" | Out-Null
+New-Item -ItemType Directory -Force -Path "build_current_cleanup/hdl" | Out-Null
 
 foreach ($fileList in $FileLists) {
     $name = [IO.Path]::GetFileNameWithoutExtension($fileList)
-    $out = "build/hdl/$name.vvp"
+    $out = "build_current_cleanup/hdl/$name.vvp"
 
     & iverilog -g2012 -o $out -f $fileList
     if ($LASTEXITCODE -ne 0) {

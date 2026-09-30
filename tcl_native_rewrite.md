@@ -87,7 +87,7 @@ Phase D is not allowed to begin until the compiler/runtime/VM surface below is p
 
 * **C.5b. TCL 1.0 `ulib.trit` Ownership Rewrite:** Public allocation APIs must expose `own<ptr<T, unknown>>`, release APIs must accept `borrow<ptr<T, unknown>>` or `borrow_mut<...>` as appropriate, and user/kernel buffer parameters must use `ptr<T, user, S>` or `ptr<T, kernel, S>` states where the caller relies on validation. Raw integer address helpers may remain as private/internal compatibility functions only when they are isolated behind typed public wrappers. The entire native compiler source set must compile cleanly against the rewritten ulib before Phase D.
 
-* **C.5c. Compiler Golden Program Suite:** Maintain 15-20 small TCL 1.0 programs with known outputs covering arithmetic, control flow, recursion, structs, arrays, constants, width-parametric functions, ownership moves/drops, pointer state transitions, unsafe load/store, atomics, vector helpers, and ulib text output. Each case must run through the C++ bootstrap compiler and VM now, and through the native compiler as soon as Phase B/C can emit runnable images. Phase D requires output equality between the bootstrap and native compiler for this suite.
+* **C.5c. Compiler Golden Program Suite:** Define 15-20 small TCL 1.0 programs with known outputs covering arithmetic, control flow, recursion, structs, arrays, constants, width-parametric functions, ownership moves/drops, pointer state transitions, unsafe load/store, atomics, vector helpers, and ulib text output. The current repository keeps only the current-platform conformance executable; focused compiler cases are added to that same CMake graph when the corresponding native path is ready. Phase D requires output equality between the bootstrap and native compiler for this suite, not a second legacy test tree.
 
 * **C.5d. Privilege/Trap Harness:** Maintain a raw TASM harness that installs `TVEC`, enters user mode, triggers a syscall/trap, observes handler-mode CSR state, returns through `ERET`, and verifies that `EPC`, `CAUSE`, `STATUS`, previous privilege, and final user privilege are correct. D1's trap entry stub depends on this exact machine sequence.
 
@@ -95,9 +95,11 @@ Phase D is not allowed to begin until the compiler/runtime/VM surface below is p
 
 ## Phase D — Native OS Kernel (`kernel.trit`)
 
-Status: completed for the current native-kernel acceptance scope. Keep
-`test_phase_d_kernel`, `test_native_apps`, `test_process_handoff`, and the
-production gate as regression coverage when changing this layer.
+Status: completed for the current native-kernel acceptance scope. The former
+`test_phase_d_kernel`, `test_native_apps`, and `test_process_handoff` suites
+belonged to the retired pre-cutover test tree. Current regression coverage is
+`tests/current_only_conformance.cpp` plus the `ci_production` gate; add a new
+focused test only when the current platform contract grows.
 
 Replaces `minimal_kernel_bringup.tasm` and `ternary_os.h`. Written in `.trit`, compiled by the Phase A/B/C pipeline, and executed in kernel privilege mode.
 

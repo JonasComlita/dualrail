@@ -14,9 +14,24 @@ that every host/wire representation occupies exactly 64 physical bits.
 Instructions remain 27 trits, vectors remain 27 lanes, and T50 remains an
 explicit extended/wide value.
 
-Optimization before/after measurements are tracked in
-`optimization_baseline.md`. Add a new dated entry there before accepting any
-hot-path optimization.
+Optimization claims are historical roadmap notes unless they have a current
+validation target. The supported platform gate is the consolidated CMake/CTest
+graph described in `AGENTS.md`; the retired benchmark baseline files are not
+release inputs.
+
+## Current platform boundary
+
+The current implementation is intentionally a clean cutover: ISA v2
+instructions, executable/function ABI v3, syscall ABI v2, `.tboot` v3, and
+`.tdisk` v2. Compilers, loaders, the VM, native VFS, and image builders reject
+older executable/image contracts; they do not decode, migrate, or reinterpret
+them. The supported validation surface is `tests/current_only_conformance.cpp`
+plus `cmake --build build_current_cleanup --target ci_production` and
+`python tools/trit_tool.py contract-check`.
+
+Everything below is retained as implementation history and future direction.
+Names such as v1, retired test targets, and benchmark rows describe the phase
+in which they were recorded, not an additional supported platform.
 
 ## Phase 1: Native Arithmetic Migration
 
@@ -405,9 +420,10 @@ Implemented first tranche:
 - Lowering emits assembly text first and then calls the existing assembler.
 - Typed arithmetic always emits explicit suffixes; `cvt` emits `.src.dst`;
   exact no-op conversions are removed.
-- Added `test_ternary_ir.cpp` for assembly text checks, VM execution,
-  diagnostics, branch/load/store/vector/accumulator/T1 coverage, and register
-  exhaustion.
+- The earlier compiler-IR tranche used `test_ternary_ir.cpp` for assembly text
+  checks, VM execution, diagnostics, and register-pressure coverage. That
+  legacy test tree was retired after the platform cutover; current behavior is
+  checked by `tests/current_only_conformance.cpp` and the CMake production gate.
 
 Validation:
 
@@ -435,7 +451,7 @@ transformer and security work. Each benchmark should report VM step count,
 runtime, checksum, memory footprint, and the exact program source or generated
 IR.
 
-Benchmarks:
+Historical benchmark scope:
 
 - T1 dot product through `vmac.t1` / `vdot.t1` versus T50 multiply-add.
 - Ternary heap versus binary heap emulated on the VM.
@@ -445,23 +461,9 @@ Benchmarks:
   step-count and timing rows.
 - Tiny generated matmul kernels in T10, T20, and T50.
 
-Implemented first tranche:
-
-- Added `benchmark_architecture.cpp`.
-- Results are written to `architecture_benchmark_results.md`.
-- Current rows cover T1-vs-T50 dot, ternary-vs-binary-style routing,
-  two-tailed outlier routing, small heap-shape routing, and generated small
-  matmul at T10/T20/T50 widths.
-- Rows report generated program size, VM steps, checksum, baseline, and
-  relative step-count delta where a paired baseline exists.
-
-Validation:
-
-- Every benchmark must have a deterministic checksum.
-- Record results in `optimization_baseline.md` or a dedicated benchmark results
-  document before and after any optimization.
-- Keep binary comparisons honest: compare VM instruction counts separately from
-  host CPU wall-clock time.
+The historical benchmark tranche and its standalone result/baseline files were
+retired during the current-only cleanup. They are retained here only as
+progress history; no benchmark target or result is consumed by the platform.
 
 ### Phase 5D: Tiny Transformer VM Runtime
 
@@ -486,8 +488,8 @@ Scope:
   `cvt.*.*` or runtime conversion helpers only at named boundaries.
 - Prefer VM-callable math routines before adding new opcodes. Add opcodes only
   after profiling shows a routine is both common and expensive.
-- Record before/after measurements in `optimization_baseline.md` before any
-  runtime or hot-path optimization is accepted.
+- Record future performance work only in a newly designed, current validation
+  target; no retired baseline file is authoritative.
 
 Initial runtime pieces:
 
@@ -556,8 +558,10 @@ Current integration note:
 - Opcodes 59-73 now have ISA decode/disassembly, assembler mnemonics, VM execution, and IR builder helpers.
 - `CALLR` and `JMPR` consume absolute instruction-memory PC targets from numeric scalar registers; `CALLR` writes `LR = PC + 1`.
 - `SYSCALL` keeps legacy sandbox service ids when trap routing is disabled; in OS-routed user mode it traps to the kernel with the id in `SYSCALL_ID` and arguments in `r13-r18`.
-- Focused Phase 6.1 verification passes in `test_multiwidth_vm` and `test_ternary_ir`.
-- Regression checks also pass in `test_native_ops`, `test_numeric_workloads`, and `test_ternary_lanes`.
+- Historical Phase 6.1 verification used the retired VM suites `test_multiwidth_vm`
+  and `test_ternary_ir`; those suites are no longer part of the current tree.
+- Current platform behavior is validated by `tests/current_only_conformance.cpp`,
+  `current_validate`, and the `ci_production` target.
 
 #### Track 6.2: VM Tooling and Infrastructure Bridge (Implemented)
 - **VM Observability**: Added lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler and kernel output profiling without core patching.
@@ -604,7 +608,7 @@ Current integration note:
 - **Scheduler State Verification**: The boot artifact test now verifies process-table metadata, context pointers, current-process bounds, and continued two-task preemption.
 
 #### Track 6.10: Ternary Architecture Contract Pack (Implemented)
-- **Contract Document**: Added `OS3/TERNARY_ARCHITECTURE_CONTRACTS.md` as the shared architecture contract for VM, assembler, compiler, kernel, debugger, FPGA, and future multicore work.
+- **Contract Document**: The historical architecture contract is now consolidated in `docs/04_Binary_Contract/architecture_v2.md`, with current authority in the root manifests and source headers.
 - **Ternary-Native Memory/Atomic Direction**: Locked the planned memory-order trit (`-1` relaxed, `0` acquire-release, `+1` sequential consistency) and the proposed `TLDR`/`TSTR` result convention (`-1` collision, `0` value mismatch, `+1` success).
 - **Cross-Cutting Contracts**: Captured trap/interrupt rules, ABI, data layout, instruction alignment, FP sticky flag direction, reset/boot, syscall/device rules, and scheduler substrate boundaries.
 
@@ -632,11 +636,14 @@ Current integration note:
 - **Ready/Wait Queues**: Added ready/wait queue metadata for the Phase 4 scheduler proof.
 - **Kernel Authoring Ergonomics**: The kernel artifact now uses shared queue, wakeup, and syscall paths instead of fixed two-task toggles.
 
-#### Track 6.15: Self-Describing Binary Loader and Object ABI Seed (Implemented)
-- **Historical v1 Seed**: The original executable header and `.execheader` directive are reproducible from Git tag `trit-v1-final` but are not accepted by the v2 toolchain or runtime.
-- **Authoritative v2 Metadata**: `.execheader2` emits a checksummed 15-word v2 header containing ISA/features, exact text/data word counts, stack alignment, scalar width, page size, and function/syscall ABI versions.
-- **Static Loader**: Loader helpers validate v2 metadata and initialize task contexts/page-table bindings; older artifacts require the offline migrator.
-- **Compiler Pipeline Boundary**: Phase 4 now owns the executable/runtime/ABI/metadata/assembler contract layers named in `OS3/compiler_pipeline.md`.
+#### Track 6.15: Self-describing current loader and object ABI (Implemented)
+- **Current metadata**: `.execheader3` emits the checksummed 20-word executable
+  ABI-v3 header over the ISA-v2 instruction codec.
+- **Static loader**: compiler, assembler, VM, kernel, and image builder validate
+  only the v3 descriptor; non-current artifacts are rejected and rebuilt from
+  source. There is no offline migrator.
+- **Compiler pipeline boundary**: the current compiler owns the executable,
+  runtime, ABI, metadata, assembler, and link contracts.
 
 #### Track 6.16: Process Creation and Lifecycle Syscalls v1 (Implemented)
 - **Process Identity**: Added free/runnable lifecycle state, PID convention, parent PID, exit status, wait target, and queue sidecars.
@@ -649,9 +656,10 @@ Current integration note:
 - **Integrated Proof**: The acceptance image covers input wakeup, shell dispatch, spawn/wait, console output, timer preemption, and idle behavior together.
 
 #### Track 6.18: Phase 4 Freeze and Acceptance (Implemented)
-- **Scope Freeze**: The syscall table, trap-frame layout, process metadata, executable header v1, and page-table v1 contract are frozen for Phase 4.
-- **Documentation Lock**: `OS3/PHASE4_COMPLETION_ROADMAP.md` is now canonical; deprecated implementation-plan files are no longer synchronized.
-- **Regression Gate**: `test_multiwidth_vm`, `test_ternary_ir`, `test_ternary_lanes`, `test_native_ops`, and `test_numeric_workloads` pass.
+- **Scope Freeze**: This historical Phase 4 snapshot froze the syscall table, trap-frame layout, process metadata, executable header v1, and page-table v1 contract. The current cutover is ISA v2, executable/function ABI v3, syscall ABI v2, `.tboot` v3, and `.tdisk` v2.
+- **Documentation Lock**: The former `OS3/` planning tree is retired. Current authority is `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, `tcl_native_rewrite.md`, and the `docs/` contract pages.
+- **Regression Gate**: the retired phase-specific tests were replaced by the
+  current conformance target and the `ci_production` CMake gate.
 
 #### Track 6.19: Advanced IR Expansion
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
@@ -683,7 +691,7 @@ Implemented as substrate v1:
 A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
 * **Scheduler Context**: The minimal kernel now saves/restores `EPC`, `STATUS`, page-table CSRs, `r1-r26`, and user `sp` using the `SCRATCH`/`CSRRW` convention, then selects the next task through a tiny process table.
 
-The definitive Phase 4 closure roadmap is `OS3/PHASE4_COMPLETION_ROADMAP.md`, and it is now complete. Compiler and source-language work should resume against this stable OS target contract.
+The historical Phase 4 closure roadmap is retained as progress context only. Current compiler and source-language work follows `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, and `tcl_native_rewrite.md` against the current platform tuple.
 
 ### Critical Path
 
@@ -728,7 +736,7 @@ high-level systems language instead of hand-written `.tasm`.
 
 Current implementation note:
 
-- `ternary_compiler.h` now provides the Phase 7 v1 public API:
+- `ternary_compiler.h` provides the current C++ bootstrap compiler API:
   `CompilerOptions`, structural `Module`/`Function`/`BasicBlock`/`Instr` IR
   types, `compileSource`, `linkModules`, runtime syscall ids, verifier helpers,
   optimizer hooks, and a register allocation helper surface.
@@ -737,32 +745,15 @@ Current implementation note:
   exhaustive `match sign(...)`, tuple swap lowering, pointer validity
   diagnostics, unsafe CSR/atomic intrinsics, and static executable linking
   through the existing assembler.
-- `test_phase7_compiler` verifies source-to-SSA compilation, linking, VM
-  execution, runtime syscall wrappers, call/loop lowering, pointer and width
-  diagnostics, unsafe CSR/atomic lowering, verifier behavior, allocation
-  surface, duplicate-symbol handling, and executable-header emission.
+- The historical `test_phase7_compiler` suite was retired with the pre-cutover
+  test tree. Current compiler and executable-header behavior is covered by
+  `current_validate` and the production gate.
 
-Inputs:
-
-- `OS3/PHASE4_COMPLETION_ROADMAP.md`: Phase 4/README Phase 6 is closed at the
-  frozen trap frame, syscall ABI, executable header v1, page-table v1, atomics,
-  scheduler, console, static spawn/wait, and shell-proof boundary.
-- `OS3/strategic_architecture.md`: the deferred strategic ideas now become
-  compiler-facing concerns where appropriate: dynamic width/type-aware
-  execution, future-aware binary metadata, 9-trit packing hooks, and tooling
-  that does not paint the VM into a corner.
-- `OS3/xv6.md`: the current microkernel already has privilege isolation, MMU
-  protection, preemptive scheduling, ready/wait queues, console I/O, static
-  spawn/wait, and a tiny shell. The gaps to an xv6 alternative are storage/files,
-  dynamic `fork`/`exec`, and a user heap via `brk`/`sbrk`.
-- `todo.md`: cache latency, TLB modeling, and true threaded multicore are future
-  realism/stress tracks. Phase 7 should emit profiling and layout metadata that
-  those tracks can consume later, but should not block the compiler on them.
-- `OS3/language_optimizations.md`: Phase 7 should adopt Hindley-Milner type
-  inference, SSA/CFG IR, graph-coloring allocation, LLVM-style IR as the shared
-  artifact, zero-cost ownership/region safety, first-class `T1`/three-way
-  branching, width polymorphism, typed memory-order annotations, and native swap
-  lowering.
+Current references for the compiler and platform boundary are
+`ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, `tcl_native_rewrite.md`,
+`TCL_Spec_1.0.md`, `docs/04_Binary_Contract/architecture_v2.md`, and
+`docs/09_Host_Runtime/image_format.md`. The former `OS3/` and `todo.md` input
+paths belonged to an earlier planning tree and are intentionally not recreated.
 
 ### Track 7.1: Structural SSA IR And Module Model
 
@@ -779,7 +770,8 @@ Inputs:
 
 Acceptance:
 
-- Existing `test_ternary_ir` programs still lower and run through the VM.
+- Historical `test_ternary_ir` programs were retired; current lowering is
+  exercised through the production compiler validation target.
 - A multi-block SSA function with `brn`/`brz`/`brp`, a loop, and a function call
   lowers to valid `.tasm`.
 - IR diagnostics report source spans and verifier failures before assembly.
@@ -859,7 +851,7 @@ Acceptance:
   relocations, data sections, executable headers, ABI version, stack hint,
   syscall ABI version, and optional debug/source metadata.
 - Implement a static linker that combines compiler-produced modules into the
-  current executable header v1 contract.
+  current executable header v3 contract.
 - Reserve but do not require richer future metadata for 9-trit packed sections,
   dynamic linking, profile data, and cache/TLB layout hints.
 - Add a single driver command path for build/run so Phase 8 can compile many
@@ -909,7 +901,7 @@ Acceptance:
 Phase 7 completion criteria:
 
 - The repository can compile a nontrivial multi-function high-level source
-  program into the frozen executable header v1 format and run it under the
+  program into the current executable header v3 format and run it under the
   Phase 6 microkernel.
 - The compiler has structural SSA IR, module/function lowering, type inference,
   width inference, zero-cost pointer/ownership checks, liveness-based register
@@ -947,8 +939,9 @@ Current implementation note:
 - `ternary_compiler.h` now reserves runtime syscall wrapper ids `12-21` for
   `open`, `close`, `read`, `write`, `stat`, `readdir`, `brk`, `sbrk`, `fork`,
   and `exec`, while keeping ids `1-11` unchanged.
-- `test_os_platform` verifies the new platform contracts and compiler
-  lowering for the Phase 8 syscall wrappers.
+- The historical `test_os_platform` suite was retired; current platform
+  contracts are verified by `tests/current_only_conformance.cpp` and
+  `ci_production`.
 
 Accepted ternary-native policies:
 
@@ -959,9 +952,10 @@ Accepted ternary-native policies:
   boundaries.
 - Shared block-cache and scheduler/device state should use `shared<T, order>`
   semantics and lower through `TLDR`/`TSTR`/`FENCE.0` where concurrency matters.
-- Current executable header v1, syscall ids `1-11`, trap-frame layout, page
-  size, and PTE v1 remain compatible. Compact three-state permission PTEs are a
-  documented future PTE v2 idea, not a Phase 8 replacement.
+- The historical Phase 8 notes describe an earlier executable-header and
+  syscall snapshot. The current clean cutover is ISA v2, executable/function
+  ABI v3, syscall ABI v2, `.tboot` v3, and `.tdisk` v2; older images are
+  rejected rather than decoded or migrated.
 
 Major tracks still to push from substrate into the running assembly kernel:
 
@@ -990,13 +984,12 @@ Phase 8 completion criteria:
 - The VM can boot a device-tree-described kernel image, mount a disk image, load
   user executables from the filesystem, allocate heap memory, run a high-level
   shell, launch child programs, and wait for their exit statuses.
-- Storage, process creation, and heap allocation close the three current gaps
-  between the Phase 6 microkernel and the xv6 alternative described in
-  `OS3/xv6.md`.
-- The full regression gate includes `test_os_platform`,
-  `test_phase7_compiler`, `test_kernel`, `test_ternary_ir`,
-  `test_multiwidth_vm`, `test_ternary_lanes`, `test_native_ops`, and
-  `test_numeric_workloads`.
+- Storage, process creation, and heap allocation close the three historical
+  gaps between the Phase 6 microkernel and the xv6 alternative. Current gaps
+  are tracked in `KNOWN_GAPS.md` and `tcl_native_rewrite.md`.
+- The current regression gate is the single `ci_production` target plus
+  `tests/current_only_conformance.cpp`; the former multi-suite list is a
+  historical record of the pre-cutover tree.
 
 ## Phase 9: Ternary xv6-Class Native Kernel and Userland Integration
 
@@ -1018,13 +1011,10 @@ Completion source of truth:
 | Scaling pass, blocking IPC/futex/event waits, signals and process control, six-layer GUI stack, widget toolkit, consumer shell, and production hardening | `tcl_native_rewrite.md` Phase F: Production OS Surface and Consumer Experience |
 | Compiler self-hosting and retirement of the C++ bootstrap compiler | `tcl_native_rewrite.md` Phase H: Self-Hosting, after the OS is distributable |
 
-Phase 9 is considered complete because the current D/E/F acceptance scope is
-covered by the production gate: `ci_production` runs the production layer,
-production hardening, OS platform, scaling profile, and consumer shell
-productization tests. Direct D/E/F regression targets remain
-`test_phase_d_kernel`, `test_process_handoff`, and `test_native_apps`.
-Self-hosting is deliberately not part of Phase 9 completion; it now belongs to
-Phase H so compiler bring-up does not obscure native OS product failures.
+Phase 9 is considered complete according to the retained rewrite plan. The
+current repository gate is `ci_production` plus the current-only conformance
+test; the former D/E/F regression target names were part of the retired test
+tree and are not compatibility promises.
 
 Retired Phase 9 track mapping:
 
@@ -1179,7 +1169,7 @@ Build as:
 - file/window/IPC events
 - crash reports
 - causal “last writer” metadata where available
-- `trit-export-diagnostics`
+- `python tools/trit_tool.py export-diagnostics`
 
 This should be high priority.
 
@@ -1404,13 +1394,15 @@ Three-valued. It's already the right type.
 **The layering:**
 
 ```
-Bare metal TASM            → smallest possible (bootloader.tasm exists in OS3/)
+Bare metal TASM            → smallest possible (`bootloader.tasm`)
 Minimal kernel (scheduler + VFS only)  → no graphics, no IPC, no net
 Full server profile        → add net and IPC
 Full desktop profile       → add graphics
 ```
 
-`OS3/minimal_kernel_bringup.tasm` already exists as a 34KB TASM file — the embedded target is already partially mapped out.
+The historical `minimal_kernel_bringup.tasm` artifact is not part of the current
+tree; the current kernel source is `kernel.trit` and the current release path is
+defined by `IMAGE_FORMAT_MANIFEST.json`.
 
 ---
 
@@ -1441,8 +1433,12 @@ fn kernel_init() -> t40 {
 - `ternary-os-server.tboot` — bundles shell only, no GUI apps, profile=0
 - `ternary-os-mobile.tboot` — bundles mobile launcher, camera, audio apps, profile=-1
 
-**Step 4: HAL abstraction in `kernel/hal.trit`**
-The HAL is already separated. Mobile HAL adds `touch_x`, `touch_y`, `touch_pressure`, `power_state` CSR names. Desktop HAL has `mouse_x`, `mouse_y`, `mouse_btn`. Both compile to CSR reads of different register addresses. The kernel doesn't know which it's running on — it asks the HAL.
+**Step 4: HAL abstraction in the current kernel/runtime**
+The active HAL path is consolidated in `kernel.trit` and the host/runtime
+interfaces. Mobile HAL adds `touch_x`, `touch_y`, `touch_pressure`,
+`power_state` CSR names; desktop HAL has `mouse_x`, `mouse_y`, `mouse_btn`.
+Both compile to CSR reads of different register addresses, and the kernel does
+not depend on retired modular `kernel/` fragments.
 
 ---
 

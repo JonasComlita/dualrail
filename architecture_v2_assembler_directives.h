@@ -74,8 +74,8 @@
             if (tokens.size() != 2 || tokens[1] != "2") {
                 errors.push_back(
                     {line_number,
-                     "Only .isa 2 is supported; migrate v1 source and "
-                     "artifacts with the offline migration tools"});
+                     "Only .isa 2 is supported; v1 source and artifacts are "
+                     "outside the current platform and must be rebuilt"});
                 continue;
             }
             directives.has_isa = true;

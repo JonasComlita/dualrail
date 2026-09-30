@@ -39,11 +39,10 @@ acceleration, use
 | **7 — Assembler** | Two-pass assembler, symbol table, instruction encoding | `ternary_asm.h` |
 | **8 — Compiler IR** | SSA IR, type system, optimizer, register allocator | `ternary_compiler_*.h`, `ternary_ir.h` |
 | **9 — TCL language** | Ternary C-Like language (source files: `.trit`) | `TCL_Spec_1.0.md`, `tritc.cpp`, `tcl_*.trit` |
-| **10 — OS kernel** | Process, VFS, IPC, window manager, 57 syscalls | `kernel.trit`, `kernel/`, `ternary_os.h` |
+| **10 — OS kernel** | Process, VFS, IPC, window manager, 57 syscalls | `kernel.trit`, `ternary_os.h`, `ternary_host_runtime.h` |
 | **11 — Apps/SDK** | GUI apps, shell, SDK library, widget toolkit | `apps/`, `apps/os_sdk.trit`, `apps/libwidget.trit` |
 | **12 — Host runtime** | Image loader, SDL runner, boot image builder | `ternary_host_runtime.h`, `build_tos_image.cpp`, `run_tos_sdl.cpp` |
 | **AI** | BitNet 1.58-bit transformer inference engine | `ternary_transformer_runtime.h` |
-| **Benchmarks** | Long-horizon Doom-class and BitNet-class OS capability tests | `docs/10_Benchmarks/` |
 
 ---
 
@@ -92,12 +91,6 @@ acceleration, use
 - **[09_Host_Runtime/image_format.md](09_Host_Runtime/image_format.md)** — .tboot/.tdisk formats
 - **[09_Host_Runtime/build_and_test.md](09_Host_Runtime/build_and_test.md)** — Build system and test runner
 
-### System Benchmarks
-- **[10_Benchmarks/system_benchmark_plan.md](10_Benchmarks/system_benchmark_plan.md)** - Doom-class and BitNet-class benchmark plan
-- **[10_Benchmarks/performance_baselines.md](10_Benchmarks/performance_baselines.md)** - controlled-host boot, app, frame, disk, and scheduler baselines
-- **[10_Benchmarks/doom.md](10_Benchmarks/doom.md)** - Interactive OS benchmark target
-- **[10_Benchmarks/bitnet.md](10_Benchmarks/bitnet.md)** - Inference and data-movement benchmark target
-
 ### TreatCode Platform
 - **[11_TreatCode_Platform/README.md](11_TreatCode_Platform/README.md)** - Program purpose and execution rules
 - **[11_TreatCode_Platform/PLAN_INDEX.md](11_TreatCode_Platform/PLAN_INDEX.md)** - Bounded plan dependency order
@@ -131,7 +124,7 @@ That phrase applies to the T40 native scalar register and ordinary DMEM word:
 encoding compatibility or every physical host/wire encoding; the 27-trit
 instruction width, 27-lane vector length, and explicit T50 wide format remain
 independent contracts.
-| Disk image | `.tdisk` (magic `0x54524954535031`) |
+| Disk image | `.tdisk` (current checksummed tDisk v2) |
 
 ---
 
@@ -158,16 +151,13 @@ independent contracts.
 | Kernel + VFS + process | ⚠️ In progress |
 | Desktop + host runtime | ⚠️ In progress |
 | Agent-operable surface | 🌱 Seeded |
-| System benchmarks | Planned |
+| Performance workloads | Future scope |
 
 See `ROADMAP_STATUS.json` for evidence and open items. See `KNOWN_GAPS.md` for actionable work.
 
 ## Knowledge freshness
 
-`python ../tools/trit_tool.py knowledge status` checks the vault and reports
-advisory freshness warnings for the generated canvas and the newest archived
-Graphify summary. Source fingerprints include root contract manifests and
-tracked code inputs while excluding build products, Graphify output, and model
-caches. Regenerate a stale canvas with `knowledge canvas`; regenerate a stale
-or legacy/unverified Graphify snapshot with `knowledge graph` when Graphify is
-available. These warnings do not override source files, manifests, or tests.
+The core validation entry point is `python ../tools/trit_tool.py contract-check`.
+It checks the current ISA/ABI and image versions; `doctor` checks required files,
+and `export-diagnostics` writes a repeatable current-platform report. Graphify
+and Obsidian remain optional navigation layers and do not define platform truth.

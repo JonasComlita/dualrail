@@ -1,0 +1,19 @@
+Start testing: Sep 29 21:13 Pacific Daylight Time
+----------------------------------------------------------
+1/1 Testing: trit_current_conformance
+1/1 Test: trit_current_conformance
+Command: "C:/Users/jonas/Documents/trit/build_current_cleanup/trit_current_conformance.exe"
+Directory: C:/Users/jonas/Documents/trit
+"trit_current_conformance" start time: Sep 29 21:13 Pacific Daylight Time
+Output:
+----------------------------------------------------------
+current platform conformance: ISA v2, executable ABI v3
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"trit_current_conformance" end time: Sep 29 21:13 Pacific Daylight Time
+"trit_current_conformance" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Sep 29 21:13 Pacific Daylight Time

@@ -60,7 +60,7 @@ bool writeFile(const std::string& path, const std::string& data) {
 
 struct TritFileHeader {
     char magic[4] = {'T', 'X', 'E', '4'};
-    uint32_t version = 2;
+    uint32_t version = 3;
     uint32_t endianness = 0x12345678;
     uint32_t header_size = 0;
     uint32_t isa_version = sandbox::architecture::v2::ISA_VERSION;
@@ -70,7 +70,7 @@ struct TritFileHeader {
     uint32_t stack_words = 0;
     uint32_t entry_pc = 0;
     uint32_t abi_version =
-        sandbox::architecture::v2::FUNCTION_ABI_VERSION;
+        sandbox::architecture::v3::FUNCTION_ABI_VERSION;
     uint32_t syscall_abi_version =
         sandbox::architecture::v2::SYSCALL_ABI_VERSION;
     uint32_t scalar_word_trits =
@@ -89,13 +89,13 @@ bool writeBinaryFile(const std::string& path, const sandbox::compiler::LinkResul
     header.instruction_count = static_cast<uint32_t>(linked.assembled.program.size());
     header.data_count = static_cast<uint32_t>(linked.assembled.data.size());
     header.required_features =
-        linked.executable_header_v2.required_features;
+        linked.executable_header_v3.required_features;
     header.stack_words = static_cast<uint32_t>(
-        linked.executable_header_v2.stack_words);
+        linked.executable_header_v3.stack_words);
     header.entry_pc = static_cast<uint32_t>(
-        linked.executable_header_v2.entry_pc);
+        linked.executable_header_v3.entry_pc);
     header.flags =
-        static_cast<uint32_t>(linked.executable_header_v2.flags);
+        static_cast<uint32_t>(linked.executable_header_v3.flags);
     
     out.write(reinterpret_cast<const char*>(&header), sizeof(header));
     
@@ -119,14 +119,14 @@ bool readBinaryFile(const std::string& path, std::vector<sandbox::isa::TritWord2
     in.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!in.good()) return false;
     
-    const bool v2_header =
+    const bool current_header =
         header.magic[0] == 'T' && header.magic[1] == 'X' &&
         header.magic[2] == 'E' && header.magic[3] == '4' &&
-        header.version == 2 &&
+        header.version == 3 &&
         header.header_size == sizeof(TritFileHeader) &&
         header.isa_version == sandbox::architecture::v2::ISA_VERSION &&
         header.abi_version ==
-            sandbox::architecture::v2::FUNCTION_ABI_VERSION &&
+            sandbox::architecture::v3::FUNCTION_ABI_VERSION &&
         header.syscall_abi_version ==
             sandbox::architecture::v2::SYSCALL_ABI_VERSION &&
         header.scalar_word_trits ==
@@ -135,11 +135,11 @@ bool readBinaryFile(const std::string& path, std::vector<sandbox::isa::TritWord2
             sandbox::architecture::v2::BASE_PAGE_WORDS &&
         (header.required_features &
          sandbox::isa::featureBit(
-             sandbox::architecture::v2::FEATURE_BASE_V2)) != 0;
-    if (!v2_header) {
+             sandbox::architecture::v3::FEATURE_EXECUTABLE_ABI_V3)) != 0;
+    if (!current_header) {
         std::cerr
-            << "Error: executable is not TXE4/ISA v2; rebuild source or "
-               "use the offline artifact migrator: "
+            << "Error: executable is not the current TXE4/ISA v2/ABI v3 format; "
+               "rebuild the source: "
             << path << "\n";
         return false;
     }
@@ -543,13 +543,13 @@ int main(int argc, char** argv) {
         linked.data_words = static_cast<int>(linked.assembled.data.size());
         linked.instruction_count = linked.text_words;
         
-        if (!linked.assembled.executable_headers_v2.empty()) {
-            linked.executable_header_v2 =
-                linked.assembled.executable_headers_v2.begin()->second;
+        if (!linked.assembled.executable_headers_v3.empty()) {
+            linked.executable_header_v3 =
+                linked.assembled.executable_headers_v3.begin()->second;
         } else {
             std::cerr
                 << "Error: raw assembly executable output requires a "
-                   "validated .execheader2\n";
+                   "validated .execheader3\n";
             return 1;
         }
 
@@ -588,7 +588,7 @@ int main(int argc, char** argv) {
             std::cout << "  Total Instruction Words:  " << linked.text_words << "\n";
             std::cout << "  Static Data Memory Words: " << linked.data_words << "\n";
             std::cout << "  Emitted ABI Version:      "
-                      << linked.executable_header_v2.function_abi_version
+                       << linked.executable_header_v3.function_abi_version
                       << "\n";
             return 0;
         }
@@ -782,7 +782,7 @@ int main(int argc, char** argv) {
         std::cout << "  Total Instruction Words:  " << linked.text_words << "\n";
         std::cout << "  Static Data Memory Words: " << linked.data_words << "\n";
         std::cout << "  Emitted ABI Version:      "
-                  << linked.executable_header_v2.function_abi_version
+                  << linked.executable_header_v3.function_abi_version
                   << "\n";
         return 0;
     }

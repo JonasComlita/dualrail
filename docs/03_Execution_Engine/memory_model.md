@@ -1,6 +1,7 @@
 # Memory Model
 
-Source of truth: `ternary_vm_state.h`, `ternary_vm.h`, `ternary_isa.h`, `tests/test_kernel.cpp`, and `tests/test_vm_widths.cpp`.
+Source of truth: `ternary_vm_state.h`, `ternary_vm.h`, `ternary_isa.h`, and
+the CMake production gate.
 
 ---
 
@@ -160,7 +161,7 @@ x86-64 native backend consumes the same micro-op and cache-key contracts; see
 
 Relevant tests:
 
-- `tests/test_vm_widths.cpp`: scalar `LOAD`/`STORE`, vector memory, vector memory faults, `FENCE` acceptance.
-- `tests/test_kernel.cpp`: user range checks, MMU fetch/data translation, page faults, protection faults, kernel MMU bypass, `TLDR`/`TSTR` success/mismatch/collision behavior.
-- `tests/test_isa_asm.cpp`: assembler/disassembler syntax for `TLDR`, `TSTR`, and `FENCE` memory order suffixes.
-- `tests/test_ternary_ir.cpp` and `tests/test_phase7_compiler.cpp`: IR/compiler lowering for ternary atomic operations.
+- `tests/current_only_conformance.cpp`: current ISA and executable contract
+  checks.
+- `cmake --build build_current_cleanup --target ci_production`: supported VM/compiler/runtime
+  integration gate.

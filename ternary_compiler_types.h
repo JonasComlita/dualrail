@@ -68,7 +68,7 @@ enum class DiagnosticsMode : uint8_t {
 };
 
 struct CompilerOptions {
-    int target_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int target_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
     int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     OptimizationLevel optimization = OptimizationLevel::Basic;
     DiagnosticsMode diagnostics_mode = DiagnosticsMode::Human;
@@ -92,33 +92,22 @@ struct CompilerOptions {
     int vector_length = architecture::v3::VECTOR_LANE_COUNT;
     // The executable envelope is independently selected. v3 vector
     // boundaries require the v3 header profile as well as function ABI v3.
-    int target_executable_version = architecture::v2::EXECUTABLE_VERSION;
+    int target_executable_version = architecture::v3::EXECUTABLE_VERSION;
 };
 
 // The compiler-facing function ABI is deliberately narrower than the full
-// ISA. Keep this contract in the type layer so parser, IR, and target
-// lowering diagnostics all name the same versioned boundary rather than
-// growing emitter-local conventions. ABI v2 supports scalar/T50 values and
-// one-word caller-owned pointers for aggregate parameters. ABI v3 is an
-// opt-in compiler function profile: aggregate returns use a hidden
-// caller-owned sret pointer in the first ABI word, and vector boundaries use
-// the fixed v3 register/stack contract. Image emission remains an explicit
-// linker/image-owner decision; a compiler-only v3 function profile must not
-// silently be treated as a v3 executable.
+// ISA. The current platform has one public function boundary: ABI v3.
 struct FunctionAbiContract {
-    static constexpr int version_v2 = architecture::v2::FUNCTION_ABI_VERSION;
-    static constexpr int version_v3 = version_v2 + 1;
-    // Keep the default at v2 for source and binary compatibility. Callers
-    // explicitly select v3 through CompilerOptions/LinkOptions.
-    static constexpr int version = version_v2;
+    static constexpr int version_v3 = architecture::v3::FUNCTION_ABI_VERSION;
+    static constexpr int version = version_v3;
 
     [[nodiscard]] static constexpr const char* id() {
-        return "trit.compiler.function-abi.v2";
+        return "trit.compiler.function-abi.v3";
     }
     [[nodiscard]] static constexpr const char* idForVersion(int candidate) {
         return candidate == version_v3
             ? "trit.compiler.function-abi.v3"
-            : "trit.compiler.function-abi.v2";
+            : "unsupported-function-abi";
     }
     [[nodiscard]] static constexpr const char* scalarReturn() {
         return "r13.scalar-or-t50-pair";
@@ -168,7 +157,7 @@ struct FunctionAbiContract {
         return candidate == version_v3;
     }
     [[nodiscard]] static constexpr bool supportsVersion(int candidate) {
-        return candidate == version_v2 || candidate == version_v3;
+        return candidate == version_v3;
     }
 };
 

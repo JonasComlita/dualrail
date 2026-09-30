@@ -100,6 +100,7 @@ When adding a syscall, you MUST update ALL of:
 2. `ternary_compiler_ir.h` — `runtime::sys_*` constant
 3. `SYSCALL_MANIFEST.json` — manifest entry
 4. `apps/os_sdk.trit` — SDK wrapper function
-5. Test in `test_os_platform.cpp` or `test_phase_d_kernel.cpp`
+5. Extend `tests/current_only_conformance.cpp` only when the syscall changes a
+   current contract, then run `cmake --build build_current_cleanup --target ci_production`.
 
 See `AGENTS.md` for the full checklist.

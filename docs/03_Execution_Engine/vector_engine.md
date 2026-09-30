@@ -1,6 +1,7 @@
 # Vector Engine
 
-Source of truth: `ternary_isa.h`, `ternary_vm_state.h`, `ternary_vm.h`, `ternary_simd.h`, and `tests/test_vm_widths.cpp`.
+Source of truth: `ternary_isa.h`, `ternary_vm_state.h`, `ternary_vm.h`, and
+`ternary_simd.h`.
 
 ---
 
@@ -147,7 +148,8 @@ Structural faults call `vm.trap()` or `vm.trapWithCause()` and stop normal execu
 
 ## Test Coverage
 
-`tests/test_vm_widths.cpp` covers:
+The production CMake gate covers the current vector/runtime integration; the
+small current contract check covers the fixed v3 geometry:
 
 - `VLEN` default length and vector fault reset sizing.
 - Elementwise `.t20` and `.t5` vector arithmetic.

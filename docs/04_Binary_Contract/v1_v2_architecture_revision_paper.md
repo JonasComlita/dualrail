@@ -1,5 +1,11 @@
 # From v1 Bring-Up to v2: A Ternary Stack Architecture Revision Study
 
+> **Historical study only.** This paper records why the stack moved away from
+> early layouts. Its compatibility and migration proposals are not current
+> implementation requirements. The current platform is ISA v2, executable and
+> function ABI v3, tBoot v3, and tDisk v2; non-current artifacts are rejected
+> and rebuilt from source.
+
 ## Abstract
 
 TernaryOS v1 was a bring-up architecture. Its first job was to make a complete

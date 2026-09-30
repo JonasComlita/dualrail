@@ -59,6 +59,6 @@ verilator --binary --timing -f hdl/trit_gate_tb.f
 With Icarus Verilog:
 
 ```sh
-iverilog -g2012 -o build/trit_gate_tb.vvp -f hdl/trit_gate_tb.f
-vvp build/trit_gate_tb.vvp
+iverilog -g2012 -o build_current_cleanup/hdl/trit_gate_tb.vvp -f hdl/trit_gate_tb.f
+vvp build_current_cleanup/hdl/trit_gate_tb.vvp
 ```

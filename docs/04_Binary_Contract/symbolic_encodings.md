@@ -65,12 +65,12 @@ Implemented notation:
 - exact balanced trits: `0t+-0++--` (MSB first; `-`, `0`, `+` only)
 - three-trit groups: `0z27:<digits>`
 - four-trit groups: `0z81:<digits>`
-- `python tools/trit_tool.py symbolic dump <literal>` prints host hex and all
-  three ternary-native forms.
+- The current conformance executable exercises the supported host projections;
+  no standalone symbolic-dump wrapper is part of the platform tool surface.
 
 The alphabets and the complete 81-entry text table are defined once in
-`ternary_symbolic_encoding.h` and mirrored by `tools/trit_symbolic.py`.
-Existing decimal and `0x` hexadecimal syntax retains its original meaning.
+`ternary_symbolic_encoding.h`. Existing decimal and `0x` hexadecimal syntax
+retains its original meaning.
 
 ## Guest SDK and dump selectors
 
@@ -85,19 +85,10 @@ The allocation-free guest surface is executable in `apps/os_sdk.trit`:
   hexadecimal, `0t`, `0z27:`, or `0z81:` output and never writes partial output
   on a buffer error.
 
-`tests/test_symbolic_guest.py` is the executable VM acceptance test. It covers
-the complete TASCII-81 table, parser/formatter round trips, malformed and
-overflow inputs, capacity errors, and sentinel preservation. Integer guest
-algorithms use the compiler's general `tdiv()` quotient intrinsic; ordinary
-T40 `/` retains numeric division semantics.
-
-`tools/trit_tool.py symbolic dump` keeps its legacy human output by default.
-`--format`, `--width`, and `--view` opt into structured symbolic output. The
-same selectors can be passed to `inspect-image` and `export-diagnostics`; JSON
-keeps the authoritative numeric fields and adds a sibling `symbolic` object.
-Memory/register/checkpoint/debugger selector propagation remains a separate
-integration gate until those runtime and diagnostic surfaces emit the same
-metadata contract.
+The guest API remains source-level functionality; the consolidated current
+validation surface is `tests/current_only_conformance.cpp` plus the CMake
+production gate. The retired symbolic dump and image-inspection subcommands
+are not part of the current tooling contract.
 
 Useful grouping:
 

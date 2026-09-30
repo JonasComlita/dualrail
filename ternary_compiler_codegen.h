@@ -1396,7 +1396,7 @@ public:
         // the code-generation source of an object.
         result.object.ssa = result.optimized_module;
         result.object.assembly = result.assembly;
-        result.object.metadata["phase"] = "ir-transition-v2";
+        result.object.metadata["phase"] = "current-ssa-ir";
         result.object.metadata["pipeline"] =
             "typed-ast,address-cfg-ir,verify,optimize,allocate,target-ir-only-fail-closed";
         result.object.metadata["object.ssa_is_optimized"] = "true";
@@ -1418,9 +1418,7 @@ public:
                 ? "v3-fixed-vlen27-register-stack-typed-boundary"
                 : "fail-closed-no-authoritative-call-abi";
         result.object.metadata["target.compiler_image_envelope"] =
-            compilerVectorAbiEnabled(options_)
-                ? "trit.executable.image.v3"
-                : "trit.executable.image.v2";
+            "trit.executable.image.v3";
         result.object.metadata["target.function_abi_contract"] =
             FunctionAbiContract::idForVersion(options_.target_abi_version);
         result.object.metadata["target.function_abi_version"] =
@@ -1433,9 +1431,9 @@ public:
             FunctionAbiContract::aggregateReturnForVersion(
                 options_.target_abi_version);
         result.object.metadata["target.vector_boundary_abi"] =
-            FunctionAbiContract::vectorBoundaryForVersion(
-                options_.target_abi_version,
-                compilerVectorAbiEnabled(options_));
+            compilerVectorAbiEnabled(options_)
+                ? "v3.fixed-vlen27-register-boundary"
+                : "v3.scalar-only-boundary";
         result.object.metadata["target.vector_spill_abi"] =
             compilerVectorAbiEnabled(options_) &&
                     options_.enable_vector_spilling
@@ -1507,7 +1505,8 @@ private:
         if (isAggregateType(function.return_type) &&
             !FunctionAbiContract::aggregateReturnsSupported(
                 function_abi_version)) {
-            return "aggregate-valued function return has no ABI v2 "
+            return "aggregate-valued function return has no supported "
+                   "function ABI "
                    "representation in " +
                    std::string(FunctionAbiContract::idForVersion(
                        function_abi_version)) +
@@ -3403,7 +3402,7 @@ private:
         dry_ctx.ir.ir_value_ceiling = dry_ctx.next_value;
         // Admit a frontend function to SSA transforms only when the address
         // CFG already satisfies the same dominance contract required after
-        // mem2reg. Complex legacy constructs remain visible as incomplete
+        // mem2reg. Unsupported source constructs remain visible as incomplete
         // instead of weakening verification or risking a miscompile.
         Module cfg_probe;
         cfg_probe.name = ast_.name;
@@ -3557,7 +3556,7 @@ private:
             store.effect = Effect::WriteMem;
             store.span = ctx.ast->span;
             ctx.block->instructions.push_back(std::move(store));
-            // Structs and arrays cross the v2 function boundary as one-word
+            // Structs and arrays cross the v3 function boundary as one-word
             // addresses. Keep the IR Param ABI index in the same word units
             // used by the caller and target prologue; advancing by the
             // pointee's full layout makes every following argument read the
@@ -5574,7 +5573,7 @@ private:
             if (slot.register_vector >= 0) {
                 // The target emitter repeats this staging from the SSA call
                 // arguments.  Keep the frontend scratch calculation aligned
-                // with the ABI for the legacy textual path as well.
+                // with the ABI for the textual diagnostic path as well.
                 ctx.line(vectorMemoryMnemonic("vload", slot.type) +
                          " v" + std::to_string(slot.register_vector) +
                          ", sp, " + std::to_string(shifted_scratch));
@@ -6527,7 +6526,7 @@ private:
 // Costs used by transforms that trade control flow for eager computation.
 // Keep this table exhaustive: a transform must have a target cost for every
 // instruction it selects before it is allowed to rewrite the CFG.  The
-// values are relative v2 instruction costs, not host-cycle promises.
+// values are relative ISA-v2 instruction costs, not host-cycle promises.
 struct TargetCostTable {
     static constexpr int unavailable = -1;
     static constexpr int branch3 = 3; // brn, brz, and the fall-through jump
@@ -7554,7 +7553,7 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
         const LatticeValue lhs = argument(0);
         const LatticeValue rhs = argument(1);
         if (instr.opcode == InstrOpcode::Tsel)
-            // TSEL is an intentional v2 target operation. Preserve it in
+            // TSEL is an intentional ISA-v2 target operation. Preserve it in
             // optimized SSA even when all four operands are currently
             // constant so branch-free match lowering remains observable and
             // target emission does not regress to a replay path.
@@ -8197,7 +8196,7 @@ inline int runInductionSimplification(Function& fn) {
     return simplified;
 }
 
-// Convert a small pure branch diamond to target TSELs only when the v2 cost
+// Convert a small pure branch diamond to target TSELs only when the ISA-v2 cost
 // table predicts no increase in dynamic work.  Arm instructions are moved
 // into the branch block (and therefore execute eagerly), so only
 // speculatable operations with known target costs are eligible.  The arm

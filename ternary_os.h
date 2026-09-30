@@ -4,10 +4,10 @@
 //
 // This header defines the first concrete Trit OS platform services beside the
 // frozen Phase 6/7 VM, ABI, and compiler contracts. It intentionally keeps the
-// existing syscall ids and task-context layout while enforcing the v2
-// executable, MMU, and storage contracts
-// compatible while adding device-tree, block-device, tiny filesystem, heap, and
-// process-lifecycle models that the assembly kernel can grow into.
+// existing syscall ids and task-context layout while enforcing the current
+// ISA-v2, executable-ABI-v3, and storage contracts. It adds device-tree,
+// block-device, tiny filesystem, heap, and process-lifecycle models that the
+// assembly kernel can grow into.
 
 #pragma once
 #ifndef TERNARY_OS_H
@@ -91,7 +91,6 @@ static constexpr int DIRECT_BLOCKS = 6;
 
 static constexpr int NATIVE_VFS_MAGIC = 60606;
 static constexpr int NATIVE_VFS_VERSION = 2;
-static constexpr int NATIVE_VFS_LEGACY_VERSION = 1;
 static constexpr int NATIVE_KERNEL_MAGIC = 40404;
 static constexpr int NATIVE_VFS_REQUIRED_BLOCKS = 8043;
 static constexpr int NATIVE_VFS_MAX_INODES = 2048;
@@ -141,8 +140,6 @@ static constexpr int NATIVE_VFS_INODE_WORDS = 8;
 static constexpr int NATIVE_VFS_DIRENT_WORDS = 6;
 static constexpr int NATIVE_VFS_EXTENT_WORDS = 6;
 static constexpr int NATIVE_VFS_DATA_BASE = 310000;
-static constexpr int NATIVE_EXEC_DESC_V2_WORDS =
-    vm::EXEC_V2_HEADER_WORDS + 3;
 static constexpr int NATIVE_EXEC_DESC_V3_WORDS =
     vm::EXEC_V3_HEADER_WORDS + 3;
 static constexpr int OS_CLUSTER_WORDS = vm::OS_CLUSTER_WORDS;
@@ -309,7 +306,6 @@ struct PackageEntry {
     std::string path;
     std::vector<long long> words;
     bool executable = false;
-    vm::ExecutableImageHeaderV2 header;
     vm::ExecutableImageHeaderV3 header_v3;
     bool header_is_v3 = false;
     SignedExecutableMetadata metadata;
@@ -337,17 +333,6 @@ struct PackageImage {
 }
 
 [[nodiscard]] inline std::vector<long long> executableHeaderWords(
-    const vm::ExecutableImageHeaderV2& header) {
-
-    std::vector<long long> words;
-    const auto encoded = vm::encodeExecutableHeaderV2(header);
-    words.reserve(encoded.size());
-    for (const auto& word : encoded)
-        words.push_back(vm::ops::toLong(word));
-    return words;
-}
-
-[[nodiscard]] inline std::vector<long long> executableHeaderWords(
     const vm::ExecutableImageHeaderV3& header) {
 
     std::vector<long long> words;
@@ -367,32 +352,6 @@ inline void appendStringWords(std::vector<long long>& out, const std::string& te
     std::vector<long long> out;
     appendStringWords(out, text);
     return out;
-}
-
-[[nodiscard]] inline SignedExecutableMetadata signExecutableMetadata(
-    const std::vector<long long>& image,
-    const vm::ExecutableImageHeaderV2& header,
-    const std::string& signer,
-    const std::string& secret,
-    int flags = 0) {
-
-    SignedExecutableMetadata metadata;
-    metadata.signer = signer;
-    metadata.content_hash = stableWordHash(image);
-    metadata.header_hash = stableWordHash(executableHeaderWords(header), 0xcbf29ce484222325ULL);
-    metadata.flags = flags;
-    std::vector<long long> signature_words = {
-        metadata.content_hash,
-        metadata.header_hash,
-        static_cast<long long>(metadata.flags),
-    };
-    std::vector<long long> signer_words = stringWords(signer);
-    std::vector<long long> secret_words = stringWords(secret);
-    signature_words.insert(signature_words.end(), signer_words.begin(), signer_words.end());
-    signature_words.insert(signature_words.end(), secret_words.begin(), secret_words.end());
-    metadata.signature = stableWordHash(signature_words, 0x84222325cbf29ce4ULL);
-    metadata.present = true;
-    return metadata;
 }
 
 [[nodiscard]] inline SignedExecutableMetadata signExecutableMetadata(
@@ -424,18 +383,6 @@ inline void appendStringWords(std::vector<long long>& out, const std::string& te
 
 [[nodiscard]] inline bool executableMetadataMatches(
     const std::vector<long long>& image,
-    const vm::ExecutableImageHeaderV2& header,
-    const SignedExecutableMetadata& metadata) {
-
-    return metadata.present &&
-           metadata.version == SIGNED_EXEC_METADATA_VERSION &&
-           metadata.content_hash == stableWordHash(image) &&
-           metadata.header_hash == stableWordHash(executableHeaderWords(header), 0xcbf29ce484222325ULL) &&
-           metadata.signature != 0;
-}
-
-[[nodiscard]] inline bool executableMetadataMatches(
-    const std::vector<long long>& image,
     const vm::ExecutableImageHeaderV3& header,
     const SignedExecutableMetadata& metadata) {
 
@@ -445,18 +392,6 @@ inline void appendStringWords(std::vector<long long>& out, const std::string& te
            metadata.header_hash == stableWordHash(executableHeaderWords(header),
                                                   0xcbf29ce484222325ULL) &&
            metadata.signature != 0;
-}
-
-[[nodiscard]] inline bool verifySignedExecutableMetadata(
-    const std::vector<long long>& image,
-    const vm::ExecutableImageHeaderV2& header,
-    const SignedExecutableMetadata& metadata,
-    const std::string& secret) {
-
-    if (!executableMetadataMatches(image, header, metadata)) return false;
-    SignedExecutableMetadata expected =
-        signExecutableMetadata(image, header, metadata.signer, secret, metadata.flags);
-    return expected.signature == metadata.signature;
 }
 
 [[nodiscard]] inline bool verifySignedExecutableMetadata(
@@ -521,28 +456,6 @@ public:
         PackageEntry entry;
         entry.path = path;
         entry.words = words;
-        package_.entries.push_back(std::move(entry));
-        return StatusResult::success(static_cast<int>(package_.entries.size()));
-    }
-
-    [[nodiscard]] StatusResult addExecutable(
-        const std::string& path,
-        const std::vector<long long>& image,
-        const vm::ExecutableImageHeaderV2& header,
-        const SignedExecutableMetadata& metadata) {
-
-        if (!validPackagePath(path) ||
-            !vm::validateExecutableHeaderV2(header) ||
-            !executableMetadataMatches(image, header, metadata)) {
-            return StatusResult::error(ERR_INVALID);
-        }
-        PackageEntry entry;
-        entry.path = path;
-        entry.words = image;
-        entry.executable = true;
-        entry.header = header;
-        entry.header_is_v3 = false;
-        entry.metadata = metadata;
         package_.entries.push_back(std::move(entry));
         return StatusResult::success(static_cast<int>(package_.entries.size()));
     }
@@ -704,8 +617,13 @@ public:
 
     BlockDevice(int block_count, std::string backing_path)
         : block_count_(std::max(1, block_count)), backing_path_(std::move(backing_path)) {
-        (void)loadCompactBacking();
-        (void)rewriteCompactBacking();
+        if (!loadCompactBacking()) {
+            // Never overwrite an unknown or retired disk image. The caller
+            // can inspect attachBackingFile() for the rejection status.
+            backing_path_.clear();
+        } else {
+            (void)rewriteCompactBacking();
+        }
     }
 
     [[nodiscard]] int blockCount() const { return block_count_; }
@@ -714,7 +632,11 @@ public:
 
     [[nodiscard]] StatusResult attachBackingFile(const std::string& path) {
         backing_path_ = path;
-        return loadCompactBacking() && rewriteCompactBacking()
+        if (!loadCompactBacking()) {
+            backing_path_.clear();
+            return StatusResult::error(ERR_INVALID);
+        }
+        return rewriteCompactBacking()
                    ? StatusResult::success(block_count_)
                    : StatusResult::error(ERR_INVALID);
     }
@@ -780,6 +702,7 @@ private:
     std::unordered_map<int, std::vector<long long>> blocks_;
     std::unordered_set<int> dirty_;
     std::string backing_path_;
+    std::uint64_t backing_generation_ = 0;
 
     [[nodiscard]] static bool isZeroBlock(const std::vector<long long>& block) {
         for (long long word : block) {
@@ -797,54 +720,125 @@ private:
         return static_cast<bool>(std::fstream(backing_path_, std::ios::in | std::ios::out | std::ios::binary));
     }
 
+    static void hashBytes(
+        std::uint64_t& hash,
+        const void* data,
+        std::size_t size) {
+        const auto* bytes = static_cast<const std::uint8_t*>(data);
+        for (std::size_t index = 0; index < size; ++index) {
+            hash ^= bytes[index];
+            hash *= 1099511628211ULL;
+        }
+    }
+
+    [[nodiscard]] static std::uint64_t canonicalRawWord(long long value) {
+        return vm::convertValue(
+                   vm::ops::fromLong(value), TernaryMode::T40)
+            .asTriple()
+            .data;
+    }
+
+    [[nodiscard]] static bool numericWordFromRaw(
+        std::uint64_t raw,
+        long long& value) {
+        if (raw > 12157665459056928801ULL) return false;
+        value = vm::ops::toLong(vm::TernaryValue::fromTriple(Triple{raw}));
+        return true;
+    }
+
     [[nodiscard]] bool loadCompactBacking() {
         if (backing_path_.empty()) return true;
         if (!ensureBackingFile()) return false;
         std::ifstream file(backing_path_, std::ios::binary);
         if (!file.good()) return false;
-        long long magic = 0;
-        int count = 0;
+        std::uint64_t magic = 0;
+        std::uint32_t version = 0;
+        std::uint32_t block_words = 0;
+        std::uint64_t generation = 0;
+        std::uint64_t expected_checksum = 0;
+        std::int32_t count = 0;
         file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+        if (file.eof()) return true;
+        file.read(reinterpret_cast<char*>(&version), sizeof(version));
+        file.read(reinterpret_cast<char*>(&block_words), sizeof(block_words));
+        file.read(reinterpret_cast<char*>(&generation), sizeof(generation));
+        file.read(reinterpret_cast<char*>(&expected_checksum),
+                  sizeof(expected_checksum));
         file.read(reinterpret_cast<char*>(&count), sizeof(count));
-        if (!file.good()) return true;
-        if (magic != kSparseDiskMagic || count < 0) return false;
+        if (!file.good()) return false;
+        if (magic != kTdiskMagic || version != kTdiskVersion ||
+            block_words != BLOCK_WORDS || count < 0) {
+            return false;
+        }
         blocks_.clear();
-        for (int i = 0; i < count; ++i) {
+        std::uint64_t actual_checksum = 1469598103934665603ULL;
+        for (std::int32_t i = 0; i < count; ++i) {
             int index = -1;
             std::vector<long long> payload(BLOCK_WORDS, 0);
             file.read(reinterpret_cast<char*>(&index), sizeof(index));
+            hashBytes(actual_checksum, &index, sizeof(index));
             for (int word = 0; word < BLOCK_WORDS; ++word) {
-                file.read(reinterpret_cast<char*>(&payload[static_cast<std::size_t>(word)]),
-                          sizeof(long long));
+                std::uint64_t raw = 0;
+                file.read(reinterpret_cast<char*>(&raw), sizeof(raw));
+                if (!file.good() || !numericWordFromRaw(
+                        raw, payload[static_cast<std::size_t>(word)])) {
+                    return false;
+                }
+                hashBytes(actual_checksum, &raw, sizeof(raw));
             }
-            if (!file.good()) return false;
             if (index >= 0 && index < block_count_ && !isZeroBlock(payload)) {
                 blocks_[index] = std::move(payload);
             }
         }
-        return true;
+        backing_generation_ = generation;
+        return actual_checksum == expected_checksum;
     }
 
-    [[nodiscard]] bool rewriteCompactBacking() const {
+    [[nodiscard]] bool rewriteCompactBacking() {
         if (backing_path_.empty()) return true;
         if (!ensureBackingFile()) return false;
         std::ofstream file(backing_path_, std::ios::binary | std::ios::trunc);
         if (!file.good()) return false;
-        const long long magic = kSparseDiskMagic;
-        const int count = static_cast<int>(blocks_.size());
+        std::vector<int> indices;
+        indices.reserve(blocks_.size());
+        for (const auto& block : blocks_) indices.push_back(block.first);
+        std::sort(indices.begin(), indices.end());
+        std::uint64_t checksum = 1469598103934665603ULL;
+        for (int index : indices) {
+            hashBytes(checksum, &index, sizeof(index));
+            const auto& payload = blocks_.at(index);
+            for (long long value : payload) {
+                const std::uint64_t raw = canonicalRawWord(value);
+                hashBytes(checksum, &raw, sizeof(raw));
+            }
+        }
+        const std::uint64_t magic = kTdiskMagic;
+        const std::uint32_t version = kTdiskVersion;
+        const std::uint32_t block_words = BLOCK_WORDS;
+        const std::uint64_t generation = backing_generation_ + 1;
+        const std::int32_t count = static_cast<std::int32_t>(indices.size());
         file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        file.write(reinterpret_cast<const char*>(&block_words), sizeof(block_words));
+        file.write(reinterpret_cast<const char*>(&generation), sizeof(generation));
+        file.write(reinterpret_cast<const char*>(&checksum), sizeof(checksum));
         file.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        for (const auto& [index, payload] : blocks_) {
+        for (int index : indices) {
+            const auto& payload = blocks_.at(index);
             file.write(reinterpret_cast<const char*>(&index), sizeof(index));
             for (long long word : payload) {
-                file.write(reinterpret_cast<const char*>(&word), sizeof(word));
+                const std::uint64_t raw = canonicalRawWord(word);
+                file.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
             }
         }
         file.flush();
-        return static_cast<bool>(file);
+        if (!file.good()) return false;
+        backing_generation_ = generation;
+        return true;
     }
 
-    static constexpr long long kSparseDiskMagic = 0x54524954535031LL;
+    static constexpr std::uint64_t kTdiskMagic = 0x54524954535032ULL;
+    static constexpr std::uint32_t kTdiskVersion = 2;
 };
 
 // =============================================================================
@@ -883,7 +877,6 @@ struct Inode {
     std::vector<int> indirect_index_blocks;
     std::vector<int> indirect_blocks;
     bool executable = false;
-    vm::ExecutableImageHeaderV2 exec_header_v2;
     vm::ExecutableImageHeaderV3 exec_header_v3;
     bool exec_header_is_v3 = false;
     int exec_header_block = -1;
@@ -983,25 +976,9 @@ public:
                     inode.exec_header_is_v3 = true;
                     inode.exec_header_block = descriptor_block;
                 } else {
-                    if (header_version != 0 &&
-                        header_version != architecture::v2::EXECUTABLE_VERSION) {
-                        return StatusResult::error(ERR_INVALID);
-                    }
-                    std::vector<vm::TernaryValue> encoded;
-                    encoded.reserve(vm::EXEC_V2_HEADER_WORDS);
-                    for (int word = 0;
-                         word < vm::EXEC_V2_HEADER_WORDS;
-                         ++word) {
-                        encoded.push_back(
-                            vm::ops::fromLong(
-                                raw[static_cast<std::size_t>(12 + word)]));
-                    }
-                    if (!vm::decodeExecutableHeaderV2(
-                            encoded, 0, inode.exec_header_v2)) {
-                        return StatusResult::error(ERR_INVALID);
-                    }
-                    inode.exec_header_is_v3 = false;
-                    inode.exec_header_block = -1;
+                    // A current filesystem rejects any non-current executable
+                    // header.
+                    return StatusResult::error(ERR_INVALID);
                 }
             }
             inode.indirect_blocks.clear();
@@ -1158,10 +1135,9 @@ public:
                         checkBlock(inode.exec_header_block, inode.id,
                                    "inode " + std::to_string(inode.id) +
                                        " executable header");
-                    } else if (!vm::validateExecutableHeaderV2(
-                                   inode.exec_header_v2)) {
-                        report.fail("executable inode has invalid header: " +
-                                    std::to_string(inode.id));
+                    } else {
+                         report.fail("executable inode has no current ABI-v3 header: " +
+                                     std::to_string(inode.id));
                     }
                 } else {
                     ++report.files;
@@ -1228,7 +1204,7 @@ public:
         if (id < 0) return StatusResult::error(ERR_NO_SPACE);
         Inode& inode = inodes_[static_cast<std::size_t>(id)];
         inode.kind = kind;
-        // Executable status becomes durable only when a validated v2 header
+        // Executable status becomes durable only when a validated ABI-v3 header
         // is attached by markExecutable().
         inode.executable = false;
         inode.size_words = 0;
@@ -1343,35 +1319,13 @@ public:
         out.executable_version = inode.executable
             ? (inode.exec_header_is_v3
                    ? architecture::v3::EXECUTABLE_VERSION
-                   : architecture::v2::EXECUTABLE_VERSION)
+                   : 0)
             : 0;
         out.direct_blocks = 0;
         for (int block : inode.direct) {
             if (block >= 0) ++out.direct_blocks;
         }
         return StatusResult::success(out.size_words);
-    }
-
-    [[nodiscard]] StatusResult markExecutable(
-        const std::string& path,
-        const vm::ExecutableImageHeaderV2& header) {
-
-        StatusResult found = lookup(path);
-        if (!found.ok()) return found;
-        Inode& inode = inodes_[static_cast<std::size_t>(found.payload)];
-        if (inode.kind == InodeKind::Directory) return StatusResult::error(ERR_IS_DIR);
-        if (!vm::validateExecutableHeaderV2(header))
-            return StatusResult::error(ERR_INVALID);
-        inode.kind = InodeKind::Executable;
-        inode.executable = true;
-        inode.exec_header_v2 = header;
-        inode.exec_header_is_v3 = false;
-        if (inode.exec_header_block >= 0) {
-            markBlockFree(inode.exec_header_block);
-            inode.exec_header_block = -1;
-        }
-        StatusResult synced = sync();
-        return synced.ok() ? StatusResult::success(found.payload) : synced;
     }
 
     [[nodiscard]] StatusResult markExecutable(
@@ -1469,16 +1423,7 @@ public:
                     raw[10] = inode.exec_header_block;
                     raw[11] = architecture::v3::EXECUTABLE_VERSION;
                 } else {
-                    raw[11] = architecture::v2::EXECUTABLE_VERSION;
-                    const auto encoded =
-                        vm::encodeExecutableHeaderV2(inode.exec_header_v2);
-                    for (int word = 0;
-                         word < vm::EXEC_V2_HEADER_WORDS;
-                         ++word) {
-                        raw[static_cast<std::size_t>(12 + word)] =
-                            vm::ops::toLong(
-                                encoded[static_cast<std::size_t>(word)]);
-                    }
+                    return StatusResult::error(ERR_INVALID);
                 }
             }
             StatusResult wrote = device_->writeBlock(2 + i, raw);
@@ -1816,26 +1761,6 @@ public:
     [[nodiscard]] StatusResult addExecutable(
         const std::string& path,
         const std::vector<long long>& image,
-        const vm::ExecutableImageHeaderV2& header) {
-
-        if (!status_.ok()) return status_;
-        if (!vm::validateExecutableHeaderV2(header))
-            return StatusResult::error(ERR_INVALID);
-        StatusResult parents = ensureParentDirectories(path);
-        if (!parents.ok()) return parents;
-        StatusResult found = fs_.lookup(path);
-        if (!found.ok()) {
-            StatusResult created = fs_.createFile(path, InodeKind::Executable, true);
-            if (!created.ok()) return created;
-        }
-        StatusResult wrote = fs_.writeFile(path, image);
-        if (!wrote.ok()) return wrote;
-        return fs_.markExecutable(path, header);
-    }
-
-    [[nodiscard]] StatusResult addExecutable(
-        const std::string& path,
-        const std::vector<long long>& image,
         const vm::ExecutableImageHeaderV3& header) {
 
         if (!status_.ok()) return status_;
@@ -1993,52 +1918,6 @@ public:
         StatusResult inode = createOrLookupFile(path, NATIVE_KIND_FILE);
         if (!inode.ok()) return inode;
         return writePayload(inode.payload, words);
-    }
-
-    [[nodiscard]] StatusResult addExecutableImage(
-        const std::string& path,
-        const std::vector<isa::TritWord27>& program,
-        const vm::ExecutableImageHeaderV2& header_v2,
-        int text_ppn) {
-
-        if (!status_.ok()) return status_;
-        if (!vm::validateExecutableHeaderV2(header_v2) ||
-            text_ppn <= 0 || program.empty() ||
-            static_cast<int>(program.size()) > header_v2.text_words) {
-            return StatusResult::error(ERR_INVALID);
-        }
-        const int blocks =
-            static_cast<int>((program.size() + BLOCK_WORDS - 1) / BLOCK_WORDS);
-        if (next_text_block_ + blocks > device_.blockCount()) {
-            return StatusResult::error(ERR_NO_SPACE);
-        }
-        const int first_text_block = next_text_block_;
-        for (int block = 0; block < blocks; ++block) {
-            std::vector<long long> out(BLOCK_WORDS, 0);
-            for (int word = 0; word < BLOCK_WORDS; ++word) {
-                const int index = block * BLOCK_WORDS + word;
-                if (index < static_cast<int>(program.size())) {
-                    out[static_cast<std::size_t>(word)] =
-                        static_cast<long long>(
-                            program[static_cast<std::size_t>(index)].bits);
-                }
-            }
-            StatusResult wrote =
-                device_.writeBlock(first_text_block + block, out);
-            if (!wrote.ok()) return wrote;
-        }
-        next_text_block_ += blocks;
-        StatusResult inode = createOrLookupFile(path, NATIVE_KIND_EXEC);
-        if (!inode.ok()) return inode;
-        const auto encoded_v2 = vm::encodeExecutableHeaderV2(header_v2);
-        std::vector<long long> descriptor;
-        descriptor.reserve(NATIVE_EXEC_DESC_V2_WORDS);
-        for (const auto& word : encoded_v2)
-            descriptor.push_back(vm::ops::toLong(word));
-        descriptor.push_back(text_ppn);
-        descriptor.push_back(first_text_block);
-        descriptor.push_back(static_cast<int>(program.size()));
-        return writePayload(inode.payload, descriptor);
     }
 
     [[nodiscard]] StatusResult addExecutableImage(
@@ -2569,12 +2448,11 @@ struct Process {
     int heap_break = 0;
     int heap_limit = 0;
     int fork_return_payload = -1;
-    vm::ExecutableImageHeaderV2 exec_header;
     vm::ExecutableImageHeaderV3 exec_header_v3;
     bool executable_header_is_v3 = false;
     vm::ExecutableArchitectureIdentity architecture;
     // ABI-v3 vector state is process-owned and separately allocated. It is
-    // not folded into the legacy scalar task record or shared across fork.
+    // not folded into the scalar task record or shared across fork.
     std::shared_ptr<vm::NativeVectorContextOwnerV3> vector_context;
     std::vector<long long> memory;
     std::map<int, OpenFile> fds;
@@ -2589,13 +2467,12 @@ struct ProcessInfo {
     int capabilities = CAP_ALL;
     int open_fds = 0;
     int memory_words = 0;
-    int executable_version = architecture::v2::EXECUTABLE_VERSION;
-    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int executable_version = architecture::v3::EXECUTABLE_VERSION;
+    int function_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
     int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     int isa_version = architecture::v2::ISA_VERSION;
     int vector_abi_version = 0;
-    std::uint64_t required_features =
-        isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+    std::uint64_t required_features = architecture::v3::REQUIRED_FEATURES;
 };
 
 struct WindowRecord {
@@ -2929,29 +2806,18 @@ public:
                 return StatusResult::error(ERR_INVALID);
             }
         } else {
-            proc->exec_header = inode->exec_header_v2;
-            proc->executable_header_is_v3 = false;
-            proc->architecture =
-                vm::architectureIdentity(inode->exec_header_v2);
-            proc->vector_context.reset();
+            return StatusResult::error(ERR_INVALID);
         }
         proc->memory = inode->data;
-        const int data_pages = proc->executable_header_is_v3
-            ? vm::executableDataPages(proc->exec_header_v3)
-            : vm::executableDataPages(proc->exec_header);
+        const int data_pages = vm::executableDataPages(proc->exec_header_v3);
         proc->heap_start = data_pages * vm::MMU_PAGE_WORDS;
         proc->heap_break = proc->heap_start;
-        const int stack_words = proc->executable_header_is_v3
-            ? proc->exec_header_v3.stack_words
-            : proc->exec_header.stack_words;
+        const int stack_words = proc->exec_header_v3.stack_words;
         proc->heap_limit =
             proc->heap_start + stack_words +
             vm::MMU_PAGE_WORDS;
         proc->state = vm::PROC_STATE_RUNNABLE;
-        const int entry_pc = proc->executable_header_is_v3
-            ? proc->exec_header_v3.entry_pc
-            : proc->exec_header.entry_pc;
-        return StatusResult::success(entry_pc);
+        return StatusResult::success(proc->exec_header_v3.entry_pc);
     }
 
     [[nodiscard]] StatusResult sysExit(int pid, int status) {
@@ -3084,29 +2950,6 @@ public:
         return vm::restoreNativeVectorContextV3(state, *proc->vector_context)
                    ? StatusResult::success(vm::TASK_CONTEXT_V3_WORDS)
                    : StatusResult::error(ERR_INVALID);
-    }
-
-    [[nodiscard]] StatusResult installExecutable(
-        const std::string& path,
-        const std::vector<long long>& image,
-        const vm::ExecutableImageHeaderV2& header) {
-
-        if (!vm::validateExecutableHeaderV2(header))
-            return StatusResult::error(ERR_INVALID);
-        StatusResult found = fs_.lookup(path);
-        if (!found.ok()) {
-            StatusResult created = fs_.createFile(path, InodeKind::Executable, true);
-            if (!created.ok()) return created;
-        } else {
-            const Inode* inode = fs_.inode(found.payload);
-            if (!inode || inode->kind == InodeKind::Directory) {
-                return StatusResult::error(ERR_IS_DIR);
-            }
-        }
-        StatusResult wrote = fs_.writeFile(path, image);
-        if (!wrote.ok()) return wrote;
-        StatusResult marked = fs_.markExecutable(path, header);
-        return marked.ok() ? StatusResult::success(static_cast<int>(image.size())) : marked;
     }
 
     [[nodiscard]] StatusResult installExecutable(
@@ -3362,22 +3205,15 @@ private:
             return StatusResult::error(ERR_INVALID);
         }
         if (entry.executable) {
-            if (entry.header_is_v3) {
-                if (!executableMetadataMatches(entry.words, entry.header_v3,
-                                               entry.metadata)) {
-                    return StatusResult::error(ERR_SIGNATURE);
-                }
-            } else if (!executableMetadataMatches(entry.words, entry.header,
-                                                  entry.metadata)) {
+            if (!entry.header_is_v3 ||
+                !executableMetadataMatches(entry.words, entry.header_v3,
+                                           entry.metadata)) {
                 return StatusResult::error(ERR_SIGNATURE);
             }
             StatusResult parents = ensureKernelParentDirectories(kernel, entry.path);
             if (!parents.ok()) return parents;
-            StatusResult installed = entry.header_is_v3
-                ? kernel.installExecutable(entry.path, entry.words,
-                                           entry.header_v3)
-                : kernel.installExecutable(entry.path, entry.words,
-                                           entry.header);
+            StatusResult installed = kernel.installExecutable(
+                entry.path, entry.words, entry.header_v3);
             if (!installed.ok()) return installed;
             StatusResult sidecar =
                 writeKernelFile(kernel,

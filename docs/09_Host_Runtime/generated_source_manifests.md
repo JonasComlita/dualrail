@@ -1,32 +1,23 @@
-# Generated source-contract manifests
+# Contract snapshots
 
-`tools/generate_source_manifests.py` derives the mechanically checkable parts
-of the syscall, bundled-app, and image-format contracts.  It writes the
-canonical sidecar `generated/source_contract_manifest.json`.
+The root manifests are the reviewable source of truth:
 
-Run the safe check from the repository root:
+- `ARCHITECTURE_MANIFEST.json` — ISA and executable/function ABI;
+- `IMAGE_FORMAT_MANIFEST.json` — tBoot v3 and tDisk v2;
+- `SYSCALL_MANIFEST.json` — syscall ABI and compiler wrappers;
+- `APP_MANIFEST.json` — bundled applications and guest paths.
 
-```powershell
-python tools/generate_source_manifests.py --check
+The checked-in `architecture_contract.h` and `architecture_contract.trit` files
+are snapshots consumed by the current ISA/runtime sources. They are not a
+second compatibility contract and are kept at the repository root so the
+current platform has one obvious contract surface.
+
+Run the consolidated checker from the repository root:
+
+```text
+python tools/trit_tool.py contract-check
 ```
 
-Refresh the sidecar only after reviewing source changes:
-
-```powershell
-python tools/generate_source_manifests.py --write
-```
-
-`--write` never rewrites `SYSCALL_MANIFEST.json`, `APP_MANIFEST.json`, or
-`IMAGE_FORMAT_MANIFEST.json`.  Those root files remain authoritative for
-policy and explanatory fields that cannot be derived safely: service groups,
-statuses, notes, calling-convention prose, root layout, default user,
-registry/validation metadata, payload field descriptions, migration policy,
-and tool descriptions.  The checker compares only stable source-derived
-values (IDs, compiler wrappers, app ownership/paths/stack classes, and image
-magic/version/block constants), so reordering or editing hand-authored prose
-does not create false drift.
-
-The legacy `SYSCALL_*` block in `ternary_vm_state.h` is retained for its older
-host surface.  The generator records its values and reports the four known
-ID conflicts with the v2 compiler runtime namespace as warnings; it does not
-rewrite or treat that legacy block as the current syscall ABI.
+If a contract changes, update its root manifest, snapshot, and direct producer
+or consumer together. Do not recreate the retired manifest generator or an
+additional source-manifest registry.

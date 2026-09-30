@@ -87,7 +87,8 @@ Each trit occupies **2 bits**. Trit `i` is at bits `[2i+1 : 2i]`.
 
 ## Scheme C — Dual-Rail Enum (`Trit` enum)
 
-**Used by:** HAL abstraction layer (`kernel/hal.trit`, `ternary_scalar.h` `getTrit()`)
+**Used by:** the current kernel/runtime HAL path (`kernel.trit`,
+`ternary_scalar.h` `getTrit()`)
 
 | `Trit` enum value | Meaning |
 |------------------|---------|

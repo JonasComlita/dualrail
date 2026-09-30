@@ -132,23 +132,28 @@ Inter-Process Communication. Syscalls: `sys_ipc_send`, `sys_ipc_recv`, `sys_ipc_
 ## Image Format Terms
 
 **.tboot**
-TernaryOS boot image file. Contains the kernel, all apps, and a rootfs image. Magic: `0x31544f4f424f5354`.
+TernaryOS v3 boot image file. Contains boot metadata, the kernel, and app
+sections. Magic: `0x31544f4f424f5354`.
 
 **.tdisk**
-TernaryOS virtual disk image. Sparse block format. Magic: `0x54524954535031`. Block size: 27 words.
+TernaryOS tDisk v2 virtual disk image. Sparse block format. Magic:
+`0x54524954535032`. Block size: 27 words.
 
 **rootfs**
-Root filesystem embedded in a `.tboot` image as a `rootfs_words` array (length must be a multiple of 27).
+The native VFS seed stored in the companion `.tdisk` image. Current release
+`.tboot` files do not embed mutable rootfs state.
 
 ---
 
 ## Build & Tool Terms
 
 **trit_tool.py**
-The master agent tool. Subcommands: `doctor`, `test`, `export-diagnostics`, `build-image`, `inspect-image`, `run`, `bench`.
+The consolidated current-platform tool. Subcommands: `doctor`,
+`contract-check`, `test`, and `export-diagnostics`.
 
-**trit-test.ps1**
-PowerShell test runner. Usage: `trit-test.ps1 smoke | os | production`
+**current_validate / ci_production**
+The CMake targets for current executable/image conformance and the production
+build gate. The former wrapper-script test tree was retired.
 
 **stage_tos_release / smoke_tos_release**
 CMake targets to build and smoke-test the production `.tboot` image.

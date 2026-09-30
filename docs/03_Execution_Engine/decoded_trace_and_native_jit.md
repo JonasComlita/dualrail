@@ -77,53 +77,14 @@ operands, sets the faulting PC, and returns a side exit before the portable
 interpreter resumes; focused tests compare status, trap code, PC, cycle count,
 and instruction count for invalid arithmetic and out-of-range memory.
 
-`test_execution_backends_benchmark` reports seven-run median wall time after two warmups
-for arithmetic, guarded-memory, and branch workloads; the acceptance gate also
-requires each seven-sample coefficient of variation to stay below 3%. Every
-repeat contributes a deterministic FNV fingerprint of status, PC, steps,
-cycles, backend counters, and the final register payload; the gate requires
-all seven fingerprints to match on the controlled host. Native execution may
-become a default only after it reaches at least 1.15x on two workloads and is
-no more than 3% slower on the third, with repeatability and CV gates passing.
-Decode-count reduction is diagnostic only, not a performance acceptance gate.
-On x86-64, a failed wall-time, repeatability, or stability gate returns nonzero
-so a benchmark result cannot be mistaken for acceptance. The controlled-host
-contract is now archived in the ignored
-`build/native-x64-jit-acceptance/native_x64_jit_acceptance.v1.json` report, so
-the host runtime selects NativeX64Jit by default on x86-64. Non-x86 builds
-retain CachedBlockInterpreter, and `TosRuntimeConfig::execution_backend` keeps
-explicit backend selection available; the benchmark emits a
-`native_x64_repeatability_record` key/value line for evidence collectors.
-The same executable runs a separate `dynamic_control` workload and emits a
-`native_x64_dynamic_control_record` line containing direct commits, portable
-side exits, repeatability, and the controlled-host stability result. This
-workload is an acceptance check for the dynamic lowering, but it does not
-alter the historical three-workload default-enable speed gate.
-The accepted controlled report records three independent processes, 21
-matching dynamic-control fingerprints, cross-process median CV below 3%, and
-the primary three-workload speed gate passing on the pinned host.
+Performance benchmarks and host-acceptance collectors are not part of the
+current platform gate. The runtime backend remains a selectable implementation
+detail; correctness is established by the production CMake graph and the
+current contract check. A future performance program must define its own
+current target and evidence format instead of reviving the deleted benchmark
+tree.
 
-## Controlled-host acceptance artifact
-
-The benchmark emits one `native_x64_sample version=1` record for each measured
-sample. The records include the workload/backend, timing, architectural
-status, PC, steps, cycles, result, fingerprint, direct/helper lowering counts,
-code-block count, and portable side exits. The records remain additive to the
-human-readable timing lines and do not change any acceptance threshold.
-
-`tools/collect_native_x64_jit_acceptance.py` is the owner-side collector. It
-builds the Release benchmark target, verifies the x86-64 executable and its
-SHA-256, records commit/compiler/OS/CPU/affinity/power-profile metadata, and
-runs three independent processes pinned to one verified logical CPU. Each
-process retains its two warmups and seven measured samples. A passing run
-requires every process gate, all 21 dynamic-control native fingerprints to
-match, and cross-process native median CV below 3%. Only then does it promote
-the versioned `trit.native_x64_jit_acceptance.v1` JSON report; failed attempts
-remain under the ignored build diagnostics directory. NativeX64Jit remains
-opt-in until that artifact is accepted by the primary integration agent.
-This proves the speed path but not yet repeatable default-on stability, so the
-production default remains disabled.
-
-Focused parity and safety coverage lives in `tests/test_vm_widths.cpp`,
+Focused parity and safety coverage is part of the production CMake gate and
+the current contract check in `tests/current_only_conformance.cpp`,
 including deterministic randomized differential execution, user-mode memory,
 ASID cache separation, precise fallback, and W^X checks.

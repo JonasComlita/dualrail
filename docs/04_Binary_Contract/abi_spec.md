@@ -29,18 +29,16 @@ lanes, and paired T50 wide values are independent geometry.
 
 ### Argument Passing
 
-- Up to 4 scalar ABI words pass in **r13–r16**.
+- Up to 6 scalar ABI words pass in **r13–r18** (wide T50 values consume two
+  words).
 - Additional words are passed in the caller-owned outgoing stack area (pushed
   before the call, reclaimed by the caller after the call).
-- The compiler-facing function contract is explicitly versioned as
-  `trit.compiler.function-abi.v2` (version 2). Struct and array parameters do
-  **not** split their payload across registers: each crosses the boundary as
-  one caller-owned pointer word. The register/stack cursor advances by one
-  word for that pointer, and the callee treats it as the aggregate base
-  address for word-wise loads and stores.
-- Compiler function ABI v3 is the release profile,
-  `trit.compiler.function-abi.v3`. It keeps the v2 scalar and aggregate
-  parameter rules and reserves the first ABI word for a hidden caller-owned
+- The compiler-facing function contract is `trit.compiler.function-abi.v3`
+  (version 3). Struct and array parameters do **not** split their payload
+  across registers: each crosses the boundary as one caller-owned pointer
+  word. The register/stack cursor advances by one word for that pointer, and
+  the callee treats it as the aggregate base address for word-wise loads and
+  stores. The first ABI word is reserved for a hidden caller-owned
   structure-return (`sret`) pointer whenever the function's result is a
   struct or array. User arguments begin at the next register/stack word.
 
@@ -50,11 +48,7 @@ lanes, and paired T50 wide values are independent geometry.
   **r13–r14**.
 - The callee writes the return value to the ABI return register(s) before
   executing `RET`.
-- Aggregate-valued returns have no representation in function ABI v2 and are
-  rejected by the compiler. Source code must pass a caller-owned aggregate
-  output pointer explicitly until a future ABI version defines an `sret`
-  contract.
-- Under function ABI v3, an aggregate-returning callee receives the hidden
+- An aggregate-returning callee receives the hidden
   `sret` pointer in the first ABI word (`r13`, or the corresponding outgoing
   stack word after register words are exhausted). It copies the result into
   that caller-owned storage and returns with no scalar payload in `r13`.
@@ -66,7 +60,7 @@ lanes, and paired T50 wide values are independent geometry.
 ```
   high address
   ┌─────────────────────┐  ← caller's SP before call
-  │   arg4, arg5, ...   │  (if >4 args; pushed by caller)
+  │   arg6, arg7, ...   │  (if >6 ABI words; pushed by caller)
   ├─────────────────────┤
   │ callee-saved regs   │  (r1–r12 that callee uses)
   ├─────────────────────┤
@@ -125,13 +119,12 @@ Kernel-side return (via ERET):
 
 Vector operations use a separate vector register file (v0–v7). The hardware
 register roles are described in [vector_abi.md](vector_abi.md), but they are
-not a compiler function boundary contract. Function ABI v2 intentionally
-defines no vector argument, return, or spill representation. A source
-function with a first-class `vec<T>` parameter/return/value is therefore
-rejected with a diagnostic naming the selected compiler profile; it is never
-scalarized or emitted through an AST fallback. A future version must define
-lane width, register assignment, VLEN preservation, fault state, and stack
-spill layout together before these boundaries can be enabled.
+part of the current compiler function boundary. Function ABI v3 defines the
+supported vector register, VLEN, context, and spill geometry together. A
+source function with an unsupported `vec<T>` parameter/return/value is
+rejected with a diagnostic naming the current compiler profile; it is never
+scalarized or emitted through an AST fallback. The current boundary remains
+fail-closed for signatures and element types that are not explicitly defined.
 
 ---
 
@@ -153,13 +146,13 @@ Compiled TCL programs produce an `ObjectModule` containing:
 | `function_order` | Ordered function list for linking |
 | `function_refs` | Cross-function reference graph (for dead-stripping) |
 
-The linker (`LinkResult`) assembles all modules into a version-dispatched
-executable header plus `AssemblyResult`. ABI v2 objects produce the 15-word
-`ExecutableImageHeaderV2`; ABI v3 link requests produce the 20-word
-`ExecutableImageHeaderV3` with fixed vector geometry. Linkers match object
-profile metadata exactly and reject mixed ABI links. The loader, image builder,
-kernel, process information, and diagnostics preserve the selected version;
-they never rewrite a v2 payload into a v3 executable.
+The linker (`LinkResult`) assembles all modules into the single current
+20-word `ExecutableImageHeaderV3` envelope plus `AssemblyResult`. Object
+profile metadata must name function ABI v3, executable ABI v3, ISA v2, and the
+current vector profile; mixed or non-current objects are rejected before code
+generation. The loader, image builder, kernel, process information, and
+diagnostics therefore share one executable boundary rather than preserving or
+rewriting alternate payload layouts.
 
 ---
 
@@ -168,7 +161,7 @@ they never rewrite a v2 payload into a v3 executable.
 After linking, the final image contains:
 
 ```
-ExecutableImageHeaderV2 or ExecutableImageHeaderV3:
+ExecutableImageHeaderV3:
   executable_version, function_abi_version, syscall_abi_version
   isa_version, required_features
   boot_entry    — PC value at start (default: address of "main")
@@ -179,7 +172,6 @@ ExecutableImageHeaderV2 or ExecutableImageHeaderV3:
 The header also records exact text/data words, stack words, scalar width,
 base-page size, flags, and a checksum. Header v3 appends vector register,
 VLEN, lane-width, 279-word context, and 27-word spill geometry. Production
-linker, assembler, loader, VM, kernel, and image builders accept v2 and v3;
-v2 remains the explicit compatibility profile. v1 executable and live-storage
-compatibility is intentionally absent; the standalone offline migrator
-converts preserved inputs from `trit-v1-final`.
+linker, assembler, loader, VM, kernel, and image builders accept this v3
+envelope only. Non-current executable images are rejected and must be rebuilt
+from source; no compatibility loader or offline migrator exists.

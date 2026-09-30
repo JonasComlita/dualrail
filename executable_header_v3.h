@@ -1,29 +1,29 @@
 #pragma once
 
-// Staged executable ABI v3 envelope.  The common prefix is byte/word
-// compatible with v2, but the exact header size, ABI version, feature mask,
-// and vector geometry are validated as one versioned contract.  The v3
-// envelope deliberately keeps ISA encoding v2 until the instruction codec and
-// loader owners add a corresponding ISA version.
+// Current executable ABI v3 envelope over the ISA-v2 instruction codec.
+// Loaders and emitters must reject every other executable envelope rather than
+// guessing or migrating it.
+
+#include "executable_header_common.h"
 
 static constexpr int EXEC_V3_HEADER_WORDS = 20;
 static constexpr int EXEC_V3_MAGIC = EXEC_MAGIC;
 
-static constexpr int EXEC_V3_MAGIC_INDEX = EXEC_V2_MAGIC_INDEX;
-static constexpr int EXEC_V3_EXECUTABLE_VERSION = EXEC_V2_EXECUTABLE_VERSION;
-static constexpr int EXEC_V3_FUNCTION_ABI_VERSION = EXEC_V2_FUNCTION_ABI_VERSION;
-static constexpr int EXEC_V3_HEADER_SIZE = EXEC_V2_HEADER_SIZE;
-static constexpr int EXEC_V3_ISA_VERSION = EXEC_V2_ISA_VERSION;
-static constexpr int EXEC_V3_REQUIRED_FEATURES = EXEC_V2_REQUIRED_FEATURES;
-static constexpr int EXEC_V3_ENTRY_PC = EXEC_V2_ENTRY_PC;
-static constexpr int EXEC_V3_TEXT_WORDS = EXEC_V2_TEXT_WORDS;
-static constexpr int EXEC_V3_DATA_WORDS = EXEC_V2_DATA_WORDS;
-static constexpr int EXEC_V3_STACK_WORDS = EXEC_V2_STACK_WORDS;
-static constexpr int EXEC_V3_SYSCALL_ABI_VERSION = EXEC_V2_SYSCALL_ABI_VERSION;
-static constexpr int EXEC_V3_SCALAR_WIDTH = EXEC_V2_SCALAR_WIDTH;
-static constexpr int EXEC_V3_BASE_PAGE_WORDS = EXEC_V2_BASE_PAGE_WORDS;
-static constexpr int EXEC_V3_FLAGS = EXEC_V2_FLAGS;
-static constexpr int EXEC_V3_CHECKSUM = EXEC_V2_CHECKSUM;
+static constexpr int EXEC_V3_MAGIC_INDEX = 0;
+static constexpr int EXEC_V3_EXECUTABLE_VERSION = 1;
+static constexpr int EXEC_V3_FUNCTION_ABI_VERSION = 2;
+static constexpr int EXEC_V3_HEADER_SIZE = 3;
+static constexpr int EXEC_V3_ISA_VERSION = 4;
+static constexpr int EXEC_V3_REQUIRED_FEATURES = 5;
+static constexpr int EXEC_V3_ENTRY_PC = 6;
+static constexpr int EXEC_V3_TEXT_WORDS = 7;
+static constexpr int EXEC_V3_DATA_WORDS = 8;
+static constexpr int EXEC_V3_STACK_WORDS = 9;
+static constexpr int EXEC_V3_SYSCALL_ABI_VERSION = 10;
+static constexpr int EXEC_V3_SCALAR_WIDTH = 11;
+static constexpr int EXEC_V3_BASE_PAGE_WORDS = 12;
+static constexpr int EXEC_V3_FLAGS = 13;
+static constexpr int EXEC_V3_CHECKSUM = 14;
 
 // Extension fields occupy the final five words of the 20-word envelope.
 static constexpr int EXEC_V3_VECTOR_REGISTER_COUNT_INDEX = 15;
@@ -50,7 +50,7 @@ struct ExecutableImageHeaderV3 {
     int executable_version = architecture::v3::EXECUTABLE_VERSION;
     int function_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
     int header_words = EXEC_V3_HEADER_WORDS;
-    // v3 is an executable/function envelope profile over the v2 ISA codec.
+    // v3 is the executable/function envelope profile over the ISA-v2 codec.
     int isa_version = architecture::v3::ISA_VERSION;
     std::uint64_t required_features = architecture::v3::REQUIRED_FEATURES;
     int entry_pc = 0;
@@ -70,18 +70,15 @@ struct ExecutableImageHeaderV3 {
 };
 
 enum class ExecutableHeaderVersion : int {
-    V2 = architecture::v2::EXECUTABLE_VERSION,
     V3 = architecture::v3::EXECUTABLE_VERSION,
 };
 
-// One version-dispatched view used by loaders and image inspectors.  The
-// concrete headers remain available so v2 callers never need to reinterpret a
-// v3 extension as a v2 record.
+// One current view used by loaders and image inspectors. No alternate image
+// variant is decoded here.
 struct ExecutableHeaderVariant {
-    ExecutableHeaderVersion version = ExecutableHeaderVersion::V2;
-    bool is_v3 = false;
+    ExecutableHeaderVersion version = ExecutableHeaderVersion::V3;
+    bool is_v3 = true;
     ExecutableHeaderCommonView common{};
-    ExecutableImageHeaderV2 v2{};
     ExecutableImageHeaderV3 v3{};
 };
 
@@ -321,53 +318,37 @@ struct ExecutableHeaderVariant {
         return false;
     }
     const TernaryValue& version_word = image[
-        static_cast<std::size_t>(header_addr + EXEC_V2_EXECUTABLE_VERSION)];
+        static_cast<std::size_t>(header_addr + EXEC_V3_EXECUTABLE_VERSION)];
     if (!isNumericMode(version_word.mode) || version_word.isInvalid()) {
         return false;
     }
     const long long version = ops::toLong(version_word);
     ExecutableHeaderVariant decoded;
-    if (version == architecture::v2::EXECUTABLE_VERSION) {
-        if (!decodeExecutableHeaderV2(image, header_addr, decoded.v2)) {
-            return false;
-        }
-        decoded.version = ExecutableHeaderVersion::V2;
-        decoded.is_v3 = false;
-        decoded.common = executableHeaderCommonView(decoded.v2);
-    } else if (version == architecture::v3::EXECUTABLE_VERSION) {
-        if (!decodeExecutableHeaderV3(image, header_addr, decoded.v3)) {
-            return false;
-        }
-        decoded.version = ExecutableHeaderVersion::V3;
-        decoded.is_v3 = true;
-        decoded.common = executableHeaderCommonView(decoded.v3);
-    } else {
-        // Unknown envelope versions are never migrated or guessed.
+    if (version != architecture::v3::EXECUTABLE_VERSION ||
+        !decodeExecutableHeaderV3(image, header_addr, decoded.v3)) {
+        // Retired and unknown envelope versions are never decoded or guessed.
         return false;
     }
+    decoded.version = ExecutableHeaderVersion::V3;
+    decoded.is_v3 = true;
+    decoded.common = executableHeaderCommonView(decoded.v3);
     out = decoded;
     return true;
 }
 
 [[nodiscard]] inline std::vector<TernaryValue> encodeExecutableHeaderVersioned(
     const ExecutableHeaderVariant& header) {
-    if (header.is_v3 || header.version == ExecutableHeaderVersion::V3) {
-        return encodeExecutableHeaderV3(header.v3);
+    if (!header.is_v3 || header.version != ExecutableHeaderVersion::V3) {
+        throw std::invalid_argument(
+            "only executable ABI v3 headers are supported");
     }
-    return encodeExecutableHeaderV2(header.v2);
+    return encodeExecutableHeaderV3(header.v3);
 }
 
 [[nodiscard]] inline bool validateExecutableHeaderVersioned(
     const ExecutableHeaderVariant& header) {
-    if (header.is_v3 != (header.version == ExecutableHeaderVersion::V3)) {
-        return false;
-    }
-    if (header.is_v3) {
-        return validateExecutableHeaderV3(header.v3) &&
-               header.v3.function_abi_version ==
-                   architecture::v3::FUNCTION_ABI_VERSION;
-    }
-    return validateExecutableHeaderV2(header.v2) &&
-           header.v2.function_abi_version ==
-               architecture::v2::FUNCTION_ABI_VERSION;
+    return header.is_v3 && header.version == ExecutableHeaderVersion::V3 &&
+           validateExecutableHeaderV3(header.v3) &&
+           header.v3.function_abi_version ==
+               architecture::v3::FUNCTION_ABI_VERSION;
 }

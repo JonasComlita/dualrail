@@ -1,27 +1,28 @@
 # Kernel Architecture Overview
 
-Source of truth: `kernel.trit`, `kernel/`, `ternary_os.h`, `SYSCALL_MANIFEST.json`
+Source of truth: `kernel.trit`, `ternary_os.h`, `ternary_host_runtime.h`,
+`SYSCALL_MANIFEST.json`
 
 ---
 
 ## Structure
 
 The kernel is a **monolithic kernel** written entirely in TCL (`.trit`).
-Source: `kernel.trit` (~5700 lines) + subsystem files in `kernel/`.
+The active source is the root `kernel.trit`, compiled directly into the current
+image path. The former modular `kernel/` fragments are retired and are not
+compiled or loaded by the current platform.
 
 ```
-kernel.trit              Main kernel: syscall dispatcher, scheduler, init
-kernel/process.trit      Process Control Blocks, fork/exec, scheduling
-kernel/vfs.trit          Virtual Filesystem: inode, open, read, write
-kernel/bio.trit          Block I/O: WAL, sector read/write
-kernel/hal.trit          Hardware Abstraction Layer: timer, interrupts
-kernel/net.trit          Networking: socket, bind, connect, send, recv
+kernel.trit              Current kernel: syscall dispatcher, scheduler, VFS, init
+ternary_os.h             Current OS-facing runtime and syscall interfaces
+ternary_host_runtime.h   Host image, VM, and runtime boundary
 ```
 
 The active storage contract is documented in
-[[redo_wal_v2|Redo WAL v2]]. The implementation remains consolidated in
-`kernel.trit` until the source split preserves generated architecture
-constants and focused test coverage.
+[[redo_wal_v2|Redo WAL v2]]. The implementation is intentionally consolidated
+in `kernel.trit`; a future source split is out of the current platform scope
+and would require preserving the root architecture contract and conformance
+coverage before it could be considered.
 
 ---
 

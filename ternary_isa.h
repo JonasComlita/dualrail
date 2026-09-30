@@ -86,7 +86,7 @@
 #include <array>
 #include <string>
 #include <stdexcept>
-#include "generated/architecture_contract.h"
+#include "architecture_contract.h"
 
 // The v3 executable/function profile keeps the v2 instruction encoding.  These
 // constants describe the opt-in vector/context envelope.  VCTX operations use
@@ -95,8 +95,10 @@
 // still opt in before executing them.
 namespace sandbox::architecture::v3 {
 inline constexpr int ISA_VERSION = architecture::v2::ISA_VERSION;
-inline constexpr int EXECUTABLE_VERSION = 3;
-inline constexpr int FUNCTION_ABI_VERSION = 3;
+inline constexpr int EXECUTABLE_VERSION =
+    architecture::v2::CURRENT_EXECUTABLE_VERSION;
+inline constexpr int FUNCTION_ABI_VERSION =
+    architecture::v2::CURRENT_FUNCTION_ABI_VERSION;
 inline constexpr int VECTOR_ABI_VERSION = 1;
 inline constexpr int SYSCALL_ABI_VERSION = architecture::v2::SYSCALL_ABI_VERSION;
 inline constexpr int VECTOR_REGISTER_COUNT = 8;
@@ -790,7 +792,7 @@ inline constexpr int CSR_MAX_ID = architecture::v2::CSR_MAX_ID;
            csrAccessAllows(descriptor->write_access, privilege);
 }
 
-#include "generated/architecture_isa_v2.h"
+#include "architecture_isa_v2.h"
 
 // =============================================================================
 // SECTION 8 — Decoded Instruction Word
@@ -1068,7 +1070,7 @@ private:
     }
 };
 
-#include "generated/architecture_instruction_codec.h"
+#include "architecture_instruction_codec.h"
 
 #include "architecture_v2_support.h"
 

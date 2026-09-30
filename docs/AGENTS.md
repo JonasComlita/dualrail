@@ -1,30 +1,23 @@
-# Docs Vault Agent Guide
+# Docs vault agent guide
 
-Open `docs/` as the Obsidian vault for Trit.
+Open `docs/` as the Obsidian-friendly explanation vault. Root source files and
+manifests remain authoritative; these pages explain and link to that source.
+Graphify output and the canvas are advisory navigation only.
 
-## Authority
+Start with `README.md`, `INDEX.md`, and `STATUS.md`. For platform changes read
+the root `ARCHITECTURE_MANIFEST.json`, `IMAGE_FORMAT_MANIFEST.json`,
+`SYSCALL_MANIFEST.json`, `ROADMAP_STATUS.json`, and `KNOWN_GAPS.md`.
 
-- Root manifests, source files, and tests remain authoritative.
-- Pages in this vault are curated navigation and explanation.
-- Generated Graphify artifacts are advisory and must not override source code,
-  manifests, or failing tests.
+The supported validation entry points are:
 
-## Workflow
+```text
+python ../tools/trit_tool.py doctor
+python ../tools/trit_tool.py contract-check
+cmake --build ../build --target current_validate
+cmake --build ../build --target ci_production
+```
 
-1. Start at `README.md`, then follow `INDEX.md` and `STATUS.md`.
-2. Use `python ../tools/trit_tool.py knowledge status` to validate the vault.
-3. Use `python ../tools/trit_tool.py knowledge canvas` after changing the docs map.
-4. Use `python ../tools/trit_tool.py knowledge graph` only when Graphify is installed
-   and a structural code report would help.
-5. Treat freshness warnings as advisory contract checks. Regenerate the canvas
-   after source-contract edits, and rerun Graphify when its archived summary is
-   stale or legacy/unverified.
-6. Keep manually written docs concise and source-linked; put generated Graphify
-   runs under `_graphify/runs/`.
-
-## Obsidian Conventions
-
-- Prefer stable Markdown links for repo portability.
-- Use wikilinks sparingly for important concepts that benefit from graph view.
-- Keep `trit-stack.canvas` as the high-level navigation canvas.
-- Do not commit Obsidian workspace layout files.
+The platform is ISA v2, executable/function ABI v3, tBoot v3, and tDisk v2
+only. Do not document old image loaders, migration utilities, or deleted test
+and wrapper trees as current capabilities. Keep links source-relative and do
+not commit Obsidian workspace metadata.

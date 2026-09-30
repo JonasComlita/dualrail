@@ -87,16 +87,12 @@ For the bounded TreatCode platform work packages and completion protocol, see
 
 ---
 
-## `kernel/` — Kernel Subsystems
+## `kernel.trit` — Current Kernel
 
-```
-kernel/
-├── bio.trit        # Block I/O — WAL, disk read/write, crash recovery
-├── hal.trit        # Hardware Abstraction Layer — timer, interrupt routing
-├── net.trit        # Networking — socket, bind, connect, send, recv
-├── process.trit    # Process management — PCB, scheduler, signals
-└── vfs.trit        # Virtual Filesystem — inode, directory, file ops
-```
+The current platform uses the root `kernel.trit` as its single compiled kernel
+source, with `ternary_os.h` and `ternary_host_runtime.h` providing the host-side
+interfaces. The former modular `kernel/` fragments were retired because no
+active CMake target or image-builder path consumed them.
 
 ---
 
@@ -141,59 +137,17 @@ apps/
 
 ---
 
-## `tests/` — Test Files
+## Current conformance and tooling
 
 ```
-tests/
-├── test_isa_asm.cpp           # ISA encoding + assembler round-trip
-├── test_multiwidth_vm_main.cpp # VM width correctness (T1–T50)
-├── test_ternary_ir.cpp        # IR assembler and linker
-├── test_ternary_lanes.cpp     # Lane type + SIMD correctness
-├── test_native_ops.cpp        # Bridge-free arithmetic
-├── test_numeric_workloads.cpp # Numeric regression suite
-├── test_phase7_compiler.cpp   # Full compiler pipeline
-├── test_tcl_asm.cpp           # TCL assembler
-├── test_malloc_micro.cpp      # Allocator micro-contracts
-├── test_layer1_hal.cpp        # HAL + CSR access
-├── test_os_platform.cpp       # OS platform tests (process, VFS, IPC)
-├── test_phase_d_kernel.cpp    # Kernel functionality
-├── test_phase_c5_pred.cpp     # Predicate/branch tests
-├── test_process_handoff.cpp   # Process spawn → exec → handoff
-├── test_production_layers.cpp # Production health checks
-├── test_production_hardening.cpp # Error injection, fault handling
-├── test_host_runtime.cpp      # Host image load + boot
-├── test_native_apps.cpp       # Bundled app compilation + run
-├── test_vm_widths.cpp         # Multi-width VM scenarios
-├── test_consumer_shell_productization.cpp # Shell product tests
-├── test_benchmark.cpp         # Performance benchmarks
-├── test_uint128.cpp           # UInt128 arithmetic
-├── test_formats.cpp           # Image format validation
-├── test_tiny_transformer_runtime.cpp # BitNet inference
-├── test_no_bridge.cpp         # Validate no binary bridge used
-│
-├── test_backend_smoke.trit    # Backend smoke (in TCL)
-├── test_compiler_frontend_smoke.trit # Frontend smoke
-├── test_parser_smoke.trit     # Parser smoke
-└── int128_compat.h            # Helper for 128-bit compat
+tests/current_only_conformance.cpp  # ISA v2 / executable ABI v3 contract check
+tools/trit_tool.py                  # doctor, contract-check, validation, diagnostics
+CMakeLists.txt                      # the single build and CTest graph
 ```
 
----
-
-## `tools/` — Agent/Build Tools
-
-```
-tools/
-├── trit_tool.py              # Master tool (doctor, test, export-diagnostics, etc.)
-├── trit-doctor.ps1           # Environment health check
-├── trit-test.ps1             # Test runner (smoke / os / production)
-├── trit-build-image.ps1      # Build .tboot release image
-├── trit-inspect-image.ps1    # Inspect .tboot/.tdisk files
-├── trit-run.ps1              # Run release image (SDL)
-├── trit-export-diagnostics.ps1 # Export diagnostics bundle
-├── trit-bench.ps1            # Run benchmarks
-├── trit-replay.ps1           # Validate diagnostics and compare traces
-└── trit-fuzz.ps1             # Deterministic malformed-image harness + smoke
-```
+The historical `tests/`, `tests_next/`, and wrapper-script trees are retired.
+The current production gate is
+`cmake --build build_current_cleanup --target ci_production`.
 
 ---
 
@@ -215,7 +169,6 @@ docs/
 ├── 07_OS_Substrate/           # Kernel and syscalls
 ├── 08_Applications/           # App SDK and bundled apps
 ├── 09_Host_Runtime/           # Build system, image format, host tools
-├── 10_Benchmarks/             # Doom-class and BitNet-class system benchmarks
 ├── 11_TreatCode_Platform/     # Collaboration, learning, and project operations
 └── 12_Future_Architecture/    # Accepted future scope and dependency plans
 ```

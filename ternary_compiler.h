@@ -81,8 +81,13 @@ namespace compiler {
         FunctionAbiContract::idForVersion(options.function_abi_version);
     const bool emit_v3_executable =
         options.executable_version == architecture::v3::EXECUTABLE_VERSION;
-    if (emit_v3_executable &&
-        options.function_abi_version != architecture::v3::FUNCTION_ABI_VERSION) {
+    if (!emit_v3_executable) {
+        result.diagnostics.push_back({
+            DiagnosticSeverity::Error,
+            "only executable ABI v3 is supported",
+            SourceSpan{"linker", 1, 1, 1}});
+    }
+    if (options.function_abi_version != architecture::v3::FUNCTION_ABI_VERSION) {
         result.diagnostics.push_back({
             DiagnosticSeverity::Error,
             "executable ABI v3 requires function ABI v3; refusing a mixed link",
@@ -278,12 +283,10 @@ namespace compiler {
             for (const auto& module : modules) asmOut << module.assembly;
         }
         asmOut << ".data\n";
-        const long long feature_word = emit_v3_executable
-            ? vm::executableFeatureWordNumeric(
-                  required_features, architecture::v3::FEATURE_V3_LAST)
-            : isa::featureWordNumeric(required_features);
+        const long long feature_word = vm::executableFeatureWordNumeric(
+            required_features, architecture::v3::FEATURE_V3_LAST);
         asmOut << "phase7_exec: "
-               << (emit_v3_executable ? ".execheader3 " : ".execheader2 ")
+               << ".execheader3 "
                << "0, " << text_measure << ", "
                << data_words << ", " << architectural_stack_words << ", "
                << feature_word << ", "
@@ -309,9 +312,7 @@ namespace compiler {
         int text_measure = 1;
         int data_words = 0;
         text_measure = static_cast<int>(result.assembled.program.size());
-        const int executable_header_words = emit_v3_executable
-            ? vm::EXEC_V3_HEADER_WORDS
-            : vm::EXEC_V2_HEADER_WORDS;
+        const int executable_header_words = vm::EXEC_V3_HEADER_WORDS;
         data_words = std::max(
             0, static_cast<int>(result.assembled.data.size()) -
                    executable_header_words);
@@ -330,18 +331,12 @@ namespace compiler {
     result.text_words = static_cast<int>(result.assembled.program.size());
     result.data_words = static_cast<int>(result.assembled.data.size());
     result.instruction_count = result.text_words;
-    if (result.assembled.executable_headers_v2.count("phase7_exec")) {
-        result.executable_header_v2 =
-            result.assembled.executable_headers_v2.at("phase7_exec");
-    }
     if (result.assembled.executable_headers_v3.count("phase7_exec")) {
         result.executable_header_v3 =
             result.assembled.executable_headers_v3.at("phase7_exec");
     }
     result.executable_version = options.executable_version;
-    result.vector_abi_version = emit_v3_executable
-        ? architecture::v3::VECTOR_ABI_VERSION
-        : 0;
+    result.vector_abi_version = architecture::v3::VECTOR_ABI_VERSION;
     for (const auto& module : modules) {
         for (const auto& symbol : module.symbols) result.symbol_map[symbol.first] = symbol.second;
     }

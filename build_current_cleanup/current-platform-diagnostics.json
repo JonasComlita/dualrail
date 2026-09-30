@@ -1,0 +1,7 @@
+{
+  "platform": "current-only",
+  "isa_version": 2,
+  "executable_abi_version": 3,
+  "tboot_version": 3,
+  "tdisk_version": 2
+}

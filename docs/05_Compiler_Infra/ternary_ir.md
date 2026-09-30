@@ -244,6 +244,6 @@ The remaining intentional boundary is vector-valued compiler source lowering:
 the frontend type model and allocator know about `vec<T>`, but this compiler
 pipeline has no authoritative vector function-call/return ABI or aggregate
 vector spill layout. Vector values consequently remain fail-closed and are
-rejected by the versioned `trit.compiler.function-abi.v2` contract. The legacy
+rejected by the current `trit.compiler.function-abi.v3` contract. The
 `allow_ast_replay` option cannot reopen this boundary: there is no AST replay,
 scalarization, or private emitter convention.

@@ -40,9 +40,6 @@ const BOOTSTRAP_WAL_RING_PAGES: t40 = 2;
 const KERNEL_STATE_BASE: t40 = 3000;
 const KERNEL_BOOTED_ADDR: t40 = 3000;
 const BOOT_ALLOC_COUNT_ADDR: t40 = 3001;
-const REL_ONLINE_ADDR: t40 = 3002;
-const REL_MIGRATION_CURSOR_ADDR: t40 = 3003;
-const REL_MIGRATION_DONE_ADDR: t40 = 3004;
 const WAL_HEAD_ADDR: t40 = 3005;
 const WAL_TAIL_ADDR: t40 = 3006;
 const WAL_NEXT_TXID_ADDR: t40 = 3007;
@@ -162,9 +159,8 @@ const WINDOW_BASE: t40 = 132000;
 const WINDOW_EVENT_BASE: t40 = 134000;
 const WINDOW_EVENT_CAPACITY: t40 = 8;
 const WINDOW_EVENT_WORDS: t40 = 4;
-// Each compositor buffer occupies ten aligned v2 base pages.  The previous
-// 6912-word stride and 8000019 base were aligned only to the legacy 27-word
-// page and caused the user mapping to point at the wrong 729-word frame.
+// Each compositor buffer occupies ten aligned ISA-v2 base pages. The current
+// 729-word page geometry keeps the user mapping aligned with the frame.
 const WINDOW_BUFFER_BASE: t40 = 8000046;
 const WINDOW_BUFFER_WORDS: t40 = 7290;
 const WINDOW_BUFFER_PAGES: t40 = 10;
@@ -208,11 +204,12 @@ const WAIT_ARG0_BASE: t40 = 138800;
 const WAIT_ARG1_BASE: t40 = 138900;
 const WAIT_ARG2_BASE: t40 = 139000;
 // Wait queues keep their FIFO tail in a separate non-overlapping range.  The
-// row remains the three-word channel/head/version ABI used by older images.
+// Row storage remains the three-word channel/head/version ABI used by the
+// current kernel.
 const WAIT_QUEUE_TAIL_BASE: t40 = 678000;
 const WAIT_NO_DEADLINE: t40 = -1;
 const WAIT_KIND_NONE: t40 = 0;
-const WAIT_KIND_LEGACY: t40 = 1;
+const WAIT_KIND_DEFAULT: t40 = 1;
 const WAIT_KIND_FUTEX: t40 = 2;
 const WAIT_KIND_IPC: t40 = 3;
 const WAIT_KIND_WINDOW: t40 = 4;
@@ -261,10 +258,6 @@ const SNAP_READER_PID: t40 = 0;
 const SNAP_READ_TXID: t40 = 1;
 const SNAP_ACTIVE: t40 = 2;
 // REL_ALLOC — compacted to 2 words (PPN is implicit in slot index).
-const REL_ALLOC_WORDS: t40 = 2;
-const REL_ALLOC_BASE: t40 = 4400;
-const REL_ALLOC_STATE: t40 = 0;
-const REL_ALLOC_VERSION: t40 = 1;
 // Attribute store — second genuine kernel relation.
 // Schema: (object_id, object_type, attr_key, attr_value, txid, version)
 // 64 rows * 6 words = 384 words at 30000-30383.
@@ -539,40 +532,32 @@ const TC_SPAN_PTBR: t40 = 12;
 const EXEC_IMAGE_WORDS: t40 = 128;
 const EXEC_IMAGE_BASE: t40 = 651000;
 const EXEC_MAGIC: t40 = 40404;
-const EXEC_V2_HEADER_WORDS: t40 = 15;
-const EXEC_DESC_TEXT_PPN: t40 = 15;
-const EXEC_DESC_TEXT_DISK_BLOCK: t40 = 16;
-const EXEC_DESC_TEXT_WORDS: t40 = 17;
-const EXEC_DESC_WORDS: t40 = 18;
-const EXEC_V2_VERSION: t40 = 2;
-const EXEC_V2_FUNCTION_ABI: t40 = 2;
-const EXEC_V2_ISA: t40 = 2;
-const EXEC_V2_SYSCALL_ABI: t40 = 2;
-const EXEC_V2_SCALAR_TRITS: t40 = 40;
-const EXEC_V2_BASE_PAGE_WORDS: t40 = 729;
-const EXEC_V2_MAGIC_INDEX: t40 = 0;
-const EXEC_V2_VERSION_INDEX: t40 = 1;
-const EXEC_V2_FUNCTION_ABI_INDEX: t40 = 2;
-const EXEC_V2_HEADER_SIZE_INDEX: t40 = 3;
-const EXEC_V2_ISA_INDEX: t40 = 4;
-const EXEC_V2_FEATURES_INDEX: t40 = 5;
-const EXEC_V2_ENTRY_PC_INDEX: t40 = 6;
-const EXEC_V2_TEXT_WORDS_INDEX: t40 = 7;
-const EXEC_V2_DATA_WORDS_INDEX: t40 = 8;
-const EXEC_V2_STACK_WORDS_INDEX: t40 = 9;
-const EXEC_V2_SYSCALL_ABI_INDEX: t40 = 10;
-const EXEC_V2_SCALAR_WIDTH_INDEX: t40 = 11;
-const EXEC_V2_BASE_PAGE_INDEX: t40 = 12;
-const EXEC_V2_FLAGS_INDEX: t40 = 13;
-const EXEC_V2_CHECKSUM_INDEX: t40 = 14;
-// v3 is an executable/context profile over the v2 instruction codec. The
-// scalar trap record remains v2; the vector context is a separate 279-word
-// process-owned allocation referenced by PROC_VECTOR_CONTEXT.
+const EXEC_DESC_WORDS: t40 = 23;
+// The current executable envelope is ABI v3 over the ISA-v2 instruction
+// codec.  These field offsets are shared by the host image builder and the
+// native kernel; no older executable envelope is decoded here.
 const EXEC_V3_HEADER_WORDS: t40 = 20;
 const EXEC_V3_VERSION: t40 = 3;
 const EXEC_V3_FUNCTION_ABI: t40 = 3;
 const EXEC_V3_ISA: t40 = 2;
 const EXEC_V3_SYSCALL_ABI: t40 = 2;
+const EXEC_V3_MAGIC_INDEX: t40 = 0;
+const EXEC_V3_VERSION_INDEX: t40 = 1;
+const EXEC_V3_FUNCTION_ABI_INDEX: t40 = 2;
+const EXEC_V3_HEADER_SIZE_INDEX: t40 = 3;
+const EXEC_V3_ISA_INDEX: t40 = 4;
+const EXEC_V3_FEATURES_INDEX: t40 = 5;
+const EXEC_V3_ENTRY_PC_INDEX: t40 = 6;
+const EXEC_V3_TEXT_WORDS_INDEX: t40 = 7;
+const EXEC_V3_DATA_WORDS_INDEX: t40 = 8;
+const EXEC_V3_STACK_WORDS_INDEX: t40 = 9;
+const EXEC_V3_SYSCALL_ABI_INDEX: t40 = 10;
+const EXEC_V3_SCALAR_WIDTH_INDEX: t40 = 11;
+const EXEC_V3_BASE_PAGE_INDEX: t40 = 12;
+const EXEC_V3_FLAGS_INDEX: t40 = 13;
+const EXEC_V3_CHECKSUM_INDEX: t40 = 14;
+const EXEC_V3_SCALAR_TRITS: t40 = 40;
+const EXEC_V3_BASE_PAGE_WORDS: t40 = 729;
 const EXEC_V3_VECTOR_REGISTER_COUNT: t40 = 8;
 const EXEC_V3_VECTOR_LANE_COUNT: t40 = 27;
 const EXEC_V3_VECTOR_LANE_WORD_TRITS: t40 = 40;
@@ -633,8 +618,9 @@ const PROCESS_SCRATCH_PPN_OFFSET: t40 = 74;
 const PROCESS_DATA_PAGES_MAX: t40 = 74;
 const PROCESS_DMEM_PPN_BASE: t40 = 1000;
 const PROCESS_CONTEXT_BASE: t40 = 669000;
-// Separate arena: PROCESS_CONTEXT_BASE is intentionally left at 32 words per
-// task for the v2 trap ABI.  100 * 279 words fit below the WAL area.
+// Separate arena: PROCESS_CONTEXT_BASE remains the scalar task record. The
+// current executable ABI v3 owns a separate 279-word vector context below
+// the WAL area.
 const PROCESS_CONTEXT_V3_BASE: t40 = 700002;
 
 const APP_MAX: t40 = 256;
@@ -771,9 +757,6 @@ fn bootstrap_allocator_init() -> t40 {
 }
 
 fn alloc_bootstrap_page() -> t40 {
-    if kload(REL_MIGRATION_DONE_ADDR) > 0 {
-        return ERR_INVALID;
-    }
     var ppn: t40 = BOOTSTRAP_RESERVED_PAGES;
     while BOOTSTRAP_MAX_PAGES - ppn > 0 {
         if kload(bootstrap_bitmap_addr(ppn)) == 0 {
@@ -2056,9 +2039,9 @@ fn log_write(txid: t40, block_addr: t40, old_data: t40, new_data: t40) -> t40 {
     var rec: t40 = wal_record_addr(head);
     var previous_lsn: t40 = wal_tx_tracker_last_lsn(txid);
     if previous_lsn < 0 {
-        // A live modulo collision (or a legacy transaction started before
-        // tracker initialization) falls back to the fully validated ring
-        // scan, preserving the original chain semantics.
+        // A live modulo collision (or a transaction predating tracker state)
+        // falls back to the fully validated ring scan, preserving chain
+        // semantics.
         previous_lsn = 0;
         var prior_slot: t40 = kload(WAL_TAIL_ADDR);
         var prior_head: t40 = kload(WAL_HEAD_ADDR);
@@ -2334,71 +2317,6 @@ fn log_checkpoint() -> t40 {
     wal_status = wal_sync_to_disk();
     if wal_status < 0 { return wal_status; }
     return cleaned;
-}
-
-fn rel_alloc_addr(ppn: t40) -> t40 {
-    return REL_ALLOC_BASE + ppn * REL_ALLOC_WORDS;
-}
-
-fn rel_store_init() -> t40 {
-    kclear(REL_ALLOC_BASE, BOOTSTRAP_MAX_PAGES * REL_ALLOC_WORDS);
-    kstore(REL_ONLINE_ADDR, 1);
-    kstore(REL_MIGRATION_CURSOR_ADDR, 0);
-    kstore(REL_MIGRATION_DONE_ADDR, 0);
-    return 1;
-}
-
-fn alloc_row_upsert(ppn: t40, state: t40) -> t40 {
-    var row: t40 = rel_alloc_addr(ppn);
-    // Physical allocator ownership is transient fast-path state.  Durable
-    // allocation truth is reconstructed from VFS metadata at reconciliation.
-    kstore(row + REL_ALLOC_STATE, state);
-    var version: t40 = kload(row + REL_ALLOC_VERSION);
-    kstore(row + REL_ALLOC_VERSION, version + 1);
-    return 1;
-}
-
-fn migrate_bootstrap_allocations_step(max_rows: t40) -> t40 {
-    if kload(REL_ONLINE_ADDR) <= 0 {
-        return ERR_INVALID;
-    }
-    if kload(REL_MIGRATION_DONE_ADDR) > 0 {
-        return 0;
-    }
-    var cursor: t40 = kload(REL_MIGRATION_CURSOR_ADDR);
-    var processed: t40 = 0;
-    while max_rows - processed > 0 {
-        if BOOTSTRAP_MAX_PAGES - cursor <= 0 {
-            kstore(REL_MIGRATION_DONE_ADDR, 1);
-            return processed;
-        }
-        if bootstrap_is_allocated(cursor) > 0 {
-            alloc_row_upsert(cursor, 1);
-        }
-        cursor = cursor + 1;
-        processed = processed + 1;
-        kstore(REL_MIGRATION_CURSOR_ADDR, cursor);
-    }
-    if BOOTSTRAP_MAX_PAGES - cursor <= 0 {
-        kstore(REL_MIGRATION_DONE_ADDR, 1);
-    }
-    return processed;
-}
-
-fn migrate_bootstrap_allocations() -> t40 {
-    var total: t40 = 0;
-    while kload(REL_MIGRATION_DONE_ADDR) == 0 {
-        var step: t40 = migrate_bootstrap_allocations_step(8);
-        if step < 0 {
-            return step;
-        }
-        total = total + step;
-    }
-    return total;
-}
-
-fn rel_allocation_state(ppn: t40) -> t40 {
-    return kload(rel_alloc_addr(ppn) + REL_ALLOC_STATE);
 }
 
 // ── WAL extended API ──────────────────────────────────────────────────────────
@@ -2926,12 +2844,12 @@ fn process_arch_addr(slot: t40) -> t40 {
     return PROCESS_ARCH_BASE + slot * PROCESS_ARCH_WORDS;
 }
 
-fn process_arch_set_v2(slot: t40) -> t40 {
+fn process_arch_set_current(slot: t40) -> t40 {
     var arch: t40 = process_arch_addr(slot);
-    kstore(arch + PROC_ARCH_EXEC_VERSION, EXEC_V2_VERSION);
-    kstore(arch + PROC_ARCH_FUNCTION_ABI, EXEC_V2_FUNCTION_ABI);
-    kstore(arch + PROC_ARCH_SYSCALL_ABI, EXEC_V2_SYSCALL_ABI);
-    kstore(arch + PROC_ARCH_ISA, EXEC_V2_ISA);
+    kstore(arch + PROC_ARCH_EXEC_VERSION, EXEC_V3_VERSION);
+    kstore(arch + PROC_ARCH_FUNCTION_ABI, EXEC_V3_FUNCTION_ABI);
+    kstore(arch + PROC_ARCH_SYSCALL_ABI, EXEC_V3_SYSCALL_ABI);
+    kstore(arch + PROC_ARCH_ISA, EXEC_V3_ISA);
     kstore(arch + PROC_ARCH_FEATURES, 1);
     kstore(arch + PROC_ARCH_FLAGS, 0);
     return 1;
@@ -2972,7 +2890,7 @@ fn process_v3_context_addr_valid(context_addr: t40) -> t40 {
     return 1;
 }
 
-// Prepare only the process-owned v3 storage. Scalar state remains in the v2
+// Prepare only the process-owned v3 storage. Scalar state remains in the
 // task record. The native VCTX entry points save/restore this allocation at
 // the kernel boundary; this routine is also used for fork/exec/reuse reset.
 fn process_prepare_v3_context(slot: t40) -> t40 {
@@ -3098,7 +3016,7 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
     kstore(PROC_SIGNAL_PENDING_BASE + slot, 0);
     kstore(PROC_CLEANED_BASE + slot, 0);
     kstore(PROC_CAPS_BASE + slot, 0);
-    process_arch_set_v2(slot);
+    process_arch_set_current(slot);
     var heap: t40 = process_heap_addr(slot);
     kstore(heap + PROC_HEAP_START, MMU_PAGE_WORDS);
     kstore(heap + PROC_HEAP_BREAK, MMU_PAGE_WORDS);
@@ -3609,7 +3527,7 @@ fn process_wait(slot: t40, channel: t40) -> t40 {
     if slot - PROCESS_MAX >= 0 {
         return ERR_INVALID;
     }
-    return process_block_on(slot, channel, WAIT_KIND_LEGACY, 0, 0, 0, 0, PROC_BLOCKED);
+    return process_block_on(slot, channel, WAIT_KIND_DEFAULT, 0, 0, 0, 0, PROC_BLOCKED);
 }
 
 fn process_wake_channel(channel: t40) -> t40 {
@@ -4817,7 +4735,7 @@ fn user_translate_slot_dmem_addr(slot: t40, addr: t40, write: t40) -> t40 {
         metric_inc(METRIC_SLOW_PATH_FAULTS_ADDR);
         return ERR_BAD_PTR;
     }
-    // Hardware-visible PTE v2 accessed/dirty trits.
+// Hardware-visible ISA-v2 PTE accessed/dirty trits.
     if hw_pte_flag(flags, 729) <= 0 {
         pte_word = pte_word + 729;
         flags = flags + 729;
@@ -5333,7 +5251,7 @@ fn vfs_extent_count(inode: t40) -> t40 {
 }
 
 // Allocation rows are reusable tombstones.  The high-water cursors remain
-// monotonic so old v2 images and WAL recovery keep their layout contract.
+// monotonic so current image and WAL recovery keep their layout contract.
 fn vfs_find_free_inode_slot() -> t40 {
     var limit: t40 = kload(VFS_NEXT_INODE_ADDR);
     if limit - 1 < 0 { limit = 1; }
@@ -6439,7 +6357,7 @@ fn vfs_sync_inode_to_disk(namespace_id: t40, inode: t40) -> t40 {
                     return ERR_INVALID;
                 }
             }
-            // Unlink clears CHILD before the final close.  v2 has no separate
+    // Unlink clears CHILD before the final close. The current format has no separate
             // inode owner in a tombstone, so a descriptor fsync conservatively
             // persists all tombstones in this namespace as well.
             if kload(dir_row + DIRENT_CHILD) <= 0 {
@@ -6861,7 +6779,7 @@ fn vfs_create(namespace_id: t40, path_addr: t40, kind: t40) -> t40 {
     if log_capacity_for(inode_records + dir_records + 1) <= 0 {
         return ERR_NO_SPACE;
     }
-    // A free inode may still have cache frames from a pre-v2 tombstone.  The
+    // A free inode may still have cache frames from a prior allocation. The
     // volatile cache is never part of the image, so invalidate it before the
     // new generation becomes visible.
     var cache_status: t40 = buffer_invalidate_inode(-1, inode);
@@ -7663,25 +7581,12 @@ fn exec_pages_for_words(words: t40) -> t40 {
     return pages;
 }
 
-fn exec_is_v3(image_addr: t40) -> t40 {
-    if kload(image_addr + EXEC_V2_VERSION_INDEX) - EXEC_V3_VERSION == 0 {
-        return 1;
-    }
-    return 0;
-}
-
 fn exec_descriptor_base(image_addr: t40) -> t40 {
-    if exec_is_v3(image_addr) > 0 {
-        return image_addr + EXEC_V3_HEADER_WORDS;
-    }
-    return image_addr + EXEC_V2_HEADER_WORDS;
+    return image_addr + EXEC_V3_HEADER_WORDS;
 }
 
 fn exec_descriptor_words(image_addr: t40) -> t40 {
-    if exec_is_v3(image_addr) > 0 {
-        return EXEC_V3_HEADER_WORDS + 3;
-    }
-    return EXEC_V2_HEADER_WORDS + 3;
+    return EXEC_V3_HEADER_WORDS + 3;
 }
 
 fn exec_descriptor_text_ppn(image_addr: t40) -> t40 {
@@ -7726,85 +7631,25 @@ fn exec_v3_feature_word_valid(word: t40) -> t40 {
     return 1;
 }
 
-fn exec_v2_header_valid(image_addr: t40, size_words: t40) -> t40 {
-    if size_words - EXEC_DESC_WORDS < 0 {
-        return 0;
-    }
-    var header: t40 = image_addr;
-    if kload(header + EXEC_V2_MAGIC_INDEX) - EXEC_MAGIC != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_VERSION_INDEX) - EXEC_V2_VERSION != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_FUNCTION_ABI_INDEX) - EXEC_V2_FUNCTION_ABI != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_HEADER_SIZE_INDEX) - EXEC_V2_HEADER_WORDS != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_ISA_INDEX) - EXEC_V2_ISA != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_FEATURES_INDEX) <= 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_ENTRY_PC_INDEX) < 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) <= 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) -
-           exec_descriptor_text_words(image_addr) != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_DATA_WORDS_INDEX) < 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_STACK_WORDS_INDEX) <= 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_SYSCALL_ABI_INDEX) - EXEC_V2_SYSCALL_ABI != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_SCALAR_WIDTH_INDEX) - EXEC_V2_SCALAR_TRITS != 0 {
-        return 0;
-    }
-    if kload(header + EXEC_V2_BASE_PAGE_INDEX) - EXEC_V2_BASE_PAGE_WORDS != 0 {
-        return 0;
-    }
-    var checksum: t40 = 0;
-    var word: t40 = 0;
-    while EXEC_V2_HEADER_WORDS - word > 0 {
-        checksum = checksum + kload(header + word);
-        word = word + 1;
-    }
-    if checksum != 0 {
-        return 0;
-    }
-    return 1;
-}
-
 fn exec_v3_header_valid(image_addr: t40, size_words: t40) -> t40 {
     if size_words - (EXEC_V3_HEADER_WORDS + 3) < 0 { return 0; }
     var header: t40 = image_addr;
-    if kload(header + EXEC_V2_MAGIC_INDEX) - EXEC_MAGIC != 0 { return 0; }
-    if kload(header + EXEC_V2_VERSION_INDEX) - EXEC_V3_VERSION != 0 { return 0; }
-    if kload(header + EXEC_V2_FUNCTION_ABI_INDEX) - EXEC_V3_FUNCTION_ABI != 0 { return 0; }
-    if kload(header + EXEC_V2_HEADER_SIZE_INDEX) - EXEC_V3_HEADER_WORDS != 0 { return 0; }
-    if kload(header + EXEC_V2_ISA_INDEX) - EXEC_V3_ISA != 0 { return 0; }
+    if kload(header + EXEC_V3_MAGIC_INDEX) - EXEC_MAGIC != 0 { return 0; }
+    if kload(header + EXEC_V3_VERSION_INDEX) - EXEC_V3_VERSION != 0 { return 0; }
+    if kload(header + EXEC_V3_FUNCTION_ABI_INDEX) - EXEC_V3_FUNCTION_ABI != 0 { return 0; }
+    if kload(header + EXEC_V3_HEADER_SIZE_INDEX) - EXEC_V3_HEADER_WORDS != 0 { return 0; }
+    if kload(header + EXEC_V3_ISA_INDEX) - EXEC_V3_ISA != 0 { return 0; }
     if exec_v3_feature_word_valid(
-            kload(header + EXEC_V2_FEATURES_INDEX)) <= 0 { return 0; }
-    if kload(header + EXEC_V2_ENTRY_PC_INDEX) < 0 { return 0; }
-    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) <= 0 { return 0; }
-    if kload(header + EXEC_V2_TEXT_WORDS_INDEX) -
+            kload(header + EXEC_V3_FEATURES_INDEX)) <= 0 { return 0; }
+    if kload(header + EXEC_V3_ENTRY_PC_INDEX) < 0 { return 0; }
+    if kload(header + EXEC_V3_TEXT_WORDS_INDEX) <= 0 { return 0; }
+    if kload(header + EXEC_V3_TEXT_WORDS_INDEX) -
            exec_descriptor_text_words(image_addr) != 0 { return 0; }
-    if kload(header + EXEC_V2_DATA_WORDS_INDEX) < 0 { return 0; }
-    if kload(header + EXEC_V2_STACK_WORDS_INDEX) <= 0 { return 0; }
-    if kload(header + EXEC_V2_SYSCALL_ABI_INDEX) - EXEC_V3_SYSCALL_ABI != 0 { return 0; }
-    if kload(header + EXEC_V2_SCALAR_WIDTH_INDEX) - EXEC_V2_SCALAR_TRITS != 0 { return 0; }
-    if kload(header + EXEC_V2_BASE_PAGE_INDEX) - EXEC_V2_BASE_PAGE_WORDS != 0 { return 0; }
+    if kload(header + EXEC_V3_DATA_WORDS_INDEX) < 0 { return 0; }
+    if kload(header + EXEC_V3_STACK_WORDS_INDEX) <= 0 { return 0; }
+    if kload(header + EXEC_V3_SYSCALL_ABI_INDEX) - EXEC_V3_SYSCALL_ABI != 0 { return 0; }
+    if kload(header + EXEC_V3_SCALAR_WIDTH_INDEX) - EXEC_V3_SCALAR_TRITS != 0 { return 0; }
+    if kload(header + EXEC_V3_BASE_PAGE_INDEX) - EXEC_V3_BASE_PAGE_WORDS != 0 { return 0; }
     if kload(header + EXEC_V3_VECTOR_REGISTER_COUNT_INDEX) - EXEC_V3_VECTOR_REGISTER_COUNT != 0 { return 0; }
     if kload(header + EXEC_V3_VECTOR_LANE_COUNT_INDEX) - EXEC_V3_VECTOR_LANE_COUNT != 0 { return 0; }
     if kload(header + EXEC_V3_VECTOR_LANE_WORD_TRITS_INDEX) - EXEC_V3_VECTOR_LANE_WORD_TRITS != 0 { return 0; }
@@ -7821,10 +7666,7 @@ fn exec_v3_header_valid(image_addr: t40, size_words: t40) -> t40 {
 }
 
 fn exec_header_valid(image_addr: t40, size_words: t40) -> t40 {
-    if exec_is_v3(image_addr) > 0 {
-        return exec_v3_header_valid(image_addr, size_words);
-    }
-    return exec_v2_header_valid(image_addr, size_words);
+    return exec_v3_header_valid(image_addr, size_words);
 }
 
 fn exec_install_architecture(process_slot: t40, image_addr: t40, size_words: t40) -> t40 {
@@ -7834,17 +7676,17 @@ fn exec_install_architecture(process_slot: t40, image_addr: t40, size_words: t40
     var header: t40 = image_addr;
     var arch: t40 = process_arch_addr(process_slot);
     kstore(arch + PROC_ARCH_EXEC_VERSION,
-           kload(header + EXEC_V2_VERSION_INDEX));
+           kload(header + EXEC_V3_VERSION_INDEX));
     kstore(arch + PROC_ARCH_FUNCTION_ABI,
-           kload(header + EXEC_V2_FUNCTION_ABI_INDEX));
+           kload(header + EXEC_V3_FUNCTION_ABI_INDEX));
     kstore(arch + PROC_ARCH_SYSCALL_ABI,
-           kload(header + EXEC_V2_SYSCALL_ABI_INDEX));
+           kload(header + EXEC_V3_SYSCALL_ABI_INDEX));
     kstore(arch + PROC_ARCH_ISA,
-           kload(header + EXEC_V2_ISA_INDEX));
+           kload(header + EXEC_V3_ISA_INDEX));
     kstore(arch + PROC_ARCH_FEATURES,
-           kload(header + EXEC_V2_FEATURES_INDEX));
+           kload(header + EXEC_V3_FEATURES_INDEX));
     kstore(arch + PROC_ARCH_FLAGS,
-           kload(header + EXEC_V2_FLAGS_INDEX));
+           kload(header + EXEC_V3_FLAGS_INDEX));
     return 1;
 }
 
@@ -7855,7 +7697,7 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if exec_header_valid(image_addr, size_words) <= 0 {
         return 0;
     }
-    var text_words: t40 = kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX);
+    var text_words: t40 = kload(image_addr + EXEC_V3_TEXT_WORDS_INDEX);
     var text_pages: t40 = exec_pages_for_words(text_words);
     if text_pages <= 0 {
         return 0;
@@ -7863,9 +7705,9 @@ fn exec_descriptor_valid(image_addr: t40, size_words: t40) -> t40 {
     if text_pages - HW_PT_MAX_PAGES > 0 {
         return 0;
     }
-    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
-    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
-        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+    var writable_words: t40 = kload(image_addr + EXEC_V3_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V3_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V3_STACK_WORDS_INDEX);
     }
     var data_pages: t40 = exec_pages_for_words(writable_words);
     if data_pages <= 0 {
@@ -7999,10 +7841,10 @@ fn is_gui_app(path_addr: t40) -> t40 {
 
 fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
     var text_pages: t40 =
-        exec_pages_for_words(kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX));
-    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
-    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
-        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+        exec_pages_for_words(kload(image_addr + EXEC_V3_TEXT_WORDS_INDEX));
+    var writable_words: t40 = kload(image_addr + EXEC_V3_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V3_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V3_STACK_WORDS_INDEX);
     }
     var data_pages: t40 = exec_pages_for_words(writable_words);
     if data_pages <= 0 { data_pages = 1; }
@@ -8031,10 +7873,9 @@ fn exec_map_descriptor(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 {
         scratch_page = scratch_page + 1;
     }
     if is_gui > 0 {
-        // The legacy 27-word-page range 49977..62018 becomes VPN 68..85
-        // with 729-word architectural pages. This covers OS_TEXT_BASE and
-        // the complete 2000-word text surface without mapping thousands of
-        // unrelated pages.
+        // The fixed video range uses VPNs 68..85 with 729-word architectural
+        // pages. This covers OS_TEXT_BASE and the complete 2000-word text
+        // surface without mapping unrelated pages.
         var vram_vpn: t40 = 68;
         while 86 - vram_vpn > 0 {
             kstore(exec_hw_dmem_ptbr(process_slot) + vram_vpn, exec_encode_pte(vram_vpn, 1, 1, 1, 0));
@@ -8049,16 +7890,14 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
     if exec_header_valid(image_addr, EXEC_IMAGE_WORDS) <= 0 {
         return ERR_INVALID;
     }
-    if exec_is_v3(image_addr) > 0 {
-        if process_vector_context_reset(process_slot) < 0 {
-            return ERR_INVALID;
-        }
+    if process_vector_context_reset(process_slot) < 0 {
+        return ERR_INVALID;
     }
     var row: t40 = process_addr(process_slot);
     var ctx: t40 = kload(row + PROC_CONTEXT);
-    var writable_words: t40 = kload(image_addr + EXEC_V2_DATA_WORDS_INDEX);
-    if kload(image_addr + EXEC_V2_STACK_WORDS_INDEX) - writable_words > 0 {
-        writable_words = kload(image_addr + EXEC_V2_STACK_WORDS_INDEX);
+    var writable_words: t40 = kload(image_addr + EXEC_V3_DATA_WORDS_INDEX);
+    if kload(image_addr + EXEC_V3_STACK_WORDS_INDEX) - writable_words > 0 {
+        writable_words = kload(image_addr + EXEC_V3_STACK_WORDS_INDEX);
     }
     var data_pages: t40 = exec_pages_for_words(writable_words);
     if data_pages <= 0 { data_pages = 1; }
@@ -8067,12 +7906,12 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
         kstore(row + PROC_CONTEXT, ctx);
     }
     kclear(ctx, TASK_CONTEXT_WORDS);
-    kstore(ctx + TASK_CONTEXT_EPC, kload(image_addr + EXEC_V2_ENTRY_PC_INDEX));
+    kstore(ctx + TASK_CONTEXT_EPC, kload(image_addr + EXEC_V3_ENTRY_PC_INDEX));
     kstore(ctx + TASK_CONTEXT_STATUS, TASK_STATUS_USER_RESUME);
     kstore(ctx + TASK_CONTEXT_IMEM_PTBR, exec_hw_imem_ptbr(process_slot));
     kstore(
         ctx + TASK_CONTEXT_IMEM_PAGES,
-        exec_pages_for_words(kload(image_addr + EXEC_V2_TEXT_WORDS_INDEX)));
+        exec_pages_for_words(kload(image_addr + EXEC_V3_TEXT_WORDS_INDEX)));
     kstore(ctx + TASK_CONTEXT_DMEM_PTBR, exec_hw_dmem_ptbr(process_slot));
     var dmem_pages: t40 = data_pages;
     if dmem_pages - (USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES) < 0 {
@@ -8082,7 +7921,7 @@ fn exec_install_context(process_slot: t40, image_addr: t40, is_gui: t40) -> t40 
         dmem_pages = 86;
     }
     kstore(ctx + TASK_CONTEXT_DMEM_PAGES, dmem_pages);
-    kstore(ctx + TASK_CONTEXT_SP, kload(image_addr + EXEC_V2_STACK_WORDS_INDEX));
+    kstore(ctx + TASK_CONTEXT_SP, kload(image_addr + EXEC_V3_STACK_WORDS_INDEX));
     var heap: t40 = process_heap_addr(process_slot);
     var heap_start: t40 = data_pages * MMU_PAGE_WORDS;
     kstore(heap + PROC_HEAP_START, heap_start);
@@ -8920,7 +8759,7 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
             process_reap_slot(target_slot);
             return kernel_set_return(1, child_status, 0);
         }
-        var wait_child: t40 = process_block_on(caller_slot, wait_channel_waitpid(arg0), WAIT_KIND_LEGACY, 0, arg0, 0, 0, PROC_BLOCKED);
+        var wait_child: t40 = process_block_on(caller_slot, wait_channel_waitpid(arg0), WAIT_KIND_DEFAULT, 0, arg0, 0, 0, PROC_BLOCKED);
         if wait_child < 0 {
             return kernel_set_return(-1, 0, wait_child);
         }
@@ -9831,7 +9670,6 @@ fn kernel_init() -> t40 {
     bootstrap_allocator_init();
     buffer_pool_init();
     wal_init();
-    rel_store_init();
     attr_store_init();
     scheduler_init();
     process_table_init();

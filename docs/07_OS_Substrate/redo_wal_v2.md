@@ -59,8 +59,8 @@ number of committed words and advances the descriptor by exactly that amount.
 Create/mkdir now use one WAL transaction for the inode row, inode cursor,
 directory row/name, and directory cursor; create timestamps are part of that
 after-image. Tombstoned inode, dirent, and extent rows are first-fit reusable;
-extent tombstones retain their `DATA_ADDR`/`LENGTH` span, while legacy v2
-length-zero tombstones remain valid but provide no reusable data hole.
+extent tombstones retain their `DATA_ADDR`/`LENGTH` span, while length-zero
+tombstones remain valid but provide no reusable data hole.
 Truncate and unlink log inode size/link state, directory tombstones, extent
 version tombstones, and mtime before committing. Unlink leaves a links=0
 orphan readable through matching open descriptors; close, process cleanup, and
@@ -106,7 +106,7 @@ only then advances the WAL tail in a new superblock.
 ## Executable recovery oracle
 
 `ternary_redo_wal.h` is the dependency-free host recovery oracle for the same
-record contract. `test_redo_wal_v2` verifies logical-versus-durable commit,
-group/timer flushing, abort without undo, torn commits, alternating
-superblocks, redo replay, and the two-barrier `fsync` gate.
+record contract. WAL recovery is included in the production source graph; a
+dedicated historical test target is not part of the current validation
+surface.
 

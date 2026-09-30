@@ -29,11 +29,9 @@ namespace host {
 inline constexpr std::uint64_t TOS_BOOT_MAGIC = 0x31544f4f424f5354ULL; // "TSOBOOT1"
 inline constexpr std::uint32_t TOS_BOOT_FORMAT_VERSION =
     architecture::v2::TBOOT_WRITE_VERSION;
-inline constexpr std::uint64_t TOS_SPARSE_DISK_MAGIC =
+inline constexpr std::uint64_t TOS_TDISK_MAGIC =
     0x54524954535032ULL; // "TRITSP2"
-inline constexpr std::uint64_t TOS_LEGACY_SPARSE_DISK_MAGIC =
-    0x54524954535031ULL; // "TRITSP1" (offline migration input only)
-inline constexpr std::uint32_t TOS_SPARSE_DISK_VERSION =
+inline constexpr std::uint32_t TOS_TDISK_VERSION =
     architecture::v2::TDISK_WRITE_VERSION;
 inline constexpr int TOS_IMAGE_SECTION_EXECUTABLE = 1 << 0;
 inline constexpr int TOS_IMAGE_SECTION_KERNEL = 1 << 1;
@@ -49,8 +47,8 @@ struct TosAppManifestEntry {
     int stack_words = 0;
     int isa_version = architecture::v2::ISA_VERSION;
     std::uint64_t required_features =
-        isa::featureBit(architecture::v2::FEATURE_BASE_V2);
-    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+        architecture::v3::REQUIRED_FEATURES;
+    int function_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
     int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
 };
 
@@ -73,11 +71,10 @@ struct TosImageManifest {
     int framebuffer_width = 80;
     int framebuffer_height = 60;
     int isa_version = architecture::v2::ISA_VERSION;
-    std::uint64_t required_features =
-        isa::featureBit(architecture::v2::FEATURE_BASE_V2);
+    std::uint64_t required_features = architecture::v3::REQUIRED_FEATURES;
     int scalar_word_trits = architecture::v2::SCALAR_WORD_TRITS;
     int base_page_words = architecture::v2::BASE_PAGE_WORDS;
-    int function_abi_version = architecture::v2::FUNCTION_ABI_VERSION;
+    int function_abi_version = architecture::v3::FUNCTION_ABI_VERSION;
     int syscall_abi_version = architecture::v2::SYSCALL_ABI_VERSION;
     std::vector<TosImageSection> sections;
     std::vector<TosAppManifestEntry> apps;
@@ -207,8 +204,8 @@ inline bool readPod(const std::vector<std::uint8_t>& in, std::size_t& offset, T&
 template <typename T>
 struct UnsupportedTbootScalar : std::false_type {};
 
-// The v3 tboot payload has only these explicit scalar encodings. Keep this
-// separate from legacy helpers used by other host formats.
+// The v3 tBoot payload has only these explicit scalar encodings. Keep this
+// separate from the other explicit host codecs.
 template <typename T>
 inline void appendTbootScalar(std::vector<std::uint8_t>& out, T value) {
     binary::Writer writer(out);
@@ -1125,8 +1122,7 @@ inline bool deserializePayload(const std::vector<std::uint8_t>& payload,
         setError(
             error,
             "boot image format v" + std::to_string(version) +
-                " is not supported by the v2 runtime; use "
-                "migrate_tos_artifacts with a fresh v2 template");
+                " is not supported; current runtime accepts tBoot v3 only");
         return false;
     }
 
@@ -1578,8 +1574,7 @@ inline bool validateBootImage(const TosBootImage& image, std::string* error = nu
             error,
             "boot image format v" +
                 std::to_string(image.manifest.format_version) +
-                " is not supported by the v2 runtime; use "
-                "migrate_tos_artifacts with a fresh v2 template");
+                " is not supported; current runtime accepts tBoot v3 only");
         return false;
     }
     if (image.program.empty()) {
@@ -1616,21 +1611,22 @@ inline bool validateBootImage(const TosBootImage& image, std::string* error = nu
         detail::setError(error, "boot image has no section table entries");
         return false;
     }
-    const bool v2_image =
+    const bool current_image =
         image.manifest.isa_version == architecture::v2::ISA_VERSION &&
         image.manifest.scalar_word_trits ==
             architecture::v2::SCALAR_WORD_TRITS &&
         image.manifest.base_page_words ==
             architecture::v2::BASE_PAGE_WORDS &&
         image.manifest.function_abi_version ==
-            architecture::v2::FUNCTION_ABI_VERSION &&
+            architecture::v3::FUNCTION_ABI_VERSION &&
         image.manifest.syscall_abi_version ==
             architecture::v2::SYSCALL_ABI_VERSION &&
-        (image.manifest.required_features &
-         isa::featureBit(architecture::v2::FEATURE_BASE_V2)) != 0;
-    if (!v2_image) {
+        (image.manifest.required_features & architecture::v3::REQUIRED_FEATURES) ==
+            architecture::v3::REQUIRED_FEATURES &&
+        (image.manifest.required_features & ~architecture::v3::SUPPORTED_FEATURES) == 0;
+    if (!current_image) {
         detail::setError(
-            error, "boot image v3 architecture metadata is incompatible");
+            error, "boot image architecture metadata must be ISA v2 and executable ABI v3");
         return false;
     }
     if (!image.data_words_raw.empty() &&
@@ -1833,8 +1829,8 @@ inline bool writeSparseDiskFile(const std::string& path,
         detail::setError(error, "failed to open sparse disk for writing: " + path);
         return false;
     }
-    const std::uint64_t magic = TOS_SPARSE_DISK_MAGIC;
-    const std::uint32_t version = TOS_SPARSE_DISK_VERSION;
+    const std::uint64_t magic = TOS_TDISK_MAGIC;
+    const std::uint32_t version = TOS_TDISK_VERSION;
     const std::uint32_t block_words = vm::STORAGE_BLOCK_WORDS;
     const std::uint64_t generation = 1;
     const std::uint64_t checksum = detail::fnv1a(records);
@@ -1915,32 +1911,24 @@ inline bool loadBootImageIntoVm(vm::VMState& machine,
         }
         if (!machine.attachBlockBackingFile(disk_path)) {
             // Keep the production rejection actionable without teaching the
-            // live VM how to mount historical formats. The standalone
-            // migrator owns those readers and emits a fresh tDisk v2 image.
+            // live VM how to mount historical formats. The current runtime
+            // accepts only checksummed tDisk v2.
             std::uint64_t magic = 0;
             std::uint32_t version = 0;
             std::ifstream disk(disk_path, std::ios::binary);
             disk.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-            if (magic == TOS_LEGACY_SPARSE_DISK_MAGIC) {
-                detail::setError(
-                    error,
-                    "legacy tDisk v1 is rejected by the v2 runtime; use "
-                    "migrate_tos_artifacts for offline conversion: " +
-                        disk_path);
-            } else if (magic == TOS_SPARSE_DISK_MAGIC) {
+            if (magic == TOS_TDISK_MAGIC) {
                 disk.read(reinterpret_cast<char*>(&version), sizeof(version));
                 detail::setError(
                     error,
                     "tDisk version " + std::to_string(version) +
-                        " is not supported by the v2 runtime; use "
-                        "migrate_tos_artifacts for offline conversion: " +
+                        " is not supported; current runtime accepts tDisk v2 only: " +
                         disk_path);
             } else {
                 detail::setError(
                     error,
                     "unsupported or corrupt tDisk backing; production runtime "
-                    "accepts only checksummed tDisk v2 (use "
-                    "migrate_tos_artifacts for legacy inputs): " +
+                    "accepts only checksummed tDisk v2: " +
                         disk_path);
             }
             return false;
