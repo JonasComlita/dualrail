@@ -18,6 +18,14 @@ const DESKTOP_PROC_RUNNING: t40 = 2;
 const DESKTOP_PROC_BLOCKED: t40 = 3;
 const DESKTOP_PROC_SLEEPING: t40 = 4;
 
+// The launcher is a single-column list. Keep its geometry in one place so
+// drawing and pointer routing cannot drift apart.
+const DESKTOP_LAUNCHER_ROW_X: t40 = 8;
+const DESKTOP_LAUNCHER_ROW_FIRST_Y: t40 = 4;
+const DESKTOP_LAUNCHER_ROW_WIDTH: t40 = 8;
+const DESKTOP_LAUNCHER_ROW_COUNT: t40 = 6;
+const DESKTOP_LAUNCHER_ROW_STRIDE: t40 = 1;
+
 fn desktop_title() -> t40 {
     os_text_cell(0, 0, 84, 11); // 'T'
     os_text_cell(1, 0, 82, 11); // 'R'
@@ -183,6 +191,57 @@ fn desktop_launch_child(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 
     return os_spawn_app(path_addr, child_slot, child_pid);
 }
 
+fn desktop_launcher_row_y(row_idx: t40) -> t40 {
+    return DESKTOP_LAUNCHER_ROW_FIRST_Y + row_idx * DESKTOP_LAUNCHER_ROW_STRIDE;
+}
+
+fn desktop_launcher_row_at(mx: t40, my: t40) -> t40 {
+    if mx - DESKTOP_LAUNCHER_ROW_X < 0 {
+        return 0;
+    }
+    if mx - (DESKTOP_LAUNCHER_ROW_X + DESKTOP_LAUNCHER_ROW_WIDTH) >= 0 {
+        return 0;
+    }
+
+    var row_idx: t40 = 0;
+    while DESKTOP_LAUNCHER_ROW_COUNT - row_idx > 0 {
+        var row_y: t40 = desktop_launcher_row_y(row_idx);
+        if my - row_y == 0 {
+            return row_idx + 1;
+        }
+        row_idx = row_idx + 1;
+    }
+    return 0;
+}
+
+fn desktop_launch_row(row: t40) -> t40 {
+    if row - 1 == 0 {
+        var path_addr: t40 = desktop_seed_calculator_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
+    }
+    if row - 2 == 0 {
+        var path_addr: t40 = desktop_seed_task_manager_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
+    }
+    if row - 3 == 0 {
+        var path_addr: t40 = desktop_seed_paint_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
+    }
+    if row - 4 == 0 {
+        var path_addr: t40 = desktop_seed_file_manager_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
+    }
+    if row - 5 == 0 {
+        var path_addr: t40 = desktop_seed_settings_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
+    }
+    if row - 6 == 0 {
+        var path_addr: t40 = desktop_seed_terminal_path(10000);
+        return desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
+    }
+    return 0;
+}
+
 fn desktop_child_accepts_input(child_pid: t40, info_addr: t40) -> t40 {
     if child_pid <= 0 {
         return 0;
@@ -202,28 +261,22 @@ fn desktop_child_accepts_input(child_pid: t40, info_addr: t40) -> t40 {
 
 fn desktop_launch_hotkey(key: t40) -> t40 {
     if key - 49 == 0 {
-        var path_addr: t40 = desktop_seed_calculator_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
+        return desktop_launch_row(1);
     }
     if key - 50 == 0 {
-        var path_addr: t40 = desktop_seed_task_manager_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
+        return desktop_launch_row(2);
     }
     if key - 51 == 0 {
-        var path_addr: t40 = desktop_seed_paint_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
+        return desktop_launch_row(3);
     }
     if key - 52 == 0 {
-        var path_addr: t40 = desktop_seed_file_manager_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
+        return desktop_launch_row(4);
     }
     if key - 53 == 0 {
-        var path_addr: t40 = desktop_seed_settings_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
+        return desktop_launch_row(5);
     }
     if key - 54 == 0 {
-        var path_addr: t40 = desktop_seed_terminal_path(10000);
-        return desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
+        return desktop_launch_row(6);
     }
     return 0;
 }
@@ -368,14 +421,16 @@ fn draw_taskbar() -> t40 {
     return 1;
 }
 
-fn desktop_draw_launcher_line(y: t40, n: t40, a: t40, b: t40, c: t40, d: t40, e: t40) -> t40 {
-    os_text_cell(8, y, n, 5);
-    os_text_cell(9, y, 46, 8);
-    os_text_cell(11, y, a, 10);
-    os_text_cell(12, y, b, 10);
-    os_text_cell(13, y, c, 10);
-    os_text_cell(14, y, d, 10);
-    if e > 0 { os_text_cell(15, y, e, 10); }
+fn desktop_draw_launcher_line(row_idx: t40, n: t40, a: t40, b: t40, c: t40, d: t40, e: t40) -> t40 {
+    var x: t40 = DESKTOP_LAUNCHER_ROW_X;
+    var y: t40 = desktop_launcher_row_y(row_idx);
+    os_text_cell(x, y, n, 5);
+    os_text_cell(x + 1, y, 46, 8);
+    os_text_cell(x + 3, y, a, 10);
+    os_text_cell(x + 4, y, b, 10);
+    os_text_cell(x + 5, y, c, 10);
+    os_text_cell(x + 6, y, d, 10);
+    if e > 0 { os_text_cell(x + 7, y, e, 10); }
     return 1;
 }
 
@@ -384,12 +439,12 @@ fn desktop_draw_launcher() -> t40 {
     os_text_cell(8, 2, 76, 8); os_text_cell(9, 2, 65, 8); os_text_cell(10, 2, 85, 8);
     os_text_cell(11, 2, 78, 8); os_text_cell(12, 2, 67, 8); os_text_cell(13, 2, 72, 8);
     os_text_cell(15, 2, 80, 3); os_text_cell(16, 2, 65, 3); os_text_cell(17, 2, 68, 3);
-    desktop_draw_launcher_line(4, 49, 67, 65, 76, 67, 0);
-    desktop_draw_launcher_line(5, 50, 84, 65, 83, 75, 0);
-    desktop_draw_launcher_line(6, 51, 80, 65, 73, 78, 84);
-    desktop_draw_launcher_line(7, 52, 70, 73, 76, 69, 83);
-    desktop_draw_launcher_line(8, 53, 83, 69, 84, 84, 0);
-    desktop_draw_launcher_line(9, 54, 84, 69, 82, 77, 0);
+    desktop_draw_launcher_line(0, 49, 67, 65, 76, 67, 0);
+    desktop_draw_launcher_line(1, 50, 84, 65, 83, 75, 0);
+    desktop_draw_launcher_line(2, 51, 80, 65, 73, 78, 84);
+    desktop_draw_launcher_line(3, 52, 70, 73, 76, 69, 83);
+    desktop_draw_launcher_line(4, 53, 83, 69, 84, 84, 0);
+    desktop_draw_launcher_line(5, 54, 84, 69, 82, 77, 0);
     return 1;
 }
 
@@ -405,86 +460,6 @@ fn desktop_draw_launch_status(slot: t40, result: t40) -> t40 {
     } else {
         os_text_cell(17, 12, 69, 9); os_text_cell(18, 12, 82, 9); os_text_cell(19, 12, 82, 9);
     }
-    return 1;
-}
-
-// Draw a single icon cell at grid col/row position
-// col: 0-2, row: 0-1; glyph: ASCII char for icon center
-fn draw_icon_cell(col: t40, row_idx: t40, glyph: t40, label_addr: t40, label_len: t40, is_hovered: t40) -> t40 {
-    // Each icon cell: 12 wide, 4 tall, starting at x=8, y=3
-    var cell_x: t40 = 8 + col * 14;
-    var cell_y: t40 = 3 + row_idx * 5;
-
-    var border_color: t40 = WIDGET_THEME_ICON_BORDER;
-    var glyph_color: t40 = WIDGET_THEME_TEXT;
-    if is_hovered > 0 {
-        border_color = WIDGET_THEME_ICON_HOVER;
-        glyph_color = WIDGET_THEME_ICON_HOVER;
-    }
-
-    // Top border
-    os_text_cell(cell_x,      cell_y, 43, border_color); // '+'
-    os_text_cell(cell_x + 1,  cell_y, 45, border_color); // '-'
-    os_text_cell(cell_x + 2,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 3,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 4,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 5,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 6,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 7,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 8,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 9,  cell_y, 45, border_color);
-    os_text_cell(cell_x + 10, cell_y, 45, border_color);
-    os_text_cell(cell_x + 11, cell_y, 43, border_color); // '+'
-
-    // Row 1: sides + empty
-    os_text_cell(cell_x, cell_y + 1, 124, border_color);  // '|'
-    var fill1: t40 = 1;
-    while 11 - fill1 > 0 {
-        os_text_cell(cell_x + fill1, cell_y + 1, 32, 0);
-        fill1 = fill1 + 1;
-    }
-    os_text_cell(cell_x + 11, cell_y + 1, 124, border_color);
-
-    // Row 2: sides + glyph centred
-    os_text_cell(cell_x, cell_y + 2, 124, border_color);
-    var fill2: t40 = 1;
-    while 11 - fill2 > 0 {
-        os_text_cell(cell_x + fill2, cell_y + 2, 32, 0);
-        fill2 = fill2 + 1;
-    }
-    os_text_cell(cell_x + 5, cell_y + 2, glyph, glyph_color); // centred glyph
-    os_text_cell(cell_x + 11, cell_y + 2, 124, border_color);
-
-    // Row 3: sides + label centred
-    os_text_cell(cell_x, cell_y + 3, 124, border_color);
-    var fill3: t40 = 1;
-    while 11 - fill3 > 0 {
-        os_text_cell(cell_x + fill3, cell_y + 3, 32, 0);
-        fill3 = fill3 + 1;
-    }
-    // Centre label (max 8 chars visible)
-    var label_x: t40 = cell_x + 1;
-    if 10 - label_len > 0 {
-        label_x = cell_x + 1 + (10 - label_len) / 2;
-    }
-    var li: t40 = 0;
-    while label_len - li > 0 {
-        var lc: t40 = 0;
-        unsafe { lc = load(label_addr + li); }
-        os_text_cell(label_x + li, cell_y + 3, lc, glyph_color);
-        li = li + 1;
-    }
-    os_text_cell(cell_x + 11, cell_y + 3, 124, border_color);
-
-    // Bottom border
-    os_text_cell(cell_x,      cell_y + 4, 43, border_color); // '+'
-    var bi: t40 = 1;
-    while 11 - bi > 0 {
-        os_text_cell(cell_x + bi, cell_y + 4, 45, border_color);
-        bi = bi + 1;
-    }
-    os_text_cell(cell_x + 11, cell_y + 4, 43, border_color); // '+'
-
     return 1;
 }
 
@@ -929,6 +904,9 @@ fn main() -> t40 {
     if os_key_available() > 0 {
         var boot_key: t40 = os_read_key();
         var boot_launch: t40 = desktop_launch_hotkey(boot_key);
+        if boot_launch > 0 {
+            active_child_pid = boot_launch;
+        }
     }
 
     desktop_draw_hud();
@@ -939,6 +917,8 @@ fn main() -> t40 {
         k = 0;
         child_owns_input = desktop_child_accepts_input(active_child_pid, DESKTOP_PROCINFO_ADDR);
         if child_owns_input > 0 {
+            // A live child owns the global input path through its window/event
+            // loop. Poll only its process state here; do not read desktop input.
             os_sleep_ms(1);
         } else {
             if active_child_pid > 0 {
@@ -947,6 +927,7 @@ fn main() -> t40 {
                 desktop_draw_hud();
                 desktop_draw_launcher();
                 hovered = 0;
+                btn = 0;
                 last_btn = 0;
             }
             active_child_pid = 0;
@@ -975,36 +956,8 @@ fn main() -> t40 {
         // Publish sprite tracking cursor
         os_sprite(mx, my, 43, 14); // '+' in yellow
 
-        // Icon grid hit-test: 3 cols x 2 rows
-        // Col starts: 8, 22, 36 (cell_x = 8 + col*14)
-        // Row starts: 3, 8   (cell_y = 3 + row*5)
-        var current_hover: t40 = 0;
-        var hx: t40 = mx - 8;
-        var hy: t40 = my - 3;
-        if hx >= 0 {
-            if hy >= 0 {
-                var col_hit: t40 = -1;
-                var row_hit: t40 = -1;
-                // Column detection
-                if hx < 12 { col_hit = 0; }
-                if hx >= 14 {
-                    if hx < 26 { col_hit = 1; }
-                }
-                if hx >= 28 {
-                    if hx < 40 { col_hit = 2; }
-                }
-                // Row detection
-                if hy < 4 { row_hit = 0; }
-                if hy >= 5 {
-                    if hy < 9 { row_hit = 1; }
-                }
-                if col_hit >= 0 {
-                    if row_hit >= 0 {
-                        current_hover = 1 + row_hit * 3 + col_hit;
-                    }
-                }
-            }
-        }
+        // Pointer routing uses the same row origin/stride as the renderer.
+        var current_hover: t40 = desktop_launcher_row_at(mx, my);
 
         if current_hover - hovered != 0 { hovered = current_hover; }
 
@@ -1028,47 +981,13 @@ fn main() -> t40 {
             if k - 55 == 0 { click = 7; }
         }
 
-        if click - 1 == 0 {
-            desktop_draw_launch_status(1, 999);
-            var path_addr: t40 = desktop_seed_calculator_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_CALC_SLOT, DESKTOP_CALC_PID);
-            desktop_draw_launch_status(1, res);
-            if res > 0 { active_child_pid = DESKTOP_CALC_PID; }
-        }
-        if click - 2 == 0 {
-            desktop_draw_launch_status(2, 999);
-            var path_addr: t40 = desktop_seed_task_manager_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_TASK_SLOT, DESKTOP_TASK_PID);
-            desktop_draw_launch_status(2, res);
-            if res > 0 { active_child_pid = DESKTOP_TASK_PID; }
-        }
-        if click - 3 == 0 {
-            desktop_draw_launch_status(3, 999);
-            var path_addr: t40 = desktop_seed_paint_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_PAINT_SLOT, DESKTOP_PAINT_PID);
-            desktop_draw_launch_status(3, res);
-            if res > 0 { active_child_pid = DESKTOP_PAINT_PID; }
-        }
-        if click - 4 == 0 {
-            desktop_draw_launch_status(4, 999);
-            var path_addr: t40 = desktop_seed_file_manager_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_FILES_SLOT, DESKTOP_FILES_PID);
-            desktop_draw_launch_status(4, res);
-            if res > 0 { active_child_pid = DESKTOP_FILES_PID; }
-        }
-        if click - 5 == 0 {
-            desktop_draw_launch_status(5, 999);
-            var path_addr: t40 = desktop_seed_settings_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_SETTINGS_SLOT, DESKTOP_SETTINGS_PID);
-            desktop_draw_launch_status(5, res);
-            if res > 0 { active_child_pid = DESKTOP_SETTINGS_PID; }
-        }
-        if click - 6 == 0 {
-            desktop_draw_launch_status(6, 999);
-            var path_addr: t40 = desktop_seed_terminal_path(10000);
-            var res: t40 = desktop_launch_child(path_addr, DESKTOP_TERMINAL_SLOT, DESKTOP_TERMINAL_PID);
-            desktop_draw_launch_status(6, res);
-            if res > 0 { active_child_pid = DESKTOP_TERMINAL_PID; }
+        if click > 0 {
+            if click - 6 <= 0 {
+                desktop_draw_launch_status(click, 999);
+                var res: t40 = desktop_launch_row(click);
+                desktop_draw_launch_status(click, res);
+                if res > 0 { active_child_pid = res; }
+            }
         }
         if click - 7 == 0 {
             unsafe { store(62000, 0); } // Clear logged in flag

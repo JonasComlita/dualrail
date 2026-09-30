@@ -19,6 +19,14 @@ fn fm_seed_root_path(addr: t40) -> t40 {
     return addr;
 }
 
+fn fm_seed_tmp_path(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47); store(addr + 1, 116); store(addr + 2, 109);
+        store(addr + 3, 112); store(addr + 4, 0);
+    }
+    return addr;
+}
+
 fn fm_draw_box(x1: t40, y1: t40, x2: t40, y2: t40, color: t40) -> t40 {
     var x: t40 = x1;
     while x2 - x >= 0 {
@@ -122,6 +130,137 @@ fn fm_draw_ui() -> t40 {
     return 1;
 }
 
+const FM_WINDOW_X: t40 = 8;
+const FM_WINDOW_Y: t40 = 5;
+const FM_WINDOW_WIDTH: t40 = 64;
+const FM_WINDOW_HEIGHT: t40 = 30;
+
+fn fm_path_length(addr: t40) -> t40 {
+    var len: t40 = 0;
+    var ch: t40 = 0;
+    while len - 255 < 0 {
+        unsafe { ch = load(addr + len); }
+        if ch == 0 { return len; }
+        len = len + 1;
+    }
+    return len;
+}
+
+fn fm_parent_path(addr: t40) -> t40 {
+    var len: t40 = fm_path_length(addr);
+    if len <= 1 {
+        fm_seed_root_path(addr);
+        return 1;
+    }
+    var i: t40 = len - 1;
+    var ch: t40 = 0;
+    while i > 0 {
+        unsafe { ch = load(addr + i); }
+        if ch - 47 == 0 {
+            unsafe { store(addr + i, 0); }
+            return 1;
+        }
+        i = i - 1;
+    }
+    fm_seed_root_path(addr);
+    return 1;
+}
+
+fn fm_open_selected(path_addr: t40, selected: t40, out_addr: t40, written: t40) -> t40 {
+    var pos: t40 = 0;
+    var index: t40 = 0;
+    var kind: t40 = 0;
+    var nlen: t40 = 0;
+    while written - pos > 0 {
+        unsafe {
+            kind = load(out_addr + pos + 1);
+            nlen = load(out_addr + pos + 2);
+        }
+        if index - selected == 0 {
+            if kind - 2 != 0 {
+                return 0;
+            }
+            var path_len: t40 = fm_path_length(path_addr);
+            var write_at: t40 = path_len;
+            if path_len > 1 {
+                unsafe { store(path_addr + write_at, 47); }
+                write_at = write_at + 1;
+            }
+            var i: t40 = 0;
+            while nlen - i > 0 {
+                if write_at - 254 >= 0 { return 0; }
+                unsafe { store(path_addr + write_at, load(out_addr + pos + 3 + i)); }
+                write_at = write_at + 1;
+                i = i + 1;
+            }
+            unsafe { store(path_addr + write_at, 0); }
+            return 1;
+        }
+        pos = pos + 3 + nlen;
+        index = index + 1;
+    }
+    return 0;
+}
+
+fn fm_draw_window_ui(win: t40, path_addr: t40, out_addr: t40, written: t40, selected: t40) -> t40 {
+    var buf: t40 = os_window_get_buffer(win);
+    if buf <= 0 { return 0; }
+    widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                      0, 0, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT, 1);
+    widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                      2, 2, 60, 3, 1);
+    widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                      2, 6, 60, 19, 0);
+
+    var pos: t40 = 0;
+    var row: t40 = 7;
+    var index: t40 = 0;
+    var kind: t40 = 0;
+    var nlen: t40 = 0;
+    while written - pos > 0 {
+        if 24 - row > 0 {
+            unsafe {
+                kind = load(out_addr + pos + 1);
+                nlen = load(out_addr + pos + 2);
+            }
+            var active: t40 = 0;
+            if index - selected == 0 { active = 1; }
+            widget_draw_panel(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                              4, row, 56, 2, active);
+            if index - 10 < 0 {
+                widget_draw_digit(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                                  6, row, index, 120, 220, 180);
+            }
+            if kind - 2 == 0 {
+                widget_draw_char(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                                 12, row, 67, 120, 220, 180);
+            } else {
+                widget_draw_char(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                                 12, row, 45, 180, 180, 180);
+            }
+            widget_draw_label(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                              17, row, out_addr + pos + 3,
+                              nlen, 180, 210, 230);
+            pos = pos + 3 + nlen;
+            row = row + 2;
+            index = index + 1;
+        } else {
+            pos = written;
+        }
+    }
+
+    // The bottom controls are intentionally window-local: u=parent, m=mkdir,
+    // x=close, and Enter opens the selected directory.
+    widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                             4, 26, 12, 3, 117, 0, 0, 0, 1);
+    widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                             18, 26, 12, 3, 109, 0, 0, 0, 1);
+    widget_draw_button_state(buf, FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT,
+                             48, 26, 12, 3, 88, 0, 0, 0, 1);
+    os_window_present(win);
+    return 1;
+}
+
 fn main() -> t40 {
     var in_kernel: t40 = 0;
     unsafe { in_kernel = csr_read(scratch); }
@@ -134,24 +273,80 @@ fn main() -> t40 {
         return 1;
     }
 
-    os_gpu_mode(0);
-    fm_draw_ui();
-    var done: t40 = 0;
-    var event_addr: t40 = 10100;
+    os_gpu_mode(1);
+    var fb: t40 = os_fb_init(80, 60);
+    if fb <= 0 { return fb; }
+    var win: t40 = os_window_create(FM_WINDOW_X, FM_WINDOW_Y,
+                                    FM_WINDOW_WIDTH, FM_WINDOW_HEIGHT);
+    if win < 0 { return win; }
+    var path_addr: t40 = 10000;
+    var out_addr: t40 = 10300;
+    var written: t40 = 0;
+    var selected: t40 = 0;
+    var mx: t40 = 0;
+    var my: t40 = 0;
+    var btn: t40 = 0;
+    var event_addr: t40 = 10600;
     var event_status: t40 = 0;
     var kind: t40 = 0;
     var k: t40 = 0;
+    fm_seed_root_path(path_addr);
+    written = os_readdir(path_addr, out_addr, 220);
+    fm_draw_window_ui(win, path_addr, out_addr, written, selected);
+    var done: t40 = 0;
     while 1 - done > 0 {
-        event_status = os_wait_event(-1, event_addr, 1000);
+        event_status = os_window_wait_event(win, event_addr, 0);
         if event_status > 0 {
             kind = os_event_kind(event_addr);
+            k = 0;
+            if kind - OS_EVENT_KIND_MOUSE == 0 {
+                mx = os_event_x_or_key(event_addr) - FM_WINDOW_X;
+                my = os_event_y(event_addr) - FM_WINDOW_Y;
+                btn = os_event_modifiers(event_addr);
+                if btn > 0 {
+                    if my - 26 >= 0 {
+                        if mx - 48 >= 0 { done = 1; }
+                        if mx - 16 < 0 { fm_parent_path(path_addr); selected = 0; }
+                        if mx - 18 >= 0 {
+                            if mx - 32 < 0 {
+                                fm_seed_tmp_path(10800);
+                                os_mkdir(10800);
+                            }
+                        }
+                    } else {
+                        if my - 7 >= 0 {
+                        selected = (my - 7) / 2;
+                        if selected - 9 > 0 { selected = 9; }
+                        }
+                    }
+                }
+            }
             if kind - OS_EVENT_KIND_CLOSE == 0 { done = 1; }
             if kind - OS_EVENT_KIND_KEY == 0 {
                 k = os_event_x_or_key(event_addr);
                 if k - 120 == 0 { done = 1; }
                 if k - 88 == 0 { done = 1; }
+                if k - 117 == 0 { fm_parent_path(path_addr); selected = 0; }
+                if k - 85 == 0 { fm_parent_path(path_addr); selected = 0; }
+                if k - 13 == 0 {
+                    fm_open_selected(path_addr, selected, out_addr, written);
+                    selected = 0;
+                }
+                if k - 109 == 0 {
+                    fm_seed_tmp_path(10800);
+                    os_mkdir(10800);
+                }
+                if k - 77 == 0 {
+                    fm_seed_tmp_path(10800);
+                    os_mkdir(10800);
+                }
+            }
+            if done == 0 {
+                written = os_readdir(path_addr, out_addr, 220);
+                fm_draw_window_ui(win, path_addr, out_addr, written, selected);
             }
         }
     }
+    os_window_destroy(win);
     return 1;
 }

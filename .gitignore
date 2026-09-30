@@ -5,12 +5,8 @@ __pycache__/
 
 bitnet_weights/converted_t40/
 bitnet_weights/model/
-qwen3.627b_weights/converted_qwen/
-qwen3.627b_weights/raw/
 build/
-build_fresh/
-build_cuda/
-build_sycl/
+build_current_cleanup/
 treatcode/node_modules/
 node_modules/
 

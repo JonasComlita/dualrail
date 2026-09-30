@@ -43,7 +43,7 @@ struct TextRenderCache {
 };
 
 struct PixelRenderCache {
-    std::vector<long long> words;
+    std::vector<std::uint32_t> pixels;
     bool valid = false;
 };
 
@@ -54,6 +54,12 @@ struct FrameRenderState {
     TextRenderCache text;
     PixelRenderCache pixels;
     bool valid = false;
+};
+
+struct PendingMouseSample {
+    int window_x = 0;
+    int window_y = 0;
+    long long buttons = 0;
 };
 
 constexpr int kTextCellWidth = 8;
@@ -271,6 +277,19 @@ std::uint32_t colorFromGraphicsWord(long long value) {
                       : sandbox::host::detail::paletteColor(static_cast<int>(value & 0x0f));
 }
 
+std::uint32_t framebufferPixelAt(
+    const sandbox::host::TosFramebufferMemorySnapshot& framebuffer,
+    int index) {
+    if (index < 0 || index >= framebuffer.width * framebuffer.height) {
+        return sandbox::host::detail::paletteColor(0);
+    }
+    if (framebuffer.mode == sandbox::host::TosFramebufferMode::GraphicsRGB &&
+        index < static_cast<int>(framebuffer.rgba.size())) {
+        return framebuffer.rgba[static_cast<std::size_t>(index)];
+    }
+    return colorFromGraphicsWord(framebufferWordAt(framebuffer, index));
+}
+
 void addDirtyRect(std::vector<SDL_Rect>& rects,
                   RenderMetrics& metrics,
                   int x,
@@ -437,9 +456,9 @@ void renderTextDirty(TextureState& texture,
 void updatePixelCache(PixelRenderCache& cache,
                       const sandbox::host::TosFramebufferMemorySnapshot& framebuffer) {
     const int count = framebuffer.width * framebuffer.height;
-    cache.words.assign(static_cast<std::size_t>(count), 0);
+    cache.pixels.assign(static_cast<std::size_t>(count), 0);
     for (int i = 0; i < count; ++i) {
-        cache.words[static_cast<std::size_t>(i)] = framebufferWordAt(framebuffer, i);
+        cache.pixels[static_cast<std::size_t>(i)] = framebufferPixelAt(framebuffer, i);
     }
     cache.valid = true;
 }
@@ -453,10 +472,10 @@ void renderPixelsDirty(TextureState& texture,
     const int width = framebuffer.width;
     const int height = framebuffer.height;
     const int count = width * height;
-    if (full_render || !cache.valid || static_cast<int>(cache.words.size()) != count) {
+    if (full_render || !cache.valid || static_cast<int>(cache.pixels.size()) != count) {
         for (int i = 0; i < count; ++i) {
             texture.pixels[static_cast<std::size_t>(i)] =
-                toSdlAbgr(colorFromGraphicsWord(framebufferWordAt(framebuffer, i)));
+                toSdlAbgr(framebufferPixelAt(framebuffer, i));
         }
         addDirtyRect(rects, metrics, 0, 0, width, height);
         updatePixelCache(cache, framebuffer);
@@ -469,11 +488,11 @@ void renderPixelsDirty(TextureState& texture,
             bool dirty = false;
             if (x < width) {
                 const int index = y * width + x;
-                dirty = framebufferWordAt(framebuffer, index) !=
-                        cache.words[static_cast<std::size_t>(index)];
+                const std::uint32_t pixel = framebufferPixelAt(framebuffer, index);
+                dirty = pixel != cache.pixels[static_cast<std::size_t>(index)];
                 if (dirty) {
                     texture.pixels[static_cast<std::size_t>(index)] =
-                        toSdlAbgr(colorFromGraphicsWord(framebufferWordAt(framebuffer, index)));
+                        toSdlAbgr(pixel);
                 }
             }
             if (dirty && run_start < 0) {
@@ -803,6 +822,7 @@ int main(int argc, char** argv) {
     bool running = true;
     bool debug_overlay = false;
     long long mouse_buttons = 0;
+    std::vector<PendingMouseSample> pending_mouse_samples;
     int rendered_frames = 0;
     bool smoke_failed = false;
     bool force_present = true;
@@ -859,8 +879,7 @@ int main(int argc, char** argv) {
                 }
                 break;
             case SDL_TEXTINPUT:
-                // Keydown handles the ASCII subset used by the guest OS. Keeping
-                // text input disabled here avoids duplicate characters on Windows.
+                runtime.pushTextInput(event.text.text, "sdl.textinput");
                 break;
             case SDL_KEYDOWN: {
                 const SDL_Keycode key = event.key.keysym.sym;
@@ -887,23 +906,40 @@ int main(int argc, char** argv) {
                 } else if (key == SDLK_F1) {
                     debug_overlay = !debug_overlay;
                     force_present = true;
+                } else if (key == SDLK_TAB) {
+                    runtime.pushKeyboardInput(9, "sdl.keydown.tab");
                 } else if (key == SDLK_BACKSPACE) {
-                    runtime.pushKeyboardInput(8);
+                    runtime.pushKeyboardInput(8, "sdl.keydown.backspace");
                 } else if (key == SDLK_RETURN) {
-                    runtime.pushKeyboardInput(13);
+                    runtime.pushKeyboardInput(13, "sdl.keydown.return");
+                } else if (key == SDLK_KP_ENTER) {
+                    runtime.pushKeyboardInput(13, "sdl.keydown.kp_enter");
                 } else if (key == SDLK_ESCAPE) {
-                    runtime.pushKeyboardInput(27);
-                } else {
-                    const long long ascii = asciiFromKey(key, mods);
-                    if (ascii >= 0) runtime.pushKeyboardInput(ascii);
+                    runtime.pushKeyboardInput(27, "sdl.keydown.escape");
                 }
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
-                if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons |= 1;
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_buttons |= 1;
+                    pending_mouse_samples.push_back(
+                        PendingMouseSample{event.button.x, event.button.y, mouse_buttons});
+                }
                 break;
             case SDL_MOUSEBUTTONUP:
-                if (event.button.button == SDL_BUTTON_LEFT) mouse_buttons &= ~1LL;
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_buttons &= ~1LL;
+                    pending_mouse_samples.push_back(
+                        PendingMouseSample{event.button.x, event.button.y, mouse_buttons});
+                }
+                break;
+            case SDL_MOUSEMOTION:
+                pending_mouse_samples.push_back(
+                    PendingMouseSample{event.motion.x,
+                                       event.motion.y,
+                                       (event.motion.state & SDL_BUTTON_LMASK) != 0
+                                           ? 1LL
+                                           : mouse_buttons});
                 break;
             default:
                 break;
@@ -911,6 +947,7 @@ int main(int argc, char** argv) {
     };
 
     while (running) {
+        pending_mouse_samples.clear();
         SDL_Event event;
         const auto before_wait = Clock::now();
         int wait_ms = 0;
@@ -937,10 +974,23 @@ int main(int argc, char** argv) {
         int mouse_x = 0;
         int mouse_y = 0;
         SDL_GetMouseState(&mouse_x, &mouse_y);
-        long long guest_x = 0;
-        long long guest_y = 0;
-        mapMouseToGuest(dest, guest_frame_w, guest_frame_h, mouse_x, mouse_y, guest_x, guest_y);
-        runtime.updateMouseState(guest_x, guest_y, mouse_buttons);
+        pending_mouse_samples.push_back(
+            PendingMouseSample{mouse_x, mouse_y, mouse_buttons});
+        for (const PendingMouseSample& sample : pending_mouse_samples) {
+            long long sample_guest_x = 0;
+            long long sample_guest_y = 0;
+            mapMouseToGuest(dest,
+                            guest_frame_w,
+                            guest_frame_h,
+                            sample.window_x,
+                            sample.window_y,
+                            sample_guest_x,
+                            sample_guest_y);
+            runtime.updateMouseState(sample_guest_x,
+                                     sample_guest_y,
+                                     sample.buttons,
+                                     "sdl.mouse");
+        }
 
         const auto now = Clock::now();
         if (now < next_present) {

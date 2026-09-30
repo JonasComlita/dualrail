@@ -72,6 +72,12 @@ const KERNEL_TICK_ADDR: t40 = 3033;
 const KERNEL_TIMER_RELOAD: t40 = 100000;
 const INPUT_LAST_MOUSE_X_ADDR: t40 = 3034;
 const INPUT_LAST_MOUSE_Y_ADDR: t40 = 3035;
+// Window routing keeps an independent sample/capture state so global
+// wait_event consumers do not consume or suppress compositor transitions.
+const WINDOW_INPUT_LAST_MOUSE_X_ADDR: t40 = 3050;
+const WINDOW_INPUT_LAST_MOUSE_Y_ADDR: t40 = 3051;
+const WINDOW_INPUT_LAST_MOUSE_BTN_ADDR: t40 = 3052;
+const WINDOW_MOUSE_CAPTURE_ID_ADDR: t40 = 3053;
 const METRIC_TLB_HITS_ADDR: t40 = 3036;
 const METRIC_TLB_MISSES_ADDR: t40 = 3037;
 const METRIC_SPAN_CACHE_HITS_ADDR: t40 = 3038;
@@ -529,7 +535,11 @@ const TC_SPAN_VPN: t40 = 10;
 const TC_SPAN_PTE_WORD: t40 = 11;
 const TC_SPAN_PTBR: t40 = 12;
 
-const EXEC_IMAGE_WORDS: t40 = 128;
+// The boot image carries full current ABI-v3 application envelopes, not only
+// the small descriptor header used by the original bring-up probe. Kernel
+// exec is serialized, so one shared staging arena is sufficient and keeps
+// the fixed metadata arenas below it from overlapping per-process buffers.
+const EXEC_IMAGE_WORDS: t40 = 12000;
 const EXEC_IMAGE_BASE: t40 = 651000;
 const EXEC_MAGIC: t40 = 40404;
 const EXEC_DESC_WORDS: t40 = 23;
@@ -1318,7 +1328,10 @@ fn window_table_init() -> t40 {
     kstore(WINDOW_NEXT_ID_ADDR, 0);
     kstore(COMPOSITOR_FRAME_COUNT_ADDR, 0);
     kstore(WINDOW_FOCUS_ID_ADDR, ERR_NOT_FOUND);
-    kstore(INPUT_LAST_MOUSE_BTN_ADDR, 0);
+    kstore(WINDOW_INPUT_LAST_MOUSE_X_ADDR, 0);
+    kstore(WINDOW_INPUT_LAST_MOUSE_Y_ADDR, 0);
+    kstore(WINDOW_INPUT_LAST_MOUSE_BTN_ADDR, 0);
+    kstore(WINDOW_MOUSE_CAPTURE_ID_ADDR, ERR_NOT_FOUND);
     return 1;
 }
 
@@ -1591,6 +1604,17 @@ fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
             slot = window_top_visible_slot();
         }
     }
+    if kind - EVENT_KIND_MOUSE == 0 {
+        var capture_id: t40 = kload(WINDOW_MOUSE_CAPTURE_ID_ADDR);
+        if capture_id >= 0 {
+            var capture_slot: t40 = window_find(capture_id);
+            if capture_slot >= 0 {
+                slot = capture_slot;
+            } else {
+                kstore(WINDOW_MOUSE_CAPTURE_ID_ADDR, ERR_NOT_FOUND);
+            }
+        }
+    }
     if slot < 0 {
         return 0;
     }
@@ -1618,7 +1642,14 @@ fn window_route_input(kind: t40, x_or_key: t40, y: t40, modifiers: t40) -> t40 {
         return queued;
     }
     var id: t40 = kload(window_addr(slot) + WIN_ID);
-    kstore(WINDOW_FOCUS_ID_ADDR, id);
+    if kind - EVENT_KIND_KEY == 0 {
+        kstore(WINDOW_FOCUS_ID_ADDR, id);
+    }
+    if kind - EVENT_KIND_MOUSE == 0 {
+        if modifiers > 0 {
+            kstore(WINDOW_FOCUS_ID_ADDR, id);
+        }
+    }
     return id;
 }
 
@@ -1630,16 +1661,46 @@ fn window_poll_input_driver() -> t40 {
     unsafe { mx = csr_read(mouse_x); }
     unsafe { my = csr_read(mouse_y); }
     unsafe { btn = csr_read(mouse_btn); }
-    var last_btn: t40 = kload(INPUT_LAST_MOUSE_BTN_ADDR);
-    if btn > 0 {
-        if last_btn <= 0 {
+    var last_x: t40 = kload(WINDOW_INPUT_LAST_MOUSE_X_ADDR);
+    var last_y: t40 = kload(WINDOW_INPUT_LAST_MOUSE_Y_ADDR);
+    var last_btn: t40 = kload(WINDOW_INPUT_LAST_MOUSE_BTN_ADDR);
+    if last_btn <= 0 {
+        if btn > 0 {
+            var down_slot: t40 = window_hit_test(mx, my);
+            if down_slot >= 0 {
+                kstore(WINDOW_MOUSE_CAPTURE_ID_ADDR,
+                       kload(window_addr(down_slot) + WIN_ID));
+            }
+        }
+    }
+    if mx - last_x != 0 {
+        var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
+        if mouse_target > 0 {
+            routed = routed + 1;
+        }
+    } else {
+        if my - last_y != 0 {
             var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
             if mouse_target > 0 {
                 routed = routed + 1;
             }
+        } else {
+            if btn - last_btn != 0 {
+                var mouse_target: t40 = window_route_input(EVENT_KIND_MOUSE, mx, my, btn);
+                if mouse_target > 0 {
+                    routed = routed + 1;
+                }
+            }
         }
     }
-    kstore(INPUT_LAST_MOUSE_BTN_ADDR, btn);
+    if last_btn > 0 {
+        if btn <= 0 {
+            kstore(WINDOW_MOUSE_CAPTURE_ID_ADDR, ERR_NOT_FOUND);
+        }
+    }
+    kstore(WINDOW_INPUT_LAST_MOUSE_X_ADDR, mx);
+    kstore(WINDOW_INPUT_LAST_MOUSE_Y_ADDR, my);
+    kstore(WINDOW_INPUT_LAST_MOUSE_BTN_ADDR, btn);
     var key_available: t40 = 0;
     unsafe { key_available = csr_read(console_in_ctrl); }
     if key_available > 0 {
@@ -3755,8 +3816,11 @@ fn kernel_timer_tick() -> t40 {
             }
         }
     }
-    wait_wake_input();
     window_poll_input_driver();
+    // A focused window owns keyboard input while it is live. Poll its event
+    // queue before waking global wait_event consumers so a stale desktop
+    // waiter cannot consume a child key first.
+    wait_wake_input();
     wait_expire_timeouts();
     return kload(KERNEL_TICK_ADDR);
 }
@@ -7532,7 +7596,7 @@ fn vfs_fsync(pid: t40, fd: t40) -> t40 {
 }
 
 fn exec_image_addr(process_slot: t40) -> t40 {
-    return EXEC_IMAGE_BASE + process_slot * EXEC_IMAGE_WORDS;
+    return EXEC_IMAGE_BASE;
 }
 
 fn exec_hw_imem_ptbr(process_slot: t40) -> t40 {

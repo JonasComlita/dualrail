@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -109,6 +110,7 @@ struct TosRuntimeConfig {
 enum class TosFramebufferMode {
     Text80x25,
     Graphics80x60,
+    GraphicsRGB,
 };
 
 struct TosFramebufferSnapshot {
@@ -127,6 +129,9 @@ struct TosFramebufferMemorySnapshot {
     int width = 80;
     int height = 25;
     std::vector<long long> words;
+    // Current compositor frames are RGB triples in guest memory. Keep the
+    // exact decoded pixels alongside the legacy one-word presentation view.
+    std::vector<std::uint32_t> rgba;
     long long sprite_x = 0;
     long long sprite_y = 0;
     long long sprite_attr = 0;
@@ -1487,13 +1492,56 @@ inline long long dmemWord(const vm::VMState& machine, int addr) {
 }
 
 constexpr int kKernelBootedAddr = 3000;
+constexpr int kCurrentContextAddr = 3019;
 constexpr int kCurrentPidAddr = 3020;
+constexpr int kTier1HeadAddr = 3009;
+constexpr int kTier1TailAddr = 3010;
+constexpr int kTier1CountAddr = 3011;
 constexpr int kSysStatusAddr = 3021;
 constexpr int kSysPayloadAddr = 3022;
 constexpr int kSysDetailAddr = 3023;
 constexpr int kInputLastMouseBtnAddr = 3031;
 constexpr int kInputLastMouseXAddr = 3034;
 constexpr int kInputLastMouseYAddr = 3035;
+constexpr int kWindowInputLastMouseXAddr = 3050;
+constexpr int kWindowInputLastMouseYAddr = 3051;
+constexpr int kWindowInputLastMouseBtnAddr = 3052;
+constexpr int kWindowFocusIdAddr = 3030;
+constexpr int kWindowMax = 100;
+constexpr int kWindowRowWords = 16;
+constexpr int kWindowBase = 132000;
+constexpr int kWindowEventBase = 134000;
+constexpr int kWindowEventCapacity = 8;
+constexpr int kWindowActive = 0;
+constexpr int kWindowId = 1;
+constexpr int kWindowOwnerPid = 2;
+constexpr int kWindowX = 3;
+constexpr int kWindowY = 4;
+constexpr int kWindowWidth = 5;
+constexpr int kWindowHeight = 6;
+constexpr int kWindowZ = 7;
+constexpr int kWindowVisible = 8;
+constexpr int kWindowBufferAddr = 10;
+constexpr int kWindowVersion = 12;
+constexpr int kWindowEventRead = 13;
+constexpr int kWindowEventWrite = 14;
+constexpr int kWindowEventCount = 15;
+constexpr int kWindowEventWords = 4;
+constexpr int kFramebufferStateBase = 131500;
+constexpr int kFramebufferValid = 0;
+constexpr int kFramebufferWidth = 1;
+constexpr int kFramebufferHeight = 2;
+constexpr int kFramebufferStride = 3;
+constexpr int kFramebufferFormat = 4;
+constexpr int kFramebufferFrontIndex = 5;
+constexpr int kFramebufferWords = 6;
+constexpr int kFramebufferFlipCount = 8;
+constexpr int kFramebufferStateWords = 10;
+constexpr int kFramebufferFrontBufferBase = 2000000;
+constexpr int kFramebufferBackBufferBase = 4800000;
+constexpr int kFramebufferFormatT5Rgb = 1;
+constexpr int kFramebufferMaxWords = 2764800;
+constexpr int kFramebufferMaxDimension = 16384;
 constexpr int kProcessMax = 100;
 constexpr int kProcessRowWords = 9;
 constexpr int kProcPid = 0;
@@ -1505,6 +1553,8 @@ constexpr int kProcContext = 5;
 constexpr int kProcWaitChannel = 6;
 constexpr int kProcVersion = 7;
 constexpr int kProcVectorContext = 8;
+constexpr int kSchedSlotMemberBase = 675100;
+constexpr int kTier1QueueBase = 140000;
 constexpr int kProcRunnable = 1;
 constexpr int kProcRunning = 2;
 constexpr int kProcBlocked = 3;
@@ -1943,20 +1993,101 @@ inline bool loadBootImageIntoVm(vm::VMState& machine,
     return true;
 }
 
+struct TosFramebufferReadPlan {
+    TosFramebufferMode mode = TosFramebufferMode::Text80x25;
+    int width = 80;
+    int height = 25;
+    int stride = 80;
+    int base = 60000;
+    int word_count = 80 * 25;
+};
+
+inline int clampFramebufferChannel(long long value) {
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return static_cast<int>(value);
+}
+
+inline TosFramebufferReadPlan framebufferReadPlan(const vm::VMState& machine) {
+    TosFramebufferReadPlan plan;
+
+    const long long valid = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferValid);
+    const long long width = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferWidth);
+    const long long height = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferHeight);
+    const long long stride = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferStride);
+    const long long format = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferFormat);
+    const long long front_index = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferFrontIndex);
+    const long long words = detail::dmemWord(
+        machine, detail::kFramebufferStateBase + detail::kFramebufferWords);
+    const long long max_dimension = detail::kFramebufferMaxDimension;
+    const long long max_words = detail::kFramebufferMaxWords;
+    const long long min_stride = width > 0 ? width * 3 : 0;
+    const bool valid_geometry =
+        valid > 0 && format == detail::kFramebufferFormatT5Rgb &&
+        width > 0 && height > 0 && width <= max_dimension &&
+        height <= max_dimension && stride >= min_stride &&
+        stride <= max_words && height <= max_words / stride;
+    if (valid_geometry) {
+        const long long visible_words = stride * height;
+        if (words >= visible_words && visible_words <= max_words &&
+            (front_index == 0 || front_index == 1)) {
+            plan.mode = TosFramebufferMode::GraphicsRGB;
+            plan.width = static_cast<int>(width);
+            plan.height = static_cast<int>(height);
+            plan.stride = static_cast<int>(stride);
+            plan.base = front_index == 0
+                ? detail::kFramebufferFrontBufferBase
+                : detail::kFramebufferBackBufferBase;
+            plan.word_count = static_cast<int>(visible_words);
+            return plan;
+        }
+    }
+
+    if (machine.gpu_mode == 0) {
+        return plan;
+    }
+    plan.mode = TosFramebufferMode::Graphics80x60;
+    plan.width = 80;
+    plan.height = 60;
+    plan.stride = 80;
+    plan.base = (machine.gpu_page == 0) ? 50000 : 55000;
+    plan.word_count = 80 * 60;
+    return plan;
+}
+
+inline std::uint32_t framebufferRgbPixel(const vm::VMState& machine,
+                                         const TosFramebufferReadPlan& plan,
+                                         int x,
+                                         int y) {
+    const int base = plan.base + y * plan.stride + x * 3;
+    return detail::rgba(
+        clampFramebufferChannel(detail::dmemWord(machine, base)),
+        clampFramebufferChannel(detail::dmemWord(machine, base + 1)),
+        clampFramebufferChannel(detail::dmemWord(machine, base + 2)));
+}
+
 inline TosFramebufferSnapshot decodeFramebuffer(const vm::VMState& machine) {
+    const TosFramebufferReadPlan plan = framebufferReadPlan(machine);
     TosFramebufferSnapshot snapshot;
+    snapshot.mode = plan.mode;
+    snapshot.width = plan.width;
+    snapshot.height = plan.height;
     snapshot.sprite_x = machine.sprite_x;
     snapshot.sprite_y = machine.sprite_y;
     snapshot.sprite_attr = machine.sprite_attr;
 
-    if (machine.gpu_mode == 0) {
-        snapshot.mode = TosFramebufferMode::Text80x25;
-        snapshot.width = 80;
-        snapshot.height = 25;
-        snapshot.glyphs.assign(80 * 25, ' ');
-        snapshot.rgba.assign(80 * 25, detail::paletteColor(0));
-        for (int i = 0; i < 80 * 25; ++i) {
-            const long long value = detail::dmemWord(machine, 60000 + i);
+    if (plan.mode == TosFramebufferMode::Text80x25) {
+        snapshot.glyphs.assign(static_cast<std::size_t>(plan.word_count), ' ');
+        snapshot.rgba.assign(static_cast<std::size_t>(plan.width * plan.height),
+                             detail::paletteColor(0));
+        for (int i = 0; i < plan.word_count; ++i) {
+            const long long value = detail::dmemWord(machine, plan.base + i);
             const char ch = static_cast<char>(value & 0xff);
             const int color = static_cast<int>((value >> 8) & 0x0f);
             snapshot.glyphs[static_cast<std::size_t>(i)] =
@@ -1966,43 +2097,27 @@ inline TosFramebufferSnapshot decodeFramebuffer(const vm::VMState& machine) {
         return snapshot;
     }
 
-    snapshot.mode = TosFramebufferMode::Graphics80x60;
-    snapshot.width = 80;
-    snapshot.height = 60;
-    snapshot.rgba.assign(80 * 60, detail::paletteColor(0));
-    const int base = (machine.gpu_page == 0) ? 50000 : 55000;
-    for (int i = 0; i < 80 * 60; ++i) {
-        const long long value = detail::dmemWord(machine, base + i);
-        snapshot.rgba[static_cast<std::size_t>(i)] =
-            value == 0 ? detail::paletteColor(0)
-                       : detail::paletteColor(static_cast<int>(value & 0x0f));
+    snapshot.rgba.assign(static_cast<std::size_t>(plan.width * plan.height),
+                         detail::paletteColor(0));
+    for (int y = 0; y < plan.height; ++y) {
+        for (int x = 0; x < plan.width; ++x) {
+            const int index = y * plan.width + x;
+            if (plan.mode == TosFramebufferMode::GraphicsRGB) {
+                snapshot.rgba[static_cast<std::size_t>(index)] =
+                    framebufferRgbPixel(machine, plan, x, y);
+            } else {
+                const long long value = detail::dmemWord(machine, plan.base + index);
+                snapshot.rgba[static_cast<std::size_t>(index)] =
+                    value == 0 ? detail::paletteColor(0)
+                               : detail::paletteColor(static_cast<int>(value & 0x0f));
+            }
+        }
     }
     return snapshot;
 }
 
-struct TosFramebufferReadPlan {
-    TosFramebufferMode mode = TosFramebufferMode::Text80x25;
-    int width = 80;
-    int height = 25;
-    int base = 60000;
-    int word_count = 80 * 25;
-};
-
 inline void mixFramebufferRevision(std::uint64_t& revision, std::uint64_t value) {
     revision ^= value + 0x9e3779b97f4a7c15ULL + (revision << 6) + (revision >> 2);
-}
-
-inline TosFramebufferReadPlan framebufferReadPlan(const vm::VMState& machine) {
-    TosFramebufferReadPlan plan;
-    if (machine.gpu_mode == 0) {
-        return plan;
-    }
-    plan.mode = TosFramebufferMode::Graphics80x60;
-    plan.width = 80;
-    plan.height = 60;
-    plan.base = (machine.gpu_page == 0) ? 50000 : 55000;
-    plan.word_count = 80 * 60;
-    return plan;
 }
 
 inline std::uint64_t framebufferRevision(const vm::VMState& machine,
@@ -2011,11 +2126,16 @@ inline std::uint64_t framebufferRevision(const vm::VMState& machine,
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.mode));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.width));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.height));
+    mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.stride));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.base));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(plan.word_count));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_x));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_y));
     mixFramebufferRevision(revision, static_cast<std::uint64_t>(machine.sprite_attr));
+    mixFramebufferRevision(
+        revision,
+        machine.dmem.rangeGeneration(detail::kFramebufferStateBase,
+                                     detail::kFramebufferStateWords));
     mixFramebufferRevision(revision, machine.dmem.rangeGeneration(plan.base, plan.word_count));
     return revision == 0 ? 1 : revision;
 }
@@ -2056,6 +2176,7 @@ public:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
+        pending_mouse_inputs_.clear();
         next_input_sequence_ = 0;
         return true;
     }
@@ -2080,6 +2201,7 @@ public:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
+        pending_mouse_inputs_.clear();
         next_input_sequence_ = 0;
         return true;
     }
@@ -2143,9 +2265,38 @@ public:
                 recordSyscall(record);
             };
         }
-        vm::RunResult result = vm::run(
-            *machine_, steps,
-            config_.record_syscall_trace ? &hooks : nullptr);
+        vm::RunResult result;
+        int completed_steps = 0;
+        while (machine_->isRunning() && completed_steps < steps) {
+            retireAcknowledgedMouseInputLocked();
+            if (!pending_mouse_inputs_.empty()) {
+                applyPendingMouseInputLocked();
+            }
+            const int remaining = steps - completed_steps;
+            if (pending_mouse_inputs_.empty()) {
+                const vm::RunResult run_result = vm::run(
+                    *machine_, remaining,
+                    config_.record_syscall_trace ? &hooks : nullptr);
+                result = run_result;
+                completed_steps += run_result.steps;
+                break;
+            }
+            vm::VMExecutionRecord record;
+            const vm::VMStatus status = vm::step(
+                *machine_, config_.record_syscall_trace ? &record : nullptr);
+            if (config_.record_syscall_trace) recordSyscall(record);
+            ++completed_steps;
+            result.status = status;
+            result.steps = completed_steps;
+            result.final_pc = machine_->pc;
+            retireAcknowledgedMouseInputLocked();
+            if (status != vm::VMStatus::RUNNING) break;
+        }
+        if (completed_steps == 0) {
+            result.status = machine_->status;
+            result.steps = 0;
+            result.final_pc = machine_->pc;
+        }
         if (machine_->power_control == 1) {
             std::string error;
             if (!resetMachineLocked(true, &error)) {
@@ -2165,11 +2316,16 @@ public:
     [[nodiscard]] vm::VMStatus stepOnce() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return vm::VMStatus::HALTED;
+        retireAcknowledgedMouseInputLocked();
+        if (!pending_mouse_inputs_.empty()) {
+            applyPendingMouseInputLocked();
+        }
         vm::VMExecutionRecord record;
         vm::VMStatus status = vm::step(
             *machine_,
             config_.record_syscall_trace ? &record : nullptr);
         if (config_.record_syscall_trace) recordSyscall(record);
+        retireAcknowledgedMouseInputLocked();
         if (machine_->power_control == 1) {
             std::string error;
             if (!resetMachineLocked(true, &error)) {
@@ -2223,9 +2379,18 @@ public:
                           const std::string& source = "host.api") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!machine_) return;
-        machine_->mouse_x = x;
-        machine_->mouse_y = y;
-        machine_->mouse_btn = buttons;
+
+        const bool same_as_pending =
+            !pending_mouse_inputs_.empty() &&
+            pending_mouse_inputs_.back().x == x &&
+            pending_mouse_inputs_.back().y == y &&
+            pending_mouse_inputs_.back().buttons == buttons;
+        const bool same_as_machine =
+            pending_mouse_inputs_.empty() && machine_->mouse_x == x &&
+            machine_->mouse_y == y && machine_->mouse_btn == buttons;
+        if (same_as_pending || same_as_machine) return;
+
+        pending_mouse_inputs_.push_back(PendingMouseInput{x, y, buttons});
         machine_->resumeFromEvent();
         input_journal_.push_back(TosInputJournalEvent{
             next_input_sequence_++,
@@ -2268,6 +2433,17 @@ public:
         for (int i = 0; i < plan.word_count; ++i) {
             snapshot.words[static_cast<std::size_t>(i)] =
                 detail::dmemWord(*machine_, plan.base + i);
+        }
+        if (plan.mode == TosFramebufferMode::GraphicsRGB) {
+            snapshot.rgba.assign(
+                static_cast<std::size_t>(plan.width * plan.height),
+                detail::paletteColor(0));
+            for (int y = 0; y < plan.height; ++y) {
+                for (int x = 0; x < plan.width; ++x) {
+                    snapshot.rgba[static_cast<std::size_t>(y * plan.width + x)] =
+                        framebufferRgbPixel(*machine_, plan, x, y);
+                }
+            }
         }
         return snapshot;
     }
@@ -2561,6 +2737,7 @@ public:
         boot_generation_ = boot_generation;
         guest_reboot_count_ = reboot_count;
         input_journal_ = std::move(journal);
+        pending_mouse_inputs_.clear();
         next_input_sequence_ = input_journal_.size();
         syscall_trace_.clear();
         syscall_trace_sequence_ = 0;
@@ -2869,7 +3046,27 @@ public:
             }
             out << "{\n";
             out << "  \"format_version\": 1,\n";
+            const long long current_context =
+                detail::dmemWord(*machine_, detail::kCurrentContextAddr);
             out << "  \"current_pid\": " << detail::dmemWord(*machine_, detail::kCurrentPidAddr) << ",\n";
+            out << "  \"current_context\": " << current_context << ",\n";
+            out << "  \"scheduler\": {\"tier1_head\": "
+                << detail::dmemWord(*machine_, detail::kTier1HeadAddr)
+                << ", \"tier1_tail\": "
+                << detail::dmemWord(*machine_, detail::kTier1TailAddr)
+                << ", \"tier1_count\": "
+                << detail::dmemWord(*machine_, detail::kTier1CountAddr)
+                << ", \"slot0_member\": "
+                << detail::dmemWord(*machine_, detail::kSchedSlotMemberBase)
+                << ", \"queue0\": "
+                << detail::dmemWord(*machine_, detail::kTier1QueueBase)
+                << "},\n";
+            out << "  \"current_context_words\": [";
+            for (int word = 0; word < 32; ++word) {
+                if (word != 0) out << ", ";
+                out << detail::dmemWord(*machine_, static_cast<int>(current_context) + word);
+            }
+            out << "],\n";
             out << "  \"slots\": [\n";
             for (int slot = 0; slot < detail::kProcessMax; ++slot) {
                 const int row = detail::kProcessBase + slot * detail::kProcessRowWords;
@@ -2916,6 +3113,133 @@ public:
                 out << "\n";
             }
             out << "  ]\n";
+            out << "}\n";
+        }
+        {
+            std::ofstream out(base / "window_table.json", std::ios::trunc);
+            if (!out.good()) {
+                detail::setError(error, "failed to write window_table.json");
+                return false;
+            }
+            out << "{\n";
+            out << "  \"focus_id\": "
+                << detail::dmemWord(*machine_, detail::kWindowFocusIdAddr)
+                << ",\n";
+            out << "  \"input_last\": {\"global_x\": "
+                << detail::dmemWord(*machine_, detail::kInputLastMouseXAddr)
+                << ", \"global_y\": "
+                << detail::dmemWord(*machine_, detail::kInputLastMouseYAddr)
+                << ", \"global_buttons\": "
+                << detail::dmemWord(*machine_, detail::kInputLastMouseBtnAddr)
+                << ", \"window_x\": "
+                << detail::dmemWord(*machine_, detail::kWindowInputLastMouseXAddr)
+                << ", \"window_y\": "
+                << detail::dmemWord(*machine_, detail::kWindowInputLastMouseYAddr)
+                << ", \"window_buttons\": "
+                << detail::dmemWord(*machine_, detail::kWindowInputLastMouseBtnAddr)
+                << "},\n";
+            out << "  \"framebuffer\": {\"valid\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferValid)
+                << ", \"width\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferWidth)
+                << ", \"height\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferHeight)
+                << ", \"stride\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferStride)
+                << ", \"format\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferFormat)
+                << ", \"front_index\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferFrontIndex)
+                << ", \"words\": "
+                << detail::dmemWord(*machine_, detail::kFramebufferStateBase +
+                                    detail::kFramebufferWords)
+                << ", \"front_samples\": [";
+            for (int index = 0; index < 12; ++index) {
+                if (index != 0) out << ", ";
+                out << detail::dmemWord(
+                    *machine_, detail::kFramebufferFrontBufferBase + index);
+            }
+            out << "], \"back_samples\": [";
+            for (int index = 0; index < 12; ++index) {
+                if (index != 0) out << ", ";
+                out << detail::dmemWord(
+                    *machine_, detail::kFramebufferBackBufferBase + index);
+            }
+            out << "]},\n";
+            out << "  \"windows\": [\n";
+            bool first_window = true;
+            for (int slot = 0; slot < detail::kWindowMax; ++slot) {
+                const int row = detail::kWindowBase +
+                                slot * detail::kWindowRowWords;
+                if (detail::dmemWord(*machine_, row + detail::kWindowActive) <= 0) {
+                    continue;
+                }
+                if (!first_window) out << ",\n";
+                first_window = false;
+                out << "    {\"slot\": " << slot
+                    << ", \"id\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowId)
+                    << ", \"owner_pid\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowOwnerPid)
+                    << ", \"x\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowX)
+                    << ", \"y\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowY)
+                    << ", \"width\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowWidth)
+                    << ", \"height\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowHeight)
+                    << ", \"z\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowZ)
+                    << ", \"visible\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowVisible)
+                    << ", \"version\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowVersion)
+                    << ", \"event_read\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowEventRead)
+                    << ", \"event_write\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowEventWrite)
+                    << ", \"event_count\": "
+                    << detail::dmemWord(*machine_, row + detail::kWindowEventCount)
+                    << ", \"buffer_samples\": [";
+                const int buffer_base = static_cast<int>(detail::dmemWord(
+                    *machine_, row + detail::kWindowBufferAddr));
+                for (int index = 0; index < 12; ++index) {
+                    if (index != 0) out << ", ";
+                    out << detail::dmemWord(*machine_, buffer_base + index);
+                }
+                out << "], \"events\": [";
+                const int event_base = detail::kWindowEventBase +
+                                       slot * detail::kWindowEventCapacity *
+                                           detail::kWindowEventWords;
+                const long long event_count = detail::dmemWord(
+                    *machine_, row + detail::kWindowEventCount);
+                const int event_read = static_cast<int>(
+                    detail::dmemWord(*machine_, row + detail::kWindowEventRead));
+                const int event_limit = std::min(
+                    detail::kWindowEventCapacity,
+                    static_cast<int>(std::max<long long>(0, event_count)));
+                for (int logical_index = 0; logical_index < event_limit;
+                     ++logical_index) {
+                    if (logical_index != 0) out << ", ";
+                    const int index =
+                        (event_read + logical_index) % detail::kWindowEventCapacity;
+                    const int event = event_base + index * detail::kWindowEventWords;
+                    out << "["
+                        << detail::dmemWord(*machine_, event) << ", "
+                        << detail::dmemWord(*machine_, event + 1) << ", "
+                        << detail::dmemWord(*machine_, event + 2) << ", "
+                        << detail::dmemWord(*machine_, event + 3) << "]";
+                }
+                out << "]}";
+            }
+            out << "\n  ]\n";
             out << "}\n";
         }
         {
@@ -3102,6 +3426,13 @@ private:
         vm::VMExecutionRecord record;
     };
 
+    struct PendingMouseInput {
+        long long x = 0;
+        long long y = 0;
+        long long buttons = 0;
+        bool applied = false;
+    };
+
     TosRuntimeConfig config_;
     TosBootImage image_;
     std::unique_ptr<vm::VMState> machine_;
@@ -3116,6 +3447,7 @@ private:
     std::shared_ptr<TosRuntimeCheckpoint> checkpoint_;
     std::uint64_t next_checkpoint_sequence_ = 0;
     std::vector<TosInputJournalEvent> input_journal_;
+    std::deque<PendingMouseInput> pending_mouse_inputs_;
     std::uint64_t next_input_sequence_ = 0;
 
     static const char* privilegeName(isa::PrivilegeMode mode) {
@@ -3154,6 +3486,41 @@ private:
                 machine_->mouse_btn = event.value2;
                 machine_->resumeFromEvent();
                 break;
+        }
+    }
+
+    void applyPendingMouseInputLocked() {
+        if (!machine_ || pending_mouse_inputs_.empty()) return;
+        PendingMouseInput& input = pending_mouse_inputs_.front();
+        if (input.applied) return;
+        machine_->mouse_x = input.x;
+        machine_->mouse_y = input.y;
+        machine_->mouse_btn = input.buttons;
+        input.applied = true;
+    }
+
+    [[nodiscard]] bool pendingMouseInputAcknowledgedLocked() const {
+        if (!machine_ || pending_mouse_inputs_.empty() ||
+            !pending_mouse_inputs_.front().applied) {
+            return false;
+        }
+        const PendingMouseInput& input = pending_mouse_inputs_.front();
+        const auto matches = [&](int x_addr, int y_addr, int button_addr) {
+            return detail::dmemWord(*machine_, x_addr) == input.x &&
+                   detail::dmemWord(*machine_, y_addr) == input.y &&
+                   detail::dmemWord(*machine_, button_addr) == input.buttons;
+        };
+        return matches(detail::kInputLastMouseXAddr,
+                       detail::kInputLastMouseYAddr,
+                       detail::kInputLastMouseBtnAddr) ||
+               matches(detail::kWindowInputLastMouseXAddr,
+                       detail::kWindowInputLastMouseYAddr,
+                       detail::kWindowInputLastMouseBtnAddr);
+    }
+
+    void retireAcknowledgedMouseInputLocked() {
+        if (pendingMouseInputAcknowledgedLocked()) {
+            pending_mouse_inputs_.pop_front();
         }
     }
 
@@ -3222,6 +3589,7 @@ private:
         checkpoint_.reset();
         next_checkpoint_sequence_ = 0;
         input_journal_.clear();
+        pending_mouse_inputs_.clear();
         next_input_sequence_ = 0;
         ++boot_generation_;
         if (guest_reboot) ++guest_reboot_count_;
@@ -3258,18 +3626,24 @@ private:
                     if (!machine_ || !machine_->isRunning()) {
                         run_steps = target_steps;
                         stopped_or_idle = true;
-                    } else if (detail::canIdleWithoutStepping(*machine_)) {
+                    } else if (pending_mouse_inputs_.empty() &&
+                               detail::canIdleWithoutStepping(*machine_)) {
                         stopped_or_idle = true;
                     } else {
                         const long long chunk =
                             std::min<long long>(8192, target_steps - run_steps);
                         for (long long i = 0; i < chunk && worker_running_; ++i) {
+                            retireAcknowledgedMouseInputLocked();
+                            if (!pending_mouse_inputs_.empty()) {
+                                applyPendingMouseInputLocked();
+                            }
                             vm::VMExecutionRecord record;
                             const vm::VMStatus status = vm::step(
                                 *machine_,
                                 config_.record_syscall_trace ? &record : nullptr);
                             if (config_.record_syscall_trace) recordSyscall(record);
                             ++chunk_steps;
+                            retireAcknowledgedMouseInputLocked();
                             if (machine_->power_control == 1) {
                                 std::string error;
                                 if (!resetMachineLocked(true, &error)) {

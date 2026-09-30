@@ -96,6 +96,10 @@ if(TRIT_ENABLE_SDL_RELEASE)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             USES_TERMINAL)
 
+        # The desktop workflow conformance check consumes the same staged
+        # current-only image as the SDL runner.
+        add_dependencies(current_validate stage_tos_release)
+
         add_custom_target(smoke_tos_release
             COMMAND "$<TARGET_FILE:run_tos_sdl>"
                     --smoke-test --frames 10

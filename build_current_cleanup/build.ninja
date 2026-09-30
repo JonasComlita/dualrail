@@ -315,7 +315,7 @@ build trit_current_conformance.exe: CXX_EXECUTABLE_LINKER__trit_current_conforma
 #############################################
 # Utility command for current_validate
 
-build current_validate: phony CMakeFiles/current_validate trit_current_conformance.exe
+build current_validate: phony CMakeFiles/current_validate stage_tos_release trit_current_conformance.exe
 
 # =============================================================================
 # Object build statements for EXECUTABLE target run_tos_sdl
@@ -646,7 +646,7 @@ build CMakeFiles/ContinuousSubmit | ${cmake_ninja_workdir}CMakeFiles/ContinuousS
 #############################################
 # Custom command for CMakeFiles\current_validate
 
-build CMakeFiles/current_validate | ${cmake_ninja_workdir}CMakeFiles/current_validate: CUSTOM_COMMAND trit_current_conformance.exe || trit_current_conformance.exe
+build CMakeFiles/current_validate | ${cmake_ninja_workdir}CMakeFiles/current_validate: CUSTOM_COMMAND trit_current_conformance.exe || build_tos_image.exe run_tos_sdl.exe stage_tos_release trit_current_conformance.exe
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\Users\jonas\Documents\trit\build_current_cleanup\trit_current_conformance.exe"
   pool = console
 
@@ -678,7 +678,7 @@ build CMakeFiles/package_tos_release | ${cmake_ninja_workdir}CMakeFiles/package_
 #############################################
 # Custom command for CMakeFiles\ctest
 
-build CMakeFiles/ctest | ${cmake_ninja_workdir}CMakeFiles/ctest: CUSTOM_COMMAND || current_validate trit_current_conformance.exe
+build CMakeFiles/ctest | ${cmake_ninja_workdir}CMakeFiles/ctest: CUSTOM_COMMAND || build_tos_image.exe current_validate run_tos_sdl.exe stage_tos_release trit_current_conformance.exe
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\ctest.exe --test-dir C:/Users/jonas/Documents/trit/build_current_cleanup --output-on-failure"
   pool = console
 
@@ -686,7 +686,7 @@ build CMakeFiles/ctest | ${cmake_ninja_workdir}CMakeFiles/ctest: CUSTOM_COMMAND 
 #############################################
 # Custom command for CMakeFiles\ci_production
 
-build CMakeFiles/ci_production | ${cmake_ninja_workdir}CMakeFiles/ci_production: CUSTOM_COMMAND tritc.exe build_tos_image.exe || build_tos_image.exe current_validate trit_current_conformance.exe tritc.exe
+build CMakeFiles/ci_production | ${cmake_ninja_workdir}CMakeFiles/ci_production: CUSTOM_COMMAND tritc.exe build_tos_image.exe || build_tos_image.exe current_validate run_tos_sdl.exe stage_tos_release trit_current_conformance.exe tritc.exe
   COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\jonas\Documents\trit && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target tritc build_tos_image && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target current_validate && C:\msys64\ucrt64\bin\cmake.exe --build C:/Users/jonas/Documents/trit/build_current_cleanup --target ctest"
   pool = console
 

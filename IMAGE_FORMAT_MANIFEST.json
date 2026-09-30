@@ -1,0 +1,116 @@
+{
+  "version": 2,
+  "schema": "trit.image_format_manifest.v2",
+  "source_of_truth": "ARCHITECTURE_MANIFEST.json",
+  "formats": {
+    "tboot": {
+      "magic_hex": "0x31544f4f424f5354",
+      "write_version": 3,
+      "read_versions": [3],
+      "endianness": "little",
+      "header": [
+        {"name": "magic", "type": "uint64"},
+        {"name": "fnv1a_checksum", "type": "uint64", "covers": "payload"},
+        {"name": "payload_size", "type": "uint64"}
+      ],
+      "payload_v3": [
+        "format_version:uint32",
+        "boot_entry:int32",
+        "framebuffer_width:int32",
+        "framebuffer_height:int32",
+        "profile_name:string",
+        "image_version:string",
+        "isa_version:int32",
+        "required_features:uint64",
+        "scalar_word_trits:int32",
+        "base_page_words:int32",
+        "function_abi_version:int32",
+        "syscall_abi_version:int32",
+        "sections:TosImageSection[]",
+        "apps:TosAppManifestEntryV3[]",
+        "program:TritWord27[]",
+        "data_words:raw_t40_uint64[]"
+      ],
+      "section_fields": [
+        "name:string",
+        "path:string",
+        "kind:string",
+        "load_address:int32",
+        "entry_pc:int32",
+        "word_count:int32",
+        "page_count:int32",
+        "flags:int32"
+      ],
+      "app_v3_fields": [
+        "name:string",
+        "path:string",
+        "text_ppn:int32",
+        "entry_pc:int32",
+        "text_pages:int32",
+        "data_pages:int32",
+        "stack_words:int32",
+        "isa_version:int32",
+        "required_features:uint64",
+        "function_abi_version:int32",
+        "syscall_abi_version:int32"
+      ],
+      "executable_header": {
+        "words": 20,
+        "executable_version": 3,
+        "function_abi_version": 3,
+        "vector_abi_version": 1,
+        "vector_length": 27,
+        "vector_register_count": 8,
+        "vector_context_words": 279,
+        "vector_spill_words": 27
+      },
+      "runtime_policy": "Production loaders accept only tboot v3 with executable ABI v3 descriptors. Older payloads are rejected as unsupported."
+    },
+    "tdisk": {
+      "magic_hex": "0x54524954535032",
+      "write_version": 2,
+      "read_versions": [2],
+      "block_words": 27,
+      "endianness": "little",
+      "header": [
+        {"name": "magic", "type": "uint64"},
+        {"name": "version", "type": "uint32"},
+        {"name": "block_words", "type": "uint32"},
+        {"name": "generation", "type": "uint64"},
+        {"name": "fnv1a_checksum", "type": "uint64", "covers": "records"},
+        {"name": "nonzero_block_count", "type": "int32"}
+      ],
+      "block_record": [
+        "block_index:int32",
+        "words:uint64[27] (canonical raw T40 for ordinary blocks; direct TritWord27.bits for executable-text blocks)"
+      ],
+      "block_encoding_notes": [
+        "blocks 0..8042 encode ordinary VFS and metadata values as canonical raw T40 uint64 words",
+        "blocks 8043 and above encode bundled executable text as direct nonnegative TritWord27.bits values in the low 54 bits",
+        "executable-text words outside the 54-bit TritWord27 range are rejected; no numeric T40 conversion is applied to them"
+      ],
+      "native_vfs_layout": [
+        "blocks 0..7286: VFS superblock, metadata, extents, and data",
+        "block 7287: redo WAL superblock A",
+        "block 7288: redo WAL superblock B",
+        "blocks 7289..8017: 729-block redo WAL ring",
+        "blocks 8018..8027: namespace policy home pages",
+        "blocks 8028..8042: compact quota ID/limit/version home pages; usage is volatile",
+        "blocks 8043 and above: bundled executable text"
+      ],
+      "redo_wal": [
+        "record_words:27",
+        "header_words:12",
+        "after_image_words:15",
+        "record_types:data,commit,checkpoint",
+        "recovery stops at the first invalid or torn record"
+      ]
+    }
+  },
+  "tools": {
+    "build": "cmake --build build_current_cleanup --target build_tos_image",
+    "test": "python tools/trit_tool.py test",
+    "contract_check": "python tools/trit_tool.py contract-check",
+    "diagnostics": "python tools/trit_tool.py export-diagnostics"
+  }
+}

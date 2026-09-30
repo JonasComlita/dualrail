@@ -4419,7 +4419,18 @@ struct VMState {
     }
 
     [[nodiscard]] bool returnFromTrap() {
-        if (privilege != PrivilegeMode::Kernel || !trap_active) return false;
+        if (privilege != PrivilegeMode::Kernel) return false;
+        // The boot stub uses the same ERET handoff as a normal trap return,
+        // but power-on has no active trap frame yet.  A status CSR prepared
+        // with a user previous-privilege is the explicit initial user resume.
+        if (!trap_active) {
+            if (previous_privilege != PrivilegeMode::User) return false;
+            privilege = previous_privilege;
+            interrupt_enable = previous_interrupt_enable;
+            pc = epc;
+            trap_reg = encodeNoTrap();
+            return true;
+        }
         privilege = previous_privilege;
         interrupt_enable = previous_interrupt_enable;
         pc = epc;

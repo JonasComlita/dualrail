@@ -1,2 +1,2 @@
-trit_current_conformance 4 0.005488
+trit_current_conformance 6 65.9071
 ---
