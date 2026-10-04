@@ -3893,20 +3893,54 @@ fn scheduler_pick_next() -> t40 {
     return ERR_NOT_FOUND;
 }
 
+// Sleep deadlines use delivered kernel ticks, not host wall milliseconds.
+// An indefinite idle wait parks the timer without losing its remaining period.
+fn kernel_has_timed_wait() -> t40 {
+    var slot: t40 = 0;
+    while (slot < PROCESS_MAX) {
+        var state: t40 = process_state(slot);
+        if state - PROC_BLOCKED == 0 {
+            if kload(WAIT_DEADLINE_BASE + slot) >= 0 { return 1; }
+        }
+        if state - PROC_SLEEPING == 0 {
+            if kload(WAIT_DEADLINE_BASE + slot) >= 0 { return 1; }
+        }
+        slot = slot + 1;
+    }
+    return 0;
+}
+
 fn kernel_schedule_next() -> t40 {
     var process_slot: t40 = scheduler_pick_next();
     if process_slot < 0 {
-        // Relational reconciliation is a repair path, not part of an
-        // ordinary context switch.
         macro_reconcile_processes();
         macro_publish();
         process_slot = scheduler_pick_next();
     }
+    var resume_timer: t40 = 0;
+    unsafe { resume_timer = csr_read(timer_enable); }
     while process_slot < 0 {
+        var timed: t40 = kernel_has_timed_wait();
+        if timed > 0 {
+            unsafe { csr_write(timer_enable, resume_timer); }
+        } else {
+            unsafe { csr_write(timer_enable, 0); }
+        }
         unsafe { arch_wait(); }
-        kernel_timer_tick();
+        var pending: t40 = 0;
+        unsafe { pending = csr_read(timer_pending); }
+        if pending > 0 {
+            // Resume this existing kernel frame; never route a nested IRQ.
+            // Several masked periods coalesce in the architectural latch.
+            unsafe { csr_write(timer_pending, 0); }
+            kernel_timer_tick();
+        } else {
+            window_poll_input_driver();
+            wait_wake_input();
+        }
         process_slot = scheduler_pick_next();
     }
+    unsafe { csr_write(timer_enable, resume_timer); }
     return scheduler_switch_to_slot(process_slot);
 }
 
@@ -8507,7 +8541,67 @@ fn kernel_set_return(status: t40, payload: t40, detail: t40) -> t40 {
     return status;
 }
 
+fn service_metrics(pid: t40, out_addr: t40, out_words: t40) -> t40 {
+    var caller_slot: t40 = process_find_pid(pid);
+    if caller_slot < 0 { return ERR_INVALID; }
+    if out_words < 7 { return ERR_INVALID; }
+    if out_addr < 0 { return ERR_BAD_PTR; }
+    var limit: t40 = USER_MEM_LIMIT;
+    if user_has_dmem_mmu(pid) > 0 { limit = HW_PT_WORDS * MMU_PAGE_WORDS; }
+    if out_addr - limit >= 0 { return ERR_BAD_PTR; }
+    if out_words - (limit - out_addr) > 0 { return ERR_BAD_PTR; }
+    var address_remainder: t40 = 0;
+    var size_remainder: t40 = 0;
+    unsafe {
+        address_remainder = tmod(out_addr, 1);
+        size_remainder = tmod(out_words, 1);
+    }
+    if address_remainder != 0 { return ERR_BAD_PTR; }
+    if size_remainder != 0 { return ERR_INVALID; }
+    if user_validate_span(pid, out_addr, out_words, 1) <= 0 { return ERR_BAD_PTR; }
+    var ns: t40 = kload(process_addr(caller_slot) + PROC_NAMESPACE);
+    var processes: t40 = 0;
+    var runnable: t40 = 0;
+    var slot: t40 = 0;
+    while (slot < PROCESS_MAX) {
+        var row: t40 = process_addr(slot);
+        if kload(row + PROC_NAMESPACE) - ns == 0 {
+            var state: t40 = kload(row + PROC_STATE);
+            if state > 0 { processes = processes + 1; }
+            if state - PROC_RUNNABLE == 0 { runnable = runnable + 1; }
+            if state - PROC_RUNNING == 0 { runnable = runnable + 1; }
+        }
+        slot = slot + 1;
+    }
+    var events: t40 = 0;
+    var capacity: t40 = 0;
+    slot = 0;
+    while (slot < WINDOW_MAX) {
+        var win: t40 = window_addr(slot);
+        if kload(win + WIN_ACTIVE) > 0 {
+            if kload(win + WIN_NAMESPACE) - ns == 0 {
+                events = events + kload(win + WIN_EVENT_COUNT);
+                capacity = capacity + WINDOW_EVENT_CAPACITY;
+            }
+        }
+        slot = slot + 1;
+    }
+    user_store_word(pid, out_addr, 1);
+    user_store_word(pid, out_addr + 1, pid);
+    user_store_word(pid, out_addr + 2, kload(KERNEL_TICK_ADDR));
+    user_store_word(pid, out_addr + 3, processes);
+    user_store_word(pid, out_addr + 4, runnable);
+    user_store_word(pid, out_addr + 5, events);
+    user_store_word(pid, out_addr + 6, capacity);
+    return 7;
+}
+
 fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t40, arg3: t40) -> t40 {
+    if service - 60 == 0 {
+        var result: t40 = service_metrics(pid, arg0, arg1);
+        if result < 0 { return kernel_set_return(-1, result, result); }
+        return kernel_set_return(1, result, 0);
+    }
     if service - 1 == 0 {
         unsafe { csr_write(console_ctrl, 3); }
         unsafe { csr_write(console_out, arg0); }

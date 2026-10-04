@@ -340,6 +340,17 @@
       2
     ]
   },
+  "numeric_policy": {
+    "native_scalar": "T40",
+    "accumulator": "T40",
+    "accumulator_suffix": "operand_and_readout_view",
+    "rounding": "strict_per_operation",
+    "accumulator_serialization": "tagged_T40_context_word",
+    "tmac": "T40_multiply_then_add",
+    "compiler_radix3_constant": "integer_coefficient_times_three_to_integer_exponent",
+    "exceptional_values": "distinct_overflow_underflow_sentinels_and_invalid_payload",
+    "implicit_reduction_widening": false
+  },
   "generation": {
     "tool": "python tools/trit_tool.py contract-check",
     "outputs": [

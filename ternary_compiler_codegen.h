@@ -392,6 +392,9 @@ private:
     }
 
     InferResult inferCall(const ExprPtr& expr) {
+        if (expr->text == "radix3") {
+            return InferResult{TypeRef::numeric(ir::Type::T40), Effect::Pure};
+        }
         if (expr->text == "shared_alloc") {
             if (expr->args.size() != 1) {
                 diagnostics_.push_back({DiagnosticSeverity::Error,
@@ -732,7 +735,8 @@ private:
                name == "sys_futex_wake" || name == "sys_ipc_recv_blocking" ||
                name == "sys_wait_event" || name == "sys_sleep_ms" ||
                name == "sys_app_spawn" ||
-               name == "sys_reboot" || name == "sys_rename";
+               name == "sys_reboot" || name == "sys_rename" ||
+               name == "sys_service_metrics";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -1099,15 +1103,8 @@ public:
         
         // Build module-level constants
         for (const auto& const_decl : ast_.consts) {
-            long long val = 0;
-            TypeRef type;
-            std::vector<Diagnostic> const_diags;
-            if (evalConstantExpr(const_decl.expr, module_constants_, val, type, false, const_diags)) {
-                module_constants_[const_decl.name] = ConstantInfo{val, type};
-            } else {
-                // If evaluation failed, report it
-                diagnostics_.insert(diagnostics_.end(), const_diags.begin(), const_diags.end());
-            }
+            checkAndRegisterConst(const_decl.name, const_decl.type, const_decl.expr,
+                                  module_constants_, ConstantTable{}, diagnostics_, const_decl.span);
         }
         
         for (const auto& fn : ast_.functions) {
@@ -1707,6 +1704,7 @@ private:
                     case InstrOpcode::Alloca:
                     case InstrOpcode::Param:
                     case InstrOpcode::Const:
+                    case InstrOpcode::Radix3Const:
                     case InstrOpcode::Copy:
                     case InstrOpcode::Add:
                     case InstrOpcode::Sub:
@@ -2514,6 +2512,22 @@ private:
                             << instr.imm << "\n";
                     }
                     break;
+                case InstrOpcode::Radix3Const: {
+                    out << "    mov.t40 " << regName(destination) << ", " << instr.imm << "\n";
+                    // TLSHIFT/TRSHIFT take at most 60 trits per instruction in the VM.
+                    // Scaling by powers of three is exact; bounded chunks also
+                    // avoid constructing an overflowing/underflowing divisor.
+                    int remaining = std::abs(instr.aux);
+                    while (remaining > 0) {
+                        const int chunk = std::min(60, remaining);
+                        out << "    mov.t40 r24, " << chunk << "\n"
+                            << "    " << (instr.aux < 0 ? "trshift" : "tlshift")
+                            << ".t40 " << regName(destination) << ", "
+                            << regName(destination) << ", r24\n";
+                        remaining -= chunk;
+                    }
+                    break;
+                }
                 case InstrOpcode::Copy: {
                     if (vector_instruction) {
                         int source = -1;
@@ -3868,14 +3882,8 @@ private:
             }
             case StmtKind::TupleSwap: emitTupleSwap(stmt, ctx); break;
             case StmtKind::Const: {
-                // Evaluate const expression at compile time
-                long long value = 0;
-                TypeRef type;
-                std::vector<Diagnostic> dummy_diags;
-                // Try to evaluate the constant expression
-                if (evalConstantExpr(stmt.expr, ctx.constants, value, type, false, dummy_diags)) {
-                    ctx.constants[stmt.name] = ConstantInfo{value, type};
-                }
+                checkAndRegisterConst(stmt.name, stmt.annotation, stmt.expr,
+                                      ctx.constants, ConstantTable{}, diagnostics_, stmt.span);
                 break;
             }
         }
@@ -4764,6 +4772,18 @@ private:
         // Check if it's a constant first
         auto const_it = ctx.constants.find(expr.text);
         if (const_it != ctx.constants.end()) {
+            if (const_it->second.initializer) {
+                // Evaluate in the declaration's environment. Replacing a
+                // constant name by an untyped expression would lose both
+                // lexical binding and rounding at its declared width.
+                const ConstantInfo binding = const_it->second;
+                ConstantTable saved = std::move(ctx.constants);
+                ctx.constants = *binding.environment;
+                ExprCode code = emitExpr(binding.initializer, binding.type, ctx);
+                emitCvtIfNeeded(code, binding.type, ctx);
+                ctx.constants = std::move(saved);
+                return code;
+            }
             return emitImmediate(const_it->second.value, const_it->second.type, expr.span, ctx);
         }
         
@@ -5433,6 +5453,21 @@ private:
     }
 
     [[nodiscard]] ExprCode emitCall(const Expr& expr, TypeRef expected, FunctionContext& ctx) {
+        if (expr.text == "radix3") {
+            long long coefficient = 0;
+            int exponent = 0;
+            if (!evalRadix3Constant(expr, ctx.constants, coefficient, exponent)) {
+                diag("radix3 requires two integer constants: coefficient within the ISA immediate range and a representable T40 exponent", expr.span);
+                return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            }
+            if (coefficient == 0) return emitImmediate(0, TypeRef::numeric(ir::Type::T40), expr.span, ctx);
+            const int reg = ctx.acquire();
+            const TypeRef type = TypeRef::numeric(ir::Type::T40);
+            const ValueId id = ctx.value(InstrOpcode::Radix3Const, type, expr.span, reg);
+            ctx.block->instructions.back().imm = coefficient;
+            ctx.block->instructions.back().aux = exponent;
+            return ExprCode{reg, type, false, id};
+        }
         if (expr.text == "shared_alloc" || expr.text == "atomic_load" || expr.text == "atomic_store") {
             return emitAtomicOp(expr, expected, ctx);
         }
@@ -6269,6 +6304,7 @@ private:
         if (name == "sys_app_spawn") return runtime::sys_app_spawn;
         if (name == "sys_reboot") return runtime::sys_reboot;
         if (name == "sys_rename") return runtime::sys_rename;
+        if (name == "sys_service_metrics") return runtime::sys_service_metrics;
         return 0;
     }
 
@@ -6315,7 +6351,8 @@ private:
                service == runtime::sys_sleep_ms ||
                service == runtime::sys_app_spawn ||
                service == runtime::sys_reboot ||
-               service == runtime::sys_rename;
+               service == runtime::sys_rename ||
+               service == runtime::sys_service_metrics;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {
@@ -6501,6 +6538,7 @@ private:
     switch (instr.opcode) {
         case InstrOpcode::Param:
         case InstrOpcode::Const:
+        case InstrOpcode::Radix3Const:
         case InstrOpcode::Copy:
         case InstrOpcode::Add:
         case InstrOpcode::Sub:
@@ -6535,6 +6573,7 @@ struct TargetCostTable {
             case InstrOpcode::Alloca: return 2;
             case InstrOpcode::Param: return 0;
             case InstrOpcode::Const: return 1;
+            case InstrOpcode::Radix3Const: return 39; // maximum bounded shift expansion
             case InstrOpcode::Copy: return 1;
             case InstrOpcode::Add:
             case InstrOpcode::Sub:
@@ -7454,6 +7493,8 @@ inline ValueId resolveCopy(ValueId value, const std::map<ValueId, ValueId>& copi
         case InstrOpcode::Mul: value = lhs * rhs; return true;
         case InstrOpcode::Div:
             if (rhs == 0) return false;
+            if (lhs == std::numeric_limits<long long>::min() && rhs == -1) return false;
+            if (lhs % rhs != 0) return false;
             value = lhs / rhs;
             return true;
         case InstrOpcode::Tmod:
@@ -7605,6 +7646,8 @@ inline int runSparseConditionalConstantPropagation(Function& fn) {
                 if (rhs.value == 0 ||
                     (lhs.value == std::numeric_limits<long long>::min() &&
                      rhs.value == -1))
+                    return LatticeValue{LatticeKind::Overdefined, 0};
+                if (instr.opcode == InstrOpcode::Div && lhs.value % rhs.value != 0)
                     return LatticeValue{LatticeKind::Overdefined, 0};
                 result = instr.opcode == InstrOpcode::Div
                     ? lhs.value / rhs.value
@@ -8506,7 +8549,8 @@ inline int runCostControlledTselConversion(Function& fn) {
                     constants.count(instr.args[0]) && constants.count(instr.args[1])) {
                     const long long a = constants[instr.args[0]];
                     const long long b = constants[instr.args[1]];
-                    if (instr.opcode != InstrOpcode::Div || b != 0) {
+                    if (instr.opcode != InstrOpcode::Div ||
+                        (b != 0 && !(a == std::numeric_limits<long long>::min() && b == -1) && a % b == 0)) {
                         long long value = 0;
                         if (instr.opcode == InstrOpcode::Add) value = a + b;
                         else if (instr.opcode == InstrOpcode::Sub) value = a - b;

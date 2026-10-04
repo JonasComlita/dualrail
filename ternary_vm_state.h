@@ -2677,6 +2677,28 @@ struct VMNativeJitStats {
     void reset() { *this = VMNativeJitStats{}; }
 };
 
+// The packed T40 value remains the sole architectural state at all external
+// boundaries. The decoded representation is copied with a core/checkpoint and
+// rebuilt from the tagged word when a process or disk checkpoint is restored.
+class T40AccumulatorState {
+public:
+    T40AccumulatorState() = default;
+    T40AccumulatorState(TernaryValue value) { *this = value; }
+    T40AccumulatorState& operator=(TernaryValue value) {
+        partial_.load(convertValue(value, TernaryMode::T40).asTriple());
+        return *this;
+    }
+    [[nodiscard]] operator TernaryValue() const {
+        return TernaryValue::fromTriple(partial_.result());
+    }
+    [[nodiscard]] bool isInvalid() const { return partial_.isInvalid(); }
+    void add(TernaryValue value) { partial_.add(value.asTriple()); }
+    void subtract(TernaryValue value) { partial_.subtract(value.asTriple()); }
+    void multiply(TernaryValue value) { partial_.multiply(value.asTriple()); }
+private:
+    native_ops::T40Accumulator partial_;
+};
+
 struct VMCoreState {
     TernaryRegisterFile regfile;
     int pc = 0;
@@ -2685,7 +2707,7 @@ struct VMCoreState {
     int vector_length = DEFAULT_VECTOR_LENGTH;
     TernaryVectorFile vregfile;
     VectorFaultState vector_faults;
-    TernaryValue accumulator = TernaryValue::zero();
+    T40AccumulatorState accumulator;
     PrivilegeMode privilege = PrivilegeMode::Kernel;
     PrivilegeMode previous_privilege = PrivilegeMode::Kernel;
     bool interrupt_enable = false;
@@ -2793,7 +2815,7 @@ struct VMState {
     int                      vector_length = DEFAULT_VECTOR_LENGTH;
     TernaryVectorFile        vregfile;
     VectorFaultState         vector_faults;
-    TernaryValue             accumulator;
+    T40AccumulatorState     accumulator;
     std::string              syscall_buffer;
     std::vector<long long>    console_input;
     PrivilegeMode            privilege = PrivilegeMode::Kernel;
@@ -3323,7 +3345,32 @@ struct VMState {
     }
 
     void enterWaiting() {
-        status = VMStatus::WAITING;
+        if (!timer_pending) status = VMStatus::WAITING;
+    }
+
+    // One idle budget unit advances to at most one timer expiry or an earlier
+    // replay input boundary. No instruction executes and no instruction record
+    // is fabricated. Disabled timers park, preserving cycle/countdown state.
+    [[nodiscard]] bool advanceWaiting(
+        long long cycle_limit = std::numeric_limits<long long>::max()) {
+        if (status != VMStatus::WAITING) return false;
+        if (!timer_pending) {
+            if (!timer_enable || cycle_limit <= cycle_count) return false;
+            const long long distance = std::max<long long>(1, timer_counter);
+            const long long elapsed = std::min(distance, cycle_limit - cycle_count);
+            cycle_count += elapsed;
+            timer_counter = std::max<long long>(0, timer_counter - elapsed);
+            if (elapsed < distance) return true;
+            timer_pending = true;
+            if (timer_reload > 0) timer_counter = timer_reload;
+            else timer_enable = false;
+        }
+        resumeFromEvent();
+        if (trap_routing_enabled && interrupt_enable && !trap_active) {
+            timer_pending = false;
+            trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_TIMER_IRQ, pc);
+        }
+        return true;
     }
 
     void resumeFromEvent() {
@@ -4403,7 +4450,7 @@ struct VMState {
                 }
             }
         }
-        if (allow_timer_interrupt && timer_pending && trap_routing_enabled && interrupt_enable) {
+        if (allow_timer_interrupt && timer_pending && trap_routing_enabled && interrupt_enable && !trap_active) {
             timer_pending = false;
             trapWithCause(TrapCode::TRAP_ILLEGAL_OP, OS_CAUSE_TIMER_IRQ, pc);
         }
@@ -4655,7 +4702,8 @@ struct VMState {
         first_failing_lane >= architecture::v3::VECTOR_LANE_COUNT) {
         return false;
     }
-    if (staged[TASK_CONTEXT_V3_ACCUMULATOR].isInvalid()) return false;
+    if (staged[TASK_CONTEXT_V3_ACCUMULATOR].mode != TernaryMode::T40 ||
+        staged[TASK_CONTEXT_V3_ACCUMULATOR].isInvalid()) return false;
     for (int index = 0; index < TASK_CONTEXT_V3_RESERVED_WORDS; ++index) {
         const TernaryValue& reserved =
             staged[TASK_CONTEXT_V3_RESERVED_BASE + index];

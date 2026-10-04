@@ -1,0 +1,246 @@
+{
+  "schema": "trit.syscalls.v2",
+  "syscall_abi_version": 2,
+  "runtime_mappings": {
+    "sys_write_int": 1,
+    "sys_newline": 2,
+    "sys_clear": 3,
+    "reserved_4": 4,
+    "reserved_5": 5,
+    "reserved_6": 6,
+    "sys_exit": 44,
+    "sys_getpid": 7,
+    "sys_uptime": 8,
+    "sys_read_console_word": 9,
+    "sys_spawn_static": 10,
+    "sys_waitpid": 43,
+    "sys_open": 12,
+    "sys_close": 13,
+    "sys_read": 14,
+    "sys_write": 15,
+    "sys_stat": 16,
+    "sys_readdir": 17,
+    "sys_brk": 18,
+    "sys_sbrk": 19,
+    "sys_fork": 20,
+    "sys_exec": 21,
+    "sys_write_char": 22,
+    "sys_ipc_send": 23,
+    "sys_ipc_recv": 24,
+    "sys_fb_init": 25,
+    "sys_fb_flip": 26,
+    "sys_window_create": 27,
+    "sys_window_get_buffer": 28,
+    "sys_window_present": 29,
+    "sys_window_move": 30,
+    "sys_window_set_z": 31,
+    "sys_window_destroy": 32,
+    "sys_window_read_event": 33,
+    "sys_window_resize": 34,
+    "sys_window_request_close": 35,
+    "sys_socket": 36,
+    "sys_bind": 37,
+    "sys_connect": 38,
+    "sys_send": 39,
+    "sys_recv": 40,
+    "sys_mkdir": 41,
+    "sys_unlink": 42,
+    "sys_sleep": 45,
+    "sys_yield": 45,
+    "sys_sleep_until_tick": 45,
+    "sys_ps": 46,
+    "sys_fsync": 47,
+    "sys_kill": 48,
+    "sys_suspend": 49,
+    "sys_resume": 50,
+    "sys_getproc": 51,
+    "sys_futex_wait": 52,
+    "sys_futex_wake": 53,
+    "sys_ipc_recv_blocking": 54,
+    "sys_wait_event": 55,
+    "sys_sleep_ms": 56,
+    "sys_app_spawn": 57,
+    "sys_reboot": 58,
+    "sys_rename": 59,
+    "sys_service_metrics": 60
+  },
+  "aliases": {
+    "sys_yield": "sys_sleep",
+    "sys_sleep_until_tick": "sys_sleep"
+  },
+  "sdk_wrappers": {
+    "os_putc": [
+      "sys_write_char"
+    ],
+    "os_newline": [
+      "sys_newline"
+    ],
+    "os_print_int": [
+      "sys_write_int"
+    ],
+    "os_puts": [
+      "sys_write_char"
+    ],
+    "os_open": [
+      "sys_open"
+    ],
+    "os_close": [
+      "sys_close"
+    ],
+    "os_read": [
+      "sys_read"
+    ],
+    "os_write": [
+      "sys_write"
+    ],
+    "os_stat": [
+      "sys_stat"
+    ],
+    "os_readdir": [
+      "sys_readdir"
+    ],
+    "os_ipc_send": [
+      "sys_ipc_send"
+    ],
+    "os_ipc_recv": [
+      "sys_ipc_recv"
+    ],
+    "os_fb_init": [
+      "sys_fb_init"
+    ],
+    "os_fb_flip": [
+      "sys_fb_flip"
+    ],
+    "os_window_create": [
+      "sys_window_create"
+    ],
+    "os_window_get_buffer": [
+      "sys_window_get_buffer"
+    ],
+    "os_window_present": [
+      "sys_window_present"
+    ],
+    "os_window_move": [
+      "sys_window_move"
+    ],
+    "os_window_set_z": [
+      "sys_window_set_z"
+    ],
+    "os_window_destroy": [
+      "sys_window_destroy"
+    ],
+    "os_window_read_event": [
+      "sys_window_read_event"
+    ],
+    "os_window_resize": [
+      "sys_window_resize"
+    ],
+    "os_window_request_close": [
+      "sys_window_request_close"
+    ],
+    "os_socket": [
+      "sys_socket"
+    ],
+    "os_bind": [
+      "sys_bind"
+    ],
+    "os_connect": [
+      "sys_connect"
+    ],
+    "os_send": [
+      "sys_send"
+    ],
+    "os_recv": [
+      "sys_recv"
+    ],
+    "os_mkdir": [
+      "sys_mkdir"
+    ],
+    "os_unlink": [
+      "sys_unlink"
+    ],
+    "os_rename": [
+      "sys_rename"
+    ],
+    "os_fsync": [
+      "sys_fsync"
+    ],
+    "os_waitpid": [
+      "sys_waitpid"
+    ],
+    "os_exit": [
+      "sys_exit"
+    ],
+    "os_sleep": [
+      "sys_sleep"
+    ],
+    "os_sleep_ms": [
+      "sys_sleep_ms"
+    ],
+    "os_ps": [
+      "sys_ps"
+    ],
+    "os_kill": [
+      "sys_kill"
+    ],
+    "os_suspend": [
+      "sys_suspend"
+    ],
+    "os_resume": [
+      "sys_resume"
+    ],
+    "os_getproc": [
+      "sys_getproc"
+    ],
+    "os_futex_wait": [
+      "sys_futex_wait"
+    ],
+    "os_futex_wake": [
+      "sys_futex_wake"
+    ],
+    "os_ipc_recv_blocking": [
+      "sys_ipc_recv_blocking"
+    ],
+    "os_wait_event": [
+      "sys_wait_event"
+    ],
+    "os_window_wait_event": [
+      "sys_wait_event"
+    ],
+    "os_spawn_app": [
+      "sys_app_spawn"
+    ],
+    "os_reboot": [
+      "sys_reboot"
+    ],
+    "os_service_metrics": [
+      "sys_service_metrics"
+    ]
+  },
+  "service_metrics": {
+    "id": 60,
+    "wrapper": "os_service_metrics",
+    "record_words": 7,
+    "fields": [
+      "version",
+      "caller_pid",
+      "kernel_tick",
+      "namespace_process_count",
+      "namespace_runnable_count",
+      "namespace_window_event_count",
+      "namespace_window_event_capacity"
+    ],
+    "version": 1,
+    "validate_entire_advertised_span": true,
+    "success": {
+      "status": 1,
+      "payload": 7,
+      "detail": 0
+    },
+    "failure": {
+      "status": -1,
+      "payload": "negative_error",
+      "detail": "negative_error"
+    }
+  }
+}

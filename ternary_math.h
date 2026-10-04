@@ -348,26 +348,26 @@ namespace sandbox {
     }
 
     struct TernaryAccumulator {
-        Triple partial{};
+        native_ops::T40Accumulator partial{};
         int         steps    = 0;
         static constexpr int FLUSH_INTERVAL = 1000;
 
         void add(Triple val) {
             if (val.isInvalid()) val = Triple::Overflow;
-            partial = native_ops::add(partial, val);
+            partial.add(val);
             ++steps;
         }
 
         void add(long double val) { add(encodeTriple(val, 0)); }
 
         Triple flush() {
-            Triple t = partial;
-            partial  = Triple{};
+            Triple t = partial.result();
+            partial.load(Triple{});
             steps    = 0;
             return t;
         }
 
-        [[nodiscard]] Triple result() const { return partial; }
+        [[nodiscard]] Triple result() const { return partial.result(); }
     };
 
     struct LongTripleAccumulator {

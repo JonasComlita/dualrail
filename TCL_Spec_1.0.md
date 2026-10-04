@@ -107,6 +107,23 @@ separate dimensions and do not redefine the native scalar width.
 
 Lane types (SIMD transport view of the same widths) are `L1`, `L5`, `L10`, `L20`, `L40`, `L50`.
 
+The current `.trit` compiler provides `radix3(coefficient, exponent)` for an
+exact T40 value `coefficient * 3^exponent`, including finite radix-3 fractions:
+
+```trit
+const QUANTUM: t40 = radix3(1, -5); // exactly 1/243
+const FRACTION: t40 = 1 / 243;      // native ternary division, never integer truncation
+```
+
+Both `radix3` arguments must be compile-time integer constants. The coefficient
+must fit the ISA's signed 16-trit immediate (±21,523,360), and the result must be
+finite and representable in T40. Other coefficients can be expressed through
+ordinary numeric expressions. Floating-width `/` preserves a fractional result;
+use `tdiv` when the current compiler's explicit T40 integer quotient is intended.
+This implemented source form does not introduce decimal/binary float literals
+or change strict per-operation rounding. See
+[`t40_numeric_boundaries.md`](docs/03_Execution_Engine/t40_numeric_boundaries.md).
+
 `T1` is the native ternary boolean replacement. It is not a boolean — it carries three distinct logical values: negative (−1), zero (0), and positive (+1). The compiler enforces exhaustive matching on `T1` the same way it enforces exhaustive matching on any enum.
 
 ### 3.3 Width-Parametric Types

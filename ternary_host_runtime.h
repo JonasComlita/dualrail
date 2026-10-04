@@ -434,6 +434,15 @@ inline bool readCheckpointValue(CheckpointReader& reader,
     return reader.pod(value.bits.lo) && reader.pod(value.bits.hi);
 }
 
+inline bool readCheckpointValue(CheckpointReader& reader,
+                                vm::T40AccumulatorState& accumulator) {
+    vm::TernaryValue value;
+    if (!readCheckpointValue(reader, value) || value.mode != TernaryMode::T40 ||
+        value.isInvalid()) return false;
+    accumulator = value;
+    return true;
+}
+
 inline void writeCheckpointProfile(CheckpointWriter& writer,
                                    const vm::ProductionProfile& profile) {
     writer.pod(profile.cores);
@@ -2327,7 +2336,7 @@ public:
         }
         vm::RunResult result;
         int completed_steps = 0;
-        while (machine_->isRunning() && completed_steps < steps) {
+        while ((machine_->isRunning() || machine_->status == vm::VMStatus::WAITING) && completed_steps < steps) {
             retireAcknowledgedInputLocked();
             if (!pending_inputs_.empty()) {
                 applyPendingInputLocked();
@@ -2341,16 +2350,21 @@ public:
                 completed_steps += run_result.steps;
                 break;
             }
+            const auto before_cycle = machine_->cycle_count;
+            const auto before_status = machine_->status;
             vm::VMExecutionRecord record;
             const vm::VMStatus status = vm::step(
                 *machine_, config_.record_syscall_trace ? &record : nullptr);
             if (config_.record_syscall_trace) recordSyscall(record);
+            if (before_status == vm::VMStatus::WAITING &&
+                status == before_status && machine_->cycle_count == before_cycle) break;
             ++completed_steps;
             result.status = status;
             result.steps = completed_steps;
             result.final_pc = machine_->pc;
             retireAcknowledgedInputLocked();
-            if (status != vm::VMStatus::RUNNING) break;
+            if (status != vm::VMStatus::RUNNING &&
+                status != vm::VMStatus::WAITING) break;
         }
         if (completed_steps == 0) {
             result.status = machine_->status;
@@ -2626,6 +2640,16 @@ public:
             }
             retireAcknowledgedInputLocked();
             applyPendingInputLocked();
+            if (machine_->status == vm::VMStatus::WAITING) {
+                const long long boundary = next_event < input_journal_.size()
+                    ? static_cast<long long>(std::min<std::uint64_t>(
+                        input_journal_[next_event].cycle,
+                        std::numeric_limits<long long>::max()))
+                    : std::numeric_limits<long long>::max();
+                if (!machine_->advanceWaiting(boundary)) break;
+                ++steps;
+                continue;
+            }
             if (!machine_->isRunning()) break;
             vm::VMExecutionRecord record;
             const vm::VMStatus status = vm::step(
@@ -3732,12 +3756,11 @@ private:
                 long long chunk_steps = 0;
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (!machine_ || !machine_->isRunning()) {
+                    if (!machine_ || (!machine_->isRunning() &&
+                                     machine_->status != vm::VMStatus::WAITING)) {
                         run_steps = target_steps;
                         stopped_or_idle = true;
-                    } else if (pending_inputs_.empty() &&
-                               detail::canIdleWithoutStepping(*machine_)) {
-                        stopped_or_idle = true;
+
                     } else {
                         const long long chunk =
                             std::min<long long>(8192, target_steps - run_steps);
@@ -3746,11 +3769,19 @@ private:
                             if (!pending_inputs_.empty()) {
                                 applyPendingInputLocked();
                             }
+                            const auto cycle_before = machine_->cycle_count;
+                            const auto status_before = machine_->status;
                             vm::VMExecutionRecord record;
                             const vm::VMStatus status = vm::step(
                                 *machine_,
                                 config_.record_syscall_trace ? &record : nullptr);
                             if (config_.record_syscall_trace) recordSyscall(record);
+                            if (status_before == vm::VMStatus::WAITING &&
+                                status == status_before &&
+                                machine_->cycle_count == cycle_before) {
+                                stopped_or_idle = true;
+                                break;
+                            }
                             ++chunk_steps;
                             retireAcknowledgedInputLocked();
                             if (machine_->power_control == 1) {

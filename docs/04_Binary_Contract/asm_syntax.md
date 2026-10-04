@@ -43,7 +43,13 @@ The assembler organizes memory using hardware-mapped sections.
 | :--- | :--- | :--- |
 | **`.text`** | **IMEM** | Contains executable code. This is the default section. |
 | **`.data`** | **DMEM** | Contains static variables and constants. |
-| **`.word`** | **Value** | Defines a 50-trit word in the `.data` section. |
+| **`.word`** | **Value** | Defines a native T40 numeric word in the `.data` section. |
+
+Current executable units declare `.isa 2`, their required features, and one
+validated `.execheader3`. The existing ABI-v3 vector-context instructions are
+`vctxstore rContext [, offset]` and `vctxload rContext [, offset]`; they require
+`.require vector_context`, have no width suffix, and address the complete aligned
+279-word tagged arena. Slot 5 holds the packed T40 accumulator.
 
 ---
 

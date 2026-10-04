@@ -1,0 +1,359 @@
+{
+  "schema": "trit.apps.v1",
+  "apps": [
+    {
+      "source": "init.trit",
+      "id": "init",
+      "title": "Init",
+      "guest_path": "/bin/init"
+    },
+    {
+      "source": "desktop.trit",
+      "id": "desktop",
+      "title": "Desktop",
+      "guest_path": "/bin/desktop"
+    },
+    {
+      "source": "shell.trit",
+      "id": "shell",
+      "title": "Shell",
+      "guest_path": "/bin/shell"
+    },
+    {
+      "source": "shell.trit",
+      "id": "sh",
+      "title": "sh",
+      "guest_path": "/bin/sh"
+    },
+    {
+      "source": "terminal.trit",
+      "id": "terminal",
+      "title": "Terminal",
+      "guest_path": "/bin/terminal"
+    },
+    {
+      "source": "file_manager.trit",
+      "id": "files",
+      "title": "Files",
+      "guest_path": "/bin/file_manager"
+    },
+    {
+      "source": "settings.trit",
+      "id": "settings",
+      "title": "Settings",
+      "guest_path": "/bin/settings"
+    },
+    {
+      "source": "task_manager.trit",
+      "id": "tasks",
+      "title": "Tasks",
+      "guest_path": "/bin/task_manager"
+    },
+    {
+      "source": "task_manager.trit",
+      "id": "top",
+      "title": "top",
+      "guest_path": "/bin/top"
+    },
+    {
+      "source": "task_manager.trit",
+      "id": "tasks_cmd",
+      "title": "tasks",
+      "guest_path": "/bin/tasks"
+    },
+    {
+      "source": "calculator.trit",
+      "id": "calculator",
+      "title": "Calculator",
+      "guest_path": "/bin/calculator"
+    },
+    {
+      "source": "paint.trit",
+      "id": "paint",
+      "title": "Paint",
+      "guest_path": "/bin/paint"
+    },
+    {
+      "source": "text_editor.trit",
+      "id": "text_editor",
+      "title": "Text Editor",
+      "guest_path": "/bin/text_editor"
+    },
+    {
+      "source": "text_editor.trit",
+      "id": "edit",
+      "title": "edit",
+      "guest_path": "/bin/edit"
+    },
+    {
+      "source": "about.trit",
+      "id": "about",
+      "title": "About",
+      "guest_path": "/bin/about"
+    },
+    {
+      "source": "help.trit",
+      "id": "help",
+      "title": "Help",
+      "guest_path": "/bin/help"
+    },
+    {
+      "source": "ls.trit",
+      "id": "ls",
+      "title": "ls",
+      "guest_path": "/bin/ls"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "cat",
+      "title": "cat",
+      "guest_path": "/bin/cat"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "echo",
+      "title": "echo",
+      "guest_path": "/bin/echo"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "pwd",
+      "title": "pwd",
+      "guest_path": "/bin/pwd"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "cp",
+      "title": "cp",
+      "guest_path": "/bin/cp"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "mv",
+      "title": "mv",
+      "guest_path": "/bin/mv"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "rm",
+      "title": "rm",
+      "guest_path": "/bin/rm"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "mkdir",
+      "title": "mkdir",
+      "guest_path": "/bin/mkdir"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "rmdir",
+      "title": "rmdir",
+      "guest_path": "/bin/rmdir"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "touch",
+      "title": "touch",
+      "guest_path": "/bin/touch"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "stat",
+      "title": "stat",
+      "guest_path": "/bin/stat"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "find",
+      "title": "find",
+      "guest_path": "/bin/find"
+    },
+    {
+      "source": "bin_core.trit",
+      "id": "grep",
+      "title": "grep",
+      "guest_path": "/bin/grep"
+    },
+    {
+      "source": "clear.trit",
+      "id": "clear",
+      "title": "clear",
+      "guest_path": "/bin/clear"
+    },
+    {
+      "source": "date.trit",
+      "id": "date",
+      "title": "date",
+      "guest_path": "/bin/date"
+    },
+    {
+      "source": "sleep.trit",
+      "id": "sleep",
+      "title": "sleep",
+      "guest_path": "/bin/sleep"
+    },
+    {
+      "source": "ps.trit",
+      "id": "ps",
+      "title": "ps",
+      "guest_path": "/bin/ps"
+    },
+    {
+      "source": "doctor.trit",
+      "id": "doctor",
+      "title": "doctor",
+      "guest_path": "/bin/doctor"
+    },
+    {
+      "source": "test.trit",
+      "id": "test",
+      "title": "test",
+      "guest_path": "/bin/test"
+    },
+    {
+      "source": "sysinfo.trit",
+      "id": "sysinfo",
+      "title": "sysinfo",
+      "guest_path": "/bin/sysinfo"
+    },
+    {
+      "source": "log.trit",
+      "id": "log",
+      "title": "log",
+      "guest_path": "/bin/log"
+    },
+    {
+      "source": "kill.trit",
+      "id": "kill",
+      "title": "kill",
+      "guest_path": "/bin/kill"
+    },
+    {
+      "source": "mount.trit",
+      "id": "mount",
+      "title": "mount",
+      "guest_path": "/bin/mount"
+    },
+    {
+      "source": "fsck.trit",
+      "id": "fsck",
+      "title": "fsck",
+      "guest_path": "/bin/fsck"
+    },
+    {
+      "source": "sync.trit",
+      "id": "sync",
+      "title": "sync",
+      "guest_path": "/bin/sync"
+    },
+    {
+      "source": "reboot.trit",
+      "id": "reboot",
+      "title": "reboot",
+      "guest_path": "/bin/reboot"
+    },
+    {
+      "source": "shutdown.trit",
+      "id": "shutdown",
+      "title": "shutdown",
+      "guest_path": "/bin/shutdown"
+    },
+    {
+      "source": "crash.trit",
+      "id": "crash",
+      "title": "crash",
+      "guest_path": "/bin/crash"
+    },
+    {
+      "source": "login.trit",
+      "id": "login",
+      "title": "login",
+      "guest_path": "/bin/login"
+    },
+    {
+      "source": "passwd.trit",
+      "id": "passwd",
+      "title": "passwd",
+      "guest_path": "/bin/passwd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "sessiond",
+      "title": "sessiond",
+      "guest_path": "/bin/sessiond"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "window_server",
+      "title": "window_server",
+      "guest_path": "/bin/window_server"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "compositor",
+      "title": "compositor",
+      "guest_path": "/bin/compositor"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "inputd",
+      "title": "inputd",
+      "guest_path": "/bin/inputd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "mountd",
+      "title": "mountd",
+      "guest_path": "/bin/mountd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "logd",
+      "title": "logd",
+      "guest_path": "/bin/logd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "crashd",
+      "title": "crashd",
+      "guest_path": "/bin/crashd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "updated",
+      "title": "updated",
+      "guest_path": "/bin/updated"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "packaged",
+      "title": "packaged",
+      "guest_path": "/bin/packaged"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "devd",
+      "title": "devd",
+      "guest_path": "/bin/devd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "timed",
+      "title": "timed",
+      "guest_path": "/bin/timed"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "authd",
+      "title": "authd",
+      "guest_path": "/bin/authd"
+    },
+    {
+      "source": "service_stub.trit",
+      "id": "powerd",
+      "title": "powerd",
+      "guest_path": "/bin/powerd"
+    }
+  ]
+}

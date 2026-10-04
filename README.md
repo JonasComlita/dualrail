@@ -261,10 +261,13 @@ ops because they use different hardware paths and have different semantics.
 - `vdot.t1`: dot product over packed `-1/0/+1` lanes.
 - `vact.t1`: ternary activation, mapping sign to `-1/0/+1`.
 
-Accumulator precision decision: accumulators should maintain `T50` precision
-unless a narrower suffix explicitly says otherwise. This mirrors binary
-low-precision multiply with wider accumulation, but ternary `T1` multiply is
-cheaper: it is conditional add/subtract/skip, not a true multiply.
+Accumulator precision is `T40`, the current native word standard. Suffixes
+select operand and read-out widths; they do not widen the accumulator. The VM
+retains decoded native T40 parts between additions/subtractions and packs at
+read-out or state-save boundaries, preserving T40 rounding after each operation.
+`tmac` rounds its product before accumulation; it is not a single-rounding FMA.
+See [the T40 numeric contract](docs/03_Execution_Engine/t40_numeric_boundaries.md)
+for exact constants, representation boundaries, and repeatable validation.
 
 ### Vector Plumbing and Memory
 

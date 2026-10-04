@@ -1250,3 +1250,8 @@ fn os_spawn_app(path_addr: t40, child_slot: t40, child_pid: t40) -> t40 {
 fn os_reboot() -> t40 {
     return sys_reboot();
 }
+
+// Fixed namespace observability record; all advertised words must be writable.
+fn os_service_metrics(out_addr: t40, out_words: t40) -> t40 {
+    return sys_service_metrics(out_addr, out_words);
+}

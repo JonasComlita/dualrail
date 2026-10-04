@@ -237,6 +237,11 @@ struct ModuleAst {
 struct ConstantInfo {
     long long value = 0;
     TypeRef type;
+    // Fractions and explicit radix-3 values retain their native expression.
+    // The integer evaluator is also used for array sizes and must not silently
+    // truncate these values or reinterpret them as integer constants.
+    ExprPtr initializer;
+    std::shared_ptr<const std::map<std::string, ConstantInfo>> environment;
 };
 using ConstantTable = std::map<std::string, ConstantInfo>;
 
@@ -275,6 +280,7 @@ inline bool evalConstantExpr(const ExprPtr& expr,
         case ExprKind::Name: {
             auto it = consts.find(expr->text);
             if (it != consts.end()) {
+                if (it->second.initializer) return false;
                 outValue = it->second.value;
                 outType = it->second.type;
                 return true;
@@ -323,6 +329,8 @@ inline bool evalConstantExpr(const ExprPtr& expr,
                         "division by zero in constant expression", expr->span});
                     return false;
                 }
+                if (leftVal == std::numeric_limits<long long>::min() && rightVal == -1) return false;
+                if (leftVal % rightVal != 0) return false;
                 outValue = leftVal / rightVal;
                 return true;
             } else if (expr->text == "==") {
@@ -367,6 +375,43 @@ inline bool evalConstantExpr(const ExprPtr& expr,
     }
 }
 
+inline bool evalRadix3Constant(const Expr& expr, const ConstantTable& table,
+                              long long& coefficient, int& exponent) {
+    long long requested_exponent = 0;
+    TypeRef ignored;
+    std::vector<Diagnostic> errors;
+    const long long max_coefficient = (native_ops::detail::pow3Int(16) - 1) / 2;
+    if (expr.args.size() != 2 ||
+        !evalConstantExpr(expr.args[0], table, coefficient, ignored, false, errors) ||
+        !evalConstantExpr(expr.args[1], table, requested_exponent, ignored, false, errors) ||
+        coefficient < -max_coefficient || coefficient > max_coefficient) return false;
+    if (coefficient == 0) { exponent = 0; return true; }
+    using Format = native_ops::detail::FmtT40;
+    if (requested_exponent < Format::exponent_min - Format::mantissa_trits ||
+        requested_exponent > Format::exponent_max) return false;
+    exponent = static_cast<int>(requested_exponent);
+    const Triple value = native_ops::detail::packSigned<Format>(
+        Int128::fromLongLong(coefficient), exponent + Format::mantissa_trits - 1);
+    return !value.isInvalid() && !value.isSpecial();
+}
+
+inline bool isNativeConstantExpr(const ExprPtr& expr, const ConstantTable& table) {
+    if (!expr) return false;
+    if (expr->kind == ExprKind::Number) return true;
+    if (expr->kind == ExprKind::Name) return table.count(expr->text) != 0;
+    if (expr->kind == ExprKind::Unary)
+        return expr->text == "-" && isNativeConstantExpr(expr->left, table);
+    if (expr->kind == ExprKind::Binary)
+        return (expr->text == "+" || expr->text == "-" || expr->text == "*" || expr->text == "/") &&
+               isNativeConstantExpr(expr->left, table) && isNativeConstantExpr(expr->right, table);
+    if (expr->kind == ExprKind::Call && expr->text == "radix3") {
+        long long coefficient = 0;
+        int exponent = 0;
+        return evalRadix3Constant(*expr, table, coefficient, exponent);
+    }
+    return false;
+}
+
 inline bool checkAndRegisterConst(const std::string& name,
                                   const TypeRef& annotation,
                                   const ExprPtr& expr,
@@ -381,7 +426,20 @@ inline bool checkAndRegisterConst(const std::string& name,
     
     long long val = 0;
     TypeRef exprType;
-    if (!evalConstantExpr(expr, consts, val, exprType, /*strict=*/true, diagnostics)) {
+    std::vector<Diagnostic> integer_diagnostics;
+    if (!evalConstantExpr(expr, consts, val, exprType, false, integer_diagnostics)) {
+        if (integer_diagnostics.empty() && isNativeConstantExpr(expr, consts) &&
+            (annotation.kind == TypeKind::Unknown || annotation.kind == TypeKind::Numeric)) {
+            table[name] = ConstantInfo{0, annotation.kind == TypeKind::Unknown
+                ? TypeRef::numeric(ir::Type::T40) : annotation, expr,
+                std::make_shared<const ConstantTable>(consts)};
+            return true;
+        }
+        if (!integer_diagnostics.empty())
+            diagnostics.insert(diagnostics.end(), integer_diagnostics.begin(), integer_diagnostics.end());
+        else
+            diagnostics.push_back({DiagnosticSeverity::Error,
+                "expression is not a supported numeric constant", span});
         return false;
     }
     
@@ -480,13 +538,9 @@ inline void foldStmt(Stmt& stmt,
                     combined[pair.first] = pair.second;
                 }
             }
-            long long val = 0;
-            TypeRef type;
-            if (evalConstantExpr(stmt.expr, combined, val, type, /*strict=*/true, diagnostics)) {
-                if (!scopes.empty()) {
-                    scopes.back()[stmt.name] = ConstantInfo{val, type};
-                }
-            }
+            if (!scopes.empty())
+                checkAndRegisterConst(stmt.name, stmt.annotation, stmt.expr,
+                                      scopes.back(), combined, diagnostics, stmt.span);
             break;
         }
         case StmtKind::Assign:
@@ -539,11 +593,8 @@ inline void foldModuleConstants(ModuleAst& ast, std::vector<Diagnostic>& diagnos
     ConstantTable fileConsts;
     populateBuiltins(fileConsts);
     for (const auto& c : ast.consts) {
-        long long val = 0;
-        TypeRef type;
-        if (evalConstantExpr(c.expr, fileConsts, val, type, /*strict=*/true, diagnostics)) {
-            fileConsts[c.name] = ConstantInfo{val, type};
-        }
+        checkAndRegisterConst(c.name, c.type, c.expr, fileConsts,
+                              ConstantTable{}, diagnostics, c.span);
     }
     
     for (auto& fn : ast.functions) {

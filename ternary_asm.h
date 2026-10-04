@@ -473,6 +473,8 @@ struct MnemonicParts {
     t["halt"] = {Opcode::HALT, F::B_TYPE, 0, false};
     t["wait"] = {Opcode::WAIT, F::B_TYPE, 0, false};
     t["tlbinv"] = {Opcode::TLBINV, F::R_TYPE, 3, false};
+    t["vctxstore"] = {Opcode::VCTXSTORE, F::R_TYPE, 1, false};
+    t["vctxload"] = {Opcode::VCTXLOAD, F::R_TYPE, 1, false};
 
     // Data movement
     t["mov"]  = {Opcode::MOV,  F::I_TYPE, 2, false};  // rd, imm  OR  rd, rs1, imm
@@ -1142,6 +1144,23 @@ struct LabelMaps {
                 }
             }
 
+        } else if (mnemonic == "vctxstore" || mnemonic == "vctxload") {
+            if (ops.size() < 1 || ops.size() > 2 || parts.has_width) {
+                errors.push_back({line, mnemonic + " requires rContext [, offset] and no width suffix"});
+                ok = false;
+            } else {
+                const int context = getReg(ops[0], line);
+                const auto offset = ops.size() == 2 ? resolveAbsolute(ops[1], line) : std::optional<int>{0};
+                if (!offset) ok = false;
+                if (ok) {
+                    try {
+                        word = encodeVectorContext(info.opcode, static_cast<uint8_t>(context), *offset);
+                    } catch (const std::exception& error) {
+                        errors.push_back({line, error.what()});
+                        ok = false;
+                    }
+                }
+            }
         } else if (mnemonic == "callr" || mnemonic == "jmpr") {
             if (ops.size() != 1) {
                 errors.push_back({line, mnemonic + " requires rTarget"});
@@ -2065,6 +2084,14 @@ collectExecutableHeadersV3(
                     origin = &line;
                     break;
                 }
+            }
+            if (origin != nullptr &&
+                (splitMnemonic(origin->mnemonic).base == "vctxstore" ||
+                 splitMnemonic(origin->mnemonic).base == "vctxload")) {
+                if ((result.required_features & featureBit(architecture::v3::FEATURE_VECTOR_CONTEXT)) == 0)
+                    result.errors.push_back({origin->line_num, "vector context instruction requires .require vector_context"});
+                // encodeVectorContext already emitted the owned ABI-v3 escape.
+                continue;
             }
             if (origin != nullptr &&
                 splitMnemonic(origin->mnemonic).base == "wait") {

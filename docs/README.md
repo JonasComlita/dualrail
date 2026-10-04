@@ -69,6 +69,7 @@ acceleration, use
 - **[03_Execution_Engine/vm_state.md](03_Execution_Engine/vm_state.md)** — VMState structure
 - **[03_Execution_Engine/memory_model.md](03_Execution_Engine/memory_model.md)** — DMEM, FENCE, addressing
 - **[03_Execution_Engine/vector_engine.md](03_Execution_Engine/vector_engine.md)** — Vector registers, VDOT
+- **[03_Execution_Engine/t40_numeric_boundaries.md](03_Execution_Engine/t40_numeric_boundaries.md)** — T40 accumulation, exact constants, rounding, and validation
 
 ### Binary / ABI Contract
 - **[04_Binary_Contract/abi_spec.md](04_Binary_Contract/abi_spec.md)** — Calling convention

@@ -687,6 +687,81 @@ template<class Fmt>
 
 } // namespace detail
 
+// A decoded T40 running value. Numeric normalization/rounding still happens
+// after every operation; only positional serialization is deferred. This is
+// derived emulator state, not a wider architectural register or binary FPU.
+class T40Accumulator {
+public:
+    T40Accumulator() = default;
+    T40Accumulator(Triple value) { load(value); }
+
+    void load(Triple value) {
+        packed_ = value;
+        packed_current_ = true;
+        mantissa_ = 0;
+        exponent_ = 0;
+        if (!value.isZero() && !value.isSpecial() && !value.isInvalid()) {
+            const auto trits = value.unpack();
+            mantissa_ = toLongLongSaturated(detail::mantissaToInt<Format>(trits));
+            exponent_ = detail::decodeExponent<Format>(trits);
+        }
+    }
+
+    [[nodiscard]] Triple result() const {
+        if (!packed_current_) {
+            packed_ = detail::packSigned<Format>(Int128::fromLongLong(mantissa_), exponent_);
+            packed_current_ = true;
+        }
+        return packed_;
+    }
+
+    [[nodiscard]] bool isInvalid() const { return packed_current_ && packed_.isInvalid(); }
+
+    void add(Triple value) {
+        if (isInvalid() || value.isInvalid()) { load(Triple::Overflow); return; }
+        if (packed_current_ && packed_.isZero()) { load(value); return; }
+        if (value.isZero()) return;
+        if ((packed_current_ && packed_.isSpecial()) || value.isSpecial()) {
+            load(Triple::Overflow);
+            return;
+        }
+        const auto trits = value.unpack();
+        Int128 rhs = detail::mantissaToInt<Format>(trits);
+        if (mantissa_ == 0) { load(value); return; }
+        if (rhs.isZero()) return;
+        Int128 lhs = Int128::fromLongLong(mantissa_);
+        int lhs_exponent = exponent_;
+        int rhs_exponent = detail::decodeExponent<Format>(trits);
+        detail::normalizeParts<Format>(lhs, lhs_exponent);
+        detail::normalizeParts<Format>(rhs, rhs_exponent);
+        if (lhs_exponent >= rhs_exponent) {
+            lhs = lhs + detail::roundedDivPow3Signed(rhs, lhs_exponent - rhs_exponent);
+        } else {
+            lhs = detail::roundedDivPow3Signed(lhs, rhs_exponent - lhs_exponent) + rhs;
+            lhs_exponent = rhs_exponent;
+        }
+        detail::normalizeParts<Format>(lhs, lhs_exponent);
+        if (lhs.isZero()) { load(Triple{}); return; }
+        if (lhs_exponent > Format::exponent_max) { load(Triple::Overflow); return; }
+        if (lhs_exponent < Format::exponent_min) { load(Triple::Underflow); return; }
+        mantissa_ = toLongLongSaturated(lhs);
+        exponent_ = lhs_exponent;
+        packed_current_ = false;
+    }
+
+    void subtract(Triple value) { add(detail::floatNegate<Format>(value)); }
+    void multiply(Triple value) { load(detail::floatMultiply<Format>(result(), value)); }
+
+private:
+    using Format = detail::FmtT40;
+    // A normalized 33-trit mantissa fits signed 64-bit storage. Existing
+    // portable integer scratch arithmetic handles alignment/carry as before.
+    long long mantissa_ = 0;
+    int exponent_ = 0;
+    mutable Triple packed_{};
+    mutable bool packed_current_ = true;
+};
+
 [[nodiscard]] inline T1 fromIntT1(long long value) {
     return detail::intFromSigned<detail::FmtT1>(value);
 }

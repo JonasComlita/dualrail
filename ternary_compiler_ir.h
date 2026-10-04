@@ -29,6 +29,7 @@ enum class InstrOpcode : uint8_t {
     Alloca,
     Param,
     Const,
+    Radix3Const,
     Copy,
     Add,
     Sub,
@@ -297,6 +298,7 @@ static constexpr int sys_sleep_ms = 56;
 static constexpr int sys_app_spawn = 57;
 static constexpr int sys_reboot = 58;
 static constexpr int sys_rename = 59;
+static constexpr int sys_service_metrics = 60;
 } // namespace runtime
 
 } // namespace compiler

@@ -2,14 +2,61 @@
 // ternary_dataflow.trit  -  An Optimized Ternary Reactive Dataflow Runtime
 // =============================================================================
 
+const DF_NODE_WORDS: t40 = 38;
+const DF_NODE_OWNER: t40 = 28;
+const DF_NODE_STREAM_REGISTERED: t40 = 29;
+const DF_NODE_PHASE: t40 = 30;
+const DF_NODE_PENDING_COUNT: t40 = 31;
+const DF_NODE_PENDING0_TAG: t40 = 32;
+const DF_NODE_PENDING0_VALUE: t40 = 33;
+const DF_NODE_PENDING1_TAG: t40 = 34;
+const DF_NODE_PENDING1_VALUE: t40 = 35;
+const DF_NODE_SCRATCH_VALUE: t40 = 36;
+const DF_NODE_FLAGS: t40 = 37;
+const DF_NODE_PHASE_IDLE: t40 = 0;
+const DF_NODE_PHASE_RUNNING: t40 = 1;
+const DF_NODE_PHASE_EOS_PENDING: t40 = 2;
+const DF_NODE_PHASE_DONE: t40 = 3;
+const DF_NODE_PHASE_ERROR: t40 = 0 - 1;
+
+const DF_SCHED_WORDS: t40 = 22;
+const DF_SCHED_CHANNELS: t40 = 7;
+const DF_SCHED_CHANNEL_COUNT: t40 = 8;
+const DF_SCHED_STREAMS: t40 = 9;
+const DF_SCHED_STREAM_COUNT: t40 = 10;
+const DF_SCHED_ROUND_ROBIN: t40 = 11;
+const DF_SCHED_LIFECYCLE: t40 = 12;
+const DF_SCHED_CANCEL: t40 = 13;
+const DF_SCHED_LAST_ATTEMPTS: t40 = 14;
+const DF_SCHED_LAST_PROGRESS: t40 = 15;
+const DF_SCHED_STARTED: t40 = 16;
+const DF_SCHED_CONSTRUCTION_ERROR: t40 = 17;
+const DF_SCHED_VALIDATION_RESULT: t40 = 18;
+const DF_SCHED_LAST_ERROR_NODE: t40 = 19;
+const DF_SCHED_BUDGET_TURN: t40 = 20;
+const DF_SCHED_PRIORITY_TURN: t40 = 21;
+
+const DF_CALLBACK_PROGRESS: t40 = 1;
+const DF_CALLBACK_BLOCKED_INPUT: t40 = 2;
+const DF_CALLBACK_BLOCKED_OUTPUT: t40 = 3;
+const DF_CALLBACK_DONE: t40 = 4;
+const DF_CALLBACK_ERROR: t40 = 0 - 1;
+
+const DF_SCHED_LIFECYCLE_RUNNING: t40 = 1;
+const DF_SCHED_LIFECYCLE_DONE: t40 = 2;
+const DF_SCHED_LIFECYCLE_ERROR: t40 = 0 - 1;
+
 // =============================================================================
 // SECTION 1 — Node Pool Bump Allocator (OPT 1)
-// Lay out node slots with inline vectors to avoid heap allocations.
-// Slot size = 28 words:
+// Lay out node slots with inline vectors and persistent callback scratch.
+// Slot size = DF_NODE_WORDS (38); offsets 0..27 keep their legacy meanings:
 //   node[0..9]: standard fields and traversal scratch (10 words)
 //   node[10..15]: inputs vector struct & inline storage (6 words)
 //   node[16..21]: outputs vector struct & inline storage (6 words)
 //   node[22..27]: dependents vector struct & inline storage (6 words)
+//   node[28..31]: owner, stream registration, lifecycle phase, pending count
+//   node[32..35]: two pending tag/value events
+//   node[36..37]: callback scratch value and reserved flags
 // =============================================================================
 
 // The pool is scheduler-owned:
@@ -17,7 +64,7 @@
 fn node_pool_init(sched: t40, capacity: t40) -> t40 {
     match capacity {
         pos => {
-            var pool: t40 = malloc_raw(capacity * 28);
+            var pool: t40 = malloc_raw(capacity * DF_NODE_WORDS);
             match pool {
                 pos => {
                     unsafe {
@@ -47,14 +94,20 @@ fn node_pool_alloc(sched: t40) -> t40 {
         pos => {
             match capacity - used {
                 pos => {
-                    var node: t40 = pool + used * 28;
+                    var node: t40 = pool + used * DF_NODE_WORDS;
                     unsafe { store(sched + 5, used + 1); }
                     return node;
                 }
-                _ => { return 0; }
+                _ => {
+                    unsafe { store(sched + DF_SCHED_CONSTRUCTION_ERROR, 1); }
+                    return 0;
+                }
             }
         }
-        _ => { return 0; }
+        _ => {
+            unsafe { store(sched + DF_SCHED_CONSTRUCTION_ERROR, 1); }
+            return 0;
+        }
     }
 }
 
@@ -70,6 +123,32 @@ fn node_pool_free(sched: t40) -> void {
         store(sched + 5, 0);
         store(sched + 6, 0);
     }
+}
+
+fn df_node_kind_valid(kind: t40) -> t40 {
+    if df_bool_or(df_bool_or(df_bool_or(kind == 0, kind == 1),
+                             df_bool_or(kind == 2, kind == 3)), kind == 4) { return 1; }
+    if kind > 4 { return df_service_kind_valid(kind); }
+    return 0;
+}
+
+fn df_sched_mark_construction_error(sched: t40) -> void {
+    if sched > 0 {
+        unsafe { store(sched + DF_SCHED_CONSTRUCTION_ERROR, 1); }
+    }
+}
+
+fn df_sched_owns_node(sched: t40, node: t40) -> t40 {
+    if df_bool_or(sched <= 0, node <= 0) { return 0; }
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    unsafe { pool = load(sched + 4); used = load(sched + 5); }
+    var i: t40 = 0;
+    while used - i > 0 {
+        if pool + i * DF_NODE_WORDS == node { return 1; }
+        i = i + 1;
+    }
+    return 0;
 }
 
 // Sized vector creator (kept for compatibility)
@@ -173,6 +252,8 @@ const DF_EVENT_DATA: t40 = 1;
 const DF_EVENT_ANOMALY: t40 = 0 - 1;
 const DF_EVENT_UNCERTAIN: t40 = 0 - 2;
 const DF_EVENT_EOS: t40 = 0 - 3;
+const DF_EVENT_ERROR: t40 = 0 - 4;
+const DF_EVENT_CANCEL: t40 = 0 - 5;
 
 fn df_channel_new(capacity: t40) -> t40 {
     match capacity {
@@ -327,11 +408,18 @@ fn df_channel_read(chan: t40, out_value: t40) -> t40 {
 //   [5] = inputs_satisfied_count
 //   [6] = name_str (for debugging)
 //   [7] = custom_data (context pointer)
-//   [8] = required_inputs_threshold (AND-join default: input_len)
+//   [8] = required_inputs_threshold (AND-join default: incoming dependency count)
 //   [9] = graph traversal scratch (white/gray/black; never execution state)
 // =============================================================================
 
 fn df_node_new(sched: t40, name: t40, kind: t40, data: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var started: t40 = 0;
+    unsafe { started = load(sched + DF_SCHED_STARTED); }
+    if df_bool_or(started > 0, df_node_kind_valid(kind) == 0) {
+        df_sched_mark_construction_error(sched);
+        return 0;
+    }
     var node: t40 = node_pool_alloc(sched);
     match node {
         zero => { return 0; }
@@ -352,6 +440,16 @@ fn df_node_new(sched: t40, name: t40, kind: t40, data: t40) -> t40 {
                 store(node + 7, data);
                 store(node + 8, 0); // threshold = 0 (unset, uses default)
                 store(node + 9, 0); // graph traversal scratch = white
+                store(node + DF_NODE_OWNER, sched);
+                store(node + DF_NODE_STREAM_REGISTERED, 0);
+                store(node + DF_NODE_PHASE, DF_NODE_PHASE_IDLE);
+                store(node + DF_NODE_PENDING_COUNT, 0);
+                store(node + DF_NODE_PENDING0_TAG, 0);
+                store(node + DF_NODE_PENDING0_VALUE, 0);
+                store(node + DF_NODE_PENDING1_TAG, 0);
+                store(node + DF_NODE_PENDING1_VALUE, 0);
+                store(node + DF_NODE_SCRATCH_VALUE, 0);
+                store(node + DF_NODE_FLAGS, 0);
                 
                 // Initialize inputs inline vector
                 store(inputs, node + 13);
@@ -404,25 +502,57 @@ fn df_node_free(node: t40) -> void {
 }
 
 fn df_node_add_input(node: t40, chan: t40) -> t40 {
+    if node <= 0 { return 0; }
+    var sched: t40 = 0;
+    unsafe { sched = load(node + DF_NODE_OWNER); }
+    var started: t40 = 0;
+    unsafe { started = load(sched + DF_SCHED_STARTED); }
+    if df_bool_or(started > 0, chan <= 0) { df_sched_mark_construction_error(sched); return 0; }
     var inputs: t40 = 0;
     unsafe { inputs = load(node + 2); }
-    return df_vec_push_safe(inputs, chan);
+    var result: t40 = df_vec_push_safe(inputs, chan);
+    if result == 0 { df_sched_mark_construction_error(sched); }
+    return result;
 }
 
 fn df_node_add_output(node: t40, chan: t40) -> t40 {
+    if node <= 0 { return 0; }
+    var sched: t40 = 0;
+    unsafe { sched = load(node + DF_NODE_OWNER); }
+    var started: t40 = 0;
+    unsafe { started = load(sched + DF_SCHED_STARTED); }
+    if df_bool_or(started > 0, chan <= 0) { df_sched_mark_construction_error(sched); return 0; }
     var outputs: t40 = 0;
     unsafe { outputs = load(node + 3); }
-    return df_vec_push_safe(outputs, chan);
+    var result: t40 = df_vec_push_safe(outputs, chan);
+    if result == 0 { df_sched_mark_construction_error(sched); }
+    return result;
 }
 
 fn df_node_add_dependent(parent: t40, child: t40) -> t40 {
+    if df_bool_or(parent <= 0, child <= 0) { return 0; }
+    var sched: t40 = 0;
+    unsafe { sched = load(parent + DF_NODE_OWNER); }
+    var started: t40 = 0;
+    unsafe { started = load(sched + DF_SCHED_STARTED); }
+    if df_bool_or(started > 0, df_sched_owns_node(sched, child) == 0) {
+        df_sched_mark_construction_error(sched);
+        return 0;
+    }
     var deps: t40 = 0;
     unsafe { deps = load(parent + 4); }
-    return df_vec_push_safe(deps, child);
+    var result: t40 = df_vec_push_safe(deps, child);
+    if result == 0 { df_sched_mark_construction_error(sched); }
+    return result;
 }
 
 // Configures OR-join/Threshold trigger (OPT 7)
 fn df_node_set_required_threshold(node: t40, threshold: t40) -> void {
+    if node <= 0 { return; }
+    var sched: t40 = 0;
+    var started: t40 = 0;
+    unsafe { sched = load(node + DF_NODE_OWNER); started = load(sched + DF_SCHED_STARTED); }
+    if started > 0 { df_sched_mark_construction_error(sched); return; }
     unsafe { store(node + 8, threshold); }
 }
 
@@ -434,264 +564,617 @@ fn df_node_set_required_threshold(node: t40, threshold: t40) -> void {
 // [4]=node pool, [5]=pool used, [6]=pool capacity.
 // =============================================================================
 
+// Superseded scheduler implementations were removed; public names resolve only to bounded runners.
+
+// Bounded registry scheduler and stream operation budget.
+// =============================================================================
+
 fn df_sched_new(capacity: t40) -> t40 {
-    match capacity - 1 {
-        pos => {}
-        _ => { return 0; }
+    if capacity < 2 { return 0; }
+    var sched: t40 = malloc_raw(DF_SCHED_WORDS);
+    if sched <= 0 { return 0; }
+    var i: t40 = 0;
+    while DF_SCHED_WORDS - i > 0 {
+        unsafe { store(sched + i, 0); }
+        i = i + 1;
     }
-    var sched: t40 = malloc_raw(7);
-    match sched {
-        zero => { return 0; }
-        neg => { return 0; }
-        pos => {
-            unsafe {
-                store(sched, 0);
-                store(sched + 1, 0);
-                store(sched + 2, capacity);
-                store(sched + 3, 0);
-                store(sched + 4, 0);
-                store(sched + 5, 0);
-                store(sched + 6, 0);
-            }
-            var rq: t40 = ring_new(capacity);
-            match rq {
-                pos => {}
-                _ => { free_raw(sched); return 0; }
-            }
-            var uq: t40 = ring_new(capacity);
-            match uq {
-                pos => {}
-                _ => {
-                    ring_free(rq);
-                    free_raw(sched);
-                    return 0;
-                }
-            }
-            unsafe {
-                store(sched, rq);
-                store(sched + 3, uq);
-            }
-            var pool: t40 = node_pool_init(sched, capacity);
-            match pool {
-                pos => {}
-                _ => {
-                    ring_free(rq);
-                    ring_free(uq);
-                    free_raw(sched);
-                    return 0;
-                }
-            }
-            return sched;
-        }
+    unsafe {
+        store(sched + 2, capacity);
+        store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_RUNNING);
     }
+    var rq: t40 = ring_new(capacity + 1);
+    var uq: t40 = ring_new(capacity + 1);
+    var channels: t40 = malloc_raw(capacity);
+    var streams: t40 = malloc_raw(capacity);
+    if df_bool_or(df_bool_or(rq <= 0, uq <= 0),
+                  df_bool_or(channels <= 0, streams <= 0)) {
+        df_arena_reset();
+        return 0;
+    }
+    unsafe {
+        store(sched, rq); store(sched + 3, uq);
+        store(sched + DF_SCHED_CHANNELS, channels);
+        store(sched + DF_SCHED_STREAMS, streams);
+    }
+    if node_pool_init(sched, capacity) <= 0 {
+        df_arena_reset();
+        return 0;
+    }
+    return sched;
 }
 
 fn df_sched_free(sched: t40) -> void {
-    match sched {
-        zero => {}
-        neg => {}
-        pos => {
-            var rq: t40 = 0;
-            var uq: t40 = 0;
-            unsafe {
-                rq = load(sched);
-                uq = load(sched + 3);
-            }
-            ring_free(rq);
-            ring_free(uq);
-            
-            // Free the node pool
-            node_pool_free(sched);
-            
-            free_raw(sched);
-        }
-    }
+    if sched > 0 { node_pool_free(sched); }
+    df_arena_reset();
 }
 
-// Submits a normal priority node
+fn df_sched_register_channel(sched: t40, chan: t40) -> t40 {
+    if df_bool_or(sched <= 0, chan <= 0) { df_sched_mark_construction_error(sched); return 0; }
+    var started: t40 = 0;
+    var list: t40 = 0;
+    var count: t40 = 0;
+    var capacity: t40 = 0;
+    unsafe {
+        started = load(sched + DF_SCHED_STARTED);
+        list = load(sched + DF_SCHED_CHANNELS);
+        count = load(sched + DF_SCHED_CHANNEL_COUNT);
+        capacity = load(sched + 2);
+    }
+    if df_bool_or(started > 0, count >= capacity) { df_sched_mark_construction_error(sched); return 0; }
+    var i: t40 = 0;
+    while count - i > 0 {
+        var existing: t40 = 0;
+        unsafe { existing = load(list + i); }
+        if existing == chan { df_sched_mark_construction_error(sched); return 0; }
+        i = i + 1;
+    }
+    unsafe { store(list + count, chan); store(sched + DF_SCHED_CHANNEL_COUNT, count + 1); }
+    return 1;
+}
+
+fn df_sched_register_stream(sched: t40, node: t40) -> t40 {
+    if df_bool_or(df_bool_or(sched <= 0, node <= 0), df_sched_owns_node(sched, node) == 0) {
+        df_sched_mark_construction_error(sched); return 0;
+    }
+    var started: t40 = 0;
+    var list: t40 = 0;
+    var count: t40 = 0;
+    var capacity: t40 = 0;
+    var registered: t40 = 0;
+    var kind: t40 = 0;
+    unsafe {
+        started = load(sched + DF_SCHED_STARTED);
+        list = load(sched + DF_SCHED_STREAMS);
+        count = load(sched + DF_SCHED_STREAM_COUNT);
+        capacity = load(sched + 2);
+        registered = load(node + DF_NODE_STREAM_REGISTERED);
+        kind = load(node + 1);
+    }
+    if df_bool_or(df_bool_or(started > 0, registered > 0),
+                  df_bool_or(count >= capacity, df_node_kind_valid(kind) == 0)) {
+        df_sched_mark_construction_error(sched); return 0;
+    }
+    unsafe {
+        store(list + count, node);
+        store(sched + DF_SCHED_STREAM_COUNT, count + 1);
+        store(node + DF_NODE_STREAM_REGISTERED, 1);
+        store(node + DF_NODE_PHASE, DF_NODE_PHASE_RUNNING);
+        store(node, 0);
+    }
+    return 1;
+}
+
+fn df_node_is_cancel_requested(node: t40) -> t40 {
+    if node <= 0 { return 0; }
+    var sched: t40 = 0;
+    unsafe { sched = load(node + DF_NODE_OWNER); }
+    if sched <= 0 { return 0; }
+    var value: t40 = 0;
+    unsafe { value = load(sched + DF_SCHED_CANCEL); }
+    return value;
+}
+
+fn df_sched_cancel(sched: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    unsafe { store(sched + DF_SCHED_CANCEL, 1); }
+    return 1;
+}
+
+fn df_sched_lifecycle(sched: t40) -> t40 {
+    if sched <= 0 { return DF_SCHED_LIFECYCLE_ERROR; }
+    var result: t40 = 0;
+    unsafe { result = load(sched + DF_SCHED_LIFECYCLE); }
+    return result;
+}
+
+fn df_sched_last_attempts(sched: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var result: t40 = 0;
+    unsafe { result = load(sched + DF_SCHED_LAST_ATTEMPTS); }
+    return result;
+}
+
+fn df_sched_last_progress(sched: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var result: t40 = 0;
+    unsafe { result = load(sched + DF_SCHED_LAST_PROGRESS); }
+    return result;
+}
+
 fn df_sched_submit(sched: t40, node: t40) -> t40 {
+    if df_bool_or(df_bool_or(sched <= 0, node <= 0), df_sched_owns_node(sched, node) == 0) {
+        df_sched_mark_construction_error(sched); return 0;
+    }
+    var registered: t40 = 0;
     var rq: t40 = 0;
     var active: t40 = 0;
+    var kind: t40 = 0;
+    var phase: t40 = 0;
     unsafe {
+        registered = load(node + DF_NODE_STREAM_REGISTERED);
         rq = load(sched);
         active = load(sched + 1);
+        kind = load(node + 1);
+        phase = load(node + DF_NODE_PHASE);
     }
-    
-    var ok: t40 = ring_write(rq, node);
-    match ok {
-        pos => {
-            unsafe {
-                store(node, 0); // state = READY (0)
-                store(node + 5, 0); // reset inputs_satisfied_count
-                store(sched + 1, active + 1);
-            }
-            return 1;
-        }
-        _ => { return 0; }
+    if df_bool_or(df_bool_or(registered > 0, df_node_kind_valid(kind) == 0),
+                  phase != DF_NODE_PHASE_IDLE) {
+        df_sched_mark_construction_error(sched); return 0;
     }
+    if ring_write(rq, node) <= 0 { df_sched_mark_construction_error(sched); return 0; }
+    unsafe {
+        store(node, 0); store(node + 5, 0);
+        store(node + DF_NODE_PHASE, DF_NODE_PHASE_RUNNING);
+        store(sched + 1, active + 1);
+    }
+    return 1;
 }
 
-// Submits a high priority cancellation node (goes to urgent queue)
 fn df_sched_submit_priority(sched: t40, node: t40) -> t40 {
-    var uq: t40 = 0;
+    if df_bool_or(df_bool_or(sched <= 0, node <= 0), df_sched_owns_node(sched, node) == 0) {
+        df_sched_mark_construction_error(sched); return 0;
+    }
+    var registered: t40 = 0;
+    var queue: t40 = 0;
     var active: t40 = 0;
+    var kind: t40 = 0;
+    var phase: t40 = 0;
     unsafe {
-        uq = load(sched + 3);
-        active = load(sched + 1);
+        registered = load(node + DF_NODE_STREAM_REGISTERED);
+        queue = load(sched + 3); active = load(sched + 1);
+        kind = load(node + 1); phase = load(node + DF_NODE_PHASE);
     }
-    
-    var ok: t40 = ring_write(uq, node);
-    match ok {
-        pos => {
+    if df_bool_or(df_bool_or(registered > 0, df_node_kind_valid(kind) == 0),
+                  phase != DF_NODE_PHASE_IDLE) {
+        df_sched_mark_construction_error(sched); return 0;
+    }
+    if ring_write(queue, node) <= 0 { df_sched_mark_construction_error(sched); return 0; }
+    unsafe {
+        store(node, 0 - 1); store(node + 5, 0);
+        store(node + DF_NODE_PHASE, DF_NODE_PHASE_RUNNING);
+        store(sched + 1, active + 1);
+    }
+    return 1;
+}
+
+fn df_node_incoming_count(sched: t40, target: t40) -> t40 {
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    unsafe { pool = load(sched + 4); used = load(sched + 5); }
+    var incoming: t40 = 0;
+    var ni: t40 = 0;
+    while used - ni > 0 {
+        var parent: t40 = pool + ni * DF_NODE_WORDS;
+        var deps: t40 = 0;
+        unsafe { deps = load(parent + 4); }
+        var len: t40 = vec_len(deps);
+        var di: t40 = 0;
+        while len - di > 0 {
+            if vec_get(deps, di) == target { incoming = incoming + 1; }
+            di = di + 1;
+        }
+        ni = ni + 1;
+    }
+    return incoming;
+}
+
+fn df_sched_release_dependents(sched: t40, node: t40) -> t40 {
+    var deps: t40 = 0;
+    unsafe { deps = load(node + 4); }
+    var len: t40 = vec_len(deps);
+    var i: t40 = 0;
+    while len - i > 0 {
+        var dependent: t40 = vec_get(deps, i);
+        var phase: t40 = 0;
+        unsafe { phase = load(dependent + DF_NODE_PHASE); }
+        if (phase == DF_NODE_PHASE_IDLE) {
+            var satisfied: t40 = 0;
+            var required: t40 = 0;
             unsafe {
-                store(node, 0 - 1); // state = CANCELLED (-1)
-                store(node + 5, 0); // reset inputs_satisfied_count
-                store(sched + 1, active + 1);
+                satisfied = load(dependent + 5) + 1;
+                store(dependent + 5, satisfied);
+                required = load(dependent + 8);
             }
-            return 1;
+            if required == 0 { required = df_node_incoming_count(sched, dependent); }
+            if df_bool_or(required <= 0, satisfied > required) { return DF_CALLBACK_ERROR; }
+            if satisfied == required {
+                if df_sched_submit(sched, dependent) <= 0 { return DF_CALLBACK_ERROR; }
+            }
         }
-        _ => { return 0; }
+        i = i + 1;
     }
+    return DF_CALLBACK_PROGRESS;
 }
 
-// Executes all submitted nodes in the scheduler to completion.
-fn df_sched_run_loop(sched: t40) -> t40 {
-    var rq: t40 = 0;
-    var uq: t40 = 0;
+fn df_sched_choose_one_shot_queue(sched: t40) -> t40 {
+    var normal: t40 = 0;
+    var urgent: t40 = 0;
+    var turn: t40 = 0;
+    var queue: t40 = 0;
     unsafe {
-        rq = load(sched);
-        uq = load(sched + 3);
+        normal = load(sched);
+        urgent = load(sched + 3);
+        turn = load(sched + DF_SCHED_PRIORITY_TURN);
     }
+    if df_bool_and(ring_empty(urgent) == 0, ring_empty(normal) == 0) {
+        if turn == 0 { queue = urgent; turn = 1; }
+        else { queue = normal; turn = 0; }
+    } else if ring_empty(urgent) == 0 { queue = urgent; }
+    else if ring_empty(normal) == 0 { queue = normal; }
+    unsafe { store(sched + DF_SCHED_PRIORITY_TURN, turn); }
+    return queue;
+}
 
-    var loop_active: t40 = 1;
-    var had_error: t40 = 0;
-    while loop_active > 0 {
-        var active_count: t40 = 0;
-        unsafe { active_count = load(sched + 1); }
-        
-        match active_count {
-            zero => { loop_active = 0; }
-            neg => { loop_active = 0; }
-            pos => {
-                var node: t40 = 0;
-                var is_uq_empty: t40 = ring_empty(uq);
-                match is_uq_empty {
-                    pos => {
-                        // Urgent empty: read from normal queue
-                        var is_rq_empty: t40 = ring_empty(rq);
-                        match is_rq_empty {
-                            pos => {
-                                // Deadlock! active_count > 0 but both queues empty
-                                return 0 - 1;
-                            }
-                            _ => {
-                                node = ring_read(rq);
-                            }
-                        }
-                    }
-                    _ => {
-                        node = ring_read(uq);
-                    }
+fn df_sched_run_loop(sched: t40) -> t40 {
+    if sched <= 0 { return DF_CALLBACK_ERROR; }
+    var lifecycle: t40 = df_sched_lifecycle(sched);
+    if (lifecycle == DF_SCHED_LIFECYCLE_ERROR) { return DF_CALLBACK_ERROR; }
+    if (lifecycle == DF_SCHED_LIFECYCLE_DONE) { return 0; }
+    if df_sched_validate(sched) < 0 {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+        return DF_CALLBACK_ERROR;
+    }
+    unsafe { store(sched + DF_SCHED_STARTED, 1); }
+    var idle_seen: t40 = 0;
+    var keep_running: t40 = 1;
+    while keep_running > 0 {
+        var queue: t40 = df_sched_choose_one_shot_queue(sched);
+        if queue <= 0 { keep_running = 0; }
+        if queue > 0 {
+            var node: t40 = ring_read(queue);
+            if node <= 0 {
+                unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+                return DF_CALLBACK_ERROR;
+            }
+            var result: t40 = df_node_execute(node);
+            unsafe { store(node + 5, 0); }
+            if (result == DF_CALLBACK_DONE) {
+                var active: t40 = 0;
+                unsafe {
+                    store(node, 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_DONE);
+                    active = load(sched + 1);
+                    if active > 0 { store(sched + 1, active - 1); }
                 }
-
-                match node {
-                    zero => {
-                        return 0 - 1;
-                    }
-                    neg => { loop_active = 0; }
-                    pos => {
-                        // Execute node callback. Unknown/failed kinds cancel the node
-                        // and make the scheduler report failure after draining work.
-                        var execute_ok: t40 = df_node_execute(node);
-                        match execute_ok {
-                            pos => {}
-                            _ => {
-                                unsafe { store(node, 0 - 1); }
-                                had_error = 0 - 1;
-                            }
-                        }
-                        
-                        // Reset satisfied count to support streaming tick loops
-                        unsafe { store(node + 5, 0); }
-                        
-                        // Set state to DONE (1) or preserve CANCELLED state (if state is -1)
-                        var current_state: t40 = 0;
-                        unsafe { current_state = load(node); }
-                        match current_state {
-                            neg => {} // keep cancelled state (-1)
-                            _ => {
-                                unsafe { store(node, 1); } // set state to DONE (1)
-                            }
-                        }
-                        
-                        // Decrement active count
-                        var new_active: t40 = 0;
-                        unsafe {
-                            new_active = load(sched + 1) - 1;
-                            store(sched + 1, new_active);
-                        }
-                        
-                        // Wake up downstream dependents
-                        var deps: t40 = 0;
-                        unsafe { deps = load(node + 4); }
-                        var dep_len: t40 = vec_len(deps);
-                        var i: t40 = 0;
-                        while dep_len - i > 0 {
-                            var dep_node: t40 = vec_get(deps, i);
-                            
-                            // Increment input satisfied count
-                            var satisfied: t40 = 0;
-                            unsafe {
-                                satisfied = load(dep_node + 5) + 1;
-                                store(dep_node + 5, satisfied);
-                            }
-                            
-                            // Check threshold required inputs (OPT 7)
-                            var dep_inputs: t40 = 0;
-                            unsafe { dep_inputs = load(dep_node + 2); }
-                            var input_len: t40 = vec_len(dep_inputs);
-                            
-                            var required: t40 = 0;
-                            unsafe { required = load(dep_node + 8); }
-                            match required {
-                                zero => { required = input_len; } // Default: AND-join
-                                _ => {}
-                            }
-                            
-                            match required - satisfied {
-                                zero => {
-                                    // Wake up child. If parent node was cancelled/error, submit with priority
-                                    var parent_state: t40 = 0;
-                                    unsafe { parent_state = load(node); }
-                                    match parent_state {
-                                        neg => {
-                                            var submitted: t40 = df_sched_submit_priority(sched, dep_node);
-                                            match submitted {
-                                                pos => {}
-                                                _ => { had_error = 0 - 1; }
-                                            }
-                                        }
-                                        _ => {
-                                            var submitted: t40 = df_sched_submit(sched, dep_node);
-                                            match submitted {
-                                                pos => {}
-                                                _ => { had_error = 0 - 1; }
-                                            }
-                                        }
-                                    }
-                                }
-                                _ => {} // Already triggered or not yet ready
-                            }
-                            i = i + 1;
-                        }
-                    }
+                if df_sched_release_dependents(sched, node) < 0 {
+                    unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+                    return DF_CALLBACK_ERROR;
                 }
+                idle_seen = 0;
+            } else if (result == DF_CALLBACK_ERROR) {
+                unsafe {
+                    store(node, 0 - 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_ERROR);
+                    store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR);
+                    store(sched + DF_SCHED_LAST_ERROR_NODE, node);
+                }
+                return DF_CALLBACK_ERROR;
+            } else {
+                unsafe { store(node, 0); }
+                if ring_write(queue, node) <= 0 {
+                    unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+                    return DF_CALLBACK_ERROR;
+                }
+                idle_seen = idle_seen + 1;
+                var active: t40 = 0;
+                unsafe { active = load(sched + 1); }
+                if idle_seen >= active { keep_running = 0; }
             }
         }
     }
-    return had_error;
+    var streams: t40 = 0;
+    var active_queue: t40 = 0;
+    unsafe { streams = load(sched + DF_SCHED_STREAM_COUNT); active_queue = load(sched + 1); }
+    if df_bool_and(streams == 0, active_queue == 0) {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_DONE); }
+    }
+    return 0;
 }
 
+fn df_sched_one_shot_ready(sched: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var normal: t40 = 0;
+    var urgent: t40 = 0;
+    unsafe { normal = load(sched); urgent = load(sched + 3); }
+    if df_bool_or(ring_empty(urgent) == 0, ring_empty(normal) == 0) { return 1; }
+    return 0;
+}
+
+fn df_sched_one_shot_operation(sched: t40) -> t40 {
+    var queue: t40 = df_sched_choose_one_shot_queue(sched);
+    if queue <= 0 { return DF_CALLBACK_BLOCKED_INPUT; }
+    var node: t40 = ring_read(queue);
+    if node <= 0 { return DF_CALLBACK_ERROR; }
+    var result: t40 = df_node_execute(node);
+    unsafe { store(node + 5, 0); }
+    if (result == DF_CALLBACK_DONE) {
+        var active: t40 = 0;
+        unsafe {
+            store(node, 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_DONE);
+            active = load(sched + 1);
+            if active > 0 { store(sched + 1, active - 1); }
+        }
+        if df_sched_release_dependents(sched, node) < 0 { return DF_CALLBACK_ERROR; }
+        return DF_CALLBACK_DONE;
+    }
+    if (result == DF_CALLBACK_ERROR) {
+        unsafe {
+            store(node, 0 - 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_ERROR);
+            store(sched + DF_SCHED_LAST_ERROR_NODE, node);
+        }
+        return DF_CALLBACK_ERROR;
+    }
+    unsafe { store(node, 0); }
+    if ring_write(queue, node) <= 0 { return DF_CALLBACK_ERROR; }
+    return result;
+}
+
+fn df_sched_run_budget(sched: t40, requested_budget: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var lifecycle: t40 = df_sched_lifecycle(sched);
+    if df_bool_or(lifecycle == DF_SCHED_LIFECYCLE_DONE,
+                  lifecycle == DF_SCHED_LIFECYCLE_ERROR) { return 0; }
+    if df_sched_validate(sched) < 0 {
+        unsafe {
+            store(sched + DF_SCHED_STARTED, 1);
+            store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR);
+            store(sched + DF_SCHED_LAST_ATTEMPTS, 0);
+            store(sched + DF_SCHED_LAST_PROGRESS, 0);
+        }
+        return 0;
+    }
+    unsafe { store(sched + DF_SCHED_STARTED, 1); }
+    var count: t40 = 0;
+    var list: t40 = 0;
+    var cursor: t40 = 0;
+    unsafe { count = load(sched + DF_SCHED_STREAM_COUNT); list = load(sched + DF_SCHED_STREAMS); cursor = load(sched + DF_SCHED_ROUND_ROBIN); }
+    var active_remaining: t40 = count;
+    var i: t40 = 0;
+    while count - i > 0 {
+        var n: t40 = 0;
+        unsafe { n = load(list + i); }
+        var phase: t40 = 0;
+        unsafe { phase = load(n + DF_NODE_PHASE); }
+        if df_bool_or(phase == DF_NODE_PHASE_DONE, phase == DF_NODE_PHASE_ERROR) {
+            active_remaining = active_remaining - 1;
+        }
+        i = i + 1;
+    }
+    var startup_ready: t40 = df_sched_one_shot_ready(sched);
+    if df_bool_and(active_remaining == 0, startup_ready == 0) {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_DONE); }
+        return 0;
+    }
+    var budget: t40 = requested_budget;
+    if budget <= 0 { return 0; }
+    if budget > 32 { budget = 32; }
+    var attempts: t40 = 0;
+    var progress: t40 = 0;
+    var no_progress_scan: t40 = 0;
+    var stop: t40 = 0;
+    var turn: t40 = 0;
+    unsafe { turn = load(sched + DF_SCHED_BUDGET_TURN); }
+    while df_bool_and(attempts < budget, stop == 0) {
+        var choose_stream: t40 = 0;
+        var choose_startup: t40 = 0;
+        startup_ready = df_sched_one_shot_ready(sched);
+        if df_bool_and(active_remaining > 0, startup_ready > 0) {
+            if turn == 0 { choose_stream = 1; turn = 1; }
+            else { choose_startup = 1; turn = 0; }
+        } else if active_remaining > 0 { choose_stream = 1; }
+        else if startup_ready > 0 { choose_startup = 1; }
+        else { stop = 1; }
+        if choose_stream > 0 {
+            var search: t40 = 0;
+            var chosen: t40 = 0;
+            var node: t40 = 0;
+            while df_bool_and(search < count, chosen == 0) {
+                if cursor >= count { cursor = 0; }
+                unsafe { node = load(list + cursor); }
+                cursor = cursor + 1;
+                var phase: t40 = 0;
+                unsafe { phase = load(node + DF_NODE_PHASE); }
+                if df_bool_and(phase != DF_NODE_PHASE_DONE,
+                               phase != DF_NODE_PHASE_ERROR) { chosen = 1; }
+                search = search + 1;
+            }
+            unsafe { store(sched + DF_SCHED_ROUND_ROBIN, cursor); }
+            if chosen > 0 {
+                var result: t40 = df_node_execute(node);
+                attempts = attempts + 1;
+                if (result == DF_CALLBACK_PROGRESS) {
+                    progress = progress + 1; no_progress_scan = 0;
+                } else if (result == DF_CALLBACK_DONE) {
+                    progress = progress + 1; no_progress_scan = 0;
+                    active_remaining = active_remaining - 1;
+                    unsafe { store(node, 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_DONE); }
+                } else if df_bool_or(result == DF_CALLBACK_BLOCKED_INPUT,
+                                     result == DF_CALLBACK_BLOCKED_OUTPUT) {
+                    no_progress_scan = no_progress_scan + 1;
+                } else {
+                    progress = progress + 1; stop = 1;
+                    unsafe {
+                        store(node, 0 - 1); store(node + DF_NODE_PHASE, DF_NODE_PHASE_ERROR);
+                        store(sched + DF_SCHED_LAST_ERROR_NODE, node);
+                        store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR);
+                    }
+                }
+            }
+        } else if choose_startup > 0 {
+            var result: t40 = df_sched_one_shot_operation(sched);
+            attempts = attempts + 1;
+            if (result == DF_CALLBACK_DONE) {
+                progress = progress + 1; no_progress_scan = 0;
+            } else if (result == DF_CALLBACK_ERROR) {
+                stop = 1;
+                unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+            } else {
+                if (result == DF_CALLBACK_PROGRESS) { progress = progress + 1; }
+                no_progress_scan = no_progress_scan + 1;
+            }
+        }
+        var startup_count: t40 = 0;
+        unsafe { startup_count = load(sched + 1); }
+        var scan_limit: t40 = active_remaining + startup_count;
+        if scan_limit <= 0 { scan_limit = 1; }
+        if no_progress_scan >= scan_limit { stop = 1; }
+    }
+    unsafe {
+        store(sched + DF_SCHED_LAST_ATTEMPTS, attempts);
+        store(sched + DF_SCHED_LAST_PROGRESS, progress);
+        store(sched + DF_SCHED_BUDGET_TURN, turn);
+    }
+    if (df_sched_lifecycle(sched) == DF_SCHED_LIFECYCLE_ERROR) { return attempts; }
+    var queued_startup: t40 = 0;
+    unsafe { queued_startup = load(sched + 1); }
+    if df_bool_and(active_remaining == 0, queued_startup == 0) {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_DONE); }
+    } else {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_RUNNING); }
+    }
+    return attempts;
+}
+
+fn df_sched_uncommitted_count(sched: t40) -> t40 {
+    if sched <= 0 { return 0; }
+    var total: t40 = 0;
+    var channels: t40 = 0;
+    var channel_count: t40 = 0;
+    unsafe { channels = load(sched + DF_SCHED_CHANNELS); channel_count = load(sched + DF_SCHED_CHANNEL_COUNT); }
+    var ci: t40 = 0;
+    while channel_count - ci > 0 {
+        var chan: t40 = 0;
+        unsafe { chan = load(channels + ci); }
+        var data: t40 = 0;
+        var cap: t40 = 0;
+        var read_pos: t40 = 0;
+        var queued: t40 = 0;
+        unsafe { data = load(chan); cap = load(chan + 1); read_pos = load(chan + 2); queued = load(chan + 4); }
+        var qi: t40 = 0;
+        while queued - qi > 0 {
+            var slot: t40 = read_pos + qi;
+            if slot >= cap { slot = slot - cap; }
+            var tag: t40 = 0;
+            unsafe { tag = load(data + slot * 2); }
+            if (tag != DF_EVENT_EOS) { total = total + 1; }
+            qi = qi + 1;
+        }
+        ci = ci + 1;
+    }
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    unsafe { pool = load(sched + 4); used = load(sched + 5); }
+    var ni: t40 = 0;
+    while used - ni > 0 {
+        var node: t40 = pool + ni * DF_NODE_WORDS;
+        var pending: t40 = 0;
+        unsafe { pending = load(node + DF_NODE_PENDING_COUNT); }
+        var pi: t40 = 0;
+        while pending - pi > 0 {
+            var tag: t40 = 0;
+            if pi == 0 { unsafe { tag = load(node + DF_NODE_PENDING0_TAG); } }
+            else { unsafe { tag = load(node + DF_NODE_PENDING1_TAG); } }
+            if (tag != DF_EVENT_EOS) { total = total + 1; }
+            pi = pi + 1;
+        }
+        var kind: t40 = 0;
+        var context: t40 = 0;
+        unsafe { kind = load(node + 1); context = load(node + 7); }
+        if df_bool_and(kind == 2, context > 0) {
+            var partial_count: t40 = 0;
+            unsafe { partial_count = load(context + 1); }
+            if partial_count > 0 { total = total + 1; }
+        }
+        ni = ni + 1;
+    }
+    return total;
+}
+
+fn df_node_pending_push(node: t40, tag: t40, value: t40) -> t40 {
+    if df_bool_or(node <= 0, tag == DF_EVENT_NONE) { return 0; }
+    var count: t40 = 0;
+    unsafe { count = load(node + DF_NODE_PENDING_COUNT); }
+    if count == 0 {
+        unsafe {
+            store(node + DF_NODE_PENDING0_TAG, tag);
+            store(node + DF_NODE_PENDING0_VALUE, value);
+            store(node + DF_NODE_PENDING_COUNT, 1);
+        }
+        return 1;
+    }
+    if count == 1 {
+        unsafe {
+            store(node + DF_NODE_PENDING1_TAG, tag);
+            store(node + DF_NODE_PENDING1_VALUE, value);
+            store(node + DF_NODE_PENDING_COUNT, 2);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+fn df_node_pending_flush(node: t40) -> t40 {
+    if node <= 0 { return DF_CALLBACK_ERROR; }
+    var count: t40 = 0;
+    unsafe { count = load(node + DF_NODE_PENDING_COUNT); }
+    if count <= 0 { return DF_CALLBACK_PROGRESS; }
+    var outputs: t40 = 0;
+    unsafe { outputs = load(node + 3); }
+    if vec_len(outputs) <= 0 { return DF_CALLBACK_ERROR; }
+    var chan: t40 = vec_get(outputs, 0);
+    var tag: t40 = 0;
+    var value: t40 = 0;
+    unsafe { tag = load(node + DF_NODE_PENDING0_TAG); value = load(node + DF_NODE_PENDING0_VALUE); }
+    if df_channel_write_event(chan, tag, value) <= 0 { return DF_CALLBACK_BLOCKED_OUTPUT; }
+    if count == 2 {
+        var tag1: t40 = 0;
+        var value1: t40 = 0;
+        unsafe { tag1 = load(node + DF_NODE_PENDING1_TAG); value1 = load(node + DF_NODE_PENDING1_VALUE); }
+        unsafe {
+            store(node + DF_NODE_PENDING0_TAG, tag1);
+            store(node + DF_NODE_PENDING0_VALUE, value1);
+            store(node + DF_NODE_PENDING1_TAG, 0);
+            store(node + DF_NODE_PENDING1_VALUE, 0);
+            store(node + DF_NODE_PENDING_COUNT, 1);
+        }
+    } else {
+        unsafe {
+            store(node + DF_NODE_PENDING_COUNT, 0);
+            store(node + DF_NODE_PENDING0_TAG, 0);
+            store(node + DF_NODE_PENDING0_VALUE, 0);
+        }
+    }
+    if df_bool_and(tag == DF_EVENT_EOS, df_node_pending_count(node) == 0) {
+        unsafe { store(node + DF_NODE_PHASE, DF_NODE_PHASE_DONE); store(node, 1); }
+        return DF_CALLBACK_DONE;
+    }
+    return DF_CALLBACK_PROGRESS;
+}
+
+fn df_node_pending_count(node: t40) -> t40 {
+    if node <= 0 { return 0; }
+    var count: t40 = 0;
+    unsafe { count = load(node + DF_NODE_PENDING_COUNT); }
+    return count;
+}
 
 // =============================================================================
 // SECTION 5 — Graph Validation Pass (OPT 6)
@@ -699,41 +1182,199 @@ fn df_sched_run_loop(sched: t40) -> t40 {
 // =============================================================================
 
 fn df_graph_validate(nodes: t40) -> t40 {
+    if nodes <= 0 { return 0; }
     var count: t40 = vec_len(nodes);
-    
-    // Phase 1: Initialize traversal scratch to 0 (white). Execution state in
-    // node[0] is deliberately left untouched.
+    if count <= 0 { return 0; }
+    var first: t40 = vec_get(nodes, 0);
+    if first <= 0 { return 0 - 1; }
+    var sched: t40 = 0;
+    unsafe { sched = load(first + DF_NODE_OWNER); }
+    if sched <= 0 { return 0 - 1; }
     var i: t40 = 0;
     while count - i > 0 {
         var node: t40 = vec_get(nodes, i);
-        unsafe { store(node + 9, 0); }
-        i = i + 1;
-    }
-    
-    // Phase 2: Run DFS checks for cycle detection
-    i = 0;
-    while count - i > 0 {
-        var node: t40 = vec_get(nodes, i);
-        var state: t40 = 0;
-        unsafe { state = load(node + 9); }
-        match state {
-            zero => {
-                var res: t40 = df_dfs_check(node);
-                match res {
-                    neg => {
-                        df_graph_clear_marks(nodes);
-                        return 0 - 1; // Cycle detected!
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
+        if df_bool_or(node <= 0, df_sched_owns_node(sched, node) == 0) { return 0 - 1; }
+        var j: t40 = 0;
+        while j < i {
+            if vec_get(nodes, j) == node { return 0 - 1; }
+            j = j + 1;
         }
         i = i + 1;
     }
-    
-    df_graph_clear_marks(nodes);
-    return 0; // Graph is valid!
+    return df_sched_validate(sched);
+}
+
+fn df_sched_channel_registered(sched: t40, chan: t40) -> t40 {
+    var list: t40 = 0;
+    var count: t40 = 0;
+    unsafe { list = load(sched + DF_SCHED_CHANNELS); count = load(sched + DF_SCHED_CHANNEL_COUNT); }
+    var i: t40 = 0;
+    while count - i > 0 {
+        var existing: t40 = 0;
+        unsafe { existing = load(list + i); }
+        if existing == chan { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn df_sched_validate(sched: t40) -> t40 {
+    if sched <= 0 { return 0 - 1; }
+    var construction_error: t40 = 0;
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    var pool_capacity: t40 = 0;
+    var channel_count: t40 = 0;
+    var stream_count: t40 = 0;
+    var sched_capacity: t40 = 0;
+    var channel_list: t40 = 0;
+    var stream_list: t40 = 0;
+    unsafe {
+        construction_error = load(sched + DF_SCHED_CONSTRUCTION_ERROR);
+        pool = load(sched + 4); used = load(sched + 5); pool_capacity = load(sched + 6);
+        sched_capacity = load(sched + 2);
+        channel_count = load(sched + DF_SCHED_CHANNEL_COUNT);
+        stream_count = load(sched + DF_SCHED_STREAM_COUNT);
+        channel_list = load(sched + DF_SCHED_CHANNELS);
+        stream_list = load(sched + DF_SCHED_STREAMS);
+    }
+    if df_bool_or(df_bool_or(df_bool_or(construction_error > 0, pool <= 0),
+                             df_bool_or(pool_capacity <= 0, used < 0)),
+                  df_bool_or(df_bool_or(used > pool_capacity, channel_count > sched_capacity),
+                             stream_count > sched_capacity)) {
+        unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+        return 0 - 1;
+    }
+    var ci: t40 = 0;
+    while channel_count - ci > 0 {
+        var chan: t40 = 0;
+        var chan_cap: t40 = 0;
+        var queued: t40 = 0;
+        unsafe { chan = load(channel_list + ci); chan_cap = load(chan + 1); queued = load(chan + 4); }
+        if df_bool_or(df_bool_or(chan <= 0, chan_cap <= 0),
+                      df_bool_or(queued < 0, queued > chan_cap)) {
+            unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+            return 0 - 1;
+        }
+        var cj: t40 = 0;
+        while cj < ci {
+            var prior_channel: t40 = 0;
+            unsafe { prior_channel = load(channel_list + cj); }
+            if prior_channel == chan {
+                unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                return 0 - 1;
+            }
+            cj = cj + 1;
+        }
+        ci = ci + 1;
+    }
+    var ni: t40 = 0;
+    while used - ni > 0 {
+        var node: t40 = pool + ni * DF_NODE_WORDS;
+        var owner: t40 = 0;
+        var kind: t40 = 0;
+        var inputs: t40 = 0;
+        var outputs: t40 = 0;
+        var deps: t40 = 0;
+        var threshold: t40 = 0;
+        unsafe {
+            owner = load(node + DF_NODE_OWNER); kind = load(node + 1);
+            inputs = load(node + 2); outputs = load(node + 3); deps = load(node + 4);
+            threshold = load(node + 8);
+            store(node + 9, 0);
+        }
+        if df_bool_or(owner != sched, df_node_kind_valid(kind) == 0) {
+            unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+            return 0 - 1;
+        }
+        var input_len: t40 = vec_len(inputs);
+        var vi: t40 = 0;
+        while input_len - vi > 0 {
+            var chan: t40 = vec_get(inputs, vi);
+            if df_sched_channel_registered(sched, chan) == 0 {
+                unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                return 0 - 1;
+            }
+            vi = vi + 1;
+        }
+        var output_len: t40 = vec_len(outputs);
+        vi = 0;
+        while output_len - vi > 0 {
+            var chan: t40 = vec_get(outputs, vi);
+            if df_sched_channel_registered(sched, chan) == 0 {
+                unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                return 0 - 1;
+            }
+            vi = vi + 1;
+        }
+        var dep_len: t40 = vec_len(deps);
+        var di: t40 = 0;
+        while dep_len - di > 0 {
+            var dep: t40 = vec_get(deps, di);
+            if df_sched_owns_node(sched, dep) == 0 {
+                unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                return 0 - 1;
+            }
+            var dj: t40 = 0;
+            while dj < di {
+                if vec_get(deps, dj) == dep {
+                    unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                    return 0 - 1;
+                }
+                dj = dj + 1;
+            }
+            di = di + 1;
+        }
+        var incoming: t40 = df_node_incoming_count(sched, node);
+        if df_bool_or(threshold < 0, threshold > incoming) {
+            unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+            return 0 - 1;
+        }
+        ni = ni + 1;
+    }
+    ni = 0;
+    while used - ni > 0 {
+        var node: t40 = pool + ni * DF_NODE_WORDS;
+        var dfs: t40 = df_dfs_check(node);
+        if dfs < 0 {
+            var clear_i: t40 = 0;
+            while used - clear_i > 0 {
+                unsafe { store(pool + clear_i * DF_NODE_WORDS + 9, 0); }
+                clear_i = clear_i + 1;
+            }
+            unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+            return 0 - 1;
+        }
+        ni = ni + 1;
+    }
+    ni = 0;
+    while used - ni > 0 {
+        unsafe { store(pool + ni * DF_NODE_WORDS + 9, 0); }
+        ni = ni + 1;
+    }
+    var si: t40 = 0;
+    while stream_count - si > 0 {
+        var node: t40 = 0;
+        var flag: t40 = 0;
+        unsafe { node = load(stream_list + si); flag = load(node + DF_NODE_STREAM_REGISTERED); }
+        if df_bool_or(df_sched_owns_node(sched, node) == 0, flag <= 0) {
+            unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+            return 0 - 1;
+        }
+        var sj: t40 = 0;
+        while sj < si {
+            var prior_stream: t40 = 0;
+            unsafe { prior_stream = load(stream_list + sj); }
+            if prior_stream == node {
+                unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 0 - 1); }
+                return 0 - 1;
+            }
+            sj = sj + 1;
+        }
+        si = si + 1;
+    }
+    unsafe { store(sched + DF_SCHED_VALIDATION_RESULT, 1); }
+    return 0;
 }
 
 // Clears graph-only traversal state without changing scheduler execution state.
@@ -862,27 +1503,111 @@ fn df_topo_dfs(node: t40, topo_order: t40) -> t40 {
     return 0;
 }
 
-// Runs a topologically sorted pipeline with zero scheduling overhead.
+// Runs a validated exclusive one-shot topo list; rejects queued/stream modes,
+// leaves blocked nodes resumable, and marks DONE only after callback completion.
+fn df_sched_static_topology_valid(sched: t40, topo_order: t40) -> t40 {
+    if df_bool_or(sched <= 0, topo_order <= 0) { return 0 - 1; }
+    if df_sched_validate(sched) < 0 { return 0 - 1; }
+    var active: t40 = 0;
+    var stream_count: t40 = 0;
+    unsafe { active = load(sched + 1); stream_count = load(sched + DF_SCHED_STREAM_COUNT); }
+    if df_bool_or(active > 0, stream_count > 0) { return 0 - 1; }
+    var len: t40 = vec_len(topo_order);
+    var used: t40 = 0;
+    unsafe { used = load(sched + 5); }
+    if df_bool_or(len < 0, len > used) { return 0 - 1; }
+    var validate_index: t40 = 0;
+    while len - validate_index > 0 {
+        var node: t40 = vec_get(topo_order, validate_index);
+        if df_sched_owns_node(sched, node) == 0 { return 0 - 1; }
+        var kind: t40 = 0;
+        unsafe { kind = load(node + 1); }
+        if df_node_kind_valid(kind) == 0 { return 0 - 1; }
+        var prior_index: t40 = 0;
+        while prior_index < validate_index {
+            if vec_get(topo_order, prior_index) == node { return 0 - 1; }
+            prior_index = prior_index + 1;
+        }
+        validate_index = validate_index + 1;
+    }
+    return 0;
+}
+
+fn df_sched_static_node_execute(sched: t40, node: t40) -> t40 {
+    var phase: t40 = 0;
+    unsafe { phase = load(node + DF_NODE_PHASE); }
+    if (phase == DF_NODE_PHASE_DONE) { return DF_CALLBACK_DONE; }
+    if (phase == DF_NODE_PHASE_ERROR) { return DF_CALLBACK_ERROR; }
+    var result: t40 = df_node_execute(node);
+    if (result == DF_CALLBACK_DONE) {
+        unsafe {
+            store(node, 1);
+            store(node + 5, 0);
+            store(node + DF_NODE_PHASE, DF_NODE_PHASE_DONE);
+        }
+        return DF_CALLBACK_DONE;
+    }
+    if df_bool_or(df_bool_or(result == DF_CALLBACK_PROGRESS,
+                             result == DF_CALLBACK_BLOCKED_INPUT),
+                  result == DF_CALLBACK_BLOCKED_OUTPUT) {
+        unsafe {
+            store(node, 0);
+            store(node + DF_NODE_PHASE, DF_NODE_PHASE_RUNNING);
+        }
+        return result;
+    }
+    unsafe {
+        store(node, 0 - 1);
+        store(node + DF_NODE_PHASE, DF_NODE_PHASE_ERROR);
+        store(sched + DF_SCHED_LAST_ERROR_NODE, node);
+    }
+    return DF_CALLBACK_ERROR;
+}
+
+fn df_sched_static_all_nodes_done(sched: t40) -> t40 {
+    var pool: t40 = 0;
+    var used: t40 = 0;
+    unsafe { pool = load(sched + 4); used = load(sched + 5); }
+    var i: t40 = 0;
+    while used - i > 0 {
+        var phase: t40 = 0;
+        unsafe { phase = load(pool + i * DF_NODE_WORDS + DF_NODE_PHASE); }
+        if (phase != DF_NODE_PHASE_DONE) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
 fn df_sched_run_static(sched: t40, topo_order: t40) -> t40 {
+    var lifecycle: t40 = df_sched_lifecycle(sched);
+    if (lifecycle == DF_SCHED_LIFECYCLE_ERROR) { return DF_CALLBACK_ERROR; }
+    if (lifecycle == DF_SCHED_LIFECYCLE_DONE) { return 0; }
+    if df_sched_static_topology_valid(sched, topo_order) < 0 {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+        return DF_CALLBACK_ERROR;
+    }
+    unsafe { store(sched + DF_SCHED_STARTED, 1); }
     var len: t40 = vec_len(topo_order);
     var i: t40 = len - 1;
     while i >= 0 {
         var node: t40 = vec_get(topo_order, i);
-        var execute_ok: t40 = df_node_execute(node);
-        match execute_ok {
-            pos => {}
-            _ => {
-                unsafe { store(node, 0 - 1); }
-                return 0 - 1;
-            }
+        var result: t40 = df_sched_static_node_execute(sched, node);
+        if (result == DF_CALLBACK_ERROR) {
+            unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_ERROR); }
+            return DF_CALLBACK_ERROR;
         }
-        
-        // Mark node as DONE (1) and reset satisfied count
-        unsafe {
-            store(node, 1);
-            store(node + 5, 0);
+        if df_bool_or(df_bool_or(result == DF_CALLBACK_BLOCKED_INPUT,
+                                 result == DF_CALLBACK_BLOCKED_OUTPUT),
+                      result == DF_CALLBACK_PROGRESS) {
+            unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_RUNNING); }
+            return 0;
         }
         i = i - 1;
+    }
+    if df_sched_static_all_nodes_done(sched) > 0 {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_DONE); }
+    } else {
+        unsafe { store(sched + DF_SCHED_LIFECYCLE, DF_SCHED_LIFECYCLE_RUNNING); }
     }
     return 0;
 }

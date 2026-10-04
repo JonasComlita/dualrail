@@ -1005,6 +1005,10 @@ struct VMExecutionRecord {
 
 inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
     if (record) *record = VMExecutionRecord{};
+    if (vm.status == VMStatus::WAITING) {
+        (void)vm.advanceWaiting();
+        return vm.status;
+    }
     if (!vm.isRunning()) return vm.status;
 
     if (record) {
@@ -1229,7 +1233,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 return vm.status;
             }
             vm.completeInstruction(pc_next);
-            if (!vm.timer_pending) vm.enterWaiting();
+            if (vm.pc == pc_next && vm.status == VMStatus::RUNNING && !vm.timer_pending) vm.enterWaiting();
             return vm.status;
         }
 
@@ -1856,11 +1860,11 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             if (iw.opcode == Opcode::ALOAD) {
                 vm.accumulator = sourceNative;
             } else if (iw.opcode == Opcode::AADD) {
-                vm.accumulator = exec::addValue(vm.accumulator, sourceNative, TernaryMode::T40);
+                vm.accumulator.add(sourceNative);
             } else if (iw.opcode == Opcode::ASUB) {
-                vm.accumulator = exec::subtractValue(vm.accumulator, sourceNative, TernaryMode::T40);
+                vm.accumulator.subtract(sourceNative);
             } else {
-                vm.accumulator = exec::multiplyValue(vm.accumulator, sourceNative, TernaryMode::T40);
+                vm.accumulator.multiply(sourceNative);
             }
 
             if (vm.accumulator.isInvalid()) {
@@ -1893,7 +1897,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
             if (iw.opcode == Opcode::VDOT) {
                 if (!writeChecked(iw.rd, dot)) return vm.status;
             } else {
-                vm.accumulator = exec::addValue(vm.accumulator, dot, TernaryMode::T40);
+                vm.accumulator.add(dot);
                 if (vm.accumulator.isInvalid()) {
                     vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                     return vm.status;
@@ -2386,7 +2390,7 @@ inline VMStatus step(VMState& vm, VMExecutionRecord* record = nullptr) {
                 return vm.status;
             }
             TernaryValue prod = exec::multiplyValue(src1Native, src2Native, TernaryMode::T40);
-            vm.accumulator = exec::addValue(vm.accumulator, prod, TernaryMode::T40);
+            vm.accumulator.add(prod);
             if (vm.accumulator.isInvalid()) {
                 vm.trap(TrapCode::TRAP_ILLEGAL_OP);
                 return vm.status;
@@ -2980,14 +2984,14 @@ struct PerformanceCounters {
 // Execute one instruction and notify hooks after the architectural state for
 // that instruction has been committed. Terminal hooks fire after onStep.
 inline VMStatus step(VMState& vm, const VMHooks& hooks) {
-    if (!vm.isRunning()) return vm.status;
+    if (!vm.isRunning() && vm.status != VMStatus::WAITING) return vm.status;
 
     const int pc_before = vm.pc;
     const VMStatus before = vm.status;
     VMExecutionRecord execution;
     const VMStatus after = step(vm, &execution);
 
-    if (hooks.onInstruction) hooks.onInstruction(vm, execution);
+    if (hooks.onInstruction && execution.attempted) hooks.onInstruction(vm, execution);
     if (hooks.onStep) hooks.onStep(vm, pc_before);
     if (before == VMStatus::RUNNING && after == VMStatus::TRAPPED && hooks.onTrap) {
         hooks.onTrap(vm, pc_before);
@@ -6490,7 +6494,7 @@ inline VMStatus stepCore(VMState& vm, int core_id) {
 
 struct RunResult {
     VMStatus   status;       // Final VMStatus when execution stopped
-    int        steps;        // Number of instructions executed
+    int        steps;        // Executed instructions plus bounded idle event advances
     int        final_pc;     // PC value when execution stopped
     TrapCode   trap_code;    // Only meaningful when status == TRAPPED
     std::string description; // Human-readable reason for stopping
@@ -6538,15 +6542,22 @@ inline RunResult runMultiCore(VMState& vm, int max_steps = 1000000) {
 }
 
 // Run the VM until HALT, TRAP, or max_steps is reached.
-// One step is one architecturally executed instruction, regardless of opcode
-// family or vector length. max_steps == -1 means unlimited.
-// Reaching max_steps leaves VMStatus as RUNNING and reports timeout().
+// One budget step is an executed instruction or one bounded idle event advance.
+// Idle cycles are virtual time; they produce no instruction record. A parked
+// disabled timer spends no budget. max_steps == -1 means unlimited.
+// Reaching max_steps preserves the current RUNNING or WAITING state.
+// timeout() retains its existing RUNNING-state meaning.
 // Returns a RunResult describing why execution stopped.
 inline RunResult run(VMState& vm, int max_steps = 1000000,
                      const VMHooks* hooks = nullptr) {
     int steps = 0;
-    while (vm.isRunning() && vm.power_control == 0) {
+    while ((vm.isRunning() || vm.status == VMStatus::WAITING) && vm.power_control == 0) {
         if (max_steps >= 0 && steps >= max_steps) break;
+        if (vm.status == VMStatus::WAITING) {
+            if (!vm.advanceWaiting()) break;
+            ++steps;
+            continue;
+        }
         if (!hooks &&
             vm.execution_backend == VMExecutionBackend::NativeX64Jit) {
             const int remaining = max_steps < 0
