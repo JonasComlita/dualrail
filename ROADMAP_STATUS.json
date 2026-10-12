@@ -1,7 +1,7 @@
 {
   "version": 2,
   "schema": "trit.roadmap_status.current.v1",
-  "updated_by": "codex-current-platform-cleanup",
+  "updated_by": "codex-user-accepted-validation-waiver",
   "authoritative_gate": "cmake --build build_current_cleanup --target ci_production",
   "current_contract": {
     "isa_version": 2,
@@ -54,16 +54,19 @@
     },
     {
       "id": "agent-operable-surface",
-      "status": "verified",
-      "summary": "The current checkout has a small CMake/CTest graph and a single supported Python entry point for doctor, contract checks, validation, and diagnostics.",
+      "status": "accepted_with_validation_waiver",
+      "summary": "Owner accepted the rollout on2026-10-11(local time) with remaining validation waived to save usage. Ten final-source default workflows and independent CLI94, desktop and automatic-three checks passed. The full suite was intentionally stopped at982,001,000 steps in history_cap1, with zero guest failures and3,421 words of arena use. Remaining full/CI/SDL/fresh-review validation is waived, without PASS claims. Acceptance and preserved results: `build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json`.",
       "evidence": [
         "AGENTS.md",
         "CMakeLists.txt",
         "TEST_MANIFEST.json",
         "tools/trit_tool.py",
-        "cmake --build build_current_cleanup --target ci_production"
+        "cmake --build build_current_cleanup --target ci_production",
+        "build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json"
       ],
-      "open_items": []
+      "open_items": [
+        "Remaining full/CI/SDL/fresh-review validation unverified under owner waiver."
+      ]
     },
     {
       "id": "future-architecture",
@@ -75,6 +78,24 @@
       ],
       "open_items": [
         "Define future hardware and product contracts before adding them to the current-only build graph."
+      ]
+    },
+    {
+      "id": "user-space-service-host",
+      "status": "accepted_with_validation_waiver",
+      "summary": "Owner accepted the rollout on2026-10-11(local time) with remaining validation waived to save usage. Ten final-source default workflows and independent CLI94, desktop and automatic-three checks passed. The full suite was intentionally stopped at982,001,000 steps in history_cap1, with zero guest failures and3,421 words of arena use. Remaining full/CI/SDL/fresh-review validation is waived, without PASS claims. Acceptance and preserved results: `build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json`.",
+      "evidence": [
+        "apps/service_host.trit",
+        "apps/service_runtime.trit",
+        "apps/init.trit",
+        "SYSCALL_MANIFEST.json",
+        "tests/current_only_conformance.cpp",
+        "docs/07_OS_Substrate/service_host.md",
+        "build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json"
+      ],
+      "open_items": [
+        "Remaining full/CI/SDL/fresh-review validation unverified under owner waiver.",
+        "trit-cx1 static buffer/capability address overlap; forced-stop replay/shared channels/GUI latency improvement remain unsupported."
       ]
     }
   ]

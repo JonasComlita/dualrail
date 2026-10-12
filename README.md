@@ -1,9 +1,13 @@
 # Ternary VM Native Roadmap
 
-This document tracks the implementation phases for the ternary numeric stack,
-VM, lane/SIMD layer, and future ISA extensions. The core rule is that numeric
-formats and lane/wire formats are separate families with explicit conversion
-boundaries.
+This document describes the ternary computing stack from numeric representation
+and ISA through assembler, compiler, language, VM, kernel, and OS. The numbered
+phases preserve the original implementation structure and dependency order;
+they are no longer a chronological account. Review, refactoring, and new features
+can revisit any layer after its baseline has been delivered.
+
+The core rule is that numeric formats and lane/wire formats are separate families
+with explicit conversion boundaries.
 
 The explicit architecture goal is a **ternary equivalent of a 64-bit
 computer**. Here, "equivalent" means the native scalar register and ordinary
@@ -19,6 +23,14 @@ validation target. The supported platform gate is the consolidated CMake/CTest
 graph described in `AGENTS.md`; the retired benchmark baseline files are not
 release inputs.
 
+Read by purpose:
+
+- [Current platform boundary](#current-platform-boundary): supported contracts and validation.
+- [Implementation baselines](#implementation-baselines): the retained Phase 1–10 structure and delivered scope.
+- [Later improvements](#later-improvements): changes that refine or extend those baselines.
+- [Current unfinished work](#current-unfinished-work): remaining acceptance and implementation scope.
+- [Future directions](#future-directions): proposed compositor, toolkit, hardware, and profile work.
+
 ## Current platform boundary
 
 The current implementation is intentionally a clean cutover: ISA v2
@@ -26,14 +38,42 @@ instructions, executable/function ABI v3, syscall ABI v2, `.tboot` v3, and
 `.tdisk` v2. Compilers, loaders, the VM, native VFS, and image builders reject
 older executable/image contracts; they do not decode, migrate, or reinterpret
 them. The supported validation surface is `tests/current_only_conformance.cpp`
-plus `cmake --build build_current_cleanup --target ci_production` and
-`python tools/trit_tool.py contract-check`.
+plus the CMake production gate. The standard entry points are:
 
-Everything below is retained as implementation history and future direction.
-Names such as v1, retired test targets, and benchmark rows describe the phase
-in which they were recorded, not an additional supported platform.
+```powershell
+python tools/trit_tool.py doctor
+python tools/trit_tool.py contract-check
+python tools/trit_tool.py test
+python tools/trit_tool.py export-diagnostics
+cmake --build build_current_cleanup --target ci_production
+```
 
-## Phase 1: Native Arithmetic Migration
+[ROADMAP_STATUS.json](ROADMAP_STATUS.json) records current-contract status and
+evidence; [KNOWN_GAPS.md](KNOWN_GAPS.md) records unresolved scope. Beads holds
+the active work and dependencies (`bd ready`, `bd show <id>`). The
+[documentation hub](docs/README.md) provides references by layer.
+
+The service rollout was owner accepted on October 11, 2026, with remaining
+full-suite, CI, SDL, and fresh-review validation waived. That acceptance does
+not establish a full production-gate PASS for the final service revision; see
+[the service improvement](#user-space-service-infrastructure-and-runtime-hardening).
+
+## Implementation baselines
+
+Phases 1–10 retain the original architecture and implementation narrative.
+Their goal, scope, and acceptance lists preserve the design context; they are
+not a live task list. Names such as v1, retired test targets, and benchmark rows
+describe the baseline in which they were recorded, not an additional supported
+platform. Present support follows the current contracts above.
+
+A delivered baseline stays delivered. Later repairs and expansions belong in
+[Later improvements](#later-improvements), with links from the affected layer;
+unfinished acceptance belongs in [Current unfinished work](#current-unfinished-work).
+Dates on an improvement record its acceptance or validation, without changing
+the phase order. New work spanning several layers can have one entry here
+rather than reopening every phase it touches.
+
+### Phase 1: Native Arithmetic Migration
 
 Status: implemented.
 
@@ -50,26 +90,29 @@ Major changes:
 - Added exhaustive and workload-style tests: Fibonacci, recursion, DFT/FFT, Taylor/Maclaurin, and edge cases.
 - Fixed the exponent-alignment bug affecting fractional addition and Newton-Raphson sqrt iteration.
 
-## Phase 2: Device-Portable Representation Layer
+Later accumulator representation and compiler constant refinements are recorded
+in [T40 numeric boundaries and exact constants](#t40-numeric-boundaries-and-exact-constants).
+
+### Phase 2: Device-Portable Representation Layer
 
 Status: implemented.
 
 Goal: prepare the codebase for CPU SIMD, GPU kernels, SYCL/CUDA allocation, and
 eventual hardware mappings without changing numeric semantics.
 
-### Iteration 2.1: `UInt128`
+#### Iteration 2.1: `UInt128`
 
 - Added portable `UInt128` and `UInt256`.
 - Replaced `LongTriple::data` backing storage with `UInt128`.
 - Updated positional pack/unpack/power-table logic.
 - Updated VM tagged payloads to use `UInt128`.
 
-### Iteration 2.2: Flat VM Memory
+#### Iteration 2.2: Flat VM Memory
 
 - Replaced vector-owned VM memory with pointer-backed flat memory.
 - Added `VMStateAllocator` so host, CUDA, or SYCL allocation can back the same VM state model.
 
-### Iteration 2.3: Lane Types
+#### Iteration 2.3: Lane Types
 
 - Added `TritLane1`, `TritLane5`, `TritLane10`, `TritLane20`, `TritLane40`, and `TritLane50`.
 - Kept lane types separate from numeric `T1/T5/T10/T20/Triple/LongTriple`.
@@ -82,7 +125,7 @@ Important distinction:
 - Lane formats are 2-bit-per-trit wire/SIMD/GPU transport formats.
 - Binary arithmetic on lane backing integers is never ternary arithmetic.
 
-## Phase 3: GPU/SIMD Execution Backend
+### Phase 3: GPU/SIMD Execution Backend
 
 Status: implemented. Plain C++ and CPU SIMD paths are validated; SYCL launch wrappers have been tuned on the local CPU OpenCL/default SYCL path; AMD GPU SYCL validation still requires the Codeplay AMD plugin or equivalent device backend.
 
@@ -125,7 +168,7 @@ Benchmark review:
 - Defer `TritLane5/10` AVX2 until after GPU/SYCL wrappers. They are fast enough in scalar form that backend plumbing is higher leverage.
 - Keep `TritLane40/50` scalar in Phase 3. Their current cost is dominated by wider `UInt128` lane access and per-trit loops; no simple 128-bit-limb AVX2 strategy has been proven yet.
 
-## Phase 4: Ternary-Aware ISA and Vector Extension
+### Phase 4: Ternary-Aware ISA and Vector Extension
 
 Status: Phase 4 reference VM implementation complete. Scalar lane ops, vector
 numeric ops, accumulator/T1 AI ops, vector plumbing, and gather/scatter now have
@@ -134,7 +177,7 @@ ISA, assembler, VM execution, and tests. Hardware acceleration remains Phase 6.
 Goal: expose advantages that are specific to ternary computation instead of
 copying a binary SIMD ISA shape.
 
-### ISA Design Rules
+#### ISA Design Rules
 
 - Keep width selection orthogonal: prefer `vadd.t20`, `vadd.t40`, `vdot.t1` over width-specific opcode names like `V32_ADD`.
 - Keep numeric vector ops separate from lane/carryless logic ops:
@@ -148,7 +191,7 @@ copying a binary SIMD ISA shape.
 - Define invalid/trap behavior consistently across VM, SIMD, GPU, FPGA, and ASIC paths before gather/scatter is added.
 - Keep architectural vector length abstract. Do not bake 256-bit or 512-bit widths into the ISA.
 
-### Phase 4 Prerequisites
+#### Phase 4 Prerequisites
 
 These should be completed before any vector opcode work begins.
 
@@ -162,7 +205,7 @@ These should be completed before any vector opcode work begins.
    - The opcode identifies the extended layout.
    - `VersionedInstructionCodec::decode()` sets decoded R5 fields when `opcode == TSEL`.
 
-### Phase 4 Implemented
+#### Phase 4 Implemented
 
 - Added scalar `TSEL` using the R5 layout.
 - Added scalar `BRZ` and `BRP` alongside existing `BRN`.
@@ -176,7 +219,7 @@ These should be completed before any vector opcode work begins.
 - Added vector conversion, permutation, blend, swap, gather, and scatter reference VM paths.
 - Added ISA, assembler, VM execution, vector-fault, and trap-record tests.
 
-### Base ISA Additions
+#### Base ISA Additions
 
 These should be implemented before the vector extension because they are useful
 for scalar VM code and clarify the architecture.
@@ -208,7 +251,7 @@ the existing R-type word:
 It should use the existing reserved pad trits rather than consuming a second
 instruction word.
 
-### T1 Predicate Semantics
+#### T1 Predicate Semantics
 
 - `TCMP` produces `T1`.
 - `BRN/BRZ/BRP` consume `T1`.
@@ -225,7 +268,7 @@ Important algebra distinction:
   nonzero signs combine by sign XOR, and zero on either input produces zero.
   Each weight means conditional subtract, skip, or conditional add.
 
-### Scalar Lane / Carryless Opcodes
+#### Scalar Lane / Carryless Opcodes
 
 Carryless trit algebra:
 
@@ -239,7 +282,7 @@ These are distinct from numeric `add/sub/neg`. They operate on lane/wire
 encodings and must not be implemented by binary arithmetic on the backing
 integer. They are defined over lane types from `ternary_lanes.h`.
 
-### Vector Numeric Opcodes
+#### Vector Numeric Opcodes
 
 - `vadd.*`, `vsub.*`, `vneg.*`, `vmul.*`, `vdiv.*`: numeric vector arithmetic.
 - `vcmp.*`: vector compare, producing a `T1` predicate vector.
@@ -251,7 +294,7 @@ integer. They are defined over lane types from `ternary_lanes.h`.
 Vector numeric ops work on numeric formats. They are separate from `tl*` lane
 ops because they use different hardware paths and have different semantics.
 
-### Accumulator and AI Opcodes
+#### Accumulator and AI Opcodes
 
 - `aclr.*`: clear accumulator.
 - `aload.*`: load accumulator from scalar value.
@@ -267,9 +310,10 @@ retains decoded native T40 parts between additions/subtractions and packs at
 read-out or state-save boundaries, preserving T40 rounding after each operation.
 `tmac` rounds its product before accumulation; it is not a single-rounding FMA.
 See [the T40 numeric contract](docs/03_Execution_Engine/t40_numeric_boundaries.md)
+and [the later implementation milestone](#t40-numeric-boundaries-and-exact-constants)
 for exact constants, representation boundaries, and repeatable validation.
 
-### Vector Plumbing and Memory
+#### Vector Plumbing and Memory
 
 - `vpack.src.dst`, `vunpack.src.dst`: explicit precision conversion.
 - `vpermute`: rearrange vector lanes.
@@ -277,7 +321,7 @@ for exact constants, representation boundaries, and repeatable validation.
 - `vswap`: explicit vector register swap.
 - `vgather.*`, `vscatter.*`: indexed memory movement with lane-local faults.
 
-### Fault Model
+#### Fault Model
 
 Scalar traps currently use a ternary-native trap class in one trit:
 
@@ -300,13 +344,13 @@ Vector faults use an explicit lane-local model:
 - Make fault selection compatible with `TSEL`/`vsel.*` so fault handling can
   route on `-1/0/+1` without binary flag emulation.
 
-### Vector Register Model
+#### Vector Register Model
 
 - Introduce vector registers separately from scalar `R0..R26`.
 - Keep architectural vector length abstract rather than hard-coding 256 or 512 bits into the ISA.
 - Add `vlen` so AVX2, AVX-512, GPU kernels, FPGA, and ASIC backends can choose different physical widths.
 
-### Phase 4 Implementation Order
+#### Phase 4 Implementation Order
 
 1. Correct scalar fault encoding with separate `fault_valid` and `fault_class`. Done.
 2. Add the R5 decoder path for `TSEL`, `VSEL`, and `VBLEND`. Done.
@@ -316,9 +360,10 @@ Vector faults use an explicit lane-local model:
 6. Add accumulator and AI ops: `vdot.t1`, `vmac.t1`, and `vact.t1`. Done.
 7. Add gather/scatter and complex vector plumbing after the vector fault model is tested. Done in the scalar reference VM.
 
-## Phase 5: GPU Launch, IR, Benchmarks, and Transformer Runtime
+### Phase 5: GPU Launch, IR, Benchmarks, and Transformer Runtime
 
-Status: in progress.
+Status: initial IR, benchmark, and transformer runtime tranches implemented;
+external GPU validation remains open. See the individual track scopes below.
 
 Goal: finish the near-complete GPU lane launch validation, then add the minimal
 compiler/IR layer and benchmark suite needed before building a maintainable
@@ -334,7 +379,7 @@ Important host limitation:
 - AMD GPU validation should be run later from a supported Linux/ROCm
   environment, or through another confirmed AMD GPU SYCL backend.
 
-### Phase 5A: GPU Kernel Launch Validation
+#### Phase 5A: GPU Kernel Launch Validation
 
 Status: local launch-boundary validation implemented; external AMD GPU
 validation remains deferred to Linux/ROCm.
@@ -383,7 +428,7 @@ Non-goals:
 - Do not add transformer-specific opcodes here.
 - Do not add FPGA/ASIC modules here.
 
-### Phase 5B: Minimal Ternary IR and Lowering
+#### Phase 5B: Minimal Ternary IR and Lowering
 
 Status: first implementation complete.
 
@@ -445,7 +490,7 @@ Non-goals:
   no-op `cvt` removal.
 - Do not add new ISA opcodes to make lowering easier.
 
-### Phase 5C: Architectural Benchmark Suite
+#### Phase 5C: Architectural Benchmark Suite
 
 Status: first deterministic benchmark tranche implemented.
 
@@ -468,7 +513,7 @@ The historical benchmark tranche and its standalone result/baseline files were
 retired during the current-only cleanup. They are retained here only as
 progress history; no benchmark target or result is consumed by the platform.
 
-### Phase 5D: Tiny Transformer VM Runtime
+#### Phase 5D: Tiny Transformer VM Runtime
 
 Status: initial generated-VM runtime scaffold implemented after Phase 5B and
 the first Phase 5C benchmark tranche.
@@ -537,20 +582,21 @@ Non-goals:
 - Do not make lane/numeric conversion implicit to simplify model code.
 - Do not implement security primitives as part of the transformer milestone.
 
-## Phase 6: Core Tooling and OS-Capable Machine Roadmap
+### Phase 6: Core Tooling and OS-Capable Machine Roadmap
 
-Status: in progress (incorporating implementation plan targets).
+Status: OS-capable machine baseline implemented (Tracks 6.0–6.18).
+Advanced IR and source-language Tracks 6.19–6.20 transferred to Phase 7.
 
 Goal: resolve core architectural correctness bugs, finalize the ternary ISA expansion, add VM tooling needed for kernel-scale debugging and static data, then formalize the OS machine contract before expanding into a full source language frontend.
 
-### Scope and Implementation Tracks
+#### Scope and Implementation Tracks
 
-#### Track 6.0: Correctness and Architectural Foundations (Completed)
+##### Track 6.0: Correctness and Architectural Foundations (Completed)
 - **Bug Fixes**: Corrected `MOVH` register masking, eliminated silent denormal precision loss in `fromLane` for `T10/T20`, aligned AVX2 SIMD validity checking with scalar paths, added `TernaryValue` equality operators for optimization passes, and ensured copy constructor exception safety in `TernaryMemory`.
 - **Architectural Unification**: Established canonical in-memory representations unifying raw lanes, typed `TritLane<N>`, `Triple`/`LongTriple`, and `TernaryValue`.
 - **Native Word & Width Semantics**: Unified the native scalar and ordinary data-memory word as `T40`, the ternary equivalent of a binary 64-bit computer's general-purpose word (`3^40 < 2^64 < 3^41`), while transitioning `T50` into an explicit extended-precision target. Configured default vector length independently as the ternary-native power of 3 `DEFAULT_VECTOR_LENGTH = 27`, and standardized `STORE` source-register addressing conventions.
 
-#### Track 6.1: ISA Expansion (Verified)
+##### Track 6.1: ISA Expansion (Verified)
 - **Indirect Control Flow**: Implement register-indirect branches (`CALLR`, `JMPR`) to support function pointers, dynamic dispatch, and vtables.
 - **Advanced Arithmetic & Windowing**: Register `R4`-type instruction layouts supporting windowed comparisons (`TWCMP`) and range clamping (`TCLAMP`). Implement remainder extraction (`TMOD`), structural exponent scaling/shifting (`TLSHIFT`, `TRSHIFT`), and scalar multiply-accumulate (`TMAC`).
 - **Ternary-Native Analysis**: Register non-zero trit counting (`TCOUNT`) and most-significant non-zero trit scanning (`TSCAN`) primitives.
@@ -566,80 +612,80 @@ Current integration note:
 - Current platform behavior is validated by `tests/current_only_conformance.cpp`,
   `current_validate`, and the `ci_production` target.
 
-#### Track 6.2: VM Tooling and Infrastructure Bridge (Implemented)
+##### Track 6.2: VM Tooling and Infrastructure Bridge (Implemented)
 - **VM Observability**: Added lightweight debugging and tracing execution hooks (`VMHooks` exposing `onStep`, `onTrap`, and `onHalt`) to support compiler and kernel output profiling without core patching.
 - **Data Sections**: Added assembler `.text`, `.data`, `.word`, text labels, data labels, and mixed text/data/text section support for static storage resolution.
 - **Step Limits**: Formalized `run()` limits so one architecturally executed instruction is one step; timeout leaves `VMStatus::RUNNING` and allows execution to continue later.
 - **Math Caching & Fallbacks**: Added lazy cached statics for expensive series constants (`cachedLn3()`, `cachedPi()`) and schoolbook limb multiplication for `UInt128 * UInt128` and `multiplyFull(UInt128, UInt128)`.
 
-#### Track 6.3: Core VM OS Substrate (Implemented)
+##### Track 6.3: Core VM OS Substrate (Implemented)
 - **CSR and Return-from-Trap ISA**: Added `CSRR`, `CSRW`, and `ERET` as opcodes 74-76 with assembler, disassembler, decode, VM dispatch, and IR builder support.
 - **Privilege and Routed Traps**: Added kernel `-1`, supervisor/reserved `0`, and user `+1` privilege state; routed traps save `EPC`, `CAUSE`, and packed `STATUS`, disable interrupts, enter kernel mode, jump to `TVEC`, and resume through `ERET`.
 - **Syscalls, Timer IRQs, and Protection**: In routed mode, user `SYSCALL imm` becomes an ECALL-style trap with `SYSCALL_ID`; deterministic timer IRQs route through the same trap path; user-mode fetch/load/store use v1 IMEM/DMEM base-limit protection while kernel bypasses those bounds.
 - **Compatibility**: Legacy halt-on-trap behavior and sandbox syscall buffer services remain unchanged until trap routing is enabled by kernel setup.
 
-#### Track 6.4: OS Contract Lock-In and Trap-Save Primitive (Implemented)
+##### Track 6.4: OS Contract Lock-In and Trap-Save Primitive (Implemented)
 - **Trap-Save CSR Primitive**: Added `CSRRW` as opcode 77 so trap handlers can atomically swap `sp` with `scratch`, matching the kernel-stack handoff pattern needed for safe interrupt context save.
 - **Trap Entry Convention**: While running user code, `SCRATCH` holds the current task kernel context/stack pointer. The first trap-handler instruction should be `csrrw sp, scratch, sp`; before `ERET`, the handler performs the reverse swap.
 - **ABI Defaults**: `r0` is zero; `r1-r12` are callee-saved; `r13-r18` are argument registers with `r13` as primary return; `r19-r24` are caller-saved temporaries; `r25` is link register; `r26` is stack pointer; `r27` remains legacy trap/status visibility.
 - **Memory and Boot Contract**: Single-core execution is sequentially consistent. `FENCE` is an architectural/compiler barrier and VM no-op for now. Reset starts in kernel mode with interrupts and MMU disabled, PC `0`, and SP at the top of DMEM.
 
-#### Track 6.5: Memory Management and Page Tables (Implemented)
+##### Track 6.5: Memory Management and Page Tables (Implemented)
 - **Single-Level MMU v1**: Added CSR-controlled user IMEM/DMEM page tables with fixed 27-word pages. Kernel mode bypasses translation; user mode fetch/load/store use virtual word addresses when `MMU_ENABLE` is set.
 - **PTE Layout**: Page tables live in DMEM as raw T40 PTE words: low trits encode valid/user/read/write/execute flags, and trit 5 onward encodes the physical page number.
 - **Fault Reporting**: Page faults set `PAGE_FAULT_ADDR` and `PAGE_FAULT_ACCESS`; fetch/load/store page faults use dedicated causes, while permission failures use protection faults.
 
-#### Track 6.6: Preemptive Timer and Two-Task Switch (Implemented)
+##### Track 6.6: Preemptive Timer and Two-Task Switch (Implemented)
 - **Task Context Layout**: Defined a 32-word task context carrying saved virtual PC, packed status, IMEM/DMEM page-table CSRs, and `r1-r26`.
 - **Timer Context Switch Proof**: Added a timer-driven trap handler proof using `CSRRW` to preserve user `sp`, save/restore all task registers and paging CSRs, re-arm the timer, and return through `ERET`.
 - **Isolation Acceptance**: The VM test suite now switches between two user tasks sharing the same virtual PC/data address while mapping their counters through different physical DMEM pages.
 
-#### Track 6.7: Minimal Kernel Bring-Up (Implemented)
+##### Track 6.7: Minimal Kernel Bring-Up (Implemented)
 - **Historical Bootable Assembly Artifact**: The v1 `minimal_kernel_bringup.tasm` proof is frozen at Git tag `trit-v1-final`; it was retired from the v2 production tree because it hard-coded 27-word MMU pages.
 - **v2 First-Silicon Bring-Up Artifact**: `v2_first_silicon_bringup.tasm` is the standalone `.isa 2` monitor image for numeric PTE/page geometry, v2 syscall/return registers, trap/ERET, timer, and WAIT acceptance.
 - **Assembler Kernel Support**: Added `.org` for physical text/data placement and `.pte` for raw T40 page-table entries, so kernel images can carry page tables and task contexts without C++ host patching.
 - **Kernel Acceptance Test**: The VM now runs the artifact as a boot image and verifies timer-driven switching between two user tasks with separate physical counters.
 
-#### Track 6.8: Kernel Syscall and Console Device Path (Implemented)
+##### Track 6.8: Kernel Syscall and Console Device Path (Implemented)
 - **Console CSRs**: Added `console_out` and `console_ctrl` as kernel-visible device CSRs. `console_out` appends a decimal word to the VM output buffer by default; `console_ctrl` appends newline for `1`, enables character mode for `2`, disables character mode for `3`, clears for negative writes, and reads back output length.
 - **Syscall ABI v1**: Routed user `SYSCALL imm` keeps the syscall id in `SYSCALL_ID`, passes arguments in `r13-r18`, and returns status/value in `r13`. Syscall `22` is `sys_write_char`, used by text diagnostics and ulib character output.
 - **Kernel-Mediated I/O**: The minimal kernel artifact now handles syscall ids `1` write integer, `2` newline, `3` clear, and `22` write character through the console CSRs while preserving timer preemption.
 
-#### Track 6.9: Critical Sections and Process Table Seed (Implemented)
+##### Track 6.9: Critical Sections and Process Table Seed (Implemented)
 - **Interrupt-Disable Critical Sections**: Verified that timer interrupts remain pending while interrupts are disabled and route precisely once kernel code re-enables interrupts through `STATUS`.
 - **Process Table Seed**: Replaced the fixed two-context toggle in the minimal kernel with `proc_count`, `current_proc`, and `proc_table[]`, where each table entry points to a task context.
 - **Scheduler State Verification**: The boot artifact test now verifies process-table metadata, context pointers, current-process bounds, and continued two-task preemption.
 
-#### Track 6.10: Ternary Architecture Contract Pack (Implemented)
+##### Track 6.10: Ternary Architecture Contract Pack (Implemented)
 - **Contract Document**: The historical architecture contract is now consolidated in `docs/04_Binary_Contract/architecture_v2.md`, with current authority in the root manifests and source headers.
 - **Ternary-Native Memory/Atomic Direction**: Locked the planned memory-order trit (`-1` relaxed, `0` acquire-release, `+1` sequential consistency) and the proposed `TLDR`/`TSTR` result convention (`-1` collision, `0` value mismatch, `+1` success).
 - **Cross-Cutting Contracts**: Captured trap/interrupt rules, ABI, data layout, instruction alignment, FP sticky flag direction, reset/boot, syscall/device rules, and scheduler substrate boundaries.
 
-#### Track 6.11: Ternary Atomics and Lock ABI (Implemented)
+##### Track 6.11: Ternary Atomics and Lock ABI (Implemented)
 - **Atomic ISA**: Added `TLDR` and `TSTR` with the ternary memory-order trit encoded as `-1` relaxed, `0` acquire-release, and `+1` sequential consistency.
 - **Store-Conditional Status**: `TSTR` returns `-1` for reservation loss/collision, `0` for expected-value mismatch, and `+1` for success.
 - **Memory-Order FENCE**: `FENCE` now accepts the same ternary order spelling (`fence.-1`, `fence.0`, `fence.+1`) while remaining a single-core VM ordering marker.
 - **Lock ABI Proof**: Added VM tests for atomic success, value mismatch, reservation collision, and a minimal acquire/critical-section/release sequence.
 
-#### Track 6.12: Scheduler Policy and Process Lifecycle (Implemented)
+##### Track 6.12: Scheduler Policy and Process Lifecycle (Implemented)
 - **Process States**: Added runnable, running, blocked, sleeping, and exited process-state constants and sidecar process metadata.
 - **Run Queue Policy**: The minimal kernel scheduler now wakes ready sleepers, skips blocked/sleeping/exited tasks, and chooses the next runnable process instead of blindly toggling contexts.
 - **Timer Accounting**: Tracks per-process timer ticks, quantum remaining, and preemption counts.
 - **Blocking Surface**: Added `proc_wakeup_tick` metadata and tests proving blocked tasks are skipped and sleeping tasks wake deterministically.
 
-#### Track 6.13: Kernel Services v1 (Implemented)
+##### Track 6.13: Kernel Services v1 (Implemented)
 - **Lifecycle Syscalls**: Added kernel-handled `yield`, `sleep_until_tick`, `exit`, `getpid`, and `uptime` syscalls while preserving console syscalls.
 - **Wait Metadata**: Added wait-channel metadata so timer sleepers are woken by the scheduler instead of polling.
 - **Idle Task**: Expanded the minimal kernel image to three user tasks plus an idle task, with idle selected when no user process is runnable.
 - **Kernel Acceptance Image**: The boot artifact now proves sleep/yield/exit/getpid behavior, task exit removal, timer wakeup, console output, and idle progress in one image.
 
-#### Track 6.14: Device/Event Queues and Kernel Authoring (Implemented)
+##### Track 6.14: Device/Event Queues and Kernel Authoring (Implemented)
 - **Event Queues**: Generalized timer sleeping into wait-channel metadata that also handles console input and child-exit waits.
 - **Device Blocking**: Added host-fed console input CSRs and blocking read behavior.
 - **Ready/Wait Queues**: Added ready/wait queue metadata for the Phase 4 scheduler proof.
 - **Kernel Authoring Ergonomics**: The kernel artifact now uses shared queue, wakeup, and syscall paths instead of fixed two-task toggles.
 
-#### Track 6.15: Self-describing current loader and object ABI (Implemented)
+##### Track 6.15: Self-describing current loader and object ABI (Implemented)
 - **Current metadata**: `.execheader3` emits the checksummed 20-word executable
   ABI-v3 header over the ISA-v2 instruction codec.
 - **Static loader**: compiler, assembler, VM, kernel, and image builder validate
@@ -648,57 +694,65 @@ Current integration note:
 - **Compiler pipeline boundary**: the current compiler owns the executable,
   runtime, ABI, metadata, assembler, and link contracts.
 
-#### Track 6.16: Process Creation and Lifecycle Syscalls v1 (Implemented)
+##### Track 6.16: Process Creation and Lifecycle Syscalls v1 (Implemented)
 - **Process Identity**: Added free/runnable lifecycle state, PID convention, parent PID, exit status, wait target, and queue sidecars.
 - **Spawn/Wait**: Added static `spawn` and `waitpid` behavior for predeclared executable images.
 - **Lifecycle Compatibility**: Preserved `yield`, `sleep_until_tick`, `exit`, `getpid`, and `uptime`.
 
-#### Track 6.17: Console Input and Minimal Shell Proof (Implemented)
+##### Track 6.17: Console Input and Minimal Shell Proof (Implemented)
 - **Console Input Device**: Added host-fed word/ASCII input queue support with `console_in` and `console_in_ctrl` CSRs.
 - **Tiny Command Loop**: The shell proof reads ASCII commands, launches static programs, waits for child exit, prints results, and exits.
 - **Integrated Proof**: The acceptance image covers input wakeup, shell dispatch, spawn/wait, console output, timer preemption, and idle behavior together.
 
-#### Track 6.18: Phase 4 Freeze and Acceptance (Implemented)
+##### Track 6.18: Phase 4 Freeze and Acceptance (Implemented)
 - **Scope Freeze**: This historical Phase 4 snapshot froze the syscall table, trap-frame layout, process metadata, executable header v1, and page-table v1 contract. The current cutover is ISA v2, executable/function ABI v3, syscall ABI v2, `.tboot` v3, and `.tdisk` v2.
 - **Documentation Lock**: The former `OS3/` planning tree is retired. Current authority is `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, `tcl_native_rewrite.md`, and the `docs/` contract pages.
 - **Regression Gate**: the retired phase-specific tests were replaced by the
   current conformance target and the `ci_production` CMake gate.
 
-#### Track 6.19: Advanced IR Expansion
+##### Track 6.19: Advanced IR Expansion
+
+Scope transferred to Phase 7; the original design targets are retained below.
+
 - **Structural Node AST**: Replace string-based code emission with structured instruction node types (`IrInstr`) containing explicit source/destination operand payloads.
 - **Type Auto-Widening Lattice**: Establish automatic numeric widening rules (`T1 < T5 < T10 < T20 < T40 < T50`) with implicit conversion node insertion.
 - **Control Flow Graphs (CFG)**: Build explicit `BasicBlock` topologies supporting structured high-level closure builders (`ifTernary`, `whileLoop`, `forRange`).
 - **Analysis & Optimization Pipeline**: Implement pre-lowering verification passes, explicit liveness analysis supporting automatic register release, and localized SSA optimization passes (Copy Propagation → Constant Folding → CSE → DCE → Strength Reduction).
 - **Module Abstraction**: Implement `Function` calling conventions and `Module` containers for multi-function compilation.
 
-#### Track 6.20: High-Level Source Language Frontend
+##### Track 6.20: High-Level Source Language Frontend
+
+Scope transferred to Phase 7; the original design targets are retained below.
+
 - **Language Design**: Design a premium ML-style ternary-native language mapping types directly to precision layers (`t1..t50`, `l1..l50`, `vec<t20>`), exposing first-class three-way conditional blocks (`match sign(x)`), replacing booleans with ternary conditions, and embedding dedicated carryless logic operators (`|+|`, `|-|`, `/\`, `\/`, `~`).
 - **Frontend Stages**: Implement an end-to-end driver orchestrating tokenization (Lexer), recursive descent parsing (Parser → AST), type checking/widening resolution, lowering to structural IR blocks, optimization passes, and backend assembly compilation.
 
-### Critical Gaps to Bridge for `xv6` OS Execution
-The VM now has the Phase 4 OS substrate: privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a bootable minimal kernel artifact, kernel-mediated console output/input, interrupt-disabled critical-section behavior, process lifecycle state, ready/wait metadata, timer-backed sleeping, lifecycle syscalls, static spawn/waitpid, an idle task, executable header v1, a minimal shell proof, a written ternary architecture contract, and the first ternary atomics/lock ABI proof. The next path is compiler/toolchain work against this frozen OS target contract.
+<a id="critical-gaps-to-bridge-for-xv6-os-execution"></a>
 
-#### A. Privilege Rings (Kernel vs. User Mode)
+#### Delivered Foundations for `xv6` OS Execution
+The historical machine baseline established privilege state, CSR control registers, routed trap/interrupt entry, `ERET`, syscall traps, deterministic timer IRQs, `CSRRW` trap-save support, single-level user page tables, page-fault reporting, a bootable minimal kernel artifact, kernel-mediated console output/input, interrupt-disabled critical-section behavior, process lifecycle state, ready/wait metadata, timer-backed sleeping, lifecycle syscalls, static spawn/waitpid, an idle task, a minimal shell proof, a written ternary architecture contract, and the first ternary atomics/lock ABI proof. Its earlier executable-header v1 was replaced by the current executable ABI v3. These foundations enabled the compiler/toolchain work in Phase 7 and native integration in Phase 9.
+
+##### A. Privilege Rings (Kernel vs. User Mode)
 Implemented in substrate v1:
 * **Ternary Protection Mode**: `-1` kernel, `0` supervisor/reserved, `+1` user.
 * **Restricted Opcodes**: CSR writes and `ERET` are kernel-only and route protection faults from user mode.
 * **V1 Protection**: User fetch/load/store obey IMEM/DMEM base-limit CSRs; kernel bypasses those v1 bounds.
 
-#### B. Memory Management Unit (MMU) & Page Tables
+##### B. Memory Management Unit (MMU) & Page Tables
 Implemented as substrate v1:
 * **Virtual Address Translation**: User fetch/load/store translate through separate single-level IMEM/DMEM page tables when `MMU_ENABLE` is set.
 * **Protection**: PTEs carry user/read/write/execute permissions. Kernel mode uses physical IMEM/DMEM and bypasses the MMU.
 * **Fault Metadata**: Page-fault CSRs record the virtual address and access class for precise handler diagnostics.
 
-#### C. Preemptive Timer Interrupts (`IRQ`)
+##### C. Preemptive Timer Interrupts (`IRQ`)
 A deterministic timer IRQ exists now and can route to `TVEC` when interrupts are enabled.
 * **Scheduler Context**: The minimal kernel now saves/restores `EPC`, `STATUS`, page-table CSRs, `r1-r26`, and user `sp` using the `SCRATCH`/`CSRRW` convention, then selects the next task through a tiny process table.
 
 The historical Phase 4 closure roadmap is retained as progress context only. Current compiler and source-language work follows `ROADMAP_STATUS.json`, `KNOWN_GAPS.md`, and `tcl_native_rewrite.md` against the current platform tuple.
 
-### Critical Path
+#### Critical Path
 
-The current OS-oriented sequence prioritizes the machine contract before the full source language:
+The original OS-oriented dependency sequence prioritized the machine contract before the full source language:
 ```
 Phase 0/1 foundations -> Phase 6.1 ISA expansion -> Phase 6.2 VM tooling bridge ->
 Phase 6.3 core VM OS substrate -> Phase 6.4 trap-save/ABI contract ->
@@ -723,19 +777,28 @@ Non-goals:
 - Do not implement arbitrary memory-hard garbage collectors in the initial source language runtime.
 - Do not add target-specific backends directly inside the source language lowering phase.
 
-## Phase 7 (Next): High-Level Compiler Toolchain And SSA Universal Bus
+<a id="phase-7-next-high-level-compiler-toolchain-and-ssa-universal-bus"></a>
 
-Status: in progress; Phase 7 compiler/toolchain v1 is implemented.
+### Phase 7: High-Level Compiler Toolchain And SSA Universal Bus
+
+Status: compiler/toolchain baseline implemented. Broader language and
+self-hosting ambitions remain separate expansion scope.
 
 Naming note: the older Phase 4 closure roadmap maps to this README's Phase 6
 OS-capable machine work. The Phase 6.19 and Phase 6.20 items above are now
-absorbed into Phase 7 so the next phase has one clear compiler/toolchain scope.
+absorbed into Phase 7 so compiler/toolchain work has one clear scope.
 
 Goal: turn the frozen OS substrate into a real high-level compiler target. Phase
 7 should not try to finish the xv6 alternative directly; it should make the
 compiler, IR, object tooling, runtime stubs, and developer loop strong enough
 that Phase 8 can implement the remaining xv6-class kernel/userland pieces in a
 high-level systems language instead of hand-written `.tasm`.
+
+The tracks below retain the original toolchain design and acceptance scope;
+they do not imply that every proposed language capability is implemented or
+still pending. Current expansion work follows the linked plans and Beads.
+Later shared constant handling is described in
+[T40 numeric boundaries and exact constants](#t40-numeric-boundaries-and-exact-constants).
 
 Current implementation note:
 
@@ -758,7 +821,7 @@ Current references for the compiler and platform boundary are
 `docs/09_Host_Runtime/image_format.md`. The former `OS3/` and `todo.md` input
 paths belonged to an earlier planning tree and are intentionally not recreated.
 
-### Track 7.1: Structural SSA IR And Module Model
+#### Track 7.1: Structural SSA IR And Module Model
 
 - Replace flat string-first IR emission with typed instruction nodes carrying
   explicit operands, defs, uses, effects, widths, and source spans.
@@ -779,7 +842,7 @@ Acceptance:
   lowers to valid `.tasm`.
 - IR diagnostics report source spans and verifier failures before assembly.
 
-### Track 7.2: Type System, Width Inference, And Safety Core
+#### Track 7.2: Type System, Width Inference, And Safety Core
 
 - Implement a Hindley-Milner style inference engine over numeric widths, lane
   widths, vectors, structs, arrays, pointers, and functions.
@@ -804,7 +867,7 @@ Acceptance:
 - Valid ownership and region proofs generate no runtime safety checks beyond the
   branch or trap instructions the program already needs.
 
-### Track 7.3: Control Flow, Optimization, And Register Allocation
+#### Track 7.3: Control Flow, Optimization, And Register Allocation
 
 - Build explicit CFG construction for `if`, ternary `match`, `while`, `for`, and
   early returns.
@@ -828,7 +891,7 @@ Acceptance:
 - Swap-like assignments lower to `SWAP` for register values and to the approved
   memory-safe fallback sequence only when needed.
 
-### Track 7.4: Frontend Language MVP
+#### Track 7.4: Frontend Language MVP
 
 - Add a lexer, parser, AST, and source map for a small ternary-native systems
   language rather than a full C++ frontend.
@@ -848,7 +911,7 @@ Acceptance:
   function calls, and run as a static user executable under the existing kernel.
 - Compiler diagnostics are stable enough to guide users without inspecting IR.
 
-### Track 7.5: Object, Linker, And Executable Tooling
+#### Track 7.5: Object, Linker, And Executable Tooling
 
 - Extend assembler/object metadata so compiled modules carry symbols,
   relocations, data sections, executable headers, ABI version, stack hint,
@@ -868,7 +931,7 @@ Acceptance:
 - Generated executables load through the same static loader path already proven
   by Phase 6.
 
-### Track 7.6: Freestanding Runtime And Syscall Surface
+#### Track 7.6: Freestanding Runtime And Syscall Surface
 
 - Provide startup code, stack-frame setup, panic/abort, integer formatting,
   minimal memory copy/set helpers, and syscall stubs for the frozen ABI.
@@ -888,7 +951,7 @@ Acceptance:
 - Future syscall declarations can exist without pretending the kernel already
   implements them.
 
-### Track 7.7: Compiler Validation And Developer Loop
+#### Track 7.7: Compiler Validation And Developer Loop
 
 - Add unit tests for lexer, parser, type inference, ownership, IR verification,
   optimization, register allocation, object metadata, linker behavior, and
@@ -924,9 +987,10 @@ Phase 7 non-goals:
 - Do not block Phase 7 on cache simulation, TLB emulation, threaded multicore,
   dynamic linking, demand paging, or FPGA/ASIC work.
 
-## Phase 8 (The Platform Boot): Ternary xv6-Class Platform Boot
+### Phase 8 (The Platform Boot): Ternary xv6-Class Platform Boot
 
-Status: in progress; Phase 8 platform substrate v1 is implemented.
+Status: platform substrate baseline implemented; its native kernel/userland
+successor was delivered in Phase 9.
 
 Goal: use the Phase 7 compiler to turn the proven microkernel substrate into an
 xv6-class ternary platform with storage, dynamic program loading, a user heap,
@@ -960,7 +1024,7 @@ Accepted ternary-native policies:
   ABI v3, syscall ABI v2, `.tboot` v3, and `.tdisk` v2; older images are
   rejected rather than decoded or migrated.
 
-Major tracks still to push from substrate into the running assembly kernel:
+Original native integration targets, subsequently addressed by Phase 9:
 
 - Boot the minimal kernel from a device-tree/HAL description for console, timer,
   block storage, page size, disk geometry, and root filesystem.
@@ -994,10 +1058,11 @@ Phase 8 completion criteria:
   `tests/current_only_conformance.cpp`; the former multi-suite list is a
   historical record of the pre-cutover tree.
 
-## Phase 9: Ternary xv6-Class Native Kernel and Userland Integration
+### Phase 9: Ternary xv6-Class Native Kernel and Userland Integration
 
-Status: completed; this phase is completed by `tcl_native_rewrite.md` Phases
-D, E, and F.
+Status: completed for the recorded native kernel/userland baseline in
+`tcl_native_rewrite.md` Phases D, E, and F. Broader desktop acceptance remains
+open in [Current unfinished work](#current-unfinished-work).
 
 Goal: transition from the host-emulated C++ substrate facade to a fully native,
 VM-executed kernel and userland stack, implementing the complete xv6-class
@@ -1034,10 +1099,10 @@ Retired Phase 9 track mapping:
 | 9.9 Simulation realism gap | `tcl_native_rewrite.md` F1 scaling pass and F6 hardening; hardware backend work continues in Phase 12 |
 | 9.10 Block cache optimization and safety hardening | `tcl_native_rewrite.md` D3/D4 buffer/WAL model, Phase E recovery, and F6 hardening |
 
-## Phase 10: Ternary OS Distribution, Host Runtime, and Bootstrapping
+### Phase 10: Ternary OS Distribution, Host Runtime, and Bootstrapping
 
-Status: in progress for Path A desktop distribution; Path B UEFI/live USB
-bootstrapping remains planned.
+Status: host-runtime features below implemented; Path A distribution acceptance
+remains open. Path B UEFI/live USB bootstrapping remains planned.
 
 Goal: turn the completed native Ternary OS milestone into something ordinary
 users can launch, install, reboot, inspect, and recover. Because commodity
@@ -1046,7 +1111,7 @@ distribution path is a desktop host runtime around the VM. The second path is a
 bare-metal UEFI host runtime that boots directly on standard x86-64 machines
 and runs the ternary VM without Windows, Linux, or macOS underneath.
 
-### Path A: Desktop Host Runtime
+#### Path A: Desktop Host Runtime
 
 Path A is the current distribution track. It packages the existing
 `run_gui_console`/VM path into a polished desktop app: prebuilt Ternary OS boot
@@ -1065,7 +1130,11 @@ Completed implementation work in this track:
 - Disk/cache optimization for sparse disk and persistence behavior.
 - Optional trace JIT implemented behind a fallback-safe execution backend.
 
-Path A goals:
+Original Path A distribution goals:
+
+Current `.tboot` v3 and `.tdisk` v2 production is implemented. The original
+goals below also include unfinished packaging and proposed format/signing
+work; `.tiso` and `.tsnap` are proposals, outside the supported format contract.
 
 - Define immutable boot/package images (`.tboot` or `.tiso`) with manifest,
   ABI/profile metadata, kernel image, application images, root filesystem seed,
@@ -1080,7 +1149,7 @@ Path A goals:
   reset, logs, and deterministic crash bundles.
 - Package the desktop runtime for Windows first, then Linux and macOS.
 
-### Path B: UEFI / Live USB Host Runtime
+#### Path B: UEFI / Live USB Host Runtime
 
 Path B remains future work. It is the bare-metal binary-host runtime: UEFI
 loads the same Ternary OS image format and runs the ternary VM directly on
@@ -1115,7 +1184,215 @@ Path B is complete when:
 - Live USB creation is documented and tested on at least one development
   machine or emulator target.
 
-## Phase 11: Security and Post-Quantum Crypto Primitives
+## Later improvements
+
+These entries describe refinements and new capabilities above the delivered
+baselines. Each gives its scope and evidence independently of the phase labels.
+Validation recorded at an earlier milestone applies to that revision; current
+source verification follows the diagnostics and production gate.
+
+### Dataflow and stream runtime
+
+Status: implemented and covered by current conformance. This is a user-space
+runtime foundation above the OS services in Phase 9, reused by the service
+host below and proposed compositor work.
+
+[`ternary_dataflow.trit`](ternary_dataflow.trit) and
+[`ternary_stream.trit`](ternary_stream.trit) provide bounded node-pool allocation,
+callback dispatch, DFS scratch coloring separate from execution state, nonzero
+vector growth from zero capacity, anomaly re-baselining after a consistent
+streak, and explicit end-of-stream events.
+
+Subsequent hardening retains pending output under backpressure, preserves
+ordered data/control events and partial windows before EOS, validates graphs
+before effects, and supports cancellation and fair, budgeted dispatch. A
+dispatch attempts at most 32 callbacks; callbacks allocate nothing.
+
+Closed Beads issues `trit-516` and `trit-5ls.1` record compiled-guest E2E proof
+with 256 ordered events through capacities 1 and 2, repeated stalls, cancellation,
+graph errors, and scheduler fairness. The recorded baseline default CTest passed.
+Evidence is in
+[`phase1_parent_validation.json`](build_current_cleanup/service_workflow_artifact/review/phase1_parent_validation.json)
+and the stream workflow under `build_current_cleanup/service_workflow_artifact/stream/`.
+The supported focused selector is `trit_current_conformance.exe --stream-only`.
+
+### T40 numeric boundaries and exact constants
+
+Status: implemented and verified at completion on October 3, 2026 (local time),
+as recorded by closed Beads issue `trit-09s`.
+
+Retained decoded T40 accumulator state between updates, deferring packing while
+preserving per-operation rounding. Added exact `radix3` constants and corrected
+fractional constant folding, including declared-width and lexical-binding
+preservation. Verified context saves and mid-reduction checkpoint restoration
+through reproducible E2E artifacts. Production conformance and SDL smoke passed
+at completion.
+
+Scope: accumulator representation and shared compiler constant handling;
+ordinary variables and T50 arithmetic retain their existing representations.
+Deferred normalization, fused rounding, and numeric status flags remain separate
+work (`trit-e8c`). See the
+[numeric-boundary contract and repeatable commands](docs/03_Execution_Engine/t40_numeric_boundaries.md)
+and [`numeric_workflow_artifact/report.json`](build_current_cleanup/numeric_workflow_artifact/report.json).
+This improvement refines Phases 1, 4, and 7 without changing the platform versions.
+
+### User-space service infrastructure and runtime hardening
+
+Status: implemented and owner accepted on October 11, 2026 (local time), with
+remaining final validation waived. Closed Beads epic `trit-5ls` records the
+acceptance; it is distinct from full production validation.
+
+- Added one `/bin/service_host` to the original 59 registrations. It provides
+  namespace-scoped telemetry, two rotating logs, eight cooperative jobs, and
+  dependency-driven startup within one process.
+- Reused the bounded dataflow/stream runtime for backpressure, ordering,
+  cancellation, pool reservations, and dispatch budgets.
+- Added namespace metrics and idle wakeups, preserved SDK error results, and
+  hardened WAL reclamation and publication ordering. Sampling follows absolute
+  CYCLE deadlines every 250 virtual milliseconds.
+- `/bin/init` attempts the host once before exec of `/bin/desktop`. Host launch
+  or startup failure still allows desktop startup. The kernel retains authority
+  over queues, ownership, process scheduling, and wakeups.
+
+Ten final-source default workflows and independent CLI94, desktop, and
+automatic-three checks passed. The full suite was intentionally stopped during
+`history_cap1`; remaining full-suite, CI, SDL, and fresh-review validation was
+waived, without PASS claims. The
+[service contract](docs/07_OS_Substrate/service_host.md) contains the detailed
+counts, durability limits, and stopped-run receipt; preserved acceptance is in
+[`user_acceptance_result.json`](build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json).
+
+WALv2 maintenance retains 729 records, two superblocks, a publication reserve,
+and WAL-before-home/barrier/checkpoint/tail ordering. Boot attributes remain
+finite volatile state reconstructed during boot. Forced-stop replay, arbitrary
+durable configuration, shared service channels, and a measured GUI latency
+improvement remain unsupported. The static buffer/capability address overlap
+remains tracked as `trit-cx1`.
+
+## Current unfinished work
+
+Completed foundations do not imply that every broader product or language goal
+is complete. [ROADMAP_STATUS.json](ROADMAP_STATUS.json),
+[KNOWN_GAPS.md](KNOWN_GAPS.md), and Beads carry the current scope and evidence;
+the following connects those records to the retained phases.
+
+| Area | Remaining scope | Current reference |
+|------|-----------------|-------------------|
+| GPU acceleration (Phases 3 and 5) | External AMD GPU SYCL/CUDA device validation and measurements | Phase 5A and `KNOWN_GAPS.md` |
+| Compiler/language (Phase 7) | Broader language and self-hosting scope; oversized T40 integer literal diagnostics | `tcl_native_rewrite.md`, `TCL_Spec_1.0.md`, `trit-a1o` |
+| Numeric semantics | Deferred normalization and numeric status architecture beyond strict T40 rounding | `trit-e8c` |
+| Native desktop and distribution (Phases 9–10) | Window/input ownership, compositor presentation, realistic desktop acceptance, persistent shell/preferences, installer and recovery | `trit-b8b`, `trit-47z`, `trit-dbz`, `trit-eua`, `trit-lex` |
+| Service/runtime hardening | Static buffer/capability overlap; final full/CI/SDL/review gates remain unverified under the owner waiver | `trit-cx1`, service contract, `ROADMAP_STATUS.json` |
+
+The recorded Calculator/Files workflow and accepted service rollout cover their
+stated scenarios. Broader native desktop acceptance remains open. The new
+compositor foundation proposed below is a separate milestone and does not
+complete the desktop, TritUI, or distribution criteria by itself.
+
+## Future directions
+
+The following contains proposed scope, including retained Phase 11–12 plans
+and the original feature/profile discussions. These are design ideas rather
+than claims of delivered behavior or a required calendar sequence. The
+[future platform architecture](docs/12_Future_Architecture/platform_evolution_plan.md)
+records the wider toolkit, profile, acceleration, and physical-device direction.
+
+### Proposed native compositor foundation
+
+Status: proposed; not implemented. Build a separate native `/bin/compositor`
+using the dataflow runtime and a reusable span-drawing library. The first
+milestone covers protected composition in a separate validation session.
+Normal desktop activation and existing-app migration follow later. Compositor
+failure closes the session without automatic restart.
+
+The dependency order is:
+
+| Stage | Deliverable | Dependency and scope |
+|-------|-------------|----------------------|
+| 1 | Reliability baseline: SDK results, process cleanup, waits, wakeups | Prerequisite; reuse validated repairs and repair only demonstrated gaps |
+| 2 | Protected communication: authenticated records, bounded queues, surface ownership, cancellation, peer death | Stage 1; kernel enforces identity, access, and lifetime |
+| 3 | Minimal service lifecycle: launch, readiness, dependencies, failure observation, orderly stop | Stages 1–2; reusable process-level mechanisms |
+| 4 | Drawing: clipped RGB spans/copies, reference Bresenham, measured run slicing | Stage 2 surface contract; can develop alongside stages 3 and 5 |
+| 5 | Graphics dataflow adapters: callbacks, backpressure, budgets, readiness waits | Stages 1–2 and the validated stream runtime |
+| 6 | Compositor: geometry, stacking, focus, capture, input routing, atomic presentation | Integrates stages 2–5 in a multi-client session |
+| 7 | TritUI: event loop, timers, fonts/images, layout, controls, clipboard/accessibility foundations | Later work above stable window/drawing interfaces |
+| 8 | App/desktop migration and normal compositor activation | Stages 6–7; replace global-screen assumptions |
+| 9 | Persistent desktop integration: preferences, associations, shell/taskbar | Migrated apps and existing VFS |
+| 10 | Complete lifecycle: installer, first boot, recovery, user-facing shutdown | Service/storage correctness and desktop integration |
+
+The foundation scope is **stages 2–6**, with stage 1 as a prerequisite.
+Stages 7–10 describe subsequent work. Reuse existing scheduling, privilege,
+page tables, executable loading, VFS, syscalls, and input infrastructure.
+The service host's dependency graph manages components inside one process;
+independent-process lifecycle mechanisms still need to be established.
+Keep `/bin/service_host` and `/bin/compositor` separate.
+
+The proposed contracts require authenticated, atomic whole-record submission,
+one outstanding synchronous window request per client, and wakeups on peer
+death or cancellation. The kernel owns surface allocation, mappings, cleanup,
+and display acquisition. Clients draw into writable buffers; the compositor
+reads immutable committed snapshots. Failed resize preserves the old surface;
+successful resize invalidates its old pointer. Foundation clients cannot bypass
+display ownership through framebuffer calls or graphics CSR writes. Existing
+`os_window_*()` source signatures remain, with routing specific to the
+foundation session until migration.
+
+Add only the narrowly scoped transport/display operations required by those
+contracts. Choose unused syscall IDs after inspecting the baseline, and update
+kernel dispatch, compiler/runtime IDs, SDK, manifests, and current conformance
+together. Bundle the compositor through the current compiler and app/image
+registration path.
+
+Use an initial 80×60 RGB display with integral channels 0–255, clipped opaque
+surfaces, full-frame back-buffer composition, and atomic frame presentation.
+The compositor owns geometry, stacking, focus, capture, hit testing, and input
+routing; pointer press raises/focuses the topmost hit window, capture lasts
+through release, and keyboard input follows focus. Support create, buffer
+acquisition, present, move, resize, stacking, destroy, event reads/waits, and
+close requests, with resource/focus/capture cleanup on client exit.
+
+A validated static graph handles ingestion, commands, input, composition, and
+output using preallocated nodes, channels, records, and scratch storage. Retain
+accepted commands, input transitions, and pending output until delivery; coalesce
+only redundant redraws. Each callback handles one record or display row, with
+at most 32 attempts per scheduler turn, round-robin progress, and readiness
+waits. Compose a stable geometry/stacking/surface-generation snapshot and retain
+its surfaces through completion. Client closure is a service record; global EOS
+is reserved for shutdown. Request errors stay local; internal callback errors
+fail the session closed. Readiness follows initialization and graph validation;
+dependency failure prevents startup, and orderly stop drains accepted work and
+releases resources.
+
+The drawing library adds clipped spans `(y, x_begin, x_end_exclusive)` and
+rectangle copies, plus reference pixel Bresenham and hybrid run-slice lines.
+Preserve directed reference pixels across octants, ties, endpoints, degenerates,
+and clipping; reject unsupported/fractional coordinates and prevent overflow.
+Select run slicing only for measured winning ranges under identical native
+execution conditions. The existing VM line command stays unchanged.
+
+Acceptance requires staged ownership/transport, lifecycle, drawing, and dataflow
+gates, then a real supervisor, compositor, and at least three compiled Trit
+clients. Exercise overlapping/offscreen windows, simultaneous requests, updates
+during composition, resize/move, focus/capture, client exit, and compositor death.
+Include tiny queues, pool exhaustion, retained pending output, mixed signed
+payloads, invalid graphs/kinds, cancellation/shutdown, forged ownership, stale
+handles, invalid spans/dimensions, unauthorized display access, and blocked-call
+wakeups. Verify raster equivalence and guard regions. Produce a repeatable
+`compositor_workflow_artifact` with PNGs, replayable input, request/event traces,
+lifecycle/resource records, pixel comparisons, benchmarks, source hashes,
+commands, and pass/fail assertions. Preserve desktop/service gates and current
+ISA/ABI/image versions; run production conformance and optional SDL smoke when
+available as part of that implementation's acceptance.
+
+Record service/capability dependencies during transport/lifecycle work; profile
+selection and closure checking follow stable registrations. Physical hardware
+follows a separate dependency chain: exact binary/MMIO representations →
+interrupt/timer contracts → discovery/driver lifecycle → virtual-device
+conformance → DMA/coherency → bus/controller drivers → physical adapters.
+Neither profiles nor physical drivers block the first SDL-hosted compositor
+session.
+
+### Phase 11: Security and Post-Quantum Crypto Primitives
 
 Status: future.
 
@@ -1134,7 +1411,7 @@ Major goals:
 - Use published, peer-reviewed algorithms as the cryptographic basis; optimize
   the VM/hardware execution path, not secret proprietary crypto math.
 
-## Phase 12: FPGA/ASIC and Production Hardware Backends
+### Phase 12: FPGA/ASIC and Production Hardware Backends
 
 Status: future.
 
@@ -1153,7 +1430,7 @@ Major goals:
 - ASIC-oriented decode/execute mapping.
 - Conformance tests shared across CPU VM, SIMD, GPU, FPGA simulation, and ASIC models.
 
-## Possible Features in the Future:
+### Possible Features in the Future
 
 **Kernel should enforce invariants. User-space/system services should analyze, narrate, learn, and advise.**
 
@@ -1241,7 +1518,11 @@ Research-grade. Build an offline scheduler advisor first. Let it recommend polic
 Beautiful idea, but too broad. Start as a user-space resource broker or async IO API, not a replacement for normal syscalls.
 
 - **Osmotic networking**
-This is basically kernel-assisted pub/sub or dataflow. Very aligned with the other ternary streaming/dataflow project. I’d build it as a message/dataflow service, not implicit kernel magic.
+This is kernel-assisted pub/sub or dataflow. The implemented
+[`ternary_dataflow.trit`](ternary_dataflow.trit) and
+[`ternary_stream.trit`](ternary_stream.trit) provide a user-space foundation;
+see [the runtime improvement](#dataflow-and-stream-runtime). Protected shared
+channels and broader pub/sub remain future work above that runtime.
 
 - **Temporal syscalls**
 Useful pieces are scheduled jobs, snapshots, historical queries, and replay. “Committed future syscalls” is dangerous unless very constrained.
@@ -1288,13 +1569,20 @@ With these first deliverables:
 
 That is the sweet spot: wild enough to make Ternary OS feel genuinely new, but grounded enough to build.
 
-### How should we think about other versions of the os? Ie for mobile devices or a headless version?
+<a id="how-should-we-think-about-other-versions-of-the-os-ie-for-mobile-devices-or-a-headless-version"></a>
+
+#### System profiles: desktop, mobile, and headless
+
+Status: proposed architecture. The following retains the original profile
+sketches and examples; profile selection, capability-closure checking, mobile
+HALs, and the illustrated image variants are not implemented product contracts.
+Their implementation follows the profile track in the future platform plan.
 
 This is a fundamentally important architectural question to answer correctly now, before the codebase grows further. The wrong answer — separate forks — is how you create a maintenance nightmare. The right answer is already partially encoded in the current design.
 
 ---
 
-## The Right Mental Model: One Kernel, Multiple Profiles
+#### The Right Mental Model: One Kernel, Multiple Profiles
 
 The kernel doesn't change between targets. What changes is:
 1. **Which subsystems are initialized at boot**
@@ -1305,7 +1593,7 @@ The `.tboot`/`.tdisk` image format already gives you the right primitive for thi
 
 ---
 
-## The Natural Separation Points Already in the Code
+#### The Natural Separation Points Already in the Code
 
 The kernel has a clean layered structure that falls apart into profile-sized pieces:
 
@@ -1348,26 +1636,26 @@ Three-valued. It's already the right type.
 
 ---
 
-## Each Target Variant
+#### Each Target Variant
 
-### Headless / Server Profile
+##### Headless / Server Profile
 
 **What changes:** `kernel_init()` skips `framebuffer_init`, `window_table_init`, and `window_compositor_loop`. The `~200 words` of window table and FB state stay zeroed. The kernel binary is identical.
 
 **What you get for free:**
 - Full VFS + namespace isolation → container-like isolation without Docker
-- WAL + MVCC + `attr_store` → this IS etcd, natively in the kernel
+- Future direction: WAL + MVCC + `attr_store` could support an etcd-like model; current boot attributes are a finite volatile relation reconstructed at boot, not durable arbitrary configuration.
 - `rel_reconcile_count()` → Kubernetes-style desired-state reconciliation built in
 - IPC channels → service mesh without a sidecar
 - 8 namespaces → 8 isolated tenants on one machine
 
-**The killer use case:** A ternary server OS where every service is a process in its own namespace, with desired state tracked in `attr_store` and reconciled continuously by the kernel scheduler. No Kubernetes. No etcd. No Docker. The OS primitives are already those things.
+**The killer use case:** A ternary server OS where every service is a process in its own namespace, with desired state tracked in `attr_store` and reconciled continuously by the kernel scheduler. No Kubernetes. No etcd. No Docker. These are future architectural comparisons, not claims of current durable configuration or orchestration support.
 
 **SDK difference:** `os_sdk.trit` without the graphics wrappers. A `os_sdk_server.trit` that exposes net, VFS, IPC, and process syscalls only.
 
 ---
 
-### Mobile Profile
+##### Mobile Profile
 
 **What changes:**
 
@@ -1390,7 +1678,7 @@ Three-valued. It's already the right type.
 
 ---
 
-### Embedded / IoT Profile
+##### Embedded / IoT Profile
 
 **What changes:** Even `kernel_init()` is optional. At this scale, you might not want a kernel at all — just the ternary runtime, `ternary_stream.trit`, `ternary_audio_dsp.trit`, and direct CSR access.
 
@@ -1409,7 +1697,7 @@ defined by `IMAGE_FORMAT_MANIFEST.json`.
 
 ---
 
-## Implementation Strategy
+#### Implementation Strategy
 
 The cleanest way to handle this without forking:
 
@@ -1445,7 +1733,7 @@ not depend on retired modular `kernel/` fragments.
 
 ---
 
-## What This Looks Like Strategically
+#### What This Looks Like Strategically
 
 The TRIT OS is actually unusually well-positioned for this because the hard work of OS differentiation — namespace isolation, process model, IPC, storage — is identical across targets. The only things that vary are the HAL (which CSRs exist) and the app set (which processes boot).
 

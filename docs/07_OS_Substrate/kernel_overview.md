@@ -29,17 +29,12 @@ coverage before it could be considered.
 ## Boot Sequence
 
 ```
-1. .tboot image loaded by host runtime (build_tos_image.cpp / ternary_host_runtime.h)
-2. VM initialized, PC = boot_entry (= address of init in kernel.trit)
-3. Kernel init:
-   a. Unmarshal rootfs from .tboot into in-memory VFS
-   b. Set up process table
-   c. Spawn PID 1 (init.trit / /sbin/init)
-4. init.trit:
-   a. Mount filesystems
-   b. Start service daemons (sessiond, logd, window_server)
-   c. Spawn desktop.trit (PID 2+)
-5. Kernel event loop: TVEC handler dispatches syscalls + timer interrupts
+1. Host loads current .tboot v3/.tdisk v2 and enters the builder boot assembly.
+2. Boot assembly calls kernel_init, reconstructs VFS/process/boot state, then execs /bin/init.
+3. Init attempts os_spawn_app(/bin/service_host, slot7, PID107) once.
+4. Spawn failure is printed; init still execs /bin/desktop. A post-launch host
+   startup failure does not block desktop. Stub daemons are not started here.
+5. Kernel trap/scheduler/input/window queues and ownership remain authoritative.
 ```
 
 ---
@@ -80,13 +75,13 @@ Each process has:
 | `sys_exec` (21)      | Replace current process image from file |
 | `sys_exit` (44)      | Terminate current process |
 | `sys_waitpid` (43)   | Wait for child process to exit |
-| `sys_spawn_static` (10) | Spawn a statically-linked process by name |
+| `sys_spawn_static` (10) | Runtime mapping retained; current kernel has no dispatch branch |
 | `sys_app_spawn` (57) | Spawn a registered app by name |
 
 ### Scheduler
 - Round-robin with priority queues.
 - Timer interrupt (`OS_CAUSE_TIMER_IRQ`) triggers preemption.
-- `sys_yield` (4), `sys_sleep` (45), `sys_sleep_ms` (56), `sys_sleep_until_tick` (5) for voluntary yield.
+- `sys_yield`, `sys_sleep` and `sys_sleep_until_tick` (all45), plus `sys_sleep_ms` (56) for voluntary yield.
 - `sys_suspend` (49) / `sys_resume` (50) for explicit process control.
 
 ---
@@ -124,13 +119,10 @@ Each process has:
 ### Standard Filesystem Layout
 ```
 /
-├── sbin/
-│   └── init          ← PID 1
-├── bin/              ← POSIX utilities (50+ binaries)
+├── bin/              ← Current APP_MANIFEST registrations, including init/desktop/service_host
 │   ├── shell, ls, cat, cp, mv, rm, mkdir, ...
 │   └── doctor, test, sysinfo, ...  (some missing; see KNOWN_GAPS.md)
-├── apps/             ← GUI apps
-│   ├── desktop, terminal, calculator, paint, ...
+│   ├── desktop, terminal, calculator, paint, service_host, ...
 └── etc/, tmp/, proc/, dev/
 ```
 
@@ -197,7 +189,7 @@ Partial implementation (see `KNOWN_GAPS.md`):
 | Syscall | ID | Description |
 |---------|----|-------------|
 | `sys_getpid` | 7  | Get current PID |
-| `sys_uptime` | 8  | Get system uptime in ticks |
+| `sys_uptime` | 8  | Get monotonic virtual CYCLE nanoseconds |
 | `sys_ps` | 46 | List running processes |
 | `sys_getproc` | 51 | Get process info by PID |
 | `sys_kill` | 48 | Send signal to process |
@@ -208,8 +200,48 @@ Partial implementation (see `KNOWN_GAPS.md`):
 
 | Return (r13) | Meaning |
 |-------------|---------|
-| 0 or positive | Success (service-specific) |
+| 1 | Success; r14 is the service payload, r15 detail |
+| 0 | No result/poll/EOF where specified; payload is preserved |
 | 2            | Blocked (will be resumed) |
 | negative     | Error |
 
 See `SYSCALL_MANIFEST.json` for per-syscall error codes.
+
+
+### Monotonic virtual timing
+
+The OS clock maps one user-readable CYCLE to one virtual nanosecond (1,000,000
+cycles per millisecond). The desktop timer quantum is 1,000,000 cycles: one virtual
+ms (1,000 Hz). Delivered kernel IRQ ticks, including metrics field 2, count delivered interrupts
+separately from elapsed milliseconds. Timer-wheel expiry catches up from elapsed CYCLE quanta
+with at most 243 buckets per scan, including coalesced interrupts.
+
+Positive blocking durations for futex wait (52), IPC receive (54), event wait
+(55), and sleep-ms (56) are integral milliseconds through 2,147,483,647; invalid
+positive durations return ERR_INVALID before queue effects. Existing ready and
+pointer/error checks retain priority. Nonpositive 52/54 waits remain indefinite,
+55 polls, and 56 returns immediately. Sleep (45) still waits one timer quantum.
+Finite deadlines round current time upward and cannot complete early; scheduling
+may complete them later. Service sampling uses absolute CYCLE deadlines and
+sleeps only the remaining interval outside callbacks.
+
+This deterministic virtual clock does not guarantee host real-time pacing.
+Measure host wall intervals and jitter separately from virtual elapsed time;
+report slow-emulation factor rather than interpreting IRQ ticks as wall time.
+
+
+### Accepted user-space observability and WAL bounds
+
+[Service host](service_host.md) documents syscall60's fixed7-word namespace
+record and one bounded private host. The service does not own kernel input,
+interrupt/scheduler queues, window ownership or wakeups. Stub-backed daemon
+registrations remain placeholders. Shared channels and GUI latency improvement
+remain deferred.
+
+WALv2 retains729 records, two alternating superblocks and publication reserve.
+Bounded transaction-boundary maintenance keeps WAL/barrier before homes/barrier,
+checkpoint publication before durable tail advancement, and targeted fsync.
+Unresolved/colliding owners, snapshot pins, unsafe targets and I/O failure block
+reclamation; active-frame guards do not relocate the `trit-cx1` static storage
+alias. Boot attributes are finite volatile state reconstructed on boot; the
+narrow PID1 retirement exception is not durable arbitrary configuration.

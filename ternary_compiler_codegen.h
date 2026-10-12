@@ -2205,6 +2205,7 @@ private:
         const int frame_words = align9(
             spill_base + spill_extent);
         std::ostringstream out;
+        int syscall_result_label = 0;
         out << function.name << ":\n";
         out << "    mov.t40 r24, " << frame_words << "\n";
         out << "    sub.t40 sp, sp, r24\n";
@@ -3175,15 +3176,25 @@ private:
                             << parallel_copy_scratch
                             << "\n";
                     }
-                    const int result_register =
-                        runtimeReturnsPayload(instr.aux)
-                            ? 14
-                            : 13;
-                    if (destination != result_register) {
-                        out << "    copy "
-                            << regName(destination)
-                            << ", r" << result_register
-                            << "\n";
+                    if (runtimeReturnsPayload(instr.aux)) {
+                        // Compare before writing the allocated result: it may
+                        // alias an ABI return register. r24 is emitter-reserved.
+                        const std::string label = function.name +
+                            "_ssa_syscall_result_" + std::to_string(syscall_result_label++);
+                        out << "    tcmp.t40 r24, r13, r0\n"
+                            << "    brn r24, " << label << "_error\n"
+                            << "    copy " << regName(destination) << ", r14\n"
+                            << "    jmp " << label << "_done\n"
+                            << label << "_error:\n"
+                            << "    tcmp.t40 r24, r15, r0\n"
+                            << "    brn r24, " << label << "_detail\n"
+                            << "    copy " << regName(destination) << ", r13\n"
+                            << "    jmp " << label << "_done\n"
+                            << label << "_detail:\n"
+                            << "    copy " << regName(destination) << ", r15\n"
+                            << label << "_done:\n";
+                    } else if (destination != 13) {
+                        out << "    copy " << regName(destination) << ", r13\n";
                     }
                     break;
                 }
@@ -5707,8 +5718,25 @@ private:
         }
         ctx.line("syscall " + std::to_string(service));
         int out = ctx.acquire();
-        ctx.line("copy r" + std::to_string(out) + ", r" +
-                 std::to_string(runtimeReturnsPayload(service) ? 14 : 13));
+        if (runtimeReturnsPayload(service)) {
+            // Diagnostic/admission assembly mirrors current SSA selection.
+            // All comparisons precede the destination write; r24 is reserved.
+            const std::string label = ctx.label("syscall_result");
+            ctx.line("tcmp.t40 r24, r13, r0");
+            ctx.line("brn r24, " + label + "_error");
+            ctx.line("copy r" + std::to_string(out) + ", r14");
+            ctx.line("jmp " + label + "_done");
+            ctx.raw(label + "_error:");
+            ctx.line("tcmp.t40 r24, r15, r0");
+            ctx.line("brn r24, " + label + "_detail");
+            ctx.line("copy r" + std::to_string(out) + ", r13");
+            ctx.line("jmp " + label + "_done");
+            ctx.raw(label + "_detail:");
+            ctx.line("copy r" + std::to_string(out) + ", r15");
+            ctx.raw(label + "_done:");
+        } else {
+            ctx.line("copy r" + std::to_string(out) + ", r13");
+        }
         ValueId id = ctx.value(InstrOpcode::Syscall, TypeRef::numeric(ir::Type::T40), expr.span, out);
         if (ctx.block && !ctx.block->instructions.empty()) {
             ctx.block->instructions.back().aux = service;

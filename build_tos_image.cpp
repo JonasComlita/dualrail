@@ -149,6 +149,11 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
         readTextFile("architecture_contract.trit");
     const std::string sdk = readTextFile("apps/os_sdk.trit");
     const std::string widget = readTextFile("apps/libwidget.trit");
+    const bool service_host = app.source_name == "service_host";
+    const std::string libraries = service_host
+        ? readTextFile("apps/service_runtime.trit") + "\n" +
+          readTextFile("ternary_dataflow.trit") + "\n" + readTextFile("ternary_stream.trit")
+        : widget;
     const std::string source = readTextFile("apps/" + app.source_name + ".trit");
     if (architecture_source.empty() || sdk.empty() || widget.empty() ||
         source.empty()) {
@@ -165,7 +170,7 @@ sandbox::compiler::LinkResult compileApp(const BundledApp& app, bool& ok) {
     compiler_options.enable_vector_spilling = true;
     CompileResult compiled = compileSource(
         app.source_name + ".trit",
-        architecture_source + "\n" + sdk + "\n" + widget + "\n" + source,
+        architecture_source + "\n" + sdk + "\n" + libraries + "\n" + source,
         compiler_options);
     if (!compiled.success) {
         std::cerr << "compile failed for " << app.id << ":\n";
@@ -427,6 +432,7 @@ int main(int argc, char** argv) {
         {"service_stub", "timed", "timed", "/bin/timed", 0, kCliStackWords, false},
         {"service_stub", "authd", "authd", "/bin/authd", 0, kCliStackWords, false},
         {"service_stub", "powerd", "powerd", "/bin/powerd", 0, kCliStackWords, false},
+        {"service_host", "service_host", "Service Host", "/bin/service_host", 0, 2048, false},
     };
 
     const std::string architecture =
@@ -517,7 +523,7 @@ int main(int argc, char** argv) {
         return ".isa 2\n"
             ".require scalar_advanced lane vector accumulator_ai atomics mmu wait wide_t50 "
             "executable_v3 vector_geometry vector_context vector_spill\n" +
-            buildBootExecAssembly("/bin/desktop") + "\n" +
+            buildBootExecAssembly("/bin/init") + "\n" +
             trap + "\n" +
             compiled_kernel.assembly + "\n"
             ".data\n"

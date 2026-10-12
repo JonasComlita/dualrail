@@ -4,6 +4,43 @@ Source of truth: `apps/os_sdk.trit`, `apps/libwidget.trit`, `APP_MANIFEST.json`
 
 ---
 
+## Current compiled interface
+
+Current applications use `t40` values and caller DMEM word addresses, with
+`os_open(path_addr, mode)`, `os_read(fd, out_addr, count_words)`,
+`os_write(fd, src_addr, count_words)`, `os_spawn_app(path_addr, child_slot, child_pid)`,
+`os_ps(out_addr, max_entries)`, `os_getproc(pid, out_addr)` and
+`os_service_metrics(out_addr, out_words)`. Paths are bounded NUL-terminated word
+strings. Service60 returns a fixed7-word namespace record; see
+[the syscall reference](../07_OS_Substrate/syscall_table.md) for all current
+arguments, raw triples, aliases and timeout semantics.
+
+Payload-return expressions select negative detail for negative status, otherwise
+negative status fallback; nonnegative status preserves payload (fd0/EOF0 and
+negative child exit status). Raw syscall ABI2 status/payload/detail remain unchanged.
+Current function/executable ABI3 uses9-word stack alignment. One CYCLE is one
+virtual nanosecond; `os_monotonic_cycles` and `os_sleep_ms` are virtual-time APIs,
+not host-wall calibration. Delivered IRQ ticks are a separate count.
+
+`apps/libwidget.trit` supplies procedural widget records and helpers such as
+`widget_init`, `widget_label_init`, `widget_set_bounds`, event routing/hit tests,
+text/rectangle drawing and RGB window helpers. The class hierarchy and object-style
+examples below are historical design sketches, not a promised current API.
+A complete third-party TritUI framework remains future work.
+
+`APP_MANIFEST.json` and the builder register60 guest paths under `/bin`, including
+`/bin/init`, `/bin/desktop`, `/bin/calculator`, `/bin/file_manager` and
+`/bin/service_host`. Init attempts the single bounded host before desktop exec;
+stub daemons remain placeholders. The host alone links its service/dataflow/stream
+libraries; normal GUI applications retain their existing SDK/widget links.
+See [service host](../07_OS_Substrate/service_host.md) for bounded ownership,
+logger/job, startup/cancel/restart and forced-stop limits.
+
+## Historical exploratory SDK and UI sketches
+
+The following older examples/inventory record prior design direction. Use the
+current compiled signatures and manifest above when writing an application.
+
 ## App SDK (`apps/os_sdk.trit`)
 
 Every bundled app links against `os_sdk.trit`. It provides:

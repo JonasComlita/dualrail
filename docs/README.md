@@ -83,8 +83,9 @@ acceleration, use
 
 ### Language, OS, Apps
 - **[06_Language/tcl_language.md](06_Language/tcl_language.md)** — TCL syntax and features
+- **[07_OS_Substrate/service_host.md](07_OS_Substrate/service_host.md)** — Bounded user-space host, metrics, timing and completion limits
 - **[07_OS_Substrate/kernel_overview.md](07_OS_Substrate/kernel_overview.md)** — Kernel architecture
-- **[07_OS_Substrate/syscall_table.md](07_OS_Substrate/syscall_table.md)** — All 57 syscalls
+- **[07_OS_Substrate/syscall_table.md](07_OS_Substrate/syscall_table.md)** — Current syscall reference
 - **[08_Applications/app_sdk.md](08_Applications/app_sdk.md)** — App SDK and widget toolkit
 - **[08_Applications/bundled_apps.md](08_Applications/bundled_apps.md)** — App inventory
 

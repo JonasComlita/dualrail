@@ -1,0 +1,740 @@
+// One cooperative user-space service. All storage is construction-owned in
+// the existing private scratch mapping; callbacks never allocate or sleep.
+// Statistics 17..27 are per generation. Prior-generation truncation is visible
+// in VFS history, but is not charged against this generation's acceptance.
+const SVC_STATE: t40 = 10000;
+const SVC_POOL: t40 = 10745;
+const SVC_JOBS: t40 = 11513;
+const SVC_LEDGER: t40 = 11641;
+const SVC_PATHS: t40 = 11769;
+const SVC_PS: t40 = 11897;
+const SVC_TRACE: t40 = 12397;
+const SVC_METRICS: t40 = 15400;
+const SVC_PROC: t40 = 15408;
+const SVC_LOG: t40 = 15416;
+const SVC_REPORT: t40 = 15436;
+const SVC_GEN: t40 = 15468;
+const SVC_MAGIC: t40 = 516;
+const SVC_WIRE_MAX: t40 = radix3(88573,22) + radix3(88573,11) + radix3(88573,0);
+const SVC_KIND_SOURCE: t40 = 5;
+const SVC_KIND_PRESSURE: t40 = 6;
+const SVC_KIND_AGGREGATE: t40 = 7;
+const SVC_KIND_LOGGER: t40 = 8;
+const SVC_KIND_WORKER: t40 = 9;
+const SVC_KIND_INIT_ARENA: t40 = 10;
+const SVC_KIND_INIT_LOGGER: t40 = 11;
+const SVC_KIND_INIT_METRICS: t40 = 12;
+const SVC_KIND_INIT_MONITOR: t40 = 13;
+const SVC_KIND_INIT_WORKER: t40 = 14;
+
+fn svc_get(index: t40) -> t40 { var v: t40 = 0; unsafe { v = load(SVC_STATE + index); } return v; }
+fn svc_set(index: t40, value: t40) -> t40 { unsafe { store(SVC_STATE + index, value); } return value; }
+fn svc_add(index: t40, value: t40) -> t40 { return svc_set(index, svc_get(index) + value); }
+fn svc_word(ptr: t40, index: t40) -> t40 { var v: t40 = 0; unsafe { v = load(ptr + index); } return v; }
+fn svc_put(ptr: t40, index: t40, value: t40) -> t40 { unsafe { store(ptr + index, value); } return value; }
+fn svc_vfs_open(path: t40, mode: t40) -> t40 { return os_open(path, mode); }
+fn svc_vfs_write(fd: t40, ptr: t40, words: t40) -> t40 { return os_write(fd, ptr, words); }
+fn svc_metrics_read(out: t40, words: t40) -> t40 { return os_service_metrics(out, words); }
+
+// Same existing remainder primitive used by the kernel's metrics span gate.
+// The bound is exactly 33 balanced ones, formed from three exact 11-trit
+// chunks; decimal MOV seeds must not define numeric admission boundaries.
+fn svc_integer(value: t40) -> t40 {
+    var v: t40 = value;
+    if v < 0 { v = 0 - v; }
+    if (v <= SVC_WIRE_MAX) {
+        var remainder: t40 = 0;
+        unsafe { remainder = tmod(value,1); }
+        if remainder == 0 { return 1; }
+    }
+    return 0;
+}
+fn svc_span(ptr: t40, words: t40, need: t40) -> t40 {
+    if svc_integer(ptr) == 0 { return 0; }
+    if svc_integer(words) == 0 { return 0; }
+    if ptr < 10000 { return 0; }
+    if words < need { return 0; }
+    if ptr + words > 16000 { return 0; }
+    return 1;
+}
+fn svc_trace(kind: t40, a: t40, b: t40) -> t40 {
+    var cursor: t40 = svc_get(96);
+    var row: t40 = SVC_TRACE + cursor * 8;
+    svc_put(row, 0, kind); svc_put(row, 1, svc_get(8));
+    svc_put(row, 2, svc_get(5)); svc_put(row, 3, a); svc_put(row, 4, b);
+    svc_put(row, 5, svc_get(17)); svc_put(row, 6, svc_get(20)); svc_put(row, 7, svc_get(1));
+    cursor = cursor + 1; if cursor >= 128 { cursor = 0; }
+    svc_set(96, cursor);
+    if svc_get(61) < 128 { svc_add(61, 1); } else { svc_add(62, 1); }
+    return 1;
+}
+fn svc_close(fd: t40) -> t40 {
+    if fd < 0 { return 0; }
+    var result: t40 = os_close(fd); svc_add(41, -1); return result;
+}
+fn svc_open(path: t40, mode: t40) -> t40 {
+    if svc_get(54) == 0 { svc_add(50, 1); }
+    var fd: t40 = svc_vfs_open(path, mode);
+    if fd >= 0 { svc_add(41, 1); }
+    return fd;
+}
+fn svc_fatal(error: t40) -> t40 {
+    if error >= 0 { error = -1; }
+    svc_set(2, error); svc_set(1, -1); svc_set(60, svc_get(20));
+    svc_set(12, df_arena_highwater()); svc_trace(-1, error, svc_get(60));
+    svc_cleanup();
+    return DF_CALLBACK_ERROR;
+}
+fn svc_pool_reserve() -> t40 {
+    var i: t40 = 2;
+    while i < svc_get(28) {
+        var slot: t40 = SVC_POOL + i * 24;
+        if svc_word(slot, 0) == 0 {
+            svc_put(slot, 0, 1); svc_put(slot, 1, 0); svc_put(slot, 2, 0); svc_put(slot, 3, 0);
+            svc_add(29, 1); if svc_get(29) > svc_get(30) { svc_set(30, svc_get(29)); }
+            return slot;
+        }
+        i = i + 1;
+    }
+    svc_add(31, 1); return 0;
+}
+fn svc_pool_release(slot: t40) -> t40 {
+    if svc_word(slot, 2) == 1 { svc_add(20, -1); }
+    svc_put(slot, 2, 0); svc_put(slot, 3, 0);
+    if slot >= SVC_POOL + 48 { svc_put(slot, 0, 0); svc_add(29, -1); }
+    return 1;
+}
+fn svc_lookup(token: t40) -> t40 {
+    if svc_get(9) <= 0 { return 0; }
+    if svc_get(10) <= 0 { return 0; }
+    if svc_integer(token) == 0 { return 0; }
+    if token <= 0 { return 0; }
+    var i: t40 = 0;
+    while i < svc_get(28) {
+        var slot: t40 = SVC_POOL + i * 24;
+        if svc_word(slot, 0) == 1 {
+            if svc_word(slot, 2) == 1 {
+                if svc_word(slot, 1) == token {
+                    if svc_word(slot, 6) == svc_get(3) {
+                        if svc_word(slot, 7) == svc_get(5) { return slot; }
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+fn svc_credit(parent: t40, role: t40) -> t40 {
+    var i: t40 = 2;
+    while i < svc_get(28) {
+        var slot: t40 = SVC_POOL + i * 24;
+        if svc_word(slot, 3) == parent * 3 + role { return slot; }
+        i = i + 1;
+    }
+    return 0;
+}
+fn svc_record_prepare(slot: t40, kind: t40, tag: t40, tick: t40) -> t40 {
+    var seq: t40 = svc_get(6);
+    if seq > 1048575 { return svc_fatal(-1); }
+    var record: t40 = slot + 4; memset(record, 0, 20);
+    var token: t40 = (svc_get(3) * 1024 + svc_get(5)) * 1048576 + seq;
+    svc_put(slot, 1, token); svc_put(slot, 3, 0);
+    svc_put(record, 0, SVC_MAGIC); svc_put(record, 1, 1); svc_put(record, 2, svc_get(3));
+    svc_put(record, 3, svc_get(5)); svc_put(record, 4, seq); svc_put(record, 5, kind);
+    svc_put(record, 6, tick); svc_put(record, 7, tag); svc_put(record, 18, svc_get(4));
+    svc_add(6, 1); return token;
+}
+fn svc_record_accept(slot: t40) -> t40 {
+    var kind: t40 = svc_word(slot + 4, 5);
+    svc_add(17, 1); svc_add(20, 1);
+    if kind == 2 { svc_add(21, 1); }
+    else if kind == 3 { svc_add(22, 1); }
+    else if kind == 4 { svc_add(23, 1); }
+    else if kind == 5 { svc_add(24, 1); }
+    else if kind == 7 { svc_add(26, 1); }
+    else { svc_add(25, 1); }
+    // Publish last: observers and all consumers see a complete immutable record.
+    svc_put(slot, 2, 1); return svc_word(slot, 1);
+}
+fn svc_record_snapshot(token: t40, out: t40, words: t40) -> t40 {
+    if svc_span(out, words, 20) == 0 { return -1; }
+    var slot: t40 = svc_lookup(token); if slot <= 0 { return -1; }
+    memcpy(out, slot + 4, 20); return 20;
+}
+fn svc_graph(which: t40) -> t40 {
+    if which == 0 { return svc_get(9); }
+    if which == 1 { return svc_get(10); }
+    return 0;
+}
+fn svc_stats(out: t40, words: t40) -> t40 {
+    if svc_span(out, words, 64) == 0 { return -1; }
+    svc_set(11, df_arena_used()); memcpy(out, SVC_STATE, 64); return 64;
+}
+fn svc_paths() -> t40 {
+    var i: t40 = 0;
+    while i < 4 {
+        var p: t40 = SVC_PATHS + i * 32;
+        svc_put(p,0,47); svc_put(p,1,118); svc_put(p,2,97); svc_put(p,3,114);
+        svc_put(p,4,47); svc_put(p,5,108); svc_put(p,6,111); svc_put(p,7,103);
+        svc_put(p,8,47); svc_put(p,9,115); svc_put(p,10,118); svc_put(p,11,99); svc_put(p,12,46);
+        if i < 2 { svc_put(p,13,48+i); }
+        if i == 2 { svc_put(p,13,103); svc_put(p,14,101); svc_put(p,15,110); }
+        if i == 3 { svc_put(p,13,114); svc_put(p,14,101); svc_put(p,15,112); svc_put(p,16,111); svc_put(p,17,114); svc_put(p,18,116); }
+        i = i + 1;
+    }
+    return 1;
+}
+fn df_service_kind_valid(kind: t40) -> t40 {
+    var i: t40 = 5; while i <= 14 { if kind == i { return 1; } i = i + 1; } return 0;
+}
+fn svc_construction_fail() -> t40 {
+    var highwater: t40 = df_arena_highwater();
+    if highwater > svc_get(12) { svc_set(12,highwater); }
+    svc_set(2,-1); svc_set(9,0); svc_set(10,0); df_arena_reset(); svc_set(11,0); return -1;
+}
+fn svc_allocate(words: t40, expected: t40) -> t40 {
+    var ptr: t40 = malloc_raw(words);
+    if ptr != expected { return 0; }
+    memset(ptr,0,words); return ptr;
+}
+fn svc_construct(capacity: t40, pool: t40) -> t40 {
+    if svc_get(1) == 1 { return -1; }
+    memset(SVC_STATE, 0, 128); svc_set(0, 1); svc_set(6, 1);
+    if df_bool_or(capacity != 1, pool < 5) {
+        if capacity != 2 { svc_set(2,-1); return -1; }
+    }
+    if svc_integer(pool) == 0 { svc_set(2,-1); return -1; }
+    if df_bool_or(pool < 5, pool > 32) { svc_set(2,-1); return -1; }
+    if df_arena_init(10000, 5400) == 0 { return -1; }
+    if malloc_raw(128) != 10000 { return svc_construction_fail(); }
+    svc_set(12,df_arena_highwater());
+    var startup: t40 = df_sched_new(5);
+    if startup <= 0 { return svc_construction_fail(); }
+    svc_set(12,df_arena_highwater());
+    var persistent: t40 = df_sched_new(5);
+    if persistent <= 0 { return svc_construction_fail(); }
+    svc_set(9,startup); svc_set(10,persistent);
+    var c0: t40 = df_channel_new(capacity); var c1: t40 = df_channel_new(capacity); var c2: t40 = df_channel_new(capacity);
+    if c0 <= 0 { return svc_construction_fail(); } if c1 <= 0 { return svc_construction_fail(); } if c2 <= 0 { return svc_construction_fail(); }
+    if capacity == 1 { if malloc_raw(6) <= 0 { return svc_construction_fail(); } }
+    var contexts: t40 = svc_allocate(106,10639); if contexts <= 0 { return svc_construction_fail(); }
+    if svc_allocate(768,SVC_POOL) <= 0 { return svc_construction_fail(); }
+    if svc_allocate(128,SVC_JOBS) <= 0 { return svc_construction_fail(); }
+    if svc_allocate(128,SVC_LEDGER) <= 0 { return svc_construction_fail(); }
+    if svc_allocate(128,SVC_PATHS) <= 0 { return svc_construction_fail(); }
+    if svc_allocate(500,SVC_PS) <= 0 { return svc_construction_fail(); }
+    if svc_allocate(1024,SVC_TRACE) <= 0 { return svc_construction_fail(); }
+    if df_arena_used() != 3421 { return svc_construction_fail(); }
+    svc_set(12,df_arena_highwater()); svc_set(11,df_arena_used()); svc_set(28,pool);
+    svc_set(29,2); svc_set(30,2); svc_put(SVC_POOL,0,1); svc_put(SVC_POOL+24,0,1);
+    svc_set(64,c0); svc_set(65,c1); svc_set(66,c2); svc_set(67,contexts);
+    svc_set(68,-1); svc_set(69,-1); svc_set(70,-1); svc_set(81,-1);
+    svc_paths();
+    var i: t40 = 0;
+    while i < 5 {
+        if df_node_new(startup,0,10+i,contexts+i*8) <= 0 { return svc_construction_fail(); }
+        var node: t40 = df_node_new(persistent,0,5+i,contexts+40+i*8);
+        if node <= 0 { return svc_construction_fail(); }
+        if df_sched_register_stream(persistent,node) <= 0 { return svc_construction_fail(); } i = i + 1;
+    }
+    var nodes: t40 = svc_word(startup,4);
+    if df_node_add_dependent(nodes,nodes+38) <= 0 { return svc_construction_fail(); }
+    if df_node_add_dependent(nodes+38,nodes+76) <= 0 { return svc_construction_fail(); }
+    if df_node_add_dependent(nodes+76,nodes+114) <= 0 { return svc_construction_fail(); }
+    if df_node_add_dependent(nodes+76,nodes+152) <= 0 { return svc_construction_fail(); }
+    nodes = svc_word(persistent,4);
+    if df_node_add_dependent(nodes,nodes+38) <= 0 { return svc_construction_fail(); }
+    if df_node_add_dependent(nodes+38,nodes+76) <= 0 { return svc_construction_fail(); }
+    if df_node_add_dependent(nodes+76,nodes+114) <= 0 { return svc_construction_fail(); }
+    if df_sched_register_channel(persistent,c0) <= 0 { return svc_construction_fail(); }
+    if df_sched_register_channel(persistent,c1) <= 0 { return svc_construction_fail(); }
+    if df_sched_register_channel(persistent,c2) <= 0 { return svc_construction_fail(); }
+    if df_node_add_output(nodes,c0) <= 0 { return svc_construction_fail(); }
+    if df_node_add_input(nodes+38,c0) <= 0 { return svc_construction_fail(); }
+    if df_node_add_output(nodes+38,c1) <= 0 { return svc_construction_fail(); }
+    if df_node_add_input(nodes+76,c1) <= 0 { return svc_construction_fail(); }
+    if df_node_add_output(nodes+76,c2) <= 0 { return svc_construction_fail(); }
+    if df_node_add_input(nodes+114,c2) <= 0 { return svc_construction_fail(); }
+    if df_sched_validate(startup) < 0 { return svc_construction_fail(); }
+    if df_sched_validate(persistent) < 0 { return svc_construction_fail(); }
+    return 0;
+}
+
+fn svc_initialized(index: t40) -> t40 {
+    var bit: t40 = 1; var i: t40 = 0;
+    while i < index { bit = bit * 2; i = i + 1; }
+    svc_add(51,bit); svc_add(53,1); svc_trace(10,index,svc_get(51)); return DF_CALLBACK_DONE;
+}
+fn svc_init_logger() -> t40 {
+    var phase: t40 = svc_get(80);
+    if phase == 0 {
+        var fd: t40 = svc_open(SVC_PATHS+64,0);
+        var generation: t40 = 1;
+        if fd >= 0 {
+            var count: t40 = os_read(fd,SVC_GEN,8);
+            if count != 8 { svc_close(fd); return svc_fatal(-1); }
+            var extra: t40 = os_read(fd,SVC_METRICS,1); svc_close(fd);
+            if extra != 0 { return svc_fatal(-1); }
+            if (svc_word(SVC_GEN,0) != SVC_MAGIC) { return svc_fatal(-1); }
+            if svc_word(SVC_GEN,1) != 1 { return svc_fatal(-1); }
+            var writer: t40 = svc_word(SVC_GEN,2); generation = svc_word(SVC_GEN,3);
+            if svc_integer(writer) == 0 { return svc_fatal(-1); }
+            if df_bool_or(writer < 1,writer > 255) { return svc_fatal(-1); }
+            if svc_integer(generation) == 0 { return svc_fatal(-1); }
+            if df_bool_or(generation < 1,generation >= 1023) { return svc_fatal(-1); }
+            var i: t40 = 4; while i < 8 { if svc_word(SVC_GEN,i) != 0 { return svc_fatal(-1); } i = i+1; }
+            generation = generation + 1;
+        } else if fd != -1 { return svc_fatal(fd); }
+        svc_set(5,generation); memset(SVC_GEN,0,8);
+        svc_put(SVC_GEN,0,SVC_MAGIC); svc_put(SVC_GEN,1,1); svc_put(SVC_GEN,2,svc_get(3)); svc_put(SVC_GEN,3,generation);
+        fd = svc_open(SVC_PATHS+64,3); if fd < 0 { return svc_fatal(fd); }
+        svc_set(81,fd); svc_set(82,0); svc_set(80,1); return DF_CALLBACK_PROGRESS;
+    }
+    if phase == 1 {
+        var offset: t40 = svc_get(82); var fd: t40 = svc_get(81);
+        if offset < 8 {
+            var written: t40 = svc_vfs_write(fd,SVC_GEN+offset,8-offset);
+            if written < 0 { return svc_fatal(written); }
+            if written == 0 { svc_add(33,1); return DF_CALLBACK_BLOCKED_OUTPUT; }
+            if written > 8-offset { return svc_fatal(-1); }
+            svc_add(82,written); return DF_CALLBACK_PROGRESS;
+        }
+        var synced: t40 = os_fsync(fd); if synced <= 0 { return svc_fatal(synced); }
+        svc_close(fd); svc_set(81,-1); svc_set(80,2); return DF_CALLBACK_PROGRESS;
+    }
+    if phase == 2 {
+        var fd: t40 = svc_open(SVC_PATHS,3); if fd < 0 { return svc_fatal(fd); }
+        svc_set(68,fd); svc_set(80,3); return DF_CALLBACK_PROGRESS;
+    }
+    if phase == 3 {
+        var fd: t40 = svc_open(SVC_PATHS+32,3); if fd < 0 { return svc_fatal(fd); }
+        svc_set(69,fd); svc_set(80,4); return svc_initialized(1);
+    }
+    return DF_CALLBACK_DONE;
+}
+fn svc_start() -> t40 {
+    if svc_get(9) <= 0 { return -1; }
+    if svc_get(1) != 0 { return -1; }
+    // Validate both graphs before identity, source or VFS startup effects.
+    if df_sched_validate(svc_get(9)) < 0 { svc_fatal(-1); return -1; }
+    if df_sched_validate(svc_get(10)) < 0 { svc_fatal(-1); return -1; }
+    svc_set(1,1);
+    var node: t40 = svc_word(svc_get(9),4);
+    if df_sched_submit(svc_get(9),node) <= 0 { svc_fatal(-1); return -1; }
+    return 0;
+}
+fn svc_request_cancel() -> t40 {
+    if svc_get(1) != 1 { return -1; }
+    svc_set(55,1); return 0;
+}
+fn svc_next_deadline() -> t40 { return svc_get(7); }
+fn svc_has_immediate_work() -> t40 {
+    if svc_get(1) != 1 { return 0; }
+    if svc_get(54) == 0 { return 1; }
+    if svc_get(20) > 0 { return 1; }
+    if svc_get(44) > 0 { return 1; }
+    if svc_get(55) > 0 { return 1; }
+    return 0;
+}
+fn svc_control_submit(tag: t40, value: t40) -> t40 {
+    if svc_get(1) != 1 { return -1; }
+    if svc_get(54) != 1 { return -1; }
+    if svc_get(55) != 0 { return -1; }
+    if tag != -1 { if tag != -2 { if tag != -4 { if tag != -5 { return -1; } } } }
+    if svc_integer(value) == 0 { return -1; }
+    if svc_get(6) + svc_get(29) + 5 > 1048575 { svc_request_cancel(); return -1; }
+    if svc_word(SVC_POOL,2) != 0 { return 0; }
+    if svc_get(83) == 0 { return 0; }
+    svc_record_prepare(SVC_POOL,6,tag,svc_get(8)); svc_put(SVC_POOL+4,11,value);
+    svc_record_accept(SVC_POOL); svc_set(84,1); return 1;
+}
+fn svc_source(node: t40) -> t40 {
+    if svc_get(84) == 1 {
+        svc_set(84,0); df_node_pending_push(node,svc_word(SVC_POOL+4,7),svc_word(SVC_POOL,1));
+        return df_node_pending_flush(node);
+    }
+    if svc_get(83) == 0 {
+        var token: t40 = svc_record_prepare(SVC_POOL,1,DF_EVENT_DATA,svc_get(8));
+        svc_record_accept(SVC_POOL); svc_set(83,1); df_node_pending_push(node,DF_EVENT_DATA,token);
+        return df_node_pending_flush(node);
+    }
+    // Reserve domain for all unmaterialized expansion credits and shutdown.
+    if svc_get(6) + svc_get(29) + 5 > 1048575 { svc_set(55,1); }
+    if svc_get(55) == 1 {
+        if svc_word(SVC_POOL,2) == 1 { return DF_CALLBACK_BLOCKED_OUTPUT; }
+        if svc_get(85) == 0 {
+            var token: t40 = svc_record_prepare(SVC_POOL,8,DF_EVENT_DATA,svc_get(8));
+            // STOP is admissions stopped, not completed drain. Its commit must
+            // return this source credit before EOS can reuse it.
+            svc_put(SVC_POOL+4,19,1); svc_record_accept(SVC_POOL); svc_set(85,1);
+            df_node_pending_push(node,DF_EVENT_DATA,token); return df_node_pending_flush(node);
+        }
+        if svc_get(85) == 1 {
+            var token: t40 = svc_record_prepare(SVC_POOL,7,DF_EVENT_EOS,svc_get(8));
+            svc_record_accept(SVC_POOL); svc_set(85,2);
+            df_node_pending_push(node,DF_EVENT_EOS,token); return df_node_pending_flush(node);
+        }
+        return DF_CALLBACK_DONE;
+    }
+    // State 7 is an absolute CYCLE deadline; state 8 remains the metrics IRQ tick.
+    if os_monotonic_cycles() < svc_get(7) { svc_add(32,1); return DF_CALLBACK_BLOCKED_INPUT; }
+    var c0: t40 = svc_get(64);
+    if svc_word(c0,4) >= svc_word(c0,1) { return DF_CALLBACK_BLOCKED_OUTPUT; }
+    var raw: t40 = svc_pool_reserve(); if raw <= 0 { return DF_CALLBACK_BLOCKED_OUTPUT; }
+    var pressure: t40 = svc_pool_reserve();
+    if pressure <= 0 { svc_pool_release(raw); return DF_CALLBACK_BLOCKED_OUTPUT; }
+    var window: t40 = svc_pool_reserve();
+    if window <= 0 { svc_pool_release(raw); svc_pool_release(pressure); return DF_CALLBACK_BLOCKED_OUTPUT; }
+    svc_set(97,os_monotonic_cycles());
+    var result: t40 = svc_metrics_read(SVC_METRICS,7);
+    if result != 7 { svc_pool_release(raw); svc_pool_release(pressure); svc_pool_release(window); return svc_fatal(result); }
+    var tick: t40 = svc_word(SVC_METRICS,2);
+    svc_set(8,tick); svc_set(7,svc_get(97)+svc_get(98)*1000000);
+    var token: t40 = svc_record_prepare(raw,2,DF_EVENT_DATA,tick);
+    memcpy(raw+15,SVC_METRICS,7); svc_put(raw+4,8,1); svc_put(raw+4,9,svc_word(raw+4,4)); svc_put(raw+4,10,svc_word(raw+4,4));
+    svc_put(pressure,3,token*3+1); svc_put(window,3,token*3+2); svc_record_accept(raw);
+    df_node_pending_push(node,DF_EVENT_DATA,token); return df_node_pending_flush(node);
+}
+fn svc_pressure(node: t40) -> t40 {
+    var tag: t40 = df_channel_read(svc_get(64),node+DF_NODE_SCRATCH_VALUE);
+    if (tag == DF_EVENT_NONE) { return DF_CALLBACK_BLOCKED_INPUT; }
+    var token: t40 = svc_word(node,DF_NODE_SCRATCH_VALUE); var slot: t40 = svc_lookup(token);
+    if slot <= 0 { return svc_fatal(-1); }
+    df_node_pending_push(node,tag,token);
+    if svc_word(slot+4,5) == 2 {
+        var high: t40 = 0;
+        if svc_word(slot+4,17) > 0 { if svc_word(slot+4,16)*5 >= svc_word(slot+4,17)*4 { high = 1; } }
+        var kind: t40 = 0;
+        if high == 1 {
+            svc_add(58,1); svc_set(59,0);
+            if svc_get(58) == 3 { if svc_get(57) == 0 { svc_set(57,1); kind = 4; } }
+        } else {
+            svc_add(59,1); svc_set(58,0);
+            if svc_get(59) == 3 { if svc_get(57) == 1 { svc_set(57,0); kind = 5; } }
+        }
+        var credit: t40 = svc_credit(token,1); if credit <= 0 { return svc_fatal(-1); }
+        if kind > 0 {
+            var transition: t40 = svc_record_prepare(credit,kind,DF_EVENT_ANOMALY,svc_word(slot+4,6));
+            svc_put(credit+4,9,svc_word(slot+4,4)); svc_put(credit+4,10,svc_word(slot+4,4));
+            svc_put(credit+4,19,3); memcpy(credit+15,slot+15,7); svc_record_accept(credit);
+            df_node_pending_push(node,DF_EVENT_ANOMALY,transition);
+            if kind == 4 { svc_set(95,1); }
+        } else { svc_pool_release(credit); }
+    }
+    return df_node_pending_flush(node);
+}
+fn svc_window_record(slot: t40, tick: t40, last: t40) -> t40 {
+    var token: t40 = svc_record_prepare(slot,3,DF_EVENT_DATA,tick);
+    svc_put(slot+4,8,svc_get(56)); svc_put(slot+4,9,svc_get(87)); svc_put(slot+4,10,last);
+    var sums: t40 = svc_get(67)+80; memcpy(slot+15,sums,7); memset(sums,0,7);
+    svc_set(56,0); return svc_record_accept(slot);
+}
+fn svc_aggregate(node: t40) -> t40 {
+    var tag: t40 = df_channel_read(svc_get(65),node+DF_NODE_SCRATCH_VALUE);
+    if (tag == DF_EVENT_NONE) { return DF_CALLBACK_BLOCKED_INPUT; }
+    var token: t40 = svc_word(node,DF_NODE_SCRATCH_VALUE); var slot: t40 = svc_lookup(token);
+    if slot <= 0 { return svc_fatal(-1); }
+    if (tag == DF_EVENT_EOS) {
+        if svc_get(56) > 0 {
+            var partial: t40 = svc_window_record(SVC_POOL+24,svc_word(slot+4,6),svc_get(88));
+            df_node_pending_push(node,DF_EVENT_DATA,partial);
+        }
+        df_node_pending_push(node,tag,token); return df_node_pending_flush(node);
+    }
+    df_node_pending_push(node,tag,token);
+    if svc_word(slot+4,5) == 2 {
+        var seq: t40 = svc_word(slot+4,4); if svc_get(56) == 0 { svc_set(87,seq); }
+        svc_set(88,seq); svc_add(56,1); var i: t40 = 0; var sums: t40 = svc_get(67)+80;
+        while i < 7 { svc_put(sums,i,svc_word(sums,i)+svc_word(slot+4,11+i)); i = i+1; }
+        var credit: t40 = svc_credit(token,2); if credit <= 0 { return svc_fatal(-1); }
+        if svc_get(56) == 8 {
+            var window: t40 = svc_window_record(credit,svc_word(slot+4,6),seq); df_node_pending_push(node,DF_EVENT_DATA,window);
+        } else { svc_pool_release(credit); }
+    }
+    return df_node_pending_flush(node);
+}
+
+fn svc_job_find(id: t40) -> t40 {
+    if id <= 0 { return 0; }
+    var i: t40 = 0; while i < 8 { var job: t40 = SVC_JOBS+i*16; if svc_word(job,0) == id { return job; } i=i+1; } return 0;
+}
+fn svc_job_submit(kind: t40) -> t40 {
+    return svc_job_admit(kind,0);
+}
+fn svc_job_admit(kind: t40, maintenance: t40) -> t40 {
+    if svc_get(1) != 1 { return -1; }
+    if svc_get(54) != 1 { return -1; }
+    if svc_get(55) != 0 { if maintenance == 0 { return -1; } }
+    if kind != 1 { if kind != 2 { return -1; } }
+    var i: t40 = 0;
+    while i < 8 {
+        var job: t40 = SVC_JOBS+i*16; var state: t40 = svc_word(job,2);
+        if df_bool_or(state <= 0,state >= 3) {
+            memset(job,0,16); var id: t40 = svc_add(94,1);
+            svc_put(job,0,id); svc_put(job,1,kind); svc_put(job,2,1);
+            svc_put(job,7,svc_get(8)); svc_put(job,12,-1); svc_put(job,15,svc_get(5));
+            svc_add(42,1); svc_add(44,1); return id;
+        }
+        i=i+1;
+    }
+    svc_add(43,1); return 0;
+}
+fn svc_job_cancel(id: t40) -> t40 {
+    var job: t40 = svc_job_find(id); if job <= 0 { return -1; }
+    // Essential boundary maintenance must return its reservation before cancel.
+    if id == svc_get(89) { return 0; }
+    var state: t40 = svc_word(job,2);
+    if df_bool_or(state == 1,state == 2) { svc_put(job,5,1); }
+    return 0;
+}
+fn svc_job_snapshot(id: t40, out: t40, words: t40) -> t40 {
+    if svc_span(out,words,16) == 0 { return -1; }
+    var job: t40 = svc_job_find(id); if job <= 0 { return -1; }
+    memcpy(out,job,16); return 16;
+}
+fn svc_job_finish(job: t40, state: t40, error: t40) -> t40 {
+    var fd: t40 = svc_word(job,12);
+    if fd >= 0 { svc_close(fd); svc_put(job,12,-1); }
+    if svc_get(49) == svc_word(job,0) { svc_set(49,0); }
+    svc_put(job,13,0); svc_put(job,2,state); svc_put(job,3,error); svc_add(44,-1);
+    if state == 3 { svc_add(45,1); }
+    if state == 4 { svc_add(47,1); }
+    if state == -1 { svc_add(46,1); }
+    svc_put(job,8,svc_get(8)); svc_put(job,6,svc_word(job,6)+1);
+    return DF_CALLBACK_PROGRESS;
+}
+fn svc_report_row(job: t40, kind: t40, row: t40) -> t40 {
+    memset(SVC_REPORT,0,32); svc_put(SVC_REPORT,0,SVC_MAGIC); svc_put(SVC_REPORT,1,1);
+    svc_put(SVC_REPORT,2,svc_get(5)); svc_put(SVC_REPORT,3,svc_word(job,0)); svc_put(SVC_REPORT,4,svc_get(8)); svc_put(SVC_REPORT,5,kind);
+    svc_put(SVC_REPORT,6,svc_word(row,0)); svc_put(SVC_REPORT,7,svc_word(row,1));
+    if kind == 1 {
+        svc_put(SVC_REPORT,8,svc_word(row,2)); svc_put(SVC_REPORT,9,svc_word(row,3)); svc_put(SVC_REPORT,10,svc_word(row,4));
+    } else {
+        svc_put(SVC_REPORT,8,svc_word(row,5)); svc_put(SVC_REPORT,9,svc_word(row,6)); svc_put(SVC_REPORT,10,svc_word(row,7));
+        svc_put(SVC_REPORT,11,svc_word(row,2)); svc_put(SVC_REPORT,12,svc_word(row,3)); svc_put(SVC_REPORT,13,svc_word(row,4));
+    }
+    svc_put(job,13,0); return 1;
+}
+fn svc_report_job(job: t40) -> t40 {
+    var id: t40 = svc_word(job,0); var step: t40 = svc_word(job,4);
+    var fd: t40 = -1; var count: t40 = 0; var cursor: t40 = 0;
+    var row: t40 = 0; var offset: t40 = 0; var wrote: t40 = 0; var synced: t40 = 0;
+    if svc_get(49) == 0 { svc_set(49,id); }
+    if svc_get(49) != id { svc_put(job,6,svc_word(job,6)+1); return DF_CALLBACK_BLOCKED_INPUT; }
+    svc_put(job,2,2);
+    if step == 0 {
+        fd = svc_open(SVC_PATHS+96,3);
+        if fd < 0 { return svc_job_finish(job,-1,fd); }
+        svc_put(job,12,fd); svc_put(job,4,1);
+    } else if step == 1 {
+        count = os_ps(SVC_PS,100);
+        if count < 0 { return svc_job_finish(job,-1,count); }
+        svc_put(job,9,count); svc_put(job,11,0); svc_put(job,4,2);
+    } else if step == 2 {
+        cursor = svc_word(job,11);
+        if cursor >= svc_word(job,9) { return svc_job_finish(job,3,0); }
+        row = SVC_PS+cursor*5;
+        if svc_word(row,4) == svc_get(4) { svc_report_row(job,1,row); svc_put(job,4,3); }
+        else { svc_put(job,11,cursor+1); }
+    } else if df_bool_or(step == 3,step == 5) {
+        offset = svc_word(job,13); fd = svc_word(job,12);
+        if offset < 16 {
+            wrote = svc_vfs_write(fd,SVC_REPORT+offset,16-offset);
+            if wrote < 0 { return svc_job_finish(job,-1,wrote); }
+            if wrote == 0 { svc_add(33,1); svc_put(job,6,svc_word(job,6)+1); return DF_CALLBACK_BLOCKED_OUTPUT; }
+            if wrote > 16-offset { return svc_job_finish(job,-1,-1); }
+            svc_put(job,13,offset+wrote);
+        } else {
+            synced = os_fsync(fd); if synced <= 0 { return svc_job_finish(job,-1,synced); }
+            svc_put(job,10,svc_word(job,10)+1); svc_put(job,13,0);
+            if step == 3 { svc_put(job,4,4); }
+            else { svc_put(job,11,svc_word(job,11)+1); svc_put(job,4,2); }
+        }
+    } else if step == 4 {
+        row = SVC_PS+svc_word(job,11)*5;
+        count = os_getproc(svc_word(row,0),SVC_PROC);
+        if count == 8 {
+            if svc_word(SVC_PROC,7) == svc_get(4) { svc_report_row(job,2,SVC_PROC); svc_put(job,4,5); }
+            else { svc_put(job,11,svc_word(job,11)+1); svc_put(job,4,2); }
+        } else { svc_put(job,11,svc_word(job,11)+1); svc_put(job,4,2); }
+    }
+    svc_put(job,8,svc_get(8)); svc_put(job,6,svc_word(job,6)+1); return DF_CALLBACK_PROGRESS;
+}
+fn svc_rotate_job(job: t40) -> t40 {
+    // A partial record pins its file. Rotation and logger are serialized, and
+    // only the inactive fully committed ledger may be retired.
+    if svc_get(36) > 0 { svc_put(job,6,svc_word(job,6)+1); return DF_CALLBACK_BLOCKED_INPUT; }
+    var target: t40 = 1-svc_get(37); svc_put(job,14,target); svc_put(job,2,2);
+    var fd: t40 = svc_get(68+target); svc_close(fd); svc_set(68+target,-1);
+    fd = svc_open(SVC_PATHS+target*32,3);
+    if fd < 0 {
+        var essential: t40 = 0;
+        if svc_word(job,0) == svc_get(89) { essential=1; }
+        if essential == 1 { svc_set(89,0); }
+        svc_job_finish(job,-1,fd);
+        if essential == 1 { return svc_fatal(fd); }
+        return DF_CALLBACK_PROGRESS;
+    }
+    svc_set(68+target,fd);
+    var count: t40 = svc_get(38+target); var i: t40 = 0;
+    while i < count { svc_put(SVC_LEDGER,target*64+i,0); i=i+1; }
+    svc_add(19,count); svc_add(18,0-count); svc_set(38+target,0);
+    svc_set(37,target); svc_add(40,1);
+    if svc_word(job,0) == svc_get(89) { svc_set(89,0); }
+    return svc_job_finish(job,3,0);
+}
+fn svc_worker(node: t40) -> t40 {
+    var scanned: t40 = 0; var cursor: t40 = svc_get(48);
+    while scanned < 8 {
+        if cursor >= 8 { cursor = 0; }
+        var job: t40 = SVC_JOBS+cursor*16; cursor=cursor+1; svc_set(48,cursor);
+        var state: t40 = svc_word(job,2);
+        if df_bool_or(state == 1,state == 2) {
+            if svc_get(55) > 0 {
+                if svc_word(job,0) != svc_get(89) { svc_put(job,5,1); }
+            }
+            if svc_word(job,5) == 1 { return svc_job_finish(job,4,0); }
+            if svc_word(job,1) == 1 { return svc_report_job(job); }
+            return svc_rotate_job(job);
+        }
+        scanned=scanned+1;
+    }
+    if svc_get(90) == 1 { return DF_CALLBACK_DONE; }
+    return DF_CALLBACK_BLOCKED_INPUT;
+}
+fn svc_rotation_submit() -> t40 {
+    if svc_get(89) > 0 { return svc_get(89); }
+    // Internal rotation may be necessary while graceful cancellation drains.
+    var id: t40 = svc_job_admit(2,1);
+    if id > 0 { svc_set(89,id); }
+    return id;
+}
+fn svc_logger(node: t40) -> t40 {
+    var token: t40 = svc_get(36); var active: t40 = svc_get(37);
+    if token == 0 {
+        if svc_get(38+active) >= 64 { svc_rotation_submit(); return DF_CALLBACK_BLOCKED_OUTPUT; }
+        var tag: t40 = df_channel_read(svc_get(66),node+DF_NODE_SCRATCH_VALUE);
+        if (tag == DF_EVENT_NONE) { return DF_CALLBACK_BLOCKED_INPUT; }
+        token = svc_word(node,DF_NODE_SCRATCH_VALUE);
+        var slot: t40 = svc_lookup(token); if slot <= 0 { return svc_fatal(-1); }
+        memcpy(SVC_LOG,slot+4,20); svc_set(36,token); svc_set(35,0);
+        return DF_CALLBACK_PROGRESS;
+    }
+    var offset: t40 = svc_get(35); var fd: t40 = svc_get(68+active);
+    if offset < 20 {
+        var wrote: t40 = svc_vfs_write(fd,SVC_LOG+offset,20-offset);
+        if wrote < 0 { return svc_fatal(wrote); }
+        if wrote == 0 { svc_add(33,1); return DF_CALLBACK_BLOCKED_OUTPUT; }
+        if wrote > 20-offset { return svc_fatal(-1); }
+        if wrote < 20-offset { svc_add(34,1); }
+        svc_add(35,wrote); return DF_CALLBACK_PROGRESS;
+    }
+    var synced: t40 = os_fsync(fd); if synced <= 0 { return svc_fatal(synced); }
+    var slot: t40 = svc_lookup(token); if slot <= 0 { return svc_fatal(-1); }
+    svc_put(SVC_LEDGER,active*64+svc_get(38+active),token); svc_add(38+active,1);
+    svc_add(18,1); svc_add(27,1); svc_trace(20,token,active);
+    var kind: t40 = svc_word(slot+4,5); svc_pool_release(slot); svc_set(35,0); svc_set(36,0);
+    if kind == 7 { svc_set(90,1); return DF_CALLBACK_DONE; }
+    return DF_CALLBACK_PROGRESS;
+}
+fn df_service_node_execute(node: t40) -> t40 {
+    var kind: t40 = svc_word(node,1);
+    if (kind == SVC_KIND_SOURCE) { return svc_source(node); }
+    if (kind == SVC_KIND_PRESSURE) { return svc_pressure(node); }
+    if (kind == SVC_KIND_AGGREGATE) { return svc_aggregate(node); }
+    if (kind == SVC_KIND_LOGGER) { return svc_logger(node); }
+    if (kind == SVC_KIND_WORKER) { return svc_worker(node); }
+    if (kind == SVC_KIND_INIT_ARENA) {
+        var pid: t40 = sys_getpid(); if df_bool_or(pid < 1,pid > 255) { return svc_fatal(-1); }
+        if os_getproc(pid,SVC_PROC) != 8 { return svc_fatal(-1); }
+        svc_set(3,pid); svc_set(4,svc_word(SVC_PROC,7)); return svc_initialized(0);
+    }
+    if (kind == SVC_KIND_INIT_LOGGER) { return svc_init_logger(); }
+    if (kind == SVC_KIND_INIT_METRICS) {
+        svc_add(50,1); var result: t40 = svc_metrics_read(SVC_METRICS,7);
+        if result != 7 { return svc_fatal(result); }
+        svc_set(8,svc_word(SVC_METRICS,2)); svc_set(98,250);
+        svc_set(7,os_monotonic_cycles()); return svc_initialized(2);
+    }
+    if (kind == SVC_KIND_INIT_MONITOR) { return svc_initialized(3); }
+    if (kind == SVC_KIND_INIT_WORKER) { return svc_initialized(4); }
+    return svc_fatal(-1);
+}
+fn svc_dispatch(budget: t40) -> t40 {
+    if svc_get(1) != 1 { return 0; }
+    if svc_integer(budget) == 0 { return 0; }
+    if budget <= 0 { return 0; } if budget > 32 { budget=32; }
+    var attempts: t40 = 0;
+    if svc_get(54) == 0 {
+        attempts = df_sched_run_budget(svc_get(9),budget);
+        if df_sched_lifecycle(svc_get(9)) < 0 { if svc_get(1) == 1 { svc_fatal(-1); } }
+        else if svc_get(51) == 31 { svc_set(54,1); }
+    } else {
+        attempts = df_sched_run_budget(svc_get(10),budget);
+        if df_sched_lifecycle(svc_get(10)) < 0 { if svc_get(1) == 1 { svc_fatal(-1); } }
+        else if df_sched_lifecycle(svc_get(10)) == 2 { svc_set(1,2); }
+    }
+    svc_set(14,attempts); if attempts > svc_get(15) { svc_set(15,attempts); }
+    svc_add(16,1); svc_set(11,df_arena_used()); return attempts;
+}
+fn svc_cleanup() -> t40 {
+    // Close even partially initialized resources, then record initialized-only
+    // reverse cleanup. Capture counters/jobs before the whole-arena reset.
+    var i: t40 = 0;
+    while i < 8 {
+        var job: t40 = SVC_JOBS+i*16; var state: t40 = svc_word(job,2);
+        if df_bool_or(state == 1,state == 2) { svc_job_finish(job,4,0); }
+        i=i+1;
+    }
+    i=4; var bit: t40 = 16;
+    while i >= 0 {
+        var mask: t40 = svc_get(51); var check: t40 = mask;
+        while check >= bit*2 { check=check-bit*2; }
+        var cleaned: t40 = svc_get(52);
+        while cleaned >= bit*2 { cleaned=cleaned-bit*2; }
+        if check >= bit { if cleaned < bit {
+            if i == 1 {
+                svc_close(svc_get(68)); svc_set(68,-1); svc_close(svc_get(69)); svc_set(69,-1);
+                svc_close(svc_get(81)); svc_set(81,-1);
+            }
+            svc_add(52,bit);
+        } }
+        bit=bit/2; i=i-1;
+    }
+    // Logger can fail before its initialization bit is committed.
+    svc_close(svc_get(68)); svc_set(68,-1); svc_close(svc_get(69)); svc_set(69,-1); svc_close(svc_get(81)); svc_set(81,-1);
+    svc_set(49,0); svc_set(35,0); svc_set(36,0);
+    return 0;
+}
+fn svc_destroy() -> t40 {
+    if svc_get(1) == 1 { return -1; }
+    if svc_get(9) <= 0 { return 0; }
+    svc_set(12,df_arena_highwater()); svc_cleanup();
+    df_arena_reset(); svc_set(11,0); svc_set(9,0); svc_set(10,0); return 0;
+}
+// Called only outside callbacks. Round the remaining absolute deadline up to ms.
+fn svc_idle_wait() -> t40 {
+    var remaining: t40 = svc_get(7) - os_monotonic_cycles();
+    if remaining <= 0 { return 0; }
+    var remainder: t40 = 0;
+    unsafe { remainder = tmod(remaining,1000000); }
+    var milliseconds: t40 = (remaining-remainder)/1000000;
+    if remainder > 0 { milliseconds = milliseconds+1; }
+    return os_sleep_ms(milliseconds);
+}
+fn main() -> t40 {
+    if svc_construct(2,32) < 0 { os_print_int(-1); return -1; }
+    svc_start(); var reported: t40 = 0;
+    while svc_get(1) == 1 {
+        svc_dispatch(32);
+        if svc_get(54) == 1 {
+            if reported == 0 { os_print_int(1); svc_job_submit(1); reported=1; }
+            if svc_get(95) == 1 { if svc_job_submit(1) > 0 { svc_set(95,0); } }
+        }
+        if svc_has_immediate_work() == 0 { svc_idle_wait(); }
+        else { sys_yield(); }
+    }
+    if svc_get(2) < 0 { os_print_int(svc_get(2)); os_print_int(svc_get(60)); }
+    svc_destroy(); return svc_get(2);
+}

@@ -1,4 +1,28 @@
-// apps/init.trit - First user-space process placeholder.
+// apps/init.trit - First user-space process.
+
+fn init_seed_service_host(addr: t40) -> t40 {
+    unsafe {
+        store(addr + 0, 47);
+        store(addr + 1, 98);
+        store(addr + 2, 105);
+        store(addr + 3, 110);
+        store(addr + 4, 47);
+        store(addr + 5, 115);
+        store(addr + 6, 101);
+        store(addr + 7, 114);
+        store(addr + 8, 118);
+        store(addr + 9, 105);
+        store(addr + 10, 99);
+        store(addr + 11, 101);
+        store(addr + 12, 95);
+        store(addr + 13, 104);
+        store(addr + 14, 111);
+        store(addr + 15, 115);
+        store(addr + 16, 116);
+        store(addr + 17, 0);
+    }
+    return addr;
+}
 
 fn init_seed_desktop(addr: t40) -> t40 {
     unsafe {
@@ -24,7 +48,10 @@ fn main() -> t40 {
     var in_kernel: t40 = 0;
     unsafe { in_kernel = csr_read(scratch); }
     if in_kernel > 0 {
-        var path: t40 = init_seed_desktop(10000);
+        var path: t40 = init_seed_service_host(10000);
+        var spawned: t40 = os_spawn_app(path, 7, 107);
+        if spawned < 0 { os_print_int(spawned); os_newline(); }
+        path = init_seed_desktop(10000);
         sys_exec(path);
     }
     return 1;

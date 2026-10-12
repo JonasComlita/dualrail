@@ -1187,6 +1187,13 @@ fn os_sleep() -> t40 {
     return sys_sleep();
 }
 
+// Monotonic virtual clock: one CYCLE is one nanosecond; host wall time is separate.
+fn os_monotonic_cycles() -> t40 {
+    var now: t40 = 0;
+    unsafe { now = csr_read(cycle); }
+    return now;
+}
+
 fn os_sleep_ms(ms: t40) -> t40 {
     return sys_sleep_ms(ms);
 }

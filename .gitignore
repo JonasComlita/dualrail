@@ -6,7 +6,7 @@ __pycache__/
 bitnet_weights/converted_t40/
 bitnet_weights/model/
 build/
-build_current_cleanup/
+build_*/
 treatcode/node_modules/
 node_modules/
 

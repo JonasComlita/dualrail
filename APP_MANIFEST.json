@@ -354,6 +354,12 @@
       "id": "powerd",
       "title": "powerd",
       "guest_path": "/bin/powerd"
+    },
+    {
+      "source": "service_host.trit",
+      "id": "service_host",
+      "title": "Service Host",
+      "guest_path": "/bin/service_host"
     }
   ]
 }

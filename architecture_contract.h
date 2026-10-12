@@ -9,6 +9,12 @@
 
 namespace sandbox::architecture::v2 {
 inline constexpr int ISA_VERSION = 2;
+inline constexpr std::int64_t CLOCK_NANOSECONDS_PER_CYCLE = 1;
+inline constexpr std::int64_t CLOCK_CYCLES_PER_MILLISECOND = 1000000;
+inline constexpr std::int64_t CLOCK_TIMER_QUANTUM_CYCLES = 1000000;
+inline constexpr std::int64_t CLOCK_QUANTA_PER_MS = 1;
+inline constexpr std::int64_t CLOCK_FINITE_MS_MAX = 2147483647;
+inline constexpr bool CLOCK_HOST_WALL_TIME_GUARANTEED = false;
 inline constexpr int INSTRUCTION_TRITS = 27;
 inline constexpr int SCALAR_WORD_TRITS = 40;
 inline constexpr int WIDE_SCALAR_TRITS = 50;

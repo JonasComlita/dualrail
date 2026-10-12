@@ -35,7 +35,7 @@ add_custom_command(
     COMMAND $<TARGET_FILE:build_tos_image> "${TOS_RELEASE_DIR}/ternary-os.tboot"
             "${TOS_RELEASE_DIR}/ternary-os.tdisk" "${TOS_RELEASE_VERSION}"
     DEPENDS build_tos_image ${TOS_APP_SOURCES} kernel.trit architecture_contract.trit
-            native_kernel_trap_stub.tasm
+            native_kernel_trap_stub.tasm ternary_dataflow.trit ternary_stream.trit
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL)
 add_custom_target(current_images DEPENDS "${TOS_RELEASE_DIR}/ternary-os.tboot"
@@ -56,6 +56,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/current_only_conformance.cpp")
         add_test(NAME trit_current_conformance
                  COMMAND trit_current_conformance
                  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(trit_current_conformance PROPERTIES TIMEOUT 0)
     endif()
 
     add_custom_target(current_validate

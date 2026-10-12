@@ -2,6 +2,577 @@
   "platform": "current-only",
   "isa_version": 2,
   "executable_abi_version": 3,
+  "function_abi_version": 3,
+  "syscall_abi_version": 2,
+  "vector_abi_version": 1,
   "tboot_version": 3,
-  "tdisk_version": 2
+  "tdisk_version": 2,
+  "source_provenance": {
+    "algorithm": "SHA256",
+    "sources": {
+      "APP_MANIFEST.json": {
+        "present": true,
+        "sha256": "c82e9ebffd8364e38ed2cf1106fc6ec06ef06e6aa3b11105491401004da69471"
+      },
+      "ARCHITECTURE_MANIFEST.json": {
+        "present": true,
+        "sha256": "7fe6db28efc8597dd17e59bd33cc9ea051a290162f099485c8cb1a73d4a707be"
+      },
+      "CMakeLists.txt": {
+        "present": true,
+        "sha256": "0ef239178a8fe5f7fc6de7369c75e2e3ad19fa93dabe2f68c022b63b9c48a38f"
+      },
+      "IMAGE_FORMAT_MANIFEST.json": {
+        "present": true,
+        "sha256": "68e4cfc260fc843f8843fd6f367711a5d579d50d9f922ca0e307264202c63059"
+      },
+      "SYSCALL_MANIFEST.json": {
+        "present": true,
+        "sha256": "f3c000520d793c2a45c9a3b688bbcae894f748d521a59dfe15fc386eb80f30c0"
+      },
+      "TEST_MANIFEST.json": {
+        "present": true,
+        "sha256": "46e06aa788ec2a4246f7dec607f03c7bf7ec80cd1b9bef7cda4b038a479f13ef"
+      },
+      "apps/about.trit": {
+        "present": true,
+        "sha256": "b57fa48d691d0df4efae56a98302741636cd7a326e9ba8c5365de509bd2ebe41"
+      },
+      "apps/bin_core.trit": {
+        "present": true,
+        "sha256": "269cf44f46b805501cc92bc73feee241a9e75ee6d05b9220bc289fb4a01de410"
+      },
+      "apps/calculator.trit": {
+        "present": true,
+        "sha256": "a8278372c6120405084e76e408dde846206e9ac256c77b9ae5fd3da9dcd50c34"
+      },
+      "apps/clear.trit": {
+        "present": true,
+        "sha256": "58bfdd98acc5d395c68579279a9d4a51aad5337e434a9f37018ab63f6bcc162c"
+      },
+      "apps/crash.trit": {
+        "present": true,
+        "sha256": "6668604a3e0f7d506cac930d9ba55ff240f5fcf856329dfde198f93859cd2811"
+      },
+      "apps/date.trit": {
+        "present": true,
+        "sha256": "eb1b09146d277606493d875dddeda469cd6a14a21dcf3bf9ca56436011e0e45a"
+      },
+      "apps/desktop.trit": {
+        "present": true,
+        "sha256": "ea80140fa41fa32b6df4cda5606ceb949eb1aec8b52d565493bddc2a5bc32de6"
+      },
+      "apps/doctor.trit": {
+        "present": true,
+        "sha256": "8d7ba7562cac469fc8e7a429452f43d5fac2df6548814d866222b388128ad171"
+      },
+      "apps/file_manager.trit": {
+        "present": true,
+        "sha256": "90e59206ba41bb9995890df4f85caa1050997bd21a01f639ae98937b4590c956"
+      },
+      "apps/fsck.trit": {
+        "present": true,
+        "sha256": "f5b0e76676eeb3754da17f6a93e03533450ef70414ad1b6c55aa730729b37e3c"
+      },
+      "apps/help.trit": {
+        "present": true,
+        "sha256": "6de4cff05df4643dd44fca2f259d2f389635c3207fee83d5ef9f86d77be588db"
+      },
+      "apps/init.trit": {
+        "present": true,
+        "sha256": "c3d63997a92fea0014185e339a08f960fe9458e69007d7c90f340e6c10c817f4"
+      },
+      "apps/kill.trit": {
+        "present": true,
+        "sha256": "e6a70b14115bc16862fd60e5c1775dc18ad27ad02cc2636528de0d43a651aa01"
+      },
+      "apps/libwidget.trit": {
+        "present": true,
+        "sha256": "f51b1788edd3dd79e9b9da8afb4a522075ea86d69fa5fdf86411138551f3fc30"
+      },
+      "apps/log.trit": {
+        "present": true,
+        "sha256": "4fdee783a119ab0d4173b2a50b4391bd289d8ebbb7045d05699cfd98dfcd08a5"
+      },
+      "apps/login.trit": {
+        "present": true,
+        "sha256": "dede47c1e8a99caeccb3cec3699bc5cf66812b00e91a8c24e1dcd43f8fd703c8"
+      },
+      "apps/ls.trit": {
+        "present": true,
+        "sha256": "129aaa292faf83021f226081612a2fc0e18a04ac36232a4732a756a6ca2519b7"
+      },
+      "apps/mount.trit": {
+        "present": true,
+        "sha256": "20b1456860d2b7bef0b0575e709f44f2c0b124df1e587ee04b0c7697dd740765"
+      },
+      "apps/os_sdk.trit": {
+        "present": true,
+        "sha256": "a75cc205485d23acd017a640a198cd058f406c1a5ec52458682d255975965d7d"
+      },
+      "apps/paint.trit": {
+        "present": true,
+        "sha256": "0be529593f604417f0e6cc5d4ed9d76d372cb4df22df6395205a5a8c7ef9cef2"
+      },
+      "apps/passwd.trit": {
+        "present": true,
+        "sha256": "15d6b1351901b224d32c920aefa3562aaaf9716ae58d0da9323d2047de2ddff6"
+      },
+      "apps/ps.trit": {
+        "present": true,
+        "sha256": "5c7d85c304f4165023ab4221be7f30e2ebdaae7fd8b57205a6943e6f6b6e0b18"
+      },
+      "apps/reboot.trit": {
+        "present": true,
+        "sha256": "d0bc0e8259c6cbb07a98ca5016d9436bee37e9e3e5375b399d7349a715462dce"
+      },
+      "apps/service_host.trit": {
+        "present": true,
+        "sha256": "6fb7a139963057aec975dfa0738528673da8a01cfe7a50b1bf08a0c838a32911"
+      },
+      "apps/service_runtime.trit": {
+        "present": true,
+        "sha256": "18666c02b41f8f33bfc64ef8bebb974b932a7357ab4390b4701ab35612291cab"
+      },
+      "apps/service_stub.trit": {
+        "present": true,
+        "sha256": "5c373f7c5407d37e852d2372363cdbd29d94c75b69f71133e9fa5e260459414f"
+      },
+      "apps/settings.trit": {
+        "present": true,
+        "sha256": "8ec63aec408bd9b4830b4feb85388e49554ce1c0b48d95dec028256c07a4afc1"
+      },
+      "apps/shell.trit": {
+        "present": true,
+        "sha256": "bdc93103283d6d903fac47de188865ff08cb4348cfe12e0b774704a2a073df4e"
+      },
+      "apps/shutdown.trit": {
+        "present": true,
+        "sha256": "e84a5d0ac4d2f5ec573d1e2a5e2962f35711b8138d19619c161d07c7cba92e2b"
+      },
+      "apps/sleep.trit": {
+        "present": true,
+        "sha256": "e414988fc85cdec2bd8c9e3ddc71e8c67d208dbb0a4333f471c723201569f3ca"
+      },
+      "apps/sync.trit": {
+        "present": true,
+        "sha256": "9f75034984a00ccc4d909b613f06b97c3c4450627175b50c15f3d809e4dd9e21"
+      },
+      "apps/sysinfo.trit": {
+        "present": true,
+        "sha256": "c11317e4fbf244fa75f5e800acadb4d03e1841d355c498234453aa48f57a79e8"
+      },
+      "apps/task_manager.trit": {
+        "present": true,
+        "sha256": "013b53d0ee16c5729d2f0eccb17e133458495b48b2736d4f531187df5c571c7d"
+      },
+      "apps/terminal.trit": {
+        "present": true,
+        "sha256": "2385d369c985885b57ab02e55225994b9480bf2fffbe780a29804f1a7b895850"
+      },
+      "apps/test.trit": {
+        "present": true,
+        "sha256": "439bd1459752211d9f1cb8f687f4ffd0198c111efcdeec62a9fdd65686a57e91"
+      },
+      "apps/text_editor.trit": {
+        "present": true,
+        "sha256": "b7b13ce31aba1ecdb65db8548420b26bb732034ee4093f41cfe9ca2efbfcd85c"
+      },
+      "architecture_contract.h": {
+        "present": true,
+        "sha256": "7187a82cb753d3ef0ed22df0cd1235ae1acabb21e04a780d3c8d4eb726353d87"
+      },
+      "architecture_contract.trit": {
+        "present": true,
+        "sha256": "d7743e0136b4493e861f12f699ad9dda2b20ebaa1d6f1f5ae93efb7db86df6fb"
+      },
+      "architecture_instruction_codec.h": {
+        "present": true,
+        "sha256": "52ce04e5765fc01a449c8728f55283b61bcaeb37894451911b9e92fe071d7f1e"
+      },
+      "architecture_isa_v2.h": {
+        "present": true,
+        "sha256": "ff7d4e9a5498e274462abb702a7aba56fa0444134b12611f6341b07fda6dae07"
+      },
+      "architecture_v2_assembler_directives.h": {
+        "present": true,
+        "sha256": "906f00cb294e151d67859485f38a799d5520b88e927aeaef0ab97ff54bb96c54"
+      },
+      "architecture_v2_assembler_types.h": {
+        "present": true,
+        "sha256": "6851ddf47510d2051e67c1dd9278c7487c6cfac69b9972fde22ec537434037fb"
+      },
+      "architecture_v2_support.h": {
+        "present": true,
+        "sha256": "d4757b28df573e4d6f486fbcc6dea2b31fea7e5771c71d443f81e2921ede6921"
+      },
+      "build_tos_image.cpp": {
+        "present": true,
+        "sha256": "413babdd110c1c2d847ac641030edd20cd94fc5f5ff2e3b5c17a0fb302d63e9c"
+      },
+      "executable_header_common.h": {
+        "present": true,
+        "sha256": "5e1fb9ac37883dad710e87fe61b9a60e00f5566951520ab54cb1e3f2dbbbe89b"
+      },
+      "executable_header_v3.h": {
+        "present": true,
+        "sha256": "0946a5d2cbbac661cda3aff5feb9fe7bb09e0720581d5ab4c4c0ee35024276b7"
+      },
+      "kernel.trit": {
+        "present": true,
+        "sha256": "51ee54a46a152a731efbade67eb51c01337933b36711eaa2a909827b1939e920"
+      },
+      "native_kernel_trap_stub.tasm": {
+        "present": true,
+        "sha256": "ac5d529b799bb2f0f409ad0ad1120c698ce16f1517198b0e15733b60eed66ffa"
+      },
+      "ternary_asm.h": {
+        "present": true,
+        "sha256": "7d27702fe489abba119c24374dd4bb92e3a661adf3908cabf67523d49007e50b"
+      },
+      "ternary_backend.h": {
+        "present": true,
+        "sha256": "7ae905f6e6454e539e5304ee52de46d805970edd43bcf56ef505d45e361fb779"
+      },
+      "ternary_binary_io.h": {
+        "present": true,
+        "sha256": "e183ec868e483ce323124e3570d0bd135785f7da881dcaad0d56ebccd34eebf0"
+      },
+      "ternary_compiler.h": {
+        "present": true,
+        "sha256": "65ec224d13eac8a64ff5a1c36bfdceef0e1d8988c9560f6a6fb6e32bf6be3da2"
+      },
+      "ternary_compiler_ast.h": {
+        "present": true,
+        "sha256": "3ca6835bf2778d9673ddadc2615d4c5be4acbfd989abea5aa05c2c448f910430"
+      },
+      "ternary_compiler_cfg.h": {
+        "present": true,
+        "sha256": "92f03f1b502163ec0ff4bf49569e5514572c35735909a4202e49f2df6504087a"
+      },
+      "ternary_compiler_codegen.h": {
+        "present": true,
+        "sha256": "b0b68b132a11e871191bb4c853c02bde007a2fae5e833238974962cdd3c9de0b"
+      },
+      "ternary_compiler_ir.h": {
+        "present": true,
+        "sha256": "bd1e03acc005568fc4f7b976aeae60f67de65e6d8dff91ad41dbe895554f8dc1"
+      },
+      "ternary_compiler_lexer.h": {
+        "present": true,
+        "sha256": "f0b55fd3f25154576c1945dd3fa1893c7fb937a5fec073619282e4f02a45e53b"
+      },
+      "ternary_compiler_parser.h": {
+        "present": true,
+        "sha256": "b41af43ff6e043b364ff621c12c7abf78a1f274ba85b062eee4759394004f517"
+      },
+      "ternary_compiler_types.h": {
+        "present": true,
+        "sha256": "690b7645f18b15e9880fd7172377a4cc9c128cc52b47c3213be66b019b380ab0"
+      },
+      "ternary_dataflow.trit": {
+        "present": true,
+        "sha256": "abb5fc2a752d4833c82d50f04db5a51cdcacaad26ce20f135f1f4361543ab816"
+      },
+      "ternary_host_runtime.h": {
+        "present": true,
+        "sha256": "5d5fb2aebf6d39cdaefd2664849e033316e670d3d2ef51f82582eed6448056a8"
+      },
+      "ternary_ir.h": {
+        "present": true,
+        "sha256": "4da7cd8d8d1950d299f1eaa1ffee4fff43f046db95878dfd9eb2b5fcae46989b"
+      },
+      "ternary_isa.h": {
+        "present": true,
+        "sha256": "0c628100c0750afc6e1f83154eb83c57ae0117415a7512d9d0eab82c49e8e3a0"
+      },
+      "ternary_lanes.h": {
+        "present": true,
+        "sha256": "700a68e2a0db11c09643a4ed47793de33648e77de4fd2fa8b42e034cbed3e5b7"
+      },
+      "ternary_math.h": {
+        "present": true,
+        "sha256": "2adbef0d82e94e487cfffc21b03d4c841e1235a7759612572ed2eea48cf76568"
+      },
+      "ternary_native_ops.h": {
+        "present": true,
+        "sha256": "e3a20f8d8dfbfca3b088c9c4364acac5343bd186a64dc62612cc111dc8ed7362"
+      },
+      "ternary_os.h": {
+        "present": true,
+        "sha256": "1bba27edd86843fed640069ed8e7acf031bde3e8b8744e2a8a7b9c48f07c057c"
+      },
+      "ternary_redo_wal.h": {
+        "present": true,
+        "sha256": "d44c89b9fc852bfa3b471dbca4f8560c717ceb660315453dc5bbfc7ba91197c3"
+      },
+      "ternary_scalar.h": {
+        "present": true,
+        "sha256": "370e6b5f40bc01e01092e16fb830dcbfc27988bda7e1bfe49fc1084a5c2117db"
+      },
+      "ternary_simd.h": {
+        "present": true,
+        "sha256": "b77d92c9e5e7b9ebad16d88a1075acf9b2e26f04098196f69d953260efd54252"
+      },
+      "ternary_stream.trit": {
+        "present": true,
+        "sha256": "cb1c5b15ace42a86d0a01568d0ce52cc05b25e8b9a1958ffa308876dce8d52f5"
+      },
+      "ternary_symbolic_encoding.h": {
+        "present": true,
+        "sha256": "36afaf5bf1ec538975207ab68669f48ddcfddd5c3e43ee520784b50e3f4b2958"
+      },
+      "ternary_uint128.h": {
+        "present": true,
+        "sha256": "53574c7ca84146a7562960b6e5a8b44f03798c39e426d132188c50fe5630e354"
+      },
+      "ternary_vm.h": {
+        "present": true,
+        "sha256": "7ad01ab6bab608140e8c4dfb976a5f4f3bd300b3de53e46b80020e84869f2899"
+      },
+      "ternary_vm_state.h": {
+        "present": true,
+        "sha256": "1e8f879577dc27e770561189e141d62177aa3e0628f1001bb6ab9fc55688c244"
+      },
+      "tests/current_only_conformance.cpp": {
+        "present": true,
+        "sha256": "951e278e4d703d1446405bbc082518abc41ac545b10dcf03f5857a190a98f9e3"
+      },
+      "tools/trit_tool.py": {
+        "present": true,
+        "sha256": "024c2835838cf3b42c5b4174c638ee1793e51f8fdacd68ffcdb46b9cea6184fb"
+      },
+      "tritc.cpp": {
+        "present": true,
+        "sha256": "960d7a0f1fbd97b486a955733eab7dbad3fb1e2289ae6e90422a4a206f21194b"
+      }
+    }
+  },
+  "completion_provenance_algorithm": "FNV-1a-64",
+  "canonical_evidence": {
+    "wal_full": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/wal_full.json"
+    },
+    "wal_admission": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/wal_admission.json"
+    },
+    "wal_shape": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/wal_shape.json"
+    },
+    "wal_extent": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/wal_extent.json"
+    },
+    "service_full": {
+      "status": "pending",
+      "current_source_match": false,
+      "scope": "full",
+      "reasons": [
+        "workflow began but closed completion is absent"
+      ],
+      "completion": "service_workflow_artifact/completion/service_full.json"
+    },
+    "service_errors": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_errors.json"
+    },
+    "service_fixtures": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_fixtures.json"
+    },
+    "service_history_cap1": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_history_cap1.json"
+    },
+    "service_reservation": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_reservation.json"
+    },
+    "service_edges": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_edges.json"
+    },
+    "service_link": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_link.json"
+    },
+    "service_auto": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_auto.json"
+    },
+    "service_auto_focused": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "focused-automatic-three",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/service_auto_focused.json"
+    },
+    "service_coexistence": {
+      "status": "missing",
+      "current_source_match": false,
+      "scope": null,
+      "reasons": [
+        "coupled completion missing; report/hash presence is not run proof"
+      ],
+      "completion": "service_workflow_artifact/completion/service_coexistence.json"
+    },
+    "sdk": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/sdk.json"
+    },
+    "metrics": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/metrics.json"
+    },
+    "stream": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/stream.json"
+    },
+    "numeric": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/numeric.json"
+    },
+    "desktop": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/desktop.json"
+    },
+    "clock_kernel": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/clock_kernel.json"
+    },
+    "clock_boundaries": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/clock_boundaries.json"
+    },
+    "clock_idle_input": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "full",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/clock_idle_input.json"
+    },
+    "clock_service": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "focused",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/clock_service.json"
+    },
+    "cli": {
+      "status": "verified",
+      "current_source_match": true,
+      "scope": "focused",
+      "reasons": [
+        "closed PASS coupled to current sources, report bytes and required coverage; no overall shell-exit claim"
+      ],
+      "completion": "service_workflow_artifact/completion/cli.json"
+    }
+  },
+  "manifest_errors": [],
+  "overall_gate_verified": false,
+  "historical_evidence": "initial Red and old root-level phase1 reports retained separately; never counted as current PASS",
+  "stream_source_labels": {
+    "os_sdk.trit": "apps/os_sdk.trit",
+    "service_runtime.trit": "apps/service_runtime.trit",
+    "embedded_guest.trit": "build_current_cleanup/service_workflow_artifact/stream/embedded_guest.trit"
+  }
 }

@@ -27,6 +27,19 @@ These are intentionally visible so agents can pick useful work without asking fo
   current monolithic kernel may remain monolithic at runtime while becoming
   selectively composed at build and image time.
 
+- Owner accepted the rollout on2026-10-11(local time) with remaining validation waived
+  to save usage. Ten final-source default workflows and independent CLI94, desktop and
+  automatic-three checks passed. The full suite was intentionally stopped at982,001,000
+  steps in history_cap1, with zero guest failures and3,421 words of arena use.
+  Remaining full/CI/SDL/fresh-review validation is waived, without PASS claims.
+  Acceptance and preserved results: `build_current_cleanup/service_workflow_artifact/final_gate/parent-full-test-final94-20261011/user_acceptance_result.json`.
+- `trit-cx1`: a static kernel buffer/capability address overlap remains. The current
+  WAL guard follows active-frame semantics; storage has not been relocated and no
+  general address-layout repair is claimed.
+- Forced-stop replay of volatile service records/jobs, durable arbitrary boot
+  attributes, shared service channels and a measured GUI latency improvement remain
+  unsupported. Sampling uses250 virtual ms, not delivered IRQ ticks or host wall ms.
+
 ## Medium Priority
 
 - Extend the current small DTB/HAL into a hierarchical device graph and driver

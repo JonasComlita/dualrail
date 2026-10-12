@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "platform": {
+    "isa_version": 2,
+    "executable_abi_version": 3,
+    "function_abi_version": 3,
+    "syscall_abi_version": 2,
+    "vector_abi_version": 1,
+    "tboot_version": 3,
+    "tdisk_version": 2
+  },
+  "conformance": {
+    "source": "tests/current_only_conformance.cpp",
+    "target": "trit_current_conformance",
+    "ctest_name": "trit_current_conformance",
+    "selectors": [
+      "--cli-only",
+      "--clock-idle-input-only",
+      "--clock-kernel-only",
+      "--clock-only",
+      "--desktop-only",
+      "--extent-lifecycle-only",
+      "--metrics-only",
+      "--numeric-only",
+      "--sdk-only",
+      "--service-auto-modes-only",
+      "--service-auto-only",
+      "--service-coexistence-only",
+      "--service-edges-only",
+      "--service-errors-only",
+      "--service-fixtures-only",
+      "--service-history-cap1-only",
+      "--service-link-only",
+      "--service-only",
+      "--service-reservation-only",
+      "--stream-only",
+      "--wal-admission-only",
+      "--wal-only",
+      "--wal-shape-only"
+    ],
+    "default_workflows": [
+      "wal_full",
+      "sdk",
+      "numeric",
+      "metrics",
+      "clock_kernel",
+      "clock_boundaries",
+      "clock_idle_input",
+      "clock_service",
+      "desktop",
+      "stream",
+      "service_full",
+      "cli"
+    ],
+    "separate_required_workflows": [
+      "service_auto"
+    ],
+    "timeout_seconds": 0
+  },
+  "build": {
+    "directory": "build_current_cleanup",
+    "configure": [
+      "cmake",
+      "-S",
+      ".",
+      "-B",
+      "build_current_cleanup"
+    ],
+    "targets": {
+      "current_images": {
+        "direct_dependencies": [
+          "release/TernaryOS/ternary-os.tboot",
+          "release/TernaryOS/ternary-os.tdisk"
+        ],
+        "producer": "build_tos_image"
+      },
+      "current_validate": {
+        "direct_dependencies": [
+          "trit_current_conformance"
+        ],
+        "runs": "trit_current_conformance"
+      },
+      "ci_production": {
+        "direct_dependencies_if_BUILD_TESTING": [
+          "tritc",
+          "build_tos_image",
+          "ctest"
+        ],
+        "direct_dependencies_if_not_BUILD_TESTING": [
+          "tritc",
+          "build_tos_image",
+          "current_validate"
+        ]
+      },
+      "stage_tos_release": {
+        "available_if": "TRIT_ENABLE_SDL_RELEASE AND SDL2_FOUND AND run_tos_sdl.cpp exists",
+        "direct_dependencies": [
+          "current_images",
+          "run_tos_sdl"
+        ]
+      },
+      "smoke_tos_release": {
+        "available_if": "stage_tos_release available",
+        "direct_dependencies": [
+          "stage_tos_release"
+        ],
+        "frames": 10
+      }
+    }
+  },
+  "cli": {
+    "source": "tools/trit_tool.py",
+    "commands": [
+      "doctor",
+      "contract-check",
+      "test",
+      "export-diagnostics"
+    ]
+  }
+}

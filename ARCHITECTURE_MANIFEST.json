@@ -15,6 +15,14 @@
     "asid_trits": 9,
     "stack_alignment_words": 9
   },
+  "clock": {
+      "kind": "monotonic_virtual",
+      "nanoseconds_per_cycle": 1,
+      "cycles_per_millisecond": 1000000,
+      "timer_quantum_cycles": 1000000,
+      "finite_ms_max": 2147483647,
+      "host_wall_time_guaranteed": false
+  },
   "abi": {
     "executable_version": 3,
     "function_abi_version": 3,
