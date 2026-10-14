@@ -26,6 +26,41 @@ const ERR_AGAIN: t40 = -11;
 const ERR_CANCELED: t40 = -12;
 const SYS_BLOCKED: t40 = 2;
 
+// Checkpointed transport/lifetime arena: PPN20200..20219, disjoint from
+// process backing [PPN1000,20200) and scalar/V3 context storage.
+const GFX_METADATA_BASE: t40 = 14725800;
+const GFX_METADATA_WORDS: t40 = 14580;
+const GFX_COUNTER_MAX: t40 = 8000000;
+const GFX_PROCESS_COUNTER: t40 = 0;
+const GFX_PROC_GENERATION_BASE: t40 = 64;
+// Private native-trap mailbox 8..15; generation-bound V3 rows 164..563.
+const GFX_V3_MAILBOX_BASE: t40 = 8;
+const GFX_V3_READY_BASE: t40 = 164;
+const GFX_V3_PENDING_SOURCE_BASE: t40 = 264;
+const GFX_V3_PENDING_SOURCE_GEN_BASE: t40 = 364;
+const GFX_V3_PENDING_DEST_GEN_BASE: t40 = 464;
+
+fn gfx_metadata_addr(offset: t40) -> t40 { return GFX_METADATA_BASE + offset; }
+
+fn process_lifetime_capacity(count: t40) -> t40 {
+    if kload(gfx_metadata_addr(GFX_PROCESS_COUNTER)) > GFX_COUNTER_MAX-count { return ERR_NO_SPACE; }
+    return 1;
+}
+
+fn process_lifetime_issue(slot: t40) -> t40 {
+    if process_lifetime_capacity(1) < 0 { return ERR_NO_SPACE; }
+    native_v3_invalidate(slot);
+    var generation: t40=kload(gfx_metadata_addr(GFX_PROCESS_COUNTER))+1;
+    kstore(gfx_metadata_addr(GFX_PROCESS_COUNTER),generation);
+    kstore(gfx_metadata_addr(GFX_PROC_GENERATION_BASE+slot),generation);
+    return generation;
+}
+
+fn kernel_integral(value: t40) -> t40 {
+    var fraction: t40=0;unsafe { fraction=tmod(value,1); }
+    if fraction==0 { return 1; }return 0;
+}
+
 const KIND_FREE: t40 = 0;
 const KIND_FILE: t40 = 1;
 const KIND_DIR: t40 = 2;
@@ -105,7 +140,9 @@ const PROC_EXIT_STATUS_BASE: t40 = 130100;
 const PROC_SIGNAL_PENDING_BASE: t40 = 130200;
 const PROC_CLEANED_BASE: t40 = 130300;
 const IPC_OWNER_BASE: t40 = 130400;
-const PROC_CAPS_BASE: t40 = 131350;
+// 100 capability words occupy131600–131699, between framebuffer metadata
+// (131500–131509) and window rows (132000 onward). Buffer metadata ends131403.
+const PROC_CAPS_BASE: t40 = 131600;
 
 const BOOTSTRAP_BITMAP_BASE: t40 = 3200;
 
@@ -3327,6 +3364,7 @@ fn process_prepare_v3_context(slot: t40) -> t40 {
     if process_v3_context_addr_valid(context_addr) <= 0 {
         return ERR_INVALID;
     }
+    native_v3_invalidate(slot);
     kclear(context_addr, TASK_CONTEXT_V3_WORDS);
     kstore(context_addr + TASK_CONTEXT_V3_HEADER_VERSION,
            EXEC_V3_CONTEXT_VERSION);
@@ -3337,14 +3375,8 @@ fn process_prepare_v3_context(slot: t40) -> t40 {
     kstore(context_addr + TASK_CONTEXT_V3_VLEN, EXEC_V3_VECTOR_LANE_COUNT);
     kstore(context_addr + TASK_CONTEXT_V3_ACCUMULATOR, 0);
     kstore(context_addr + TASK_CONTEXT_V3_FIRST_FAILING_LANE, -1);
-    var lane: t40 = 0;
-    while EXEC_V3_VECTOR_LANE_COUNT - lane > 0 {
-        // The host VM stores one exact tagged fault record per lane. Kernel
-        // initialization clears those records; the common layout reserves
-        // 27 words beginning at the same offset.
-        kstore(context_addr + TASK_CONTEXT_V3_FAULT_BASE + lane, 0);
-        lane = lane + 1;
-    }
+    // This is an unready placeholder. The native return boundary initializes
+    // or clones exact tagged V3 words with VCTXSTORE before any user return.
     return context_addr;
 }
 
@@ -3364,23 +3396,250 @@ fn process_vector_context_reset(slot: t40) -> t40 {
 }
 
 fn process_vector_context_copy(dst_slot: t40, src_slot: t40) -> t40 {
-    var dst: t40 = process_vector_context_addr(dst_slot);
-    var src: t40 = process_vector_context_addr(src_slot);
-    if dst < 0 { return dst; }
-    if src < 0 { return src; }
-    var word: t40 = 0;
-    while TASK_CONTEXT_V3_WORDS - word > 0 {
-        kstore(dst + word, kload(src + word));
-        word = word + 1;
+    if native_v3_slot_valid(dst_slot) < 0 { return ERR_INVALID; }
+    if native_v3_slot_valid(src_slot) < 0 { return ERR_INVALID; }
+    if dst_slot == src_slot { return ERR_INVALID; }
+    if (process_state(dst_slot) != PROC_STOPPED) { return ERR_INVALID; }
+    var src_gen: t40 = kload(gfx_metadata_addr(GFX_PROC_GENERATION_BASE + src_slot));
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + src_slot)) != src_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + dst_slot)) != 0 { return ERR_INVALID; }
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + dst_slot), src_slot + 1);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + dst_slot), src_gen);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + dst_slot), kload(gfx_metadata_addr(GFX_PROC_GENERATION_BASE + dst_slot)));
+    return process_default_context_v3_addr(dst_slot);
+}
+
+fn native_v3_invalidate(slot: t40) -> t40 {
+    if kernel_integral(slot) <= 0 { return ERR_INVALID; }
+    if slot < 0 { return ERR_INVALID; }
+    if (slot >= PROCESS_MAX) { return ERR_INVALID; }
+    kstore(gfx_metadata_addr(GFX_V3_READY_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + slot), 0);
+    var child: t40 = 0;
+    while (child < PROCESS_MAX) {
+        if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + child)) == slot + 1 {
+            // Keep the dependency marker: the native return validator must
+            // halt if a successful fork's source was reset before its clone.
+            kstore(gfx_metadata_addr(GFX_V3_READY_BASE + child), 0);
+        }
+        child = child + 1;
     }
-    return dst;
+    kclear(gfx_metadata_addr(GFX_V3_MAILBOX_BASE), 8);
+    return 1;
+}
+
+fn native_v3_slot_valid(slot: t40) -> t40 {
+    if kernel_integral(slot) <= 0 { return ERR_INVALID; }
+    if slot < 0 { return ERR_INVALID; }
+    if (slot >= PROCESS_MAX) { return ERR_INVALID; }
+    var state: t40 = process_state(slot);
+    if state <= 0 { return ERR_INVALID; }
+    if process_terminal_state(state) > 0 { return ERR_INVALID; }
+    var row: t40 = process_addr(slot);
+    if kload(row + PROC_CONTEXT) != process_default_context_addr(slot) { return ERR_INVALID; }
+    if kload(row + PROC_VECTOR_CONTEXT) != process_default_context_v3_addr(slot) { return ERR_INVALID; }
+    if process_v3_context_addr_valid(kload(row + PROC_VECTOR_CONTEXT)) <= 0 { return ERR_INVALID; }
+    var generation: t40 = kload(gfx_metadata_addr(GFX_PROC_GENERATION_BASE + slot));
+    if kernel_integral(generation) <= 0 { return ERR_INVALID; }
+    if generation <= 0 { return ERR_INVALID; }
+    if (generation > GFX_COUNTER_MAX) { return ERR_INVALID; }
+    if generation > kload(gfx_metadata_addr(GFX_PROCESS_COUNTER)) { return ERR_INVALID; }
+    var arch: t40 = process_arch_addr(slot);
+    if (kload(arch + PROC_ARCH_EXEC_VERSION) != EXEC_V3_VERSION) { return ERR_INVALID; }
+    if (kload(arch + PROC_ARCH_FUNCTION_ABI) != EXEC_V3_FUNCTION_ABI) { return ERR_INVALID; }
+    if (kload(arch + PROC_ARCH_SYSCALL_ABI) != EXEC_V3_SYSCALL_ABI) { return ERR_INVALID; }
+    if (kload(arch + PROC_ARCH_ISA) != EXEC_V3_ISA) { return ERR_INVALID; }
+    return generation;
+}
+
+fn native_v3_mark_saved() -> t40 {
+    var slot: t40 = process_find_pid(kload(CURRENT_PID_ADDR));
+    var generation: t40 = native_v3_slot_valid(slot);
+    if generation < 0 { return generation; }
+    if kload(CURRENT_CONTEXT_ADDR) != process_default_context_addr(slot) { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot)) != 0 { return ERR_INVALID; }
+    kstore(gfx_metadata_addr(GFX_V3_READY_BASE + slot), generation);
+    return 1;
+}
+
+fn native_v3_next_clone() -> t40 {
+    var slot: t40 = 0;
+    while (slot < PROCESS_MAX) {
+        var source_plus_one: t40 = kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot));
+        if source_plus_one != 0 {
+            var source: t40 = source_plus_one - 1;
+            var destination_gen: t40 = native_v3_slot_valid(slot);
+            if destination_gen < 0 { return destination_gen; }
+            var source_gen: t40 = native_v3_slot_valid(source);
+            if source_gen < 0 { return source_gen; }
+            if source == slot { return ERR_INVALID; }
+            if (process_state(slot) != PROC_STOPPED) { return ERR_INVALID; }
+            if kload(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + slot)) != destination_gen { return ERR_INVALID; }
+            if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + slot)) != source_gen { return ERR_INVALID; }
+            if kload(gfx_metadata_addr(GFX_V3_READY_BASE + source)) != source_gen { return ERR_INVALID; }
+            if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + source)) != 0 { return ERR_INVALID; }
+            var mailbox: t40 = gfx_metadata_addr(GFX_V3_MAILBOX_BASE);
+            kstore(mailbox, process_default_context_v3_addr(slot));
+            kstore(mailbox + 1, process_default_context_v3_addr(source));
+            kstore(mailbox + 2, slot); kstore(mailbox + 3, source);
+            kstore(mailbox + 4, destination_gen); kstore(mailbox + 5, source_gen);
+            return 1;
+        }
+        slot = slot + 1;
+    }
+    return 0;
+}
+
+// Validate one canonical private hardware page for the pending native clone.
+// The raw shim may repair numeric T50 words only while the child is unready.
+fn native_fork_private_page(vpn: t40) -> t40 {
+    if kernel_integral(vpn) <= 0 { return ERR_INVALID; }
+    if vpn < 0 { return ERR_INVALID; }
+    if (vpn >= HW_PT_MAX_PAGES) { return ERR_INVALID; }
+    var mailbox: t40 = gfx_metadata_addr(GFX_V3_MAILBOX_BASE);
+    var slot: t40 = kload(mailbox + 2); var source: t40 = kload(mailbox + 3);
+    var issuer: t40 = kload(gfx_metadata_addr(GFX_PROCESS_COUNTER));
+    if kernel_integral(issuer) <= 0 { return ERR_INVALID; }
+    if issuer <= 0 { return ERR_INVALID; }
+    if (issuer > GFX_COUNTER_MAX) { return ERR_INVALID; }
+    var destination_gen: t40 = native_v3_slot_valid(slot);
+    if destination_gen < 0 { return destination_gen; }
+    var source_gen: t40 = native_v3_slot_valid(source);
+    if source_gen < 0 { return source_gen; }
+    if source == slot { return ERR_INVALID; }
+    if (process_state(slot) != PROC_STOPPED) { return ERR_INVALID; }
+    if kload(mailbox) != process_default_context_v3_addr(slot) { return ERR_INVALID; }
+    if kload(mailbox + 1) != process_default_context_v3_addr(source) { return ERR_INVALID; }
+    if kload(mailbox + 4) != destination_gen { return ERR_INVALID; }
+    if kload(mailbox + 5) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot)) != source + 1 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + slot)) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + slot)) != destination_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + source)) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + source)) != 0 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + slot)) != 0 { return ERR_INVALID; }
+    var source_context: t40 = process_default_context_addr(source);
+    var destination_context: t40 = process_default_context_addr(slot);
+    var source_pt: t40 = kload(source_context + TASK_CONTEXT_DMEM_PTBR);
+    var destination_pt: t40 = kload(destination_context + TASK_CONTEXT_DMEM_PTBR);
+    if source_pt != exec_hw_dmem_ptbr(source) { return ERR_INVALID; }
+    if destination_pt != exec_hw_dmem_ptbr(slot) { return ERR_INVALID; }
+    var pages: t40 = kload(source_context + TASK_CONTEXT_DMEM_PAGES);
+    if kernel_integral(pages) <= 0 { return ERR_INVALID; }
+    if pages <= 0 { return ERR_INVALID; }
+    if (pages > HW_PT_MAX_PAGES) { return ERR_INVALID; }
+    if kload(destination_context + TASK_CONTEXT_DMEM_PAGES) != pages { return ERR_INVALID; }
+    if vpn >= pages { kstore(mailbox + 6, 0); kstore(mailbox + 7, 0); return 0; }
+    var word: t40 = kload(source_pt + vpn);
+    var child_word: t40 = kload(destination_pt + vpn);
+    if kernel_integral(word) <= 0 { return ERR_INVALID; }
+    if kernel_integral(child_word) <= 0 { return ERR_INVALID; }
+    if word < 0 { return ERR_INVALID; }
+    if child_word < 0 { return ERR_INVALID; }
+    var source_ppn: t40 = exec_process_dmem_ppn(source);
+    var destination_ppn: t40 = exec_process_dmem_ppn(slot);
+    var ppn: t40 = hw_pte_phys_base(word) / MMU_PAGE_WORDS;
+    var private_mapping: t40 = 0;
+    if word > 0 {
+        if (vpn < PROCESS_DATA_PAGES_MAX) { if ppn == source_ppn + vpn { private_mapping = 1; } }
+        if (vpn >= USER_SCRATCH_VPN_BASE) {
+            if (vpn < USER_SCRATCH_VPN_BASE + USER_SCRATCH_PAGES) {
+                if (ppn == source_ppn + PROCESS_SCRATCH_PPN_OFFSET + vpn - USER_SCRATCH_VPN_BASE) { private_mapping = 1; }
+            }
+        }
+    }
+    if private_mapping == 0 {
+        if child_word != 0 { return ERR_INVALID; }
+        kstore(mailbox + 6, 0); kstore(mailbox + 7, 0); return 0;
+    }
+    var offset: t40 = ppn - source_ppn;
+    if offset < 0 { return ERR_INVALID; }
+    if (offset >= PROCESS_DMEM_PAGES_MAX) { return ERR_INVALID; }
+    var target: t40 = destination_ppn + offset;
+    if child_word != word + (target - ppn) * 19683 { return ERR_INVALID; }
+    kstore(mailbox + 6, ppn * MMU_PAGE_WORDS);
+    kstore(mailbox + 7, target * MMU_PAGE_WORDS);
+    return 1;
+}
+
+fn native_v3_finish_clone() -> t40 {
+    var mailbox: t40 = gfx_metadata_addr(GFX_V3_MAILBOX_BASE);
+    var slot: t40 = kload(mailbox + 2); var source: t40 = kload(mailbox + 3);
+    var destination_gen: t40 = native_v3_slot_valid(slot);
+    if destination_gen < 0 { return destination_gen; }
+    var source_gen: t40 = native_v3_slot_valid(source);
+    if source_gen < 0 { return source_gen; }
+    if source == slot { return ERR_INVALID; }
+    if (process_state(slot) != PROC_STOPPED) { return ERR_INVALID; }
+    if kload(mailbox) != process_default_context_v3_addr(slot) { return ERR_INVALID; }
+    if kload(mailbox + 1) != process_default_context_v3_addr(source) { return ERR_INVALID; }
+    if kload(mailbox + 4) != destination_gen { return ERR_INVALID; }
+    if kload(mailbox + 5) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot)) != source + 1 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + slot)) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + slot)) != destination_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + source)) != source_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + source)) != 0 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + slot)) != 0 { return ERR_INVALID; }
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_GEN_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_PENDING_DEST_GEN_BASE + slot), 0);
+    kstore(gfx_metadata_addr(GFX_V3_READY_BASE + slot), destination_gen);
+    process_set_state(slot, PROC_RUNNABLE);
+    kclear(mailbox, 8);
+    return 1;
+}
+
+fn native_v3_selected() -> t40 {
+    var slot: t40 = process_find_pid(kload(CURRENT_PID_ADDR));
+    var generation: t40 = native_v3_slot_valid(slot);
+    if generation < 0 { return generation; }
+    var state: t40 = process_state(slot);
+    if (state != PROC_RUNNABLE) {
+        if (state != PROC_RUNNING) {
+            if slot != 0 { return ERR_INVALID; }
+            if kload(CURRENT_PID_ADDR) != 1 { return ERR_INVALID; }
+            if (state != PROC_BLOCKED) { return ERR_INVALID; }
+        }
+    }
+    if kload(CURRENT_CONTEXT_ADDR) != process_default_context_addr(slot) { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot)) != 0 { return ERR_INVALID; }
+    var ready: t40 = kload(gfx_metadata_addr(GFX_V3_READY_BASE + slot));
+    if kernel_integral(ready) <= 0 { return ERR_INVALID; }
+    if ready != 0 { if ready != generation { return ERR_INVALID; } }
+    var mailbox: t40 = gfx_metadata_addr(GFX_V3_MAILBOX_BASE);
+    kstore(mailbox, process_default_context_v3_addr(slot));
+    kstore(mailbox + 4, generation); kstore(mailbox + 6, slot);
+    var need_init: t40 = 0;
+    if ready == 0 { need_init = 1; }
+    kstore(mailbox + 7, need_init);
+    return 1;
+}
+
+fn native_v3_mark_initialized() -> t40 {
+    var mailbox: t40 = gfx_metadata_addr(GFX_V3_MAILBOX_BASE);
+    var slot: t40 = kload(mailbox + 6);
+    var generation: t40 = native_v3_slot_valid(slot);
+    if generation < 0 { return generation; }
+    if process_find_pid(kload(CURRENT_PID_ADDR)) != slot { return ERR_INVALID; }
+    if kload(CURRENT_CONTEXT_ADDR) != process_default_context_addr(slot) { return ERR_INVALID; }
+    if kload(mailbox) != process_default_context_v3_addr(slot) { return ERR_INVALID; }
+    if kload(mailbox + 4) != generation { return ERR_INVALID; }
+    if kload(mailbox + 7) != 1 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + slot)) != 0 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + slot)) != 0 { return ERR_INVALID; }
+    kstore(gfx_metadata_addr(GFX_V3_READY_BASE + slot), generation);
+    return 1;
 }
 
 // These two hooks are the kernel-side lifecycle boundary for the privileged
 // VCTXSTORE/VCTXLOAD instructions. The native dispatcher supplies the current
 // vector file; the process table owns only the validated destination pointer.
 fn process_vector_context_save(slot: t40) -> t40 {
-    return process_vector_context_addr(slot);
+    if native_v3_slot_valid(slot) < 0 { return ERR_INVALID; }
+    return process_default_context_v3_addr(slot);
 }
 
 fn process_vector_context_restore(slot: t40) -> t40 {
@@ -3388,6 +3647,8 @@ fn process_vector_context_restore(slot: t40) -> t40 {
 }
 
 fn process_table_init() -> t40 {
+    kclear(gfx_metadata_addr(GFX_V3_READY_BASE), PROCESS_MAX * 4);
+    kclear(gfx_metadata_addr(GFX_V3_MAILBOX_BASE), 8);
     kclear(PROCESS_BASE, PROCESS_MAX * PROCESS_ROW_WORDS);
     kclear(QUOTA_BASE, QUOTA_MAX * QUOTA_ROW_WORDS);
     kclear(PROCESS_CONTEXT_BASE, PROCESS_MAX * TASK_CONTEXT_WORDS);
@@ -3428,6 +3689,8 @@ fn process_create(slot: t40, pid: t40, namespace_id: t40, priority: t40, quota_i
         ctx = process_default_context_addr(slot);
     }
     if process_find_pid(pid) >= 0 { return ERR_INVALID; }
+    if process_lifetime_capacity(1) < 0 { return ERR_NO_SPACE; }
+    process_lifetime_issue(slot);
     kstore(row + PROC_PID, pid);
     kstore(row + PROC_STATE, PROC_RUNNABLE);
     kstore(row + PROC_NAMESPACE, namespace_id);
@@ -3609,11 +3872,24 @@ fn process_clear_wait(slot: t40) -> t40 {
 
 fn process_wake_for_signal(slot: t40) -> t40 {
     var state: t40 = process_state(slot);
+    var waiting: t40 = 0;
     if state - PROC_BLOCKED == 0 {
-        process_clear_wait(slot);
-        return process_set_state(slot, PROC_RUNNABLE);
+        waiting = 1;
     }
     if state - PROC_SLEEPING == 0 {
+        waiting = 1;
+    }
+    if waiting > 0 {
+        // Only a registered wait owns a saved blocking syscall return.
+        // Bare bootstrap blocked states retain their original EPC.
+        var row: t40 = process_addr(slot);
+        if kload(WAIT_KIND_BASE + slot) > 0 {
+            if kload(row + PROC_WAIT_CHANNEL) != 0 {
+                if kload(row + PROC_CONTEXT) > 0 {
+                    return wait_complete_slot(slot, -1, 0, ERR_CANCELED);
+                }
+            }
+        }
         process_clear_wait(slot);
         return process_set_state(slot, PROC_RUNNABLE);
     }
@@ -4447,6 +4723,9 @@ fn process_release_windows(pid: t40) -> t40 {
                 if kload(WINDOW_FOCUS_ID_ADDR) - kload(row + WIN_ID) == 0 {
                     kstore(WINDOW_FOCUS_ID_ADDR, -1);
                 }
+                if kload(WINDOW_MOUSE_CAPTURE_ID_ADDR) - kload(row + WIN_ID) == 0 {
+                    kstore(WINDOW_MOUSE_CAPTURE_ID_ADDR, -1);
+                }
                 kclear(row, WINDOW_ROW_WORDS);
                 kclear(window_event_addr(slot, 0), WINDOW_EVENT_CAPACITY * WINDOW_EVENT_WORDS);
                 kclear(window_buffer_addr(slot), WINDOW_BUFFER_WORDS);
@@ -4483,6 +4762,7 @@ fn process_release_ipc(pid: t40) -> t40 {
     var released: t40 = 0;
     while IPC_MAX_CHANNELS - channel_id > 0 {
         if kload(IPC_OWNER_BASE + channel_id) - pid == 0 {
+            wait_cancel_channel(wait_channel_ipc(channel_id));
             kclear(ipc_channel_addr(channel_id), IPC_CHANNEL_WORDS);
             kclear(ipc_buffer_addr(channel_id), IPC_CAPACITY);
             kstore(IPC_OWNER_BASE + channel_id, -1);
@@ -4619,9 +4899,10 @@ fn process_finish_exit(process_slot: t40, status: t40, final_state: t40) -> t40 
     if parent_pid > 0 {
         if process_find_pid(parent_pid) >= 0 {
             process_set_state(process_slot, final_state);
-            wait_wake_waitpid(pid, status);
+            var waited: t40 = wait_wake_waitpid(pid, status);
             process_wake_channel(pid);
             process_wake_channel(parent_pid);
+            if waited > 0 { process_reap_slot(process_slot); }
             return final_state;
         }
     }
@@ -4891,62 +5172,118 @@ fn pte_flags_has(flags: t40, flag: t40) -> t40 {
     return 0;
 }
 
+// Current ABI3 native fork uses eager private backing copies. The retired
+// software-only COW bookkeeping cannot create a runnable native child.
 fn fork_process(parent_slot: t40, child_slot: t40, child_pid: t40) -> t40 {
-    if parent_slot < 0 {
+    if kernel_integral(parent_slot)<=0 { return ERR_INVALID; }
+    if parent_slot<0 { return ERR_INVALID; }
+    if (parent_slot>=PROCESS_MAX) { return ERR_INVALID; }
+    if kernel_integral(child_slot)<=0 { return ERR_INVALID; }
+    if child_slot<=0 { return ERR_INVALID; }
+    if (child_slot>=PROCESS_MAX) { return ERR_INVALID; }
+    if child_slot==parent_slot { return ERR_INVALID; }
+    if kernel_integral(child_pid)<=0 { return ERR_INVALID; }
+    if child_pid<=1 { return ERR_INVALID; }
+    if (process_state(child_slot)!=PROC_FREE) { return ERR_INVALID; }
+    if process_find_pid(child_pid)>=0 { return ERR_INVALID; }
+    var parent_row: t40=process_addr(parent_slot);
+    var source: t40=kload(parent_row+PROC_CONTEXT);
+    if source!=process_default_context_addr(parent_slot) { return ERR_INVALID; }
+    var arch: t40=process_arch_addr(parent_slot);
+    if (kload(arch+PROC_ARCH_EXEC_VERSION)!=EXEC_V3_VERSION) { return ERR_INVALID; }
+    if (kload(arch+PROC_ARCH_FUNCTION_ABI)!=EXEC_V3_FUNCTION_ABI) { return ERR_INVALID; }
+    if (kload(arch+PROC_ARCH_SYSCALL_ABI)!=EXEC_V3_SYSCALL_ABI) { return ERR_INVALID; }
+    if (kload(arch+PROC_ARCH_ISA)!=EXEC_V3_ISA) { return ERR_INVALID; }
+    var vector: t40=process_vector_context_addr(parent_slot);
+    if vector<0 { return ERR_INVALID; }
+    if (kload(vector+TASK_CONTEXT_V3_HEADER_VERSION)!=EXEC_V3_CONTEXT_VERSION) { return ERR_INVALID; }
+    if (kload(vector+TASK_CONTEXT_V3_HEADER_LENGTH)!=TASK_CONTEXT_V3_WORDS) { return ERR_INVALID; }
+    var imem: t40=kload(source+TASK_CONTEXT_IMEM_PTBR);
+    var dmem: t40=kload(source+TASK_CONTEXT_DMEM_PTBR);
+    if imem!=exec_hw_imem_ptbr(parent_slot) { return ERR_INVALID; }
+    if dmem!=exec_hw_dmem_ptbr(parent_slot) { return ERR_INVALID; }
+    var ipages: t40=kload(source+TASK_CONTEXT_IMEM_PAGES);
+    var dpages: t40=kload(source+TASK_CONTEXT_DMEM_PAGES);
+    if kernel_integral(ipages)<=0 { return ERR_INVALID; }
+    if kernel_integral(dpages)<=0 { return ERR_INVALID; }
+    if ipages<=0 { return ERR_INVALID; }
+    if dpages<=0 { return ERR_INVALID; }
+    if (ipages>HW_PT_MAX_PAGES) { return ERR_INVALID; }
+    if (dpages>HW_PT_MAX_PAGES) { return ERR_INVALID; }
+    var vpn: t40=0;
+    while vpn<ipages {
+        var word: t40=kload(imem+vpn);
+        if word<=0 { return ERR_INVALID; }
+        if hw_pte_flag(hw_pte_flags(word),27)>0 { return ERR_INVALID; }
+        vpn=vpn+1;
+    }
+    var parent_gen: t40 = native_v3_slot_valid(parent_slot);
+    if parent_gen < 0 { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_READY_BASE + parent_slot)) != parent_gen { return ERR_INVALID; }
+    if kload(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + parent_slot)) != 0 { return ERR_INVALID; }
+    if process_lifetime_capacity(1)<0 { return ERR_NO_SPACE; }
+    var created: t40=process_create(child_slot,child_pid,kload(parent_row+PROC_NAMESPACE),kload(parent_row+PROC_PRIORITY),kload(parent_row+PROC_QUOTA),0);
+    if created<0 { return created; }
+    process_set_state(child_slot, PROC_STOPPED);
+    process_set_parent(child_slot,kload(parent_row+PROC_PID));
+    process_set_caps(child_slot,kload(PROC_CAPS_BASE+parent_slot));
+    process_arch_copy(child_slot,parent_slot);
+    if process_vector_context_copy(child_slot,parent_slot) < 0 {
+        // Impossible after the read-only admission preflight. Preserve the
+        // issued lifetime and force the native return validator to halt.
+        kstore(gfx_metadata_addr(GFX_V3_PENDING_SOURCE_BASE + child_slot), -1);
         return ERR_INVALID;
     }
-    if parent_slot - PROCESS_MAX >= 0 {
-        return ERR_INVALID;
-    }
-    if child_slot < 0 {
-        return ERR_INVALID;
-    }
-    if child_slot - PROCESS_MAX >= 0 {
-        return ERR_INVALID;
-    }
-    var parent_row: t40 = process_addr(parent_slot);
-    var ns: t40 = kload(parent_row + PROC_NAMESPACE);
-    var quota_id: t40 = kload(parent_row + PROC_QUOTA);
-    var vpn: t40 = 0;
-    while PTE_MAX_VPN - vpn > 0 {
-        var src: t40 = pte_entry_addr(parent_slot, vpn);
-        if kload(src + PTE_WORD) > 0 {
-            var flags: t40 = kload(src + PTE_FLAGS);
-            if pte_flags_has(flags, PTE_FLAG_MMIO) <= 0 {
-                var ppn: t40 = kload(src + PTE_PPN);
-                if page_is_evictable(ppn) <= 0 {
-                    return ERR_INVALID;
+    var destination: t40=kload(process_addr(child_slot)+PROC_CONTEXT);
+    var w: t40=0;
+    while (w<TASK_CONTEXT_WORDS) { kstore(destination+w,kload(source+w));w=w+1; }
+    kstore(destination+TASK_CONTEXT_EPC,kload(source+TASK_CONTEXT_EPC)+1);
+    kstore(destination+18,1);kstore(destination+19,0);kstore(destination+20,0);
+    exec_clear_hw_page_tables(child_slot);
+    kstore(destination+TASK_CONTEXT_IMEM_PTBR,exec_hw_imem_ptbr(child_slot));
+    kstore(destination+TASK_CONTEXT_DMEM_PTBR,exec_hw_dmem_ptbr(child_slot));
+    vpn=0;
+    while (vpn<HW_PT_MAX_PAGES) { kstore(exec_hw_imem_ptbr(child_slot)+vpn,kload(imem+vpn));vpn=vpn+1; }
+    var parent_ppn: t40=exec_process_dmem_ppn(parent_slot);
+    var child_ppn: t40=exec_process_dmem_ppn(child_slot);
+    vpn=0;
+    while vpn<dpages {
+        var word: t40=kload(dmem+vpn);
+        if word>0 {
+            var ppn: t40=hw_pte_phys_base(word)/MMU_PAGE_WORDS;
+            // Admit only canonical private mappings. External aliases may
+            // numerically overlap this process's backing without belonging to it.
+            var private_mapping: t40=0;
+            if (vpn<PROCESS_DATA_PAGES_MAX) {
+                if ppn==parent_ppn+vpn { private_mapping=1; }
+            }
+            if (vpn>=USER_SCRATCH_VPN_BASE) {
+                if (vpn<USER_SCRATCH_VPN_BASE+USER_SCRATCH_PAGES) {
+                    if (ppn==parent_ppn+PROCESS_SCRATCH_PPN_OFFSET+vpn-USER_SCRATCH_VPN_BASE) { private_mapping=1; }
                 }
             }
-        }
-        vpn = vpn + 1;
-    }
-    process_create(child_slot, child_pid, ns, kload(parent_row + PROC_PRIORITY), quota_id, 0);
-    process_arch_copy(child_slot, parent_slot);
-    process_vector_context_copy(child_slot, parent_slot);
-    process_set_parent(child_slot, kload(parent_row + PROC_PID));
-    process_set_caps(child_slot, kload(PROC_CAPS_BASE + parent_slot));
-    vpn = 0;
-    while PTE_MAX_VPN - vpn > 0 {
-        var src_row: t40 = pte_entry_addr(parent_slot, vpn);
-        var dst_row: t40 = pte_entry_addr(child_slot, vpn);
-        if kload(src_row + PTE_WORD) > 0 {
-            var src_flags: t40 = kload(src_row + PTE_FLAGS);
-            if pte_flags_has(src_flags, PTE_FLAG_MMIO) > 0 {
-                pte_mark_fault(child_slot, vpn);
-            } else {
-                kstore(src_row + PTE_FLAGS, PTE_FLAG_COW);
-                kstore(dst_row + PTE_WORD, kload(src_row + PTE_WORD));
-                kstore(dst_row + PTE_PPN, kload(src_row + PTE_PPN));
-                kstore(dst_row + PTE_FLAGS, PTE_FLAG_COW);
-                kstore(dst_row + PTE_VERSION, kload(dst_row + PTE_VERSION) + 1);
-                kstore(dst_row + PTE_NAMESPACE, ns);
-                translation_cache_invalidate(parent_slot);
-                translation_cache_invalidate(child_slot);
+            if private_mapping>0 {
+                var target: t40=child_ppn+ppn-parent_ppn;
+                w=0;while (w<MMU_PAGE_WORDS) { kstore(target*MMU_PAGE_WORDS+w,kload(ppn*MMU_PAGE_WORDS+w));w=w+1; }
+                kstore(exec_hw_dmem_ptbr(child_slot)+vpn,word+(target-ppn)*19683);
             }
         }
-        vpn = vpn + 1;
+        vpn=vpn+1;
     }
+    // Keep software executable mappings coherent without altering the parent.
+    vpn=0;
+    while (vpn<PTE_MAX_VPN) {
+        var src: t40=pte_entry_addr(parent_slot,vpn);
+        if kload(src+PTE_WORD)>0 {
+            if pte_flags_has(kload(src+PTE_FLAGS),PTE_FLAG_MMIO)<=0 {
+                var dst: t40=pte_entry_addr(child_slot,vpn);
+                w=0;while (w<PTE_ROW_WORDS) { kstore(dst+w,kload(src+w));w=w+1; }
+            }
+        }
+        vpn=vpn+1;
+    }
+    w=0;while (w<PROCESS_HEAP_WORDS) { kstore(process_heap_addr(child_slot)+w,kload(process_heap_addr(parent_slot)+w));w=w+1; }
+    translation_cache_invalidate(child_slot);
     return child_pid;
 }
 
@@ -8927,6 +9264,8 @@ fn app_launch(pid: t40, path_addr: t40, required_caps: t40) -> t40 {
         return process_slot;
     }
     var proc_row: t40 = process_addr(process_slot);
+    if process_lifetime_capacity(1) < 0 { return ERR_NO_SPACE; }
+    process_lifetime_issue(process_slot);
     var namespace_id: t40 = kload(proc_row + PROC_NAMESPACE);
     var app_id: t40 = app_find(namespace_id, path_addr);
     if app_id < 0 {
@@ -8983,6 +9322,9 @@ fn app_spawn(parent_pid: t40, path_addr: t40, child_slot: t40, child_pid: t40) -
     if parent_slot < 0 {
         return parent_slot;
     }
+    // Creation and admitted exec each need a fresh global value. Exhaustion
+    // must preserve an existing terminal child before any reap or mutation.
+    if process_lifetime_capacity(2) < 0 { return ERR_NO_SPACE; }
 
     var child_state: t40 = kload(process_addr(child_slot) + PROC_STATE);
     if child_state > 0 {
@@ -9007,7 +9349,8 @@ fn app_spawn(parent_pid: t40, path_addr: t40, child_slot: t40, child_pid: t40) -
     }
 
     var parent_row: t40 = process_addr(parent_slot);
-    process_create(child_slot, child_pid, kload(parent_row + PROC_NAMESPACE), kload(parent_row + PROC_PRIORITY), kload(parent_row + PROC_QUOTA), 0);
+    var created: t40=process_create(child_slot, child_pid, kload(parent_row + PROC_NAMESPACE), kload(parent_row + PROC_PRIORITY), kload(parent_row + PROC_QUOTA), 0);
+    if created < 0 { return created; }
     process_set_parent(child_slot, parent_pid);
     var loaded: t40 = app_launch(child_pid, path_addr, 0);
     if loaded < 0 {
@@ -9627,7 +9970,7 @@ fn kernel_syscall_dispatch(pid: t40, service: t40, arg0: t40, arg1: t40, arg2: t
         }
         var spawned: t40 = app_spawn(pid, SYSCALL_PATH_COPY_BASE, arg1, arg2);
         if spawned < 0 {
-            return kernel_set_return(-1, 0, 0 - spawned);
+            return kernel_set_return(-1, 0, spawned);
         }
         return kernel_set_return(1, spawned, 0);
     }
@@ -10341,6 +10684,7 @@ fn kernel_ps_user(pid: t40, out_addr: t40, max_entries: t40) -> t40 {
 }
 
 fn kernel_init() -> t40 {
+    kclear(GFX_METADATA_BASE,GFX_METADATA_WORDS);
     kstore(KERNEL_BOOTED_ADDR, 0);
     kstore(BUFFER_CLOCK_HAND_ADDR, 0);
     kclear(NS_DIRTY_VERSION_BASE, NS_DIRTY_VERSION_WORDS);

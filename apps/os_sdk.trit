@@ -1262,3 +1262,23 @@ fn os_reboot() -> t40 {
 fn os_service_metrics(out_addr: t40, out_words: t40) -> t40 {
     return sys_service_metrics(out_addr, out_words);
 }
+
+// Authenticated graphics transport v1; resources/display remain a later gate.
+fn os_gfx_register(out_addr: t40, out_words: t40) -> t40 {
+    return sys_gfx_register(out_addr, out_words);
+}
+fn os_gfx_join(session_gen: t40, out_addr: t40, out_words: t40) -> t40 {
+    return sys_gfx_join(session_gen, out_addr, out_words);
+}
+fn os_gfx_submit(session_gen: t40, request_addr: t40, request_words: t40, reply_out_addr: t40) -> t40 {
+    return sys_gfx_submit(session_gen, request_addr, request_words, reply_out_addr);
+}
+fn os_gfx_receive(session_gen: t40, out_addr: t40, out_words: t40, timeout_ms: t40) -> t40 {
+    return sys_gfx_receive(session_gen, out_addr, out_words, timeout_ms);
+}
+fn os_gfx_reply(session_gen: t40, reply_addr: t40, reply_words: t40) -> t40 {
+    return sys_gfx_reply(session_gen, reply_addr, reply_words);
+}
+fn os_gfx_leave(session_gen: t40) -> t40 {
+    return sys_gfx_leave(session_gen);
+}

@@ -18,8 +18,18 @@
       "--clock-idle-input-only",
       "--clock-kernel-only",
       "--clock-only",
+      "--compositor-drawing-lifecycle-only",
+      "--compositor-drawing-only",
+      "--compositor-fork-fatal-user-only",
+      "--compositor-fork-malformed-v3-only",
+      "--compositor-fork-memory-only",
+      "--compositor-fork-prerequisite-only",
+      "--compositor-fork-window-lifetime-only",
+      "--compositor-prerequisites-only",
+      "--compositor-transport-only",
       "--desktop-only",
       "--extent-lifecycle-only",
+      "--kernel-word-classification-only",
       "--metrics-only",
       "--numeric-only",
       "--sdk-only",
@@ -53,7 +63,10 @@
       "cli"
     ],
     "separate_required_workflows": [
-      "service_auto"
+      "service_auto",
+      "compositor_prerequisites",
+      "compositor_transport",
+      "compositor_drawing"
     ],
     "timeout_seconds": 0
   },

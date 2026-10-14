@@ -736,7 +736,13 @@ private:
                name == "sys_wait_event" || name == "sys_sleep_ms" ||
                name == "sys_app_spawn" ||
                name == "sys_reboot" || name == "sys_rename" ||
-               name == "sys_service_metrics";
+               name == "sys_service_metrics" ||
+               name == "sys_gfx_register" ||
+               name == "sys_gfx_join" ||
+               name == "sys_gfx_submit" ||
+               name == "sys_gfx_receive" ||
+               name == "sys_gfx_reply" ||
+               name == "sys_gfx_leave";
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsicName(const std::string& name) {
@@ -6333,11 +6339,19 @@ private:
         if (name == "sys_reboot") return runtime::sys_reboot;
         if (name == "sys_rename") return runtime::sys_rename;
         if (name == "sys_service_metrics") return runtime::sys_service_metrics;
+        if (name == "sys_gfx_register") return runtime::sys_gfx_register;
+        if (name == "sys_gfx_join") return runtime::sys_gfx_join;
+        if (name == "sys_gfx_submit") return runtime::sys_gfx_submit;
+        if (name == "sys_gfx_receive") return runtime::sys_gfx_receive;
+        if (name == "sys_gfx_reply") return runtime::sys_gfx_reply;
+        if (name == "sys_gfx_leave") return runtime::sys_gfx_leave;
+
         return 0;
     }
 
     [[nodiscard]] static bool runtimeReturnsPayload(int service) {
         return service == runtime::sys_getpid ||
+               service == runtime::sys_sbrk ||
                service == runtime::sys_uptime ||
                service == runtime::sys_read_console_word ||
                service == runtime::sys_open ||
@@ -6380,7 +6394,13 @@ private:
                service == runtime::sys_app_spawn ||
                service == runtime::sys_reboot ||
                service == runtime::sys_rename ||
-               service == runtime::sys_service_metrics;
+               service == runtime::sys_service_metrics ||
+               service == runtime::sys_gfx_register ||
+               service == runtime::sys_gfx_join ||
+               service == runtime::sys_gfx_submit ||
+               service == runtime::sys_gfx_receive ||
+               service == runtime::sys_gfx_reply ||
+               service == runtime::sys_gfx_leave;
     }
 
     [[nodiscard]] static bool isUnsafeIntrinsic(const std::string& name) {

@@ -203,7 +203,8 @@ inline constexpr int CSR_ISA_FEATURES = 49;
 inline constexpr int CSR_MMU_BASE_PAGE_WORDS = 50;
 inline constexpr int CSR_MMU_SUPERPAGE_WORDS = 51;
 inline constexpr int CSR_ASID = 52;
-inline constexpr int CSR_MAX_ID = 52;
+inline constexpr int CSR_DMEM_CLASS = 53;
+inline constexpr int CSR_MAX_ID = 53;
 
 enum class CsrAccessLevel : std::uint8_t {
     NONE = 0,
@@ -220,7 +221,7 @@ struct CsrDescriptor {
     std::string_view kind;
 };
 
-inline constexpr std::array<CsrDescriptor, 53> CSR_DESCRIPTORS = {{
+inline constexpr std::array<CsrDescriptor, 54> CSR_DESCRIPTORS = {{
     {CSR_EPC, "epc", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
     {CSR_CAUSE, "cause", CsrAccessLevel::KERNEL, CsrAccessLevel::KERNEL, "trap"},
     {CSR_STATUS, "status", CsrAccessLevel::USER, CsrAccessLevel::KERNEL, "trap"},
@@ -274,6 +275,7 @@ inline constexpr std::array<CsrDescriptor, 53> CSR_DESCRIPTORS = {{
     {CSR_MMU_BASE_PAGE_WORDS, "mmu_base_page_words", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
     {CSR_MMU_SUPERPAGE_WORDS, "mmu_superpage_words", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
     {CSR_ASID, "asid", CsrAccessLevel::USER, CsrAccessLevel::NONE, "discovery"},
+    {CSR_DMEM_CLASS, "dmem_class", CsrAccessLevel::KERNEL, CsrAccessLevel::NONE, "memory"},
 }};
 
 [[nodiscard]] inline constexpr const CsrDescriptor* csrDescriptor(int id) {

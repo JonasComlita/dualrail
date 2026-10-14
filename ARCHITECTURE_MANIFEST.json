@@ -260,7 +260,8 @@
       "ISA_FEATURES": {"id": 49, "name": "isa_features", "read": "user", "write": "none", "kind": "discovery"},
       "MMU_BASE_PAGE_WORDS": {"id": 50, "name": "mmu_base_page_words", "read": "user", "write": "none", "kind": "discovery"},
       "MMU_SUPERPAGE_WORDS": {"id": 51, "name": "mmu_superpage_words", "read": "user", "write": "none", "kind": "discovery"},
-      "ASID": {"id": 52, "name": "asid", "read": "user", "write": "none", "kind": "discovery"}
+      "ASID": {"id": 52, "name": "asid", "read": "user", "write": "none", "kind": "discovery"},
+      "DMEM_CLASS": {"id": 53, "name": "dmem_class", "read": "kernel", "write": "none", "kind": "memory"}
     },
     "extension_layouts": {
       "r": {

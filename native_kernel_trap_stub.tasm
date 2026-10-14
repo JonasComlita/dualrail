@@ -52,9 +52,120 @@ native_trap_entry:
     mov r1, 3019
     store sp, r1, 0
     mov sp, 16383
+    ; Preserve the interrupted lifetime's live v3 state before dispatch can
+    ; replace it or select another process. Helpers validate owned storage.
+    mov r1, 3020
+    load r13, r1, 0
+    call process_find_pid
+    brn r13, native_vector_context_fault
+    call process_vector_context_save
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_context_fault
+    vctxstore r13
+    call native_v3_mark_saved
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_context_fault
     csrr r13, cause
     call kernel_dispatch
 
+    ; Finish every exact V3 fork clone before any user return. r2 is an ABI
+    ; callee-saved scalar; the fixed bound includes all100 process slots.
+    mov r2, 100
+native_vector_clone_next:
+    call native_v3_next_clone
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_select_return
+    brz r2, native_vector_context_fault
+    mov r1, 14725808
+    load r13, r1, 1
+    vctxload r13
+    load r13, r1, 0
+    vctxstore r13
+    ; Correct only numeric wide words in canonical private pages. The scalar
+    ; eager clone already preserves tested narrower typed-load semantics.
+    ; r2/r3 are ABI callee-saved across each page validation helper.
+    mov r3, 0
+native_numeric_clone_page:
+    mov r4, 512
+    tcmp.t40 r4, r3, r4
+    brz r4, native_numeric_clone_done
+    brp r4, native_vector_context_fault
+    copy.t40 r13, r3
+    call native_fork_private_page
+    brn r13, native_vector_context_fault
+    brz r13, native_numeric_clone_next_page
+    mov r1, 14725808
+    load r4, r1, 6
+    load r5, r1, 7
+    mov r6, 729
+    mov r24, 0
+    vbcast.t40 v2, r24
+native_numeric_clone_word:
+    copy.t40 r22, r4
+    copy.t40 r23, r5
+    mov r20, 1
+    load r19, r22, 0
+    tscan.t40 r21, r20
+    mov r24, 10
+    sub.t40 r24, r21, r24
+    brn r24, native_numeric_clone_wide
+    mov r24, 32
+    sub.t40 r24, r21, r24
+    brz r24, native_numeric_clone_next_word
+    jmp native_vector_context_fault
+native_numeric_clone_wide:
+    vgather.t50 v0, r22, v2
+    vscatter.t50 v0, r23, v2
+native_numeric_clone_next_word:
+    mov r24, 1
+    add.t40 r4, r4, r24
+    add.t40 r5, r5, r24
+    sub.t40 r6, r6, r24
+    brp r6, native_numeric_clone_word
+native_numeric_clone_next_page:
+    mov r24, 1
+    add.t40 r3, r3, r24
+    jmp native_numeric_clone_page
+native_numeric_clone_done:
+    call native_v3_finish_clone
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_context_fault
+    mov r3, 1
+    sub.t40 r2, r2, r3
+    jmp native_vector_clone_next
+
+native_vector_select_return:
+    call native_v3_selected
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_context_fault
+    mov r1, 14725808
+    load r2, r1, 7
+    brz r2, native_vector_restore_return
+    mov r3, 1
+    tcmp.t40 r2, r2, r3
+    brn r2, native_vector_context_fault
+    brp r2, native_vector_context_fault
+    ; First-task boot live state is captured at its first trap entry. Other
+    ; never-run selected lifetimes receive canonical zero V3 state here.
+    mov r3, 0
+    vbcast.t40 v0, r3
+    vbcast.t40 v1, r3
+    vbcast.t40 v2, r3
+    vbcast.t40 v3, r3
+    vbcast.t40 v4, r3
+    vbcast.t40 v5, r3
+    vbcast.t40 v6, r3
+    vbcast.t40 v7, r3
+    aclr.t40
+    load r13, r1, 0
+    vctxstore r13
+    call native_v3_mark_initialized
+    brn r13, native_vector_context_fault
+    brz r13, native_vector_context_fault
+native_vector_restore_return:
+    mov r1, 14725808
+    load r13, r1, 0
+    vctxload r13
     mov r1, 3019
     load sp, r1, 0
     load r1, sp, 0
@@ -99,3 +210,8 @@ native_trap_entry:
     load r25, sp, 30
     csrrw sp, scratch, sp
     eret
+
+native_vector_context_fault:
+    ; A missing or invalid owned context must never resume unvalidated user
+    ; vector state. Keep the VM halted in Kernel mode for diagnosis.
+    halt

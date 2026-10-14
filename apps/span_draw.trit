@@ -1,0 +1,185 @@
+// Stateless native RGB drawing. The caller owns the complete mapped surface
+// and guarantees integral RGB source words for copies. Virtual bounds here do
+// not authenticate kernel ownership or detect physical aliases.
+
+fn span_draw_integer(value: t40, lower: t40, upper: t40) -> t40 {
+    // Special comparisons may fault this User process before any drawing store.
+    if value < lower { return 0; }
+    if value > upper { return 0; }
+    unsafe { if tmod(value,1) != 0 { return 0; } }
+    return 1;
+}
+
+fn span_draw_surface(buf: t40, w: t40, h: t40) -> t40 {
+    if span_draw_integer(buf,1,373248) != 1 { return 0; }
+    if span_draw_integer(w,1,80) != 1 { return 0; }
+    if span_draw_integer(h,1,60) != 1 { return 0; }
+    if buf + w*h*3 > 373248 { return 0; }
+    return 1;
+}
+
+fn span_draw_color(r: t40, g: t40, b: t40) -> t40 {
+    if span_draw_integer(r,0,255) != 1 { return 0; }
+    if span_draw_integer(g,0,255) != 1 { return 0; }
+    if span_draw_integer(b,0,255) != 1 { return 0; }
+    return 1;
+}
+
+// Internal run emitter: dimensions, pointer and colors have already passed
+// validation. Run-exclusive ends may be4097; clip before address arithmetic.
+fn span_draw_run(buf: t40, w: t40, h: t40, y: t40,
+                 xb: t40, xe: t40, r: t40, g: t40, b: t40) -> t40 {
+    if y < 0 { return 0; }
+    if y >= h { return 0; }
+    var left: t40=xb;
+    var right: t40=xe;
+    if left < 0 { left=0; }
+    if right > w { right=w; }
+    if right <= left { return 0; }
+    var address: t40=buf+(y*w+left)*3;
+    var x: t40=left;
+    while x < right {
+        unsafe { store(address,r);store(address+1,g);store(address+2,b); }
+        address=address+3;
+        x=x+1;
+    }
+    return right-left;
+}
+
+fn draw_rgb_span(buf: t40, w: t40, h: t40, y: t40,
+                 xb: t40, xe: t40, r: t40, g: t40, b: t40) -> t40 {
+    if span_draw_surface(buf,w,h) != 1 { return -8; }
+    if span_draw_integer(y,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(xb,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(xe,-4096,4096) != 1 { return -8; }
+    if span_draw_color(r,g,b) != 1 { return -8; }
+    if xb > xe { return -8; }
+    return span_draw_run(buf,w,h,y,xb,xe,r,g,b);
+}
+
+fn draw_rgb_copy(dst: t40, dw: t40, dh: t40,
+                 src: t40, sw: t40, sh: t40,
+                 dx: t40, dy: t40, sx: t40, sy: t40,
+                 cw: t40, ch: t40) -> t40 {
+    if span_draw_surface(dst,dw,dh) != 1 { return -8; }
+    if span_draw_surface(src,sw,sh) != 1 { return -8; }
+    if span_draw_integer(dx,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(dy,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(sx,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(sy,-4096,4096) != 1 { return -8; }
+    if span_draw_integer(cw,0,8192) != 1 { return -8; }
+    if span_draw_integer(ch,0,8192) != 1 { return -8; }
+    var same: t40=0;
+    if dst == src { if dw == sw { if dh == sh { same=1; } } }
+    let dend: t40=dst+dw*dh*3;
+    let send: t40=src+sw*sh*3;
+    if same != 1 { if dst < send { if src < dend { return -8; } } }
+    // One offset interval couples both surfaces; no endpoint rerasterization.
+    var lx: t40=0;var hx: t40=cw;
+    var ly: t40=0;var hy: t40=ch;
+    if 0-dx > lx { lx=0-dx; }
+    if 0-sx > lx { lx=0-sx; }
+    if dw-dx < hx { hx=dw-dx; }
+    if sw-sx < hx { hx=sw-sx; }
+    if 0-dy > ly { ly=0-dy; }
+    if 0-sy > ly { ly=0-sy; }
+    if dh-dy < hy { hy=dh-dy; }
+    if sh-sy < hy { hy=sh-sy; }
+    if hx <= lx { return 0; }
+    if hy <= ly { return 0; }
+    var first_y: t40=ly;var stop_y: t40=hy;var step_y: t40=1;
+    var first_x: t40=lx;var stop_x: t40=hx;var step_x: t40=1;
+    if same == 1 {
+        if dy > sy { first_y=hy-1;stop_y=ly-1;step_y=-1; }
+        if dx > sx { first_x=hx-1;stop_x=lx-1;step_x=-1; }
+    }
+    var y: t40=first_y;
+    while y != stop_y {
+        var x: t40=first_x;
+        while x != stop_x {
+            let source: t40=src+((sy+y)*sw+sx+x)*3;
+            let target: t40=dst+((dy+y)*dw+dx+x)*3;
+            // All three source channels precede any destination store.
+            unsafe {
+                let red: t40=load(source);
+                let green: t40=load(source+1);
+                let blue: t40=load(source+2);
+                store(target,red);store(target+1,green);store(target+2,blue);
+            }
+            x=x+step_x;
+        }
+        y=y+step_y;
+    }
+    return (hx-lx)*(hy-ly);
+}
+
+fn span_draw_line_valid(buf: t40, w: t40, h: t40,
+                        x0: t40, y0: t40, x1: t40, y1: t40,
+                        r: t40, g: t40, b: t40) -> t40 {
+    if span_draw_surface(buf,w,h) != 1 { return 0; }
+    if span_draw_integer(x0,-4096,4096) != 1 { return 0; }
+    if span_draw_integer(y0,-4096,4096) != 1 { return 0; }
+    if span_draw_integer(x1,-4096,4096) != 1 { return 0; }
+    if span_draw_integer(y1,-4096,4096) != 1 { return 0; }
+    if span_draw_color(r,g,b) != 1 { return 0; }
+    return 1;
+}
+
+fn draw_rgb_line_reference(buf: t40, w: t40, h: t40,
+                           x0: t40, y0: t40, x1: t40, y1: t40,
+                           r: t40, g: t40, b: t40) -> t40 {
+    if span_draw_line_valid(buf,w,h,x0,y0,x1,y1,r,g,b) != 1 { return -8; }
+    var dx: t40=x1-x0;if dx < 0 { dx=0-dx; }
+    var ady: t40=y1-y0;if ady < 0 { ady=0-ady; }
+    let dy: t40=0-ady;
+    var step_x: t40=-1;if x0 < x1 { step_x=1; }
+    var step_y: t40=-1;if y0 < y1 { step_y=1; }
+    var x: t40=x0;var y: t40=y0;var err: t40=dx+dy;
+    var count: t40=0;
+    while count >= 0 {
+        if x >= 0 { if x < w { if y >= 0 { if y < h {
+            let address: t40=buf+(y*w+x)*3;
+            unsafe { store(address,r);store(address+1,g);store(address+2,b); }
+            count=count+1;
+        } } } }
+        if x == x1 { if y == y1 { return count; } }
+        let old_e2: t40=2*err;
+        if old_e2 >= dy { err=err+dy;x=x+step_x; }
+        if old_e2 <= dx { err=err+dx;y=y+step_y; }
+    }
+    return count;
+}
+
+fn draw_rgb_line_hybrid(buf: t40, w: t40, h: t40,
+                        x0: t40, y0: t40, x1: t40, y1: t40,
+                        r: t40, g: t40, b: t40) -> t40 {
+    if span_draw_line_valid(buf,w,h,x0,y0,x1,y1,r,g,b) != 1 { return -8; }
+    var dx: t40=x1-x0;if dx < 0 { dx=0-dx; }
+    var ady: t40=y1-y0;if ady < 0 { ady=0-ady; }
+    if ady >= dx { return draw_rgb_line_reference(buf,w,h,x0,y0,x1,y1,r,g,b); }
+    var step_x: t40=-1;if x0 < x1 { step_x=1; }
+    var step_y: t40=-1;if y0 < y1 { step_y=1; }
+    if ady == 0 {
+        if step_x == 1 { return span_draw_run(buf,w,h,y0,x0,x1+1,r,g,b); }
+        return span_draw_run(buf,w,h,y0,x1,x0+1,r,g,b);
+    }
+    var x: t40=x0;var y: t40=y0;var err: t40=dx-ady;
+    var remaining: t40=dx+1;var count: t40=0;
+    while remaining > 0 {
+        var k: t40=0;
+        let numerator: t40=2*err-dx;
+        if numerator > 0 {
+            let denominator: t40=2*ady;
+            var remainder: t40=0;
+            unsafe { remainder=tmod(numerator,denominator); }
+            k=(numerator-remainder)/denominator;
+            if remainder > 0 { k=k+1; }
+        }
+        var n: t40=k+1;if n > remaining { n=remaining; }
+        if step_x == 1 { count=count+span_draw_run(buf,w,h,y,x,x+n,r,g,b); }
+        if step_x == -1 { count=count+span_draw_run(buf,w,h,y,x-n+1,x+1,r,g,b); }
+        remaining=remaining-n;
+        if remaining > 0 { x=x+step_x*n;y=y+step_y;err=err-n*ady+dx; }
+    }
+    return count;
+}

@@ -299,6 +299,13 @@ static constexpr int sys_app_spawn = 57;
 static constexpr int sys_reboot = 58;
 static constexpr int sys_rename = 59;
 static constexpr int sys_service_metrics = 60;
+static constexpr int sys_gfx_register = 61;
+static constexpr int sys_gfx_join = 62;
+static constexpr int sys_gfx_submit = 63;
+static constexpr int sys_gfx_receive = 64;
+static constexpr int sys_gfx_reply = 65;
+static constexpr int sys_gfx_leave = 66;
+
 } // namespace runtime
 
 } // namespace compiler

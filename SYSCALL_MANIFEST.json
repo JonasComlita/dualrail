@@ -62,7 +62,13 @@
     "sys_app_spawn": 57,
     "sys_reboot": 58,
     "sys_rename": 59,
-    "sys_service_metrics": 60
+    "sys_service_metrics": 60,
+    "sys_gfx_register": 61,
+    "sys_gfx_join": 62,
+    "sys_gfx_submit": 63,
+    "sys_gfx_receive": 64,
+    "sys_gfx_reply": 65,
+    "sys_gfx_leave": 66
   },
   "aliases": {
     "sys_yield": "sys_sleep",
@@ -215,6 +221,24 @@
     ],
     "os_service_metrics": [
       "sys_service_metrics"
+    ],
+    "os_gfx_register": [
+      "sys_gfx_register"
+    ],
+    "os_gfx_join": [
+      "sys_gfx_join"
+    ],
+    "os_gfx_submit": [
+      "sys_gfx_submit"
+    ],
+    "os_gfx_receive": [
+      "sys_gfx_receive"
+    ],
+    "os_gfx_reply": [
+      "sys_gfx_reply"
+    ],
+    "os_gfx_leave": [
+      "sys_gfx_leave"
     ]
   },
   "service_metrics": {
